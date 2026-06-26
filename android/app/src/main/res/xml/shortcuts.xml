@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <shortcut
+      android:shortcutId="jarvis_assistant"
+      android:shortcutShortLabel="Ask Jarvis"
+      android:shortcutLongLabel="Ask Jarvis about visits, mismatches, and sales trends">
+    <capability-binding android:key="actions.intent.GET_THING">
+      <parameter-binding
+          android:key="queryText"
+          android:value="query" />
+    </capability-binding>
+    <intent
+        android:action="android.intent.action.VIEW"
+        android:targetPackage="com.example.jarvis"
+        android:targetClass="com.example.jarvis.DeepLinkActivity"
+        android:data="https://your-domain.example.com/app/jarvis?queryText={query}" />
+  </shortcut>
+</shortcuts>
