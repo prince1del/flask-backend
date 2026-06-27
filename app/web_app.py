@@ -338,6 +338,7 @@ ANALYTICS_TEMPLATE = """
                         <td>{{ item.sales_executive_email or '' }}</td>
                         <td>{{ item.sales_executive_birthday or '' }}</td>
                         <td>{{ item.sales_executive_anniversary or '' }}</td>
+<td>{{ item.owner_name or '' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -354,6 +355,7 @@ ANALYTICS_TEMPLATE = """
                         <th>ID</th>
                         <th>Retailer Code</th>
                         <th>Retailer Name</th>
+                        <th>Owner Name</th>
                         <th>Distributor</th>
                         <th>Location</th>
                         <th>Phone</th>
@@ -377,6 +379,7 @@ ANALYTICS_TEMPLATE = """
                         <td>{{ item.id }}</td>
                         <td>{{ item.retailer_code or '' }}</td>
                         <td>{{ item.name or '' }}</td>
+                        <td>{{ item.owner_name or '' }}</td>
                         <td>{{ item.distributor_name or '' }}</td>
                         <td>{{ item.location or '' }}</td>
                         <td>{{ item.phone_number or '' }}</td>
