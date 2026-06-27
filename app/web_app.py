@@ -318,7 +318,7 @@ ANALYTICS_TEMPLATE = """
                     {% for item in distributors %}
                     <tr>
                         <td>{{ item.id }}</td>
-                        <td>{{ item.distributor_id or '' }}</td>
+                        <td>{{ item.distributor_name or '' }}</td>
                         <td>{{ item.firm_name or '' }}</td>
                         <td>{{ item.firm_nick_name or '' }}</td>
                         <td>{{ item.name or '' }}</td>
@@ -354,7 +354,7 @@ ANALYTICS_TEMPLATE = """
                         <th>ID</th>
                         <th>Retailer Code</th>
                         <th>Retailer Name</th>
-                        <th>Distributor ID</th>
+                        <th>Distributor</th>
                         <th>Location</th>
                         <th>Phone</th>
                         <th>Email</th>
@@ -377,7 +377,7 @@ ANALYTICS_TEMPLATE = """
                         <td>{{ item.id }}</td>
                         <td>{{ item.retailer_code or '' }}</td>
                         <td>{{ item.name or '' }}</td>
-                        <td>{{ item.distributor_id or '' }}</td>
+                        <td>{{ item.distributor_name or '' }}</td>
                         <td>{{ item.location or '' }}</td>
                         <td>{{ item.phone_number or '' }}</td>
                         <td>{{ item.email or '' }}</td>
@@ -469,7 +469,7 @@ SCHEDULER_TEMPLATE = """
       <input name="week_start_date" value="{{ current_date }}" />
       <label>Day of Week</label>
       <input name="day_of_week" value="Monday" />
-      <label>Planned Distributor IDs</label>
+      <label>Planned Distributors</label>
       <input name="planned_distributor_ids" placeholder="1,2" />
       <label>Planned Retailer IDs</label>
       <input name="planned_retailer_ids" placeholder="1,2" />
@@ -545,7 +545,7 @@ def _expected_upload_format(key: str) -> dict[str, set[str]]:
                 "multipart/form-data",
                 "text/plain",
                 "application/xml",
-            },
+            }
         }
 
     if key in {"sales_order_file", "invoice_file"}:
@@ -607,6 +607,19 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.getenv("SECRET_KEY", "change-me")
 
+    # ---- FIREBASE CLOUD CONNECTION CODE START ----
+    fb_sync = None
+    try:
+        from centralized_db_system.firebase_sync import FirebaseSync
+        fb_sync = FirebaseSync() 
+        if fb_sync._client is not None:
+            print("--- Firebase Cloud Server Connected Successfully! ---")
+        else:
+            print("--- Firebase Client loaded but inactive (Check Config) ---")
+    except Exception as e:
+        print(f"--- Firebase Connection Failed: {e} ---")
+    # ---- FIREBASE CLOUD CONNECTION CODE END ----
+
     def _db_path() -> str:
         return str(app.config.get("DATABASE_PATH") or "centralized_db.sqlite3")
 
@@ -652,13 +665,13 @@ def create_app() -> Flask:
             <body style=\"font-family: Arial, sans-serif; margin: 2rem;\">
               <h1>Bulk Upload Masters</h1>
                             <p>
-                                Download templates:
-                                <a href="/api/v1/masters/template/distributors">Distributor Excel</a> |
-                                <a href="/api/v1/masters/template/distributors?format=csv">Distributor CSV</a> |
-                                <a href="/api/v1/masters/template/retailers">Retailer Excel</a> |
-                                <a href="/api/v1/masters/template/retailers?format=csv">Retailer CSV</a> |
-                                <a href="/api/v1/masters/template/articles">Article Excel</a> |
-                                <a href="/api/v1/masters/template/articles?format=csv">Article CSV</a>
+                              Download templates:
+                              <a href="/api/v1/masters/template/distributors">Distributor Excel</a> |
+                              <a href="/api/v1/masters/template/distributors?format=csv">Distributor CSV</a> |
+                              <a href="/api/v1/masters/template/retailers">Retailer Excel</a> |
+                              <a href="/api/v1/masters/template/retailers?format=csv">Retailer CSV</a> |
+                              <a href="/api/v1/masters/template/articles">Article Excel</a> |
+                              <a href="/api/v1/masters/template/articles?format=csv">Article CSV</a>
                             </p>
               <form method=\"post\" enctype=\"multipart/form-data\">
                 <p><label>File <input type=\"file\" name=\"file\" required /></label></p>
@@ -1065,13 +1078,17 @@ def create_app() -> Flask:
                         "received_content_type": content_type,
                     }, indent=2)
                     progress_summary = "Upload rejected because the file type does not match the required format."
+                    
+                    if fb_sync and fb_sync._client is not None:
+                        fb_sync.sync_verification_status({"status": "error", "message": f"{key} upload failed format rule", "next_step": "Retry"})
+                        
                     return render_template_string(
                         HTML_TEMPLATE,
                         report=report,
                         report_data=json.loads(report),
                         progress_summary=progress_summary,
                         locked_rules_summary=locked_rules_summary,
-                        sync_status=json.dumps(FirebaseSync().get_sync_status(), indent=2),
+                        sync_status=json.dumps(fb_sync.get_sync_status() if fb_sync else {}, indent=2),
                         search_query=search_query,
                         search_results=search_results,
                     )
@@ -1134,10 +1151,15 @@ def create_app() -> Flask:
                 progress_lines.append(f"Persisted upload records: {persisted_upload_ids}")
             progress_summary = "\n".join(progress_lines)
 
+            current_status = "idle"
+            current_msg = "No files uploaded"
+            
             if workflow_action == "stage1":
+                current_status = "stage-1-saved"
+                current_msg = "Common order sheet saved. Distributor files can be attached next."
                 report_payload = {
-                    "status": "stage-1-saved",
-                    "message": "Common order sheet saved. Distributor files can be attached next.",
+                    "status": current_status,
+                    "message": current_msg,
                     "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
                     "uploaded_documents": stored_metadata,
                     "next_step": next_step,
@@ -1151,63 +1173,60 @@ def create_app() -> Flask:
                         step1_result = compare_step1(stored_files.get("order_file"), stored_files.get("filled_file"))
                     except Exception as exc:
                         step1_result = {"status": "error", "error": str(exc)}
+                    current_status = "stage-2-checked"
+                    current_msg = "Distributor filled order checked against the common order sheet."
                     report = json.dumps({
-                        "status": "stage-2-checked",
-                        "message": "Distributor filled order checked against the common order sheet.",
+                        "status": current_status,
+                        "message": current_msg,
                         "step1": step1_result,
                         "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
                         "uploaded_documents": stored_metadata,
                         "next_step": next_step,
                     }, indent=2)
                 else:
-                    report = json.dumps({
-                        "status": "error",
-                        "message": "Stage 2 requires both order_file and filled_file",
-                        "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                        "uploaded_documents": stored_metadata,
-                    }, indent=2)
+                    current_status = "error"
+                    current_msg = "Stage 2 requires both order_file and filled_file"
+                    report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
             elif workflow_action == "stage3":
                 if stored_files.get("filled_file") and stored_files.get("sales_order_file"):
                     try:
                         step2_result = compare_step2(stored_files.get("filled_file"), stored_files.get("sales_order_file"))
                     except Exception as exc:
                         step2_result = {"status": "error", "error": str(exc)}
+                    current_status = "stage-3-checked"
+                    current_msg = "Sales order checked against distributor-wise filled order."
                     report = json.dumps({
-                        "status": "stage-3-checked",
-                        "message": "Sales order checked against distributor-wise filled order.",
+                        "status": current_status,
+                        "message": current_msg,
                         "step2": step2_result,
                         "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
                         "uploaded_documents": stored_metadata,
                         "next_step": next_step,
                     }, indent=2)
                 else:
-                    report = json.dumps({
-                        "status": "error",
-                        "message": "Stage 3 requires filled_file and sales_order_file",
-                        "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                        "uploaded_documents": stored_metadata,
-                    }, indent=2)
+                    current_status = "error"
+                    current_msg = "Stage 3 requires filled_file and sales_order_file"
+                    report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
             elif workflow_action == "stage4":
                 if stored_files.get("sales_order_file") and stored_files.get("invoice_file"):
                     try:
                         step3_result = compare_step3(stored_files.get("sales_order_file"), stored_files.get("invoice_file"))
                     except Exception as exc:
                         step3_result = {"status": "error", "error": str(exc)}
+                    current_status = "stage-4-checked"
+                    current_msg = "Commercial invoice checked against sales order."
                     report = json.dumps({
-                        "status": "stage-4-checked",
-                        "message": "Commercial invoice checked against sales order.",
+                        "status": current_status,
+                        "message": current_msg,
                         "step3": step3_result,
                         "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
                         "uploaded_documents": stored_metadata,
                         "next_step": next_step,
                     }, indent=2)
                 else:
-                    report = json.dumps({
-                        "status": "error",
-                        "message": "Stage 4 requires sales_order_file and invoice_file",
-                        "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                        "uploaded_documents": stored_metadata,
-                    }, indent=2)
+                    current_status = "error"
+                    current_msg = "Stage 4 requires sales_order_file and invoice_file"
+                    report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
             elif uploaded_count == 0:
                 report = json.dumps({"status": "idle", "message": "No files uploaded"}, indent=2)
             elif uploaded_count < 4:
@@ -1217,10 +1236,11 @@ def create_app() -> Flask:
                         step1_result = compare_step1(stored_files.get("order_file"), stored_files.get("filled_file"))
                     except Exception as exc:
                         step1_result = {"status": "error", "error": str(exc)}
-
+                current_status = "partial-verification"
+                current_msg = "Captured step-by-step. Partial verification. Please upload all four files for a full report."
                 report = json.dumps({
-                    "status": "partial-verification",
-                    "message": "Captured step-by-step. Partial verification. Please upload all four files for a full report.",
+                    "status": current_status,
+                    "message": current_msg,
                     "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
                     "uploaded_documents": stored_metadata,
                     "next_step": next_step,
@@ -1228,17 +1248,22 @@ def create_app() -> Flask:
                 }, indent=2)
             else:
                 try:
-                    report = json.dumps(
-                        run_full_verification(
-                            stored_files["order_file"],
-                            stored_files["filled_file"],
-                            stored_files["sales_order_file"],
-                            stored_files["invoice_file"],
-                        ),
-                        indent=2,
-                    )
+                    verified_data = run_full_verification(stored_files["order_file"], stored_files["filled_file"], stored_files["sales_order_file"], stored_files["invoice_file"])
+                    current_status = verified_data.get("status", "completed")
+                    current_msg = verified_data.get("message", "Full verification completed successfully")
+                    report = json.dumps(verified_data, indent=2)
                 except Exception as exc:
-                    report = json.dumps({"status": "error", "message": str(exc)}, indent=2)
+                    current_status = "error"
+                    current_msg = str(exc)
+                    report = json.dumps({"status": "error", "message": current_msg}, indent=2)
+
+            if fb_sync and fb_sync._client is not None:
+                fb_sync.sync_verification_status({
+                    "status": current_status,
+                    "message": current_msg,
+                    "next_step": next_step or "All Completed",
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
 
         report_data = None
         if report:
@@ -1250,7 +1275,7 @@ def create_app() -> Flask:
         if search_query:
             search_results = json.dumps(CentralizedDB("centralized_db.sqlite3").global_search(search_query), indent=2)
 
-        sync_status = json.dumps(FirebaseSync().get_sync_status(), indent=2)
+        sync_status = json.dumps(fb_sync.get_sync_status() if fb_sync else {"active": False}, indent=2)
         return render_template_string(
             HTML_TEMPLATE,
             report=report,
@@ -1305,7 +1330,13 @@ def create_app() -> Flask:
         db = CentralizedDB("centralized_db.sqlite3")
         payload = json.dumps(db.get_dashboard_payload(), indent=2)
         distributors = db.list_master_distributors(limit=50)
-        retailers = db.list_master_retailers(limit=50)
+        raw_retailers = db.list_master_retailers(limit=50)
+        dist_id_to_name = {d['id']: d['firm_name'] for d in distributors}
+        retailers = []
+        for r in raw_retailers:
+            r = dict(r)
+            r['distributor_name'] = dist_id_to_name.get(r.get('distributor_id'), 'Unknown')
+            retailers.append(r)
         return render_template_string(ANALYTICS_TEMPLATE, payload=payload, distributors=distributors, retailers=retailers)
 
     @app.route("/scheduler", methods=["GET", "POST"])
@@ -1548,7 +1579,7 @@ def create_app() -> Flask:
             """
             <h1>Credit Policy</h1>
             <form method=\"post\">
-              <label>Distributor ID</label><input name=\"distributor_id\" type=\"number\" />
+              <label>Distributor</label><input name=\"distributor_id\" type=\"number\" />
               <label>Max Credit Limit</label><input name=\"max_credit_limit\" type=\"number\" step=\"0.01\" />
               <label>Credit Days Allowed</label><input name=\"credit_days_allowed\" type=\"number\" />
               <label>Account Status</label><input name=\"account_status\" value=\"ACTIVE\" />
@@ -1663,9 +1694,410 @@ def create_app() -> Flask:
             gps_logs=json.dumps(gps_logs, indent=2),
         )
 
+    @app.route("/reports")
+    def monthly_reports() -> str:
+        selected_month = request.args.get("month") or datetime.now().strftime("%Y-%m")
+        data = _get_monthly_report_data(_db_path(), selected_month)
+        return render_template_string(REPORTS_TEMPLATE, selected_month=selected_month, **data)
+
+    @app.route("/reports/download/excel")
+    def download_monthly_report_excel() -> Response:
+        selected_month = request.args.get("month") or datetime.now().strftime("%Y-%m")
+        data = _get_monthly_report_data(_db_path(), selected_month)
+        df = pd.DataFrame(data["distributor_activity"])
+        if df.empty:
+            df = pd.DataFrame(columns=["distributor_name", "total_uploads", "stage1", "stage2", "stage3", "stage4", "last_upload"])
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Monthly Report")
+        output.seek(0)
+        return Response(
+            output.read(),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.xlsx"},
+        )
+
+    @app.route("/reports/download/csv")
+    def download_monthly_report_csv() -> Response:
+        selected_month = request.args.get("month") or datetime.now().strftime("%Y-%m")
+        data = _get_monthly_report_data(_db_path(), selected_month)
+        output = StringIO()
+        writer = csv.DictWriter(output, fieldnames=["distributor_name", "total_uploads", "stage1", "stage2", "stage3", "stage4", "last_upload"])
+        writer.writeheader()
+        writer.writerows(data["distributor_activity"])
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.csv"},
+        )
+    @app.route("/article-master")
+    def article_master_search() -> str:
+        db_path = _db_path()
+        query = request.args.get("q", "").strip()
+        size_filter = request.args.get("size", "").strip()
+        articles = []
+        if query or size_filter:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                sql = "SELECT * FROM article_master_v2 WHERE 1=1"
+                params = []
+                if query:
+                    sql += " AND (brand LIKE ? OR product LIKE ? OR print_style LIKE ?)"
+                    params += [f"%{query}%", f"%{query}%", f"%{query}%"]
+                if size_filter:
+                    sql += " AND size = ?"
+                    params.append(size_filter)
+                sql += " ORDER BY brand, size"
+                articles = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        return render_template_string(ARTICLE_MASTER_TEMPLATE,
+            query=query, size_filter=size_filter, articles=articles)
+
+
+    @app.route('/retailer-download')
+    def retailer_download_page():
+        db_path = _db_path()
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            distributors = [dict(r) for r in conn.execute('SELECT id, firm_name, firm_nick_name FROM master_distributors ORDER BY firm_name').fetchall()]
+        return render_template_string(RETAILER_DOWNLOAD_TEMPLATE, distributors=distributors)
+
+    @app.route('/retailer-download/excel')
+    def retailer_download_excel():
+        db_path = _db_path()
+        dist_id = request.args.get('dist_id', 'all')
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if dist_id == 'all':
+                rows = conn.execute("""
+                    SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
+                    d.firm_name as distributor_name, d.firm_nick_name,
+                    r.location, r.phone_number, r.email, r.address, r.gst_no
+                    FROM master_retailers r
+                    LEFT JOIN master_distributors d ON r.distributor_id = d.id
+                    ORDER BY d.firm_name, r.name
+                """).fetchall()
+                filename = 'all_retailers.xlsx'
+            else:
+                rows = conn.execute("""
+                    SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
+                    d.firm_name as distributor_name, d.firm_nick_name,
+                    r.location, r.phone_number, r.email, r.address, r.gst_no
+                    FROM master_retailers r
+                    LEFT JOIN master_distributors d ON r.distributor_id = d.id
+                    WHERE r.distributor_id = ?
+                    ORDER BY r.name
+                """, (dist_id,)).fetchall()
+                dist_name = rows[0]['firm_nick_name'] if rows else str(dist_id)
+                filename = f'{dist_name}_retailers.xlsx'
+        import io as _io
+        import pandas as _pd
+        df = _pd.DataFrame([dict(r) for r in rows])
+        output = _io.BytesIO()
+        with _pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Retailers')
+        output.seek(0)
+        return Response(
+            output.read(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+
+    @app.route('/retailer-download/csv')
+    def retailer_download_csv():
+        import csv as _csv
+        from io import StringIO as _StringIO
+        db_path = _db_path()
+        dist_id = request.args.get('dist_id', 'all')
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if dist_id == 'all':
+                rows = conn.execute("""
+                    SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
+                    d.firm_name as distributor_name, d.firm_nick_name,
+                    r.location, r.phone_number, r.email, r.address, r.gst_no
+                    FROM master_retailers r
+                    LEFT JOIN master_distributors d ON r.distributor_id = d.id
+                    ORDER BY d.firm_name, r.name
+                """).fetchall()
+                filename = 'all_retailers.csv'
+            else:
+                rows = conn.execute("""
+                    SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
+                    d.firm_name as distributor_name, d.firm_nick_name,
+                    r.location, r.phone_number, r.email, r.address, r.gst_no
+                    FROM master_retailers r
+                    LEFT JOIN master_distributors d ON r.distributor_id = d.id
+                    WHERE r.distributor_id = ?
+                    ORDER BY r.name
+                """, (dist_id,)).fetchall()
+                dist_name = rows[0]['firm_nick_name'] if rows else str(dist_id)
+                filename = f'{dist_name}_retailers.csv'
+        output = _StringIO()
+        if rows:
+            writer = _csv.DictWriter(output, fieldnames=list(dict(rows[0]).keys()))
+            writer.writeheader()
+            writer.writerows([dict(r) for r in rows])
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+
     return app
 
+ARTICLE_MASTER_TEMPLATE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Article Master</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    .card { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9rem; }
+    th { background: #f0f0f0; }
+    .search-box { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+    .search-box input, .search-box select { padding: 0.5rem; font-size: 1rem; }
+    .search-box button { padding: 0.5rem 1.5rem; background: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .badge { background: #e9ecef; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <h1>📦 Article Master</h1>
+  <div class="card">
+    <form method="get" action="/article-master">
+      <div class="search-box">
+        <input type="text" name="q" value="{{ query }}" placeholder="Brand search karo... (e.g. Cardinal, Epigram)" style="width: 300px;" />
+        <select name="size">
+          <option value="">-- All Sizes --</option>
+          {% for s in ['SB BS','DB BS','KS BS','KB FS','DB FS','DBL BS','DB Comf'] %}
+          <option value="{{ s }}" {% if size_filter == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">🔍 Search</button>
+        <a href="/article-master" style="padding: 0.5rem;">Clear</a>
+      </div>
+    </form>
+  </div>
+  {% if articles %}
+  <div class="card">
+    <p><strong>{{ articles|length }} articles मिले</strong></p>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Brand</th><th>TC</th><th>Size</th><th>BS Size</th>
+            <th>Product</th><th>Print Style</th><th>Bale</th><th>Colors</th>
+            <th>MRP (₹)</th><th>Selling Price (₹)</th><th>PTR (₹)</th>
+            <th>Retailer Margin</th><th>Ex-Mill (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in articles %}
+          <tr>
+            <td><strong>{{ a.brand }}</strong></td>
+            <td><span class="badge">{{ a.tc }}</span></td>
+            <td><span class="badge">{{ a.size }}</span></td>
+            <td>{{ a.bs_size }}</td>
+            <td>{{ a.product }}</td>
+            <td>{{ a.print_style }}</td>
+            <td>{{ a.bale_size }}</td>
+            <td>{{ a.colors }}</td>
+            <td><strong>₹{{ "%.0f"|format(a.mrp) }}</strong></td>
+            <td>₹{{ "%.0f"|format(a.selling_price) }}</td>
+            <td>₹{{ "%.0f"|format(a.ptr) }}</td>
+            <td>{{ "%.0f"|format(a.retailer_margin * 100) }}%</td>
+            <td>₹{{ "%.0f"|format(a.exmill_price) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% elif query or size_filter %}
+  <div class="card"><p>कोई article नहीं मिला।</p></div>
+  {% else %}
+  <div class="card"><p>Brand name या size search करो। उदाहरण: "Cardinal", "KS BS"</p></div>
+  {% endif %}
+  <p><a href="/">← Back</a> | <a href="/analytics">Analytics</a> | <a href="/reports">Reports</a></p>
+</body>
+</html>
+"""
 
+RETAILER_DOWNLOAD_TEMPLATE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Retailer Download</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    .card { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; }
+    .btn { display: inline-block; padding: 0.5rem 1.2rem; border-radius: 4px; text-decoration: none; margin: 0.3rem; font-size: 0.9rem; }
+    .btn-excel { background: #1d6f42; color: white; }
+    .btn-csv { background: #0d6efd; color: white; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f0f0f0; }
+  </style>
+</head>
+<body>
+  <h1>📥 Retailer Download</h1>
+
+  <div class="card">
+    <h2>All Retailers Download</h2>
+    <p>Total 750 retailers — sabhi distributors ke saath</p>
+    <a href="/retailer-download/excel?dist_id=all" class="btn btn-excel">📊 Excel Download (All)</a>
+    <a href="/retailer-download/csv?dist_id=all" class="btn btn-csv">📄 CSV Download (All)</a>
+  </div>
+
+  <div class="card">
+    <h2>Distributor Wise Download</h2>
+    <table>
+      <thead>
+        <tr><th>Distributor</th><th>Nick Name</th><th>Excel</th><th>CSV</th></tr>
+      </thead>
+      <tbody>
+        {% for d in distributors %}
+        <tr>
+          <td>{{ d.firm_name }}</td>
+          <td>{{ d.firm_nick_name }}</td>
+          <td><a href="/retailer-download/excel?dist_id={{ d.id }}" class="btn btn-excel">📊 Excel</a></td>
+          <td><a href="/retailer-download/csv?dist_id={{ d.id }}" class="btn btn-csv">📄 CSV</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p><a href="/">← Back</a> | <a href="/analytics">Analytics</a></p>
+</body>
+</html>
+"""
+
+REPORTS_TEMPLATE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Monthly Reports</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    .card { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f0f0f0; }
+    .summary-box { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .stat { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 1rem; min-width: 150px; text-align: center; }
+    .stat h3 { margin: 0; font-size: 2rem; color: #0d6efd; }
+    .stat p { margin: 0.25rem 0 0; color: #666; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>📊 Monthly Reports</h1>
+  <div class="card">
+    <h2>Select Month</h2>
+    <form method="get" action="/reports">
+      <input type="month" name="month" value="{{ selected_month }}" style="padding: 0.4rem; margin: 0 1rem;" />
+      <button type="submit">Load Report</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Summary — {{ selected_month }}</h2>
+    <div class="summary-box">
+      <div class="stat"><h3>{{ total_uploads }}</h3><p>Total Uploads</p></div>
+      <div class="stat"><h3>{{ total_distributors }}</h3><p>Active Distributors</p></div>
+      <div class="stat"><h3>{{ verified_count }}</h3><p>Verified Orders</p></div>
+      <div class="stat"><h3>{{ pending_count }}</h3><p>Pending Orders</p></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Distributor Order Activity</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Distributor</th><th>Total Uploads</th><th>Stage 1</th>
+            <th>Stage 2</th><th>Stage 3</th><th>Stage 4</th><th>Last Upload</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in distributor_activity %}
+          <tr>
+            <td>{{ row.distributor_name or 'Unknown' }}</td>
+            <td>{{ row.total_uploads }}</td>
+            <td>{{ row.stage1 }}</td>
+            <td>{{ row.stage2 }}</td>
+            <td>{{ row.stage3 }}</td>
+            <td>{{ row.stage4 }}</td>
+            <td>{{ row.last_upload }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" style="text-align:center;">No data for this month</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Download Report</h2>
+    <p>
+      <a href="/reports/download/excel?month={{ selected_month }}">📥 Download Excel</a> &nbsp;|&nbsp;
+      <a href="/reports/download/csv?month={{ selected_month }}">📥 Download CSV</a>
+    </p>
+  </div>
+  <p><a href="/">← Back to Dashboard</a> | <a href="/analytics">Analytics</a></p>
+</body>
+</html>
+"""
+
+
+def _get_monthly_report_data(db_path: str, month: str) -> dict:
+    try:
+        year, mon = month.split("-")
+        start_date = f"{year}-{mon}-01"
+        import calendar
+        last_day = calendar.monthrange(int(year), int(mon))[1]
+        end_date = f"{year}-{mon}-{last_day:02d}"
+    except Exception:
+        return {"distributor_activity": [], "total_uploads": 0, "total_distributors": 0, "verified_count": 0, "pending_count": 0}
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            total_uploads = conn.execute(
+                "SELECT COUNT(*) FROM distributor_order_uploads WHERE DATE(uploaded_at) BETWEEN ? AND ?",
+                (start_date, end_date)
+            ).fetchone()[0]
+            rows = conn.execute("""
+                SELECT distributor_name,
+                    COUNT(*) as total_uploads,
+                    SUM(CASE WHEN stage_key = 'order_file' THEN 1 ELSE 0 END) as stage1,
+                    SUM(CASE WHEN stage_key = 'filled_file' THEN 1 ELSE 0 END) as stage2,
+                    SUM(CASE WHEN stage_key = 'sales_order_file' THEN 1 ELSE 0 END) as stage3,
+                    SUM(CASE WHEN stage_key = 'invoice_file' THEN 1 ELSE 0 END) as stage4,
+                    MAX(DATE(uploaded_at)) as last_upload
+                FROM distributor_order_uploads
+                WHERE DATE(uploaded_at) BETWEEN ? AND ?
+                AND distributor_name IS NOT NULL
+                AND distributor_name != ''
+                GROUP BY distributor_name
+                ORDER BY total_uploads DESC
+            """, (start_date, end_date)).fetchall()
+            distributor_activity = [dict(row) for row in rows]
+            total_distributors = len(distributor_activity)
+            verified_count = sum(1 for r in distributor_activity if r["stage1"] and r["stage2"] and r["stage3"] and r["stage4"])
+            pending_count = total_distributors - verified_count
+    except Exception:
+        distributor_activity = []
+        total_uploads = total_distributors = verified_count = pending_count = 0
+    return {
+        "distributor_activity": distributor_activity,
+        "total_uploads": total_uploads,
+        "total_distributors": total_distributors,
+        "verified_count": verified_count,
+        "pending_count": pending_count,
+    }
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
