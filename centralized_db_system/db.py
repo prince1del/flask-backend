@@ -22,7 +22,142 @@ from .article_master import ArticleMasterService
 
 
 class CentralizedDB:
-    """A lightweight SQLite-backed centralized database wrapper."""
+
+    # ============ DYNAMIC SCHEMA MANAGER ============
+
+    def init_schema_manager(self):
+        """Schema manager table banao agar nahi hai"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS custom_schema_fields (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT NOT NULL,  -- 'distributor', 'retailer', 'article'
+                    field_name TEXT NOT NULL,
+                    field_label TEXT NOT NULL,
+                    field_type TEXT DEFAULT 'text',  -- text, number, date, select
+                    field_order INTEGER DEFAULT 0,
+                    is_required INTEGER DEFAULT 0,
+                    is_visible INTEGER DEFAULT 1,
+                    options TEXT DEFAULT NULL,  -- JSON for select type
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(entity_type, field_name)
+                )
+            """)
+            conn.commit()
+
+    def get_schema_fields(self, entity_type: str) -> list:
+        """Entity ke fields lao order ke saath"""
+        self.init_schema_manager()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT * FROM custom_schema_fields
+                WHERE entity_type = ? AND is_visible = 1
+                ORDER BY field_order ASC
+            """, (entity_type,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_all_schema_fields(self, entity_type: str) -> list:
+        """Saare fields (hidden bhi)"""
+        self.init_schema_manager()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT * FROM custom_schema_fields
+                WHERE entity_type = ?
+                ORDER BY field_order ASC
+            """, (entity_type,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def add_schema_field(self, entity_type: str, field_name: str, field_label: str,
+                        field_type: str = 'text', field_order: int = 0,
+                        is_required: int = 0, options: str = None) -> int:
+        """Naya field add karo"""
+        self.init_schema_manager()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                INSERT OR IGNORE INTO custom_schema_fields
+                (entity_type, field_name, field_label, field_type, field_order, is_required, options)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (entity_type, field_name, field_label, field_type, field_order, is_required, options))
+            conn.commit()
+            return cursor.lastrowid
+
+    def delete_schema_field(self, field_id: int) -> bool:
+        """Field delete karo"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM custom_schema_fields WHERE id = ?", (field_id,))
+            conn.commit()
+            return True
+
+    def toggle_schema_field_visibility(self, field_id: int, is_visible: int) -> bool:
+        """Field show/hide karo"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE custom_schema_fields SET is_visible = ? WHERE id = ?",
+                        (is_visible, field_id))
+            conn.commit()
+            return True
+
+    def reorder_schema_fields(self, field_orders: list[dict]) -> bool:
+        """Fields reorder karo — [{id: 1, order: 0}, {id: 2, order: 1}]"""
+        with sqlite3.connect(self.db_path) as conn:
+            for item in field_orders:
+                conn.execute("UPDATE custom_schema_fields SET field_order = ? WHERE id = ?",
+                            (item['order'], item['id']))
+            conn.commit()
+            return True
+
+    def seed_default_schema(self):
+        """Pehli baar default fields seed karo"""
+        self.init_schema_manager()
+        defaults = {
+            'distributor': [
+                ('distributor_code', 'Distributor Code', 'text', 0),
+                ('firm_name', 'Firm Name', 'text', 1),
+                ('firm_nick_name', 'Nick Name', 'text', 2),
+                ('name', 'Contact Person', 'text', 3),
+                ('phone_number', 'Mobile Number', 'text', 4),
+                ('email', 'Email', 'text', 5),
+                ('zone', 'State', 'text', 6),
+                ('region', 'Area', 'text', 7),
+                ('gst_no', 'GST Number', 'text', 8),
+                ('payment_terms', 'Payment Terms', 'text', 9),
+                ('credit_limit', 'Credit Limit', 'number', 10),
+            ],
+            'retailer': [
+                ('retailer_code', 'Retailer Code', 'text', 0),
+                ('name', 'Retailer Name', 'text', 1),
+                ('owner_name', 'Owner Name', 'text', 2),
+                ('distributor_id', 'Distributor', 'select', 3),
+                ('location', 'Location', 'text', 4),
+                ('phone_number', 'Phone Number', 'text', 5),
+                ('email', 'Email', 'text', 6),
+                ('address', 'Address', 'text', 7),
+                ('gst_no', 'GST Number', 'text', 8),
+            ],
+            'article': [
+                ('brand', 'Brand', 'text', 0),
+                ('tc', 'TC', 'text', 1),
+                ('size', 'Size', 'text', 2),
+                ('bs_size', 'BS Size', 'text', 3),
+                ('product', 'Product', 'text', 4),
+                ('print_style', 'Print Style', 'text', 5),
+                ('mrp', 'MRP (₹)', 'number', 6),
+                ('selling_price', 'Selling Price (₹)', 'number', 7),
+                ('ptr', 'PTR (₹)', 'number', 8),
+                ('exmill_price', 'Ex-Mill (₹)', 'number', 9),
+            ],
+        }
+        with sqlite3.connect(self.db_path) as conn:
+            for entity, fields in defaults.items():
+                for field_name, label, ftype, order in fields:
+                    conn.execute("""
+                        INSERT OR IGNORE INTO custom_schema_fields
+                        (entity_type, field_name, field_label, field_type, field_order)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (entity, field_name, label, ftype, order))
+            conn.commit()
+    
 
     def __init__(self, db_path: str | None = None, sync_store: OfflineSyncStore | None = None):
         self.db_path = self._resolve_db_path(db_path)
@@ -3327,7 +3462,7 @@ class CentralizedDB:
     def get_master_retailer_by_name(self, name: str) -> dict[str, Any] | None:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary FROM master_retailers WHERE LOWER(name) = ? LIMIT 1",
+                "SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, owner_name FROM master_retailers WHERE LOWER(name) = ? LIMIT 1",
                 (str(name or "").strip().lower(),),
             ).fetchone()
         if row is None:
@@ -3356,6 +3491,7 @@ class CentralizedDB:
             "sales_executive_email": row[20],
             "sales_executive_birthday": row[21],
             "sales_executive_anniversary": row[22],
+            "owner_name": row[23],
         }
 
     def list_master_retailers(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -3363,7 +3499,7 @@ class CentralizedDB:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
                 """
-                SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary
+                SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, owner_name
                 FROM master_retailers
                 ORDER BY id DESC
                 LIMIT ?
@@ -3396,6 +3532,7 @@ class CentralizedDB:
                 "sales_executive_email": row[20],
                 "sales_executive_birthday": row[21],
                 "sales_executive_anniversary": row[22],
+                "owner_name": row[23],
             }
             for row in rows
         ]
@@ -3501,7 +3638,7 @@ class CentralizedDB:
     def get_master_retailer(self, retailer_id: int) -> dict[str, Any] | None:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary FROM master_retailers WHERE id = ?",
+                "SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, owner_name FROM master_retailers WHERE id = ?",
                 (retailer_id,),
             ).fetchone()
         if row is None:
@@ -3530,6 +3667,7 @@ class CentralizedDB:
             "sales_executive_email": row[20],
             "sales_executive_birthday": row[21],
             "sales_executive_anniversary": row[22],
+            "owner_name": row[23],
         }
 
     def bulk_upload_targets_achievements(self, path: str | Path) -> int:
