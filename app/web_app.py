@@ -1927,6 +1927,7 @@ th { background: #f0f0f0; }
 </body></html>"""
 
     @app.route("/settings/schema")
+    @app.route("/settings/schema/")
     def schema_manager():
         entity = request.args.get("entity", "distributor")
         message = request.args.get("message", "")
@@ -2247,4 +2248,4 @@ def _get_monthly_report_data(db_path: str, month: str) -> dict:
     }
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
