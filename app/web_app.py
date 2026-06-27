@@ -1843,9 +1843,9 @@ def create_app() -> Flask:
             headers={'Content-Disposition': f'attachment; filename={filename}'}
         )
 
-                # ============ SCHEMA MANAGER ROUTES ============
+    # ============ SCHEMA MANAGER ROUTES ============
 
-        SCHEMA_MANAGER_TEMPLATE = """<!doctype html>
+    SCHEMA_MANAGER_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>Schema Manager</title>
 <style>
 body { font-family: Arial, sans-serif; margin: 2rem; }
