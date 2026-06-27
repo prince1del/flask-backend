@@ -2248,4 +2248,4 @@ def _get_monthly_report_data(db_path: str, month: str) -> dict:
     }
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True, port=5001)
+    app.run(debug=os.getenv('DEBUG','False')=='True', port=int(os.getenv('PORT',5000)))
