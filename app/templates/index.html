@@ -1,43 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NEXORA v1.1 Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">NEXORA</p>
-          <h1>NEXORA v1.1 Dashboard</h1>
-          <p class="subtitle">Real-time visibility for distributors, targets, storage, and verification workflows.</p>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1>🚀 NEXORA v1.1 Dashboard</h1>
+            <div class="header-right">
+                <span id="user-info" class="user-info">Admin User</span>
+                <button onclick="logout()" class="btn-logout">Logout</button>
+            </div>
         </div>
-      </header>
+    </header>
 
-      <main class="cards">
-        <section class="card">
-          <h2>Targets & Achievement</h2>
-          <p>Review distributor targets and achievement progress.</p>
-          <a href="/target-achievement">Open</a>
-        </section>
-        <section class="card">
-          <h2>Party Matching</h2>
-          <p>Inspect duplicate and similar parties with review queue support.</p>
-          <a href="/party-matching">Open</a>
-        </section>
-        <section class="card">
-          <h2>Storage</h2>
-          <p>Monitor file storage, syncing, and account details.</p>
-          <a href="/storage/dashboard">Open</a>
-        </section>
-        <section class="card">
-          <h2>Health</h2>
-          <p>Verify the backend is serving the web dashboard.</p>
-          <a href="/health">Open</a>
-        </section>
-      </main>
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h2>NEXORA Login</h2>
+            <div class="form-group">
+                <label>Username:</label>
+                <input type="text" id="username" placeholder="mobile_test_admin" value="mobile_test_admin">
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input type="password" id="password" placeholder="Password" value="mobile_test_admin_123">
+            </div>
+            <button onclick="login()" class="btn btn-primary">Login</button>
+            <p id="loginError" class="error"></p>
+        </div>
+    </div>
+
+    <div id="dashboard" class="dashboard hidden">
+        <div class="container">
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <h3>Backend Status</h3>
+                    <p id="status" class="status-ok">✅ Online</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Modules</h3>
+                    <p>5 Active</p>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('workspaces')">Workspaces</button>
+                <button class="tab-btn" onclick="switchTab('target')">Target vs Achievement</button>
+                <button class="tab-btn" onclick="switchTab('party')">Smart Party Matching</button>
+                <button class="tab-btn" onclick="switchTab('storage')">Google Drive</button>
+            </div>
+
+            <div id="workspaces-tab" class="tab-content active">
+                <div class="module-header">
+                    <h2>Workspaces</h2>
+                    <button onclick="loadWorkspaces()" class="btn btn-primary">Refresh</button>
+                </div>
+                <div id="workspaces-list" class="list-container"><p>Loading...</p></div>
+            </div>
+
+            <div id="target-tab" class="tab-content">
+                <div class="module-header">
+                    <h2>Target vs Achievement</h2>
+                    <button onclick="loadYears()" class="btn btn-primary">Refresh</button>
+                </div>
+                <div class="card">
+                    <h3>Overall Summary</h3>
+                    <div id="target-summary" class="summary"><p>Loading...</p></div>
+                </div>
+                <div class="card">
+                    <h3>Fiscal Years</h3>
+                    <div id="years-list" class="list-container"><p>Loading...</p></div>
+                </div>
+            </div>
+
+            <div id="party-tab" class="tab-content">
+                <div class="module-header">
+                    <h2>Smart Party Matching</h2>
+                </div>
+                <div class="card">
+                    <h3>Search Parties</h3>
+                    <div class="form-group">
+                        <input type="text" id="partyQuery" placeholder="Search...">
+                    </div>
+                    <button onclick="searchParties()" class="btn btn-primary">Search</button>
+                </div>
+                <div class="card">
+                    <h3>Results</h3>
+                    <div id="party-results" class="list-container"><p>Enter search term</p></div>
+                </div>
+            </div>
+
+            <div id="storage-tab" class="tab-content">
+                <div class="module-header">
+                    <h2>Google Drive Storage</h2>
+                    <button onclick="loadDashboard()" class="btn btn-primary">Refresh</button>
+                </div>
+                <div class="card">
+                    <h3>Connection Status</h3>
+                    <div id="storage-status" class="summary"><p>Loading...</p></div>
+                </div>
+                <div class="card">
+                    <h3>Storage Information</h3>
+                    <div id="storage-info" class="summary"><p>Loading...</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
     </div>
 
     <script src="{{ url_for('static', filename='app.js') }}"></script>
