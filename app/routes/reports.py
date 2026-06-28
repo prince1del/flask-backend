@@ -93,7 +93,9 @@ REPORTS_TEMPLATE = """
 def monthly_reports() -> str:
     selected_month = request.args.get("month") or "2026-06"
     data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
-    return render_template_string(REPORTS_TEMPLATE, selected_month=selected_month, **data)
+    return render_template_string(
+        REPORTS_TEMPLATE, selected_month=selected_month, **data
+    )
 
 
 @reports_blueprint.route("/reports/download/excel")
@@ -102,9 +104,20 @@ def download_monthly_report_excel() -> Response:
     selected_month = request.args.get("month") or "2026-06"
     data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
     import pandas as pd
+
     df = pd.DataFrame(data["distributor_activity"])
     if df.empty:
-        df = pd.DataFrame(columns=["distributor_name", "total_uploads", "stage1", "stage2", "stage3", "stage4", "last_upload"])
+        df = pd.DataFrame(
+            columns=[
+                "distributor_name",
+                "total_uploads",
+                "stage1",
+                "stage2",
+                "stage3",
+                "stage4",
+                "last_upload",
+            ]
+        )
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Monthly Report")
@@ -112,7 +125,9 @@ def download_monthly_report_excel() -> Response:
     return Response(
         output.read(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.xlsx"},
+        headers={
+            "Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.xlsx"
+        },
     )
 
 
@@ -122,13 +137,26 @@ def download_monthly_report_csv() -> Response:
     selected_month = request.args.get("month") or "2026-06"
     data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
     output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=["distributor_name", "total_uploads", "stage1", "stage2", "stage3", "stage4", "last_upload"])
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "distributor_name",
+            "total_uploads",
+            "stage1",
+            "stage2",
+            "stage3",
+            "stage4",
+            "last_upload",
+        ],
+    )
     writer.writeheader()
     writer.writerows(data["distributor_activity"])
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.csv"},
+        headers={
+            "Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.csv"
+        },
     )
 
 
@@ -169,7 +197,9 @@ def download_distributors() -> Response:
 @reports_blueprint.route("/download/distributors/excel")
 @require_jwt_auth
 def download_distributors_excel() -> Response:
-    excel_bytes = CentralizedDB("centralized_db.sqlite3").export_master_distributors_excel()
+    excel_bytes = CentralizedDB(
+        "centralized_db.sqlite3"
+    ).export_master_distributors_excel()
     return Response(
         excel_bytes,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -202,7 +232,9 @@ def download_retailers() -> Response:
 @reports_blueprint.route("/download/retailers/excel")
 @require_jwt_auth
 def download_retailers_excel() -> Response:
-    excel_bytes = CentralizedDB("centralized_db.sqlite3").export_master_retailers_excel()
+    excel_bytes = CentralizedDB(
+        "centralized_db.sqlite3"
+    ).export_master_retailers_excel()
     return Response(
         excel_bytes,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -217,7 +249,9 @@ def download_targets() -> Response:
     return Response(
         csv_data,
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=targets_achievements.csv"},
+        headers={
+            "Content-Disposition": "attachment; filename=targets_achievements.csv"
+        },
     )
 
 
@@ -247,9 +281,13 @@ def download_dsr() -> Response:
     report_id = request.args.get("report_id", type=int)
     if report_id is None:
         return Response("Missing report_id", status=400)
-    excel_bytes = CentralizedDB("centralized_db.sqlite3").export_dsr_report(report_id, export_format="excel")
+    excel_bytes = CentralizedDB("centralized_db.sqlite3").export_dsr_report(
+        report_id, export_format="excel"
+    )
     return Response(
         excel_bytes,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=dsr_report_{report_id}.xlsx"},
+        headers={
+            "Content-Disposition": f"attachment; filename=dsr_report_{report_id}.xlsx"
+        },
     )

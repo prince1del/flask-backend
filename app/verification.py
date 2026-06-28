@@ -26,7 +26,13 @@ def parse_distributor_fields_from_text(text: str) -> dict[str, Any]:
             parsed["distributor_code"] = cleaned_value
         elif normalized_key in {"firm_name", "firm"}:
             parsed["firm_name"] = cleaned_value
-        elif normalized_key in {"firm_nick_name", "firm_nickname", "firm_nick_name_", "nickname", "nick_name"}:
+        elif normalized_key in {
+            "firm_nick_name",
+            "firm_nickname",
+            "firm_nick_name_",
+            "nickname",
+            "nick_name",
+        }:
             parsed["firm_nick_name"] = cleaned_value
         elif normalized_key in {"gstin", "gst_no", "gst_number"}:
             parsed["gst_no"] = cleaned_value
@@ -41,7 +47,13 @@ def parse_distributor_fields_from_text(text: str) -> dict[str, Any]:
                 parsed["credit_limit"] = cleaned_value
         elif normalized_key in {"address", "street", "address_line"}:
             parsed["address"] = cleaned_value
-        elif normalized_key in {"phone", "phone_number", "mobile", "contact_no", "contact_number"}:
+        elif normalized_key in {
+            "phone",
+            "phone_number",
+            "mobile",
+            "contact_no",
+            "contact_number",
+        }:
             parsed["phone_number"] = cleaned_value
         elif normalized_key in {"email", "email_address"}:
             parsed["email"] = cleaned_value
@@ -59,15 +71,30 @@ def parse_retailer_fields_from_text(text: str) -> dict[str, Any]:
         cleaned_value = value.strip()
         if not cleaned_value:
             continue
-        if normalized_key in {"retailer_name", "name", "retailer"} or normalized_key.endswith("retailer"):
+        if normalized_key in {
+            "retailer_name",
+            "name",
+            "retailer",
+        } or normalized_key.endswith("retailer"):
             parsed["name"] = cleaned_value
-        elif normalized_key in {"distributor", "linked_distributor", "linked_distributor_name", "distributor_name"} or normalized_key.endswith("distributor"):
+        elif normalized_key in {
+            "distributor",
+            "linked_distributor",
+            "linked_distributor_name",
+            "distributor_name",
+        } or normalized_key.endswith("distributor"):
             parsed["distributor_reference"] = cleaned_value
         elif normalized_key in {"location", "city", "place"}:
             parsed["location"] = cleaned_value
         elif normalized_key in {"address", "street", "address_line"}:
             parsed["address"] = cleaned_value
-        elif normalized_key in {"phone", "phone_number", "mobile", "contact_no", "contact_number"}:
+        elif normalized_key in {
+            "phone",
+            "phone_number",
+            "mobile",
+            "contact_no",
+            "contact_number",
+        }:
             parsed["phone_number"] = cleaned_value
         elif normalized_key in {"email", "email_address"}:
             parsed["email"] = cleaned_value

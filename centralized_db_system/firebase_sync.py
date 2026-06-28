@@ -16,10 +16,21 @@ from .sync import OfflineSyncStore
 class FirebaseSync:
     """Minimal Firebase integration for syncing records to a cloud database."""
 
-    def __init__(self, project_id: str | None = None, database_url: str | None = None, sync_store: OfflineSyncStore | None = None):
+    def __init__(
+        self,
+        project_id: str | None = None,
+        database_url: str | None = None,
+        sync_store: OfflineSyncStore | None = None,
+    ):
         # Hum direct aapke sales-manager ka settings ya fallback environment se uthayenge
-        self.project_id = project_id or os.getenv("FIREBASE_PROJECT_ID") or "sales-manager-8286d"
-        self.database_url = database_url or os.getenv("FIREBASE_DATABASE_URL") or "https://sales-manager-8286d-default-rtdb.firebaseio.com/"
+        self.project_id = (
+            project_id or os.getenv("FIREBASE_PROJECT_ID") or "sales-manager-8286d"
+        )
+        self.database_url = (
+            database_url
+            or os.getenv("FIREBASE_DATABASE_URL")
+            or "https://sales-manager-8286d-default-rtdb.firebaseio.com/"
+        )
         self.sync_store = sync_store or OfflineSyncStore()
         self._client = None
         self._initialize_client()
@@ -28,7 +39,9 @@ class FirebaseSync:
         if not self.database_url:
             return False
         lowered = self.database_url.lower()
-        return lowered.startswith("https://") and (".firebaseio.com" in lowered or ".firebasedatabase.app" in lowered)
+        return lowered.startswith("https://") and (
+            ".firebaseio.com" in lowered or ".firebasedatabase.app" in lowered
+        )
 
     def _initialize_client(self) -> None:
         self._client = None
@@ -41,11 +54,17 @@ class FirebaseSync:
 
         try:
             # .env se chabi ka rasta dhoondhna, nahi toh standard instance/ wala folder fallback lena
-            credential_path = os.getenv("FIREBASE_CREDENTIALS_JSON") or os.getenv("FIREBASE_CONFIG_PATH") or "instance/firebase_credentials.json"
-            
+            credential_path = (
+                os.getenv("FIREBASE_CREDENTIALS_JSON")
+                or os.getenv("FIREBASE_CONFIG_PATH")
+                or "instance/firebase_credentials.json"
+            )
+
             credential_file = Path(credential_path).expanduser()
             if not credential_file.exists():
-                print(f"--- Warning: Firebase JSON chabi nahi mili is raste par: {credential_file} ---")
+                print(
+                    f"--- Warning: Firebase JSON chabi nahi mili is raste par: {credential_file} ---"
+                )
                 return
 
             cred = credentials.Certificate(str(credential_file))
@@ -95,10 +114,7 @@ class FirebaseSync:
             ref = self._client.reference("records")
             snapshot = ref.get()
             if isinstance(snapshot, dict):
-                return [
-                    {"id": key, **value}
-                    for key, value in snapshot.items()
-                ]
+                return [{"id": key, **value} for key, value in snapshot.items()]
         except Exception:
             return []
         return []

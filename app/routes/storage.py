@@ -42,7 +42,9 @@ def oauth_callback():
 
     credentials = GoogleDriveOAuth.exchange_code_for_token(code)
     user_id = _get_current_user_id()
-    result = storage_manager.connect_user_storage(user_id=user_id, provider_type="google_drive", oauth_token=credentials)
+    result = storage_manager.connect_user_storage(
+        user_id=user_id, provider_type="google_drive", oauth_token=credentials
+    )
     return jsonify({"success": True, "data": result}), 200
 
 

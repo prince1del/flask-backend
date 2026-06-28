@@ -171,10 +171,15 @@ def analytics() -> str:
     payload = json.dumps(db.get_dashboard_payload(), indent=2)
     distributors = db.list_master_distributors(limit=50)
     raw_retailers = db.list_master_retailers(limit=50)
-    dist_id_to_name = {d['id']: d['firm_name'] for d in distributors}
+    dist_id_to_name = {d["id"]: d["firm_name"] for d in distributors}
     retailers = []
     for r in raw_retailers:
         r = dict(r)
-        r['distributor_name'] = dist_id_to_name.get(r.get('distributor_id'), 'Unknown')
+        r["distributor_name"] = dist_id_to_name.get(r.get("distributor_id"), "Unknown")
         retailers.append(r)
-    return render_template_string(ANALYTICS_TEMPLATE, payload=payload, distributors=distributors, retailers=retailers)
+    return render_template_string(
+        ANALYTICS_TEMPLATE,
+        payload=payload,
+        distributors=distributors,
+        retailers=retailers,
+    )

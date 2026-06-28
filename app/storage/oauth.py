@@ -29,11 +29,15 @@ class GoogleDriveOAuth:
         try:
             from google_auth_oauthlib.flow import Flow
         except ImportError as exc:
-            raise RuntimeError("google-auth-oauthlib is required for Google OAuth flow") from exc
+            raise RuntimeError(
+                "google-auth-oauthlib is required for Google OAuth flow"
+            ) from exc
 
         flow = Flow.from_client_config(cls._get_client_config(), scopes=cls.SCOPES)
         flow.redirect_uri = cls.REDIRECT_URI
-        auth_url, state = flow.authorization_url(access_type="offline", include_granted_scopes="true")
+        auth_url, state = flow.authorization_url(
+            access_type="offline", include_granted_scopes="true"
+        )
         return auth_url, state
 
     @classmethod
@@ -42,7 +46,9 @@ class GoogleDriveOAuth:
         try:
             from google_auth_oauthlib.flow import Flow
         except ImportError as exc:
-            raise RuntimeError("google-auth-oauthlib is required for Google OAuth flow") from exc
+            raise RuntimeError(
+                "google-auth-oauthlib is required for Google OAuth flow"
+            ) from exc
 
         flow = Flow.from_client_config(cls._get_client_config(), scopes=cls.SCOPES)
         flow.redirect_uri = cls.REDIRECT_URI
@@ -57,7 +63,9 @@ class GoogleDriveOAuth:
             from google.oauth2.credentials import Credentials
             from google.auth.transport.requests import Request
         except ImportError as exc:
-            raise RuntimeError("google-auth and google-auth-transport-requests are required for token refresh") from exc
+            raise RuntimeError(
+                "google-auth and google-auth-transport-requests are required for token refresh"
+            ) from exc
 
         credentials = Credentials(
             token=None,

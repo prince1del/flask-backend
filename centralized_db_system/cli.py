@@ -13,7 +13,32 @@ from .sync import apply_pending_changes
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage the centralized database")
-    parser.add_argument("command", choices=["init", "add", "list", "get", "update", "delete", "count", "sync", "firebase-sync", "firebase-check", "add-distributor", "add-retailer", "list-distributors", "list-retailers", "backup", "restore", "audit-log", "cleanup-temp", "analyze-documents", "build-article-master"], help="Action to perform")
+    parser.add_argument(
+        "command",
+        choices=[
+            "init",
+            "add",
+            "list",
+            "get",
+            "update",
+            "delete",
+            "count",
+            "sync",
+            "firebase-sync",
+            "firebase-check",
+            "add-distributor",
+            "add-retailer",
+            "list-distributors",
+            "list-retailers",
+            "backup",
+            "restore",
+            "audit-log",
+            "cleanup-temp",
+            "analyze-documents",
+            "build-article-master",
+        ],
+        help="Action to perform",
+    )
     parser.add_argument("args", nargs="*", help="Command arguments")
     parser.add_argument("--db", dest="db_path", help="Optional database path")
     return parser
@@ -46,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
             print("No records found")
             return 0
         for record in records:
-            print(f"{record['id']}: {record['name']} | {record['email'] or '-'} | {record['department'] or '-'}")
+            print(
+                f"{record['id']}: {record['name']} | {record['email'] or '-'} | {record['department'] or '-'}"
+            )
         return 0
 
     if args.command == "get":
@@ -117,7 +144,9 @@ def main(argv: list[str] | None = None) -> int:
             print("No audit logs found")
             return 0
         for item in logs:
-            print(f"{item['id']} | {item['created_at']} | {item['action']} | {item['table_name']} | {item['record_id']} | {item['details']}")
+            print(
+                f"{item['id']} | {item['created_at']} | {item['action']} | {item['table_name']} | {item['record_id']} | {item['details']}"
+            )
         return 0
 
     if args.command == "cleanup-temp":
@@ -150,7 +179,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "add-distributor":
         if len(args.args) < 7:
-            print("Usage: add-distributor <name> <contact_person> <phone> <email> <address> <city> <state> [gst_number] [credit_limit]", file=sys.stderr)
+            print(
+                "Usage: add-distributor <name> <contact_person> <phone> <email> <address> <city> <state> [gst_number] [credit_limit]",
+                file=sys.stderr,
+            )
             return 2
         record_id = db.add_distributor(
             args.args[0],
@@ -168,7 +200,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "add-retailer":
         if len(args.args) < 7:
-            print("Usage: add-retailer <name> <contact_person> <phone> <email> <address> <city> <state> [gst_number] [credit_limit]", file=sys.stderr)
+            print(
+                "Usage: add-retailer <name> <contact_person> <phone> <email> <address> <city> <state> [gst_number] [credit_limit]",
+                file=sys.stderr,
+            )
             return 2
         record_id = db.add_retailer(
             args.args[0],
@@ -190,7 +225,9 @@ def main(argv: list[str] | None = None) -> int:
             print("No distributors found")
             return 0
         for distributor in distributors:
-            print(f"{distributor['id']}: {distributor['name']} | {distributor['contact_person']} | {distributor['phone']}")
+            print(
+                f"{distributor['id']}: {distributor['name']} | {distributor['contact_person']} | {distributor['phone']}"
+            )
         return 0
 
     if args.command == "list-retailers":
@@ -199,19 +236,25 @@ def main(argv: list[str] | None = None) -> int:
             print("No retailers found")
             return 0
         for retailer in retailers:
-            print(f"{retailer['id']}: {retailer['name']} | {retailer['contact_person']} | {retailer['phone']}")
+            print(
+                f"{retailer['id']}: {retailer['name']} | {retailer['contact_person']} | {retailer['phone']}"
+            )
         return 0
 
     if args.command == "analyze-documents":
         if not args.args:
-            print("Usage: analyze-documents <file1> <file2> [file3 ...]", file=sys.stderr)
+            print(
+                "Usage: analyze-documents <file1> <file2> [file3 ...]", file=sys.stderr
+            )
             return 2
         report = analyze_documents(args.args)
         print(json.dumps(report["summary"], indent=2))
         if report["mismatches"]:
             print("\nMismatches:")
             for item in report["mismatches"]:
-                print(f"- {item['field']}: {item['message']} | source={item['source']} | target={item['target']}")
+                print(
+                    f"- {item['field']}: {item['message']} | source={item['source']} | target={item['target']}"
+                )
         return 0
 
     if args.command == "build-article-master":

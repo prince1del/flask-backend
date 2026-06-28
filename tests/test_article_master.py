@@ -33,9 +33,25 @@ def test_article_service_merges_messy_categories(tmp_path: Path) -> None:
     db = CentralizedDB(str(tmp_path / "article_master_merge.sqlite3"))
     service = ArticleMasterService(str(db.db_path))
 
-    service.save_article({"category_name": "Bombay Dyeing Towel", "design_code": "B200", "color_way": "red", "base_rate": 900, "gst_percentage": 12, "pcs_per_bale": 20})
+    service.save_article(
+        {
+            "category_name": "Bombay Dyeing Towel",
+            "design_code": "B200",
+            "color_way": "red",
+            "base_rate": 900,
+            "gst_percentage": 12,
+            "pcs_per_bale": 20,
+        }
+    )
     sanitized = service.sanitize_article_payload(
-        {"category_name": "towels", "design_code": "B201", "color_way": "green", "base_rate": 950, "gst_percentage": 12, "pcs_per_bale": 20},
+        {
+            "category_name": "towels",
+            "design_code": "B201",
+            "color_way": "green",
+            "base_rate": 950,
+            "gst_percentage": 12,
+            "pcs_per_bale": 20,
+        },
         existing_categories=["Towels"],
     )
 

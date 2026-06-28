@@ -8,7 +8,9 @@ def test_distributor_visit_module_isolated_and_seeded(tmp_path: Path) -> None:
 
     fields = db.list_distributor_form_fields()
     assert any(field["field_id"] == "current_stock_audit" for field in fields)
-    assert any(field["field_id"] == "payment_outstanding_credit_limit" for field in fields)
+    assert any(
+        field["field_id"] == "payment_outstanding_credit_limit" for field in fields
+    )
 
     validation = db.validate_distributor_visit_payload(
         {

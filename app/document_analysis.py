@@ -23,7 +23,9 @@ def normalize_name(value: str) -> str:
     return " ".join(part.lower() for part in value.replace("-", " ").split() if part)
 
 
-def match_person_names(left: str, right: str, aliases: dict[str, list[str]] | None = None) -> bool:
+def match_person_names(
+    left: str, right: str, aliases: dict[str, list[str]] | None = None
+) -> bool:
     aliases = aliases or {}
     normalized_left = normalize_name(left)
     normalized_right = normalize_name(right)
@@ -44,13 +46,22 @@ def match_person_names(left: str, right: str, aliases: dict[str, list[str]] | No
 
     left_initials = "".join(token[0] for token in left_tokens if token)
     right_initials = "".join(token[0] for token in right_tokens if token)
-    if left_initials and right_initials and (left_initials.startswith(right_initials) or right_initials.startswith(left_initials)):
+    if (
+        left_initials
+        and right_initials
+        and (
+            left_initials.startswith(right_initials)
+            or right_initials.startswith(left_initials)
+        )
+    ):
         return True
 
     if _fuzzy_similarity(left, right) >= 0.6:
         return True
 
-    alias_lookup = {normalize_name(item): True for values in aliases.values() for item in values}
+    alias_lookup = {
+        normalize_name(item): True for values in aliases.values() for item in values
+    }
     if normalize_name(left) in alias_lookup and normalize_name(right) in alias_lookup:
         return True
 
@@ -76,7 +87,9 @@ def _read_excel_rows(path: Path) -> list[dict[str, Any]]:
     for row in rows[1:]:
         if not any(cell is not None and str(cell).strip() for cell in row):
             continue
-        data_rows.append({headers[index]: row[index] for index in range(min(len(headers), len(row)))})
+        data_rows.append(
+            {headers[index]: row[index] for index in range(min(len(headers), len(row)))}
+        )
     return data_rows
 
 
@@ -138,7 +151,9 @@ def _extract_document_data(path: Path) -> dict[str, Any]:
     return {"file": str(path), "rows": rows}
 
 
-def analyze_documents(paths: list[Path | str], aliases: dict[str, list[str]] | None = None) -> dict[str, Any]:
+def analyze_documents(
+    paths: list[Path | str], aliases: dict[str, list[str]] | None = None
+) -> dict[str, Any]:
     documents = [_extract_document_data(Path(path)) for path in paths]
     mismatches: list[dict[str, Any]] = []
     person_match_count = 0
@@ -146,7 +161,11 @@ def analyze_documents(paths: list[Path | str], aliases: dict[str, list[str]] | N
     if len(documents) < 2:
         return {
             "documents": documents,
-            "summary": {"mismatch_count": 0, "person_match_count": 0, "status": "insufficient-data"},
+            "summary": {
+                "mismatch_count": 0,
+                "person_match_count": 0,
+                "status": "insufficient-data",
+            },
             "mismatches": [],
         }
 
@@ -155,33 +174,56 @@ def analyze_documents(paths: list[Path | str], aliases: dict[str, list[str]] | N
         if not document["rows"]:
             continue
         row = document["rows"][0]
-        for field in ["product", "quantity", "rate", "gst", "discount", "client_name", "invoice_amount"]:
+        for field in [
+            "product",
+            "quantity",
+            "rate",
+            "gst",
+            "discount",
+            "client_name",
+            "invoice_amount",
+        ]:
             reference_value = reference.get(field)
             current_value = row.get(field)
             if field == "client_name":
-                matched = match_person_names(str(reference_value or ""), str(current_value or ""), aliases)
+                matched = match_person_names(
+                    str(reference_value or ""), str(current_value or ""), aliases
+                )
                 if not matched:
-                    mismatches.append({"field": field, "source": reference.get(field), "target": row.get(field), "message": "Client name mismatch"})
+                    mismatches.append(
+                        {
+                            "field": field,
+                            "source": reference.get(field),
+                            "target": row.get(field),
+                            "message": "Client name mismatch",
+                        }
+                    )
                 else:
                     person_match_count += 1
-                    mismatches.append({
-                        "field": field,
-                        "source": reference.get(field),
-                        "target": row.get(field),
-                        "message": "Client name matched as alias or similar name",
-                    })
+                    mismatches.append(
+                        {
+                            "field": field,
+                            "source": reference.get(field),
+                            "target": row.get(field),
+                            "message": "Client name matched as alias or similar name",
+                        }
+                    )
                 continue
 
             if _normalize_value(reference_value) != _normalize_value(current_value):
-                mismatches.append({
-                    "field": field,
-                    "source": reference_value,
-                    "target": current_value,
-                    "message": f"{field} mismatch",
-                })
+                mismatches.append(
+                    {
+                        "field": field,
+                        "source": reference_value,
+                        "target": current_value,
+                        "message": f"{field} mismatch",
+                    }
+                )
 
     effective_mismatches = [
-        item for item in mismatches if item.get("message") != "Client name matched as alias or similar name"
+        item
+        for item in mismatches
+        if item.get("message") != "Client name matched as alias or similar name"
     ]
 
     return {

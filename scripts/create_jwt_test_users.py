@@ -21,7 +21,9 @@ def ensure_users(db_path: str | None = None) -> list[dict[str, object]]:
         """
     )
 
-    existing_columns = {row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()}
+    existing_columns = {
+        row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()
+    }
     for column_name, column_sql in (("role", "TEXT"), ("workspace_id", "TEXT")):
         if column_name not in existing_columns:
             cur.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_sql}")
@@ -33,7 +35,9 @@ def ensure_users(db_path: str | None = None) -> list[dict[str, object]]:
 
     created = []
     for username, password, role, workspace_id in users:
-        existing = cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        existing = cur.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
         password_hash = generate_password_hash(password)
         if existing:
             cur.execute(

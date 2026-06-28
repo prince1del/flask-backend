@@ -16,15 +16,31 @@ def test_upload_page_runs_three_step_verification():
     assert response.status_code == 200
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(order_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(order_buffer, index=False)
     order_buffer.seek(0)
 
     filled_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 12, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(filled_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 12,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(filled_buffer, index=False)
     filled_buffer.seek(0)
 
     response = client.post(
@@ -32,8 +48,18 @@ def test_upload_page_runs_three_step_verification():
         data={
             "order_file": (order_buffer, "order.xlsx"),
             "filled_file": (filled_buffer, "filled.xlsx"),
-            "sales_order_file": (io.BytesIO(b"Product: Milk Powder\nQuantity: 12\nRate: 100\nGST: 5\nClient Name: Rahul Kumar Yadav\nInvoice Amount: 1000\nTotal GST: 5"), "sales_order.pdf"),
-            "invoice_file": (io.BytesIO(b"Product: Milk Powder\nQuantity: 12\nRate: 100\nGST: 5\nClient Name: Rahul K Yadav\nInvoice Amount: 1000\nTotal GST: 5"), "invoice.pdf"),
+            "sales_order_file": (
+                io.BytesIO(
+                    b"Product: Milk Powder\nQuantity: 12\nRate: 100\nGST: 5\nClient Name: Rahul Kumar Yadav\nInvoice Amount: 1000\nTotal GST: 5"
+                ),
+                "sales_order.pdf",
+            ),
+            "invoice_file": (
+                io.BytesIO(
+                    b"Product: Milk Powder\nQuantity: 12\nRate: 100\nGST: 5\nClient Name: Rahul K Yadav\nInvoice Amount: 1000\nTotal GST: 5"
+                ),
+                "invoice.pdf",
+            ),
         },
         content_type="multipart/form-data",
     )
@@ -42,7 +68,10 @@ def test_upload_page_runs_three_step_verification():
     html = response.get_data(as_text=True)
     assert "Order-to-Invoice Workflow" in html
     assert "Stage 1 - Common order sheet" in html
-    assert "distributor-wise filled Excel" in html or "Distributor-wise filled order" in html
+    assert (
+        "distributor-wise filled Excel" in html
+        or "Distributor-wise filled order" in html
+    )
     assert "Stage 4 - Commercial invoice" in html
     assert "Save Stage 1" in html
     assert "Check Stage 2" in html
@@ -60,15 +89,31 @@ def test_partial_uploads_show_clear_verification_message():
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(order_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(order_buffer, index=False)
     order_buffer.seek(0)
 
     filled_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 12, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(filled_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 12,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(filled_buffer, index=False)
     filled_buffer.seek(0)
 
     response = client.post(
@@ -128,9 +173,17 @@ def test_stage2_requires_filled_and_order_files():
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(order_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(order_buffer, index=False)
     order_buffer.seek(0)
 
     response = client.post(
@@ -153,12 +206,22 @@ def test_uploads_show_recognized_file_types_and_stages():
     client = app.test_client()
 
     filled_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(filled_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(filled_buffer, index=False)
     filled_buffer.seek(0)
 
-    sales_order_pdf = io.BytesIO(b"Product: Milk Powder\nQuantity: 10\nRate: 100\nGST: 5")
+    sales_order_pdf = io.BytesIO(
+        b"Product: Milk Powder\nQuantity: 10\nRate: 100\nGST: 5"
+    )
 
     response = client.post(
         "/",
@@ -185,18 +248,36 @@ def test_run_all_persists_distributor_wise_upload_records(tmp_path):
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(order_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(order_buffer, index=False)
     order_buffer.seek(0)
 
     filled_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(filled_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(filled_buffer, index=False)
     filled_buffer.seek(0)
 
-    sales_order_pdf = io.BytesIO(b"Product: Milk Powder\nQuantity: 10\nRate: 100\nGST: 5")
+    sales_order_pdf = io.BytesIO(
+        b"Product: Milk Powder\nQuantity: 10\nRate: 100\nGST: 5"
+    )
     invoice_pdf = io.BytesIO(b"Product: Milk Powder\nQuantity: 10\nRate: 100\nGST: 5")
 
     response = client.post(
@@ -218,7 +299,9 @@ def test_run_all_persists_distributor_wise_upload_records(tmp_path):
     persisted = db.list_distributor_order_uploads(distributor_name="Alpha Traders")
     assert len(persisted) >= 4
     stages = {item["stage_key"] for item in persisted[:4]}
-    assert {"order_file", "filled_file", "sales_order_file", "invoice_file"}.issubset(stages)
+    assert {"order_file", "filled_file", "sales_order_file", "invoice_file"}.issubset(
+        stages
+    )
 
 
 def test_single_uploads_are_accumulated_across_requests():
@@ -227,9 +310,17 @@ def test_single_uploads_are_accumulated_across_requests():
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(order_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(order_buffer, index=False)
     order_buffer.seek(0)
 
     first_response = client.post(
@@ -240,9 +331,17 @@ def test_single_uploads_are_accumulated_across_requests():
     assert first_response.status_code == 200
 
     filled_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 12, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(filled_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 12,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(filled_buffer, index=False)
     filled_buffer.seek(0)
 
     second_response = client.post(
@@ -264,15 +363,31 @@ def test_reuploading_order_sheet_clears_stale_session_files():
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 10, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(order_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 10,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(order_buffer, index=False)
     order_buffer.seek(0)
 
     filled_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Milk Powder", "quantity": 12, "rate": 100, "gst": 5, "discount": 2},
-    ]).to_excel(filled_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "product": "Milk Powder",
+                "quantity": 12,
+                "rate": 100,
+                "gst": 5,
+                "discount": 2,
+            },
+        ]
+    ).to_excel(filled_buffer, index=False)
     filled_buffer.seek(0)
 
     first_response = client.post(
@@ -286,9 +401,11 @@ def test_reuploading_order_sheet_clears_stale_session_files():
     assert first_response.status_code == 200
 
     fresh_order = io.BytesIO()
-    pd.DataFrame([
-        {"product": "Aster", "quantity": 18, "rate": 12, "gst": 6, "discount": 750},
-    ]).to_excel(fresh_order, index=False)
+    pd.DataFrame(
+        [
+            {"product": "Aster", "quantity": 18, "rate": 12, "gst": 6, "discount": 750},
+        ]
+    ).to_excel(fresh_order, index=False)
     fresh_order.seek(0)
 
     second_response = client.post(
@@ -322,7 +439,9 @@ def test_verification_progress_shows_step_by_step_capture():
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([{"product": "Milk Powder", "quantity": 10, "rate": 100}]).to_excel(order_buffer, index=False)
+    pd.DataFrame([{"product": "Milk Powder", "quantity": 10, "rate": 100}]).to_excel(
+        order_buffer, index=False
+    )
     order_buffer.seek(0)
 
     response = client.post(
@@ -344,17 +463,23 @@ def test_step1_inferred_mapping_is_shown_on_verification_page():
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        ["Aster", "100 (One in a dent)", 1728, 1049, 5, 2],
-        ["Bluemen", "104 (One in a dent)", 288, 799, 5, None],
-    ], dtype=object).to_excel(order_buffer, header=False, index=False)
+    pd.DataFrame(
+        [
+            ["Aster", "100 (One in a dent)", 1728, 1049, 5, 2],
+            ["Bluemen", "104 (One in a dent)", 288, 799, 5, None],
+        ],
+        dtype=object,
+    ).to_excel(order_buffer, header=False, index=False)
     order_buffer.seek(0)
 
     filled_buffer = io.BytesIO()
-    pd.DataFrame([
-        ["Aster", "100 (One in a dent)", 1728, 1049, 5, 2],
-        ["Bluemen", "104 (One in a dent)", 288, 799, 5, None],
-    ], dtype=object).to_excel(filled_buffer, header=False, index=False)
+    pd.DataFrame(
+        [
+            ["Aster", "100 (One in a dent)", 1728, 1049, 5, 2],
+            ["Bluemen", "104 (One in a dent)", 288, 799, 5, None],
+        ],
+        dtype=object,
+    ).to_excel(filled_buffer, header=False, index=False)
     filled_buffer.seek(0)
 
     response = client.post(
@@ -452,7 +577,9 @@ def test_master_template_download_returns_distributor_excel_template():
     response = client.get("/api/v1/masters/template/distributors")
 
     assert response.status_code == 200
-    assert "attachment; filename=distributors_template.xlsx" in response.headers.get("Content-Disposition", "")
+    assert "attachment; filename=distributors_template.xlsx" in response.headers.get(
+        "Content-Disposition", ""
+    )
     template_df = pd.read_excel(io.BytesIO(response.data))
     required_columns = {
         "Distributor Code",
@@ -498,7 +625,10 @@ def test_bulk_upload_endpoint_accepts_pdf_files():
 
     response = client.post(
         "/api/v1/masters/bulk-upload",
-        data={"file": (io.BytesIO(b"%PDF-1.4\n%test pdf"), "sample.pdf"), "master_type": "distributors"},
+        data={
+            "file": (io.BytesIO(b"%PDF-1.4\n%test pdf"), "sample.pdf"),
+            "master_type": "distributors",
+        },
         content_type="multipart/form-data",
     )
 
@@ -530,7 +660,10 @@ def test_bulk_upload_endpoint_persists_distributor_info_from_pdf():
 
     response = client.post(
         "/api/v1/masters/bulk-upload",
-        data={"file": (io.BytesIO(pdf_content), "sample.pdf"), "master_type": "distributors"},
+        data={
+            "file": (io.BytesIO(pdf_content), "sample.pdf"),
+            "master_type": "distributors",
+        },
         content_type="multipart/form-data",
     )
 
@@ -539,7 +672,9 @@ def test_bulk_upload_endpoint_persists_distributor_info_from_pdf():
     assert payload["status"] == "success"
     assert payload["inserted"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(distributor_name)
+    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(
+        distributor_name
+    )
     assert stored is not None
     assert stored["firm_name"] == "Alpha Group"
     assert stored["firm_nick_name"] == "AG"
@@ -585,7 +720,10 @@ def test_bulk_upload_endpoint_persists_retailer_info_from_pdf():
 
     response = client.post(
         "/api/v1/masters/bulk-upload",
-        data={"file": (io.BytesIO(pdf_content), "sample.pdf"), "master_type": "retailers"},
+        data={
+            "file": (io.BytesIO(pdf_content), "sample.pdf"),
+            "master_type": "retailers",
+        },
         content_type="multipart/form-data",
     )
 
@@ -594,7 +732,9 @@ def test_bulk_upload_endpoint_persists_retailer_info_from_pdf():
     assert payload["status"] == "success"
     assert payload["inserted"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_retailer_by_name(retailer_name)
+    stored = CentralizedDB("centralized_db.sqlite3").get_master_retailer_by_name(
+        retailer_name
+    )
     assert stored is not None
     assert stored["name"] == retailer_name
     assert stored["location"] == "Mumbai"
@@ -610,9 +750,11 @@ def test_bulk_upload_endpoint_accepts_excel_files():
     client = app.test_client()
 
     order_buffer = io.BytesIO()
-    pd.DataFrame([
-        {"distributor": "Alpha", "retailer": "Beta", "city": "Delhi"},
-    ]).to_excel(order_buffer, index=False)
+    pd.DataFrame(
+        [
+            {"distributor": "Alpha", "retailer": "Beta", "city": "Delhi"},
+        ]
+    ).to_excel(order_buffer, index=False)
     order_buffer.seek(0)
 
     response = client.post(
@@ -635,15 +777,17 @@ def test_bulk_upload_endpoint_persists_distributors_to_database():
     distributor_name = f"Bulk Distributor {uuid.uuid4().hex[:8]}"
     distributor_gst = f"27{uuid.uuid4().hex[:13].upper()}"
     buffer = io.BytesIO()
-    pd.DataFrame([
-        {
-            "Distributor Name": distributor_name,
-            "GSTIN": distributor_gst,
-            "Zone": "West",
-            "Region": "Mumbai",
-            "Credit Limit": 1000,
-        },
-    ]).to_excel(buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "Distributor Name": distributor_name,
+                "GSTIN": distributor_gst,
+                "Zone": "West",
+                "Region": "Mumbai",
+                "Credit Limit": 1000,
+            },
+        ]
+    ).to_excel(buffer, index=False)
     buffer.seek(0)
 
     response = client.post(
@@ -657,7 +801,9 @@ def test_bulk_upload_endpoint_persists_distributors_to_database():
     assert payload["status"] == "success"
     assert payload["inserted"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(distributor_name)
+    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(
+        distributor_name
+    )
     assert stored is not None
     assert stored["name"] == distributor_name
 
@@ -681,7 +827,7 @@ def test_contacts_import_export_page_shows_blank_download_and_upload_options():
     assert "/download/retailers" in html
     assert 'name="master_type"' in html
     assert '<option value="retailers">Retailers</option>' in html
-    assert "accept=\".csv,.xlsx,.xls,.xlsm,.xlsb\"" in html
+    assert 'accept=".csv,.xlsx,.xls,.xlsm,.xlsb"' in html
 
 
 def test_contacts_import_rejects_pdf_files():
@@ -710,39 +856,49 @@ def test_contacts_import_updates_existing_distributor_from_excel():
     distributor_gst = f"27{uuid.uuid4().hex[:13].upper()}"
 
     seed_buffer = io.BytesIO()
-    pd.DataFrame([
-        {
-            "Distributor Name": distributor_name,
-            "GSTIN": distributor_gst,
-            "Mobile Number": "9000000000",
-            "Address": "Old Address",
-        }
-    ]).to_excel(seed_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "Distributor Name": distributor_name,
+                "GSTIN": distributor_gst,
+                "Mobile Number": "9000000000",
+                "Address": "Old Address",
+            }
+        ]
+    ).to_excel(seed_buffer, index=False)
     seed_buffer.seek(0)
 
     first_response = client.post(
         "/api/v1/contacts/import",
-        data={"master_type": "distributors", "file": (seed_buffer, "contacts_seed.xlsx")},
+        data={
+            "master_type": "distributors",
+            "file": (seed_buffer, "contacts_seed.xlsx"),
+        },
         content_type="multipart/form-data",
     )
     assert first_response.status_code == 200
 
     update_buffer = io.BytesIO()
-    pd.DataFrame([
-        {
-            "Distributor Name": distributor_name,
-            "GSTIN": distributor_gst,
-            "Mobile Number": "9111111111",
-            "Address": "New Address",
-            "Firm Name": "Updated Firm",
-            "Firm nick name": "UF",
-        }
-    ]).to_excel(update_buffer, index=False)
+    pd.DataFrame(
+        [
+            {
+                "Distributor Name": distributor_name,
+                "GSTIN": distributor_gst,
+                "Mobile Number": "9111111111",
+                "Address": "New Address",
+                "Firm Name": "Updated Firm",
+                "Firm nick name": "UF",
+            }
+        ]
+    ).to_excel(update_buffer, index=False)
     update_buffer.seek(0)
 
     update_response = client.post(
         "/api/v1/contacts/import",
-        data={"master_type": "distributors", "file": (update_buffer, "contacts_update.xlsx")},
+        data={
+            "master_type": "distributors",
+            "file": (update_buffer, "contacts_update.xlsx"),
+        },
         content_type="multipart/form-data",
     )
 
@@ -751,7 +907,9 @@ def test_contacts_import_updates_existing_distributor_from_excel():
     assert payload["status"] == "success"
     assert payload["updated"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(distributor_name)
+    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(
+        distributor_name
+    )
     assert stored is not None
     assert stored["phone_number"] == "9111111111"
     assert stored["address"] == "New Address"
@@ -769,56 +927,71 @@ def test_contacts_import_updates_existing_retailer_from_excel():
     retailer_name = f"Retailer Contact {uuid.uuid4().hex[:8]}"
 
     distributor_seed = io.BytesIO()
-    pd.DataFrame([
-        {
-            "Distributor Name": distributor_name,
-            "GSTIN": distributor_gst,
-        }
-    ]).to_excel(distributor_seed, index=False)
+    pd.DataFrame(
+        [
+            {
+                "Distributor Name": distributor_name,
+                "GSTIN": distributor_gst,
+            }
+        ]
+    ).to_excel(distributor_seed, index=False)
     distributor_seed.seek(0)
     dist_response = client.post(
         "/api/v1/contacts/import",
-        data={"master_type": "distributors", "file": (distributor_seed, "dist_seed.xlsx")},
+        data={
+            "master_type": "distributors",
+            "file": (distributor_seed, "dist_seed.xlsx"),
+        },
         content_type="multipart/form-data",
     )
     assert dist_response.status_code == 200
 
     retailer_seed = io.BytesIO()
-    pd.DataFrame([
-        {
-            "Retailer Name": retailer_name,
-            "Distributor": distributor_name,
-            "Location": "Old Location",
-            "Phone": "9000000001",
-            "Email": "old@example.com",
-            "Address": "Old Retailer Address",
-            "GSTIN": "27ABCDE1234F1Z5",
-        }
-    ]).to_excel(retailer_seed, index=False)
+    pd.DataFrame(
+        [
+            {
+                "Retailer Name": retailer_name,
+                "Distributor": distributor_name,
+                "Location": "Old Location",
+                "Phone": "9000000001",
+                "Email": "old@example.com",
+                "Address": "Old Retailer Address",
+                "GSTIN": "27ABCDE1234F1Z5",
+            }
+        ]
+    ).to_excel(retailer_seed, index=False)
     retailer_seed.seek(0)
     retailer_first = client.post(
         "/api/v1/contacts/import",
-        data={"master_type": "retailers", "file": (retailer_seed, "retailer_seed.xlsx")},
+        data={
+            "master_type": "retailers",
+            "file": (retailer_seed, "retailer_seed.xlsx"),
+        },
         content_type="multipart/form-data",
     )
     assert retailer_first.status_code == 200
 
     retailer_update = io.BytesIO()
-    pd.DataFrame([
-        {
-            "Retailer Name": retailer_name,
-            "Distributor": distributor_name,
-            "Location": "New Location",
-            "Phone": "9111111112",
-            "Email": "new@example.com",
-            "Address": "New Retailer Address",
-            "GSTIN": "27ZZZZZ1234Z1Z5",
-        }
-    ]).to_excel(retailer_update, index=False)
+    pd.DataFrame(
+        [
+            {
+                "Retailer Name": retailer_name,
+                "Distributor": distributor_name,
+                "Location": "New Location",
+                "Phone": "9111111112",
+                "Email": "new@example.com",
+                "Address": "New Retailer Address",
+                "GSTIN": "27ZZZZZ1234Z1Z5",
+            }
+        ]
+    ).to_excel(retailer_update, index=False)
     retailer_update.seek(0)
     retailer_second = client.post(
         "/api/v1/contacts/import",
-        data={"master_type": "retailers", "file": (retailer_update, "retailer_update.xlsx")},
+        data={
+            "master_type": "retailers",
+            "file": (retailer_update, "retailer_update.xlsx"),
+        },
         content_type="multipart/form-data",
     )
 
@@ -828,7 +1001,9 @@ def test_contacts_import_updates_existing_retailer_from_excel():
     assert payload["master_type"] == "retailers"
     assert payload["updated"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_retailer_by_name(retailer_name)
+    stored = CentralizedDB("centralized_db.sqlite3").get_master_retailer_by_name(
+        retailer_name
+    )
     assert stored is not None
     assert stored["location"] == "New Location"
     assert stored["phone_number"] == "9111111112"

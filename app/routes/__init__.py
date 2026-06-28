@@ -4,6 +4,7 @@ from .data import data_blueprint
 from .reports import reports_blueprint
 from .schemas import schemas_blueprint
 from .storage import bp as storage_blueprint
+from .target_achievement import target_achievement_blueprint
 from .workspaces import workspaces_blueprint
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "reports_blueprint",
     "schemas_blueprint",
     "storage_blueprint",
+    "target_achievement_blueprint",
     "workspaces_blueprint",
 ]

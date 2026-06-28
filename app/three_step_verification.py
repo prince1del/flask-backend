@@ -47,11 +47,13 @@ def _load_product_aliases(path: str | Path | None = None) -> dict[str, str]:
     if path is not None:
         candidates.append(Path(path))
 
-    candidates.extend([
-        Path(__file__).resolve().parent.parent / "product_aliases.json",
-        Path(__file__).resolve().with_name("product_aliases.json"),
-        Path.cwd() / "product_aliases.json",
-    ])
+    candidates.extend(
+        [
+            Path(__file__).resolve().parent.parent / "product_aliases.json",
+            Path(__file__).resolve().with_name("product_aliases.json"),
+            Path.cwd() / "product_aliases.json",
+        ]
+    )
 
     for candidate in candidates:
         if not candidate.exists() or not candidate.is_file():
@@ -86,14 +88,22 @@ def _normalize_product_key(value: Any) -> str:
         return ""
 
     aliases = _load_product_aliases()
-    for alias, canonical in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
+    for alias, canonical in sorted(
+        aliases.items(), key=lambda item: len(item[0]), reverse=True
+    ):
         pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
         text = re.sub(pattern, canonical, text)
 
     replacements = [
-        (r"\b(king size|queen size|single|double|fitted|flat|set|sets|comforter|blanket|pillow|bed|beds)\b", " "),
+        (
+            r"\b(king size|queen size|single|double|fitted|flat|set|sets|comforter|blanket|pillow|bed|beds)\b",
+            " ",
+        ),
         (r"\b(ks|k\s*s)\b", " "),
-        (r"\b(bs\d+|sn\s*\d+|grid\s*space|space|pnk|brw|blu|gbr|red|white|black|grey|gray|beige|cream|brown|navy|pink|purple|green|yellow|orange)\b", " "),
+        (
+            r"\b(bs\d+|sn\s*\d+|grid\s*space|space|pnk|brw|blu|gbr|red|white|black|grey|gray|beige|cream|brown|navy|pink|purple|green|yellow|orange)\b",
+            " ",
+        ),
         (r"\b(\d+[a-z]?|[a-z]{1,2})\b", " "),
     ]
     for pattern, replacement in replacements:
@@ -187,7 +197,11 @@ def _load_excel(path: str | Path) -> pd.DataFrame:
 
     if raw_df is not None and not raw_df.empty:
         for row_index in range(min(10, len(raw_df))):
-            row_values = [str(value).strip() for value in raw_df.iloc[row_index].tolist() if str(value).strip()]
+            row_values = [
+                str(value).strip()
+                for value in raw_df.iloc[row_index].tolist()
+                if str(value).strip()
+            ]
             if not row_values:
                 continue
             if _has_expected_header(row_values):
@@ -229,7 +243,9 @@ def _looks_like_item_row(line: str) -> bool:
     lowered = normalize_text(line)
     if lowered in {"total", "totals", "grand total", "invoice total", "summary"}:
         return False
-    if re.search(r"\b(total|grand total|summary|page|property|sku|barcode|code)\b", lowered):
+    if re.search(
+        r"\b(total|grand total|summary|page|property|sku|barcode|code)\b", lowered
+    ):
         return False
     if re.fullmatch(r"[A-Za-z0-9\-/.,]+", lowered):
         return False
@@ -266,48 +282,66 @@ def _parse_pdf_table_like_text(text: str) -> dict[str, Any]:
             normalized_key = key.strip().lower().replace(" ", "_")
             extracted[field_map.get(normalized_key, normalized_key)] = value.strip()
             continue
-        if re.match(r"^(client name|invoice amount|total gst|total tax)\b", line, flags=re.I):
-            label, value = re.match(r"^(client name|invoice amount|total gst|total tax)\s*(.*)$", line, flags=re.I).groups()
+        if re.match(
+            r"^(client name|invoice amount|total gst|total tax)\b", line, flags=re.I
+        ):
+            label, value = re.match(
+                r"^(client name|invoice amount|total gst|total tax)\s*(.*)$",
+                line,
+                flags=re.I,
+            ).groups()
             normalized_key = _normalize_column_name(label)
             extracted[field_map.get(normalized_key, normalized_key)] = value.strip()
             continue
 
-        row_match = re.match(r"^(?P<product>.+?)\s+(?P<quantity>\d+(?:[.,]\d+)?)\s+(?P<rate>[\d,]+(?:\.\d+)?)(?:\s+(?P<gst>.+))?$", line)
+        row_match = re.match(
+            r"^(?P<product>.+?)\s+(?P<quantity>\d+(?:[.,]\d+)?)\s+(?P<rate>[\d,]+(?:\.\d+)?)(?:\s+(?P<gst>.+))?$",
+            line,
+        )
         if row_match and _looks_like_item_row(line):
             gst_value = row_match.group("gst").strip() if row_match.group("gst") else ""
             gst_numbers = re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", gst_value)
             if gst_numbers:
                 gst_value = gst_numbers[-1].replace(",", "")
-            parsed_rows.append({
-                "product": row_match.group("product").strip(),
-                "quantity": row_match.group("quantity").strip(),
-                "rate": row_match.group("rate").strip(),
-                "gst": gst_value,
-            })
+            parsed_rows.append(
+                {
+                    "product": row_match.group("product").strip(),
+                    "quantity": row_match.group("quantity").strip(),
+                    "rate": row_match.group("rate").strip(),
+                    "gst": gst_value,
+                }
+            )
             continue
         parts = re.split(r"\s{2,}|	", line)
         if len(parts) >= 3 and _looks_like_item_row(line):
-            numeric_tokens = [token.replace(",", "") for token in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", line)]
+            numeric_tokens = [
+                token.replace(",", "")
+                for token in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", line)
+            ]
             if len(numeric_tokens) >= 2:
-                product = line[:line.rfind(numeric_tokens[-2])].strip()
+                product = line[: line.rfind(numeric_tokens[-2])].strip()
                 quantity = numeric_tokens[-2]
                 rate = numeric_tokens[-1]
-                parsed_rows.append({
-                    "product": product,
-                    "quantity": quantity,
-                    "rate": rate,
-                    "gst": numeric_tokens[-3] if len(numeric_tokens) > 2 else "",
-                })
+                parsed_rows.append(
+                    {
+                        "product": product,
+                        "quantity": quantity,
+                        "rate": rate,
+                        "gst": numeric_tokens[-3] if len(numeric_tokens) > 2 else "",
+                    }
+                )
                 continue
             product = parts[0].strip()
             quantity = parts[1].strip()
             rate = parts[2].strip()
-            parsed_rows.append({
-                "product": product,
-                "quantity": quantity,
-                "rate": rate,
-                "gst": parts[3].strip() if len(parts) > 3 else "",
-            })
+            parsed_rows.append(
+                {
+                    "product": product,
+                    "quantity": quantity,
+                    "rate": rate,
+                    "gst": parts[3].strip() if len(parts) > 3 else "",
+                }
+            )
 
     if parsed_rows:
         extracted["rows"] = parsed_rows
@@ -316,7 +350,15 @@ def _parse_pdf_table_like_text(text: str) -> dict[str, Any]:
 
 
 def _normalize_column_name(column: Any) -> str:
-    return str(column).strip().lower().replace("%", "pct").replace(" ", "_").replace("-", "_").replace(".", "_")
+    return (
+        str(column)
+        .strip()
+        .lower()
+        .replace("%", "pct")
+        .replace(" ", "_")
+        .replace("-", "_")
+        .replace(".", "_")
+    )
 
 
 def _coerce_numeric_value(value: Any) -> Any:
@@ -421,7 +463,9 @@ def _quantity_candidates(row: dict[str, Any]) -> set[float | int]:
     return candidates
 
 
-def _quantity_matches(expected_row: dict[str, Any], actual_row: dict[str, Any]) -> tuple[bool, Any, Any]:
+def _quantity_matches(
+    expected_row: dict[str, Any], actual_row: dict[str, Any]
+) -> tuple[bool, Any, Any]:
     expected_candidates = _quantity_candidates(expected_row)
     actual_candidates = _quantity_candidates(actual_row)
 
@@ -464,7 +508,9 @@ def _detect_step1_mapping_issue(mismatches: list[dict[str, Any]]) -> bool:
         field_name = mismatch.get("field")
         if field_name == "gst" and not _is_plausible_gst(mismatch.get("actual_value")):
             gst_implausible += 1
-        if field_name == "discount" and not _is_plausible_discount(mismatch.get("actual_value")):
+        if field_name == "discount" and not _is_plausible_discount(
+            mismatch.get("actual_value")
+        ):
             discount_implausible += 1
 
     return gst_implausible >= 5 or discount_implausible >= 5
@@ -530,7 +576,9 @@ def _find_matching_column(columns: list[str], candidates: list[str]) -> str | No
         for normalized_name, original_name in normalized_columns.items():
             # For short aliases like qty/gst/tc, avoid noisy substring matches.
             if len(candidate_normalized) <= 4:
-                if normalized_name.startswith(candidate_normalized + "_") or normalized_name.endswith("_" + candidate_normalized):
+                if normalized_name.startswith(
+                    candidate_normalized + "_"
+                ) or normalized_name.endswith("_" + candidate_normalized):
                     return original_name
                 continue
             if candidate_normalized in normalized_name:
@@ -538,19 +586,85 @@ def _find_matching_column(columns: list[str], candidates: list[str]) -> str | No
     return None
 
 
-def _sanitize_inferred_column(field_name: str, column_name: str | None, all_columns: list[str]) -> str | None:
+def _sanitize_inferred_column(
+    field_name: str, column_name: str | None, all_columns: list[str]
+) -> str | None:
     if not column_name:
         return None
 
     normalized = _normalize_column_name(column_name)
     blocked_tokens_by_field = {
-        "quantity": {"bale", "design", "color", "tc", "tax", "gst", "discount", "value", "ptr", "margin", "price", "rate", "mrp", "size", "units"},
-        "rate": {"qty", "quantity", "bale", "design", "color", "tc", "tax", "gst", "discount", "margin", "units", "size"},
-        "gst": {"tc", "size", "design", "color", "bale", "qty", "quantity", "discount", "rate", "price", "value", "mrp", "margin"},
-        "discount": {"bale", "size", "design", "color", "tc", "tax", "gst", "qty", "quantity", "rate", "price", "mrp", "units"},
+        "quantity": {
+            "bale",
+            "design",
+            "color",
+            "tc",
+            "tax",
+            "gst",
+            "discount",
+            "value",
+            "ptr",
+            "margin",
+            "price",
+            "rate",
+            "mrp",
+            "size",
+            "units",
+        },
+        "rate": {
+            "qty",
+            "quantity",
+            "bale",
+            "design",
+            "color",
+            "tc",
+            "tax",
+            "gst",
+            "discount",
+            "margin",
+            "units",
+            "size",
+        },
+        "gst": {
+            "tc",
+            "size",
+            "design",
+            "color",
+            "bale",
+            "qty",
+            "quantity",
+            "discount",
+            "rate",
+            "price",
+            "value",
+            "mrp",
+            "margin",
+        },
+        "discount": {
+            "bale",
+            "size",
+            "design",
+            "color",
+            "tc",
+            "tax",
+            "gst",
+            "qty",
+            "quantity",
+            "rate",
+            "price",
+            "mrp",
+            "units",
+        },
     }
     preferred_by_field = {
-        "quantity": ["quantity", "qty", "qnty", "ordered_qty", "filled_qty", "order_qty"],
+        "quantity": [
+            "quantity",
+            "qty",
+            "qnty",
+            "ordered_qty",
+            "filled_qty",
+            "order_qty",
+        ],
         "rate": ["rate", "selling_price", "unit_rate", "unit_price", "price", "mrp"],
         "gst": ["gst", "gst_percentage", "tax", "tax_rate", "vat"],
         "discount": ["discount", "disc", "discount_value", "discount_amt", "value"],
@@ -570,16 +684,91 @@ def _sanitize_inferred_column(field_name: str, column_name: str | None, all_colu
 
 def _infer_item_columns(columns: list[str]) -> dict[str, str | None]:
     inferred = {
-        "product": _find_matching_column(columns, ["product", "product_description", "item", "item_description", "description", "product_name", "article", "article_name", "item_name", "item_name_description", "master_item", "material", "sku_description"]),
-        "quantity": _find_matching_column(columns, ["quantity", "qty", "ordered_qty", "filled_qty", "order_qty", "sale_qty", "qty_ordered", "ordered_quantity", "ord_qty", "qty_order", "pack_qty", "pieces"]),
-        "rate": _find_matching_column(columns, ["rate", "unit_rate", "price", "unit_price", "selling_price", "mrp", "sale_rate", "unit_price_rate", "basic_rate", "amount"]),
-        "gst": _find_matching_column(columns, ["gst", "gst_percentage", "tax", "gst_pct", "gstpct", "tax_percentage", "tax_rate", "vat", "vat_percentage", "tax_amt"]),
-        "discount": _find_matching_column(columns, ["discount", "discount_percent", "discount_amt", "disc", "discount_value", "discnt"]),
+        "product": _find_matching_column(
+            columns,
+            [
+                "product",
+                "product_description",
+                "item",
+                "item_description",
+                "description",
+                "product_name",
+                "article",
+                "article_name",
+                "item_name",
+                "item_name_description",
+                "master_item",
+                "material",
+                "sku_description",
+            ],
+        ),
+        "quantity": _find_matching_column(
+            columns,
+            [
+                "quantity",
+                "qty",
+                "ordered_qty",
+                "filled_qty",
+                "order_qty",
+                "sale_qty",
+                "qty_ordered",
+                "ordered_quantity",
+                "ord_qty",
+                "qty_order",
+                "pack_qty",
+                "pieces",
+            ],
+        ),
+        "rate": _find_matching_column(
+            columns,
+            [
+                "rate",
+                "unit_rate",
+                "price",
+                "unit_price",
+                "selling_price",
+                "mrp",
+                "sale_rate",
+                "unit_price_rate",
+                "basic_rate",
+                "amount",
+            ],
+        ),
+        "gst": _find_matching_column(
+            columns,
+            [
+                "gst",
+                "gst_percentage",
+                "tax",
+                "gst_pct",
+                "gstpct",
+                "tax_percentage",
+                "tax_rate",
+                "vat",
+                "vat_percentage",
+                "tax_amt",
+            ],
+        ),
+        "discount": _find_matching_column(
+            columns,
+            [
+                "discount",
+                "discount_percent",
+                "discount_amt",
+                "disc",
+                "discount_value",
+                "discnt",
+            ],
+        ),
     }
-    inferred["quantity"] = _sanitize_inferred_column("quantity", inferred.get("quantity"), columns)
+    inferred["quantity"] = _sanitize_inferred_column(
+        "quantity", inferred.get("quantity"), columns
+    )
     inferred["rate"] = _sanitize_inferred_column("rate", inferred.get("rate"), columns)
     inferred["gst"] = _sanitize_inferred_column("gst", inferred.get("gst"), columns)
-    inferred["discount"] = _sanitize_inferred_column("discount", inferred.get("discount"), columns)
+    inferred["discount"] = _sanitize_inferred_column(
+        "discount", inferred.get("discount"), columns
+    )
     return inferred
 
 
@@ -592,14 +781,27 @@ def _extract_column_series(df: pd.DataFrame, column_name: str) -> pd.Series:
 
 
 def _numeric_score(series: pd.Series) -> int:
-    values = [value for value in series.tolist() if _coerce_numeric_value(value) is not None]
+    values = [
+        value for value in series.tolist() if _coerce_numeric_value(value) is not None
+    ]
     return len(values)
 
 
-def _choose_best_quantity_source(df: pd.DataFrame, current_source: str | None) -> str | None:
+def _choose_best_quantity_source(
+    df: pd.DataFrame, current_source: str | None
+) -> str | None:
     normalized_columns = [_normalize_column_name(column) for column in df.columns]
-    candidate_aliases = {"quantity", "qty", "qnty", "ordered_qty", "filled_qty", "order_qty"}
-    available_candidates = [column for column in normalized_columns if column in candidate_aliases]
+    candidate_aliases = {
+        "quantity",
+        "qty",
+        "qnty",
+        "ordered_qty",
+        "filled_qty",
+        "order_qty",
+    }
+    available_candidates = [
+        column for column in normalized_columns if column in candidate_aliases
+    ]
     if not available_candidates:
         return current_source
 
@@ -616,9 +818,13 @@ def _choose_best_quantity_source(df: pd.DataFrame, current_source: str | None) -
     return best_column or current_source
 
 
-def _build_missing_columns_error(df: pd.DataFrame, inferred_columns: dict[str, str | None]) -> dict[str, Any]:
+def _build_missing_columns_error(
+    df: pd.DataFrame, inferred_columns: dict[str, str | None]
+) -> dict[str, Any]:
     required_fields = ["product", "quantity", "rate"]
-    missing_fields = [field for field in required_fields if inferred_columns.get(field) is None]
+    missing_fields = [
+        field for field in required_fields if inferred_columns.get(field) is None
+    ]
 
     return {
         "error": "Missing required item columns",
@@ -659,7 +865,9 @@ def _row_composite_key(row: dict[str, Any]) -> str:
         "color",
         "no_of_design",
     ]
-    descriptors = [_normalize_component(row.get(field_name)) for field_name in descriptor_fields]
+    descriptors = [
+        _normalize_component(row.get(field_name)) for field_name in descriptor_fields
+    ]
     descriptors = [value for value in descriptors if value]
     if not product_key:
         return "|".join(descriptors)
@@ -680,7 +888,18 @@ def _row_match_score(expected_row: dict[str, Any], actual_row: dict[str, Any]) -
     elif fuzzy_match(expected_product, actual_product, threshold=0.8):
         score += 4.0
 
-    for field_name in ["brand", "tc", "size", "units", "bs_size", "pillow_size", "pillow_stitching_style", "print_style", "color", "no_of_design"]:
+    for field_name in [
+        "brand",
+        "tc",
+        "size",
+        "units",
+        "bs_size",
+        "pillow_size",
+        "pillow_stitching_style",
+        "print_style",
+        "color",
+        "no_of_design",
+    ]:
         expected_value = _normalize_component(expected_row.get(field_name))
         actual_value = _normalize_component(actual_row.get(field_name))
         if expected_value and actual_value and expected_value == actual_value:
@@ -700,23 +919,41 @@ def _row_match_score(expected_row: dict[str, Any], actual_row: dict[str, Any]) -
 def _infer_item_columns_from_content(df: pd.DataFrame) -> dict[str, str | None]:
     profiles: list[dict[str, Any]] = []
     for index, column in enumerate(df.columns):
-        values = [value for value in df[column].tolist() if pd.notna(value) and str(value).strip()]
+        values = [
+            value
+            for value in df[column].tolist()
+            if pd.notna(value) and str(value).strip()
+        ]
         numeric_count = sum(1 for value in values if _is_numeric_like(value))
         text_values = [value for value in values if not _is_numeric_like(value)]
-        alpha_count = sum(1 for value in text_values if re.search(r"[A-Za-z]", str(value)))
-        profiles.append({
-            "column": column,
-            "index": index,
-            "numeric_count": numeric_count,
-            "text_count": len(text_values),
-            "alpha_count": alpha_count,
-        })
+        alpha_count = sum(
+            1 for value in text_values if re.search(r"[A-Za-z]", str(value))
+        )
+        profiles.append(
+            {
+                "column": column,
+                "index": index,
+                "numeric_count": numeric_count,
+                "text_count": len(text_values),
+                "alpha_count": alpha_count,
+            }
+        )
 
     if not profiles:
-        return {"product": None, "quantity": None, "rate": None, "gst": None, "discount": None}
+        return {
+            "product": None,
+            "quantity": None,
+            "rate": None,
+            "gst": None,
+            "discount": None,
+        }
 
     product_column = None
-    product_candidates = [profile for profile in profiles if profile["alpha_count"] > 0 and profile["text_count"] > 0]
+    product_candidates = [
+        profile
+        for profile in profiles
+        if profile["alpha_count"] > 0 and profile["text_count"] > 0
+    ]
     if product_candidates:
         product_column = sorted(
             product_candidates,
@@ -727,7 +964,9 @@ def _infer_item_columns_from_content(df: pd.DataFrame) -> dict[str, str | None]:
             ),
         )[0]["column"]
 
-    remaining_profiles = [profile for profile in profiles if profile["column"] != product_column]
+    remaining_profiles = [
+        profile for profile in profiles if profile["column"] != product_column
+    ]
     numeric_candidates = sorted(
         [profile for profile in remaining_profiles if profile["numeric_count"] > 0],
         key=lambda profile: (
@@ -739,10 +978,16 @@ def _infer_item_columns_from_content(df: pd.DataFrame) -> dict[str, str | None]:
 
     inferred: dict[str, str | None] = {
         "product": product_column,
-        "quantity": numeric_candidates[0]["column"] if len(numeric_candidates) > 0 else None,
-        "rate": numeric_candidates[1]["column"] if len(numeric_candidates) > 1 else None,
+        "quantity": numeric_candidates[0]["column"]
+        if len(numeric_candidates) > 0
+        else None,
+        "rate": numeric_candidates[1]["column"]
+        if len(numeric_candidates) > 1
+        else None,
         "gst": numeric_candidates[2]["column"] if len(numeric_candidates) > 2 else None,
-        "discount": numeric_candidates[3]["column"] if len(numeric_candidates) > 3 else None,
+        "discount": numeric_candidates[3]["column"]
+        if len(numeric_candidates) > 3
+        else None,
     }
     return inferred
 
@@ -764,7 +1009,9 @@ def parse_step1_order_excel(path: str | Path) -> dict[str, Any]:
         if not inferred_columns.get(field):
             inferred_columns[field] = column_name
     for field_name in ["quantity", "rate", "gst", "discount"]:
-        inferred_columns[field_name] = _sanitize_inferred_column(field_name, inferred_columns.get(field_name), columns)
+        inferred_columns[field_name] = _sanitize_inferred_column(
+            field_name, inferred_columns.get(field_name), columns
+        )
     product_column = inferred_columns["product"]
     quantity_column = inferred_columns["quantity"]
     rate_column = inferred_columns["rate"]
@@ -776,11 +1023,19 @@ def parse_step1_order_excel(path: str | Path) -> dict[str, Any]:
 
     normalized = df.rename(columns=lambda col: _normalize_column_name(col))
 
-    product_source = _normalize_column_name(product_column) if product_column is not None else None
-    quantity_source = _normalize_column_name(quantity_column) if quantity_column is not None else None
-    rate_source = _normalize_column_name(rate_column) if rate_column is not None else None
+    product_source = (
+        _normalize_column_name(product_column) if product_column is not None else None
+    )
+    quantity_source = (
+        _normalize_column_name(quantity_column) if quantity_column is not None else None
+    )
+    rate_source = (
+        _normalize_column_name(rate_column) if rate_column is not None else None
+    )
     gst_source = _normalize_column_name(gst_column) if gst_column is not None else None
-    discount_source = _normalize_column_name(discount_column) if discount_column is not None else None
+    discount_source = (
+        _normalize_column_name(discount_column) if discount_column is not None else None
+    )
 
     quantity_source = _choose_best_quantity_source(normalized, quantity_source)
 
@@ -816,14 +1071,24 @@ def parse_step1_order_excel(path: str | Path) -> dict[str, Any]:
         normalized["discount"] = ""
 
     gst_values = normalized["gst"].tolist() if "gst" in normalized.columns else []
-    discount_values = normalized["discount"].tolist() if "discount" in normalized.columns else []
+    discount_values = (
+        normalized["discount"].tolist() if "discount" in normalized.columns else []
+    )
     implausible_gst_ratio = 0.0
     implausible_discount_ratio = 0.0
     if header_inferred_columns.get("gst") is not None and gst_values:
-        implausible_gst_count = sum(1 for value in gst_values if value is not None and value != "" and not _is_plausible_gst(value))
+        implausible_gst_count = sum(
+            1
+            for value in gst_values
+            if value is not None and value != "" and not _is_plausible_gst(value)
+        )
         implausible_gst_ratio = implausible_gst_count / len(gst_values)
     if header_inferred_columns.get("discount") is not None and discount_values:
-        implausible_discount_count = sum(1 for value in discount_values if value is not None and value != "" and not _is_plausible_discount(value))
+        implausible_discount_count = sum(
+            1
+            for value in discount_values
+            if value is not None and value != "" and not _is_plausible_discount(value)
+        )
         implausible_discount_ratio = implausible_discount_count / len(discount_values)
 
     if implausible_gst_ratio >= 0.6 or implausible_discount_ratio >= 0.6:
@@ -840,7 +1105,9 @@ def parse_step1_order_excel(path: str | Path) -> dict[str, Any]:
     }
 
 
-def compare_step1(order_file: str | Path, filled_items_file: str | Path) -> dict[str, Any]:
+def compare_step1(
+    order_file: str | Path, filled_items_file: str | Path
+) -> dict[str, Any]:
     if not order_file or not filled_items_file:
         return {"status": "skipped", "reason": "missing_inputs"}
 
@@ -885,18 +1152,40 @@ def compare_step1(order_file: str | Path, filled_items_file: str | Path) -> dict
         product_key = _row_product_key(row)
         composite_key = _row_composite_key(row)
         if not product_key and not composite_key:
-            mismatches.append({"mismatch_type": "missing_item", "expected_value": row, "actual_value": None})
+            mismatches.append(
+                {
+                    "mismatch_type": "missing_item",
+                    "expected_value": row,
+                    "actual_value": None,
+                }
+            )
             continue
 
-        candidate_indexes = [index for index in filled_rows_by_composite_key.get(composite_key, []) if index not in used_filled_indexes]
+        candidate_indexes = [
+            index
+            for index in filled_rows_by_composite_key.get(composite_key, [])
+            if index not in used_filled_indexes
+        ]
         if not candidate_indexes:
-            candidate_indexes = [index for index in filled_rows_by_product_key.get(product_key, []) if index not in used_filled_indexes]
+            candidate_indexes = [
+                index
+                for index in filled_rows_by_product_key.get(product_key, [])
+                if index not in used_filled_indexes
+            ]
 
         if not candidate_indexes:
-            mismatches.append({"mismatch_type": "missing_item", "expected_value": row, "actual_value": None})
+            mismatches.append(
+                {
+                    "mismatch_type": "missing_item",
+                    "expected_value": row,
+                    "actual_value": None,
+                }
+            )
             continue
 
-        best_index = max(candidate_indexes, key=lambda idx: _row_match_score(row, filled_rows[idx]))
+        best_index = max(
+            candidate_indexes, key=lambda idx: _row_match_score(row, filled_rows[idx])
+        )
         used_filled_indexes.add(best_index)
         filled_row = filled_rows[best_index]
         for key in ["quantity", "rate", "product", "gst", "discount"]:
@@ -904,19 +1193,31 @@ def compare_step1(order_file: str | Path, filled_items_file: str | Path) -> dict
             actual_value = filled_row.get(key)
             if key in {"quantity", "rate", "gst", "discount"}:
                 if key == "quantity":
-                    quantity_match, expected_quantity_value, actual_quantity_value = _quantity_matches(row, filled_row)
+                    (
+                        quantity_match,
+                        expected_quantity_value,
+                        actual_quantity_value,
+                    ) = _quantity_matches(row, filled_row)
                     if quantity_match:
                         continue
-                    mismatches.append({
-                        "mismatch_type": "field_mismatch",
-                        "field": key,
-                        "expected_value": expected_quantity_value,
-                        "actual_value": actual_quantity_value,
-                    })
+                    mismatches.append(
+                        {
+                            "mismatch_type": "field_mismatch",
+                            "field": key,
+                            "expected_value": expected_quantity_value,
+                            "actual_value": actual_quantity_value,
+                        }
+                    )
                     continue
-                if key == "gst" and (not _is_plausible_gst(expected_value) or not _is_plausible_gst(actual_value)):
+                if key == "gst" and (
+                    not _is_plausible_gst(expected_value)
+                    or not _is_plausible_gst(actual_value)
+                ):
                     continue
-                if key == "discount" and (not _is_plausible_discount(expected_value) or not _is_plausible_discount(actual_value)):
+                if key == "discount" and (
+                    not _is_plausible_discount(expected_value)
+                    or not _is_plausible_discount(actual_value)
+                ):
                     continue
                 expected_number = _coerce_numeric_value(expected_value)
                 actual_number = _coerce_numeric_value(actual_value)
@@ -925,27 +1226,32 @@ def compare_step1(order_file: str | Path, filled_items_file: str | Path) -> dict
                 if key == "rate" and _rate_matches(expected_value, actual_value):
                     continue
                 if expected_number != actual_number:
-                    mismatches.append({
-                        "mismatch_type": "field_mismatch",
-                        "field": key,
-                        "expected_value": expected_value,
-                        "actual_value": actual_value,
-                    })
+                    mismatches.append(
+                        {
+                            "mismatch_type": "field_mismatch",
+                            "field": key,
+                            "expected_value": expected_value,
+                            "actual_value": actual_value,
+                        }
+                    )
             else:
                 expected_product_key = _normalize_product_key(expected_value)
                 actual_product_key = _normalize_product_key(actual_value)
                 equivalent_product = (
-                    (expected_product_key and actual_product_key and expected_product_key == actual_product_key)
-                    or fuzzy_match(expected_value, actual_value, threshold=0.8)
-                )
+                    expected_product_key
+                    and actual_product_key
+                    and expected_product_key == actual_product_key
+                ) or fuzzy_match(expected_value, actual_value, threshold=0.8)
                 if equivalent_product:
                     continue
-                mismatches.append({
-                    "mismatch_type": "field_mismatch",
-                    "field": key,
-                    "expected_value": expected_value,
-                    "actual_value": actual_value,
-                })
+                mismatches.append(
+                    {
+                        "mismatch_type": "field_mismatch",
+                        "field": key,
+                        "expected_value": expected_value,
+                        "actual_value": actual_value,
+                    }
+                )
 
     if _detect_step1_mapping_issue(mismatches):
         return {
@@ -1014,7 +1320,9 @@ def parse_step2_sales_order_pdf(path: str | Path) -> dict[str, Any]:
     return {"text": text, "parsed": parsed}
 
 
-def compare_step2(filled_items_file: str | Path, sales_order_pdf: str | Path) -> dict[str, Any]:
+def compare_step2(
+    filled_items_file: str | Path, sales_order_pdf: str | Path
+) -> dict[str, Any]:
     if not filled_items_file or not sales_order_pdf:
         return {"status": "skipped", "reason": "missing_inputs"}
 
@@ -1022,7 +1330,10 @@ def compare_step2(filled_items_file: str | Path, sales_order_pdf: str | Path) ->
     sales_order = parse_step2_sales_order_pdf(sales_order_pdf)
 
     if "error" in filled or "error" in sales_order:
-        return {"status": "error", "errors": _collect_errors(filled.get("error"), sales_order.get("error"))}
+        return {
+            "status": "error",
+            "errors": _collect_errors(filled.get("error"), sales_order.get("error")),
+        }
 
     mismatches: list[dict[str, Any]] = []
     filled_rows = filled.get("rows", [])
@@ -1056,18 +1367,36 @@ def compare_step2(filled_items_file: str | Path, sales_order_pdf: str | Path) ->
             or ("set" in expected_key and "set" in actual_key)
         )
         if not is_equivalent_product:
-            mismatches.append({"mismatch_type": "product_mismatch", "expected_value": expected_product, "actual_value": actual_product})
+            mismatches.append(
+                {
+                    "mismatch_type": "product_mismatch",
+                    "expected_value": expected_product,
+                    "actual_value": actual_product,
+                }
+            )
             continue
 
         expected_quantity = _coerce_numeric_value(row.get("quantity"))
         actual_quantity = _coerce_numeric_value(parsed_row.get("quantity"))
         if expected_quantity != actual_quantity:
-            mismatches.append({"mismatch_type": "quantity_mismatch", "expected_value": expected_quantity, "actual_value": actual_quantity})
+            mismatches.append(
+                {
+                    "mismatch_type": "quantity_mismatch",
+                    "expected_value": expected_quantity,
+                    "actual_value": actual_quantity,
+                }
+            )
 
         expected_rate = _coerce_numeric_value(row.get("rate"))
         actual_rate = _coerce_numeric_value(parsed_row.get("rate"))
         if expected_rate != actual_rate:
-            mismatches.append({"mismatch_type": "rate_mismatch", "expected_value": expected_rate, "actual_value": actual_rate})
+            mismatches.append(
+                {
+                    "mismatch_type": "rate_mismatch",
+                    "expected_value": expected_rate,
+                    "actual_value": actual_rate,
+                }
+            )
 
     if _detect_step2_parser_issue(mismatches):
         return {
@@ -1098,7 +1427,9 @@ def parse_step3_invoice_pdf(path: str | Path) -> dict[str, Any]:
     return {"text": text, "parsed": _parse_pdf_table_like_text(text)}
 
 
-def compare_step3(sales_order_pdf: str | Path, commercial_invoice_pdf: str | Path) -> dict[str, Any]:
+def compare_step3(
+    sales_order_pdf: str | Path, commercial_invoice_pdf: str | Path
+) -> dict[str, Any]:
     if not sales_order_pdf or not commercial_invoice_pdf:
         return {"status": "skipped", "reason": "missing_inputs"}
 
@@ -1106,7 +1437,10 @@ def compare_step3(sales_order_pdf: str | Path, commercial_invoice_pdf: str | Pat
     invoice = parse_step3_invoice_pdf(commercial_invoice_pdf)
 
     if "error" in so or "error" in invoice:
-        return {"status": "error", "errors": _collect_errors(so.get("error"), invoice.get("error"))}
+        return {
+            "status": "error",
+            "errors": _collect_errors(so.get("error"), invoice.get("error")),
+        }
 
     mismatches: list[dict[str, Any]] = []
     fields = [
@@ -1121,10 +1455,22 @@ def compare_step3(sales_order_pdf: str | Path, commercial_invoice_pdf: str | Pat
             continue
         if expected_key == "client_name":
             if not fuzzy_match(expected_value, actual_value, threshold=0.8):
-                mismatches.append({"mismatch_type": "client_name_mismatch", "expected_value": expected_value, "actual_value": actual_value})
+                mismatches.append(
+                    {
+                        "mismatch_type": "client_name_mismatch",
+                        "expected_value": expected_value,
+                        "actual_value": actual_value,
+                    }
+                )
         else:
             if normalize_text(expected_value) != normalize_text(actual_value):
-                mismatches.append({"mismatch_type": f"{expected_key}_mismatch", "expected_value": expected_value, "actual_value": actual_value})
+                mismatches.append(
+                    {
+                        "mismatch_type": f"{expected_key}_mismatch",
+                        "expected_value": expected_value,
+                        "actual_value": actual_value,
+                    }
+                )
 
     return {
         "status": "ok" if not mismatches else "mismatches-found",
@@ -1133,7 +1479,12 @@ def compare_step3(sales_order_pdf: str | Path, commercial_invoice_pdf: str | Pat
     }
 
 
-def run_full_verification(order_file: str | Path, filled_items_file: str | Path, sales_order_pdf: str | Path, commercial_invoice_pdf: str | Path) -> dict[str, Any]:
+def run_full_verification(
+    order_file: str | Path,
+    filled_items_file: str | Path,
+    sales_order_pdf: str | Path,
+    commercial_invoice_pdf: str | Path,
+) -> dict[str, Any]:
     return {
         "step1": compare_step1(order_file, filled_items_file),
         "step2": compare_step2(filled_items_file, sales_order_pdf),

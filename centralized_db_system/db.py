@@ -22,13 +22,13 @@ from .article_master import ArticleMasterService
 
 
 class CentralizedDB:
-
     # ============ DYNAMIC SCHEMA MANAGER ============
 
     def init_schema_manager(self):
         """Schema manager table banao agar nahi hai"""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS custom_schema_fields (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     entity_type TEXT NOT NULL,  -- 'distributor', 'retailer', 'article'
@@ -42,13 +42,15 @@ class CentralizedDB:
                     created_at TEXT DEFAULT (datetime('now')),
                     UNIQUE(entity_type, field_name)
                 )
-            """)
+            """
+            )
             conn.commit()
 
     def ensure_storage_tables(self) -> None:
         """Create storage account and file index tables if they do not exist."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS storage_accounts (
                     id INTEGER PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -64,8 +66,10 @@ class CentralizedDB:
                     updated_at TIMESTAMP,
                     UNIQUE(user_id, workspace_id, provider_type)
                 )
-            """)
-            conn.execute("""
+            """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS file_index (
                     id INTEGER PRIMARY KEY,
                     workspace_id TEXT DEFAULT 'bombay_dyeing',
@@ -94,8 +98,10 @@ class CentralizedDB:
                     FOREIGN KEY(storage_account_id) REFERENCES storage_accounts(id),
                     UNIQUE(storage_account_id, file_id)
                 )
-            """)
-            conn.execute("""
+            """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS file_versions (
                     id INTEGER PRIMARY KEY,
                     file_index_id INTEGER,
@@ -106,8 +112,10 @@ class CentralizedDB:
                     created_by INTEGER,
                     FOREIGN KEY(file_index_id) REFERENCES file_index(id)
                 )
-            """)
-            conn.execute("""
+            """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS file_operations_log (
                     id INTEGER PRIMARY KEY,
                     file_index_id INTEGER,
@@ -118,13 +126,26 @@ class CentralizedDB:
                     created_at TIMESTAMP,
                     FOREIGN KEY(file_index_id) REFERENCES file_index(id)
                 )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_workspace ON file_index(workspace_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_owner ON file_index(owner_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_module ON file_index(module)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_company ON file_index(company)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_created ON file_index(created_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_storage_accounts_user ON storage_accounts(user_id)")
+            """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_index_workspace ON file_index(workspace_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_index_owner ON file_index(owner_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_index_module ON file_index(module)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_index_company ON file_index(company)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_index_created ON file_index(created_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_storage_accounts_user ON storage_accounts(user_id)"
+            )
             conn.commit()
 
     def save_storage_account(
@@ -178,7 +199,9 @@ class CentralizedDB:
             ).fetchone()
             return int(row[0]) if row else 0
 
-    def get_storage_account(self, user_id: int, provider_type: str | None = None) -> dict[str, Any] | None:
+    def get_storage_account(
+        self, user_id: int, provider_type: str | None = None
+    ) -> dict[str, Any] | None:
         """Retrieve a storage account for a user."""
         self.ensure_storage_tables()
         query = "SELECT * FROM storage_accounts WHERE user_id = ?"
@@ -192,14 +215,22 @@ class CentralizedDB:
             if row is None:
                 return None
             data = dict(row)
-            data["oauth_token"] = json.loads(data["oauth_token"]) if data.get("oauth_token") else None
+            data["oauth_token"] = (
+                json.loads(data["oauth_token"]) if data.get("oauth_token") else None
+            )
             return data
 
-    def disconnect_storage_account(self, user_id: int, provider_type: str | None = None) -> bool:
+    def disconnect_storage_account(
+        self, user_id: int, provider_type: str | None = None
+    ) -> bool:
         """Mark a storage account as disconnected."""
         self.ensure_storage_tables()
         query = "UPDATE storage_accounts SET sync_status = ?, oauth_token = NULL, updated_at = ? WHERE user_id = ?"
-        params: tuple[Any, ...] = ("disconnected", datetime.now(timezone.utc).isoformat(), user_id)
+        params: tuple[Any, ...] = (
+            "disconnected",
+            datetime.now(timezone.utc).isoformat(),
+            user_id,
+        )
         if provider_type:
             query += " AND provider_type = ?"
             params += (provider_type,)
@@ -250,7 +281,9 @@ class CentralizedDB:
                         item.get("name"),
                         item.get("fileType") or item.get("mimeType"),
                         item.get("mimeType"),
-                        ",".join(item.get("parents", [])) if item.get("parents") else None,
+                        ",".join(item.get("parents", []))
+                        if item.get("parents")
+                        else None,
                         int(item.get("size")) if item.get("size") else None,
                         item.get("modifiedTime"),
                         now,
@@ -302,16 +335,360 @@ class CentralizedDB:
             "total_storage_bytes": account["total_storage_bytes"],
             "used_storage_bytes": account["used_storage_bytes"],
         }
+
+    def ensure_target_achievement_tables(self) -> None:
+        """Create Target vs Achievement tables if they do not exist."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_achievement_years (
+                    id INTEGER PRIMARY KEY,
+                    workspace_id TEXT DEFAULT 'bombay_dyeing',
+                    financial_year TEXT NOT NULL,
+                    target_amount REAL,
+                    achievement_amount REAL,
+                    achievement_percent REAL,
+                    target_source TEXT,
+                    achievement_source TEXT,
+                    remarks TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT,
+                    UNIQUE(workspace_id, financial_year)
+                )
+            """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fy_year ON target_achievement_years(financial_year)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_achievement_uploads (
+                    id INTEGER PRIMARY KEY,
+                    workspace_id TEXT DEFAULT 'bombay_dyeing',
+                    financial_year_id INTEGER,
+                    file_name TEXT,
+                    file_type TEXT,
+                    uploaded_by TEXT,
+                    total_rows INTEGER,
+                    calculated_total REAL,
+                    upload_status TEXT,
+                    parsed_at TIMESTAMP,
+                    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(financial_year_id) REFERENCES target_achievement_years(id)
+                )
+            """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fy_id ON target_achievement_uploads(financial_year_id)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_achievement_breakup (
+                    id INTEGER PRIMARY KEY,
+                    workspace_id TEXT DEFAULT 'bombay_dyeing',
+                    financial_year_id INTEGER,
+                    attribute_type TEXT,
+                    attribute_name TEXT,
+                    target_amount REAL,
+                    achievement_amount REAL,
+                    achievement_percent REAL,
+                    source TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(financial_year_id, attribute_type, attribute_name),
+                    FOREIGN KEY(financial_year_id) REFERENCES target_achievement_years(id)
+                )
+            """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fy_breakup ON target_achievement_breakup(financial_year_id, attribute_type)"
+            )
+            conn.commit()
+
+    def create_financial_year(
+        self,
+        financial_year: str,
+        target_amount: float | None,
+        achievement_amount: float | None,
+        remarks: str | None,
+        created_by: str | None,
+    ) -> tuple[bool, int, str | None]:
+        """Create new FY record."""
+        self.ensure_target_achievement_tables()
+        achievement_percent = 0.0
+        if target_amount is not None and target_amount != 0:
+            achievement_percent = round(
+                (achievement_amount or 0) / float(target_amount) * 100, 2
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    """
+                        INSERT INTO target_achievement_years (
+                            financial_year, target_amount, achievement_amount,
+                            achievement_percent, target_source, achievement_source,
+                            remarks, created_at, updated_at, created_by
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        financial_year,
+                        target_amount,
+                        achievement_amount,
+                        achievement_percent,
+                        "Manual",
+                        "Manual",
+                        remarks,
+                        now,
+                        now,
+                        created_by,
+                    ),
+                )
+                conn.commit()
+                return True, int(cursor.lastrowid), None
+        except sqlite3.IntegrityError as exc:
+            return False, 0, str(exc)
+
+    def get_financial_year(self, fy_id: int) -> dict[str, Any] | None:
+        """Get single FY by ID."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM target_achievement_years WHERE id = ?", (fy_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_all_financial_years(
+        self, workspace_id: str = "bombay_dyeing"
+    ) -> list[dict[str, Any]]:
+        """Get all FYs, sorted by year DESC."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM target_achievement_years WHERE workspace_id = ? ORDER BY financial_year DESC",
+                (workspace_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_financial_year(
+        self,
+        fy_id: int,
+        target_amount: float | None = None,
+        achievement_amount: float | None = None,
+        remarks: str | None = None,
+    ) -> bool:
+        """Update FY record."""
+        self.ensure_target_achievement_tables()
+        existing = self.get_financial_year(fy_id)
+        if not existing:
+            return False
+
+        target_amount = (
+            target_amount
+            if target_amount is not None
+            else existing.get("target_amount")
+        )
+        achievement_amount = (
+            achievement_amount
+            if achievement_amount is not None
+            else existing.get("achievement_amount")
+        )
+        achievement_percent = 0.0
+        if target_amount is not None and float(target_amount) != 0:
+            achievement_percent = round(
+                (float(achievement_amount or 0) / float(target_amount)) * 100, 2
+            )
+
+        updated_at = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                    UPDATE target_achievement_years SET
+                        target_amount = ?,
+                        achievement_amount = ?,
+                        achievement_percent = ?,
+                        remarks = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                """,
+                (
+                    target_amount,
+                    achievement_amount,
+                    achievement_percent,
+                    remarks if remarks is not None else existing.get("remarks"),
+                    updated_at,
+                    fy_id,
+                ),
+            )
+            conn.commit()
+            return True
+
+    def delete_financial_year(self, fy_id: int) -> bool:
+        """Delete FY and cascade breakup records."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "DELETE FROM target_achievement_breakup WHERE financial_year_id = ?",
+                (fy_id,),
+            )
+            conn.execute(
+                "DELETE FROM target_achievement_uploads WHERE financial_year_id = ?",
+                (fy_id,),
+            )
+            cursor = conn.execute(
+                "DELETE FROM target_achievement_years WHERE id = ?", (fy_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def save_upload_record(
+        self,
+        fy_id: int,
+        file_name: str,
+        file_type: str,
+        total_rows: int,
+        calculated_total: float,
+        uploaded_by: str | None,
+    ) -> int:
+        """Save file upload metadata."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                    INSERT INTO target_achievement_uploads (
+                        financial_year_id, file_name, file_type, uploaded_by,
+                        total_rows, calculated_total, upload_status, parsed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    fy_id,
+                    file_name,
+                    file_type,
+                    uploaded_by,
+                    total_rows,
+                    calculated_total,
+                    "success",
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def list_upload_records(self, fy_id: int) -> list[dict[str, Any]]:
+        """List upload records for a financial year."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM target_achievement_uploads WHERE financial_year_id = ? ORDER BY uploaded_at DESC",
+                (fy_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def save_breakup_record(
+        fy_id: int,
+        attribute_type: str,
+        attribute_name: str,
+        target_amount: float | None,
+        achievement_amount: float | None,
+        source: str,
+    ) -> int:
+        """Save/update breakup record."""
+        self.ensure_target_achievement_tables()
+        target_amount = float(target_amount or 0)
+        achievement_amount = float(achievement_amount or 0)
+        achievement_percent = 0.0
+        if target_amount != 0:
+            achievement_percent = round((achievement_amount / target_amount) * 100, 2)
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                    INSERT INTO target_achievement_breakup (
+                        financial_year_id, attribute_type, attribute_name,
+                        target_amount, achievement_amount, achievement_percent, source
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(financial_year_id, attribute_type, attribute_name) DO UPDATE SET
+                        target_amount = excluded.target_amount,
+                        achievement_amount = excluded.achievement_amount,
+                        achievement_percent = excluded.achievement_percent,
+                        source = excluded.source,
+                        created_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    fy_id,
+                    attribute_type,
+                    attribute_name,
+                    target_amount,
+                    achievement_amount,
+                    achievement_percent,
+                    source,
+                ),
+            )
+            conn.commit()
+            return int(
+                cursor.lastrowid
+                if cursor.lastrowid
+                else conn.execute(
+                    "SELECT id FROM target_achievement_breakup WHERE financial_year_id = ? AND attribute_type = ? AND attribute_name = ?",
+                    (fy_id, attribute_type, attribute_name),
+                ).fetchone()[0]
+            )
+
+    def get_breakup(self, fy_id: int, attribute_type: str) -> list[dict[str, Any]]:
+        """Get breakup records for attribute type."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                    SELECT * FROM target_achievement_breakup
+                    WHERE financial_year_id = ? AND attribute_type = ?
+                    ORDER BY achievement_percent DESC
+                """,
+                (fy_id, attribute_type),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_target_achievement_summary(self) -> dict[str, Any]:
+        """Get overall metrics across all FYs."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) AS total_count, SUM(target_amount) AS overall_target, SUM(achievement_amount) AS overall_achievement FROM target_achievement_years"
+            )
+            summary = cursor.fetchone()
+            overall_target = summary[1] or 0.0
+            overall_achievement = summary[2] or 0.0
+            overall_percent = 0.0
+            if overall_target != 0:
+                overall_percent = round((overall_achievement / overall_target) * 100, 2)
+            return {
+                "total_count": summary[0] or 0,
+                "overall_target": overall_target,
+                "overall_achievement": overall_achievement,
+                "overall_percent": overall_percent,
+            }
+
+    def get_storage_summary(self) -> dict[str, Any]:
+        return self.get_target_achievement_summary()
+
     def get_schema_fields(self, entity_type: str) -> list:
         """Entity ke fields lao order ke saath"""
         self.init_schema_manager()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT * FROM custom_schema_fields
                 WHERE entity_type = ? AND is_visible = 1
                 ORDER BY field_order ASC
-            """, (entity_type,)).fetchall()
+            """,
+                (entity_type,),
+            ).fetchall()
             return [dict(r) for r in rows]
 
     def get_all_schema_fields(self, entity_type: str) -> list:
@@ -319,24 +696,45 @@ class CentralizedDB:
         self.init_schema_manager()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT * FROM custom_schema_fields
                 WHERE entity_type = ?
                 ORDER BY field_order ASC
-            """, (entity_type,)).fetchall()
+            """,
+                (entity_type,),
+            ).fetchall()
             return [dict(r) for r in rows]
 
-    def add_schema_field(self, entity_type: str, field_name: str, field_label: str,
-                        field_type: str = 'text', field_order: int = 0,
-                        is_required: int = 0, options: str = None) -> int:
+    def add_schema_field(
+        self,
+        entity_type: str,
+        field_name: str,
+        field_label: str,
+        field_type: str = "text",
+        field_order: int = 0,
+        is_required: int = 0,
+        options: str = None,
+    ) -> int:
         """Naya field add karo"""
         self.init_schema_manager()
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 INSERT OR IGNORE INTO custom_schema_fields
                 (entity_type, field_name, field_label, field_type, field_order, is_required, options)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (entity_type, field_name, field_label, field_type, field_order, is_required, options))
+            """,
+                (
+                    entity_type,
+                    field_name,
+                    field_label,
+                    field_type,
+                    field_order,
+                    is_required,
+                    options,
+                ),
+            )
             conn.commit()
             return cursor.lastrowid
 
@@ -350,8 +748,10 @@ class CentralizedDB:
     def toggle_schema_field_visibility(self, field_id: int, is_visible: int) -> bool:
         """Field show/hide karo"""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("UPDATE custom_schema_fields SET is_visible = ? WHERE id = ?",
-                        (is_visible, field_id))
+            conn.execute(
+                "UPDATE custom_schema_fields SET is_visible = ? WHERE id = ?",
+                (is_visible, field_id),
+            )
             conn.commit()
             return True
 
@@ -359,8 +759,10 @@ class CentralizedDB:
         """Fields reorder karo — [{id: 1, order: 0}, {id: 2, order: 1}]"""
         with sqlite3.connect(self.db_path) as conn:
             for item in field_orders:
-                conn.execute("UPDATE custom_schema_fields SET field_order = ? WHERE id = ?",
-                            (item['order'], item['id']))
+                conn.execute(
+                    "UPDATE custom_schema_fields SET field_order = ? WHERE id = ?",
+                    (item["order"], item["id"]),
+                )
             conn.commit()
             return True
 
@@ -368,55 +770,59 @@ class CentralizedDB:
         """Pehli baar default fields seed karo"""
         self.init_schema_manager()
         defaults = {
-            'distributor': [
-                ('distributor_code', 'Distributor Code', 'text', 0),
-                ('firm_name', 'Firm Name', 'text', 1),
-                ('firm_nick_name', 'Nick Name', 'text', 2),
-                ('name', 'Contact Person', 'text', 3),
-                ('phone_number', 'Mobile Number', 'text', 4),
-                ('email', 'Email', 'text', 5),
-                ('zone', 'State', 'text', 6),
-                ('region', 'Area', 'text', 7),
-                ('gst_no', 'GST Number', 'text', 8),
-                ('payment_terms', 'Payment Terms', 'text', 9),
-                ('credit_limit', 'Credit Limit', 'number', 10),
+            "distributor": [
+                ("distributor_code", "Distributor Code", "text", 0),
+                ("firm_name", "Firm Name", "text", 1),
+                ("firm_nick_name", "Nick Name", "text", 2),
+                ("name", "Contact Person", "text", 3),
+                ("phone_number", "Mobile Number", "text", 4),
+                ("email", "Email", "text", 5),
+                ("zone", "State", "text", 6),
+                ("region", "Area", "text", 7),
+                ("gst_no", "GST Number", "text", 8),
+                ("payment_terms", "Payment Terms", "text", 9),
+                ("credit_limit", "Credit Limit", "number", 10),
             ],
-            'retailer': [
-                ('retailer_code', 'Retailer Code', 'text', 0),
-                ('name', 'Retailer Name', 'text', 1),
-                ('owner_name', 'Owner Name', 'text', 2),
-                ('distributor_id', 'Distributor', 'select', 3),
-                ('location', 'Location', 'text', 4),
-                ('phone_number', 'Phone Number', 'text', 5),
-                ('email', 'Email', 'text', 6),
-                ('address', 'Address', 'text', 7),
-                ('gst_no', 'GST Number', 'text', 8),
+            "retailer": [
+                ("retailer_code", "Retailer Code", "text", 0),
+                ("name", "Retailer Name", "text", 1),
+                ("owner_name", "Owner Name", "text", 2),
+                ("distributor_id", "Distributor", "select", 3),
+                ("location", "Location", "text", 4),
+                ("phone_number", "Phone Number", "text", 5),
+                ("email", "Email", "text", 6),
+                ("address", "Address", "text", 7),
+                ("gst_no", "GST Number", "text", 8),
             ],
-            'article': [
-                ('brand', 'Brand', 'text', 0),
-                ('tc', 'TC', 'text', 1),
-                ('size', 'Size', 'text', 2),
-                ('bs_size', 'BS Size', 'text', 3),
-                ('product', 'Product', 'text', 4),
-                ('print_style', 'Print Style', 'text', 5),
-                ('mrp', 'MRP (₹)', 'number', 6),
-                ('selling_price', 'Selling Price (₹)', 'number', 7),
-                ('ptr', 'PTR (₹)', 'number', 8),
-                ('exmill_price', 'Ex-Mill (₹)', 'number', 9),
+            "article": [
+                ("brand", "Brand", "text", 0),
+                ("tc", "TC", "text", 1),
+                ("size", "Size", "text", 2),
+                ("bs_size", "BS Size", "text", 3),
+                ("product", "Product", "text", 4),
+                ("print_style", "Print Style", "text", 5),
+                ("mrp", "MRP (₹)", "number", 6),
+                ("selling_price", "Selling Price (₹)", "number", 7),
+                ("ptr", "PTR (₹)", "number", 8),
+                ("exmill_price", "Ex-Mill (₹)", "number", 9),
             ],
         }
         with sqlite3.connect(self.db_path) as conn:
             for entity, fields in defaults.items():
                 for field_name, label, ftype, order in fields:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         INSERT OR IGNORE INTO custom_schema_fields
                         (entity_type, field_name, field_label, field_type, field_order)
                         VALUES (?, ?, ?, ?, ?)
-                    """, (entity, field_name, label, ftype, order))
+                    """,
+                        (entity, field_name, label, ftype, order),
+                    )
             conn.commit()
-    
 
-    def __init__(self, db_path: str | None = None, sync_store: OfflineSyncStore | None = None):
+    def __init__(
+        self, db_path: str | None = None, sync_store: OfflineSyncStore | None = None
+    ):
         self.db_path = self._resolve_db_path(db_path)
         self.sync_store = sync_store or OfflineSyncStore()
         self.firebase_sync = FirebaseSync(sync_store=self.sync_store)
@@ -435,7 +841,11 @@ class CentralizedDB:
             parsed = urlparse(value)
             if value.startswith("sqlite://"):
                 path_value = value.removeprefix("sqlite:///")
-                if path_value.startswith("/") and len(path_value) >= 3 and path_value[2] == ":":
+                if (
+                    path_value.startswith("/")
+                    and len(path_value) >= 3
+                    and path_value[2] == ":"
+                ):
                     path_value = path_value[1:]
                 return Path(path_value).expanduser()
 
@@ -446,7 +856,14 @@ class CentralizedDB:
 
         return Path("centralized_db.sqlite3").expanduser()
 
-    def _log_audit_event(self, conn: sqlite3.Connection, action: str, table_name: str, record_id: int | str | None = None, details: dict[str, Any] | None = None) -> None:
+    def _log_audit_event(
+        self,
+        conn: sqlite3.Connection,
+        action: str,
+        table_name: str,
+        record_id: int | str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         conn.execute(
             "INSERT INTO database_audit_log (created_at, action, table_name, record_id, details) VALUES (?, ?, ?, ?, ?)",
             (
@@ -467,7 +884,12 @@ class CentralizedDB:
             with sqlite3.connect(target_path) as backup_conn:
                 source_conn.backup(backup_conn)
         with sqlite3.connect(target_path) as conn:
-            self._log_audit_event(conn, "backup", "database", details={"source": str(self.db_path), "destination": str(target_path)})
+            self._log_audit_event(
+                conn,
+                "backup",
+                "database",
+                details={"source": str(self.db_path), "destination": str(target_path)},
+            )
             conn.commit()
         return target_path
 
@@ -485,16 +907,24 @@ class CentralizedDB:
                     target_path.unlink()
             except PermissionError:
                 import gc
+
                 gc.collect()
                 target_path.unlink(missing_ok=True)
         shutil.copy2(source_path, target_path)
         self._initialize()
         with sqlite3.connect(target_path) as conn:
-            self._log_audit_event(conn, "restore", "database", details={"source": str(source_path), "destination": str(target_path)})
+            self._log_audit_event(
+                conn,
+                "restore",
+                "database",
+                details={"source": str(source_path), "destination": str(target_path)},
+            )
             conn.commit()
         return target_path
 
-    def cleanup_temp_uploads(self, directory: str | Path, max_age_hours: int = 24) -> int:
+    def cleanup_temp_uploads(
+        self, directory: str | Path, max_age_hours: int = 24
+    ) -> int:
         folder = Path(directory).expanduser()
         if not folder.exists():
             return 0
@@ -507,7 +937,16 @@ class CentralizedDB:
                 file_path.unlink(missing_ok=True)
                 removed += 1
         with sqlite3.connect(self.db_path) as conn:
-            self._log_audit_event(conn, "cleanup", "temp_uploads", details={"directory": str(folder), "removed": removed, "max_age_hours": max_age_hours})
+            self._log_audit_event(
+                conn,
+                "cleanup",
+                "temp_uploads",
+                details={
+                    "directory": str(folder),
+                    "removed": removed,
+                    "max_age_hours": max_age_hours,
+                },
+            )
             conn.commit()
         return removed
 
@@ -535,7 +974,9 @@ class CentralizedDB:
             raise ValueError("username and password are required")
 
         with sqlite3.connect(self.db_path) as conn:
-            existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            existing = conn.execute(
+                "SELECT id FROM users WHERE username = ?", (username,)
+            ).fetchone()
             if existing:
                 raise ValueError("user already exists")
 
@@ -545,7 +986,11 @@ class CentralizedDB:
                 "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
                 (username, password_hash, created_at),
             )
-            return {"id": cursor.lastrowid, "username": username, "created_at": created_at}
+            return {
+                "id": cursor.lastrowid,
+                "username": username,
+                "created_at": created_at,
+            }
 
     def authenticate_user(self, username: str, password: str) -> bool:
         username = (username or "").strip()
@@ -553,7 +998,9 @@ class CentralizedDB:
             return False
 
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("SELECT password_hash FROM users WHERE username = ?", (username,)).fetchone()
+            row = conn.execute(
+                "SELECT password_hash FROM users WHERE username = ?", (username,)
+            ).fetchone()
             if not row:
                 return False
             return check_password_hash(row[0], password)
@@ -677,9 +1124,24 @@ class CentralizedDB:
                 CREATE TABLE IF NOT EXISTS master_retailers (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     retailer_id TEXT UNIQUE,
+                    retailer_code TEXT,
                     name TEXT NOT NULL,
                     distributor_id INTEGER,
                     location TEXT,
+                    phone_number TEXT,
+                    email TEXT,
+                    address TEXT,
+                    gst_no TEXT,
+                    secondary_retailer_name TEXT,
+                    secondary_retailer_phone_number TEXT,
+                    secondary_retailer_birthday TEXT,
+                    secondary_retailer_anniversary TEXT,
+                    sales_executive_name TEXT,
+                    sales_executive_phone_number TEXT,
+                    sales_executive_email TEXT,
+                    sales_executive_birthday TEXT,
+                    sales_executive_anniversary TEXT,
+                    owner_name TEXT,
                     latitude REAL,
                     longitude REAL,
                     status TEXT DEFAULT 'active',
@@ -1007,7 +1469,9 @@ class CentralizedDB:
             )
             self._ensure_column_exists(conn, "master_distributors", "latitude", "REAL")
             self._ensure_column_exists(conn, "master_distributors", "longitude", "REAL")
-            self._ensure_column_exists(conn, "master_distributors", "phone_number", "TEXT")
+            self._ensure_column_exists(
+                conn, "master_distributors", "phone_number", "TEXT"
+            )
             self._ensure_column_exists(conn, "master_distributors", "email", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "address", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "zone", "TEXT")
@@ -1015,54 +1479,127 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "master_distributors", "gst_no", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "location", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "firm_name", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "firm_nick_name", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "distributor_code", "TEXT")
+            self._ensure_column_exists(
+                conn, "master_distributors", "firm_nick_name", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "distributor_code", "TEXT"
+            )
             self._ensure_column_exists(conn, "master_distributors", "pincode", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "payment_terms", "TEXT")
+            self._ensure_column_exists(
+                conn, "master_distributors", "payment_terms", "TEXT"
+            )
             self._ensure_column_exists(conn, "master_distributors", "birthday", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "anniversary", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "secondary_distributor_name", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "secondary_distributor_phone_number", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "secondary_distributor_birthday", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "secondary_distributor_anniversary", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "sales_executive_name", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "sales_executive_phone_number", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "sales_executive_email", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "sales_executive_birthday", "TEXT")
-            self._ensure_column_exists(conn, "master_distributors", "sales_executive_anniversary", "TEXT")
+            self._ensure_column_exists(
+                conn, "master_distributors", "anniversary", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "secondary_distributor_name", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn,
+                "master_distributors",
+                "secondary_distributor_phone_number",
+                "TEXT",
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "secondary_distributor_birthday", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "secondary_distributor_anniversary", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "sales_executive_name", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "sales_executive_phone_number", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "sales_executive_email", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "sales_executive_birthday", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_distributors", "sales_executive_anniversary", "TEXT"
+            )
             self._ensure_column_exists(conn, "master_retailers", "latitude", "REAL")
             self._ensure_column_exists(conn, "master_retailers", "longitude", "REAL")
             self._ensure_column_exists(conn, "master_retailers", "phone_number", "TEXT")
             self._ensure_column_exists(conn, "master_retailers", "email", "TEXT")
             self._ensure_column_exists(conn, "master_retailers", "address", "TEXT")
             self._ensure_column_exists(conn, "master_retailers", "gst_no", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "retailer_code", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "secondary_retailer_name", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "secondary_retailer_phone_number", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "secondary_retailer_birthday", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "secondary_retailer_anniversary", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "sales_executive_name", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "sales_executive_phone_number", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "sales_executive_email", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "sales_executive_birthday", "TEXT")
-            self._ensure_column_exists(conn, "master_retailers", "sales_executive_anniversary", "TEXT")
+            self._ensure_column_exists(
+                conn, "master_retailers", "retailer_code", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "secondary_retailer_name", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "secondary_retailer_phone_number", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "secondary_retailer_birthday", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "secondary_retailer_anniversary", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "sales_executive_name", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "sales_executive_phone_number", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "sales_executive_email", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "sales_executive_birthday", "TEXT"
+            )
+            self._ensure_column_exists(
+                conn, "master_retailers", "sales_executive_anniversary", "TEXT"
+            )
             self._ensure_column_exists(conn, "master_retailers", "zone", "TEXT")
             self._ensure_column_exists(conn, "master_retailers", "region", "TEXT")
             self._ensure_column_exists(conn, "business_rules", "rule_key", "TEXT")
             self._ensure_column_exists(conn, "business_rules", "rule_value", "TEXT")
-            self._ensure_column_exists(conn, "business_rules", "is_locked", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column_exists(
+                conn, "business_rules", "is_locked", "INTEGER NOT NULL DEFAULT 1"
+            )
             self._ensure_column_exists(conn, "business_rules", "updated_at", "TEXT")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_distributors_name ON master_distributors(name)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_distributors_gst_no ON master_distributors(gst_no)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_retailers_name ON master_retailers(name)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_retailers_distributor_id ON master_retailers(distributor_id)")
-            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_business_rules_rule_key ON business_rules(rule_key)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_targets_achievements_distributor ON targets_achievements(distributor_id, year, month)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_primary_sales_distributor ON primary_sales(distributor_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_secondary_sales_distributor_retailer ON secondary_sales(distributor_id, retailer_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_distributor_order_uploads_distributor ON distributor_order_uploads(distributor_name)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_distributor_order_uploads_stage ON distributor_order_uploads(stage_key)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_distributor_order_uploads_uploaded_at ON distributor_order_uploads(uploaded_at)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_master_distributors_name ON master_distributors(name)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_master_distributors_gst_no ON master_distributors(gst_no)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_master_retailers_name ON master_retailers(name)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_master_retailers_distributor_id ON master_retailers(distributor_id)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_business_rules_rule_key ON business_rules(rule_key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_targets_achievements_distributor ON targets_achievements(distributor_id, year, month)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_primary_sales_distributor ON primary_sales(distributor_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_secondary_sales_distributor_retailer ON secondary_sales(distributor_id, retailer_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_distributor_order_uploads_distributor ON distributor_order_uploads(distributor_name)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_distributor_order_uploads_stage ON distributor_order_uploads(stage_key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_distributor_order_uploads_uploaded_at ON distributor_order_uploads(uploaded_at)"
+            )
             self._seed_distributor_form_fields(conn)
             self._seed_retailer_form_fields(conn)
             self._seed_business_rules(conn)
@@ -1071,11 +1608,41 @@ class CentralizedDB:
 
     def _seed_distributor_form_fields(self, conn: sqlite3.Connection) -> None:
         defaults = [
-            ("current_stock_audit", "Current Stock Audit (Warehouse stock status)", "text", None, 1),
-            ("payment_outstanding_credit_limit", "Payment Outstanding & Credit Limit Discussion", "text", None, 1),
-            ("new_primary_order_booking", "New Primary Order Booking (Volume/Items)", "text", None, 1),
-            ("distributor_market_feedback_grievances", "Distributor Market Feedback & Grievances", "text", None, 1),
-            ("general_meeting_notes_next_actions", "General Meeting Notes & Next Action Steps", "text", None, 1),
+            (
+                "current_stock_audit",
+                "Current Stock Audit (Warehouse stock status)",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "payment_outstanding_credit_limit",
+                "Payment Outstanding & Credit Limit Discussion",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "new_primary_order_booking",
+                "New Primary Order Booking (Volume/Items)",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "distributor_market_feedback_grievances",
+                "Distributor Market Feedback & Grievances",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "general_meeting_notes_next_actions",
+                "General Meeting Notes & Next Action Steps",
+                "text",
+                None,
+                1,
+            ),
         ]
         for field_id, field_label, field_type, options, is_required in defaults:
             conn.execute(
@@ -1083,17 +1650,60 @@ class CentralizedDB:
                 INSERT OR IGNORE INTO distributor_form_fields (field_id, field_label, field_type, options, is_required, status, created_at)
                 VALUES (?, ?, ?, ?, ?, 'active', ?)
                 """,
-                (field_id, field_label, field_type, json.dumps(options) if options is not None else None, is_required, datetime.now(timezone.utc).isoformat()),
+                (
+                    field_id,
+                    field_label,
+                    field_type,
+                    json.dumps(options) if options is not None else None,
+                    is_required,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
 
     def _seed_retailer_form_fields(self, conn: sqlite3.Connection) -> None:
         defaults = [
-            ("secondary_sales_volume", "Secondary Sales Volume (Counter sales check)", "text", None, 1),
-            ("product_display_stock_availability", "Product Display & Stock Availability Status", "text", None, 1),
-            ("distributor_service_rating", "Distributor Service Rating (Scale 1 to 5 stars)", "text", None, 1),
-            ("competitor_counter_schemes_discounts", "Competitor Counter Schemes & Discounts Analysis", "text", None, 1),
-            ("retailer_order_collection", "Retailer Order Collection (To forward to distributor)", "text", None, 1),
-            ("counter_photo_reference", "Shop/Counter Photo Reference (Metadata link for Google Drive storage)", "text", None, 0),
+            (
+                "secondary_sales_volume",
+                "Secondary Sales Volume (Counter sales check)",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "product_display_stock_availability",
+                "Product Display & Stock Availability Status",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "distributor_service_rating",
+                "Distributor Service Rating (Scale 1 to 5 stars)",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "competitor_counter_schemes_discounts",
+                "Competitor Counter Schemes & Discounts Analysis",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "retailer_order_collection",
+                "Retailer Order Collection (To forward to distributor)",
+                "text",
+                None,
+                1,
+            ),
+            (
+                "counter_photo_reference",
+                "Shop/Counter Photo Reference (Metadata link for Google Drive storage)",
+                "text",
+                None,
+                0,
+            ),
             ("counter_discussion_notes", "Counter Discussion Notes", "text", None, 0),
         ]
         for field_id, field_label, field_type, options, is_required in defaults:
@@ -1102,7 +1712,14 @@ class CentralizedDB:
                 INSERT OR IGNORE INTO retailer_form_fields (field_id, field_label, field_type, options, is_required, status, created_at)
                 VALUES (?, ?, ?, ?, ?, 'active', ?)
                 """,
-                (field_id, field_label, field_type, json.dumps(options) if options is not None else None, is_required, datetime.now(timezone.utc).isoformat()),
+                (
+                    field_id,
+                    field_label,
+                    field_type,
+                    json.dumps(options) if options is not None else None,
+                    is_required,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
 
     def _seed_business_rules(self, conn: sqlite3.Connection) -> None:
@@ -1146,7 +1763,13 @@ class CentralizedDB:
                 (rule_key, rule_value, now),
             )
 
-    def _ensure_column_exists(self, conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:
+    def _ensure_column_exists(
+        self,
+        conn: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        column_type: str,
+    ) -> None:
         rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
         if any(row[1] == column_name for row in rows):
             return
@@ -1159,13 +1782,20 @@ class CentralizedDB:
             "SELECT id, name, gst_no, zone, region, NULL AS location FROM master_distributors UNION ALL SELECT id, name, NULL AS gst_no, NULL AS zone, NULL AS region, location FROM master_retailers"
         ).fetchall()
         for row in master_rows:
-            content = " ".join(filter(None, [str(row[1]), str(row[2]), str(row[3]), str(row[4]), str(row[5])]))
+            content = " ".join(
+                filter(
+                    None,
+                    [str(row[1]), str(row[2]), str(row[3]), str(row[4]), str(row[5])],
+                )
+            )
             conn.execute(
                 "INSERT INTO global_search_index (content, category, source_id, source_table) VALUES (?, ?, ?, ?)",
                 (content, "masters", row[0], "masters"),
             )
 
-        verification_rows = conn.execute("SELECT id, report_type, reference_id, content FROM verification_outputs").fetchall()
+        verification_rows = conn.execute(
+            "SELECT id, report_type, reference_id, content FROM verification_outputs"
+        ).fetchall()
         for row in verification_rows:
             content = " ".join(filter(None, [str(row[1]), str(row[2]), str(row[3])]))
             conn.execute(
@@ -1187,21 +1817,26 @@ class CentralizedDB:
             "SELECT id, year, month, zone, target_amount, achievement_amount FROM targets_achievements"
         ).fetchall()
         for row in analytics_rows:
-            content = " ".join(filter(None, [str(row[1]), str(row[2]), str(row[3]), str(row[4]), str(row[5])]))
+            content = " ".join(
+                filter(
+                    None,
+                    [str(row[1]), str(row[2]), str(row[3]), str(row[4]), str(row[5])],
+                )
+            )
             conn.execute(
                 "INSERT INTO global_search_index (content, category, source_id, source_table) VALUES (?, ?, ?, ?)",
                 (content, "analytics", row[0], "targets_achievements"),
             )
 
     def _normalize_text(self, value: Any) -> str:
-        return " ".join(str(value or "").strip().split()).lower()
+        return " ".join(str(value or "").strip().split())
 
     def _canonicalize_known_master_name(self, value: Any) -> str:
         raw_value = str(value or "").strip()
         if not raw_value:
             return ""
 
-        normalized_value = self._normalize_text(raw_value)
+        normalized_value = self._normalize_text(raw_value).lower()
         alias_map = {
             "bnd": "Bernina International P Ltd",
             "choice corner": "Choice Corner Bombay Dyeing",
@@ -1246,7 +1881,13 @@ class CentralizedDB:
             rows = connection.execute(query, params).fetchall()
             for row in rows:
                 candidate_name = self._normalize_text(row[1])
-                if candidate_name == normalized_name:
+                if not candidate_name:
+                    continue
+                # Use fuzzy matching to detect similar names (case-insensitive)
+                score = fuzz.token_sort_ratio(
+                    normalized_name.lower(), candidate_name.lower()
+                )
+                if score >= threshold:
                     return int(row[0])
 
             return None
@@ -1264,32 +1905,75 @@ class CentralizedDB:
         normalized_type = str(document_type or "").strip().lower()
         existing_entries = existing_entries or []
 
-        reference_no = payload.get("order_ref_no") or payload.get("reference_no") or payload.get("invoice_no") or payload.get("document_no")
-        if reference_no and any(str(entry.get("order_ref_no") or entry.get("reference_no") or entry.get("invoice_no") or entry.get("document_no")) == str(reference_no) for entry in existing_entries):
+        reference_no = (
+            payload.get("order_ref_no")
+            or payload.get("reference_no")
+            or payload.get("invoice_no")
+            or payload.get("document_no")
+        )
+        if reference_no and any(
+            str(
+                entry.get("order_ref_no")
+                or entry.get("reference_no")
+                or entry.get("invoice_no")
+                or entry.get("document_no")
+            )
+            == str(reference_no)
+            for entry in existing_entries
+        ):
             warnings.append("Duplicate entry detected for reference number")
 
-        if normalized_type in {"order sheet", "sales order", "sales_order", "so", "commercial invoice", "commercial_invoice", "invoice"}:
-            rate = payload.get("rate") or payload.get("unit_rate") or payload.get("unit_price")
-            quantity = payload.get("quantity") or payload.get("ordered_qty") or payload.get("filled_qty")
-            amount = payload.get("amount") or payload.get("invoice_amount") or payload.get("net_amount") or payload.get("gross_amount")
+        if normalized_type in {
+            "order sheet",
+            "sales order",
+            "sales_order",
+            "so",
+            "commercial invoice",
+            "commercial_invoice",
+            "invoice",
+        }:
+            rate = (
+                payload.get("rate")
+                or payload.get("unit_rate")
+                or payload.get("unit_price")
+            )
+            quantity = (
+                payload.get("quantity")
+                or payload.get("ordered_qty")
+                or payload.get("filled_qty")
+            )
+            amount = (
+                payload.get("amount")
+                or payload.get("invoice_amount")
+                or payload.get("net_amount")
+                or payload.get("gross_amount")
+            )
             if rate is not None and quantity is not None and amount is not None:
                 try:
                     expected_amount = float(quantity) * float(rate)
                     if abs(float(amount) - expected_amount) > 0.01:
-                        warnings.append("Rate mismatch detected against quantity and amount")
+                        warnings.append(
+                            "Rate mismatch detected against quantity and amount"
+                        )
                 except (TypeError, ValueError):
-                    warnings.append("Unable to validate amount against quantity and rate")
+                    warnings.append(
+                        "Unable to validate amount against quantity and rate"
+                    )
 
             ordered_qty = payload.get("ordered_qty")
             filled_qty = payload.get("filled_qty")
             if ordered_qty is None:
                 ordered_qty = payload.get("quantity")
             if filled_qty is None:
-                filled_qty = payload.get("filled_quantity") or payload.get("received_qty")
+                filled_qty = payload.get("filled_quantity") or payload.get(
+                    "received_qty"
+                )
             if ordered_qty is not None and filled_qty is not None:
                 try:
                     if float(filled_qty) != float(ordered_qty):
-                        warnings.append("Quantity discrepancy detected between ordered and filled quantities")
+                        warnings.append(
+                            "Quantity discrepancy detected between ordered and filled quantities"
+                        )
                 except (TypeError, ValueError):
                     warnings.append("Unable to validate quantity discrepancy")
 
@@ -1368,10 +2052,23 @@ class CentralizedDB:
         commit_callback: Any | None = None,
         existing_entries: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        validation = self.validate_data_entry(document_type, payload, existing_entries=existing_entries)
+        validation = self.validate_data_entry(
+            document_type, payload, existing_entries=existing_entries
+        )
         if not validation["valid"]:
-            alert_id = self.create_data_entry_alert(document_type, payload.get("order_ref_no") or payload.get("reference_no") or payload.get("invoice_no"), payload, validation["warnings"])
-            return {"accepted": False, "alert_id": alert_id, "warnings": validation["warnings"]}
+            alert_id = self.create_data_entry_alert(
+                document_type,
+                payload.get("order_ref_no")
+                or payload.get("reference_no")
+                or payload.get("invoice_no"),
+                payload,
+                validation["warnings"],
+            )
+            return {
+                "accepted": False,
+                "alert_id": alert_id,
+                "warnings": validation["warnings"],
+            }
 
         if commit_callback is not None:
             commit_callback(payload)
@@ -1383,7 +2080,12 @@ class CentralizedDB:
         commit_callback: Any | None = None,
         existing_entries: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        return self.process_data_entry("Sales Order", payload, commit_callback=commit_callback, existing_entries=existing_entries)
+        return self.process_data_entry(
+            "Sales Order",
+            payload,
+            commit_callback=commit_callback,
+            existing_entries=existing_entries,
+        )
 
     def record_commercial_invoice_entry(
         self,
@@ -1391,7 +2093,12 @@ class CentralizedDB:
         commit_callback: Any | None = None,
         existing_entries: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        return self.process_data_entry("Commercial Invoice", payload, commit_callback=commit_callback, existing_entries=existing_entries)
+        return self.process_data_entry(
+            "Commercial Invoice",
+            payload,
+            commit_callback=commit_callback,
+            existing_entries=existing_entries,
+        )
 
     def upsert_credit_control(
         self,
@@ -1402,24 +2109,45 @@ class CentralizedDB:
     ) -> dict[str, Any]:
         created_at = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
-            existing = conn.execute("SELECT id FROM credit_control WHERE distributor_id = ?", (distributor_id,)).fetchone()
+            existing = conn.execute(
+                "SELECT id FROM credit_control WHERE distributor_id = ?",
+                (distributor_id,),
+            ).fetchone()
             if existing:
                 conn.execute(
                     "UPDATE credit_control SET max_credit_limit = ?, credit_days_allowed = ?, account_status = ?, created_at = ? WHERE distributor_id = ?",
-                    (max_credit_limit, credit_days_allowed, account_status, created_at, distributor_id),
+                    (
+                        max_credit_limit,
+                        credit_days_allowed,
+                        account_status,
+                        created_at,
+                        distributor_id,
+                    ),
                 )
                 conn.commit()
-                row = conn.execute("SELECT id, distributor_id, max_credit_limit, credit_days_allowed, account_status, created_at FROM credit_control WHERE distributor_id = ?", (distributor_id,)).fetchone()
+                row = conn.execute(
+                    "SELECT id, distributor_id, max_credit_limit, credit_days_allowed, account_status, created_at FROM credit_control WHERE distributor_id = ?",
+                    (distributor_id,),
+                ).fetchone()
             else:
                 cursor = conn.execute(
                     """
                     INSERT INTO credit_control (distributor_id, max_credit_limit, credit_days_allowed, account_status, created_at)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    (distributor_id, max_credit_limit, credit_days_allowed, account_status, created_at),
+                    (
+                        distributor_id,
+                        max_credit_limit,
+                        credit_days_allowed,
+                        account_status,
+                        created_at,
+                    ),
                 )
                 conn.commit()
-                row = conn.execute("SELECT id, distributor_id, max_credit_limit, credit_days_allowed, account_status, created_at FROM credit_control WHERE id = ?", (int(cursor.lastrowid),)).fetchone()
+                row = conn.execute(
+                    "SELECT id, distributor_id, max_credit_limit, credit_days_allowed, account_status, created_at FROM credit_control WHERE id = ?",
+                    (int(cursor.lastrowid),),
+                ).fetchone()
         return {
             "id": row[0],
             "distributor_id": row[1],
@@ -1437,14 +2165,24 @@ class CentralizedDB:
         account_status: str | None = None,
         bypass: bool = True,
     ) -> dict[str, Any]:
-        policy = self.upsert_credit_control(distributor_id, max_credit_limit=max_credit_limit, credit_days_allowed=credit_days_allowed, account_status=account_status or "ACTIVE")
+        policy = self.upsert_credit_control(
+            distributor_id,
+            max_credit_limit=max_credit_limit,
+            credit_days_allowed=credit_days_allowed,
+            account_status=account_status or "ACTIVE",
+        )
         if bypass:
             return {"valid": True, "bypassed": True, "policy": policy}
         return {"valid": True, "bypassed": False, "policy": policy}
 
-    def build_distributor_purchase_behavior_logs(self, distributor_id: int) -> list[dict[str, Any]]:
+    def build_distributor_purchase_behavior_logs(
+        self, distributor_id: int
+    ) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM distributor_purchase_behavior_logs WHERE distributor_id = ?", (distributor_id,))
+            conn.execute(
+                "DELETE FROM distributor_purchase_behavior_logs WHERE distributor_id = ?",
+                (distributor_id,),
+            )
             lifecycle_rows = conn.execute(
                 "SELECT tracking_id, order_received_date, order_filled_date, dispatch_date FROM order_lifecycle_tracking WHERE distributor_id = ? ORDER BY order_received_date, order_filled_date, dispatch_date",
                 (distributor_id,),
@@ -1472,12 +2210,19 @@ class CentralizedDB:
                 intervals = []
                 for earlier, later in zip(order_dates, order_dates[1:]):
                     try:
-                        intervals.append((datetime.strptime(later, "%Y-%m-%d") - datetime.strptime(earlier, "%Y-%m-%d")).days)
+                        intervals.append(
+                            (
+                                datetime.strptime(later, "%Y-%m-%d")
+                                - datetime.strptime(earlier, "%Y-%m-%d")
+                            ).days
+                        )
                     except ValueError:
                         continue
                 avg_interval = sum(intervals) / len(intervals) if intervals else 0.0
 
-            grouped: dict[tuple[int | None, str | None, str | None, str | None], dict[str, Any]] = {}
+            grouped: dict[
+                tuple[int | None, str | None, str | None, str | None], dict[str, Any]
+            ] = {}
             for receipt in receipt_rows:
                 key = (receipt[1], receipt[4], receipt[5], receipt[6])
                 if key not in grouped:
@@ -1587,8 +2332,23 @@ class CentralizedDB:
                 (tracking_id, transit_status, created_at, "Initial status"),
             )
             conn.commit()
-        self.sync_store.enqueue("stock-lifecycle-create", {"tracking_id": tracking_id, "order_ref_no": order_ref_no, "distributor_id": distributor_id, "transit_status": transit_status})
-        self.firebase_sync.push_record({"entity": "order_lifecycle", "tracking_id": tracking_id, "order_ref_no": order_ref_no, "transit_status": transit_status})
+        self.sync_store.enqueue(
+            "stock-lifecycle-create",
+            {
+                "tracking_id": tracking_id,
+                "order_ref_no": order_ref_no,
+                "distributor_id": distributor_id,
+                "transit_status": transit_status,
+            },
+        )
+        self.firebase_sync.push_record(
+            {
+                "entity": "order_lifecycle",
+                "tracking_id": tracking_id,
+                "order_ref_no": order_ref_no,
+                "transit_status": transit_status,
+            }
+        )
         return tracking_id
 
     def get_order_lifecycle_tracking(self, tracking_id: int) -> dict[str, Any] | None:
@@ -1659,8 +2419,12 @@ class CentralizedDB:
                 raise ValueError("Tracking record not found")
 
             status_value = transit_status or current.get("transit_status") or "ORDERED"
-            if status_value == "DELIVERED" and (not pod_number or not actual_delivery_date):
-                raise ValueError("POD number and actual delivery date are required for delivered shipments")
+            if status_value == "DELIVERED" and (
+                not pod_number or not actual_delivery_date
+            ):
+                raise ValueError(
+                    "POD number and actual delivery date are required for delivered shipments"
+                )
 
             conn.execute(
                 """
@@ -1671,28 +2435,69 @@ class CentralizedDB:
                 WHERE tracking_id = ?
                 """,
                 (
-                    order_filled_date if order_filled_date is not None else current.get("order_filled_date"),
-                    sales_order_generated_date if sales_order_generated_date is not None else current.get("sales_order_generated_date"),
-                    payment_status if payment_status is not None else current.get("payment_status"),
-                    commercial_invoice_date if commercial_invoice_date is not None else current.get("commercial_invoice_date"),
-                    dispatch_date if dispatch_date is not None else current.get("dispatch_date"),
-                    expected_delivery_date if expected_delivery_date is not None else current.get("expected_delivery_date"),
-                    actual_delivery_date if actual_delivery_date is not None else current.get("actual_delivery_date"),
+                    order_filled_date
+                    if order_filled_date is not None
+                    else current.get("order_filled_date"),
+                    sales_order_generated_date
+                    if sales_order_generated_date is not None
+                    else current.get("sales_order_generated_date"),
+                    payment_status
+                    if payment_status is not None
+                    else current.get("payment_status"),
+                    commercial_invoice_date
+                    if commercial_invoice_date is not None
+                    else current.get("commercial_invoice_date"),
+                    dispatch_date
+                    if dispatch_date is not None
+                    else current.get("dispatch_date"),
+                    expected_delivery_date
+                    if expected_delivery_date is not None
+                    else current.get("expected_delivery_date"),
+                    actual_delivery_date
+                    if actual_delivery_date is not None
+                    else current.get("actual_delivery_date"),
                     pod_number if pod_number is not None else current.get("pod_number"),
                     status_value,
-                    receiving_status if receiving_status is not None else current.get("receiving_status"),
-                    receiving_condition if receiving_condition is not None else current.get("receiving_condition"),
+                    receiving_status
+                    if receiving_status is not None
+                    else current.get("receiving_status"),
+                    receiving_condition
+                    if receiving_condition is not None
+                    else current.get("receiving_condition"),
                     tracking_id,
                 ),
             )
             conn.execute(
                 "INSERT INTO order_lifecycle_status_history (tracking_id, transit_status, changed_at, pod_number, actual_delivery_date, notes) VALUES (?, ?, ?, ?, ?, ?)",
-                (tracking_id, status_value, datetime.now(timezone.utc).isoformat(), pod_number if pod_number is not None else current.get("pod_number"), actual_delivery_date if actual_delivery_date is not None else current.get("actual_delivery_date"), notes or f"Stage update for {status_value}"),
+                (
+                    tracking_id,
+                    status_value,
+                    datetime.now(timezone.utc).isoformat(),
+                    pod_number if pod_number is not None else current.get("pod_number"),
+                    actual_delivery_date
+                    if actual_delivery_date is not None
+                    else current.get("actual_delivery_date"),
+                    notes or f"Stage update for {status_value}",
+                ),
             )
             conn.commit()
 
-        self.sync_store.enqueue("stock-lifecycle-update", {"tracking_id": tracking_id, "transit_status": status_value, "pod_number": pod_number, "actual_delivery_date": actual_delivery_date})
-        self.firebase_sync.push_record({"entity": "order_lifecycle", "tracking_id": tracking_id, "transit_status": status_value})
+        self.sync_store.enqueue(
+            "stock-lifecycle-update",
+            {
+                "tracking_id": tracking_id,
+                "transit_status": status_value,
+                "pod_number": pod_number,
+                "actual_delivery_date": actual_delivery_date,
+            },
+        )
+        self.firebase_sync.push_record(
+            {
+                "entity": "order_lifecycle",
+                "tracking_id": tracking_id,
+                "transit_status": status_value,
+            }
+        )
         return self.get_order_lifecycle_tracking(tracking_id)
 
     def update_order_lifecycle_status(
@@ -1709,7 +2514,9 @@ class CentralizedDB:
 
         if transit_status == "DELIVERED":
             if not pod_number or not actual_delivery_date:
-                raise ValueError("POD number and actual delivery date are required for delivered shipments")
+                raise ValueError(
+                    "POD number and actual delivery date are required for delivered shipments"
+                )
 
         with sqlite3.connect(self.db_path) as conn:
             current = self.get_order_lifecycle_tracking(tracking_id)
@@ -1722,12 +2529,33 @@ class CentralizedDB:
             changed_at = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "INSERT INTO order_lifecycle_status_history (tracking_id, transit_status, changed_at, pod_number, actual_delivery_date, notes) VALUES (?, ?, ?, ?, ?, ?)",
-                (tracking_id, transit_status, changed_at, pod_number, actual_delivery_date, notes or f"Status changed to {transit_status}"),
+                (
+                    tracking_id,
+                    transit_status,
+                    changed_at,
+                    pod_number,
+                    actual_delivery_date,
+                    notes or f"Status changed to {transit_status}",
+                ),
             )
             conn.commit()
 
-        self.sync_store.enqueue("stock-lifecycle-update", {"tracking_id": tracking_id, "transit_status": transit_status, "pod_number": pod_number, "actual_delivery_date": actual_delivery_date})
-        self.firebase_sync.push_record({"entity": "order_lifecycle", "tracking_id": tracking_id, "transit_status": transit_status})
+        self.sync_store.enqueue(
+            "stock-lifecycle-update",
+            {
+                "tracking_id": tracking_id,
+                "transit_status": transit_status,
+                "pod_number": pod_number,
+                "actual_delivery_date": actual_delivery_date,
+            },
+        )
+        self.firebase_sync.push_record(
+            {
+                "entity": "order_lifecycle",
+                "tracking_id": tracking_id,
+                "transit_status": transit_status,
+            }
+        )
         return self.get_order_lifecycle_tracking(tracking_id)
 
     def record_delivery_receipt(
@@ -1749,21 +2577,32 @@ class CentralizedDB:
         else:
             status_flag = "PARTIALLY_RECEIVED"
 
-        if verification_context and verification_context.get("invoiced_qty") is not None:
+        if (
+            verification_context
+            and verification_context.get("invoiced_qty") is not None
+        ):
             expected_invoiced = float(verification_context["invoiced_qty"])
             if float(invoiced_qty) != expected_invoiced:
                 status_flag = "MISMATCH_FOUND"
 
         with sqlite3.connect(self.db_path) as conn:
             existing_tracking = self.get_order_lifecycle_tracking(tracking_id)
-            if existing_tracking and existing_tracking.get("transit_status") not in {"DELIVERED", "CANCELLED"}:
+            if existing_tracking and existing_tracking.get("transit_status") not in {
+                "DELIVERED",
+                "CANCELLED",
+            }:
                 conn.execute(
                     "UPDATE order_lifecycle_tracking SET transit_status = 'DISPATCHED' WHERE tracking_id = ?",
                     (tracking_id,),
                 )
                 conn.execute(
                     "INSERT INTO order_lifecycle_status_history (tracking_id, transit_status, changed_at, notes) VALUES (?, ?, ?, ?)",
-                    (tracking_id, "DISPATCHED", datetime.now(timezone.utc).isoformat(), "Receipt logged at distributor"),
+                    (
+                        tracking_id,
+                        "DISPATCHED",
+                        datetime.now(timezone.utc).isoformat(),
+                        "Receipt logged at distributor",
+                    ),
                 )
 
             cursor = conn.execute(
@@ -1787,8 +2626,22 @@ class CentralizedDB:
             conn.commit()
             receipt_id = int(cursor.lastrowid)
 
-        self.sync_store.enqueue("stock-receipt-create", {"receipt_id": receipt_id, "tracking_id": tracking_id, "status_flag": status_flag})
-        self.firebase_sync.push_record({"entity": "delivery_receipt", "receipt_id": receipt_id, "tracking_id": tracking_id, "status_flag": status_flag})
+        self.sync_store.enqueue(
+            "stock-receipt-create",
+            {
+                "receipt_id": receipt_id,
+                "tracking_id": tracking_id,
+                "status_flag": status_flag,
+            },
+        )
+        self.firebase_sync.push_record(
+            {
+                "entity": "delivery_receipt",
+                "receipt_id": receipt_id,
+                "tracking_id": tracking_id,
+                "status_flag": status_flag,
+            }
+        )
         return {
             "receipt_id": receipt_id,
             "tracking_id": tracking_id,
@@ -1800,7 +2653,9 @@ class CentralizedDB:
             "status_flag": status_flag,
         }
 
-    def list_delivery_receipts(self, tracking_id: int | None = None) -> list[dict[str, Any]]:
+    def list_delivery_receipts(
+        self, tracking_id: int | None = None
+    ) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             if tracking_id is None:
                 rows = conn.execute(
@@ -1827,7 +2682,9 @@ class CentralizedDB:
             for row in rows
         ]
 
-    def add_record(self, name: str, email: str | None = None, department: str | None = None) -> int:
+    def add_record(
+        self, name: str, email: str | None = None, department: str | None = None
+    ) -> int:
         cleaned_name = (name or "").strip()
         if not cleaned_name:
             raise ValueError("name is required")
@@ -1840,7 +2697,17 @@ class CentralizedDB:
                 """,
                 (cleaned_name, email, department, created_at),
             )
-            self._log_audit_event(conn, "create", "records", record_id=int(cursor.lastrowid), details={"name": cleaned_name, "email": email, "department": department})
+            self._log_audit_event(
+                conn,
+                "create",
+                "records",
+                record_id=int(cursor.lastrowid),
+                details={
+                    "name": cleaned_name,
+                    "email": email,
+                    "department": department,
+                },
+            )
             conn.commit()
             record_id = int(cursor.lastrowid)
 
@@ -1853,12 +2720,14 @@ class CentralizedDB:
                 "created_at": created_at,
             },
         )
-        self.firebase_sync.push_record({
-            "name": name,
-            "email": email,
-            "department": department,
-            "created_at": created_at,
-        })
+        self.firebase_sync.push_record(
+            {
+                "name": name,
+                "email": email,
+                "department": department,
+                "created_at": created_at,
+            }
+        )
         return record_id
 
     def list_records(self) -> list[dict[str, Any]]:
@@ -1899,8 +2768,12 @@ class CentralizedDB:
         assignments = ", ".join(f"{key} = ?" for key in fields)
         values = [*fields.values(), record_id]
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(f"UPDATE records SET {assignments} WHERE id = ?", values)
-            self._log_audit_event(conn, "update", "records", record_id=record_id, details=fields)
+            cursor = conn.execute(
+                f"UPDATE records SET {assignments} WHERE id = ?", values
+            )
+            self._log_audit_event(
+                conn, "update", "records", record_id=record_id, details=fields
+            )
             conn.commit()
 
         for key, value in fields.items():
@@ -1908,7 +2781,9 @@ class CentralizedDB:
                 "update",
                 {"record_id": record_id, "field": key, "value": value},
             )
-            self.firebase_sync.push_record({"record_id": record_id, "field": key, "value": value})
+            self.firebase_sync.push_record(
+                {"record_id": record_id, "field": key, "value": value}
+            )
         return cursor.rowcount > 0
 
     def delete_record(self, record_id: int) -> bool:
@@ -1930,7 +2805,9 @@ class CentralizedDB:
             conn.execute("DELETE FROM secondary_sales")
             conn.commit()
 
-        self.sync_store.enqueue("clear_distributor_contacts", {"tables": ["master_distributors"]})
+        self.sync_store.enqueue(
+            "clear_distributor_contacts", {"tables": ["master_distributors"]}
+        )
         self.firebase_sync.push_record({"action": "clear_distributor_contacts"})
         return int(deleted_distributors)
 
@@ -1940,7 +2817,9 @@ class CentralizedDB:
             deleted_retailers = cursor.rowcount
             conn.commit()
 
-        self.sync_store.enqueue("clear_retailer_contacts", {"tables": ["master_retailers"]})
+        self.sync_store.enqueue(
+            "clear_retailer_contacts", {"tables": ["master_retailers"]}
+        )
         self.firebase_sync.push_record({"action": "clear_retailer_contacts"})
         return int(deleted_retailers)
 
@@ -1972,7 +2851,20 @@ class CentralizedDB:
                     gst_number, credit_limit, balance, status, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, contact_person, phone, email, address, city, state, gst_number, credit_limit, balance, status, created_at),
+                (
+                    name,
+                    contact_person,
+                    phone,
+                    email,
+                    address,
+                    city,
+                    state,
+                    gst_number,
+                    credit_limit,
+                    balance,
+                    status,
+                    created_at,
+                ),
             )
             conn.commit()
             record_id = int(cursor.lastrowid)
@@ -2025,7 +2917,20 @@ class CentralizedDB:
                     gst_number, credit_limit, balance, status, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, contact_person, phone, email, address, city, state, gst_number, credit_limit, balance, status, created_at),
+                (
+                    name,
+                    contact_person,
+                    phone,
+                    email,
+                    address,
+                    city,
+                    state,
+                    gst_number,
+                    credit_limit,
+                    balance,
+                    status,
+                    created_at,
+                ),
             )
             conn.commit()
             record_id = int(cursor.lastrowid)
@@ -2094,7 +2999,14 @@ class CentralizedDB:
             for row in rows
         ]
 
-    def add_distributor_visit_log(self, distributor_id: int, visit_date: str, visit_time: str | None = None, responses: dict[str, Any] | None = None, synced_status: str = "pending") -> int:
+    def add_distributor_visit_log(
+        self,
+        distributor_id: int,
+        visit_date: str,
+        visit_time: str | None = None,
+        responses: dict[str, Any] | None = None,
+        synced_status: str = "pending",
+    ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         payload = json.dumps(responses or {})
         with sqlite3.connect(self.db_path) as conn:
@@ -2103,13 +3015,28 @@ class CentralizedDB:
                 INSERT INTO distributor_visit_logs (distributor_id, visit_date, visit_time, synced_status, responses, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (distributor_id, visit_date, visit_time, synced_status, payload, created_at),
+                (
+                    distributor_id,
+                    visit_date,
+                    visit_time,
+                    synced_status,
+                    payload,
+                    created_at,
+                ),
             )
             conn.commit()
             self._refresh_global_search_index(conn)
             return int(cursor.lastrowid)
 
-    def add_retailer_visit_log(self, retailer_id: int, linked_distributor_id: int | None = None, visit_date: str = "", visit_time: str | None = None, responses: dict[str, Any] | None = None, synced_status: str = "pending") -> int:
+    def add_retailer_visit_log(
+        self,
+        retailer_id: int,
+        linked_distributor_id: int | None = None,
+        visit_date: str = "",
+        visit_time: str | None = None,
+        responses: dict[str, Any] | None = None,
+        synced_status: str = "pending",
+    ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         payload = json.dumps(responses or {})
         with sqlite3.connect(self.db_path) as conn:
@@ -2118,7 +3045,15 @@ class CentralizedDB:
                 INSERT INTO retailer_visit_logs (retailer_id, linked_distributor_id, visit_date, visit_time, synced_status, responses, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (retailer_id, linked_distributor_id, visit_date, visit_time, synced_status, payload, created_at),
+                (
+                    retailer_id,
+                    linked_distributor_id,
+                    visit_date,
+                    visit_time,
+                    synced_status,
+                    payload,
+                    created_at,
+                ),
             )
             conn.commit()
             self._refresh_global_search_index(conn)
@@ -2142,13 +3077,24 @@ class CentralizedDB:
                 INSERT INTO workflow_todo_list (staff_id, party_id, party_type, task_description, is_completed, created_date, completed_timestamp, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (staff_id, party_id, party_type, task_description, int(is_completed), created_date, completed_timestamp, created_at),
+                (
+                    staff_id,
+                    party_id,
+                    party_type,
+                    task_description,
+                    int(is_completed),
+                    created_date,
+                    completed_timestamp,
+                    created_at,
+                ),
             )
             conn.commit()
             self._refresh_global_search_index(conn)
             return int(cursor.lastrowid)
 
-    def list_workflow_todos_for_party(self, party_id: int, party_type: str) -> list[dict[str, Any]]:
+    def list_workflow_todos_for_party(
+        self, party_id: int, party_type: str
+    ) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT task_id, staff_id, party_id, party_type, task_description, is_completed, created_date, completed_timestamp, created_at FROM workflow_todo_list WHERE party_id = ? AND party_type = ? ORDER BY created_date, task_id",
@@ -2189,9 +3135,14 @@ class CentralizedDB:
             "created_at": row[8],
         }
 
-    def generate_workflow_todos_from_pjp(self, plan_id: int, staff_id: int = 1) -> list[int]:
+    def generate_workflow_todos_from_pjp(
+        self, plan_id: int, staff_id: int = 1
+    ) -> list[int]:
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("SELECT planned_distributor_ids, planned_retailer_ids FROM weekly_pjp_plans WHERE plan_id = ?", (plan_id,)).fetchone()
+            row = conn.execute(
+                "SELECT planned_distributor_ids, planned_retailer_ids FROM weekly_pjp_plans WHERE plan_id = ?",
+                (plan_id,),
+            ).fetchone()
         if not row:
             return []
         planned_distributors = json.loads(row[0] or "[]") if row[0] else []
@@ -2200,10 +3151,18 @@ class CentralizedDB:
         default_tasks = ["Stock Audit", "Payment Discussion", "Order Collection"]
         for party_id in planned_distributors:
             for description in default_tasks:
-                task_ids.append(self.create_workflow_todo_task(staff_id, int(party_id), "distributor", description))
+                task_ids.append(
+                    self.create_workflow_todo_task(
+                        staff_id, int(party_id), "distributor", description
+                    )
+                )
         for party_id in planned_retailers:
             for description in default_tasks:
-                task_ids.append(self.create_workflow_todo_task(staff_id, int(party_id), "retailer", description))
+                task_ids.append(
+                    self.create_workflow_todo_task(
+                        staff_id, int(party_id), "retailer", description
+                    )
+                )
         return task_ids
 
     def validate_gps_coordinates(
@@ -2214,8 +3173,17 @@ class CentralizedDB:
         expected_longitude: float | None,
         radius_meters: float = 100.0,
     ) -> dict[str, Any]:
-        if captured_latitude is None or captured_longitude is None or expected_latitude is None or expected_longitude is None:
-            return {"valid": False, "geofenced_status": "OUT_OF_BOUNDS", "distance_meters": None}
+        if (
+            captured_latitude is None
+            or captured_longitude is None
+            or expected_latitude is None
+            or expected_longitude is None
+        ):
+            return {
+                "valid": False,
+                "geofenced_status": "OUT_OF_BOUNDS",
+                "distance_meters": None,
+            }
         try:
             from math import asin, cos, radians, sin, sqrt
 
@@ -2224,15 +3192,32 @@ class CentralizedDB:
             lat2 = radians(float(expected_latitude))
             delta_lat = radians(float(expected_latitude) - float(captured_latitude))
             delta_lon = radians(float(expected_longitude) - float(captured_longitude))
-            a = sin(delta_lat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(delta_lon / 2) ** 2
+            a = (
+                sin(delta_lat / 2) ** 2
+                + cos(lat1) * cos(lat2) * sin(delta_lon / 2) ** 2
+            )
             c = 2 * asin(sqrt(a))
             distance_meters = earth_radius * c
             matched = distance_meters <= float(radius_meters)
-            return {"valid": matched, "geofenced_status": "MATCHED" if matched else "OUT_OF_BOUNDS", "distance_meters": round(distance_meters, 2)}
+            return {
+                "valid": matched,
+                "geofenced_status": "MATCHED" if matched else "OUT_OF_BOUNDS",
+                "distance_meters": round(distance_meters, 2),
+            }
         except Exception:
-            return {"valid": False, "geofenced_status": "OUT_OF_BOUNDS", "distance_meters": None}
+            return {
+                "valid": False,
+                "geofenced_status": "OUT_OF_BOUNDS",
+                "distance_meters": None,
+            }
 
-    def cache_gps_coordinate_offline(self, visit_log_id: int, captured_latitude: float, captured_longitude: float, device_timestamp: str) -> int:
+    def cache_gps_coordinate_offline(
+        self,
+        visit_log_id: int,
+        captured_latitude: float,
+        captured_longitude: float,
+        device_timestamp: str,
+    ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
@@ -2240,7 +3225,13 @@ class CentralizedDB:
                 INSERT INTO offline_gps_cache (visit_log_id, captured_latitude, captured_longitude, device_timestamp, created_at)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (visit_log_id, captured_latitude, captured_longitude, device_timestamp, created_at),
+                (
+                    visit_log_id,
+                    captured_latitude,
+                    captured_longitude,
+                    device_timestamp,
+                    created_at,
+                ),
             )
             conn.commit()
             return int(cursor.lastrowid)
@@ -2255,24 +3246,39 @@ class CentralizedDB:
         expected_longitude: float | None = None,
         radius_meters: float = 100.0,
     ) -> int:
-        validation = self.validate_gps_coordinates(captured_latitude, captured_longitude, expected_latitude, expected_longitude, radius_meters)
+        validation = self.validate_gps_coordinates(
+            captured_latitude,
+            captured_longitude,
+            expected_latitude,
+            expected_longitude,
+            radius_meters,
+        )
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO gps_visit_verification_logs (visit_log_id, captured_latitude, captured_longitude, geofenced_status, device_timestamp, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (visit_log_id, captured_latitude, captured_longitude, validation["geofenced_status"], device_timestamp, datetime.now(timezone.utc).isoformat()),
+                (
+                    visit_log_id,
+                    captured_latitude,
+                    captured_longitude,
+                    validation["geofenced_status"],
+                    device_timestamp,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             conn.commit()
-            self.firebase_sync.push_record({
-                "type": "gps_visit_verification",
-                "visit_log_id": visit_log_id,
-                "captured_latitude": captured_latitude,
-                "captured_longitude": captured_longitude,
-                "geofenced_status": validation["geofenced_status"],
-                "device_timestamp": device_timestamp,
-            })
+            self.firebase_sync.push_record(
+                {
+                    "type": "gps_visit_verification",
+                    "visit_log_id": visit_log_id,
+                    "captured_latitude": captured_latitude,
+                    "captured_longitude": captured_longitude,
+                    "geofenced_status": validation["geofenced_status"],
+                    "device_timestamp": device_timestamp,
+                }
+            )
             return int(cursor.lastrowid)
 
     def get_gps_verification_log(self, log_id: int) -> dict[str, Any] | None:
@@ -2293,23 +3299,35 @@ class CentralizedDB:
             "created_at": row[6],
         }
 
-    def validate_distributor_visit_payload(self, responses: dict[str, Any]) -> dict[str, Any]:
+    def validate_distributor_visit_payload(
+        self, responses: dict[str, Any]
+    ) -> dict[str, Any]:
         templates = self.list_distributor_form_fields()
         errors: list[str] = []
         for template in templates:
-            if template.get("is_required") and not str(responses.get(template["field_id"], "")).strip():
+            if (
+                template.get("is_required")
+                and not str(responses.get(template["field_id"], "")).strip()
+            ):
                 errors.append(f"{template['field_label']} is required")
         return {"valid": not errors, "errors": errors}
 
-    def validate_retailer_visit_payload(self, responses: dict[str, Any]) -> dict[str, Any]:
+    def validate_retailer_visit_payload(
+        self, responses: dict[str, Any]
+    ) -> dict[str, Any]:
         templates = self.list_retailer_form_fields()
         errors: list[str] = []
         for template in templates:
-            if template.get("is_required") and not str(responses.get(template["field_id"], "")).strip():
+            if (
+                template.get("is_required")
+                and not str(responses.get(template["field_id"], "")).strip()
+            ):
                 errors.append(f"{template['field_label']} is required")
         return {"valid": not errors, "errors": errors}
 
-    def save_verification_output(self, report_type: str, reference_id: str | None, content: str) -> int:
+    def save_verification_output(
+        self, report_type: str, reference_id: str | None, content: str
+    ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
@@ -2421,7 +3439,15 @@ class CentralizedDB:
     def global_search(self, query: str) -> dict[str, Any]:
         normalized_query = (query or "").strip()
         if not normalized_query:
-            return {"query": normalized_query, "results": {"masters": [], "verifications": [], "visit_logs": [], "analytics": []}}
+            return {
+                "query": normalized_query,
+                "results": {
+                    "masters": [],
+                    "verifications": [],
+                    "visit_logs": [],
+                    "analytics": [],
+                },
+            }
 
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
@@ -2429,7 +3455,12 @@ class CentralizedDB:
                 (normalized_query,),
             ).fetchall()
 
-        results: dict[str, list[dict[str, Any]]] = {"masters": [], "verifications": [], "visit_logs": [], "analytics": []}
+        results: dict[str, list[dict[str, Any]]] = {
+            "masters": [],
+            "verifications": [],
+            "visit_logs": [],
+            "analytics": [],
+        }
         for content, category, source_id, source_table in rows:
             results.setdefault(category, []).append(
                 {
@@ -2445,10 +3476,39 @@ class CentralizedDB:
             with sqlite3.connect(self.db_path) as conn:
                 fallback_rows = conn.execute(
                     "SELECT name, gst_no, zone, region, location, id, 'master' FROM master_distributors WHERE LOWER(COALESCE(name, '')) LIKE ? OR LOWER(COALESCE(gst_no, '')) LIKE ? OR LOWER(COALESCE(zone, '')) LIKE ? OR LOWER(COALESCE(region, '')) LIKE ? OR LOWER(COALESCE(location, '')) LIKE ? UNION ALL SELECT name, gst_no, zone, region, location, id, 'master' FROM master_retailers WHERE LOWER(COALESCE(name, '')) LIKE ? OR LOWER(COALESCE(gst_no, '')) LIKE ? OR LOWER(COALESCE(zone, '')) LIKE ? OR LOWER(COALESCE(region, '')) LIKE ? OR LOWER(COALESCE(location, '')) LIKE ?",
-                    (f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%", f"%{normalized_query.lower()}%"),
+                    (
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                        f"%{normalized_query.lower()}%",
+                    ),
                 ).fetchall()
             for row in fallback_rows:
-                results["masters"].append({"category": "masters", "source_id": row[5], "source_table": "masters", "content": " ".join(filter(None, [str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4])]))})
+                results["masters"].append(
+                    {
+                        "category": "masters",
+                        "source_id": row[5],
+                        "source_table": "masters",
+                        "content": " ".join(
+                            filter(
+                                None,
+                                [
+                                    str(row[0]),
+                                    str(row[1]),
+                                    str(row[2]),
+                                    str(row[3]),
+                                    str(row[4]),
+                                ],
+                            )
+                        ),
+                    }
+                )
 
         return {"query": normalized_query, "results": results}
 
@@ -2471,28 +3531,36 @@ class CentralizedDB:
     def get_morning_suggestion_list(self, current_date: str) -> list[dict[str, Any]]:
         suggestions: list[dict[str, Any]] = []
         with sqlite3.connect(self.db_path) as conn:
-            distributors = conn.execute("SELECT id FROM distributors ORDER BY id").fetchall()
+            distributors = conn.execute(
+                "SELECT id FROM distributors ORDER BY id"
+            ).fetchall()
             retailers = conn.execute("SELECT id FROM retailers ORDER BY id").fetchall()
 
         for (distributor_id,) in distributors:
             last_visit = self.get_last_visit_date("distributor", distributor_id)
-            suggestions.append({
-                "entity_type": "distributor",
-                "entity_id": distributor_id,
-                "last_visit_date": last_visit,
-                "priority_score": self._days_since(last_visit, current_date),
-            })
+            suggestions.append(
+                {
+                    "entity_type": "distributor",
+                    "entity_id": distributor_id,
+                    "last_visit_date": last_visit,
+                    "priority_score": self._days_since(last_visit, current_date),
+                }
+            )
 
         for (retailer_id,) in retailers:
             last_visit = self.get_last_visit_date("retailer", retailer_id)
-            suggestions.append({
-                "entity_type": "retailer",
-                "entity_id": retailer_id,
-                "last_visit_date": last_visit,
-                "priority_score": self._days_since(last_visit, current_date),
-            })
+            suggestions.append(
+                {
+                    "entity_type": "retailer",
+                    "entity_id": retailer_id,
+                    "last_visit_date": last_visit,
+                    "priority_score": self._days_since(last_visit, current_date),
+                }
+            )
 
-        suggestions.sort(key=lambda item: (item["priority_score"], item["entity_type"]), reverse=True)
+        suggestions.sort(
+            key=lambda item: (item["priority_score"], item["entity_type"]), reverse=True
+        )
         return suggestions
 
     def _days_since(self, last_visit: str | None, current_date: str) -> int:
@@ -2505,7 +3573,14 @@ class CentralizedDB:
         except ValueError:
             return 9999
 
-    def create_weekly_pjp_plan(self, week_start_date: str, day_of_week: str, planned_distributor_ids: list[int], planned_retailer_ids: list[int], status: str = "planned") -> int:
+    def create_weekly_pjp_plan(
+        self,
+        week_start_date: str,
+        day_of_week: str,
+        planned_distributor_ids: list[int],
+        planned_retailer_ids: list[int],
+        status: str = "planned",
+    ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
@@ -2513,7 +3588,14 @@ class CentralizedDB:
                 INSERT INTO weekly_pjp_plans (week_start_date, day_of_week, planned_distributor_ids, planned_retailer_ids, status, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (week_start_date, day_of_week, json.dumps(planned_distributor_ids), json.dumps(planned_retailer_ids), status, created_at),
+                (
+                    week_start_date,
+                    day_of_week,
+                    json.dumps(planned_distributor_ids),
+                    json.dumps(planned_retailer_ids),
+                    status,
+                    created_at,
+                ),
             )
             conn.commit()
             self.generate_workflow_todos_from_pjp(int(cursor.lastrowid), staff_id=1)
@@ -2527,9 +3609,24 @@ class CentralizedDB:
         deleted_gps = 0
         deleted_verifications = 0
         with sqlite3.connect(self.db_path) as conn:
-            deleted_todos = int(conn.execute("DELETE FROM workflow_todo_list WHERE created_date < ?", (cutoff_text,)).rowcount)
-            deleted_gps = int(conn.execute("DELETE FROM gps_visit_verification_logs WHERE device_timestamp < ?", (cutoff_dt,)).rowcount)
-            deleted_verifications = int(conn.execute("DELETE FROM verification_outputs WHERE created_at < ?", (cutoff_dt,)).rowcount)
+            deleted_todos = int(
+                conn.execute(
+                    "DELETE FROM workflow_todo_list WHERE created_date < ?",
+                    (cutoff_text,),
+                ).rowcount
+            )
+            deleted_gps = int(
+                conn.execute(
+                    "DELETE FROM gps_visit_verification_logs WHERE device_timestamp < ?",
+                    (cutoff_dt,),
+                ).rowcount
+            )
+            deleted_verifications = int(
+                conn.execute(
+                    "DELETE FROM verification_outputs WHERE created_at < ?",
+                    (cutoff_dt,),
+                ).rowcount
+            )
             conn.commit()
         return {
             "workflow_todos_deleted": deleted_todos,
@@ -2551,13 +3648,26 @@ class CentralizedDB:
                 INSERT INTO dsr_reports (report_date, summary, distributor_visit_count, retailer_visit_count, orders_booked, payments_discussed, feedback_collected, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (report_date, summary or "Auto-generated DSR", distributor_visit_count, retailer_visit_count, orders_booked, payments_discussed, feedback_collected, created_at),
+                (
+                    report_date,
+                    summary or "Auto-generated DSR",
+                    distributor_visit_count,
+                    retailer_visit_count,
+                    orders_booked,
+                    payments_discussed,
+                    feedback_collected,
+                    created_at,
+                ),
             )
             conn.commit()
             return int(cursor.lastrowid)
 
     def _count_visit_logs(self, entity_type: str, report_date: str) -> int:
-        table = "distributor_visit_logs" if entity_type == "distributor" else "retailer_visit_logs"
+        table = (
+            "distributor_visit_logs"
+            if entity_type == "distributor"
+            else "retailer_visit_logs"
+        )
         id_column = "distributor_id" if entity_type == "distributor" else "retailer_id"
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
@@ -2566,7 +3676,9 @@ class CentralizedDB:
             ).fetchone()
         return int(row[0]) if row else 0
 
-    def list_dsr_reports_by_date_range(self, from_date: str, to_date: str) -> list[dict[str, Any]]:
+    def list_dsr_reports_by_date_range(
+        self, from_date: str, to_date: str
+    ) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT report_id, report_date, summary, distributor_visit_count, retailer_visit_count, orders_booked, payments_discussed, feedback_collected, created_at FROM dsr_reports WHERE report_date BETWEEN ? AND ? ORDER BY report_date",
@@ -2587,7 +3699,9 @@ class CentralizedDB:
             for row in rows
         ]
 
-    def export_dsr_report(self, report_id: int, export_format: str = "excel") -> bytes | str:
+    def export_dsr_report(
+        self, report_id: int, export_format: str = "excel"
+    ) -> bytes | str:
         report = self.get_dsr_report(report_id)
         if not report:
             raise ValueError("DSR report not found")
@@ -2624,7 +3738,7 @@ class CentralizedDB:
     def _normalize_text(self, value: Any) -> str:
         if value is None:
             return ""
-        return " ".join(str(value).strip().split()).lower()
+        return " ".join(str(value).strip().split())
 
     def _normalize_gst_no(self, value: Any) -> str | None:
         cleaned = self._normalize_text(value).upper()
@@ -2648,7 +3762,9 @@ class CentralizedDB:
         except (TypeError, ValueError):
             return None
 
-    def _resolve_template_header(self, template_config: dict[str, Any] | None, field_name: str, fallback: str) -> str:
+    def _resolve_template_header(
+        self, template_config: dict[str, Any] | None, field_name: str, fallback: str
+    ) -> str:
         headers = (template_config or {}).get("headers", {})
         if isinstance(headers, dict):
             configured = headers.get(field_name)
@@ -2656,16 +3772,38 @@ class CentralizedDB:
                 return str(configured)
         return fallback
 
-    def _get_row_value(self, row: dict[str, Any], field_name: str, fallback: str, template_config: dict[str, Any] | None = None) -> Any:
-        configured_header = self._resolve_template_header(template_config, field_name, fallback)
+    def _get_row_value(
+        self,
+        row: dict[str, Any],
+        field_name: str,
+        fallback: str,
+        template_config: dict[str, Any] | None = None,
+    ) -> Any:
+        configured_header = self._resolve_template_header(
+            template_config, field_name, fallback
+        )
         candidates = [configured_header, fallback]
         alias_map = {
             "distributor_name": ["Distributor Name", "Distributor", "Name"],
             "distributor_code": ["Distributor Code", "Distributor ID", "Code"],
             "firm_name": ["Firm Name", "Firm"],
             "firm_nick_name": ["Firm nick name", "Firm Nick Name", "Firm Nickname"],
-            "phone_number": ["Phone", "Phone Number", "Mobile Number", "Distributor Mobile Number", "Distributor Phone", "Retailer Mobile Number", "Retailer Phone"],
-            "email": ["Email", "Email Address", "Email id", "Distributor Email", "Retailer Email"],
+            "phone_number": [
+                "Phone",
+                "Phone Number",
+                "Mobile Number",
+                "Distributor Mobile Number",
+                "Distributor Phone",
+                "Retailer Mobile Number",
+                "Retailer Phone",
+            ],
+            "email": [
+                "Email",
+                "Email Address",
+                "Email id",
+                "Distributor Email",
+                "Retailer Email",
+            ],
             "address": ["Address"],
             "pincode": ["Pincode", "Pin Code"],
             "gst_no": ["GSTIN", "GST Number", "GST No", "GST"],
@@ -2674,23 +3812,71 @@ class CentralizedDB:
             "payment_terms": ["Payment Terms", "Payment Term"],
             "birthday": ["Birthday"],
             "anniversary": ["Anniversary"],
-            "secondary_distributor_name": ["Secondary Distributor Name", "Secondary Contact Name", "Secondary Distributor", "Secondary Contact"],
-            "secondary_distributor_phone_number": ["Secondary Distributor Mobile Number", "Secondary Distributor Phone", "Secondary Contact Mobile Number", "Secondary Contact Phone"],
-            "secondary_distributor_birthday": ["Secondary Distributor Birthday", "Secondary Contact Birthday"],
-            "secondary_distributor_anniversary": ["Secondary Distributor Anniversary", "Secondary Contact Anniversary"],
-            "sales_executive_name": ["Sales Executive Name", "Sales Executive", "Sales Executive Contact Name"],
-            "sales_executive_phone_number": ["Sales Executive Mobile Number", "Sales Executive Phone", "Sales Executive Phone Number"],
-            "sales_executive_email": ["Sales Executive Email", "Sales Executive Email Address"],
+            "secondary_distributor_name": [
+                "Secondary Distributor Name",
+                "Secondary Contact Name",
+                "Secondary Distributor",
+                "Secondary Contact",
+            ],
+            "secondary_distributor_phone_number": [
+                "Secondary Distributor Mobile Number",
+                "Secondary Distributor Phone",
+                "Secondary Contact Mobile Number",
+                "Secondary Contact Phone",
+            ],
+            "secondary_distributor_birthday": [
+                "Secondary Distributor Birthday",
+                "Secondary Contact Birthday",
+            ],
+            "secondary_distributor_anniversary": [
+                "Secondary Distributor Anniversary",
+                "Secondary Contact Anniversary",
+            ],
+            "sales_executive_name": [
+                "Sales Executive Name",
+                "Sales Executive",
+                "Sales Executive Contact Name",
+            ],
+            "sales_executive_phone_number": [
+                "Sales Executive Mobile Number",
+                "Sales Executive Phone",
+                "Sales Executive Phone Number",
+            ],
+            "sales_executive_email": [
+                "Sales Executive Email",
+                "Sales Executive Email Address",
+            ],
             "sales_executive_birthday": ["Sales Executive Birthday"],
             "sales_executive_anniversary": ["Sales Executive Anniversary"],
             "retailer_name": ["Retailer Name", "Retailer", "Name"],
-            "linked_distributor_gst_or_name": ["Distributor", "Linked Distributor GST or Name", "Distributor Name", "Distributor GST or Name"],
+            "linked_distributor_gst_or_name": [
+                "Distributor",
+                "Linked Distributor GST or Name",
+                "Distributor Name",
+                "Distributor GST or Name",
+            ],
             "retailer_code": ["Retailer Code", "Retailer ID", "Code"],
             "location": ["Location", "City"],
-            "secondary_retailer_name": ["Secondary Retailer Name", "Secondary Contact Name", "Secondary Retailer", "Secondary Contact"],
-            "secondary_retailer_phone_number": ["Secondary Retailer Mobile Number", "Secondary Retailer Phone", "Secondary Contact Mobile Number", "Secondary Contact Phone"],
-            "secondary_retailer_birthday": ["Secondary Retailer Birthday", "Secondary Contact Birthday"],
-            "secondary_retailer_anniversary": ["Secondary Retailer Anniversary", "Secondary Contact Anniversary"],
+            "secondary_retailer_name": [
+                "Secondary Retailer Name",
+                "Secondary Contact Name",
+                "Secondary Retailer",
+                "Secondary Contact",
+            ],
+            "secondary_retailer_phone_number": [
+                "Secondary Retailer Mobile Number",
+                "Secondary Retailer Phone",
+                "Secondary Contact Mobile Number",
+                "Secondary Contact Phone",
+            ],
+            "secondary_retailer_birthday": [
+                "Secondary Retailer Birthday",
+                "Secondary Contact Birthday",
+            ],
+            "secondary_retailer_anniversary": [
+                "Secondary Retailer Anniversary",
+                "Secondary Contact Anniversary",
+            ],
         }
         candidates.extend(alias_map.get(field_name, []))
 
@@ -2735,14 +3921,18 @@ class CentralizedDB:
                 "min bale pack",
                 "bale size",
             }
-            matched_signals = sum(1 for value in normalized_columns if value in signal_columns)
+            matched_signals = sum(
+                1 for value in normalized_columns if value in signal_columns
+            )
             if matched_signals < 3:
                 dataframe = pd.read_excel(file_path, sheet_name=0, header=0)
         dataframe = dataframe.fillna("")
         dataframe.columns = [str(col).strip() for col in dataframe.columns]
         return dataframe
 
-    def _build_template_dataframe(self, template_config: dict[str, Any] | None, template_type: str) -> pd.DataFrame:
+    def _build_template_dataframe(
+        self, template_config: dict[str, Any] | None, template_type: str
+    ) -> pd.DataFrame:
         import pandas as pd
 
         default_templates = {
@@ -2871,10 +4061,20 @@ class CentralizedDB:
         merged_config = dict(selected)
         if template_config:
             header_map = template_config.get("headers", {}) or {}
-            merged_config["label_map"] = {key: header_map.get(key, selected["label_map"].get(key, key)) for key in selected["headers"]}
-        return pd.DataFrame([{column: "" for column in selected["headers"]}]).rename(columns=merged_config["label_map"])
+            merged_config["label_map"] = {
+                key: header_map.get(key, selected["label_map"].get(key, key))
+                for key in selected["headers"]
+            }
+        return pd.DataFrame([{column: "" for column in selected["headers"]}]).rename(
+            columns=merged_config["label_map"]
+        )
 
-    def _generate_template_bytes(self, template_type: str, template_config: dict[str, Any] | None = None, file_format: str = "excel") -> bytes:
+    def _generate_template_bytes(
+        self,
+        template_type: str,
+        template_config: dict[str, Any] | None = None,
+        file_format: str = "excel",
+    ) -> bytes:
         dataframe = self._build_template_dataframe(template_config, template_type)
         if file_format.lower() == "csv":
             output = StringIO()
@@ -2884,13 +4084,25 @@ class CentralizedDB:
         dataframe.to_excel(output, index=False)
         return output.getvalue()
 
-    def generate_master_template(self, template_type: str, file_format: str = "excel", template_config: dict[str, Any] | None = None) -> bytes:
+    def generate_master_template(
+        self,
+        template_type: str,
+        file_format: str = "excel",
+        template_config: dict[str, Any] | None = None,
+    ) -> bytes:
         allowed_types = {"distributors", "retailers", "articles"}
         if template_type not in allowed_types:
             raise ValueError(f"Unsupported template type: {template_type}")
-        return self._generate_template_bytes(template_type, template_config=template_config, file_format=file_format)
+        return self._generate_template_bytes(
+            template_type, template_config=template_config, file_format=file_format
+        )
 
-    def bulk_upload_masters(self, master_type: str, path: str | Path, template_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    def bulk_upload_masters(
+        self,
+        master_type: str,
+        path: str | Path,
+        template_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if master_type not in {"distributors", "retailers"}:
             raise ValueError("Unsupported master type")
 
@@ -2904,50 +4116,214 @@ class CentralizedDB:
             if master_type == "distributors":
                 for row in rows:
                     try:
-                        name = self._canonicalize_known_master_name(self._get_row_value(row, "distributor_name", "Distributor Name", template_config))
-                        name_key = self._normalize_text(name)
+                        name = self._canonicalize_known_master_name(
+                            self._get_row_value(
+                                row,
+                                "distributor_name",
+                                "Distributor Name",
+                                template_config,
+                            )
+                        )
+                        name_key = self._normalize_text(name).lower()
                         if not name_key:
                             skipped += 1
                             continue
-                        distributor_code = self._normalize_text(self._get_row_value(row, "distributor_code", "Distributor Code", template_config))
-                        firm_name = self._canonicalize_known_master_name(self._get_row_value(row, "firm_name", "Firm Name", template_config))
-                        firm_nick_name = self._normalize_text(self._get_row_value(row, "firm_nick_name", "Firm nick name", template_config))
+                        distributor_code = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "distributor_code",
+                                "Distributor Code",
+                                template_config,
+                            )
+                        )
+                        firm_name = self._canonicalize_known_master_name(
+                            self._get_row_value(
+                                row, "firm_name", "Firm Name", template_config
+                            )
+                        )
+                        firm_nick_name = self._normalize_text(
+                            self._get_row_value(
+                                row, "firm_nick_name", "Firm nick name", template_config
+                            )
+                        )
                         if not firm_nick_name:
-                            firm_nick_name = self._normalize_text(self._get_row_value(row, "firm_nick_name", "Firm Nick Name", template_config))
-                        gst_no = self._normalize_gst_no(self._get_row_value(row, "gst_no", "GST Number", template_config))
+                            firm_nick_name = self._normalize_text(
+                                self._get_row_value(
+                                    row,
+                                    "firm_nick_name",
+                                    "Firm Nick Name",
+                                    template_config,
+                                )
+                            )
+                        gst_no = self._normalize_gst_no(
+                            self._get_row_value(
+                                row, "gst_no", "GST Number", template_config
+                            )
+                        )
                         if not gst_no:
-                            gst_no = self._normalize_gst_no(self._get_row_value(row, "gst_no", "GSTIN", template_config))
+                            gst_no = self._normalize_gst_no(
+                                self._get_row_value(
+                                    row, "gst_no", "GSTIN", template_config
+                                )
+                            )
 
-                        distribution_state = self._normalize_text(self._get_row_value(row, "distribution_state", "Distribution State", template_config))
-                        distribution_area = self._normalize_text(self._get_row_value(row, "distribution_area", "Distribution Area", template_config))
-                        zone = distribution_state or self._normalize_text(self._get_row_value(row, "zone", "Zone", template_config))
-                        region = distribution_area or self._normalize_text(self._get_row_value(row, "region", "Region", template_config))
+                        distribution_state = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "distribution_state",
+                                "Distribution State",
+                                template_config,
+                            )
+                        )
+                        distribution_area = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "distribution_area",
+                                "Distribution Area",
+                                template_config,
+                            )
+                        )
+                        zone = distribution_state or self._normalize_text(
+                            self._get_row_value(row, "zone", "Zone", template_config)
+                        )
+                        region = distribution_area or self._normalize_text(
+                            self._get_row_value(
+                                row, "region", "Region", template_config
+                            )
+                        )
 
-                        location = self._normalize_text(self._get_row_value(row, "location", "Location", template_config))
-                        pincode = self._normalize_text(self._get_row_value(row, "pincode", "Pincode", template_config))
-                        payment_terms = self._normalize_text(self._get_row_value(row, "payment_terms", "Payment Terms", template_config))
-                        birthday = self._normalize_text(self._get_row_value(row, "birthday", "Birthday", template_config))
-                        anniversary = self._normalize_text(self._get_row_value(row, "anniversary", "Anniversary", template_config))
-                        secondary_distributor_name = self._normalize_text(self._get_row_value(row, "secondary_distributor_name", "Secondary Distributor Name", template_config))
-                        secondary_distributor_phone_number = self._normalize_text(self._get_row_value(row, "secondary_distributor_phone_number", "Secondary Distributor Mobile Number", template_config))
-                        secondary_distributor_birthday = self._normalize_text(self._get_row_value(row, "secondary_distributor_birthday", "Secondary Distributor Birthday", template_config))
-                        secondary_distributor_anniversary = self._normalize_text(self._get_row_value(row, "secondary_distributor_anniversary", "Secondary Distributor Anniversary", template_config))
-                        sales_executive_name = self._normalize_text(self._get_row_value(row, "sales_executive_name", "Sales Executive Name", template_config))
-                        sales_executive_phone_number = self._normalize_text(self._get_row_value(row, "sales_executive_phone_number", "Sales Executive Mobile Number", template_config))
-                        sales_executive_email = self._normalize_text(self._get_row_value(row, "sales_executive_email", "Sales Executive Email", template_config))
-                        sales_executive_birthday = self._normalize_text(self._get_row_value(row, "sales_executive_birthday", "Sales Executive Birthday", template_config))
-                        sales_executive_anniversary = self._normalize_text(self._get_row_value(row, "sales_executive_anniversary", "Sales Executive Anniversary", template_config))
+                        location = self._normalize_text(
+                            self._get_row_value(
+                                row, "location", "Location", template_config
+                            )
+                        )
+                        pincode = self._normalize_text(
+                            self._get_row_value(
+                                row, "pincode", "Pincode", template_config
+                            )
+                        )
+                        payment_terms = self._normalize_text(
+                            self._get_row_value(
+                                row, "payment_terms", "Payment Terms", template_config
+                            )
+                        )
+                        birthday = self._normalize_text(
+                            self._get_row_value(
+                                row, "birthday", "Birthday", template_config
+                            )
+                        )
+                        anniversary = self._normalize_text(
+                            self._get_row_value(
+                                row, "anniversary", "Anniversary", template_config
+                            )
+                        )
+                        secondary_distributor_name = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_distributor_name",
+                                "Secondary Distributor Name",
+                                template_config,
+                            )
+                        )
+                        secondary_distributor_phone_number = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_distributor_phone_number",
+                                "Secondary Distributor Mobile Number",
+                                template_config,
+                            )
+                        )
+                        secondary_distributor_birthday = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_distributor_birthday",
+                                "Secondary Distributor Birthday",
+                                template_config,
+                            )
+                        )
+                        secondary_distributor_anniversary = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_distributor_anniversary",
+                                "Secondary Distributor Anniversary",
+                                template_config,
+                            )
+                        )
+                        sales_executive_name = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_name",
+                                "Sales Executive Name",
+                                template_config,
+                            )
+                        )
+                        sales_executive_phone_number = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_phone_number",
+                                "Sales Executive Mobile Number",
+                                template_config,
+                            )
+                        )
+                        sales_executive_email = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_email",
+                                "Sales Executive Email",
+                                template_config,
+                            )
+                        )
+                        sales_executive_birthday = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_birthday",
+                                "Sales Executive Birthday",
+                                template_config,
+                            )
+                        )
+                        sales_executive_anniversary = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_anniversary",
+                                "Sales Executive Anniversary",
+                                template_config,
+                            )
+                        )
 
-                        credit_limit = self._coerce_float(self._get_row_value(row, "credit_limit", "Credit Limit", template_config))
-                        phone_number = self._normalize_text(self._get_row_value(row, "phone_number", "Mobile Number", template_config))
+                        credit_limit = self._coerce_float(
+                            self._get_row_value(
+                                row, "credit_limit", "Credit Limit", template_config
+                            )
+                        )
+                        phone_number = self._normalize_text(
+                            self._get_row_value(
+                                row, "phone_number", "Mobile Number", template_config
+                            )
+                        )
                         if not phone_number:
-                            phone_number = self._normalize_text(self._get_row_value(row, "phone_number", "Phone", template_config))
+                            phone_number = self._normalize_text(
+                                self._get_row_value(
+                                    row, "phone_number", "Phone", template_config
+                                )
+                            )
 
-                        email = self._normalize_text(self._get_row_value(row, "email", "Email id", template_config))
+                        email = self._normalize_text(
+                            self._get_row_value(
+                                row, "email", "Email id", template_config
+                            )
+                        )
                         if not email:
-                            email = self._normalize_text(self._get_row_value(row, "email", "Email", template_config))
+                            email = self._normalize_text(
+                                self._get_row_value(
+                                    row, "email", "Email", template_config
+                                )
+                            )
 
-                        address = self._normalize_text(self._get_row_value(row, "address", "Address", template_config))
+                        address = self._normalize_text(
+                            self._get_row_value(
+                                row, "address", "Address", template_config
+                            )
+                        )
                         if gst_no and len(gst_no) < 10:
                             errors.append(f"Invalid GST for distributor {name}")
                             skipped += 1
@@ -2957,9 +4333,13 @@ class CentralizedDB:
                             "SELECT id, distributor_id, name, gst_no, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(name) = ?",
                             (name_key,),
                         ).fetchall()
-                        existing_by_name = existing_by_name_rows[0] if existing_by_name_rows else None
+                        existing_by_name = (
+                            existing_by_name_rows[0] if existing_by_name_rows else None
+                        )
                         if len(existing_by_name_rows) > 1:
-                            errors.append(f"Ambiguous distributor name match for '{name}'. Use unique GST Number.")
+                            errors.append(
+                                f"Ambiguous distributor name match for '{name}'. Use unique GST Number."
+                            )
                             skipped += 1
                             continue
 
@@ -2969,9 +4349,13 @@ class CentralizedDB:
                                 "SELECT id, distributor_id, name, gst_no, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(COALESCE(gst_no, '')) = ?",
                                 (gst_no.lower(),),
                             ).fetchall()
-                        existing_by_gst = existing_by_gst_rows[0] if existing_by_gst_rows else None
+                        existing_by_gst = (
+                            existing_by_gst_rows[0] if existing_by_gst_rows else None
+                        )
                         if len(existing_by_gst_rows) > 1:
-                            errors.append(f"Ambiguous GST match for distributor '{name}' with GST '{gst_no}'.")
+                            errors.append(
+                                f"Ambiguous GST match for distributor '{name}' with GST '{gst_no}'."
+                            )
                             skipped += 1
                             continue
 
@@ -2981,44 +4365,75 @@ class CentralizedDB:
                                 "SELECT id, distributor_id, name, gst_no, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(COALESCE(distributor_id, '')) = ?",
                                 (distributor_code.lower(),),
                             ).fetchall()
-                        existing_by_code = existing_by_code_rows[0] if existing_by_code_rows else None
+                        existing_by_code = (
+                            existing_by_code_rows[0] if existing_by_code_rows else None
+                        )
                         if len(existing_by_code_rows) > 1:
-                            errors.append(f"Ambiguous distributor code match for '{distributor_code}'.")
+                            errors.append(
+                                f"Ambiguous distributor code match for '{distributor_code}'."
+                            )
                             skipped += 1
                             continue
 
-                        if existing_by_code is not None and existing_by_name is not None and int(existing_by_code[0]) != int(existing_by_name[0]):
-                            errors.append(f"Conflict for distributor '{name}': name and distributor code point to different records.")
+                        if (
+                            existing_by_code is not None
+                            and existing_by_name is not None
+                            and int(existing_by_code[0]) != int(existing_by_name[0])
+                        ):
+                            errors.append(
+                                f"Conflict for distributor '{name}': name and distributor code point to different records."
+                            )
                             skipped += 1
                             continue
 
-                        if existing_by_code is not None and existing_by_gst is not None and int(existing_by_code[0]) != int(existing_by_gst[0]):
-                            errors.append(f"Conflict for distributor code '{distributor_code}': GST points to a different record.")
+                        if (
+                            existing_by_code is not None
+                            and existing_by_gst is not None
+                            and int(existing_by_code[0]) != int(existing_by_gst[0])
+                        ):
+                            errors.append(
+                                f"Conflict for distributor code '{distributor_code}': GST points to a different record."
+                            )
                             skipped += 1
                             continue
 
-                        if existing_by_name is not None and existing_by_gst is not None and int(existing_by_name[0]) != int(existing_by_gst[0]):
-                            errors.append(f"Conflict for distributor '{name}': name and GST point to different records.")
+                        if (
+                            existing_by_name is not None
+                            and existing_by_gst is not None
+                            and int(existing_by_name[0]) != int(existing_by_gst[0])
+                        ):
+                            errors.append(
+                                f"Conflict for distributor '{name}': name and GST point to different records."
+                            )
                             skipped += 1
                             continue
 
                         if existing_by_name is not None and gst_no:
-                            existing_name_gst = self._normalize_gst_no(existing_by_name[3])
+                            existing_name_gst = self._normalize_gst_no(
+                                existing_by_name[3]
+                            )
                             if existing_name_gst and existing_name_gst != gst_no:
-                                errors.append(f"Conflict for distributor '{name}': existing GST '{existing_name_gst}' differs from uploaded GST '{gst_no}'.")
+                                errors.append(
+                                    f"Conflict for distributor '{name}': existing GST '{existing_name_gst}' differs from uploaded GST '{gst_no}'."
+                                )
                                 skipped += 1
                                 continue
 
                         if existing_by_gst is not None and not distributor_code:
                             existing_gst_name = self._normalize_text(existing_by_gst[2])
-                            if existing_gst_name and existing_gst_name.lower() != name.lower():
+                            if (
+                                existing_gst_name
+                                and existing_gst_name.lower() != name.lower()
+                            ):
                                 errors.append(
                                     f"Conflict for GST '{gst_no}': existing distributor '{existing_by_gst[2]}' differs from uploaded '{name}'."
                                 )
                                 skipped += 1
                                 continue
 
-                        existing_row = existing_by_code or existing_by_gst or existing_by_name
+                        existing_row = (
+                            existing_by_code or existing_by_gst or existing_by_name
+                        )
                         if existing_row is not None:
                             distributor_id = int(existing_row[0])
                             updated_code = distributor_code or existing_row[1]
@@ -3036,16 +4451,38 @@ class CentralizedDB:
                             updated_payment_terms = payment_terms or existing_row[13]
                             updated_birthday = birthday or existing_row[14]
                             updated_anniversary = anniversary or existing_row[15]
-                            updated_secondary_distributor_name = secondary_distributor_name or existing_row[16]
-                            updated_secondary_distributor_phone_number = secondary_distributor_phone_number or existing_row[17]
-                            updated_secondary_distributor_birthday = secondary_distributor_birthday or existing_row[18]
-                            updated_secondary_distributor_anniversary = secondary_distributor_anniversary or existing_row[19]
-                            updated_sales_executive_name = sales_executive_name or existing_row[20]
-                            updated_sales_executive_phone_number = sales_executive_phone_number or existing_row[21]
-                            updated_sales_executive_email = sales_executive_email or existing_row[22]
-                            updated_sales_executive_birthday = sales_executive_birthday or existing_row[23]
-                            updated_sales_executive_anniversary = sales_executive_anniversary or existing_row[24]
-                            updated_credit_limit = credit_limit if credit_limit is not None else existing_row[25]
+                            updated_secondary_distributor_name = (
+                                secondary_distributor_name or existing_row[16]
+                            )
+                            updated_secondary_distributor_phone_number = (
+                                secondary_distributor_phone_number or existing_row[17]
+                            )
+                            updated_secondary_distributor_birthday = (
+                                secondary_distributor_birthday or existing_row[18]
+                            )
+                            updated_secondary_distributor_anniversary = (
+                                secondary_distributor_anniversary or existing_row[19]
+                            )
+                            updated_sales_executive_name = (
+                                sales_executive_name or existing_row[20]
+                            )
+                            updated_sales_executive_phone_number = (
+                                sales_executive_phone_number or existing_row[21]
+                            )
+                            updated_sales_executive_email = (
+                                sales_executive_email or existing_row[22]
+                            )
+                            updated_sales_executive_birthday = (
+                                sales_executive_birthday or existing_row[23]
+                            )
+                            updated_sales_executive_anniversary = (
+                                sales_executive_anniversary or existing_row[24]
+                            )
+                            updated_credit_limit = (
+                                credit_limit
+                                if credit_limit is not None
+                                else existing_row[25]
+                            )
                             updated_status = existing_row[26] or "active"
 
                             conn.execute(
@@ -3131,18 +4568,25 @@ class CentralizedDB:
                             payment_terms=payment_terms or None,
                             birthday=birthday or None,
                             anniversary=anniversary or None,
-                            secondary_distributor_name=secondary_distributor_name or None,
-                            secondary_distributor_phone_number=secondary_distributor_phone_number or None,
-                            secondary_distributor_birthday=secondary_distributor_birthday or None,
-                            secondary_distributor_anniversary=secondary_distributor_anniversary or None,
+                            secondary_distributor_name=secondary_distributor_name
+                            or None,
+                            secondary_distributor_phone_number=secondary_distributor_phone_number
+                            or None,
+                            secondary_distributor_birthday=secondary_distributor_birthday
+                            or None,
+                            secondary_distributor_anniversary=secondary_distributor_anniversary
+                            or None,
                             sales_executive_name=sales_executive_name or None,
-                            sales_executive_phone_number=sales_executive_phone_number or None,
+                            sales_executive_phone_number=sales_executive_phone_number
+                            or None,
                             sales_executive_email=sales_executive_email or None,
                             sales_executive_birthday=sales_executive_birthday or None,
-                            sales_executive_anniversary=sales_executive_anniversary or None,
+                            sales_executive_anniversary=sales_executive_anniversary
+                            or None,
                             credit_limit=credit_limit,
                             status="active",
                             conn=conn,
+                            allow_fuzzy=False,
                         )
                         inserted += 1
                     except Exception as exc:  # pragma: no cover - defensive path
@@ -3151,34 +4595,138 @@ class CentralizedDB:
             else:
                 for row in rows:
                     try:
-                        name = self._canonicalize_known_master_name(self._get_row_value(row, "retailer_name", "Retailer Name", template_config))
-                        name_key = self._normalize_text(name)
+                        name = self._canonicalize_known_master_name(
+                            self._get_row_value(
+                                row, "retailer_name", "Retailer Name", template_config
+                            )
+                        )
+                        name_key = self._normalize_text(name).lower()
                         if not name_key:
                             skipped += 1
                             continue
-                        distributor_reference = self._canonicalize_known_master_name(self._get_row_value(row, "linked_distributor_gst_or_name", "Distributor", template_config))
-                        retailer_code = self._normalize_text(self._get_row_value(row, "retailer_code", "Retailer Code", template_config))
-                        location = self._normalize_text(self._get_row_value(row, "location", "Location", template_config))
-                        phone_number = self._normalize_text(self._get_row_value(row, "phone_number", "Phone", template_config))
-                        email = self._normalize_text(self._get_row_value(row, "email", "Email", template_config))
-                        address = self._normalize_text(self._get_row_value(row, "address", "Address", template_config))
-                        gst_no = self._normalize_gst_no(self._get_row_value(row, "gst_no", "GSTIN", template_config))
-                        secondary_retailer_name = self._normalize_text(self._get_row_value(row, "secondary_retailer_name", "Secondary Retailer Name", template_config))
-                        secondary_retailer_phone_number = self._normalize_text(self._get_row_value(row, "secondary_retailer_phone_number", "Secondary Retailer Mobile Number", template_config))
-                        secondary_retailer_birthday = self._normalize_text(self._get_row_value(row, "secondary_retailer_birthday", "Secondary Retailer Birthday", template_config))
-                        secondary_retailer_anniversary = self._normalize_text(self._get_row_value(row, "secondary_retailer_anniversary", "Secondary Retailer Anniversary", template_config))
-                        sales_executive_name = self._normalize_text(self._get_row_value(row, "sales_executive_name", "Sales Executive Name", template_config))
-                        sales_executive_phone_number = self._normalize_text(self._get_row_value(row, "sales_executive_phone_number", "Sales Executive Mobile Number", template_config))
-                        sales_executive_email = self._normalize_text(self._get_row_value(row, "sales_executive_email", "Sales Executive Email", template_config))
-                        sales_executive_birthday = self._normalize_text(self._get_row_value(row, "sales_executive_birthday", "Sales Executive Birthday", template_config))
-                        sales_executive_anniversary = self._normalize_text(self._get_row_value(row, "sales_executive_anniversary", "Sales Executive Anniversary", template_config))
+                        distributor_reference = self._canonicalize_known_master_name(
+                            self._get_row_value(
+                                row,
+                                "linked_distributor_gst_or_name",
+                                "Distributor",
+                                template_config,
+                            )
+                        )
+                        retailer_code = self._normalize_text(
+                            self._get_row_value(
+                                row, "retailer_code", "Retailer Code", template_config
+                            )
+                        )
+                        location = self._normalize_text(
+                            self._get_row_value(
+                                row, "location", "Location", template_config
+                            )
+                        )
+                        phone_number = self._normalize_text(
+                            self._get_row_value(
+                                row, "phone_number", "Phone", template_config
+                            )
+                        )
+                        email = self._normalize_text(
+                            self._get_row_value(row, "email", "Email", template_config)
+                        )
+                        address = self._normalize_text(
+                            self._get_row_value(
+                                row, "address", "Address", template_config
+                            )
+                        )
+                        gst_no = self._normalize_gst_no(
+                            self._get_row_value(row, "gst_no", "GSTIN", template_config)
+                        )
+                        secondary_retailer_name = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_retailer_name",
+                                "Secondary Retailer Name",
+                                template_config,
+                            )
+                        )
+                        secondary_retailer_phone_number = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_retailer_phone_number",
+                                "Secondary Retailer Mobile Number",
+                                template_config,
+                            )
+                        )
+                        secondary_retailer_birthday = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_retailer_birthday",
+                                "Secondary Retailer Birthday",
+                                template_config,
+                            )
+                        )
+                        secondary_retailer_anniversary = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "secondary_retailer_anniversary",
+                                "Secondary Retailer Anniversary",
+                                template_config,
+                            )
+                        )
+                        sales_executive_name = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_name",
+                                "Sales Executive Name",
+                                template_config,
+                            )
+                        )
+                        sales_executive_phone_number = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_phone_number",
+                                "Sales Executive Mobile Number",
+                                template_config,
+                            )
+                        )
+                        sales_executive_email = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_email",
+                                "Sales Executive Email",
+                                template_config,
+                            )
+                        )
+                        sales_executive_birthday = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_birthday",
+                                "Sales Executive Birthday",
+                                template_config,
+                            )
+                        )
+                        sales_executive_anniversary = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "sales_executive_anniversary",
+                                "Sales Executive Anniversary",
+                                template_config,
+                            )
+                        )
                         distributor = None
                         if distributor_reference:
-                            distributor = self.get_master_distributor_by_name(distributor_reference)
+                            distributor = self.get_master_distributor_by_name(
+                                distributor_reference
+                            )
                             if distributor is None:
-                                distributor = self._find_master_distributor_by_gst_or_name(distributor_reference)
+                                distributor = (
+                                    self._find_master_distributor_by_gst_or_name(
+                                        distributor_reference
+                                    )
+                                )
                         if distributor is None:
-                            distributor = self._find_or_create_distributor_from_reference(distributor_reference)
+                            distributor = (
+                                self._find_or_create_distributor_from_reference(
+                                    distributor_reference
+                                )
+                            )
                         if distributor is None:
                             skipped += 1
                             continue
@@ -3242,14 +4790,19 @@ class CentralizedDB:
                             address=address or None,
                             gst_no=gst_no or None,
                             secondary_retailer_name=secondary_retailer_name or None,
-                            secondary_retailer_phone_number=secondary_retailer_phone_number or None,
-                            secondary_retailer_birthday=secondary_retailer_birthday or None,
-                            secondary_retailer_anniversary=secondary_retailer_anniversary or None,
+                            secondary_retailer_phone_number=secondary_retailer_phone_number
+                            or None,
+                            secondary_retailer_birthday=secondary_retailer_birthday
+                            or None,
+                            secondary_retailer_anniversary=secondary_retailer_anniversary
+                            or None,
                             sales_executive_name=sales_executive_name or None,
-                            sales_executive_phone_number=sales_executive_phone_number or None,
+                            sales_executive_phone_number=sales_executive_phone_number
+                            or None,
                             sales_executive_email=sales_executive_email or None,
                             sales_executive_birthday=sales_executive_birthday or None,
-                            sales_executive_anniversary=sales_executive_anniversary or None,
+                            sales_executive_anniversary=sales_executive_anniversary
+                            or None,
                             conn=conn,
                         )
                         inserted += 1
@@ -3257,10 +4810,25 @@ class CentralizedDB:
                         errors.append(str(exc))
                         skipped += 1
 
-        self.firebase_sync.push_record({"type": "bulk_master_upload", "master_type": master_type, "inserted": inserted, "skipped": skipped})
-        return {"inserted": inserted, "updated": updated, "skipped": skipped, "errors": errors, "rows_processed": len(rows)}
+        self.firebase_sync.push_record(
+            {
+                "type": "bulk_master_upload",
+                "master_type": master_type,
+                "inserted": inserted,
+                "skipped": skipped,
+            }
+        )
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "rows_processed": len(rows),
+        }
 
-    def bulk_upload_articles(self, path: str | Path, template_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    def bulk_upload_articles(
+        self, path: str | Path, template_config: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         rows = self._load_rows_from_upload(path)
         inserted = 0
         skipped = 0
@@ -3270,12 +4838,48 @@ class CentralizedDB:
             for row in rows:
                 try:
                     payload = {
-                        "category_name": self._normalize_text(row.get(self._resolve_template_header(template_config, "category_name", "Category"))),
-                        "design_code": self._normalize_text(row.get(self._resolve_template_header(template_config, "design_code", "Design Code"))),
-                        "color_way": self._normalize_text(row.get(self._resolve_template_header(template_config, "color_way", "Colour"))),
-                        "base_rate": self._coerce_float(row.get(self._resolve_template_header(template_config, "base_rate", "Base Rate"))),
-                        "gst_percentage": self._coerce_float(row.get(self._resolve_template_header(template_config, "gst_percentage", "GST %"))),
-                        "pcs_per_bale": self._coerce_float(row.get(self._resolve_template_header(template_config, "pcs_per_bale", "Pcs / Bale"))),
+                        "category_name": self._normalize_text(
+                            row.get(
+                                self._resolve_template_header(
+                                    template_config, "category_name", "Category"
+                                )
+                            )
+                        ),
+                        "design_code": self._normalize_text(
+                            row.get(
+                                self._resolve_template_header(
+                                    template_config, "design_code", "Design Code"
+                                )
+                            )
+                        ),
+                        "color_way": self._normalize_text(
+                            row.get(
+                                self._resolve_template_header(
+                                    template_config, "color_way", "Colour"
+                                )
+                            )
+                        ),
+                        "base_rate": self._coerce_float(
+                            row.get(
+                                self._resolve_template_header(
+                                    template_config, "base_rate", "Base Rate"
+                                )
+                            )
+                        ),
+                        "gst_percentage": self._coerce_float(
+                            row.get(
+                                self._resolve_template_header(
+                                    template_config, "gst_percentage", "GST %"
+                                )
+                            )
+                        ),
+                        "pcs_per_bale": self._coerce_float(
+                            row.get(
+                                self._resolve_template_header(
+                                    template_config, "pcs_per_bale", "Pcs / Bale"
+                                )
+                            )
+                        ),
                     }
                     if not payload["category_name"] and not payload["design_code"]:
                         skipped += 1
@@ -3286,9 +4890,16 @@ class CentralizedDB:
                     errors.append(str(exc))
                     skipped += 1
 
-        return {"inserted": inserted, "skipped": skipped, "errors": errors, "rows_processed": len(rows)}
+        return {
+            "inserted": inserted,
+            "skipped": skipped,
+            "errors": errors,
+            "rows_processed": len(rows),
+        }
 
-    def build_article_master_from_order_sheet(self, path: str | Path, template_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    def build_article_master_from_order_sheet(
+        self, path: str | Path, template_config: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         dataframe = self._load_order_sheet_dataframe(path)
         rows = dataframe.to_dict(orient="records")
         inserted = 0
@@ -3296,17 +4907,42 @@ class CentralizedDB:
         duplicates = 0
         errors: list[str] = []
 
-        category_header = self._resolve_template_header(template_config, "category_name", "Product")
-        design_header = self._resolve_template_header(template_config, "design_code", "Brand")
-        variant_header = self._resolve_template_header(template_config, "variant", "Size")
-        color_header = self._resolve_template_header(template_config, "color_way", "Print Style")
-        base_rate_header = self._resolve_template_header(template_config, "base_rate", "ExMill Price")
-        fallback_base_rate_header = self._resolve_template_header(template_config, "fallback_base_rate", "Selling Price")
-        gst_header = self._resolve_template_header(template_config, "gst_percentage", "GST %")
-        pcs_header = self._resolve_template_header(template_config, "pcs_per_bale", "Min bale pack")
-        fallback_pcs_header = self._resolve_template_header(template_config, "fallback_pcs_per_bale", "Bale Size")
+        category_header = self._resolve_template_header(
+            template_config, "category_name", "Product"
+        )
+        design_header = self._resolve_template_header(
+            template_config, "design_code", "Brand"
+        )
+        variant_header = self._resolve_template_header(
+            template_config, "variant", "Size"
+        )
+        color_header = self._resolve_template_header(
+            template_config, "color_way", "Print Style"
+        )
+        base_rate_header = self._resolve_template_header(
+            template_config, "base_rate", "ExMill Price"
+        )
+        fallback_base_rate_header = self._resolve_template_header(
+            template_config, "fallback_base_rate", "Selling Price"
+        )
+        gst_header = self._resolve_template_header(
+            template_config, "gst_percentage", "GST %"
+        )
+        pcs_header = self._resolve_template_header(
+            template_config, "pcs_per_bale", "Min bale pack"
+        )
+        fallback_pcs_header = self._resolve_template_header(
+            template_config, "fallback_pcs_per_bale", "Bale Size"
+        )
 
-        def _article_key(category_name: str, design_name: str, color_way: str, base_rate: float, gst_percentage: float, pcs_per_bale: float) -> tuple[str, str, str, float, float, float]:
+        def _article_key(
+            category_name: str,
+            design_name: str,
+            color_way: str,
+            base_rate: float,
+            gst_percentage: float,
+            pcs_per_bale: float,
+        ) -> tuple[str, str, str, float, float, float]:
             return (
                 category_name.strip().lower(),
                 design_name.strip().lower(),
@@ -3321,7 +4957,14 @@ class CentralizedDB:
                 "SELECT category_name, design_name, COALESCE(color_way, ''), COALESCE(base_rate, 0), COALESCE(gst_percentage, 0), COALESCE(pcs_per_bale, 0) FROM article_master"
             ).fetchall()
             seen_keys = {
-                _article_key(str(item[0] or ""), str(item[1] or ""), str(item[2] or ""), float(item[3] or 0.0), float(item[4] or 0.0), float(item[5] or 0.0))
+                _article_key(
+                    str(item[0] or ""),
+                    str(item[1] or ""),
+                    str(item[2] or ""),
+                    float(item[3] or 0.0),
+                    float(item[4] or 0.0),
+                    float(item[5] or 0.0),
+                )
                 for item in existing_rows
             }
 
@@ -3337,7 +4980,9 @@ class CentralizedDB:
 
                     base_rate = self._coerce_float(row.get(base_rate_header))
                     if base_rate is None:
-                        base_rate = self._coerce_float(row.get(fallback_base_rate_header))
+                        base_rate = self._coerce_float(
+                            row.get(fallback_base_rate_header)
+                        )
 
                     gst_percentage = self._coerce_float(row.get(gst_header))
                     pcs_per_bale = self._coerce_float(row.get(pcs_header))
@@ -3357,7 +5002,9 @@ class CentralizedDB:
                         skipped += 1
                         continue
 
-                    sanitized_payload = self.article_service.sanitize_article_payload(payload)
+                    sanitized_payload = self.article_service.sanitize_article_payload(
+                        payload
+                    )
                     dedupe_key = _article_key(
                         sanitized_payload["category_name"],
                         sanitized_payload["design_name"],
@@ -3386,7 +5033,9 @@ class CentralizedDB:
             "source": str(Path(path)),
         }
 
-    def _find_master_distributor_by_gst_or_name(self, reference: str) -> dict[str, Any] | None:
+    def _find_master_distributor_by_gst_or_name(
+        self, reference: str
+    ) -> dict[str, Any] | None:
         canonical_reference = self._canonicalize_known_master_name(reference)
         lookup_values = [self._normalize_text(canonical_reference)]
         original_value = self._normalize_text(reference)
@@ -3428,10 +5077,16 @@ class CentralizedDB:
             "created_at": exact[20],
         }
 
-    def _find_or_create_distributor_from_reference(self, reference: str) -> dict[str, Any] | None:
+    def _find_or_create_distributor_from_reference(
+        self, reference: str
+    ) -> dict[str, Any] | None:
         if not self._normalize_text(reference):
             return None
-        return self.get_master_distributor_by_name(reference) or self.add_master_distributor(name=reference, gst_no=None, zone=None, region=None, credit_limit=None)
+        return self.get_master_distributor_by_name(
+            reference
+        ) or self.add_master_distributor(
+            name=reference, gst_no=None, zone=None, region=None, credit_limit=None
+        )
 
     def add_master_distributor(
         self,
@@ -3464,14 +5119,31 @@ class CentralizedDB:
         longitude: float | None = None,
         status: str = "active",
         conn: sqlite3.Connection | None = None,
+        allow_fuzzy: bool = True,
     ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         canonical_name = self._canonicalize_known_master_name(name)
-        canonical_firm_name = self._canonicalize_known_master_name(firm_name) if firm_name is not None else None
+        canonical_firm_name = (
+            self._canonicalize_known_master_name(firm_name)
+            if firm_name is not None
+            else None
+        )
         connection = conn or sqlite3.connect(self.db_path)
         should_close = conn is None
         try:
-            existing_id = self._find_similar_master_entry(connection, "master_distributors", "name", canonical_name)
+            # Prefer exact GST match when GST number is provided
+            if gst_no:
+                gst_row = connection.execute(
+                    "SELECT id FROM master_distributors WHERE LOWER(COALESCE(gst_no, '')) = ? LIMIT 1",
+                    (str(gst_no).lower(),),
+                ).fetchone()
+                if gst_row:
+                    return int(gst_row[0])
+            existing_id = None
+            if allow_fuzzy:
+                existing_id = self._find_similar_master_entry(
+                    connection, "master_distributors", "name", canonical_name
+                )
             if existing_id is not None:
                 return existing_id
 
@@ -3559,8 +5231,13 @@ class CentralizedDB:
             lookup_values.append(original_value)
 
         with sqlite3.connect(self.db_path) as conn:
-            query = "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, zone, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at FROM master_distributors WHERE " + " OR ".join("LOWER(name) = ?" for _ in lookup_values) + " LIMIT 1"
-            row = conn.execute(query, lookup_values).fetchone()
+            query = (
+                "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, zone, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at FROM master_distributors WHERE "
+                + " OR ".join("LOWER(name) = ?" for _ in lookup_values)
+                + " LIMIT 1"
+            )
+            lookup_values_lc = [str(v).lower() for v in lookup_values]
+            row = conn.execute(query, lookup_values_lc).fetchone()
         if row is None:
             return None
         return {
@@ -3953,7 +5630,12 @@ class CentralizedDB:
             conn.commit()
         return imported
 
-    def get_target_variance_summary(self, distributor_id: int | None = None, year: int | None = None, zone: str | None = None) -> dict[str, Any]:
+    def get_target_variance_summary(
+        self,
+        distributor_id: int | None = None,
+        year: int | None = None,
+        zone: str | None = None,
+    ) -> dict[str, Any]:
         query = "SELECT year, month, distributor_id, zone, target_amount, achievement_amount FROM targets_achievements WHERE 1=1"
         params: list[Any] = []
         if distributor_id is not None:
@@ -3976,7 +5658,11 @@ class CentralizedDB:
         for row in rows:
             target_amount = float(row[4])
             achievement_amount = float(row[5])
-            variance_percentage = 0.0 if target_amount == 0 else ((achievement_amount - target_amount) / target_amount) * 100
+            variance_percentage = (
+                0.0
+                if target_amount == 0
+                else ((achievement_amount - target_amount) / target_amount) * 100
+            )
             total_target += target_amount
             total_achievement += achievement_amount
             summary_rows.append(
@@ -3991,7 +5677,11 @@ class CentralizedDB:
                 }
             )
 
-        overall_variance_percentage = 0.0 if total_target == 0 else round(((total_achievement / total_target) * 100) - 100, 2)
+        overall_variance_percentage = (
+            0.0
+            if total_target == 0
+            else round(((total_achievement / total_target) * 100) - 100, 2)
+        )
         return {
             "rows": summary_rows,
             "overall_variance_percentage": round(overall_variance_percentage, 2),
@@ -4043,7 +5733,9 @@ class CentralizedDB:
             conn.commit()
         return imported
 
-    def get_sales_flow_summary(self, distributor_id: int | None = None) -> dict[str, Any]:
+    def get_sales_flow_summary(
+        self, distributor_id: int | None = None
+    ) -> dict[str, Any]:
         with sqlite3.connect(self.db_path) as conn:
             primary_row = conn.execute(
                 "SELECT COALESCE(SUM(quantity), 0) FROM primary_sales WHERE (? IS NULL OR distributor_id = ?)",
@@ -4056,7 +5748,9 @@ class CentralizedDB:
         primary_volume = float(primary_row[0]) if primary_row else 0.0
         secondary_volume = float(secondary_row[0]) if secondary_row else 0.0
         difference = primary_volume - secondary_volume
-        variance_percentage = 0.0 if primary_volume == 0 else ((secondary_volume / primary_volume) * 100)
+        variance_percentage = (
+            0.0 if primary_volume == 0 else ((secondary_volume / primary_volume) * 100)
+        )
         return {
             "primary_volume": round(primary_volume, 2),
             "secondary_volume": round(secondary_volume, 2),
@@ -4066,11 +5760,21 @@ class CentralizedDB:
 
     def get_dashboard_payload(self) -> dict[str, Any]:
         with sqlite3.connect(self.db_path) as conn:
-            distributors_count = conn.execute("SELECT COUNT(*) FROM master_distributors").fetchone()[0]
-            retailers_count = conn.execute("SELECT COUNT(*) FROM master_retailers").fetchone()[0]
-            targets_rows = conn.execute("SELECT COUNT(*) FROM targets_achievements").fetchone()[0]
-            primary_total = conn.execute("SELECT COALESCE(SUM(quantity), 0) FROM primary_sales").fetchone()[0]
-            secondary_total = conn.execute("SELECT COALESCE(SUM(quantity), 0) FROM secondary_sales").fetchone()[0]
+            distributors_count = conn.execute(
+                "SELECT COUNT(*) FROM master_distributors"
+            ).fetchone()[0]
+            retailers_count = conn.execute(
+                "SELECT COUNT(*) FROM master_retailers"
+            ).fetchone()[0]
+            targets_rows = conn.execute(
+                "SELECT COUNT(*) FROM targets_achievements"
+            ).fetchone()[0]
+            primary_total = conn.execute(
+                "SELECT COALESCE(SUM(quantity), 0) FROM primary_sales"
+            ).fetchone()[0]
+            secondary_total = conn.execute(
+                "SELECT COALESCE(SUM(quantity), 0) FROM secondary_sales"
+            ).fetchone()[0]
         return {
             "masters": {
                 "distributors": int(distributors_count),
@@ -4091,10 +5795,16 @@ class CentralizedDB:
     def list_articles_by_category(self) -> list[dict[str, Any]]:
         return self.article_service.list_articles_by_category()
 
-    def sanitize_article_payload(self, payload: dict[str, Any], existing_categories: list[str] | None = None) -> dict[str, Any]:
-        return self.article_service.sanitize_article_payload(payload, existing_categories)
+    def sanitize_article_payload(
+        self, payload: dict[str, Any], existing_categories: list[str] | None = None
+    ) -> dict[str, Any]:
+        return self.article_service.sanitize_article_payload(
+            payload, existing_categories
+        )
 
-    def upsert_business_rule(self, rule_key: str, rule_value: str, is_locked: bool = True) -> int:
+    def upsert_business_rule(
+        self, rule_key: str, rule_value: str, is_locked: bool = True
+    ) -> int:
         cleaned_key = (rule_key or "").strip().lower()
         cleaned_value = (rule_value or "").strip()
         if not cleaned_key:
@@ -4115,7 +5825,9 @@ class CentralizedDB:
                 """,
                 (cleaned_key, cleaned_value, 1 if is_locked else 0, now),
             )
-            row = conn.execute("SELECT id FROM business_rules WHERE rule_key = ?", (cleaned_key,)).fetchone()
+            row = conn.execute(
+                "SELECT id FROM business_rules WHERE rule_key = ?", (cleaned_key,)
+            ).fetchone()
             return int(row[0])
 
     def list_business_rules(self, locked_only: bool = True) -> list[dict[str, Any]]:
@@ -4273,7 +5985,9 @@ class CentralizedDB:
 
     def _read_table_rows(self, table_name: str, columns: list[str]) -> list[list[Any]]:
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(f"SELECT {', '.join(columns)} FROM {table_name}").fetchall()
+            rows = conn.execute(
+                f"SELECT {', '.join(columns)} FROM {table_name}"
+            ).fetchall()
         return [list(row) for row in rows]
 
     def export_master_retailers(self) -> str:
@@ -4305,7 +6019,29 @@ class CentralizedDB:
         )
 
     def export_master_retailers_excel(self) -> bytes:
-        columns = ["id", "retailer_id", "retailer_code", "name", "distributor_id", "location", "phone_number", "email", "address", "gst_no", "secondary_retailer_name", "secondary_retailer_phone_number", "secondary_retailer_birthday", "secondary_retailer_anniversary", "sales_executive_name", "sales_executive_phone_number", "sales_executive_email", "sales_executive_birthday", "sales_executive_anniversary", "status", "created_at"]
+        columns = [
+            "id",
+            "retailer_id",
+            "retailer_code",
+            "name",
+            "distributor_id",
+            "location",
+            "phone_number",
+            "email",
+            "address",
+            "gst_no",
+            "secondary_retailer_name",
+            "secondary_retailer_phone_number",
+            "secondary_retailer_birthday",
+            "secondary_retailer_anniversary",
+            "sales_executive_name",
+            "sales_executive_phone_number",
+            "sales_executive_email",
+            "sales_executive_birthday",
+            "sales_executive_anniversary",
+            "status",
+            "created_at",
+        ]
         rows = self._read_table_rows("master_retailers", columns)
         df = pd.DataFrame(rows, columns=columns)
         buffer = BytesIO()
@@ -4315,17 +6051,43 @@ class CentralizedDB:
     def export_targets_achievements(self) -> str:
         return self.export_table(
             "targets_achievements",
-            ["id", "year", "month", "distributor_id", "zone", "target_amount", "achievement_amount", "created_at"],
+            [
+                "id",
+                "year",
+                "month",
+                "distributor_id",
+                "zone",
+                "target_amount",
+                "achievement_amount",
+                "created_at",
+            ],
         )
 
     def export_primary_sales(self) -> str:
         return self.export_table(
             "primary_sales",
-            ["id", "distributor_id", "invoice_no", "invoice_date", "quantity", "amount", "created_at"],
+            [
+                "id",
+                "distributor_id",
+                "invoice_no",
+                "invoice_date",
+                "quantity",
+                "amount",
+                "created_at",
+            ],
         )
 
     def export_secondary_sales(self) -> str:
         return self.export_table(
             "secondary_sales",
-            ["id", "distributor_id", "retailer_id", "invoice_no", "sale_date", "quantity", "amount", "created_at"],
+            [
+                "id",
+                "distributor_id",
+                "retailer_id",
+                "invoice_no",
+                "sale_date",
+                "quantity",
+                "amount",
+                "created_at",
+            ],
         )

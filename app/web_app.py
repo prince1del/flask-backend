@@ -1,6 +1,9 @@
 ﻿import os
 
-from flask import Flask
+from flask import Flask, request, current_app, render_template_string
+import json
+
+from centralized_db_system.db import CentralizedDB
 
 from app.jwt_service import JWTService
 from app.routes import (
@@ -10,6 +13,7 @@ from app.routes import (
     reports_blueprint,
     schemas_blueprint,
     storage_blueprint,
+    target_achievement_blueprint,
     workspaces_blueprint,
 )
 from app.routes.auth import register_auth_hooks
@@ -30,10 +34,23 @@ def create_app() -> Flask:
     app.register_blueprint(analytics_blueprint)
     app.register_blueprint(reports_blueprint)
     app.register_blueprint(storage_blueprint)
+    app.register_blueprint(target_achievement_blueprint)
 
-    @app.route('/health', methods=['GET'])
+    @app.route("/health", methods=["GET"])
     def health() -> str:
-        return 'OK', 200
+        return "OK", 200
+
+    @app.route("/scheduler", methods=["GET", "POST"])
+    def scheduler() -> str:
+        current_date = request.args.get("current_date") or "2026-06-26"
+        db_path = current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
+        db = CentralizedDB(db_path)
+        suggestions = json.dumps(db.get_morning_suggestion_list(current_date), indent=2)
+        html = render_template_string(
+            "<h1>Morning Suggestions</h1><pre>{{suggestions}}</pre><h2>Weekly PJP Planner</h2>",
+            suggestions=suggestions,
+        )
+        return html
 
     return app
 

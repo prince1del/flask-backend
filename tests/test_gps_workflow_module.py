@@ -5,7 +5,9 @@ from pathlib import Path
 from centralized_db_system.db import CentralizedDB
 
 
-def test_pjp_plan_generates_workflow_todos_and_validates_gps_visit(tmp_path: Path) -> None:
+def test_pjp_plan_generates_workflow_todos_and_validates_gps_visit(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "gps_workflow.sqlite3"))
 
     distributor_id = db.add_master_distributor(
@@ -23,7 +25,9 @@ def test_pjp_plan_generates_workflow_todos_and_validates_gps_visit(tmp_path: Pat
         [],
     )
 
-    tasks = db.list_workflow_todos_for_party(party_id=distributor_id, party_type="distributor")
+    tasks = db.list_workflow_todos_for_party(
+        party_id=distributor_id, party_type="distributor"
+    )
     assert plan_id > 0
     assert any(task["task_description"] == "Stock Audit" for task in tasks)
 
@@ -69,7 +73,9 @@ def test_retention_policy_purges_data_older_than_365_days(tmp_path: Path) -> Non
         created_date=recent_date,
     )
 
-    visit_id = db.add_distributor_visit_log(distributor_id=11, visit_date=old_date, responses={"notes": "old visit"})
+    visit_id = db.add_distributor_visit_log(
+        distributor_id=11, visit_date=old_date, responses={"notes": "old visit"}
+    )
     db.record_gps_visit_verification(
         visit_log_id=visit_id,
         captured_latitude=18.52,
@@ -84,7 +90,13 @@ def test_retention_policy_purges_data_older_than_365_days(tmp_path: Path) -> Non
     db.save_verification_output("recent", "recent-1", "recent report")
 
     with sqlite3.connect(db.db_path) as conn:
-        conn.execute("UPDATE verification_outputs SET created_at = ? WHERE reference_id = ?", ((datetime.now(timezone.utc) - timedelta(days=400)).isoformat(), "legacy-1"))
+        conn.execute(
+            "UPDATE verification_outputs SET created_at = ? WHERE reference_id = ?",
+            (
+                (datetime.now(timezone.utc) - timedelta(days=400)).isoformat(),
+                "legacy-1",
+            ),
+        )
         conn.commit()
 
     removed = db.run_retention_policy(retention_days=365)

@@ -19,7 +19,9 @@ class ArticleMasterService:
         cleaned = " ".join(str(category).strip().split())
         return cleaned.title()
 
-    def _infer_category(self, category: str | None, existing_categories: list[str]) -> str:
+    def _infer_category(
+        self, category: str | None, existing_categories: list[str]
+    ) -> str:
         normalized = self._normalize_category(category)
         if not normalized or normalized == "Uncategorized":
             return "Uncategorized"
@@ -35,10 +37,16 @@ class ArticleMasterService:
                 best_match = existing
         return best_match or normalized
 
-    def sanitize_article_payload(self, payload: dict[str, Any], existing_categories: list[str] | None = None) -> dict[str, Any]:
+    def sanitize_article_payload(
+        self, payload: dict[str, Any], existing_categories: list[str] | None = None
+    ) -> dict[str, Any]:
         existing_categories = existing_categories or []
-        category = self._infer_category(payload.get("category_name"), existing_categories)
-        design_name = str(payload.get("design_name") or payload.get("design_code") or "").strip()
+        category = self._infer_category(
+            payload.get("category_name"), existing_categories
+        )
+        design_name = str(
+            payload.get("design_name") or payload.get("design_code") or ""
+        ).strip()
         color_way = str(payload.get("color_way") or "").strip()
         base_rate = float(payload.get("base_rate") or 0.0)
         gst_percentage = float(payload.get("gst_percentage") or 0.0)
@@ -55,13 +63,22 @@ class ArticleMasterService:
             "status": status,
         }
 
-    def save_article(self, payload: dict[str, Any], conn: sqlite3.Connection | None = None) -> int:
+    def save_article(
+        self, payload: dict[str, Any], conn: sqlite3.Connection | None = None
+    ) -> int:
         connection = conn or sqlite3.connect(self.db_path)
         should_close = conn is None
         try:
-            existing_categories = [row[0] for row in connection.execute("SELECT category_name FROM article_master WHERE status != 'inactive'").fetchall()]
+            existing_categories = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT category_name FROM article_master WHERE status != 'inactive'"
+                ).fetchall()
+            ]
             sanitized = self.sanitize_article_payload(payload, existing_categories)
-            article_id = f"{sanitized['category_name'][:3].upper()}-{uuid4().hex[:10].upper()}"
+            article_id = (
+                f"{sanitized['category_name'][:3].upper()}-{uuid4().hex[:10].upper()}"
+            )
             created_at = datetime.now(timezone.utc).isoformat()
             cursor = connection.execute(
                 """

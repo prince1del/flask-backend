@@ -1,6 +1,6 @@
 import re
 
-f = open('app/web_app.py', 'r', encoding='utf-8')
+f = open("app/web_app.py", "r", encoding="utf-8")
 c = f.read()
 f.close()
 
@@ -152,12 +152,12 @@ RETAILER_DOWNLOAD_TEMPLATE = """
 '''
 
 # Add routes before return app
-c = c.replace('    return app', new_routes + '    return app', 1)
+c = c.replace("    return app", new_routes + "    return app", 1)
 
 # Add template before REPORTS_TEMPLATE
 c = c.replace('REPORTS_TEMPLATE = """', new_template + 'REPORTS_TEMPLATE = """', 1)
 
-f = open('app/web_app.py', 'w', encoding='utf-8')
+f = open("app/web_app.py", "w", encoding="utf-8")
 f.write(c)
 f.close()
-print('Done! Routes and template added.')
+print("Done! Routes and template added.")

@@ -81,7 +81,9 @@ def database_admin() -> str:
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
         if action == "backup":
-            backup_path = db.backup_database(Path("instance") / "backups" / "centralized_db_backup.sqlite3")
+            backup_path = db.backup_database(
+                Path("instance") / "backups" / "centralized_db_backup.sqlite3"
+            )
             backup_message = f"Backup created at {backup_path}"
         elif action == "restore":
             restore_path = (request.form.get("restore_path") or "").strip()
@@ -94,7 +96,9 @@ def database_admin() -> str:
             else:
                 restore_message = "Please provide a backup file path"
         elif action == "cleanup":
-            cleanup_dir = (request.form.get("cleanup_dir") or "").strip() or "instance/verification_uploads"
+            cleanup_dir = (
+                request.form.get("cleanup_dir") or ""
+            ).strip() or "instance/verification_uploads"
             removed = db.cleanup_temp_uploads(cleanup_dir)
             cleanup_message = f"Removed {removed} stale files from {cleanup_dir}"
 

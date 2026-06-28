@@ -26,7 +26,9 @@ class StorageProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def create_folder(self, folder_name: str, parent_folder: str | None = None) -> dict[str, Any]:
+    def create_folder(
+        self, folder_name: str, parent_folder: str | None = None
+    ) -> dict[str, Any]:
         """Create folder in storage."""
         raise NotImplementedError
 

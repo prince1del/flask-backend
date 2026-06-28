@@ -22,7 +22,9 @@ class GoogleDriveProvider(StorageProvider):
             from google.oauth2.credentials import Credentials
             from googleapiclient.discovery import build
         except ImportError as exc:
-            raise RuntimeError("google-auth and google-api-python-client are required for Google Drive integration") from exc
+            raise RuntimeError(
+                "google-auth and google-api-python-client are required for Google Drive integration"
+            ) from exc
 
         if isinstance(oauth_token, str):
             oauth_token = json.loads(oauth_token)
@@ -42,7 +44,15 @@ class GoogleDriveProvider(StorageProvider):
             metadata["parents"] = [target_folder]
         media = MediaFileUpload(file_path, resumable=True)
         try:
-            file = self.service.files().create(body=metadata, media_body=media, fields="id,name,mimeType,size,modifiedTime").execute()
+            file = (
+                self.service.files()
+                .create(
+                    body=metadata,
+                    media_body=media,
+                    fields="id,name,mimeType,size,modifiedTime",
+                )
+                .execute()
+            )
             return file
         except Exception as exc:
             raise RuntimeError(f"Google Drive upload failed: {exc}") from exc
@@ -52,7 +62,9 @@ class GoogleDriveProvider(StorageProvider):
         try:
             from googleapiclient.http import MediaIoBaseDownload
         except ImportError as exc:
-            raise RuntimeError("google-api-python-client is required for Google Drive downloads") from exc
+            raise RuntimeError(
+                "google-api-python-client is required for Google Drive downloads"
+            ) from exc
 
         request = self.service.files().get_media(fileId=file_id)
         with io.FileIO(target_path, "wb") as fh:
@@ -76,18 +88,33 @@ class GoogleDriveProvider(StorageProvider):
         if folder_path:
             query = f"{folder_path!r} in parents and trashed = false"
         try:
-            response = self.service.files().list(q=query, pageSize=200, fields="files(id,name,mimeType,modifiedTime,size,parents)").execute()
+            response = (
+                self.service.files()
+                .list(
+                    q=query,
+                    pageSize=200,
+                    fields="files(id,name,mimeType,modifiedTime,size,parents)",
+                )
+                .execute()
+            )
             return response.get("files", [])
         except Exception as exc:
             raise RuntimeError(f"Google Drive list_files failed: {exc}") from exc
 
-    def create_folder(self, folder_name: str, parent_folder: str | None = None) -> dict[str, Any]:
+    def create_folder(
+        self, folder_name: str, parent_folder: str | None = None
+    ) -> dict[str, Any]:
         """Create folder in Google Drive."""
-        metadata = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
+        metadata = {
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder",
+        }
         if parent_folder:
             metadata["parents"] = [parent_folder]
         try:
-            folder = self.service.files().create(body=metadata, fields="id,name").execute()
+            folder = (
+                self.service.files().create(body=metadata, fields="id,name").execute()
+            )
             return folder
         except Exception as exc:
             raise RuntimeError(f"Google Drive create_folder failed: {exc}") from exc
@@ -97,7 +124,16 @@ class GoogleDriveProvider(StorageProvider):
         file = self.service.files().get(fileId=file_id, fields="parents").execute()
         previous_parents = ",".join(file.get("parents", []))
         try:
-            updated = self.service.files().update(fileId=file_id, addParents=target_folder, removeParents=previous_parents, fields="id,parents").execute()
+            updated = (
+                self.service.files()
+                .update(
+                    fileId=file_id,
+                    addParents=target_folder,
+                    removeParents=previous_parents,
+                    fields="id,parents",
+                )
+                .execute()
+            )
             return updated
         except Exception as exc:
             raise RuntimeError(f"Google Drive move failed: {exc}") from exc
@@ -105,7 +141,11 @@ class GoogleDriveProvider(StorageProvider):
     def copy(self, file_id: str, target_folder: str) -> dict[str, Any]:
         """Copy file to another folder."""
         try:
-            copied = self.service.files().copy(fileId=file_id, body={"parents": [target_folder]}).execute()
+            copied = (
+                self.service.files()
+                .copy(fileId=file_id, body={"parents": [target_folder]})
+                .execute()
+            )
             return copied
         except Exception as exc:
             raise RuntimeError(f"Google Drive copy failed: {exc}") from exc
@@ -113,7 +153,11 @@ class GoogleDriveProvider(StorageProvider):
     def rename(self, file_id: str, new_name: str) -> dict[str, Any]:
         """Rename file."""
         try:
-            renamed = self.service.files().update(fileId=file_id, body={"name": new_name}, fields="id,name").execute()
+            renamed = (
+                self.service.files()
+                .update(fileId=file_id, body={"name": new_name}, fields="id,name")
+                .execute()
+            )
             return renamed
         except Exception as exc:
             raise RuntimeError(f"Google Drive rename failed: {exc}") from exc
@@ -125,7 +169,13 @@ class GoogleDriveProvider(StorageProvider):
     def get_file_metadata(self, file_id: str) -> dict[str, Any]:
         """Get file metadata from Google Drive."""
         try:
-            metadata = self.service.files().get(fileId=file_id, fields="id,name,mimeType,modifiedTime,size,parents").execute()
+            metadata = (
+                self.service.files()
+                .get(
+                    fileId=file_id, fields="id,name,mimeType,modifiedTime,size,parents"
+                )
+                .execute()
+            )
             return metadata
         except Exception as exc:
             raise RuntimeError(f"Google Drive get_file_metadata failed: {exc}") from exc

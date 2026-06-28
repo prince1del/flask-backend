@@ -9,15 +9,40 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, Response, jsonify, redirect, render_template_string, request, session, url_for
+from flask import (
+    Blueprint,
+    Response,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
 
 from centralized_db_system.bale_to_pieces import calculate_bale_to_pieces
 from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
 from app.routes.auth import require_jwt_auth
-from app.three_step_verification import _extract_pdf_text, _parse_pdf_table_like_text, compare_step1, compare_step2, compare_step3, run_full_verification
-from app.utils import detect_upload_file_type, expected_upload_format, infer_ai_intent, infer_distributor_name, stage_label_for_key
-from app.verification import parse_distributor_fields_from_text, parse_retailer_fields_from_text
+from app.three_step_verification import (
+    _extract_pdf_text,
+    _parse_pdf_table_like_text,
+    compare_step1,
+    compare_step2,
+    compare_step3,
+    run_full_verification,
+)
+from app.utils import (
+    detect_upload_file_type,
+    expected_upload_format,
+    infer_ai_intent,
+    infer_distributor_name,
+    stage_label_for_key,
+)
+from app.verification import (
+    parse_distributor_fields_from_text,
+    parse_retailer_fields_from_text,
+)
 
 
 data_blueprint = Blueprint("data", __name__)
@@ -142,11 +167,20 @@ HTML_TEMPLATE = """
 
 
 def _db_path() -> str:
-    return "centralized_db.sqlite3"
+    try:
+        from flask import current_app
+
+        return current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
+    except Exception:
+        return "centralized_db.sqlite3"
 
 
 def _get_verification_upload_dir() -> Path:
-    upload_root = Path("app/instance/verification_uploads") if Path("app/instance/verification_uploads").exists() else Path("instance/verification_uploads")
+    upload_root = (
+        Path("app/instance/verification_uploads")
+        if Path("app/instance/verification_uploads").exists()
+        else Path("instance/verification_uploads")
+    )
     upload_root.mkdir(parents=True, exist_ok=True)
     session_id = session.get("verification_session_id") or str(uuid.uuid4())
     session["verification_session_id"] = session_id
@@ -190,7 +224,10 @@ def bulk_upload() -> tuple[Response, int] | str:
 
     uploaded_file = request.files.get("file")
     if uploaded_file is None or uploaded_file.filename == "":
-        return jsonify({"status": "error", "message": "No file part in the request"}), 400
+        return (
+            jsonify({"status": "error", "message": "No file part in the request"}),
+            400,
+        )
 
     filename = uploaded_file.filename or ""
     master_type = (request.form.get("master_type") or "distributors").strip().lower()
@@ -218,7 +255,10 @@ def bulk_upload() -> tuple[Response, int] | str:
     try:
         content = uploaded_file.read()
         if not content:
-            return jsonify({"status": "error", "message": "Uploaded file is empty"}), 400
+            return (
+                jsonify({"status": "error", "message": "Uploaded file is empty"}),
+                400,
+            )
 
         if suffix in supported_suffixes:
             temp_suffix = suffix or ".xlsx"
@@ -235,6 +275,7 @@ def bulk_upload() -> tuple[Response, int] | str:
             handle.write(content)
             temp_path = handle.name
 
+        # On Windows the temporary file must be closed before other libraries read it.
         if temp_suffix == ".pdf":
             try:
                 extracted_text = _extract_pdf_text(temp_path)
@@ -245,10 +286,11 @@ def bulk_upload() -> tuple[Response, int] | str:
                     "parsed_fields": parsed_data,
                 }
                 if master_type == "distributors":
-                    distributor_fields = parse_distributor_fields_from_text(extracted_text)
+                    distributor_fields = parse_distributor_fields_from_text(
+                        extracted_text
+                    )
                     if distributor_fields.get("name"):
-                        db_path = Path(__file__).resolve().parent.parent.parent / "centralized_db.sqlite3"
-                        db = CentralizedDB(str(db_path))
+                        db = CentralizedDB(_db_path())
                         inserted_id = db.add_master_distributor(
                             name=distributor_fields["name"],
                             distributor_code=distributor_fields.get("distributor_code"),
@@ -257,13 +299,29 @@ def bulk_upload() -> tuple[Response, int] | str:
                             gst_no=distributor_fields.get("gst_no"),
                             zone=distributor_fields.get("zone"),
                             region=distributor_fields.get("region"),
-                            credit_limit=distributor_fields.get("credit_limit") if isinstance(distributor_fields.get("credit_limit"), (int, float)) else None,
+                            credit_limit=distributor_fields.get("credit_limit")
+                            if isinstance(
+                                distributor_fields.get("credit_limit"), (int, float)
+                            )
+                            else None,
                         )
                         connection = sqlite3.connect(db.db_path)
                         try:
                             connection.execute(
-                                "UPDATE master_distributors SET phone_number = ?, email = ?, address = ? WHERE id = ?",
+                                "UPDATE master_distributors SET name = ?, firm_name = ?, firm_nick_name = ?, gst_no = ?, zone = ?, region = ?, credit_limit = ?, phone_number = ?, email = ?, address = ? WHERE id = ?",
                                 (
+                                    distributor_fields.get("name"),
+                                    distributor_fields.get("firm_name"),
+                                    distributor_fields.get("firm_nick_name"),
+                                    distributor_fields.get("gst_no"),
+                                    distributor_fields.get("zone"),
+                                    distributor_fields.get("region"),
+                                    distributor_fields.get("credit_limit")
+                                    if isinstance(
+                                        distributor_fields.get("credit_limit"),
+                                        (int, float),
+                                    )
+                                    else None,
                                     distributor_fields.get("phone_number"),
                                     distributor_fields.get("email"),
                                     distributor_fields.get("address"),
@@ -277,18 +335,25 @@ def bulk_upload() -> tuple[Response, int] | str:
                 elif master_type == "retailers":
                     retailer_fields = parse_retailer_fields_from_text(extracted_text)
                     if retailer_fields.get("name"):
-                        db_path = Path(__file__).resolve().parent.parent.parent / "centralized_db.sqlite3"
-                        db = CentralizedDB(str(db_path))
+                        db = CentralizedDB(_db_path())
                         distributor = None
                         reference = retailer_fields.get("distributor_reference")
                         if reference:
                             distributor = db.get_master_distributor_by_name(reference)
                             if distributor is None:
-                                distributor = db._find_master_distributor_by_gst_or_name(reference)
+                                distributor = (
+                                    db._find_master_distributor_by_gst_or_name(
+                                        reference
+                                    )
+                                )
                         if distributor is None and reference:
-                            distributor = db._find_or_create_distributor_from_reference(reference)
+                            distributor = db._find_or_create_distributor_from_reference(
+                                reference
+                            )
                         if distributor is None:
-                            distributor = db._find_or_create_distributor_from_reference(retailer_fields.get("name", ""))
+                            distributor = db._find_or_create_distributor_from_reference(
+                                retailer_fields.get("name", "")
+                            )
                         if distributor is not None:
                             inserted_id = db.add_master_retailer(
                                 name=retailer_fields["name"],
@@ -299,8 +364,10 @@ def bulk_upload() -> tuple[Response, int] | str:
                             connection = sqlite3.connect(db.db_path)
                             try:
                                 connection.execute(
-                                    "UPDATE master_retailers SET phone_number = ?, email = ?, address = ?, gst_no = ? WHERE id = ?",
+                                    "UPDATE master_retailers SET name = ?, location = ?, phone_number = ?, email = ?, address = ?, gst_no = ? WHERE id = ?",
                                     (
+                                        retailer_fields.get("name"),
+                                        retailer_fields.get("location"),
                                         retailer_fields.get("phone_number"),
                                         retailer_fields.get("email"),
                                         retailer_fields.get("address"),
@@ -313,53 +380,87 @@ def bulk_upload() -> tuple[Response, int] | str:
                                 connection.close()
                             parsed_payload["persisted_retailer_id"] = inserted_id
             except Exception:
-                parsed_payload = {"file_type": "pdf", "text_preview": "", "parsed_fields": {}}
+                parsed_payload = {
+                    "file_type": "pdf",
+                    "text_preview": "",
+                    "parsed_fields": {},
+                }
 
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            return jsonify({
-                "status": "success",
-                "message": f"Received PDF file {filename}; PDF uploads are accepted and queued for future processing",
-                "rows": 0,
-                "inserted": 1 if ((master_type == "distributors" and parsed_payload.get("persisted_distributor_id")) or (master_type == "retailers" and parsed_payload.get("persisted_retailer_id"))) else 0,
-                "updated": 0,
-                "skipped": 0,
-                "errors": [],
-                "file_type": "pdf",
-                "parsed_data": parsed_payload,
-            }), 200
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Received PDF file {filename}; PDF uploads are accepted and queued for future processing",
+                        "rows": 0,
+                        "inserted": 1
+                        if (
+                            (
+                                master_type == "distributors"
+                                and parsed_payload.get("persisted_distributor_id")
+                            )
+                            or (
+                                master_type == "retailers"
+                                and parsed_payload.get("persisted_retailer_id")
+                            )
+                        )
+                        else 0,
+                        "updated": 0,
+                        "skipped": 0,
+                        "errors": [],
+                        "file_type": "pdf",
+                        "parsed_data": parsed_payload,
+                    }
+                ),
+                200,
+            )
 
         if temp_suffix in {".bin", ".txt", ".json", ".xml"}:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            return jsonify({
-                "status": "success",
-                "message": f"Received file {filename}; upload accepted for future processing",
-                "rows": 0,
-                "inserted": 0,
-                "updated": 0,
-                "skipped": 0,
-                "errors": [],
-                "file_type": suffix.lstrip(".") or "unknown",
-            }), 200
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Received file {filename}; upload accepted for future processing",
+                        "rows": 0,
+                        "inserted": 0,
+                        "updated": 0,
+                        "skipped": 0,
+                        "errors": [],
+                        "file_type": suffix.lstrip(".") or "unknown",
+                    }
+                ),
+                200,
+            )
 
         try:
-            db_path = Path(__file__).resolve().parent.parent.parent / "centralized_db.sqlite3"
-            result = CentralizedDB(str(db_path)).bulk_upload_masters(master_type, temp_path)
+            db_path = (
+                Path(__file__).resolve().parent.parent.parent / "centralized_db.sqlite3"
+            )
+            result = CentralizedDB(str(db_path)).bulk_upload_masters(
+                master_type, temp_path
+            )
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-        return jsonify({
-            "status": "success",
-            "message": f"Successfully processed {result['rows_processed']} rows from {filename}",
-            "rows": int(result["rows_processed"]),
-            "inserted": int(result["inserted"]),
-            "updated": int(result.get("updated", 0)),
-            "skipped": int(result["skipped"]),
-            "errors": result.get("errors", []),
-            "file_type": suffix.lstrip(".") if suffix else "unknown",
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "message": f"Successfully processed {result['rows_processed']} rows from {filename}",
+                    "rows": int(result["rows_processed"]),
+                    "inserted": int(result["inserted"]),
+                    "updated": int(result.get("updated", 0)),
+                    "skipped": int(result["skipped"]),
+                    "errors": result.get("errors", []),
+                    "file_type": suffix.lstrip(".") if suffix else "unknown",
+                }
+            ),
+            200,
+        )
     except Exception as exc:
         return jsonify({"status": "error", "message": str(exc)}), 500
 
@@ -421,11 +522,22 @@ def contacts_import_export() -> str:
 def import_contacts() -> tuple[Response, int]:
     uploaded_file = request.files.get("file")
     if uploaded_file is None or uploaded_file.filename == "":
-        return jsonify({"status": "error", "message": "No file part in the request"}), 400
+        return (
+            jsonify({"status": "error", "message": "No file part in the request"}),
+            400,
+        )
 
     master_type = (request.form.get("master_type") or "distributors").strip().lower()
     if master_type not in {"distributors", "retailers"}:
-        return jsonify({"status": "error", "message": "Unsupported contact type. Use distributors or retailers."}), 400
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Unsupported contact type. Use distributors or retailers.",
+                }
+            ),
+            400,
+        )
 
     filename = uploaded_file.filename or ""
     suffix = Path(filename).suffix.lower()
@@ -446,15 +558,34 @@ def import_contacts() -> tuple[Response, int]:
     }
 
     if suffix == ".pdf" or "pdf" in content_type:
-        return jsonify({"status": "error", "message": "PDF is not allowed. Please upload CSV or Excel file."}), 400
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "PDF is not allowed. Please upload CSV or Excel file.",
+                }
+            ),
+            400,
+        )
 
     if suffix not in allowed_suffixes and content_type not in excel_csv_content_types:
-        return jsonify({"status": "error", "message": "Unsupported file format. Please upload CSV or Excel file."}), 400
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Unsupported file format. Please upload CSV or Excel file.",
+                }
+            ),
+            400,
+        )
 
     try:
         content = uploaded_file.read()
         if not content:
-            return jsonify({"status": "error", "message": "Uploaded file is empty"}), 400
+            return (
+                jsonify({"status": "error", "message": "Uploaded file is empty"}),
+                400,
+            )
 
         temp_suffix = suffix if suffix in allowed_suffixes else ".xlsx"
         with tempfile.NamedTemporaryFile(suffix=temp_suffix, delete=False) as handle:
@@ -462,23 +593,32 @@ def import_contacts() -> tuple[Response, int]:
             temp_path = handle.name
 
         try:
-            db_path = Path(__file__).resolve().parent.parent.parent / "centralized_db.sqlite3"
-            result = CentralizedDB(str(db_path)).bulk_upload_masters(master_type, temp_path)
+            db_path = (
+                Path(__file__).resolve().parent.parent.parent / "centralized_db.sqlite3"
+            )
+            result = CentralizedDB(str(db_path)).bulk_upload_masters(
+                master_type, temp_path
+            )
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-        return jsonify({
-            "status": "success",
-            "message": f"Successfully processed {result['rows_processed']} rows from {filename} for {master_type}",
-            "master_type": master_type,
-            "rows": int(result["rows_processed"]),
-            "inserted": int(result.get("inserted", 0)),
-            "updated": int(result.get("updated", 0)),
-            "skipped": int(result.get("skipped", 0)),
-            "errors": result.get("errors", []),
-            "file_type": suffix.lstrip(".") if suffix else "unknown",
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "message": f"Successfully processed {result['rows_processed']} rows from {filename} for {master_type}",
+                    "master_type": master_type,
+                    "rows": int(result["rows_processed"]),
+                    "inserted": int(result.get("inserted", 0)),
+                    "updated": int(result.get("updated", 0)),
+                    "skipped": int(result.get("skipped", 0)),
+                    "errors": result.get("errors", []),
+                    "file_type": suffix.lstrip(".") if suffix else "unknown",
+                }
+            ),
+            200,
+        )
     except Exception as exc:
         return jsonify({"status": "error", "message": str(exc)}), 500
 
@@ -491,7 +631,9 @@ def download_master_template(master_type: str) -> Response:
         return jsonify({"status": "error", "message": "Unsupported format"}), 400
 
     try:
-        payload = CentralizedDB(_db_path()).generate_master_template(master_type, file_format=file_format)
+        payload = CentralizedDB(_db_path()).generate_master_template(
+            master_type, file_format=file_format
+        )
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
 
@@ -503,7 +645,9 @@ def download_master_template(master_type: str) -> Response:
         extension = "xlsx"
 
     response = Response(payload, mimetype=mimetype)
-    response.headers["Content-Disposition"] = f"attachment; filename={master_type}_template.{extension}"
+    response.headers[
+        "Content-Disposition"
+    ] = f"attachment; filename={master_type}_template.{extension}"
     return response
 
 
@@ -513,10 +657,14 @@ def index() -> str:
     progress_summary = None
     search_query = request.args.get("q", "") if request.method == "GET" else ""
     search_results = None
-    locked_rules_summary = json.dumps(CentralizedDB(_db_path()).list_business_rules(locked_only=True), indent=2)
+    locked_rules_summary = json.dumps(
+        CentralizedDB(_db_path()).list_business_rules(locked_only=True), indent=2
+    )
     if request.method == "POST":
         db = CentralizedDB(_db_path())
-        workflow_action = (request.form.get("workflow_action") or "run_all").strip().lower()
+        workflow_action = (
+            (request.form.get("workflow_action") or "run_all").strip().lower()
+        )
         distributor_name = (request.form.get("distributor_name") or "").strip()
         files = {
             "order_file": request.files.get("order_file"),
@@ -540,9 +688,16 @@ def index() -> str:
             "stage2": {"order_file", "filled_file"},
             "stage3": {"filled_file", "sales_order_file"},
             "stage4": {"sales_order_file", "invoice_file"},
-            "run_all": {"order_file", "filled_file", "sales_order_file", "invoice_file"},
+            "run_all": {
+                "order_file",
+                "filled_file",
+                "sales_order_file",
+                "invoice_file",
+            },
         }
-        permitted_keys = stage_upload_map.get(workflow_action, stage_upload_map["run_all"])
+        permitted_keys = stage_upload_map.get(
+            workflow_action, stage_upload_map["run_all"]
+        )
         persisted_upload_ids: list[int] = []
 
         for key, uploaded_file in files.items():
@@ -553,16 +708,25 @@ def index() -> str:
 
             suffix = Path(uploaded_file.filename).suffix.lower()
             content_type = (uploaded_file.mimetype or "").lower()
-            detected_file_type = detect_upload_file_type(uploaded_file.filename, content_type)
+            detected_file_type = detect_upload_file_type(
+                uploaded_file.filename, content_type
+            )
             expected_format = expected_upload_format(key)
-            if expected_format["extensions"] and suffix not in expected_format["extensions"] and content_type not in expected_format["content_types"]:
-                report = json.dumps({
-                    "status": "error",
-                    "message": f"{key} must be uploaded in the expected file format",
-                    "expected_extensions": sorted(expected_format["extensions"]),
-                    "received_extension": suffix,
-                    "received_content_type": content_type,
-                }, indent=2)
+            if (
+                expected_format["extensions"]
+                and suffix not in expected_format["extensions"]
+                and content_type not in expected_format["content_types"]
+            ):
+                report = json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"{key} must be uploaded in the expected file format",
+                        "expected_extensions": sorted(expected_format["extensions"]),
+                        "received_extension": suffix,
+                        "received_content_type": content_type,
+                    },
+                    indent=2,
+                )
                 progress_summary = "Upload rejected because the file type does not match the required format."
                 return render_template_string(
                     HTML_TEMPLATE,
@@ -579,7 +743,9 @@ def index() -> str:
             target_path = upload_dir / f"{key}_{safe_name}"
             uploaded_file.save(target_path)
             stored_files[key] = str(target_path)
-            inferred_distributor_name = infer_distributor_name(key, safe_name, explicit_name=distributor_name)
+            inferred_distributor_name = infer_distributor_name(
+                key, safe_name, explicit_name=distributor_name
+            )
             stored_metadata[key] = {
                 "stage": stage_label_for_key(key),
                 "file_type": detected_file_type,
@@ -589,7 +755,8 @@ def index() -> str:
             }
             try:
                 upload_record_id = db.save_distributor_order_upload(
-                    verification_session_id=session.get("verification_session_id") or "",
+                    verification_session_id=session.get("verification_session_id")
+                    or "",
                     distributor_name=inferred_distributor_name,
                     stage_key=key,
                     file_type=detected_file_type,
@@ -606,8 +773,14 @@ def index() -> str:
         session["verification_file_metadata"] = stored_metadata
         session.modified = True
 
-        uploaded_count = sum(1 for key in ["order_file", "filled_file", "sales_order_file", "invoice_file"] if stored_files.get(key))
-        progress_lines = [f"Captured files ({uploaded_count}/4): {', '.join(sorted([key for key in stored_files if stored_files.get(key)])) if stored_files else 'none'}"]
+        uploaded_count = sum(
+            1
+            for key in ["order_file", "filled_file", "sales_order_file", "invoice_file"]
+            if stored_files.get(key)
+        )
+        progress_lines = [
+            f"Captured files ({uploaded_count}/4): {', '.join(sorted([key for key in stored_files if stored_files.get(key)])) if stored_files else 'none'}"
+        ]
         step_labels = {
             "order_file": "Order sheet",
             "filled_file": "Order filled",
@@ -622,7 +795,9 @@ def index() -> str:
         if next_step:
             progress_lines.append(f"Next step: upload {next_step}")
         else:
-            progress_lines.append("All four files are captured. Verification can now run.")
+            progress_lines.append(
+                "All four files are captured. Verification can now run."
+            )
         if stored_metadata:
             readable_metadata = "; ".join(
                 f"{key} -> {meta.get('stage')} [{meta.get('file_type')}] {meta.get('filename')} ({meta.get('distributor_name') or 'unassigned'})"
@@ -637,106 +812,191 @@ def index() -> str:
         current_msg = "No files uploaded"
         if workflow_action == "stage1":
             current_status = "stage-1-saved"
-            current_msg = "Common order sheet saved. Distributor files can be attached next."
+            current_msg = (
+                "Common order sheet saved. Distributor files can be attached next."
+            )
             report_payload = {
                 "status": current_status,
                 "message": current_msg,
-                "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
+                "uploaded_files": sorted(
+                    [key for key in stored_files if stored_files.get(key)]
+                ),
                 "uploaded_documents": stored_metadata,
                 "next_step": next_step,
             }
             if stored_files.get("order_file"):
-                report_payload["step1"] = {"status": "saved", "reason": "common_order_sheet_attached"}
+                report_payload["step1"] = {
+                    "status": "saved",
+                    "reason": "common_order_sheet_attached",
+                }
             report = json.dumps(report_payload, indent=2)
         elif workflow_action == "stage2":
             if stored_files.get("order_file") and stored_files.get("filled_file"):
                 try:
-                    step1_result = compare_step1(stored_files.get("order_file"), stored_files.get("filled_file"))
+                    step1_result = compare_step1(
+                        stored_files.get("order_file"), stored_files.get("filled_file")
+                    )
                 except Exception as exc:
                     step1_result = {"status": "error", "error": str(exc)}
                 current_status = "stage-2-checked"
-                current_msg = "Distributor filled order checked against the common order sheet."
-                report = json.dumps({
-                    "status": current_status,
-                    "message": current_msg,
-                    "step1": step1_result,
-                    "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                    "uploaded_documents": stored_metadata,
-                    "next_step": next_step,
-                }, indent=2)
+                current_msg = (
+                    "Distributor filled order checked against the common order sheet."
+                )
+                report = json.dumps(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "step1": step1_result,
+                        "uploaded_files": sorted(
+                            [key for key in stored_files if stored_files.get(key)]
+                        ),
+                        "uploaded_documents": stored_metadata,
+                        "next_step": next_step,
+                    },
+                    indent=2,
+                )
             else:
                 current_status = "error"
                 current_msg = "Stage 2 requires both order_file and filled_file"
-                report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
+                report = json.dumps(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "uploaded_files": sorted(
+                            [key for key in stored_files if stored_files.get(key)]
+                        ),
+                        "uploaded_documents": stored_metadata,
+                    },
+                    indent=2,
+                )
         elif workflow_action == "stage3":
             if stored_files.get("filled_file") and stored_files.get("sales_order_file"):
                 try:
-                    step2_result = compare_step2(stored_files.get("filled_file"), stored_files.get("sales_order_file"))
+                    step2_result = compare_step2(
+                        stored_files.get("filled_file"),
+                        stored_files.get("sales_order_file"),
+                    )
                 except Exception as exc:
                     step2_result = {"status": "error", "error": str(exc)}
                 current_status = "stage-3-checked"
-                current_msg = "Sales order checked against distributor-wise filled order."
-                report = json.dumps({
-                    "status": current_status,
-                    "message": current_msg,
-                    "step2": step2_result,
-                    "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                    "uploaded_documents": stored_metadata,
-                    "next_step": next_step,
-                }, indent=2)
+                current_msg = (
+                    "Sales order checked against distributor-wise filled order."
+                )
+                report = json.dumps(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "step2": step2_result,
+                        "uploaded_files": sorted(
+                            [key for key in stored_files if stored_files.get(key)]
+                        ),
+                        "uploaded_documents": stored_metadata,
+                        "next_step": next_step,
+                    },
+                    indent=2,
+                )
             else:
                 current_status = "error"
                 current_msg = "Stage 3 requires filled_file and sales_order_file"
-                report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
+                report = json.dumps(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "uploaded_files": sorted(
+                            [key for key in stored_files if stored_files.get(key)]
+                        ),
+                        "uploaded_documents": stored_metadata,
+                    },
+                    indent=2,
+                )
         elif workflow_action == "stage4":
-            if stored_files.get("sales_order_file") and stored_files.get("invoice_file"):
+            if stored_files.get("sales_order_file") and stored_files.get(
+                "invoice_file"
+            ):
                 try:
-                    step3_result = compare_step3(stored_files.get("sales_order_file"), stored_files.get("invoice_file"))
+                    step3_result = compare_step3(
+                        stored_files.get("sales_order_file"),
+                        stored_files.get("invoice_file"),
+                    )
                 except Exception as exc:
                     step3_result = {"status": "error", "error": str(exc)}
                 current_status = "stage-4-checked"
                 current_msg = "Commercial invoice checked against sales order."
-                report = json.dumps({
-                    "status": current_status,
-                    "message": current_msg,
-                    "step3": step3_result,
-                    "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                    "uploaded_documents": stored_metadata,
-                    "next_step": next_step,
-                }, indent=2)
+                report = json.dumps(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "step3": step3_result,
+                        "uploaded_files": sorted(
+                            [key for key in stored_files if stored_files.get(key)]
+                        ),
+                        "uploaded_documents": stored_metadata,
+                        "next_step": next_step,
+                    },
+                    indent=2,
+                )
             else:
                 current_status = "error"
                 current_msg = "Stage 4 requires sales_order_file and invoice_file"
-                report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
+                report = json.dumps(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "uploaded_files": sorted(
+                            [key for key in stored_files if stored_files.get(key)]
+                        ),
+                        "uploaded_documents": stored_metadata,
+                    },
+                    indent=2,
+                )
         elif uploaded_count == 0:
-            report = json.dumps({"status": "idle", "message": "No files uploaded"}, indent=2)
+            report = json.dumps(
+                {"status": "idle", "message": "No files uploaded"}, indent=2
+            )
         elif uploaded_count < 4:
             step1_result = None
             if stored_files.get("order_file") and stored_files.get("filled_file"):
                 try:
-                    step1_result = compare_step1(stored_files.get("order_file"), stored_files.get("filled_file"))
+                    step1_result = compare_step1(
+                        stored_files.get("order_file"), stored_files.get("filled_file")
+                    )
                 except Exception as exc:
                     step1_result = {"status": "error", "error": str(exc)}
             current_status = "partial-verification"
             current_msg = "Captured step-by-step. Partial verification. Please upload all four files for a full report."
-            report = json.dumps({
-                "status": current_status,
-                "message": current_msg,
-                "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                "uploaded_documents": stored_metadata,
-                "next_step": next_step,
-                "step1": step1_result or {"status": "skipped", "reason": "missing_excel_inputs"},
-            }, indent=2)
+            report = json.dumps(
+                {
+                    "status": current_status,
+                    "message": current_msg,
+                    "uploaded_files": sorted(
+                        [key for key in stored_files if stored_files.get(key)]
+                    ),
+                    "uploaded_documents": stored_metadata,
+                    "next_step": next_step,
+                    "step1": step1_result
+                    or {"status": "skipped", "reason": "missing_excel_inputs"},
+                },
+                indent=2,
+            )
         else:
             try:
-                verified_data = run_full_verification(stored_files["order_file"], stored_files["filled_file"], stored_files["sales_order_file"], stored_files["invoice_file"])
+                verified_data = run_full_verification(
+                    stored_files["order_file"],
+                    stored_files["filled_file"],
+                    stored_files["sales_order_file"],
+                    stored_files["invoice_file"],
+                )
                 current_status = verified_data.get("status", "completed")
-                current_msg = verified_data.get("message", "Full verification completed successfully")
+                current_msg = verified_data.get(
+                    "message", "Full verification completed successfully"
+                )
                 report = json.dumps(verified_data, indent=2)
             except Exception as exc:
                 current_status = "error"
                 current_msg = str(exc)
-                report = json.dumps({"status": "error", "message": current_msg}, indent=2)
+                report = json.dumps(
+                    {"status": "error", "message": current_msg}, indent=2
+                )
 
     report_data = None
     if report:
@@ -746,7 +1006,10 @@ def index() -> str:
             report_data = None
 
     if search_query:
-        search_results = json.dumps(CentralizedDB("centralized_db.sqlite3").global_search(search_query), indent=2)
+        search_results = json.dumps(
+            CentralizedDB("centralized_db.sqlite3").global_search(search_query),
+            indent=2,
+        )
 
     sync_status = json.dumps({}, indent=2)
     return render_template_string(
@@ -788,7 +1051,7 @@ def articles() -> str:
     db = CentralizedDB("centralized_db.sqlite3")
     articles = json.dumps(db.list_articles_by_category(), indent=2)
     return render_template_string(
-        "<h1>Article Master</h1><pre>{{ articles }}</pre><p><a href=\"/\">Back</a></p>",
+        '<h1>Article Master</h1><pre>{{ articles }}</pre><p><a href="/">Back</a></p>',
         articles=articles,
     )
 
@@ -797,9 +1060,19 @@ def articles() -> str:
 @require_jwt_auth
 def ai_assistant_query() -> Response:
     payload = request.get_json(silent=True) or {}
-    query = str(payload.get("query") or payload.get("queryText") or request.args.get("queryText") or request.args.get("query") or "").strip()
+    query = str(
+        payload.get("query")
+        or payload.get("queryText")
+        or request.args.get("queryText")
+        or request.args.get("query")
+        or ""
+    ).strip()
     if not query:
-        return Response(json.dumps({"error": "Missing query"}), status=400, mimetype="application/json")
+        return Response(
+            json.dumps({"error": "Missing query"}),
+            status=400,
+            mimetype="application/json",
+        )
 
     query = query.replace("ask jarvis", "").replace("talk to jarvis", "").strip()
     db = CentralizedDB("centralized_db.sqlite3")
@@ -807,7 +1080,9 @@ def ai_assistant_query() -> Response:
     answer = "Jarvis at your service, Boss. No matching information found."
 
     if intent == "last_visit":
-        entity = query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
+        entity = (
+            query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
+        )
         distributor = db.get_master_distributor_by_name(entity)
         if distributor:
             last_visit = db.get_last_visit_date("distributor", distributor["id"])
@@ -816,10 +1091,18 @@ def ai_assistant_query() -> Response:
             answer = f"Jarvis at your service, Boss. I could not find a distributor named {entity}."
     elif intent == "alerts":
         alerts = db.list_data_entry_alerts()
-        answer = f"Jarvis at your service, Boss. You have {len(alerts)} active alerts." if alerts else "Jarvis at your service, Boss. No active alerts found."
+        answer = (
+            f"Jarvis at your service, Boss. You have {len(alerts)} active alerts."
+            if alerts
+            else "Jarvis at your service, Boss. No active alerts found."
+        )
     elif intent == "pjp":
         suggestions = db.get_morning_suggestion_list("2026-06-26")
-        answer = f"Jarvis at your service, Boss. There are {len(suggestions)} retailer visits suggested today." if suggestions else "Jarvis at your service, Boss. No PJP suggestions found."
+        answer = (
+            f"Jarvis at your service, Boss. There are {len(suggestions)} retailer visits suggested today."
+            if suggestions
+            else "Jarvis at your service, Boss. No PJP suggestions found."
+        )
     elif intent == "purchase_trends":
         distributor = db.get_master_distributor_by_name(query)
         if distributor:
@@ -831,7 +1114,12 @@ def ai_assistant_query() -> Response:
         search_results = db.global_search(query)
         answer = f"Jarvis at your service, Boss. {json.dumps(search_results, ensure_ascii=False)}"
 
-    return Response(json.dumps({"intent": intent, "query": query, "answer": answer}, ensure_ascii=False), mimetype="application/json")
+    return Response(
+        json.dumps(
+            {"intent": intent, "query": query, "answer": answer}, ensure_ascii=False
+        ),
+        mimetype="application/json",
+    )
 
 
 @data_blueprint.route("/alerts")
@@ -839,7 +1127,7 @@ def alerts() -> str:
     db = CentralizedDB("centralized_db.sqlite3")
     rows = db.list_data_entry_alerts()
     return render_template_string(
-        "<h1>Data Entry Alerts</h1><pre>{{ rows }}</pre><p><a href=\"/\">Back</a></p>",
+        '<h1>Data Entry Alerts</h1><pre>{{ rows }}</pre><p><a href="/">Back</a></p>',
         rows=json.dumps(rows, indent=2),
     )
 
@@ -854,7 +1142,12 @@ def credit_policy() -> str:
         credit_days_allowed = request.form.get("credit_days_allowed", type=int)
         account_status = request.form.get("account_status", "ACTIVE")
         if distributor_id is not None:
-            db.upsert_credit_control(distributor_id, max_credit_limit=max_credit_limit, credit_days_allowed=credit_days_allowed, account_status=account_status)
+            db.upsert_credit_control(
+                distributor_id,
+                max_credit_limit=max_credit_limit,
+                credit_days_allowed=credit_days_allowed,
+                account_status=account_status,
+            )
             message = "Credit policy saved"
     policy_rows = db.list_credit_control()
     return render_template_string(
@@ -883,14 +1176,19 @@ def purchase_behavior() -> str:
         distributor_id = 1
     logs = db.build_distributor_purchase_behavior_logs(distributor_id)
     return render_template_string(
-        "<h1>Distributor Purchase Behavior</h1><pre>{{ logs }}</pre><p><a href=\"/\">Back</a></p>",
+        '<h1>Distributor Purchase Behavior</h1><pre>{{ logs }}</pre><p><a href="/">Back</a></p>',
         logs=json.dumps(logs, indent=2),
     )
 
 
 @data_blueprint.route("/pwa-dashboard")
 def pwa_dashboard() -> Response:
-    return Response((Path(__file__).resolve().parent.parent / "pwa_dashboard.html").read_text(encoding="utf-8"), mimetype="text/html")
+    return Response(
+        (Path(__file__).resolve().parent.parent / "pwa_dashboard.html").read_text(
+            encoding="utf-8"
+        ),
+        mimetype="text/html",
+    )
 
 
 @data_blueprint.route("/api/v1/dashboard/summary")
@@ -908,38 +1206,68 @@ def dashboard_summary() -> Response:
         },
         "suggestions": db.get_morning_suggestion_list("2026-06-26")[:3],
     }
-    return Response(json.dumps(payload, ensure_ascii=False), mimetype="application/json")
+    return Response(
+        json.dumps(payload, ensure_ascii=False), mimetype="application/json"
+    )
 
 
 @data_blueprint.route("/manifest.json")
 def manifest() -> Response:
-    return Response(json.dumps({
-        "name": "Jarvis Business Platform",
-        "short_name": "Jarvis",
-        "start_url": "/pwa-dashboard",
-        "display": "standalone",
-        "background_color": "#020617",
-        "theme_color": "#0f172a",
-        "icons": [
-            {"src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml"},
-            {"src": "/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml"},
-        ],
-    }), mimetype="application/json")
+    return Response(
+        json.dumps(
+            {
+                "name": "Jarvis Business Platform",
+                "short_name": "Jarvis",
+                "start_url": "/pwa-dashboard",
+                "display": "standalone",
+                "background_color": "#020617",
+                "theme_color": "#0f172a",
+                "icons": [
+                    {
+                        "src": "/icon-192.svg",
+                        "sizes": "192x192",
+                        "type": "image/svg+xml",
+                    },
+                    {
+                        "src": "/icon-512.svg",
+                        "sizes": "512x512",
+                        "type": "image/svg+xml",
+                    },
+                ],
+            }
+        ),
+        mimetype="application/json",
+    )
 
 
 @data_blueprint.route("/service-worker.js")
 def service_worker() -> Response:
-    return Response((Path(__file__).resolve().parent.parent / "service-worker.js").read_text(encoding="utf-8"), mimetype="application/javascript")
+    return Response(
+        (Path(__file__).resolve().parent.parent / "service-worker.js").read_text(
+            encoding="utf-8"
+        ),
+        mimetype="application/javascript",
+    )
 
 
 @data_blueprint.route("/icon-192.svg")
 def icon_192() -> Response:
-    return Response((Path(__file__).resolve().parent.parent / "icon-192.svg").read_text(encoding="utf-8"), mimetype="image/svg+xml")
+    return Response(
+        (Path(__file__).resolve().parent.parent / "icon-192.svg").read_text(
+            encoding="utf-8"
+        ),
+        mimetype="image/svg+xml",
+    )
 
 
 @data_blueprint.route("/icon-512.svg")
 def icon_512() -> Response:
-    return Response((Path(__file__).resolve().parent.parent / "icon-512.svg").read_text(encoding="utf-8"), mimetype="image/svg+xml")
+    return Response(
+        (Path(__file__).resolve().parent.parent / "icon-512.svg").read_text(
+            encoding="utf-8"
+        ),
+        mimetype="image/svg+xml",
+    )
 
 
 @data_blueprint.route("/workflow-gps")
@@ -1085,17 +1413,25 @@ def article_master_search() -> str:
         </body>
         </html>
         """,
-        query=query, size_filter=size_filter, articles=articles,
+        query=query,
+        size_filter=size_filter,
+        articles=articles,
     )
 
 
-@data_blueprint.route('/retailer-download')
+@data_blueprint.route("/retailer-download")
 def retailer_download_page():
     db_path = _db_path()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        distributors = [dict(r) for r in conn.execute('SELECT id, firm_name, firm_nick_name FROM master_distributors ORDER BY firm_name').fetchall()]
-    return render_template_string("""
+        distributors = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, firm_name, firm_nick_name FROM master_distributors ORDER BY firm_name"
+            ).fetchall()
+        ]
+    return render_template_string(
+        """
 <!doctype html>
 <html>
 <head>
@@ -1144,70 +1480,32 @@ def retailer_download_page():
   <p><a href="/">← Back</a> | <a href="/analytics">Analytics</a></p>
 </body>
 </html>
-""", distributors=distributors)
-
-
-@data_blueprint.route('/retailer-download/excel')
-def retailer_download_excel():
-    db_path = _db_path()
-    dist_id = request.args.get('dist_id', 'all')
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        if dist_id == 'all':
-            rows = conn.execute("""
-                SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
-                d.firm_name as distributor_name, d.firm_nick_name,
-                r.location, r.phone_number, r.email, r.address, r.gst_no
-                FROM master_retailers r
-                LEFT JOIN master_distributors d ON r.distributor_id = d.id
-                ORDER BY d.firm_name, r.name
-            """).fetchall()
-            filename = 'all_retailers.xlsx'
-        else:
-            rows = conn.execute("""
-                SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
-                d.firm_name as distributor_name, d.firm_nick_name,
-                r.location, r.phone_number, r.email, r.address, r.gst_no
-                FROM master_retailers r
-                LEFT JOIN master_distributors d ON r.distributor_id = d.id
-                WHERE r.distributor_id = ?
-                ORDER BY r.name
-            """, (dist_id,)).fetchall()
-            dist_name = rows[0]['firm_nick_name'] if rows else str(dist_id)
-            filename = f'{dist_name}_retailers.xlsx'
-    import pandas as _pd
-    df = _pd.DataFrame([dict(r) for r in rows])
-    output = io.BytesIO()
-    with _pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Retailers')
-    output.seek(0)
-    return Response(
-        output.read(),
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': f'attachment; filename={filename}'}
+""",
+        distributors=distributors,
     )
 
 
-@data_blueprint.route('/retailer-download/csv')
-def retailer_download_csv():
-    import csv as _csv
-    from io import StringIO as _StringIO
+@data_blueprint.route("/retailer-download/excel")
+def retailer_download_excel():
     db_path = _db_path()
-    dist_id = request.args.get('dist_id', 'all')
+    dist_id = request.args.get("dist_id", "all")
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        if dist_id == 'all':
-            rows = conn.execute("""
+        if dist_id == "all":
+            rows = conn.execute(
+                """
                 SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
                 d.firm_name as distributor_name, d.firm_nick_name,
                 r.location, r.phone_number, r.email, r.address, r.gst_no
                 FROM master_retailers r
                 LEFT JOIN master_distributors d ON r.distributor_id = d.id
                 ORDER BY d.firm_name, r.name
-            """).fetchall()
-            filename = 'all_retailers.csv'
+            """
+            ).fetchall()
+            filename = "all_retailers.xlsx"
         else:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
                 d.firm_name as distributor_name, d.firm_nick_name,
                 r.location, r.phone_number, r.email, r.address, r.gst_no
@@ -1215,9 +1513,61 @@ def retailer_download_csv():
                 LEFT JOIN master_distributors d ON r.distributor_id = d.id
                 WHERE r.distributor_id = ?
                 ORDER BY r.name
-            """, (dist_id,)).fetchall()
-            dist_name = rows[0]['firm_nick_name'] if rows else str(dist_id)
-            filename = f'{dist_name}_retailers.csv'
+            """,
+                (dist_id,),
+            ).fetchall()
+            dist_name = rows[0]["firm_nick_name"] if rows else str(dist_id)
+            filename = f"{dist_name}_retailers.xlsx"
+    import pandas as _pd
+
+    df = _pd.DataFrame([dict(r) for r in rows])
+    output = io.BytesIO()
+    with _pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Retailers")
+    output.seek(0)
+    return Response(
+        output.read(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@data_blueprint.route("/retailer-download/csv")
+def retailer_download_csv():
+    import csv as _csv
+    from io import StringIO as _StringIO
+
+    db_path = _db_path()
+    dist_id = request.args.get("dist_id", "all")
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        if dist_id == "all":
+            rows = conn.execute(
+                """
+                SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
+                d.firm_name as distributor_name, d.firm_nick_name,
+                r.location, r.phone_number, r.email, r.address, r.gst_no
+                FROM master_retailers r
+                LEFT JOIN master_distributors d ON r.distributor_id = d.id
+                ORDER BY d.firm_name, r.name
+            """
+            ).fetchall()
+            filename = "all_retailers.csv"
+        else:
+            rows = conn.execute(
+                """
+                SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
+                d.firm_name as distributor_name, d.firm_nick_name,
+                r.location, r.phone_number, r.email, r.address, r.gst_no
+                FROM master_retailers r
+                LEFT JOIN master_distributors d ON r.distributor_id = d.id
+                WHERE r.distributor_id = ?
+                ORDER BY r.name
+            """,
+                (dist_id,),
+            ).fetchall()
+            dist_name = rows[0]["firm_nick_name"] if rows else str(dist_id)
+            filename = f"{dist_name}_retailers.csv"
     output = _StringIO()
     if rows:
         writer = _csv.DictWriter(output, fieldnames=list(dict(rows[0]).keys()))
@@ -1225,6 +1575,6 @@ def retailer_download_csv():
         writer.writerows([dict(r) for r in rows])
     return Response(
         output.getvalue(),
-        mimetype='text/csv',
-        headers={'Content-Disposition': f'attachment; filename={filename}'}
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
