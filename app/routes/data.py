@@ -14,6 +14,7 @@ from flask import Blueprint, Response, jsonify, redirect, render_template_string
 from centralized_db_system.bale_to_pieces import calculate_bale_to_pieces
 from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
+from app.routes.auth import require_jwt_auth
 from app.three_step_verification import _extract_pdf_text, _parse_pdf_table_like_text, compare_step1, compare_step2, compare_step3, run_full_verification
 from app.utils import detect_upload_file_type, expected_upload_format, infer_ai_intent, infer_distributor_name, stage_label_for_key
 from app.verification import parse_distributor_fields_from_text, parse_retailer_fields_from_text
@@ -155,6 +156,7 @@ def _get_verification_upload_dir() -> Path:
 
 
 @data_blueprint.route("/api/v1/masters/bulk-upload", methods=["GET", "POST"])
+@require_jwt_auth
 def bulk_upload() -> tuple[Response, int] | str:
     if request.method == "GET":
         return """
@@ -363,6 +365,7 @@ def bulk_upload() -> tuple[Response, int] | str:
 
 
 @data_blueprint.route("/api/v1/contacts/import-export", methods=["GET"])
+@require_jwt_auth
 def contacts_import_export() -> str:
     return """
     <!doctype html>
@@ -414,6 +417,7 @@ def contacts_import_export() -> str:
 
 
 @data_blueprint.route("/api/v1/contacts/import", methods=["POST"])
+@require_jwt_auth
 def import_contacts() -> tuple[Response, int]:
     uploaded_file = request.files.get("file")
     if uploaded_file is None or uploaded_file.filename == "":
@@ -480,6 +484,7 @@ def import_contacts() -> tuple[Response, int]:
 
 
 @data_blueprint.route("/api/v1/masters/template/<master_type>")
+@require_jwt_auth
 def download_master_template(master_type: str) -> Response:
     file_format = (request.args.get("format") or "excel").strip().lower()
     if file_format not in {"excel", "csv"}:
@@ -789,6 +794,7 @@ def articles() -> str:
 
 
 @data_blueprint.route("/api/v1/ai-assistant/query", methods=["GET", "POST"])
+@require_jwt_auth
 def ai_assistant_query() -> Response:
     payload = request.get_json(silent=True) or {}
     query = str(payload.get("query") or payload.get("queryText") or request.args.get("queryText") or request.args.get("query") or "").strip()
@@ -888,6 +894,7 @@ def pwa_dashboard() -> Response:
 
 
 @data_blueprint.route("/api/v1/dashboard/summary")
+@require_jwt_auth
 def dashboard_summary() -> Response:
     db = CentralizedDB("centralized_db.sqlite3")
     alerts = db.list_data_entry_alerts()

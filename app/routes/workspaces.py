@@ -4,6 +4,7 @@ from pathlib import Path
 from flask import Blueprint, Response, render_template_string, request
 
 from centralized_db_system.db import CentralizedDB
+from app.routes.auth import require_jwt_auth
 
 workspaces_blueprint = Blueprint("workspaces", __name__)
 
@@ -63,11 +64,13 @@ ADMIN_DATABASE_TEMPLATE = """
 
 
 @workspaces_blueprint.route("/api/v1/workspaces", methods=["GET", "POST"])
+@require_jwt_auth
 def workspaces() -> tuple[dict[str, object], int]:
     return {"status": "ok", "items": []}, 200
 
 
 @workspaces_blueprint.route("/admin/database", methods=["GET", "POST"])
+@require_jwt_auth
 def database_admin() -> str:
     db = CentralizedDB("centralized_db.sqlite3")
     backup_message = None

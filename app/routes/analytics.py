@@ -3,6 +3,7 @@ import json
 from flask import Blueprint, render_template_string
 
 from centralized_db_system.db import CentralizedDB
+from app.routes.auth import require_jwt_auth
 
 analytics_blueprint = Blueprint("analytics", __name__)
 
@@ -164,6 +165,7 @@ ANALYTICS_TEMPLATE = """
 
 
 @analytics_blueprint.route("/analytics")
+@require_jwt_auth
 def analytics() -> str:
     db = CentralizedDB("centralized_db.sqlite3")
     payload = json.dumps(db.get_dashboard_payload(), indent=2)

@@ -6,6 +6,7 @@ from io import StringIO
 from flask import Blueprint, Response, request, render_template_string
 
 from centralized_db_system.db import CentralizedDB
+from app.routes.auth import require_jwt_auth
 from app.utils import get_monthly_report_data
 
 reports_blueprint = Blueprint("reports", __name__)
@@ -88,6 +89,7 @@ REPORTS_TEMPLATE = """
 
 
 @reports_blueprint.route("/reports")
+@require_jwt_auth
 def monthly_reports() -> str:
     selected_month = request.args.get("month") or "2026-06"
     data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
@@ -95,6 +97,7 @@ def monthly_reports() -> str:
 
 
 @reports_blueprint.route("/reports/download/excel")
+@require_jwt_auth
 def download_monthly_report_excel() -> Response:
     selected_month = request.args.get("month") or "2026-06"
     data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
@@ -114,6 +117,7 @@ def download_monthly_report_excel() -> Response:
 
 
 @reports_blueprint.route("/reports/download/csv")
+@require_jwt_auth
 def download_monthly_report_csv() -> Response:
     selected_month = request.args.get("month") or "2026-06"
     data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
@@ -129,6 +133,7 @@ def download_monthly_report_csv() -> Response:
 
 
 @reports_blueprint.route("/download/analytics")
+@require_jwt_auth
 def download_analytics() -> Response:
     db = CentralizedDB("centralized_db.sqlite3")
     payload = db.get_dashboard_payload()
@@ -140,6 +145,7 @@ def download_analytics() -> Response:
 
 
 @reports_blueprint.route("/download/report")
+@require_jwt_auth
 def download_report() -> Response:
     report_text = request.args.get("report", "")
     return Response(
@@ -150,6 +156,7 @@ def download_report() -> Response:
 
 
 @reports_blueprint.route("/download/distributors")
+@require_jwt_auth
 def download_distributors() -> Response:
     csv_data = CentralizedDB("centralized_db.sqlite3").export_master_distributors()
     return Response(
@@ -160,6 +167,7 @@ def download_distributors() -> Response:
 
 
 @reports_blueprint.route("/download/distributors/excel")
+@require_jwt_auth
 def download_distributors_excel() -> Response:
     excel_bytes = CentralizedDB("centralized_db.sqlite3").export_master_distributors_excel()
     return Response(
@@ -170,6 +178,7 @@ def download_distributors_excel() -> Response:
 
 
 @reports_blueprint.route("/download/distributors/pdf")
+@require_jwt_auth
 def download_distributors_pdf() -> Response:
     pdf_bytes = CentralizedDB("centralized_db.sqlite3").export_master_distributors_pdf()
     return Response(
@@ -180,6 +189,7 @@ def download_distributors_pdf() -> Response:
 
 
 @reports_blueprint.route("/download/retailers")
+@require_jwt_auth
 def download_retailers() -> Response:
     csv_data = CentralizedDB("centralized_db.sqlite3").export_master_retailers()
     return Response(
@@ -190,6 +200,7 @@ def download_retailers() -> Response:
 
 
 @reports_blueprint.route("/download/retailers/excel")
+@require_jwt_auth
 def download_retailers_excel() -> Response:
     excel_bytes = CentralizedDB("centralized_db.sqlite3").export_master_retailers_excel()
     return Response(
@@ -200,6 +211,7 @@ def download_retailers_excel() -> Response:
 
 
 @reports_blueprint.route("/download/targets")
+@require_jwt_auth
 def download_targets() -> Response:
     csv_data = CentralizedDB("centralized_db.sqlite3").export_targets_achievements()
     return Response(
@@ -210,6 +222,7 @@ def download_targets() -> Response:
 
 
 @reports_blueprint.route("/download/primary-sales")
+@require_jwt_auth
 def download_primary_sales() -> Response:
     csv_data = CentralizedDB("centralized_db.sqlite3").export_primary_sales()
     return Response(

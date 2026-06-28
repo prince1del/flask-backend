@@ -1,6 +1,7 @@
 from flask import Blueprint, redirect, render_template_string, request
 
 from centralized_db_system.db import CentralizedDB
+from app.routes.auth import require_jwt_auth
 
 schemas_blueprint = Blueprint("schemas", __name__)
 
@@ -87,12 +88,14 @@ th { background: #f0f0f0; }
 
 
 @schemas_blueprint.route("/api/v1/schemas", methods=["GET", "POST"])
+@require_jwt_auth
 def schemas() -> tuple[dict[str, object], int]:
     return {"status": "ok", "items": []}, 200
 
 
 @schemas_blueprint.route("/settings/schema")
 @schemas_blueprint.route("/settings/schema/")
+@require_jwt_auth
 def schema_manager():
     entity = request.args.get("entity", "distributor")
     message = request.args.get("message", "")
@@ -102,6 +105,7 @@ def schema_manager():
 
 
 @schemas_blueprint.route("/settings/schema/add", methods=["POST"])
+@require_jwt_auth
 def schema_add_field():
     entity = request.form.get("entity", "distributor")
     field_name = request.form.get("field_name", "").strip()
@@ -119,6 +123,7 @@ def schema_add_field():
 
 
 @schemas_blueprint.route("/settings/schema/delete", methods=["POST"])
+@require_jwt_auth
 def schema_delete_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
@@ -128,6 +133,7 @@ def schema_delete_field():
 
 
 @schemas_blueprint.route("/settings/schema/toggle", methods=["POST"])
+@require_jwt_auth
 def schema_toggle_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
@@ -138,6 +144,7 @@ def schema_toggle_field():
 
 
 @schemas_blueprint.route("/settings/schema/move", methods=["POST"])
+@require_jwt_auth
 def schema_move_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
@@ -156,6 +163,7 @@ def schema_move_field():
 
 
 @schemas_blueprint.route("/settings/schema/seed", methods=["POST"])
+@require_jwt_auth
 def schema_seed():
     CentralizedDB("centralized_db.sqlite3").seed_default_schema()
     return redirect("/settings/schema?entity=distributor&message=Default schema loaded!")

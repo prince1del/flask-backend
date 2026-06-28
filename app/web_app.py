@@ -2,6 +2,7 @@
 
 from flask import Flask
 
+from app.jwt_service import JWTService
 from app.routes import (
     analytics_blueprint,
     auth_blueprint,
@@ -16,6 +17,8 @@ from app.routes.auth import register_auth_hooks
 def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.getenv("SECRET_KEY", "change-me")
+    app.config["SECRET_KEY"] = app.secret_key
+    app.extensions["jwt_service"] = JWTService(secret_key=app.secret_key)
 
     register_auth_hooks(app)
 
