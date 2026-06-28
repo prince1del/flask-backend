@@ -1232,8 +1232,18 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("login"))
 
+    @app.route("/dashboard")
+    def dashboard() -> Response:
+        html = (Path(__file__).resolve().parent / "templates" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        return Response(html, mimetype="text/html")
+
     @app.route("/", methods=["GET", "POST"])
     def index() -> str:
+        if request.method == "GET":
+            return redirect(url_for("dashboard"))
+
         report = None
         progress_summary = None
         search_query = request.args.get("q", "") if request.method == "GET" else ""
