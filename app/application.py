@@ -2048,10 +2048,7 @@ def create_app() -> Flask:
 
     @app.route("/pwa-dashboard")
     def pwa_dashboard() -> Response:
-        return Response(
-            (Path(__file__).parent / "pwa_dashboard.html").read_text(encoding="utf-8"),
-            mimetype="text/html",
-        )
+        return Response("Not Found", status=404)
 
     @app.route("/api/v1/dashboard/summary")
     def dashboard_summary() -> Response:

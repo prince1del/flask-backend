@@ -1183,12 +1183,7 @@ def purchase_behavior() -> str:
 
 @data_blueprint.route("/pwa-dashboard")
 def pwa_dashboard() -> Response:
-    return Response(
-        (Path(__file__).resolve().parent.parent / "pwa_dashboard.html").read_text(
-            encoding="utf-8"
-        ),
-        mimetype="text/html",
-    )
+    return Response("Not Found", status=404)
 
 
 @data_blueprint.route("/api/v1/dashboard/summary")
