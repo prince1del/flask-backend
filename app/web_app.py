@@ -9,6 +9,9 @@ from app.routes import (
     reports_blueprint,
     schemas_blueprint,
     workspaces_blueprint,
+    target_achievement_bp,
+    party_matching_bp,
+    storage_bp,
 )
 from app.routes.auth import register_auth_hooks
 
@@ -25,6 +28,9 @@ def create_app() -> Flask:
     app.register_blueprint(data_blueprint)
     app.register_blueprint(analytics_blueprint)
     app.register_blueprint(reports_blueprint)
+    app.register_blueprint(target_achievement_bp)
+    app.register_blueprint(party_matching_bp)
+    app.register_blueprint(storage_bp)
 
     return app
 
