@@ -11,10 +11,26 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from flask import Flask, Response, jsonify, redirect, render_template_string, request, session, url_for
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.utils import secure_filename
 
-from app.three_step_verification import _extract_pdf_text, _parse_pdf_table_like_text, compare_step1, compare_step2, compare_step3, run_full_verification
+from app.three_step_verification import (
+    _extract_pdf_text,
+    _parse_pdf_table_like_text,
+    compare_step1,
+    compare_step2,
+    compare_step3,
+    run_full_verification,
+)
 
 
 def _parse_distributor_fields_from_text(text: str) -> dict[str, Any]:
@@ -33,7 +49,13 @@ def _parse_distributor_fields_from_text(text: str) -> dict[str, Any]:
             parsed["distributor_code"] = cleaned_value
         elif normalized_key in {"firm_name", "firm"}:
             parsed["firm_name"] = cleaned_value
-        elif normalized_key in {"firm_nick_name", "firm_nickname", "firm_nick_name_", "nickname", "nick_name"}:
+        elif normalized_key in {
+            "firm_nick_name",
+            "firm_nickname",
+            "firm_nick_name_",
+            "nickname",
+            "nick_name",
+        }:
             parsed["firm_nick_name"] = cleaned_value
         elif normalized_key in {"gstin", "gst_no", "gst_number"}:
             parsed["gst_no"] = cleaned_value
@@ -48,7 +70,13 @@ def _parse_distributor_fields_from_text(text: str) -> dict[str, Any]:
                 parsed["credit_limit"] = cleaned_value
         elif normalized_key in {"address", "street", "address_line"}:
             parsed["address"] = cleaned_value
-        elif normalized_key in {"phone", "phone_number", "mobile", "contact_no", "contact_number"}:
+        elif normalized_key in {
+            "phone",
+            "phone_number",
+            "mobile",
+            "contact_no",
+            "contact_number",
+        }:
             parsed["phone_number"] = cleaned_value
         elif normalized_key in {"email", "email_address"}:
             parsed["email"] = cleaned_value
@@ -66,15 +94,30 @@ def _parse_retailer_fields_from_text(text: str) -> dict[str, Any]:
         cleaned_value = value.strip()
         if not cleaned_value:
             continue
-        if normalized_key in {"retailer_name", "name", "retailer"} or normalized_key.endswith("retailer"):
+        if normalized_key in {
+            "retailer_name",
+            "name",
+            "retailer",
+        } or normalized_key.endswith("retailer"):
             parsed["name"] = cleaned_value
-        elif normalized_key in {"distributor", "linked_distributor", "linked_distributor_name", "distributor_name"} or normalized_key.endswith("distributor"):
+        elif normalized_key in {
+            "distributor",
+            "linked_distributor",
+            "linked_distributor_name",
+            "distributor_name",
+        } or normalized_key.endswith("distributor"):
             parsed["distributor_reference"] = cleaned_value
         elif normalized_key in {"location", "city", "place"}:
             parsed["location"] = cleaned_value
         elif normalized_key in {"address", "street", "address_line"}:
             parsed["address"] = cleaned_value
-        elif normalized_key in {"phone", "phone_number", "mobile", "contact_no", "contact_number"}:
+        elif normalized_key in {
+            "phone",
+            "phone_number",
+            "mobile",
+            "contact_no",
+            "contact_number",
+        }:
             parsed["phone_number"] = cleaned_value
         elif normalized_key in {"email", "email_address"}:
             parsed["email"] = cleaned_value
@@ -517,13 +560,30 @@ SCHEDULER_TEMPLATE = """
 
 def _infer_ai_intent(query: str) -> str:
     normalized = (query or "").strip().lower()
-    if any(term in normalized for term in ["retailers should i visit", "visit today", "which retailers", "pjp", "schedule", "today's visits", "visit list"]):
+    if any(
+        term in normalized
+        for term in [
+            "retailers should i visit",
+            "visit today",
+            "which retailers",
+            "pjp",
+            "schedule",
+            "today's visits",
+            "visit list",
+        ]
+    ):
         return "pjp"
     if any(term in normalized for term in ["last visit", "visited", "visit to"]):
         return "last_visit"
-    if any(term in normalized for term in ["mismatch", "alert", "price mismatch", "invoice"]):
+    if any(
+        term in normalized
+        for term in ["mismatch", "alert", "price mismatch", "invoice"]
+    ):
         return "alerts"
-    if any(term in normalized for term in ["top-selling", "top selling", "purchase", "trend", "this month"]):
+    if any(
+        term in normalized
+        for term in ["top-selling", "top selling", "purchase", "trend", "this month"]
+    ):
         return "purchase_trends"
     return "search"
 
@@ -548,13 +608,18 @@ def _expected_upload_format(key: str) -> dict[str, set[str]]:
                 "multipart/form-data",
                 "text/plain",
                 "application/xml",
-            }
+            },
         }
 
     if key in {"sales_order_file", "invoice_file"}:
         return {
             "extensions": {".pdf"},
-            "content_types": {"application/pdf", "application/octet-stream", "application/x-download", "binary/octet-stream"},
+            "content_types": {
+                "application/pdf",
+                "application/octet-stream",
+                "application/x-download",
+                "binary/octet-stream",
+            },
         }
 
     return {"extensions": set(), "content_types": set()}
@@ -573,12 +638,18 @@ def _detect_upload_file_type(filename: str, content_type: str) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf" or "pdf" in content_type:
         return "pdf"
-    if suffix in {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"} or "excel" in content_type or "spreadsheet" in content_type:
+    if (
+        suffix in {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"}
+        or "excel" in content_type
+        or "spreadsheet" in content_type
+    ):
         return "excel"
     return "unknown"
 
 
-def _infer_distributor_name(upload_key: str, filename: str, explicit_name: str | None = None) -> str | None:
+def _infer_distributor_name(
+    upload_key: str, filename: str, explicit_name: str | None = None
+) -> str | None:
     if explicit_name and explicit_name.strip():
         return explicit_name.strip()
     if upload_key == "order_file":
@@ -614,7 +685,8 @@ def create_app() -> Flask:
     fb_sync = None
     try:
         from centralized_db_system.firebase_sync import FirebaseSync
-        fb_sync = FirebaseSync() 
+
+        fb_sync = FirebaseSync()
         if fb_sync._client is not None:
             print("--- Firebase Cloud Server Connected Successfully! ---")
         else:
@@ -644,7 +716,12 @@ def create_app() -> Flask:
             return None
         if request.path.startswith("/static/"):
             return None
-        if request.path in {"/manifest.json", "/service-worker.js", "/icon-192.svg", "/icon-512.svg"}:
+        if request.path in {
+            "/manifest.json",
+            "/service-worker.js",
+            "/icon-192.svg",
+            "/icon-512.svg",
+        }:
             return None
 
         if session.get("authenticated"):
@@ -692,12 +769,20 @@ def create_app() -> Flask:
 
         uploaded_file = request.files.get("file")
         if uploaded_file is None or uploaded_file.filename == "":
-            return jsonify({"status": "error", "message": "No file part in the request"}), 400
+            return (
+                jsonify({"status": "error", "message": "No file part in the request"}),
+                400,
+            )
 
         filename = uploaded_file.filename or ""
-        master_type = (request.form.get("master_type") or "distributors").strip().lower()
+        master_type = (
+            (request.form.get("master_type") or "distributors").strip().lower()
+        )
         if master_type not in {"distributors", "retailers"}:
-            return jsonify({"status": "error", "message": "Unsupported master type"}), 400
+            return (
+                jsonify({"status": "error", "message": "Unsupported master type"}),
+                400,
+            )
 
         suffix = Path(filename).suffix.lower()
         content_type = (uploaded_file.mimetype or "").lower()
@@ -720,7 +805,10 @@ def create_app() -> Flask:
         try:
             content = uploaded_file.read()
             if not content:
-                return jsonify({"status": "error", "message": "Uploaded file is empty"}), 400
+                return (
+                    jsonify({"status": "error", "message": "Uploaded file is empty"}),
+                    400,
+                )
 
             if suffix in supported_suffixes:
                 temp_suffix = suffix or ".xlsx"
@@ -728,12 +816,16 @@ def create_app() -> Flask:
                 temp_suffix = ".xlsx"
             elif "pdf" in content_type:
                 temp_suffix = ".pdf"
-            elif content_type in supported_content_types or suffix in supported_suffixes:
+            elif (
+                content_type in supported_content_types or suffix in supported_suffixes
+            ):
                 temp_suffix = ".csv"
             else:
                 temp_suffix = ".bin"
 
-            with tempfile.NamedTemporaryFile(suffix=temp_suffix, delete=False) as handle:
+            with tempfile.NamedTemporaryFile(
+                suffix=temp_suffix, delete=False
+            ) as handle:
                 handle.write(content)
                 temp_path = handle.name
 
@@ -747,19 +839,30 @@ def create_app() -> Flask:
                         "parsed_fields": parsed_data,
                     }
                     if master_type == "distributors":
-                        distributor_fields = _parse_distributor_fields_from_text(extracted_text)
+                        distributor_fields = _parse_distributor_fields_from_text(
+                            extracted_text
+                        )
                         if distributor_fields.get("name"):
-                            db_path = Path(__file__).resolve().parent.parent / "centralized_db.sqlite3"
+                            db_path = (
+                                Path(__file__).resolve().parent.parent
+                                / "centralized_db.sqlite3"
+                            )
                             db = CentralizedDB(str(db_path))
                             inserted_id = db.add_master_distributor(
                                 name=distributor_fields["name"],
-                                distributor_code=distributor_fields.get("distributor_code"),
+                                distributor_code=distributor_fields.get(
+                                    "distributor_code"
+                                ),
                                 firm_name=distributor_fields.get("firm_name"),
                                 firm_nick_name=distributor_fields.get("firm_nick_name"),
                                 gst_no=distributor_fields.get("gst_no"),
                                 zone=distributor_fields.get("zone"),
                                 region=distributor_fields.get("region"),
-                                credit_limit=distributor_fields.get("credit_limit") if isinstance(distributor_fields.get("credit_limit"), (int, float)) else None,
+                                credit_limit=distributor_fields.get("credit_limit")
+                                if isinstance(
+                                    distributor_fields.get("credit_limit"), (int, float)
+                                )
+                                else None,
                             )
                             connection = sqlite3.connect(db.db_path)
                             try:
@@ -777,20 +880,39 @@ def create_app() -> Flask:
                                 connection.close()
                             parsed_payload["persisted_distributor_id"] = inserted_id
                     elif master_type == "retailers":
-                        retailer_fields = _parse_retailer_fields_from_text(extracted_text)
+                        retailer_fields = _parse_retailer_fields_from_text(
+                            extracted_text
+                        )
                         if retailer_fields.get("name"):
-                            db_path = Path(__file__).resolve().parent.parent / "centralized_db.sqlite3"
+                            db_path = (
+                                Path(__file__).resolve().parent.parent
+                                / "centralized_db.sqlite3"
+                            )
                             db = CentralizedDB(str(db_path))
                             distributor = None
                             reference = retailer_fields.get("distributor_reference")
                             if reference:
-                                distributor = db.get_master_distributor_by_name(reference)
+                                distributor = db.get_master_distributor_by_name(
+                                    reference
+                                )
                                 if distributor is None:
-                                    distributor = db._find_master_distributor_by_gst_or_name(reference)
+                                    distributor = (
+                                        db._find_master_distributor_by_gst_or_name(
+                                            reference
+                                        )
+                                    )
                             if distributor is None and reference:
-                                distributor = db._find_or_create_distributor_from_reference(reference)
+                                distributor = (
+                                    db._find_or_create_distributor_from_reference(
+                                        reference
+                                    )
+                                )
                             if distributor is None:
-                                distributor = db._find_or_create_distributor_from_reference(retailer_fields.get("name", ""))
+                                distributor = (
+                                    db._find_or_create_distributor_from_reference(
+                                        retailer_fields.get("name", "")
+                                    )
+                                )
                             if distributor is not None:
                                 inserted_id = db.add_master_retailer(
                                     name=retailer_fields["name"],
@@ -815,53 +937,87 @@ def create_app() -> Flask:
                                     connection.close()
                                 parsed_payload["persisted_retailer_id"] = inserted_id
                 except Exception:
-                    parsed_payload = {"file_type": "pdf", "text_preview": "", "parsed_fields": {}}
+                    parsed_payload = {
+                        "file_type": "pdf",
+                        "text_preview": "",
+                        "parsed_fields": {},
+                    }
 
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-                return jsonify({
-                    "status": "success",
-                    "message": f"Received PDF file {filename}; PDF uploads are accepted and queued for future processing",
-                    "rows": 0,
-                    "inserted": 1 if ((master_type == "distributors" and parsed_payload.get("persisted_distributor_id")) or (master_type == "retailers" and parsed_payload.get("persisted_retailer_id"))) else 0,
-                    "updated": 0,
-                    "skipped": 0,
-                    "errors": [],
-                    "file_type": "pdf",
-                    "parsed_data": parsed_payload,
-                }), 200
+                return (
+                    jsonify(
+                        {
+                            "status": "success",
+                            "message": f"Received PDF file {filename}; PDF uploads are accepted and queued for future processing",
+                            "rows": 0,
+                            "inserted": 1
+                            if (
+                                (
+                                    master_type == "distributors"
+                                    and parsed_payload.get("persisted_distributor_id")
+                                )
+                                or (
+                                    master_type == "retailers"
+                                    and parsed_payload.get("persisted_retailer_id")
+                                )
+                            )
+                            else 0,
+                            "updated": 0,
+                            "skipped": 0,
+                            "errors": [],
+                            "file_type": "pdf",
+                            "parsed_data": parsed_payload,
+                        }
+                    ),
+                    200,
+                )
 
             if temp_suffix in {".bin", ".txt", ".json", ".xml"}:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-                return jsonify({
-                    "status": "success",
-                    "message": f"Received file {filename}; upload accepted for future processing",
-                    "rows": 0,
-                    "inserted": 0,
-                    "updated": 0,
-                    "skipped": 0,
-                    "errors": [],
-                    "file_type": suffix.lstrip(".") or "unknown",
-                }), 200
+                return (
+                    jsonify(
+                        {
+                            "status": "success",
+                            "message": f"Received file {filename}; upload accepted for future processing",
+                            "rows": 0,
+                            "inserted": 0,
+                            "updated": 0,
+                            "skipped": 0,
+                            "errors": [],
+                            "file_type": suffix.lstrip(".") or "unknown",
+                        }
+                    ),
+                    200,
+                )
 
             try:
-                db_path = Path(__file__).resolve().parent.parent / "centralized_db.sqlite3"
-                result = CentralizedDB(str(db_path)).bulk_upload_masters(master_type, temp_path)
+                db_path = (
+                    Path(__file__).resolve().parent.parent / "centralized_db.sqlite3"
+                )
+                result = CentralizedDB(str(db_path)).bulk_upload_masters(
+                    master_type, temp_path
+                )
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
 
-            return jsonify({
-                "status": "success",
-                "message": f"Successfully processed {result['rows_processed']} rows from {filename}",
-                "rows": int(result["rows_processed"]),
-                "inserted": int(result["inserted"]),
-                "updated": int(result.get("updated", 0)),
-                "skipped": int(result["skipped"]),
-                "errors": result.get("errors", []),
-                "file_type": suffix.lstrip(".") if suffix else "unknown",
-            }), 200
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Successfully processed {result['rows_processed']} rows from {filename}",
+                        "rows": int(result["rows_processed"]),
+                        "inserted": int(result["inserted"]),
+                        "updated": int(result.get("updated", 0)),
+                        "skipped": int(result["skipped"]),
+                        "errors": result.get("errors", []),
+                        "file_type": suffix.lstrip(".") if suffix else "unknown",
+                    }
+                ),
+                200,
+            )
         except Exception as exc:
             return jsonify({"status": "error", "message": str(exc)}), 500
 
@@ -919,11 +1075,24 @@ def create_app() -> Flask:
     def import_contacts() -> tuple[Response, int]:
         uploaded_file = request.files.get("file")
         if uploaded_file is None or uploaded_file.filename == "":
-            return jsonify({"status": "error", "message": "No file part in the request"}), 400
+            return (
+                jsonify({"status": "error", "message": "No file part in the request"}),
+                400,
+            )
 
-        master_type = (request.form.get("master_type") or "distributors").strip().lower()
+        master_type = (
+            (request.form.get("master_type") or "distributors").strip().lower()
+        )
         if master_type not in {"distributors", "retailers"}:
-            return jsonify({"status": "error", "message": "Unsupported contact type. Use distributors or retailers."}), 400
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Unsupported contact type. Use distributors or retailers.",
+                    }
+                ),
+                400,
+            )
 
         filename = uploaded_file.filename or ""
         suffix = Path(filename).suffix.lower()
@@ -944,39 +1113,72 @@ def create_app() -> Flask:
         }
 
         if suffix == ".pdf" or "pdf" in content_type:
-            return jsonify({"status": "error", "message": "PDF is not allowed. Please upload CSV or Excel file."}), 400
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "PDF is not allowed. Please upload CSV or Excel file.",
+                    }
+                ),
+                400,
+            )
 
-        if suffix not in allowed_suffixes and content_type not in excel_csv_content_types:
-            return jsonify({"status": "error", "message": "Unsupported file format. Please upload CSV or Excel file."}), 400
+        if (
+            suffix not in allowed_suffixes
+            and content_type not in excel_csv_content_types
+        ):
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Unsupported file format. Please upload CSV or Excel file.",
+                    }
+                ),
+                400,
+            )
 
         try:
             content = uploaded_file.read()
             if not content:
-                return jsonify({"status": "error", "message": "Uploaded file is empty"}), 400
+                return (
+                    jsonify({"status": "error", "message": "Uploaded file is empty"}),
+                    400,
+                )
 
             temp_suffix = suffix if suffix in allowed_suffixes else ".xlsx"
-            with tempfile.NamedTemporaryFile(suffix=temp_suffix, delete=False) as handle:
+            with tempfile.NamedTemporaryFile(
+                suffix=temp_suffix, delete=False
+            ) as handle:
                 handle.write(content)
                 temp_path = handle.name
 
             try:
-                db_path = Path(__file__).resolve().parent.parent / "centralized_db.sqlite3"
-                result = CentralizedDB(str(db_path)).bulk_upload_masters(master_type, temp_path)
+                db_path = (
+                    Path(__file__).resolve().parent.parent / "centralized_db.sqlite3"
+                )
+                result = CentralizedDB(str(db_path)).bulk_upload_masters(
+                    master_type, temp_path
+                )
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
 
-            return jsonify({
-                "status": "success",
-                "message": f"Successfully processed {result['rows_processed']} rows from {filename} for {master_type}",
-                "master_type": master_type,
-                "rows": int(result["rows_processed"]),
-                "inserted": int(result.get("inserted", 0)),
-                "updated": int(result.get("updated", 0)),
-                "skipped": int(result.get("skipped", 0)),
-                "errors": result.get("errors", []),
-                "file_type": suffix.lstrip(".") if suffix else "unknown",
-            }), 200
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Successfully processed {result['rows_processed']} rows from {filename} for {master_type}",
+                        "master_type": master_type,
+                        "rows": int(result["rows_processed"]),
+                        "inserted": int(result.get("inserted", 0)),
+                        "updated": int(result.get("updated", 0)),
+                        "skipped": int(result.get("skipped", 0)),
+                        "errors": result.get("errors", []),
+                        "file_type": suffix.lstrip(".") if suffix else "unknown",
+                    }
+                ),
+                200,
+            )
         except Exception as exc:
             return jsonify({"status": "error", "message": str(exc)}), 500
 
@@ -1004,7 +1206,9 @@ def create_app() -> Flask:
             return jsonify({"status": "error", "message": "Unsupported format"}), 400
 
         try:
-            payload = CentralizedDB(_db_path()).generate_master_template(master_type, file_format=file_format)
+            payload = CentralizedDB(_db_path()).generate_master_template(
+                master_type, file_format=file_format
+            )
         except ValueError as exc:
             return jsonify({"status": "error", "message": str(exc)}), 400
 
@@ -1012,11 +1216,15 @@ def create_app() -> Flask:
             mimetype = "text/csv"
             extension = "csv"
         else:
-            mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mimetype = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
             extension = "xlsx"
 
         response = Response(payload, mimetype=mimetype)
-        response.headers["Content-Disposition"] = f"attachment; filename={master_type}_template.{extension}"
+        response.headers[
+            "Content-Disposition"
+        ] = f"attachment; filename={master_type}_template.{extension}"
         return response
 
     @app.route("/logout")
@@ -1030,10 +1238,14 @@ def create_app() -> Flask:
         progress_summary = None
         search_query = request.args.get("q", "") if request.method == "GET" else ""
         search_results = None
-        locked_rules_summary = json.dumps(CentralizedDB(_db_path()).list_business_rules(locked_only=True), indent=2)
+        locked_rules_summary = json.dumps(
+            CentralizedDB(_db_path()).list_business_rules(locked_only=True), indent=2
+        )
         if request.method == "POST":
             db = CentralizedDB(_db_path())
-            workflow_action = (request.form.get("workflow_action") or "run_all").strip().lower()
+            workflow_action = (
+                (request.form.get("workflow_action") or "run_all").strip().lower()
+            )
             distributor_name = (request.form.get("distributor_name") or "").strip()
             files = {
                 "order_file": request.files.get("order_file"),
@@ -1057,9 +1269,16 @@ def create_app() -> Flask:
                 "stage2": {"order_file", "filled_file"},
                 "stage3": {"filled_file", "sales_order_file"},
                 "stage4": {"sales_order_file", "invoice_file"},
-                "run_all": {"order_file", "filled_file", "sales_order_file", "invoice_file"},
+                "run_all": {
+                    "order_file",
+                    "filled_file",
+                    "sales_order_file",
+                    "invoice_file",
+                },
             }
-            permitted_keys = stage_upload_map.get(workflow_action, stage_upload_map["run_all"])
+            permitted_keys = stage_upload_map.get(
+                workflow_action, stage_upload_map["run_all"]
+            )
             persisted_upload_ids: list[int] = []
 
             for key, uploaded_file in files.items():
@@ -1070,28 +1289,47 @@ def create_app() -> Flask:
 
                 suffix = Path(uploaded_file.filename).suffix.lower()
                 content_type = (uploaded_file.mimetype or "").lower()
-                detected_file_type = _detect_upload_file_type(uploaded_file.filename, content_type)
+                detected_file_type = _detect_upload_file_type(
+                    uploaded_file.filename, content_type
+                )
                 expected_format = _expected_upload_format(key)
-                if expected_format["extensions"] and suffix not in expected_format["extensions"] and content_type not in expected_format["content_types"]:
-                    report = json.dumps({
-                        "status": "error",
-                        "message": f"{key} must be uploaded in the expected file format",
-                        "expected_extensions": sorted(expected_format["extensions"]),
-                        "received_extension": suffix,
-                        "received_content_type": content_type,
-                    }, indent=2)
+                if (
+                    expected_format["extensions"]
+                    and suffix not in expected_format["extensions"]
+                    and content_type not in expected_format["content_types"]
+                ):
+                    report = json.dumps(
+                        {
+                            "status": "error",
+                            "message": f"{key} must be uploaded in the expected file format",
+                            "expected_extensions": sorted(
+                                expected_format["extensions"]
+                            ),
+                            "received_extension": suffix,
+                            "received_content_type": content_type,
+                        },
+                        indent=2,
+                    )
                     progress_summary = "Upload rejected because the file type does not match the required format."
-                    
+
                     if fb_sync and fb_sync._client is not None:
-                        fb_sync.sync_verification_status({"status": "error", "message": f"{key} upload failed format rule", "next_step": "Retry"})
-                        
+                        fb_sync.sync_verification_status(
+                            {
+                                "status": "error",
+                                "message": f"{key} upload failed format rule",
+                                "next_step": "Retry",
+                            }
+                        )
+
                     return render_template_string(
                         HTML_TEMPLATE,
                         report=report,
                         report_data=json.loads(report),
                         progress_summary=progress_summary,
                         locked_rules_summary=locked_rules_summary,
-                        sync_status=json.dumps(fb_sync.get_sync_status() if fb_sync else {}, indent=2),
+                        sync_status=json.dumps(
+                            fb_sync.get_sync_status() if fb_sync else {}, indent=2
+                        ),
                         search_query=search_query,
                         search_results=search_results,
                     )
@@ -1100,7 +1338,9 @@ def create_app() -> Flask:
                 target_path = upload_dir / f"{key}_{safe_name}"
                 uploaded_file.save(target_path)
                 stored_files[key] = str(target_path)
-                inferred_distributor_name = _infer_distributor_name(key, safe_name, explicit_name=distributor_name)
+                inferred_distributor_name = _infer_distributor_name(
+                    key, safe_name, explicit_name=distributor_name
+                )
                 stored_metadata[key] = {
                     "stage": _stage_label_for_key(key),
                     "file_type": detected_file_type,
@@ -1110,7 +1350,8 @@ def create_app() -> Flask:
                 }
                 try:
                     upload_record_id = db.save_distributor_order_upload(
-                        verification_session_id=session.get("verification_session_id") or "",
+                        verification_session_id=session.get("verification_session_id")
+                        or "",
                         distributor_name=inferred_distributor_name,
                         stage_key=key,
                         file_type=detected_file_type,
@@ -1127,8 +1368,19 @@ def create_app() -> Flask:
             session["verification_file_metadata"] = stored_metadata
             session.modified = True
 
-            uploaded_count = sum(1 for key in ["order_file", "filled_file", "sales_order_file", "invoice_file"] if stored_files.get(key))
-            progress_lines = [f"Captured files ({uploaded_count}/4): {', '.join(sorted([key for key in stored_files if stored_files.get(key)])) if stored_files else 'none'}"]
+            uploaded_count = sum(
+                1
+                for key in [
+                    "order_file",
+                    "filled_file",
+                    "sales_order_file",
+                    "invoice_file",
+                ]
+                if stored_files.get(key)
+            )
+            progress_lines = [
+                f"Captured files ({uploaded_count}/4): {', '.join(sorted([key for key in stored_files if stored_files.get(key)])) if stored_files else 'none'}"
+            ]
             step_labels = {
                 "order_file": "Order sheet",
                 "filled_file": "Order filled",
@@ -1136,14 +1388,21 @@ def create_app() -> Flask:
                 "invoice_file": "Commercial invoice",
             }
             next_step = None
-            for key in ["order_file", "filled_file", "sales_order_file", "invoice_file"]:
+            for key in [
+                "order_file",
+                "filled_file",
+                "sales_order_file",
+                "invoice_file",
+            ]:
                 if not stored_files.get(key):
                     next_step = step_labels.get(key)
                     break
             if next_step:
                 progress_lines.append(f"Next step: upload {next_step}")
             else:
-                progress_lines.append("All four files are captured. Verification can now run.")
+                progress_lines.append(
+                    "All four files are captured. Verification can now run."
+                )
             if stored_metadata:
                 readable_metadata = "; ".join(
                     f"{key} -> {meta.get('stage')} [{meta.get('file_type')}] {meta.get('filename')} ({meta.get('distributor_name') or 'unassigned'})"
@@ -1151,122 +1410,213 @@ def create_app() -> Flask:
                 )
                 progress_lines.append(f"Recognized uploads: {readable_metadata}")
             if persisted_upload_ids:
-                progress_lines.append(f"Persisted upload records: {persisted_upload_ids}")
+                progress_lines.append(
+                    f"Persisted upload records: {persisted_upload_ids}"
+                )
             progress_summary = "\n".join(progress_lines)
 
             current_status = "idle"
             current_msg = "No files uploaded"
-            
+
             if workflow_action == "stage1":
                 current_status = "stage-1-saved"
-                current_msg = "Common order sheet saved. Distributor files can be attached next."
+                current_msg = (
+                    "Common order sheet saved. Distributor files can be attached next."
+                )
                 report_payload = {
                     "status": current_status,
                     "message": current_msg,
-                    "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
+                    "uploaded_files": sorted(
+                        [key for key in stored_files if stored_files.get(key)]
+                    ),
                     "uploaded_documents": stored_metadata,
                     "next_step": next_step,
                 }
                 if stored_files.get("order_file"):
-                    report_payload["step1"] = {"status": "saved", "reason": "common_order_sheet_attached"}
+                    report_payload["step1"] = {
+                        "status": "saved",
+                        "reason": "common_order_sheet_attached",
+                    }
                 report = json.dumps(report_payload, indent=2)
             elif workflow_action == "stage2":
                 if stored_files.get("order_file") and stored_files.get("filled_file"):
                     try:
-                        step1_result = compare_step1(stored_files.get("order_file"), stored_files.get("filled_file"))
+                        step1_result = compare_step1(
+                            stored_files.get("order_file"),
+                            stored_files.get("filled_file"),
+                        )
                     except Exception as exc:
                         step1_result = {"status": "error", "error": str(exc)}
                     current_status = "stage-2-checked"
                     current_msg = "Distributor filled order checked against the common order sheet."
-                    report = json.dumps({
-                        "status": current_status,
-                        "message": current_msg,
-                        "step1": step1_result,
-                        "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                        "uploaded_documents": stored_metadata,
-                        "next_step": next_step,
-                    }, indent=2)
+                    report = json.dumps(
+                        {
+                            "status": current_status,
+                            "message": current_msg,
+                            "step1": step1_result,
+                            "uploaded_files": sorted(
+                                [key for key in stored_files if stored_files.get(key)]
+                            ),
+                            "uploaded_documents": stored_metadata,
+                            "next_step": next_step,
+                        },
+                        indent=2,
+                    )
                 else:
                     current_status = "error"
                     current_msg = "Stage 2 requires both order_file and filled_file"
-                    report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
+                    report = json.dumps(
+                        {
+                            "status": current_status,
+                            "message": current_msg,
+                            "uploaded_files": sorted(
+                                [key for key in stored_files if stored_files.get(key)]
+                            ),
+                            "uploaded_documents": stored_metadata,
+                        },
+                        indent=2,
+                    )
             elif workflow_action == "stage3":
-                if stored_files.get("filled_file") and stored_files.get("sales_order_file"):
+                if stored_files.get("filled_file") and stored_files.get(
+                    "sales_order_file"
+                ):
                     try:
-                        step2_result = compare_step2(stored_files.get("filled_file"), stored_files.get("sales_order_file"))
+                        step2_result = compare_step2(
+                            stored_files.get("filled_file"),
+                            stored_files.get("sales_order_file"),
+                        )
                     except Exception as exc:
                         step2_result = {"status": "error", "error": str(exc)}
                     current_status = "stage-3-checked"
-                    current_msg = "Sales order checked against distributor-wise filled order."
-                    report = json.dumps({
-                        "status": current_status,
-                        "message": current_msg,
-                        "step2": step2_result,
-                        "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                        "uploaded_documents": stored_metadata,
-                        "next_step": next_step,
-                    }, indent=2)
+                    current_msg = (
+                        "Sales order checked against distributor-wise filled order."
+                    )
+                    report = json.dumps(
+                        {
+                            "status": current_status,
+                            "message": current_msg,
+                            "step2": step2_result,
+                            "uploaded_files": sorted(
+                                [key for key in stored_files if stored_files.get(key)]
+                            ),
+                            "uploaded_documents": stored_metadata,
+                            "next_step": next_step,
+                        },
+                        indent=2,
+                    )
                 else:
                     current_status = "error"
                     current_msg = "Stage 3 requires filled_file and sales_order_file"
-                    report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
+                    report = json.dumps(
+                        {
+                            "status": current_status,
+                            "message": current_msg,
+                            "uploaded_files": sorted(
+                                [key for key in stored_files if stored_files.get(key)]
+                            ),
+                            "uploaded_documents": stored_metadata,
+                        },
+                        indent=2,
+                    )
             elif workflow_action == "stage4":
-                if stored_files.get("sales_order_file") and stored_files.get("invoice_file"):
+                if stored_files.get("sales_order_file") and stored_files.get(
+                    "invoice_file"
+                ):
                     try:
-                        step3_result = compare_step3(stored_files.get("sales_order_file"), stored_files.get("invoice_file"))
+                        step3_result = compare_step3(
+                            stored_files.get("sales_order_file"),
+                            stored_files.get("invoice_file"),
+                        )
                     except Exception as exc:
                         step3_result = {"status": "error", "error": str(exc)}
                     current_status = "stage-4-checked"
                     current_msg = "Commercial invoice checked against sales order."
-                    report = json.dumps({
-                        "status": current_status,
-                        "message": current_msg,
-                        "step3": step3_result,
-                        "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                        "uploaded_documents": stored_metadata,
-                        "next_step": next_step,
-                    }, indent=2)
+                    report = json.dumps(
+                        {
+                            "status": current_status,
+                            "message": current_msg,
+                            "step3": step3_result,
+                            "uploaded_files": sorted(
+                                [key for key in stored_files if stored_files.get(key)]
+                            ),
+                            "uploaded_documents": stored_metadata,
+                            "next_step": next_step,
+                        },
+                        indent=2,
+                    )
                 else:
                     current_status = "error"
                     current_msg = "Stage 4 requires sales_order_file and invoice_file"
-                    report = json.dumps({"status": current_status, "message": current_msg, "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]), "uploaded_documents": stored_metadata}, indent=2)
+                    report = json.dumps(
+                        {
+                            "status": current_status,
+                            "message": current_msg,
+                            "uploaded_files": sorted(
+                                [key for key in stored_files if stored_files.get(key)]
+                            ),
+                            "uploaded_documents": stored_metadata,
+                        },
+                        indent=2,
+                    )
             elif uploaded_count == 0:
-                report = json.dumps({"status": "idle", "message": "No files uploaded"}, indent=2)
+                report = json.dumps(
+                    {"status": "idle", "message": "No files uploaded"}, indent=2
+                )
             elif uploaded_count < 4:
                 step1_result = None
                 if stored_files.get("order_file") and stored_files.get("filled_file"):
                     try:
-                        step1_result = compare_step1(stored_files.get("order_file"), stored_files.get("filled_file"))
+                        step1_result = compare_step1(
+                            stored_files.get("order_file"),
+                            stored_files.get("filled_file"),
+                        )
                     except Exception as exc:
                         step1_result = {"status": "error", "error": str(exc)}
                 current_status = "partial-verification"
                 current_msg = "Captured step-by-step. Partial verification. Please upload all four files for a full report."
-                report = json.dumps({
-                    "status": current_status,
-                    "message": current_msg,
-                    "uploaded_files": sorted([key for key in stored_files if stored_files.get(key)]),
-                    "uploaded_documents": stored_metadata,
-                    "next_step": next_step,
-                    "step1": step1_result or {"status": "skipped", "reason": "missing_excel_inputs"},
-                }, indent=2)
+                report = json.dumps(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "uploaded_files": sorted(
+                            [key for key in stored_files if stored_files.get(key)]
+                        ),
+                        "uploaded_documents": stored_metadata,
+                        "next_step": next_step,
+                        "step1": step1_result
+                        or {"status": "skipped", "reason": "missing_excel_inputs"},
+                    },
+                    indent=2,
+                )
             else:
                 try:
-                    verified_data = run_full_verification(stored_files["order_file"], stored_files["filled_file"], stored_files["sales_order_file"], stored_files["invoice_file"])
+                    verified_data = run_full_verification(
+                        stored_files["order_file"],
+                        stored_files["filled_file"],
+                        stored_files["sales_order_file"],
+                        stored_files["invoice_file"],
+                    )
                     current_status = verified_data.get("status", "completed")
-                    current_msg = verified_data.get("message", "Full verification completed successfully")
+                    current_msg = verified_data.get(
+                        "message", "Full verification completed successfully"
+                    )
                     report = json.dumps(verified_data, indent=2)
                 except Exception as exc:
                     current_status = "error"
                     current_msg = str(exc)
-                    report = json.dumps({"status": "error", "message": current_msg}, indent=2)
+                    report = json.dumps(
+                        {"status": "error", "message": current_msg}, indent=2
+                    )
 
             if fb_sync and fb_sync._client is not None:
-                fb_sync.sync_verification_status({
-                    "status": current_status,
-                    "message": current_msg,
-                    "next_step": next_step or "All Completed",
-                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                })
+                fb_sync.sync_verification_status(
+                    {
+                        "status": current_status,
+                        "message": current_msg,
+                        "next_step": next_step or "All Completed",
+                        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
 
         report_data = None
         if report:
@@ -1276,9 +1626,14 @@ def create_app() -> Flask:
                 report_data = None
 
         if search_query:
-            search_results = json.dumps(CentralizedDB("centralized_db.sqlite3").global_search(search_query), indent=2)
+            search_results = json.dumps(
+                CentralizedDB("centralized_db.sqlite3").global_search(search_query),
+                indent=2,
+            )
 
-        sync_status = json.dumps(fb_sync.get_sync_status() if fb_sync else {"active": False}, indent=2)
+        sync_status = json.dumps(
+            fb_sync.get_sync_status() if fb_sync else {"active": False}, indent=2
+        )
         return render_template_string(
             HTML_TEMPLATE,
             report=report,
@@ -1301,20 +1656,26 @@ def create_app() -> Flask:
         if request.method == "POST":
             action = (request.form.get("action") or "").strip()
             if action == "backup":
-                backup_path = db.backup_database(Path("instance") / "backups" / "centralized_db_backup.sqlite3")
+                backup_path = db.backup_database(
+                    Path("instance") / "backups" / "centralized_db_backup.sqlite3"
+                )
                 backup_message = f"Backup created at {backup_path}"
             elif action == "restore":
                 restore_path = (request.form.get("restore_path") or "").strip()
                 if restore_path:
                     try:
-                        restored_path = db.restore_database(restore_path, overwrite=True)
+                        restored_path = db.restore_database(
+                            restore_path, overwrite=True
+                        )
                         restore_message = f"Restored database to {restored_path}"
                     except Exception as exc:
                         restore_message = f"Restore failed: {exc}"
                 else:
                     restore_message = "Please provide a backup file path"
             elif action == "cleanup":
-                cleanup_dir = (request.form.get("cleanup_dir") or "").strip() or "instance/verification_uploads"
+                cleanup_dir = (
+                    request.form.get("cleanup_dir") or ""
+                ).strip() or "instance/verification_uploads"
                 removed = db.cleanup_temp_uploads(cleanup_dir)
                 cleanup_message = f"Removed {removed} stale files from {cleanup_dir}"
 
@@ -1334,13 +1695,20 @@ def create_app() -> Flask:
         payload = json.dumps(db.get_dashboard_payload(), indent=2)
         distributors = db.list_master_distributors(limit=50)
         raw_retailers = db.list_master_retailers(limit=50)
-        dist_id_to_name = {d['id']: d['firm_name'] for d in distributors}
+        dist_id_to_name = {d["id"]: d["firm_name"] for d in distributors}
         retailers = []
         for r in raw_retailers:
             r = dict(r)
-            r['distributor_name'] = dist_id_to_name.get(r.get('distributor_id'), 'Unknown')
+            r["distributor_name"] = dist_id_to_name.get(
+                r.get("distributor_id"), "Unknown"
+            )
             retailers.append(r)
-        return render_template_string(ANALYTICS_TEMPLATE, payload=payload, distributors=distributors, retailers=retailers)
+        return render_template_string(
+            ANALYTICS_TEMPLATE,
+            payload=payload,
+            distributors=distributors,
+            retailers=retailers,
+        )
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:
@@ -1354,13 +1722,28 @@ def create_app() -> Flask:
         if request.method == "POST":
             week_start_date = request.form.get("week_start_date") or current_date
             day_of_week = request.form.get("day_of_week") or "Monday"
-            planned_distributor_ids = [int(item.strip()) for item in request.form.get("planned_distributor_ids", "").split(",") if item.strip()]
-            planned_retailer_ids = [int(item.strip()) for item in request.form.get("planned_retailer_ids", "").split(",") if item.strip()]
-            plan_id = db.create_weekly_pjp_plan(week_start_date, day_of_week, planned_distributor_ids, planned_retailer_ids)
+            planned_distributor_ids = [
+                int(item.strip())
+                for item in request.form.get("planned_distributor_ids", "").split(",")
+                if item.strip()
+            ]
+            planned_retailer_ids = [
+                int(item.strip())
+                for item in request.form.get("planned_retailer_ids", "").split(",")
+                if item.strip()
+            ]
+            plan_id = db.create_weekly_pjp_plan(
+                week_start_date,
+                day_of_week,
+                planned_distributor_ids,
+                planned_retailer_ids,
+            )
             plan_message = f"Saved weekly plan {plan_id}"
 
         suggestions = json.dumps(db.get_morning_suggestion_list(current_date), indent=2)
-        reports = json.dumps(db.list_dsr_reports_by_date_range(from_date, to_date), indent=2)
+        reports = json.dumps(
+            db.list_dsr_reports_by_date_range(from_date, to_date), indent=2
+        )
         latest_report = db.list_dsr_reports_by_date_range(from_date, to_date)
         if latest_report:
             report_id = latest_report[-1]["report_id"]
@@ -1392,7 +1775,9 @@ def create_app() -> Flask:
         return Response(
             report_text,
             mimetype="text/plain",
-            headers={"Content-Disposition": "attachment; filename=verification_report.txt"},
+            headers={
+                "Content-Disposition": "attachment; filename=verification_report.txt"
+            },
         )
 
     @app.route("/catalog/media")
@@ -1415,7 +1800,9 @@ def create_app() -> Flask:
 
     @app.route("/download/distributors/excel")
     def download_distributors_excel() -> Response:
-        excel_bytes = CentralizedDB("centralized_db.sqlite3").export_master_distributors_excel()
+        excel_bytes = CentralizedDB(
+            "centralized_db.sqlite3"
+        ).export_master_distributors_excel()
         return Response(
             excel_bytes,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1424,7 +1811,9 @@ def create_app() -> Flask:
 
     @app.route("/download/distributors/pdf")
     def download_distributors_pdf() -> Response:
-        pdf_bytes = CentralizedDB("centralized_db.sqlite3").export_master_distributors_pdf()
+        pdf_bytes = CentralizedDB(
+            "centralized_db.sqlite3"
+        ).export_master_distributors_pdf()
         return Response(
             pdf_bytes,
             mimetype="application/pdf",
@@ -1442,7 +1831,9 @@ def create_app() -> Flask:
 
     @app.route("/download/retailers/excel")
     def download_retailers_excel() -> Response:
-        excel_bytes = CentralizedDB("centralized_db.sqlite3").export_master_retailers_excel()
+        excel_bytes = CentralizedDB(
+            "centralized_db.sqlite3"
+        ).export_master_retailers_excel()
         return Response(
             excel_bytes,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1455,7 +1846,9 @@ def create_app() -> Flask:
         return Response(
             csv_data,
             mimetype="text/csv",
-            headers={"Content-Disposition": "attachment; filename=targets_achievements.csv"},
+            headers={
+                "Content-Disposition": "attachment; filename=targets_achievements.csv"
+            },
         )
 
     @app.route("/download/primary-sales")
@@ -1481,11 +1874,15 @@ def create_app() -> Flask:
         report_id = request.args.get("report_id", type=int)
         if report_id is None:
             return Response("Missing report_id", status=400)
-        excel_bytes = CentralizedDB("centralized_db.sqlite3").export_dsr_report(report_id, export_format="excel")
+        excel_bytes = CentralizedDB("centralized_db.sqlite3").export_dsr_report(
+            report_id, export_format="excel"
+        )
         return Response(
             excel_bytes,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename=dsr_report_{report_id}.xlsx"},
+            headers={
+                "Content-Disposition": f"attachment; filename=dsr_report_{report_id}.xlsx"
+            },
         )
 
     @app.route("/bale-calculator", methods=["GET", "POST"])
@@ -1499,7 +1896,9 @@ def create_app() -> Flask:
                 "number_of_designs": request.form.get("number_of_designs", type=float),
                 "number_of_colors": request.form.get("number_of_colors", type=float),
             }
-            calculator_result = json.dumps(calculate_bale_to_pieces(**payload), indent=2)
+            calculator_result = json.dumps(
+                calculate_bale_to_pieces(**payload), indent=2
+            )
         return Response(calculator_result or "", mimetype="application/json")
 
     @app.route("/search")
@@ -1513,16 +1912,26 @@ def create_app() -> Flask:
         db = CentralizedDB("centralized_db.sqlite3")
         articles = json.dumps(db.list_articles_by_category(), indent=2)
         return render_template_string(
-            "<h1>Article Master</h1><pre>{{ articles }}</pre><p><a href=\"/\">Back</a></p>",
+            '<h1>Article Master</h1><pre>{{ articles }}</pre><p><a href="/">Back</a></p>',
             articles=articles,
         )
 
     @app.route("/api/v1/ai-assistant/query", methods=["GET", "POST"])
     def ai_assistant_query() -> Response:
         payload = request.get_json(silent=True) or {}
-        query = str(payload.get("query") or payload.get("queryText") or request.args.get("queryText") or request.args.get("query") or "").strip()
+        query = str(
+            payload.get("query")
+            or payload.get("queryText")
+            or request.args.get("queryText")
+            or request.args.get("query")
+            or ""
+        ).strip()
         if not query:
-            return Response(json.dumps({"error": "Missing query"}), status=400, mimetype="application/json")
+            return Response(
+                json.dumps({"error": "Missing query"}),
+                status=400,
+                mimetype="application/json",
+            )
 
         query = query.replace("ask jarvis", "").replace("talk to jarvis", "").strip()
         db = CentralizedDB("centralized_db.sqlite3")
@@ -1530,7 +1939,9 @@ def create_app() -> Flask:
         answer = "Jarvis at your service, Boss. No matching information found."
 
         if intent == "last_visit":
-            entity = query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
+            entity = (
+                query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
+            )
             distributor = db.get_master_distributor_by_name(entity)
             if distributor:
                 last_visit = db.get_last_visit_date("distributor", distributor["id"])
@@ -1539,10 +1950,18 @@ def create_app() -> Flask:
                 answer = f"Jarvis at your service, Boss. I could not find a distributor named {entity}."
         elif intent == "alerts":
             alerts = db.list_data_entry_alerts()
-            answer = f"Jarvis at your service, Boss. You have {len(alerts)} active alerts." if alerts else "Jarvis at your service, Boss. No active alerts found."
+            answer = (
+                f"Jarvis at your service, Boss. You have {len(alerts)} active alerts."
+                if alerts
+                else "Jarvis at your service, Boss. No active alerts found."
+            )
         elif intent == "pjp":
             suggestions = db.get_morning_suggestion_list("2026-06-26")
-            answer = f"Jarvis at your service, Boss. There are {len(suggestions)} retailer visits suggested today." if suggestions else "Jarvis at your service, Boss. No PJP suggestions found."
+            answer = (
+                f"Jarvis at your service, Boss. There are {len(suggestions)} retailer visits suggested today."
+                if suggestions
+                else "Jarvis at your service, Boss. No PJP suggestions found."
+            )
         elif intent == "purchase_trends":
             distributor = db.get_master_distributor_by_name(query)
             if distributor:
@@ -1554,14 +1973,19 @@ def create_app() -> Flask:
             search_results = db.global_search(query)
             answer = f"Jarvis at your service, Boss. {json.dumps(search_results, ensure_ascii=False)}"
 
-        return Response(json.dumps({"intent": intent, "query": query, "answer": answer}, ensure_ascii=False), mimetype="application/json")
+        return Response(
+            json.dumps(
+                {"intent": intent, "query": query, "answer": answer}, ensure_ascii=False
+            ),
+            mimetype="application/json",
+        )
 
     @app.route("/alerts")
     def alerts() -> str:
         db = CentralizedDB("centralized_db.sqlite3")
         rows = db.list_data_entry_alerts()
         return render_template_string(
-            "<h1>Data Entry Alerts</h1><pre>{{ rows }}</pre><p><a href=\"/\">Back</a></p>",
+            '<h1>Data Entry Alerts</h1><pre>{{ rows }}</pre><p><a href="/">Back</a></p>',
             rows=json.dumps(rows, indent=2),
         )
 
@@ -1575,7 +1999,12 @@ def create_app() -> Flask:
             credit_days_allowed = request.form.get("credit_days_allowed", type=int)
             account_status = request.form.get("account_status", "ACTIVE")
             if distributor_id is not None:
-                db.upsert_credit_control(distributor_id, max_credit_limit=max_credit_limit, credit_days_allowed=credit_days_allowed, account_status=account_status)
+                db.upsert_credit_control(
+                    distributor_id,
+                    max_credit_limit=max_credit_limit,
+                    credit_days_allowed=credit_days_allowed,
+                    account_status=account_status,
+                )
                 message = "Credit policy saved"
         policy_rows = db.list_credit_control()
         return render_template_string(
@@ -1603,13 +2032,16 @@ def create_app() -> Flask:
             distributor_id = 1
         logs = db.build_distributor_purchase_behavior_logs(distributor_id)
         return render_template_string(
-            "<h1>Distributor Purchase Behavior</h1><pre>{{ logs }}</pre><p><a href=\"/\">Back</a></p>",
+            '<h1>Distributor Purchase Behavior</h1><pre>{{ logs }}</pre><p><a href="/">Back</a></p>',
             logs=json.dumps(logs, indent=2),
         )
 
     @app.route("/pwa-dashboard")
     def pwa_dashboard() -> Response:
-        return Response((Path(__file__).parent / "pwa_dashboard.html").read_text(encoding="utf-8"), mimetype="text/html")
+        return Response(
+            (Path(__file__).parent / "pwa_dashboard.html").read_text(encoding="utf-8"),
+            mimetype="text/html",
+        )
 
     @app.route("/api/v1/dashboard/summary")
     def dashboard_summary() -> Response:
@@ -1625,41 +2057,67 @@ def create_app() -> Flask:
             },
             "suggestions": db.get_morning_suggestion_list("2026-06-26")[:3],
         }
-        return Response(json.dumps(payload, ensure_ascii=False), mimetype="application/json")
+        return Response(
+            json.dumps(payload, ensure_ascii=False), mimetype="application/json"
+        )
 
     @app.route("/manifest.json")
     def manifest() -> Response:
-        return Response(json.dumps({
-            "name": "Jarvis Business Platform",
-            "short_name": "Jarvis",
-            "start_url": "/pwa-dashboard",
-            "display": "standalone",
-            "background_color": "#020617",
-            "theme_color": "#0f172a",
-            "icons": [
-                {"src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml"},
-                {"src": "/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml"},
-            ],
-        }), mimetype="application/json")
+        return Response(
+            json.dumps(
+                {
+                    "name": "Jarvis Business Platform",
+                    "short_name": "Jarvis",
+                    "start_url": "/pwa-dashboard",
+                    "display": "standalone",
+                    "background_color": "#020617",
+                    "theme_color": "#0f172a",
+                    "icons": [
+                        {
+                            "src": "/icon-192.svg",
+                            "sizes": "192x192",
+                            "type": "image/svg+xml",
+                        },
+                        {
+                            "src": "/icon-512.svg",
+                            "sizes": "512x512",
+                            "type": "image/svg+xml",
+                        },
+                    ],
+                }
+            ),
+            mimetype="application/json",
+        )
 
     @app.route("/service-worker.js")
     def service_worker() -> Response:
-        return Response((Path(__file__).parent / "service-worker.js").read_text(encoding="utf-8"), mimetype="application/javascript")
+        return Response(
+            (Path(__file__).parent / "service-worker.js").read_text(encoding="utf-8"),
+            mimetype="application/javascript",
+        )
 
     @app.route("/icon-192.svg")
     def icon_192() -> Response:
-        return Response((Path(__file__).parent / "icon-192.svg").read_text(encoding="utf-8"), mimetype="image/svg+xml")
+        return Response(
+            (Path(__file__).parent / "icon-192.svg").read_text(encoding="utf-8"),
+            mimetype="image/svg+xml",
+        )
 
     @app.route("/icon-512.svg")
     def icon_512() -> Response:
-        return Response((Path(__file__).parent / "icon-512.svg").read_text(encoding="utf-8"), mimetype="image/svg+xml")
+        return Response(
+            (Path(__file__).parent / "icon-512.svg").read_text(encoding="utf-8"),
+            mimetype="image/svg+xml",
+        )
 
     @app.route("/workflow-gps")
     def workflow_gps() -> str:
         db = CentralizedDB("centralized_db.sqlite3")
         party_id = request.args.get("party_id", type=int) or 1
         party_type = request.args.get("party_type", "distributor") or "distributor"
-        tasks = db.list_workflow_todos_for_party(party_id=party_id, party_type=party_type)
+        tasks = db.list_workflow_todos_for_party(
+            party_id=party_id, party_type=party_type
+        )
         gps_logs = []
         with sqlite3.connect(db.db_path) as conn:
             rows = conn.execute(
@@ -1701,7 +2159,9 @@ def create_app() -> Flask:
     def monthly_reports() -> str:
         selected_month = request.args.get("month") or datetime.now().strftime("%Y-%m")
         data = _get_monthly_report_data(_db_path(), selected_month)
-        return render_template_string(REPORTS_TEMPLATE, selected_month=selected_month, **data)
+        return render_template_string(
+            REPORTS_TEMPLATE, selected_month=selected_month, **data
+        )
 
     @app.route("/reports/download/excel")
     def download_monthly_report_excel() -> Response:
@@ -1709,7 +2169,17 @@ def create_app() -> Flask:
         data = _get_monthly_report_data(_db_path(), selected_month)
         df = pd.DataFrame(data["distributor_activity"])
         if df.empty:
-            df = pd.DataFrame(columns=["distributor_name", "total_uploads", "stage1", "stage2", "stage3", "stage4", "last_upload"])
+            df = pd.DataFrame(
+                columns=[
+                    "distributor_name",
+                    "total_uploads",
+                    "stage1",
+                    "stage2",
+                    "stage3",
+                    "stage4",
+                    "last_upload",
+                ]
+            )
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Monthly Report")
@@ -1717,7 +2187,9 @@ def create_app() -> Flask:
         return Response(
             output.read(),
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.xlsx"},
+            headers={
+                "Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.xlsx"
+            },
         )
 
     @app.route("/reports/download/csv")
@@ -1725,14 +2197,28 @@ def create_app() -> Flask:
         selected_month = request.args.get("month") or datetime.now().strftime("%Y-%m")
         data = _get_monthly_report_data(_db_path(), selected_month)
         output = StringIO()
-        writer = csv.DictWriter(output, fieldnames=["distributor_name", "total_uploads", "stage1", "stage2", "stage3", "stage4", "last_upload"])
+        writer = csv.DictWriter(
+            output,
+            fieldnames=[
+                "distributor_name",
+                "total_uploads",
+                "stage1",
+                "stage2",
+                "stage3",
+                "stage4",
+                "last_upload",
+            ],
+        )
         writer.writeheader()
         writer.writerows(data["distributor_activity"])
         return Response(
             output.getvalue(),
             mimetype="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.csv"},
+            headers={
+                "Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.csv"
+            },
         )
+
     @app.route("/article-master")
     def article_master_search() -> str:
         db_path = _db_path()
@@ -1752,36 +2238,49 @@ def create_app() -> Flask:
                     params.append(size_filter)
                 sql += " ORDER BY brand, size"
                 articles = [dict(r) for r in conn.execute(sql, params).fetchall()]
-        return render_template_string(ARTICLE_MASTER_TEMPLATE,
-            query=query, size_filter=size_filter, articles=articles)
+        return render_template_string(
+            ARTICLE_MASTER_TEMPLATE,
+            query=query,
+            size_filter=size_filter,
+            articles=articles,
+        )
 
-
-    @app.route('/retailer-download')
+    @app.route("/retailer-download")
     def retailer_download_page():
         db_path = _db_path()
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
-            distributors = [dict(r) for r in conn.execute('SELECT id, firm_name, firm_nick_name FROM master_distributors ORDER BY firm_name').fetchall()]
-        return render_template_string(RETAILER_DOWNLOAD_TEMPLATE, distributors=distributors)
+            distributors = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT id, firm_name, firm_nick_name FROM master_distributors ORDER BY firm_name"
+                ).fetchall()
+            ]
+        return render_template_string(
+            RETAILER_DOWNLOAD_TEMPLATE, distributors=distributors
+        )
 
-    @app.route('/retailer-download/excel')
+    @app.route("/retailer-download/excel")
     def retailer_download_excel():
         db_path = _db_path()
-        dist_id = request.args.get('dist_id', 'all')
+        dist_id = request.args.get("dist_id", "all")
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
-            if dist_id == 'all':
-                rows = conn.execute("""
+            if dist_id == "all":
+                rows = conn.execute(
+                    """
                     SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
                     d.firm_name as distributor_name, d.firm_nick_name,
                     r.location, r.phone_number, r.email, r.address, r.gst_no
                     FROM master_retailers r
                     LEFT JOIN master_distributors d ON r.distributor_id = d.id
                     ORDER BY d.firm_name, r.name
-                """).fetchall()
-                filename = 'all_retailers.xlsx'
+                """
+                ).fetchall()
+                filename = "all_retailers.xlsx"
             else:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
                     d.firm_name as distributor_name, d.firm_nick_name,
                     r.location, r.phone_number, r.email, r.address, r.gst_no
@@ -1789,42 +2288,49 @@ def create_app() -> Flask:
                     LEFT JOIN master_distributors d ON r.distributor_id = d.id
                     WHERE r.distributor_id = ?
                     ORDER BY r.name
-                """, (dist_id,)).fetchall()
-                dist_name = rows[0]['firm_nick_name'] if rows else str(dist_id)
-                filename = f'{dist_name}_retailers.xlsx'
+                """,
+                    (dist_id,),
+                ).fetchall()
+                dist_name = rows[0]["firm_nick_name"] if rows else str(dist_id)
+                filename = f"{dist_name}_retailers.xlsx"
         import io as _io
         import pandas as _pd
+
         df = _pd.DataFrame([dict(r) for r in rows])
         output = _io.BytesIO()
-        with _pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Retailers')
+        with _pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Retailers")
         output.seek(0)
         return Response(
             output.read(),
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            headers={'Content-Disposition': f'attachment; filename={filename}'}
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
-    @app.route('/retailer-download/csv')
+    @app.route("/retailer-download/csv")
     def retailer_download_csv():
         import csv as _csv
         from io import StringIO as _StringIO
+
         db_path = _db_path()
-        dist_id = request.args.get('dist_id', 'all')
+        dist_id = request.args.get("dist_id", "all")
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
-            if dist_id == 'all':
-                rows = conn.execute("""
+            if dist_id == "all":
+                rows = conn.execute(
+                    """
                     SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
                     d.firm_name as distributor_name, d.firm_nick_name,
                     r.location, r.phone_number, r.email, r.address, r.gst_no
                     FROM master_retailers r
                     LEFT JOIN master_distributors d ON r.distributor_id = d.id
                     ORDER BY d.firm_name, r.name
-                """).fetchall()
-                filename = 'all_retailers.csv'
+                """
+                ).fetchall()
+                filename = "all_retailers.csv"
             else:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT r.id, r.retailer_code, r.name as retailer_name, r.owner_name,
                     d.firm_name as distributor_name, d.firm_nick_name,
                     r.location, r.phone_number, r.email, r.address, r.gst_no
@@ -1832,9 +2338,11 @@ def create_app() -> Flask:
                     LEFT JOIN master_distributors d ON r.distributor_id = d.id
                     WHERE r.distributor_id = ?
                     ORDER BY r.name
-                """, (dist_id,)).fetchall()
-                dist_name = rows[0]['firm_nick_name'] if rows else str(dist_id)
-                filename = f'{dist_name}_retailers.csv'
+                """,
+                    (dist_id,),
+                ).fetchall()
+                dist_name = rows[0]["firm_nick_name"] if rows else str(dist_id)
+                filename = f"{dist_name}_retailers.csv"
         output = _StringIO()
         if rows:
             writer = _csv.DictWriter(output, fieldnames=list(dict(rows[0]).keys()))
@@ -1842,8 +2350,8 @@ def create_app() -> Flask:
             writer.writerows([dict(r) for r in rows])
         return Response(
             output.getvalue(),
-            mimetype='text/csv',
-            headers={'Content-Disposition': f'attachment; filename={filename}'}
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
     # ============ SCHEMA MANAGER ROUTES ============
@@ -1936,7 +2444,9 @@ th { background: #f0f0f0; }
         message = request.args.get("message", "")
         db = CentralizedDB(_db_path())
         fields = db.get_all_schema_fields(entity)
-        return render_template_string(SCHEMA_MANAGER_TEMPLATE, entity=entity, fields=fields, message=message)
+        return render_template_string(
+            SCHEMA_MANAGER_TEMPLATE, entity=entity, fields=fields, message=message
+        )
 
     @app.route("/settings/schema/add", methods=["POST"])
     def schema_add_field():
@@ -1968,7 +2478,9 @@ th { background: #f0f0f0; }
         field_id = request.form.get("field_id", type=int)
         is_visible = request.form.get("is_visible", type=int)
         if field_id is not None:
-            CentralizedDB(_db_path()).toggle_schema_field_visibility(field_id, is_visible)
+            CentralizedDB(_db_path()).toggle_schema_field_visibility(
+                field_id, is_visible
+            )
         return redirect(f"/settings/schema?entity={entity}&message=Visibility updated")
 
     @app.route("/settings/schema/move", methods=["POST"])
@@ -1982,19 +2494,24 @@ th { background: #f0f0f0; }
         if field_id in ids:
             idx = ids.index(field_id)
             if direction == "up" and idx > 0:
-                ids[idx], ids[idx-1] = ids[idx-1], ids[idx]
-            elif direction == "down" and idx < len(ids)-1:
-                ids[idx], ids[idx+1] = ids[idx+1], ids[idx]
-            db.reorder_schema_fields([{"id": fid, "order": i} for i, fid in enumerate(ids)])
+                ids[idx], ids[idx - 1] = ids[idx - 1], ids[idx]
+            elif direction == "down" and idx < len(ids) - 1:
+                ids[idx], ids[idx + 1] = ids[idx + 1], ids[idx]
+            db.reorder_schema_fields(
+                [{"id": fid, "order": i} for i, fid in enumerate(ids)]
+            )
         return redirect(f"/settings/schema?entity={entity}&message=Reordered")
 
     @app.route("/settings/schema/seed", methods=["POST"])
     def schema_seed():
         CentralizedDB(_db_path()).seed_default_schema()
-        return redirect("/settings/schema?entity=distributor&message=Default schema loaded!")
+        return redirect(
+            "/settings/schema?entity=distributor&message=Default schema loaded!"
+        )
 
     # ============ END SCHEMA MANAGER ROUTES ============
     return app
+
 
 ARTICLE_MASTER_TEMPLATE = """
 <!doctype html>
@@ -2209,18 +2726,26 @@ def _get_monthly_report_data(db_path: str, month: str) -> dict:
         year, mon = month.split("-")
         start_date = f"{year}-{mon}-01"
         import calendar
+
         last_day = calendar.monthrange(int(year), int(mon))[1]
         end_date = f"{year}-{mon}-{last_day:02d}"
     except Exception:
-        return {"distributor_activity": [], "total_uploads": 0, "total_distributors": 0, "verified_count": 0, "pending_count": 0}
+        return {
+            "distributor_activity": [],
+            "total_uploads": 0,
+            "total_distributors": 0,
+            "verified_count": 0,
+            "pending_count": 0,
+        }
     try:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             total_uploads = conn.execute(
                 "SELECT COUNT(*) FROM distributor_order_uploads WHERE DATE(uploaded_at) BETWEEN ? AND ?",
-                (start_date, end_date)
+                (start_date, end_date),
             ).fetchone()[0]
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT distributor_name,
                     COUNT(*) as total_uploads,
                     SUM(CASE WHEN stage_key = 'order_file' THEN 1 ELSE 0 END) as stage1,
@@ -2234,10 +2759,16 @@ def _get_monthly_report_data(db_path: str, month: str) -> dict:
                 AND distributor_name != ''
                 GROUP BY distributor_name
                 ORDER BY total_uploads DESC
-            """, (start_date, end_date)).fetchall()
+            """,
+                (start_date, end_date),
+            ).fetchall()
             distributor_activity = [dict(row) for row in rows]
             total_distributors = len(distributor_activity)
-            verified_count = sum(1 for r in distributor_activity if r["stage1"] and r["stage2"] and r["stage3"] and r["stage4"])
+            verified_count = sum(
+                1
+                for r in distributor_activity
+                if r["stage1"] and r["stage2"] and r["stage3"] and r["stage4"]
+            )
             pending_count = total_distributors - verified_count
     except Exception:
         distributor_activity = []
@@ -2249,6 +2780,10 @@ def _get_monthly_report_data(db_path: str, month: str) -> dict:
         "verified_count": verified_count,
         "pending_count": pending_count,
     }
+
+
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=os.getenv('DEBUG','False')=='True', port=int(os.getenv('PORT',5000)))
+    app.run(
+        debug=os.getenv("DEBUG", "False") == "True", port=int(os.getenv("PORT", 5000))
+    )

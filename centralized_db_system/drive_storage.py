@@ -12,7 +12,9 @@ class GoogleDriveStorage:
         self.folder_id = folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
         self.client = client
 
-    def upload_file(self, path: str | Path, file_name: str | None = None) -> dict[str, Any]:
+    def upload_file(
+        self, path: str | Path, file_name: str | None = None
+    ) -> dict[str, Any]:
         path = Path(path)
         name = file_name or path.name
         file_id = f"drive-{abs(hash(path.name))}"

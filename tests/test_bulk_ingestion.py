@@ -10,31 +10,35 @@ def _write_excel(path: Path, dataframe: pd.DataFrame) -> None:
         dataframe.to_excel(writer, index=False, sheet_name="Sheet1")
 
 
-def test_bulk_master_upload_populates_distributors_and_retailers(tmp_path: Path) -> None:
+def test_bulk_master_upload_populates_distributors_and_retailers(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "bulk_masters.sqlite3"))
 
     distributor_file = tmp_path / "distributors.xlsx"
-    distributor_df = pd.DataFrame([
-        {
-            "Distributor Code": "D-ALPHA",
-            "Firm Name": "Alpha Group",
-            "Firm nick name": "AG",
-            "Distributor Name": "Alpha Traders",
-            "Mobile Number": "9876543210",
-            "Location": "Andheri",
-            "Address": "Main Road",
-            "Pincode": "400001",
-            "Email id": "alpha@example.com",
-            "Distribution State": "Maharashtra",
-            "Distribution Area": "Mumbai",
-            "GST Number": "27AAAA0000A1Z5",
-            "Payment Terms": "30 Days",
-            "Birthday": "1990-01-01",
-            "Anniversary": "2015-05-20",
-            "Credit Limit": 15000,
-            "Opening Balance": 2500,
-        }
-    ])
+    distributor_df = pd.DataFrame(
+        [
+            {
+                "Distributor Code": "D-ALPHA",
+                "Firm Name": "Alpha Group",
+                "Firm nick name": "AG",
+                "Distributor Name": "Alpha Traders",
+                "Mobile Number": "9876543210",
+                "Location": "Andheri",
+                "Address": "Main Road",
+                "Pincode": "400001",
+                "Email id": "alpha@example.com",
+                "Distribution State": "Maharashtra",
+                "Distribution Area": "Mumbai",
+                "GST Number": "27AAAA0000A1Z5",
+                "Payment Terms": "30 Days",
+                "Birthday": "1990-01-01",
+                "Anniversary": "2015-05-20",
+                "Credit Limit": 15000,
+                "Opening Balance": 2500,
+            }
+        ]
+    )
     _write_excel(distributor_file, distributor_df)
 
     distributor_result = db.bulk_upload_masters(
@@ -65,14 +69,16 @@ def test_bulk_master_upload_populates_distributors_and_retailers(tmp_path: Path)
     assert distributor_result["inserted"] == 1
 
     retailer_file = tmp_path / "retailers.xlsx"
-    retailer_df = pd.DataFrame([
-        {
-            "Retailer Name": "Shop One",
-            "Distributor": "Alpha Traders",
-            "Location": "Andheri",
-            "Phone": "9876543210",
-        }
-    ])
+    retailer_df = pd.DataFrame(
+        [
+            {
+                "Retailer Name": "Shop One",
+                "Distributor": "Alpha Traders",
+                "Location": "Andheri",
+                "Phone": "9876543210",
+            }
+        ]
+    )
     _write_excel(retailer_file, retailer_df)
 
     retailer_result = db.bulk_upload_masters(
@@ -109,32 +115,38 @@ def test_bulk_master_upload_populates_distributors_and_retailers(tmp_path: Path)
     assert retailer["distributor_id"] == distributor["id"]
 
 
-def test_bulk_master_upload_accepts_common_retailer_header_aliases(tmp_path: Path) -> None:
+def test_bulk_master_upload_accepts_common_retailer_header_aliases(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "retailer_aliases.sqlite3"))
-    db.add_master_distributor(name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG")
+    db.add_master_distributor(
+        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG"
+    )
 
     retailer_file = tmp_path / "retailers_aliases.xlsx"
-    retailer_df = pd.DataFrame([
-        {
-            "Retailer Name": "Shop One",
-            "Distributor": "Alpha Traders",
-            "Retailer Code": "RT-001",
-            "Location": "Andheri",
-            "Retailer Mobile Number": "9876543210",
-            "Retailer Email": "shop@example.com",
-            "Address": "Main Road",
-            "GSTIN": "27AAAA0000A1Z5",
-            "Secondary Contact Name": "Aman",
-            "Secondary Contact Mobile Number": "7777777777",
-            "Secondary Contact Birthday": "1993-03-03",
-            "Secondary Contact Anniversary": "2018-04-04",
-            "Sales Executive": "Nisha",
-            "Sales Executive Mobile Number": "6666666666",
-            "Sales Executive Email": "nisha@example.com",
-            "Sales Executive Birthday": "1991-05-05",
-            "Sales Executive Anniversary": "2019-06-06",
-        }
-    ])
+    retailer_df = pd.DataFrame(
+        [
+            {
+                "Retailer Name": "Shop One",
+                "Distributor": "Alpha Traders",
+                "Retailer Code": "RT-001",
+                "Location": "Andheri",
+                "Retailer Mobile Number": "9876543210",
+                "Retailer Email": "shop@example.com",
+                "Address": "Main Road",
+                "GSTIN": "27AAAA0000A1Z5",
+                "Secondary Contact Name": "Aman",
+                "Secondary Contact Mobile Number": "7777777777",
+                "Secondary Contact Birthday": "1993-03-03",
+                "Secondary Contact Anniversary": "2018-04-04",
+                "Sales Executive": "Nisha",
+                "Sales Executive Mobile Number": "6666666666",
+                "Sales Executive Email": "nisha@example.com",
+                "Sales Executive Birthday": "1991-05-05",
+                "Sales Executive Anniversary": "2019-06-06",
+            }
+        ]
+    )
     _write_excel(retailer_file, retailer_df)
 
     result = db.bulk_upload_masters("retailers", retailer_file)
@@ -149,38 +161,42 @@ def test_bulk_master_upload_accepts_common_retailer_header_aliases(tmp_path: Pat
     assert retailer["sales_executive_name"] == "Nisha"
 
 
-def test_bulk_master_upload_accepts_common_distributor_header_aliases(tmp_path: Path) -> None:
+def test_bulk_master_upload_accepts_common_distributor_header_aliases(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "distributor_aliases.sqlite3"))
 
     distributor_file = tmp_path / "distributors_aliases.xlsx"
-    distributor_df = pd.DataFrame([
-        {
-            "Distributor Name": "Alpha Traders",
-            "Distributor Code": "D-ALPHA",
-            "Firm Name": "Alpha Group",
-            "Firm nick name": "AG",
-            "Distributor Mobile Number": "9876543210",
-            "Distributor Email": "alpha@example.com",
-            "Location": "Andheri",
-            "Address": "Main Road",
-            "Pincode": "400001",
-            "Distribution State": "Maharashtra",
-            "Distribution Area": "Mumbai",
-            "GSTIN": "27AAAA0000A1Z5",
-            "Payment Terms": "30 Days",
-            "Birthday": "1990-01-01",
-            "Anniversary": "2015-05-20",
-            "Secondary Contact Name": "Ravi",
-            "Secondary Contact Mobile Number": "9999999999",
-            "Secondary Contact Birthday": "1992-02-02",
-            "Secondary Contact Anniversary": "2016-03-03",
-            "Sales Executive": "Meera",
-            "Sales Executive Mobile Number": "8888888888",
-            "Sales Executive Email": "meera@example.com",
-            "Sales Executive Birthday": "1991-04-04",
-            "Sales Executive Anniversary": "2018-05-05",
-        }
-    ])
+    distributor_df = pd.DataFrame(
+        [
+            {
+                "Distributor Name": "Alpha Traders",
+                "Distributor Code": "D-ALPHA",
+                "Firm Name": "Alpha Group",
+                "Firm nick name": "AG",
+                "Distributor Mobile Number": "9876543210",
+                "Distributor Email": "alpha@example.com",
+                "Location": "Andheri",
+                "Address": "Main Road",
+                "Pincode": "400001",
+                "Distribution State": "Maharashtra",
+                "Distribution Area": "Mumbai",
+                "GSTIN": "27AAAA0000A1Z5",
+                "Payment Terms": "30 Days",
+                "Birthday": "1990-01-01",
+                "Anniversary": "2015-05-20",
+                "Secondary Contact Name": "Ravi",
+                "Secondary Contact Mobile Number": "9999999999",
+                "Secondary Contact Birthday": "1992-02-02",
+                "Secondary Contact Anniversary": "2016-03-03",
+                "Sales Executive": "Meera",
+                "Sales Executive Mobile Number": "8888888888",
+                "Sales Executive Email": "meera@example.com",
+                "Sales Executive Birthday": "1991-04-04",
+                "Sales Executive Anniversary": "2018-05-05",
+            }
+        ]
+    )
     _write_excel(distributor_file, distributor_df)
 
     result = db.bulk_upload_masters("distributors", distributor_file)
@@ -195,28 +211,32 @@ def test_bulk_master_upload_accepts_common_distributor_header_aliases(tmp_path: 
     assert distributor["sales_executive_name"] == "Meera"
 
 
-def test_bulk_master_upload_allows_similar_but_distinct_distributor_names(tmp_path: Path) -> None:
+def test_bulk_master_upload_allows_similar_but_distinct_distributor_names(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "similar_distributors.sqlite3"))
 
     distributor_file = tmp_path / "distributors.xlsx"
-    distributor_df = pd.DataFrame([
-        {
-            "Distributor Name": "Alpha Traders",
-            "GST Number": "27AAAA0000A1Z5",
-            "Zone": "West",
-            "Region": "Mumbai",
-            "Credit Limit": 15000,
-            "Opening Balance": 2500,
-        },
-        {
-            "Distributor Name": "Alpha Trader",
-            "GST Number": "27AAAA0000A2Z5",
-            "Zone": "West",
-            "Region": "Mumbai",
-            "Credit Limit": 12000,
-            "Opening Balance": 1800,
-        },
-    ])
+    distributor_df = pd.DataFrame(
+        [
+            {
+                "Distributor Name": "Alpha Traders",
+                "GST Number": "27AAAA0000A1Z5",
+                "Zone": "West",
+                "Region": "Mumbai",
+                "Credit Limit": 15000,
+                "Opening Balance": 2500,
+            },
+            {
+                "Distributor Name": "Alpha Trader",
+                "GST Number": "27AAAA0000A2Z5",
+                "Zone": "West",
+                "Region": "Mumbai",
+                "Credit Limit": 12000,
+                "Opening Balance": 1800,
+            },
+        ]
+    )
     _write_excel(distributor_file, distributor_df)
 
     result = db.bulk_upload_masters(
@@ -244,26 +264,28 @@ def test_distributor_bulk_upload_saves_extended_fields(tmp_path: Path) -> None:
     db = CentralizedDB(str(tmp_path / "distributor_extended.sqlite3"))
 
     distributor_file = tmp_path / "distributors.xlsx"
-    distributor_df = pd.DataFrame([
-        {
-            "Distributor Code": "D-ALPHA-EXT",
-            "Firm Name": "Alpha Group",
-            "Firm nick name": "AG",
-            "Distributor Name": "Alpha Traders",
-            "GST Number": "27AAAA0000A1Z5",
-            "Distribution State": "West",
-            "Distribution Area": "Mumbai",
-            "Credit Limit": 15000,
-            "Mobile Number": "9876543210",
-            "Email id": "alpha@example.com",
-            "Location": "Andheri",
-            "Address": "Main Road",
-            "Pincode": "400001",
-            "Payment Terms": "30 Days",
-            "Birthday": "1990-01-01",
-            "Anniversary": "2015-05-20",
-        }
-    ])
+    distributor_df = pd.DataFrame(
+        [
+            {
+                "Distributor Code": "D-ALPHA-EXT",
+                "Firm Name": "Alpha Group",
+                "Firm nick name": "AG",
+                "Distributor Name": "Alpha Traders",
+                "GST Number": "27AAAA0000A1Z5",
+                "Distribution State": "West",
+                "Distribution Area": "Mumbai",
+                "Credit Limit": 15000,
+                "Mobile Number": "9876543210",
+                "Email id": "alpha@example.com",
+                "Location": "Andheri",
+                "Address": "Main Road",
+                "Pincode": "400001",
+                "Payment Terms": "30 Days",
+                "Birthday": "1990-01-01",
+                "Anniversary": "2015-05-20",
+            }
+        ]
+    )
     _write_excel(distributor_file, distributor_df)
 
     result = db.bulk_upload_masters(
@@ -311,16 +333,18 @@ def test_retailer_bulk_upload_saves_extended_fields(tmp_path: Path) -> None:
     db = CentralizedDB(str(tmp_path / "retailer_extended.sqlite3"))
 
     distributor_file = tmp_path / "distributors.xlsx"
-    distributor_df = pd.DataFrame([
-        {
-            "Distributor Name": "Alpha Traders",
-            "GSTIN": "27AAAA0000A1Z5",
-            "Zone": "West",
-            "Region": "Mumbai",
-            "Credit Limit": 15000,
-            "Opening Balance": 2500,
-        }
-    ])
+    distributor_df = pd.DataFrame(
+        [
+            {
+                "Distributor Name": "Alpha Traders",
+                "GSTIN": "27AAAA0000A1Z5",
+                "Zone": "West",
+                "Region": "Mumbai",
+                "Credit Limit": 15000,
+                "Opening Balance": 2500,
+            }
+        ]
+    )
     _write_excel(distributor_file, distributor_df)
 
     db.bulk_upload_masters(
@@ -339,17 +363,19 @@ def test_retailer_bulk_upload_saves_extended_fields(tmp_path: Path) -> None:
     )
 
     retailer_file = tmp_path / "retailers.xlsx"
-    retailer_df = pd.DataFrame([
-        {
-            "Retailer Name": "Shop One",
-            "Distributor": "Alpha Traders",
-            "Location": "Andheri",
-            "Phone": "9876543210",
-            "Email": "shop@example.com",
-            "Address": "Main Road",
-            "GSTIN": "27ABCDE1234F1Z5",
-        }
-    ])
+    retailer_df = pd.DataFrame(
+        [
+            {
+                "Retailer Name": "Shop One",
+                "Distributor": "Alpha Traders",
+                "Location": "Andheri",
+                "Phone": "9876543210",
+                "Email": "shop@example.com",
+                "Address": "Main Road",
+                "GSTIN": "27ABCDE1234F1Z5",
+            }
+        ]
+    )
     _write_excel(retailer_file, retailer_df)
 
     result = db.bulk_upload_masters(
@@ -381,16 +407,18 @@ def test_article_bulk_upload_sanitizes_and_saves_custom_headers(tmp_path: Path) 
     db = CentralizedDB(str(tmp_path / "articles.sqlite3"))
 
     article_file = tmp_path / "articles.xlsx"
-    article_df = pd.DataFrame([
-        {
-            "Category": "towels",
-            "Design Code": "A100",
-            "Colour": "blue",
-            "Base Rate": 1200,
-            "GST %": 5,
-            "Pcs / Bale": 40,
-        }
-    ])
+    article_df = pd.DataFrame(
+        [
+            {
+                "Category": "towels",
+                "Design Code": "A100",
+                "Colour": "blue",
+                "Base Rate": 1200,
+                "GST %": 5,
+                "Pcs / Bale": 40,
+            }
+        ]
+    )
     _write_excel(article_file, article_df)
 
     result = db.bulk_upload_articles(
@@ -415,37 +443,43 @@ def test_article_bulk_upload_sanitizes_and_saves_custom_headers(tmp_path: Path) 
     assert rows[0]["base_rate"] == 1200
 
 
-def test_distributor_bulk_upload_updates_same_record_without_mixing(tmp_path: Path) -> None:
+def test_distributor_bulk_upload_updates_same_record_without_mixing(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "distributor_updates.sqlite3"))
 
     distributor_file_1 = tmp_path / "distributors_first.xlsx"
-    distributor_df_1 = pd.DataFrame([
-        {
-            "Firm Name": "Alpha Group",
-            "Firm nick name": "AG",
-            "Distributor Name": "Alpha Traders",
-            "GST Number": "27AAAA0000A1Z5",
-            "Mobile Number": "9876543210",
-            "Address": "Main Road",
-        }
-    ])
+    distributor_df_1 = pd.DataFrame(
+        [
+            {
+                "Firm Name": "Alpha Group",
+                "Firm nick name": "AG",
+                "Distributor Name": "Alpha Traders",
+                "GST Number": "27AAAA0000A1Z5",
+                "Mobile Number": "9876543210",
+                "Address": "Main Road",
+            }
+        ]
+    )
     _write_excel(distributor_file_1, distributor_df_1)
 
     first = db.bulk_upload_masters("distributors", distributor_file_1)
     assert first["inserted"] == 1
 
     distributor_file_2 = tmp_path / "distributors_second.xlsx"
-    distributor_df_2 = pd.DataFrame([
-        {
-            "Firm Name": "Alpha Group Pvt Ltd",
-            "Firm nick name": "AGP",
-            "Distributor Name": "Alpha Traders",
-            "GST Number": "27AAAA0000A1Z5",
-            "Mobile Number": "9999999999",
-            "Address": "Updated Road",
-            "Payment Terms": "45 Days",
-        }
-    ])
+    distributor_df_2 = pd.DataFrame(
+        [
+            {
+                "Firm Name": "Alpha Group Pvt Ltd",
+                "Firm nick name": "AGP",
+                "Distributor Name": "Alpha Traders",
+                "GST Number": "27AAAA0000A1Z5",
+                "Mobile Number": "9999999999",
+                "Address": "Updated Road",
+                "Payment Terms": "45 Days",
+            }
+        ]
+    )
     _write_excel(distributor_file_2, distributor_df_2)
 
     second = db.bulk_upload_masters("distributors", distributor_file_2)
@@ -462,32 +496,38 @@ def test_distributor_bulk_upload_updates_same_record_without_mixing(tmp_path: Pa
     assert stored["payment_terms"] == "45 Days"
 
 
-def test_distributor_bulk_upload_skips_conflict_when_name_and_gst_map_to_different_records(tmp_path: Path) -> None:
+def test_distributor_bulk_upload_skips_conflict_when_name_and_gst_map_to_different_records(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "distributor_conflict.sqlite3"))
 
     base_file = tmp_path / "base_distributors.xlsx"
-    base_df = pd.DataFrame([
-        {
-            "Distributor Name": "Alpha Traders",
-            "GST Number": "27AAAA0000A1Z5",
-        },
-        {
-            "Distributor Name": "Beta Traders",
-            "GST Number": "27BBBB0000B1Z5",
-        },
-    ])
+    base_df = pd.DataFrame(
+        [
+            {
+                "Distributor Name": "Alpha Traders",
+                "GST Number": "27AAAA0000A1Z5",
+            },
+            {
+                "Distributor Name": "Beta Traders",
+                "GST Number": "27BBBB0000B1Z5",
+            },
+        ]
+    )
     _write_excel(base_file, base_df)
     seed = db.bulk_upload_masters("distributors", base_file)
     assert seed["inserted"] == 2
 
     conflict_file = tmp_path / "conflict_distributors.xlsx"
-    conflict_df = pd.DataFrame([
-        {
-            "Distributor Name": "Alpha Traders",
-            "GST Number": "27BBBB0000B1Z5",
-            "Mobile Number": "9000000000",
-        }
-    ])
+    conflict_df = pd.DataFrame(
+        [
+            {
+                "Distributor Name": "Alpha Traders",
+                "GST Number": "27BBBB0000B1Z5",
+                "Mobile Number": "9000000000",
+            }
+        ]
+    )
     _write_excel(conflict_file, conflict_df)
 
     result = db.bulk_upload_masters("distributors", conflict_file)

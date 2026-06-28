@@ -13046,5 +13046,4492 @@
     "payload": {
       "action": "clear_retailer_contacts"
     }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T09:31:35.173209+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T09:31:35.196799+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T09:31:35.224673+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:31:42.987866+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:31:42.987866+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:31:43.843165+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:31:43.843165+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:31:44.632915+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:31:44.632915+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T09:31:53.270694+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T09:31:53.684582+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:31:56.371174+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:31:56.371174+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T09:32:49.459025+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T09:32:49.499607+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T09:32:49.532814+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:32:57.132549+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:32:57.132549+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:32:58.028498+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:32:58.028498+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:32:58.912788+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:32:58.912788+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T09:33:05.901782+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T09:33:06.206985+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:33:08.399754+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:33:08.399754+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T09:39:46.165338+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T09:39:46.189085+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T09:39:46.223662+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:39:53.355962+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:39:53.355962+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:39:54.158636+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:39:54.158636+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:39:54.785152+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:39:54.785152+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T09:40:00.959224+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T09:40:01.275248+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:40:03.556519+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:40:03.556519+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T09:41:21.768256+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T09:41:21.802586+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T09:41:21.835924+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:41:28.608657+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:41:28.608657+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:41:29.288479+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:41:29.288479+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:41:29.935335+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:41:29.935335+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T09:41:36.135314+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T09:41:36.482095+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:41:38.732371+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:41:38.732371+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T09:46:38.770729+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T09:46:38.804057+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T09:46:38.844064+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:46:46.194046+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:46:46.194046+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:46:46.964089+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:46:46.964089+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:46:47.746891+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:46:47.746891+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T09:46:55.060659+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T09:46:55.407820+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:46:57.801216+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:46:57.801216+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T09:47:35.513929+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T09:47:35.557697+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T09:47:35.590975+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:47:42.723272+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T09:47:42.723272+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:47:43.497167+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T09:47:43.497167+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:47:44.240957+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T09:47:44.240957+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T09:47:50.817075+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T09:47:51.156566+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:47:53.557563+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T09:47:53.557563+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T10:01:48.616768+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T10:01:48.643376+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T10:01:48.674292+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T10:01:54.859965+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T10:01:54.859965+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T10:01:55.498935+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T10:01:55.498935+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T10:01:56.076610+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T10:01:56.076610+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T10:02:01.526544+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T10:02:01.806561+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T10:02:03.780351+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T10:02:03.780351+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "distributors",
+      "name": "ABC Traders",
+      "created_at": "2026-06-28T10:02:48.076433+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "retailers",
+      "name": "Shop 24",
+      "created_at": "2026-06-28T10:02:48.107610+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "node": "products",
+      "name": "Milk Powder",
+      "created_at": "2026-06-28T10:02:48.139694+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T10:02:53.974579+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "department": "Research",
+      "created_at": "2026-06-28T10:02:53.974579+00:00"
+    }
+  },
+  {
+    "action": "update",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "field": "department",
+      "value": "Engineering"
+    }
+  },
+  {
+    "action": "delete",
+    "payload": {
+      "record_id": 1
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "record_id": 1,
+      "action": "delete"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T10:02:54.619665+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Backup Test",
+      "email": "backup@example.com",
+      "department": "Ops",
+      "created_at": "2026-06-28T10:02:54.619665+00:00"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T10:02:55.197837+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Audit User",
+      "email": "audit@example.com",
+      "department": "Audit",
+      "created_at": "2026-06-28T10:02:55.197837+00:00"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "clear_distributor_contacts",
+    "payload": {
+      "tables": [
+        "master_distributors"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_distributor_contacts"
+    }
+  },
+  {
+    "action": "clear_retailer_contacts",
+    "payload": {
+      "tables": [
+        "master_retailers"
+      ]
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "action": "clear_retailer_contacts"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-2001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "distributor_id": 9,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 2,
+      "order_ref_no": "SO-2002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 2,
+      "tracking_id": 2,
+      "status_flag": "FULLY_RECEIVED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52041,
+      "captured_longitude": 73.85671,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2026-06-28T10:03:00.629697+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "gps_visit_verification",
+      "visit_log_id": 1,
+      "captured_latitude": 18.52,
+      "captured_longitude": 73.85,
+      "geofenced_status": "MATCHED",
+      "device_timestamp": "2025-05-24T10:03:00.923205+00:00"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "distributor_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1001",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "DELIVERED",
+      "pod_number": "POD-9001",
+      "actual_delivery_date": "2026-06-04"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "DELIVERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "distributor_id": 2,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1002",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-receipt-create",
+    "payload": {
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "delivery_receipt",
+      "receipt_id": 1,
+      "tracking_id": 1,
+      "status_flag": "MISMATCH_FOUND"
+    }
+  },
+  {
+    "action": "stock-lifecycle-create",
+    "payload": {
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "distributor_id": 3,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "order_ref_no": "SO-1003",
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "stock-lifecycle-update",
+    "payload": {
+      "tracking_id": 1,
+      "transit_status": "ORDERED",
+      "pod_number": null,
+      "actual_delivery_date": null
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "entity": "order_lifecycle",
+      "tracking_id": 1,
+      "transit_status": "ORDERED"
+    }
+  },
+  {
+    "action": "add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T10:03:02.964687+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "department": "Engineering",
+      "created_at": "2026-06-28T10:03:02.964687+00:00"
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "distributors",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "action": "firebase-add",
+    "payload": {
+      "type": "bulk_master_upload",
+      "master_type": "retailers",
+      "inserted": 0,
+      "skipped": 0
+    }
   }
 ]

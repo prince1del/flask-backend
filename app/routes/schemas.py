@@ -1,6 +1,7 @@
 from flask import Blueprint, redirect, render_template_string, request
 
 from centralized_db_system.db import CentralizedDB
+from app.routes.auth import require_jwt_auth
 
 schemas_blueprint = Blueprint("schemas", __name__)
 
@@ -87,21 +88,26 @@ th { background: #f0f0f0; }
 
 
 @schemas_blueprint.route("/api/v1/schemas", methods=["GET", "POST"])
+@require_jwt_auth
 def schemas() -> tuple[dict[str, object], int]:
     return {"status": "ok", "items": []}, 200
 
 
 @schemas_blueprint.route("/settings/schema")
 @schemas_blueprint.route("/settings/schema/")
+@require_jwt_auth
 def schema_manager():
     entity = request.args.get("entity", "distributor")
     message = request.args.get("message", "")
     db = CentralizedDB("centralized_db.sqlite3")
     fields = db.get_all_schema_fields(entity)
-    return render_template_string(SCHEMA_MANAGER_TEMPLATE, entity=entity, fields=fields, message=message)
+    return render_template_string(
+        SCHEMA_MANAGER_TEMPLATE, entity=entity, fields=fields, message=message
+    )
 
 
 @schemas_blueprint.route("/settings/schema/add", methods=["POST"])
+@require_jwt_auth
 def schema_add_field():
     entity = request.form.get("entity", "distributor")
     field_name = request.form.get("field_name", "").strip()
@@ -119,6 +125,7 @@ def schema_add_field():
 
 
 @schemas_blueprint.route("/settings/schema/delete", methods=["POST"])
+@require_jwt_auth
 def schema_delete_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
@@ -128,16 +135,20 @@ def schema_delete_field():
 
 
 @schemas_blueprint.route("/settings/schema/toggle", methods=["POST"])
+@require_jwt_auth
 def schema_toggle_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
     is_visible = request.form.get("is_visible", type=int)
     if field_id is not None:
-        CentralizedDB("centralized_db.sqlite3").toggle_schema_field_visibility(field_id, is_visible)
+        CentralizedDB("centralized_db.sqlite3").toggle_schema_field_visibility(
+            field_id, is_visible
+        )
     return redirect(f"/settings/schema?entity={entity}&message=Visibility updated")
 
 
 @schemas_blueprint.route("/settings/schema/move", methods=["POST"])
+@require_jwt_auth
 def schema_move_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
@@ -156,6 +167,9 @@ def schema_move_field():
 
 
 @schemas_blueprint.route("/settings/schema/seed", methods=["POST"])
+@require_jwt_auth
 def schema_seed():
     CentralizedDB("centralized_db.sqlite3").seed_default_schema()
-    return redirect("/settings/schema?entity=distributor&message=Default schema loaded!")
+    return redirect(
+        "/settings/schema?entity=distributor&message=Default schema loaded!"
+    )

@@ -31,7 +31,12 @@ def expected_upload_format(key: str) -> dict[str, set[str]]:
     if key in {"sales_order_file", "invoice_file"}:
         return {
             "extensions": {".pdf"},
-            "content_types": {"application/pdf", "application/octet-stream", "application/x-download", "binary/octet-stream"},
+            "content_types": {
+                "application/pdf",
+                "application/octet-stream",
+                "application/x-download",
+                "binary/octet-stream",
+            },
         }
 
     return {"extensions": set(), "content_types": set()}
@@ -50,12 +55,18 @@ def detect_upload_file_type(filename: str, content_type: str) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf" or "pdf" in content_type:
         return "pdf"
-    if suffix in {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"} or "excel" in content_type or "spreadsheet" in content_type:
+    if (
+        suffix in {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"}
+        or "excel" in content_type
+        or "spreadsheet" in content_type
+    ):
         return "excel"
     return "unknown"
 
 
-def infer_distributor_name(upload_key: str, filename: str, explicit_name: str | None = None) -> str | None:
+def infer_distributor_name(
+    upload_key: str, filename: str, explicit_name: str | None = None
+) -> str | None:
     if explicit_name and explicit_name.strip():
         return explicit_name.strip()
     if upload_key == "order_file":
@@ -85,13 +96,30 @@ def infer_distributor_name(upload_key: str, filename: str, explicit_name: str | 
 
 def infer_ai_intent(query: str) -> str:
     normalized = (query or "").strip().lower()
-    if any(term in normalized for term in ["retailers should i visit", "visit today", "which retailers", "pjp", "schedule", "today's visits", "visit list"]):
+    if any(
+        term in normalized
+        for term in [
+            "retailers should i visit",
+            "visit today",
+            "which retailers",
+            "pjp",
+            "schedule",
+            "today's visits",
+            "visit list",
+        ]
+    ):
         return "pjp"
     if any(term in normalized for term in ["last visit", "visited", "visit to"]):
         return "last_visit"
-    if any(term in normalized for term in ["mismatch", "alert", "price mismatch", "invoice"]):
+    if any(
+        term in normalized
+        for term in ["mismatch", "alert", "price mismatch", "invoice"]
+    ):
         return "alerts"
-    if any(term in normalized for term in ["top-selling", "top selling", "purchase", "trend", "this month"]):
+    if any(
+        term in normalized
+        for term in ["top-selling", "top selling", "purchase", "trend", "this month"]
+    ):
         return "purchase_trends"
     return "search"
 
@@ -109,7 +137,13 @@ def get_monthly_report_data(db_path: str, month: str) -> dict[str, Any]:
         last_day = calendar.monthrange(int(year), int(mon))[1]
         end_date = f"{year}-{mon}-{last_day:02d}"
     except Exception:
-        return {"distributor_activity": [], "total_uploads": 0, "total_distributors": 0, "verified_count": 0, "pending_count": 0}
+        return {
+            "distributor_activity": [],
+            "total_uploads": 0,
+            "total_distributors": 0,
+            "verified_count": 0,
+            "pending_count": 0,
+        }
     try:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -137,7 +171,11 @@ def get_monthly_report_data(db_path: str, month: str) -> dict[str, Any]:
             ).fetchall()
             distributor_activity = [dict(row) for row in rows]
             total_distributors = len(distributor_activity)
-            verified_count = sum(1 for r in distributor_activity if r["stage1"] and r["stage2"] and r["stage3"] and r["stage4"])
+            verified_count = sum(
+                1
+                for r in distributor_activity
+                if r["stage1"] and r["stage2"] and r["stage3"] and r["stage4"]
+            )
             pending_count = total_distributors - verified_count
     except Exception:
         distributor_activity = []

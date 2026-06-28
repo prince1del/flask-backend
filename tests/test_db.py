@@ -61,7 +61,9 @@ def test_audit_logs_are_recorded(tmp_path):
     db.add_record("Audit User", "audit@example.com", "Audit")
 
     logs = db.list_audit_logs(limit=10)
-    assert any(item["table_name"] == "records" and item["action"] == "create" for item in logs)
+    assert any(
+        item["table_name"] == "records" and item["action"] == "create" for item in logs
+    )
 
 
 def test_cleanup_temp_uploads_removes_old_files(tmp_path):
@@ -102,7 +104,9 @@ def test_distributor_order_upload_records_are_persisted(tmp_path):
     assert first_id > 0
     assert second_id > first_id
 
-    rows = db.list_distributor_order_uploads(distributor_name="Alpha Traders", verification_session_id="session-1")
+    rows = db.list_distributor_order_uploads(
+        distributor_name="Alpha Traders", verification_session_id="session-1"
+    )
     assert len(rows) == 2
     assert rows[0]["stage_key"] == "sales_order_file"
     assert rows[1]["stage_key"] == "filled_file"
@@ -128,7 +132,9 @@ def test_master_distributor_stores_distributor_code_and_exposes_it(tmp_path):
     assert any(item["distributor_code"] == "DC-001" for item in listed)
 
 
-def test_master_distributor_stores_secondary_contact_and_sales_executive_fields(tmp_path):
+def test_master_distributor_stores_secondary_contact_and_sales_executive_fields(
+    tmp_path,
+):
     db = CentralizedDB(str(tmp_path / "contact_fields.sqlite3"))
 
     distributor_id = db.add_master_distributor(
@@ -185,7 +191,9 @@ def test_master_retailer_stores_retailer_code_and_contact_fields(tmp_path):
 def test_clear_master_contacts_removes_distributor_and_retailer_data(tmp_path):
     db = CentralizedDB(str(tmp_path / "clear_contacts.sqlite3"))
 
-    db.add_master_distributor(name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG")
+    db.add_master_distributor(
+        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG"
+    )
     db.add_master_retailer(name="Shop One", distributor_id=1, location="Andheri")
 
     removed = db.clear_master_contacts()
@@ -198,7 +206,9 @@ def test_clear_master_contacts_removes_distributor_and_retailer_data(tmp_path):
 def test_clear_distributor_contacts_keeps_retailer_contacts(tmp_path):
     db = CentralizedDB(str(tmp_path / "clear_distributor_contacts.sqlite3"))
 
-    db.add_master_distributor(name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG")
+    db.add_master_distributor(
+        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG"
+    )
     db.add_master_retailer(name="Shop One", distributor_id=1, location="Andheri")
 
     removed = db.clear_distributor_contacts()
@@ -211,7 +221,9 @@ def test_clear_distributor_contacts_keeps_retailer_contacts(tmp_path):
 def test_clear_retailer_contacts_keeps_distributor_contacts(tmp_path):
     db = CentralizedDB(str(tmp_path / "clear_retailer_contacts.sqlite3"))
 
-    db.add_master_distributor(name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG")
+    db.add_master_distributor(
+        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG"
+    )
     db.add_master_retailer(name="Shop One", distributor_id=1, location="Andheri")
 
     removed = db.clear_retailer_contacts()
@@ -242,7 +254,12 @@ def test_business_rules_are_seeded_and_upsertable(tmp_path):
     assert "pricing_ptr_definition" in keys
     assert "size_prompt_precheck_rule" in keys
 
-    db.upsert_business_rule("pricing_exmill_definition", "ExMill means distributor buying price")
+    db.upsert_business_rule(
+        "pricing_exmill_definition", "ExMill means distributor buying price"
+    )
     updated = db.list_business_rules(locked_only=True)
     updated_map = {item["rule_key"]: item["rule_value"] for item in updated}
-    assert updated_map["pricing_exmill_definition"] == "ExMill means distributor buying price"
+    assert (
+        updated_map["pricing_exmill_definition"]
+        == "ExMill means distributor buying price"
+    )

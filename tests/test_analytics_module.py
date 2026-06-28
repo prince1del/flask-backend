@@ -83,7 +83,9 @@ def test_primary_and_secondary_sales_flow(tmp_path: Path) -> None:
 
 def test_dashboard_payload_contains_analytics_sections(tmp_path: Path) -> None:
     db = CentralizedDB(str(tmp_path / "dashboard.sqlite3"))
-    db.add_master_distributor("Gamma Traders", "27GGGGG0000A1Z5", "South", "Chennai", 30000, "active")
+    db.add_master_distributor(
+        "Gamma Traders", "27GGGGG0000A1Z5", "South", "Chennai", 30000, "active"
+    )
     payload = db.get_dashboard_payload()
 
     assert payload["masters"]["distributors"] == 1

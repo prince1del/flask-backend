@@ -8,12 +8,15 @@ def test_offline_queue_and_replay(tmp_path):
     sync_store = OfflineSyncStore(base_dir=str(tmp_path / "sync-state"))
 
     record_id = db.add_record("Grace Hopper", "grace@example.com", "Engineering")
-    sync_store.enqueue("add", {
-        "name": "Grace Hopper",
-        "email": "grace@example.com",
-        "department": "Engineering",
-        "created_at": db.get_record(record_id)["created_at"],
-    })
+    sync_store.enqueue(
+        "add",
+        {
+            "name": "Grace Hopper",
+            "email": "grace@example.com",
+            "department": "Engineering",
+            "created_at": db.get_record(record_id)["created_at"],
+        },
+    )
 
     assert sync_store.pending_count() == 1
 

@@ -5,7 +5,9 @@ import pytest
 from centralized_db_system.db import CentralizedDB
 
 
-def test_order_lifecycle_delivery_requires_pod_and_actual_delivery_date(tmp_path: Path) -> None:
+def test_order_lifecycle_delivery_requires_pod_and_actual_delivery_date(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "stock_tracking.sqlite3"))
 
     tracking_id = db.create_order_lifecycle_tracking(
@@ -62,10 +64,14 @@ def test_delivery_receipt_flags_partial_receipt_and_shortage(tmp_path: Path) -> 
     assert receipt["status_flag"] == "MISMATCH_FOUND"
     assert receipt["shortage_qty"] == 20
     assert receipt["damaged_qty"] == 5
-    assert db.get_order_lifecycle_tracking(tracking_id)["transit_status"] == "DISPATCHED"
+    assert (
+        db.get_order_lifecycle_tracking(tracking_id)["transit_status"] == "DISPATCHED"
+    )
 
 
-def test_order_stage_updates_capture_payment_and_receiving_condition(tmp_path: Path) -> None:
+def test_order_stage_updates_capture_payment_and_receiving_condition(
+    tmp_path: Path,
+) -> None:
     db = CentralizedDB(str(tmp_path / "stage_flow.sqlite3"))
     tracking_id = db.create_order_lifecycle_tracking(
         order_ref_no="SO-1003",

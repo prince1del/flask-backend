@@ -9,7 +9,9 @@ class OfflineSyncStore:
     """Queue local changes and replay them when a remote backend becomes available."""
 
     def __init__(self, base_dir: str | None = None):
-        self.base_dir = Path(base_dir or os.getenv("SYNC_STATE_DIR", "./sync-state")).expanduser()
+        self.base_dir = Path(
+            base_dir or os.getenv("SYNC_STATE_DIR", "./sync-state")
+        ).expanduser()
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.queue_path = self.base_dir / "pending.json"
         self.queue_path.touch(exist_ok=True)
@@ -69,6 +71,8 @@ def apply_pending_changes(db_path: str, sync_store: OfflineSyncStore) -> int:
                     (payload.get("value"), payload.get("record_id")),
                 )
             elif action == "delete":
-                conn.execute("DELETE FROM records WHERE id = ?", (payload.get("record_id"),))
+                conn.execute(
+                    "DELETE FROM records WHERE id = ?", (payload.get("record_id"),)
+                )
         conn.commit()
     return len(pending)

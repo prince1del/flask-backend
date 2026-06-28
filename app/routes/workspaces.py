@@ -4,6 +4,7 @@ from pathlib import Path
 from flask import Blueprint, Response, render_template_string, request
 
 from centralized_db_system.db import CentralizedDB
+from app.routes.auth import require_jwt_auth
 
 workspaces_blueprint = Blueprint("workspaces", __name__)
 
@@ -63,11 +64,13 @@ ADMIN_DATABASE_TEMPLATE = """
 
 
 @workspaces_blueprint.route("/api/v1/workspaces", methods=["GET", "POST"])
+@require_jwt_auth
 def workspaces() -> tuple[dict[str, object], int]:
     return {"status": "ok", "items": []}, 200
 
 
 @workspaces_blueprint.route("/admin/database", methods=["GET", "POST"])
+@require_jwt_auth
 def database_admin() -> str:
     db = CentralizedDB("centralized_db.sqlite3")
     backup_message = None
@@ -78,7 +81,9 @@ def database_admin() -> str:
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
         if action == "backup":
-            backup_path = db.backup_database(Path("instance") / "backups" / "centralized_db_backup.sqlite3")
+            backup_path = db.backup_database(
+                Path("instance") / "backups" / "centralized_db_backup.sqlite3"
+            )
             backup_message = f"Backup created at {backup_path}"
         elif action == "restore":
             restore_path = (request.form.get("restore_path") or "").strip()
@@ -91,7 +96,9 @@ def database_admin() -> str:
             else:
                 restore_message = "Please provide a backup file path"
         elif action == "cleanup":
-            cleanup_dir = (request.form.get("cleanup_dir") or "").strip() or "instance/verification_uploads"
+            cleanup_dir = (
+                request.form.get("cleanup_dir") or ""
+            ).strip() or "instance/verification_uploads"
             removed = db.cleanup_temp_uploads(cleanup_dir)
             cleanup_message = f"Removed {removed} stale files from {cleanup_dir}"
 
