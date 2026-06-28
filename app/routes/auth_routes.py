@@ -4,35 +4,12 @@ JWT-based login, refresh, logout
 """
 
 from flask import Blueprint, request, jsonify
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 from datetime import datetime
 
-bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
+from centralized_db_system.db import CentralizedDB
 
-# In-memory user store for demo (in production, use database)
-USERS = {
-    'mobile_test_admin': {
-        'id': 1,
-        'username': 'mobile_test_admin',
-        'password_hash': generate_password_hash('mobile_test_admin_123'),
-        'role': 'admin',
-        'workspace_id': 'bombay_dyeing'
-    },
-    'mobile_test_user': {
-        'id': 2,
-        'username': 'mobile_test_user',
-        'password_hash': generate_password_hash('mobile_test_user_123'),
-        'role': 'user',
-        'workspace_id': 'bombay_dyeing'
-    },
-    'founder_test': {
-        'id': 3,
-        'username': 'founder_test',
-        'password_hash': generate_password_hash('founder_test_123'),
-        'role': 'admin',
-        'workspace_id': 'bombay_dyeing'
-    }
-}
+bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
 
 def init_jwt_service(app):
@@ -59,10 +36,18 @@ def login():
                 }
             }), 400
         
-        # Check user in store
-        user = USERS.get(username)
-        
-        if not user or not check_password_hash(user['password_hash'], password):
+        db = CentralizedDB()
+        user_row = db._db_path and None
+        with db._db_path.open('r'):
+            pass
+        conn = None
+        import sqlite3
+        conn = sqlite3.connect(str(db._db_path))
+        conn.row_factory = sqlite3.Row
+        user_row = conn.execute('SELECT id, username, password_hash, role, workspace_id FROM users WHERE username = ?', (username,)).fetchone()
+        conn.close()
+
+        if not user_row or not check_password_hash(user_row['password_hash'], password):
             return jsonify({
                 'success': False,
                 'error': {
@@ -75,10 +60,10 @@ def login():
         from jwt_service import JWTService
         jwt_service = JWTService(secret_key='your-secret-key-change-in-production')
         access_token, refresh_token = jwt_service.create_tokens(
-            user_id=user['id'],
-            username=user['username'],
-            role=user['role'],
-            workspace_id=user['workspace_id']
+            user_id=user_row['id'],
+            username=user_row['username'],
+            role=user_row['role'],
+            workspace_id=user_row['workspace_id']
         )
         
         return jsonify({
@@ -89,10 +74,10 @@ def login():
                 'expires_in': jwt_service.access_token_expiry,
                 'token_type': 'Bearer',
                 'user': {
-                    'id': user['id'],
-                    'username': user['username'],
-                    'role': user['role'],
-                    'workspace_id': user['workspace_id']
+                    'id': user_row['id'],
+                    'username': user_row['username'],
+                    'role': user_row['role'],
+                    'workspace_id': user_row['workspace_id']
                 }
             }
         }), 200
@@ -147,9 +132,13 @@ def refresh():
             }), 401
         
         # Get user
-        user = USERS.get(payload['username'])
+        db = CentralizedDB()
+        conn = sqlite3.connect(str(db._db_path))
+        conn.row_factory = sqlite3.Row
+        user_row = conn.execute('SELECT id, username, password_hash, role, workspace_id FROM users WHERE username = ?', (payload['username'],)).fetchone()
+        conn.close()
         
-        if not user:
+        if not user_row:
             return jsonify({
                 'success': False,
                 'error': {
@@ -160,10 +149,10 @@ def refresh():
         
         # Create new access token
         new_access_token, _ = jwt_service.create_tokens(
-            user_id=user['id'],
-            username=user['username'],
-            role=user['role'],
-            workspace_id=user['workspace_id']
+            user_id=user_row['id'],
+            username=user_row['username'],
+            role=user_row['role'],
+            workspace_id=user_row['workspace_id']
         )
         
         return jsonify({

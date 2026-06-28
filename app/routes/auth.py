@@ -1,3 +1,4 @@
+import sqlite3
 from functools import wraps
 
 from flask import Blueprint, Response, current_app, jsonify, redirect, render_template_string, request, session, url_for
@@ -90,6 +91,29 @@ def ensure_default_admin() -> None:
     CentralizedDB().ensure_default_admin_user()
 
 
+def get_user_row(username: str) -> dict[str, object] | None:
+    db = CentralizedDB()
+    conn = sqlite3.connect(str(db.db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        select_columns = ["id", "username", "password_hash"]
+        if "role" in columns:
+            select_columns.append("role")
+        if "workspace_id" in columns:
+            select_columns.append("workspace_id")
+        query = f"SELECT {', '.join(select_columns)} FROM users WHERE username = ?"
+        row = conn.execute(query, (username,)).fetchone()
+        data = dict(row) if row is not None else None
+        if data is not None and "role" not in data:
+            data["role"] = "admin"
+        if data is not None and "workspace_id" not in data:
+            data["workspace_id"] = "default"
+        return data
+    finally:
+        conn.close()
+
+
 @auth_blueprint.route("/api/v1/auth/login", methods=["POST"], endpoint="api_login")
 def api_login() -> tuple[Response, int]:
     data = request.get_json(silent=True) or request.form or {}
@@ -99,16 +123,16 @@ def api_login() -> tuple[Response, int]:
     if not username or not password:
         return jsonify({"success": False, "error": {"code": "MISSING_CREDENTIALS", "message": "Username and password required"}}), 400
 
-    db = CentralizedDB()
-    if not db.authenticate_user(username, password):
+    user_row = get_user_row(username)
+    if not user_row or not CentralizedDB().authenticate_user(username, password):
         return jsonify({"success": False, "error": {"code": "INVALID_CREDENTIALS", "message": "Invalid username or password"}}), 401
 
     service = get_jwt_service()
     access_token, refresh_token = service.create_tokens(
-        user_id=1,
-        username=username,
-        role="admin",
-        workspace_id="default",
+        user_id=user_row.get("id", 1),
+        username=user_row.get("username", username),
+        role=user_row.get("role", "admin"),
+        workspace_id=user_row.get("workspace_id", "default"),
     )
     return jsonify({
         "success": True,
@@ -117,7 +141,12 @@ def api_login() -> tuple[Response, int]:
             "refresh_token": refresh_token,
             "expires_in": service.access_token_expiry,
             "token_type": "Bearer",
-            "user": {"username": username, "role": "admin", "workspace_id": "default"},
+            "user": {
+                "id": user_row.get("id", 1),
+                "username": user_row.get("username", username),
+                "role": user_row.get("role", "admin"),
+                "workspace_id": user_row.get("workspace_id", "default"),
+            },
         },
     }), 200
 
