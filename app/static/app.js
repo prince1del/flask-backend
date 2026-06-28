@@ -1,9 +1,83 @@
+const API_BASE_URL = 'https://flask-backend-wnlq.onrender.com/api/v1';
+
 const authState = {
   accessToken: null,
   username: null,
 };
 
+function saveAuthToken(token) {
+  authState.accessToken = token;
+  if (token) {
+    localStorage.setItem('authToken', token);
+  } else {
+    localStorage.removeItem('authToken');
+  }
+}
+
+function saveUsername(username) {
+  authState.username = username;
+  if (username) {
+    localStorage.setItem('username', username);
+  } else {
+    localStorage.removeItem('username');
+  }
+}
+
+function loadAuthState() {
+  const savedToken = localStorage.getItem('authToken');
+  const savedUsername = localStorage.getItem('username');
+
+  if (savedToken) {
+    authState.accessToken = savedToken;
+  }
+  if (savedUsername) {
+    authState.username = savedUsername;
+  }
+}
+
+function getApiUrl(endpoint) {
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint;
+  }
+  const separator = endpoint.startsWith('/') ? '' : '/';
+  return `${API_BASE_URL}${separator}${endpoint}`;
+}
+
+async function apiCall(endpoint, method = 'GET', body = null) {
+  const options = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+
+  if (authState.accessToken) {
+    options.headers.Authorization = `Bearer ${authState.accessToken}`;
+  }
+
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+
+  try {
+    const response = await fetch(getApiUrl(endpoint), options);
+    const data = await response.json();
+    return { success: response.ok, data: data, status: response.status };
+  } catch (error) {
+    console.error('API Error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 function initApp() {
+  loadAuthState();
+  if (authState.accessToken) {
+    document.getElementById('dashboard')?.classList.remove('hidden');
+    document.getElementById('loginModal')?.classList.add('hidden');
+    if (authState.username) {
+      document.getElementById('user-info').textContent = authState.username;
+    }
+  }
   loadDashboard();
   loadYears();
 }
@@ -19,7 +93,7 @@ async function login() {
   }
 
   try {
-    const response = await fetch('/api/v1/auth/login', {
+    const response = await fetch(getApiUrl('/auth/login'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -35,6 +109,8 @@ async function login() {
 
     authState.accessToken = data.data.access_token;
     authState.username = data.data.user.username || username;
+    saveAuthToken(authState.accessToken);
+    saveUsername(authState.username);
 
     try {
       await fetch('/login', {
@@ -59,6 +135,8 @@ async function login() {
     if (username === 'mobile_test_admin' && password === 'mobile_test_admin_123') {
       authState.accessToken = 'dummy-token';
       authState.username = 'Admin User';
+      saveAuthToken(authState.accessToken);
+      saveUsername(authState.username);
       document.getElementById('loginModal').classList.add('hidden');
       document.getElementById('dashboard').classList.remove('hidden');
       document.getElementById('user-info').textContent = authState.username;
@@ -82,6 +160,8 @@ async function logout() {
     console.warn('Logout request failed:', e);
   }
 
+  saveAuthToken(null);
+  saveUsername(null);
   authState.accessToken = null;
   authState.username = null;
   document.getElementById('loginModal').classList.remove('hidden');
@@ -98,7 +178,7 @@ async function fetchWithAuth(url, options = {}) {
   if (authState.accessToken) {
     headers.Authorization = `Bearer ${authState.accessToken}`;
   }
-  return fetch(url, { ...options, headers, credentials: 'same-origin' });
+  return fetch(getApiUrl(url), { ...options, headers, credentials: 'same-origin' });
 }
 
 function formatBytes(bytes) {
