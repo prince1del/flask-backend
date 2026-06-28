@@ -127,6 +127,22 @@ class StorageManager:
         """Search indexed files."""
         return self.db.search_file_index(user_id, query, filters)
 
+    def get_storage_account(self, user_id: int) -> dict[str, Any] | None:
+        """Return persisted storage account metadata for the user."""
+        account = self.db.get_storage_account(user_id)
+        if not account:
+            return None
+        return {
+            "id": account["id"],
+            "provider_type": account["provider_type"],
+            "connected_at": account["connected_at"],
+            "last_sync": account["last_sync"],
+            "sync_status": account["sync_status"],
+            "total_storage_bytes": account["total_storage_bytes"],
+            "used_storage_bytes": account["used_storage_bytes"],
+            "workspace_id": account.get("workspace_id"),
+        }
+
     def get_storage_dashboard(self, user_id: int) -> dict[str, Any]:
         """Get storage usage dashboard."""
         connection = self.user_connections.get(user_id) or self._get_persisted_connection(user_id)

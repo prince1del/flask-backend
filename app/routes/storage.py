@@ -12,7 +12,10 @@ storage_manager.register_provider("google_drive", GoogleDriveProvider)
 
 
 def _get_current_user_id() -> int:
-    return session.get("user_id", 1)
+    user = getattr(request, "user", None)
+    if isinstance(user, dict) and user.get("user_id"):
+        return int(user["user_id"])
+    return int(session.get("user_id", 1))
 
 
 @bp.route("/api/v1/storage/connect", methods=["POST"])
@@ -49,6 +52,16 @@ def disconnect_storage():
     user_id = _get_current_user_id()
     result = storage_manager.disconnect_user_storage(user_id)
     return jsonify(result)
+
+
+@bp.route("/api/v1/storage/account", methods=["GET"])
+@require_jwt_auth
+def storage_account():
+    user_id = _get_current_user_id()
+    account = storage_manager.get_storage_account(user_id)
+    if account is None:
+        return jsonify({"success": False, "error": "no_connected_storage"}), 404
+    return jsonify({"success": True, "data": account}), 200
 
 
 @bp.route("/api/v1/storage/dashboard", methods=["GET"])
