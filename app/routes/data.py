@@ -651,7 +651,7 @@ def download_master_template(master_type: str) -> Response:
     return response
 
 
-@data_blueprint.route("/", methods=["GET", "POST"], endpoint="index")
+@data_blueprint.route("/legacy", methods=["GET", "POST"], endpoint="index")
 def index() -> str:
     report = None
     progress_summary = None
