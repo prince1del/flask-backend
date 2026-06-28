@@ -7,6 +7,8 @@ from .storage import storage_bp
 from .target_achievement import target_achievement_bp
 from .workspaces import workspaces_blueprint
 from .party_matching import party_matching_bp
+from .parties import parties_bp
+from .sales_orders import sales_bp
 
 __all__ = [
     'target_achievement_bp',
@@ -17,5 +19,7 @@ __all__ = [
     'data_blueprint',
     'reports_blueprint',
     'schemas_blueprint',
-    'workspaces_blueprint'
+    'workspaces_blueprint',
+    'parties_bp',
+    'sales_bp',
 ]

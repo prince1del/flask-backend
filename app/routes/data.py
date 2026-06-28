@@ -1183,7 +1183,25 @@ def purchase_behavior() -> str:
 
 @data_blueprint.route("/pwa-dashboard")
 def pwa_dashboard() -> Response:
-    return Response("Not Found", status=404)
+    return Response(
+        """
+        <!doctype html>
+        <html>
+        <head>
+          <meta charset=\"utf-8\"> 
+          <title>Jarvis PWA Dashboard</title>
+          <link rel=\"manifest\" href=\"/manifest.json\">
+          <meta name=\"theme-color\" content=\"#0f172a\">
+        </head>
+        <body style=\"font-family: system-ui, sans-serif; background: #020617; color: #eef2ff; margin: 2rem;\">
+          <h1>Jarvis PWA Dashboard</h1>
+          <p>Progressive web app shell is available.</p>
+          <p><a href=\"/manifest.json\" style=\"color: #facc15\">View manifest</a></p>
+        </body>
+        </html>
+        """,
+        mimetype="text/html",
+    )
 
 
 @data_blueprint.route("/api/v1/dashboard/summary")

@@ -3,7 +3,44 @@ const authState = {
   username: null,
 };
 
+const partyMasterState = {
+  distributors: [],
+  retailers: [],
+};
+
+function saveAuthToken(token) {
+  if (token) {
+    localStorage.setItem('authAccessToken', token);
+  } else {
+    localStorage.removeItem('authAccessToken');
+  }
+}
+
+function saveUsername(username) {
+  if (username) {
+    localStorage.setItem('authUsername', username);
+  } else {
+    localStorage.removeItem('authUsername');
+  }
+}
+
+function loadAuthState() {
+  authState.accessToken = localStorage.getItem('authAccessToken');
+  authState.username = localStorage.getItem('authUsername');
+  const userInfoEl = document.getElementById('user-info') || document.getElementById('user-name');
+  if (authState.accessToken) {
+    document.getElementById('loginModal')?.classList.add('hidden');
+    document.getElementById('dashboard')?.classList.remove('hidden');
+    if (userInfoEl) {
+      userInfoEl.textContent = authState.username || 'Admin User';
+    }
+  }
+}
+
 function initApp() {
+  loadAuthState();
+  updateGreeting();
+  loadRecentActivities();
   loadDashboard();
   loadYears();
 }
@@ -35,6 +72,8 @@ async function login() {
 
     authState.accessToken = data.data.access_token;
     authState.username = data.data.user.username || username;
+    saveAuthToken(authState.accessToken);
+    saveUsername(authState.username);
 
     try {
       await fetch('/login', {
@@ -49,9 +88,12 @@ async function login() {
       console.warn('Session login failed:', e);
     }
 
-    document.getElementById('loginModal').classList.add('hidden');
-    document.getElementById('dashboard').classList.remove('hidden');
-    document.getElementById('user-info').textContent = authState.username;
+    document.getElementById('loginModal')?.classList.add('hidden');
+    document.getElementById('dashboard')?.classList.remove('hidden');
+    const userInfoEl = document.getElementById('user-info') || document.getElementById('user-name');
+    if (userInfoEl) {
+      userInfoEl.textContent = authState.username;
+    }
     errorEl.textContent = '';
     loadDashboard();
     loadYears();
@@ -59,9 +101,14 @@ async function login() {
     if (username === 'mobile_test_admin' && password === 'mobile_test_admin_123') {
       authState.accessToken = 'dummy-token';
       authState.username = 'Admin User';
-      document.getElementById('loginModal').classList.add('hidden');
-      document.getElementById('dashboard').classList.remove('hidden');
-      document.getElementById('user-info').textContent = authState.username;
+      saveAuthToken(authState.accessToken);
+      saveUsername(authState.username);
+      document.getElementById('loginModal')?.classList.add('hidden');
+      document.getElementById('dashboard')?.classList.remove('hidden');
+      const userInfoEl = document.getElementById('user-info') || document.getElementById('user-name');
+      if (userInfoEl) {
+        userInfoEl.textContent = authState.username;
+      }
       errorEl.textContent = '';
       loadDashboard();
       loadYears();
@@ -84,9 +131,14 @@ async function logout() {
 
   authState.accessToken = null;
   authState.username = null;
-  document.getElementById('loginModal').classList.remove('hidden');
-  document.getElementById('dashboard').classList.add('hidden');
-  document.getElementById('loginError').textContent = '';
+  saveAuthToken(null);
+  saveUsername(null);
+  const loginModal = document.getElementById('loginModal');
+  const dashboard = document.getElementById('dashboard');
+  const loginError = document.getElementById('loginError');
+  if (loginModal) loginModal.classList.remove('hidden');
+  if (dashboard) dashboard.classList.add('hidden');
+  if (loginError) loginError.textContent = '';
 }
 
 function loadDashboard() {
@@ -370,6 +422,312 @@ function openFileLibrary() {
   openJsonPage('Storage File Library', '/api/v1/storage/files');
 }
 
+function openPartyMasterSection() {
+  if (!authState.accessToken) {
+    alert('Please login to access Party Master.');
+    return;
+  }
+  document.getElementById('party-master-section')?.classList.remove('hidden');
+  openPartyMasterTab('distributor');
+  loadDistributors();
+  loadRetailers();
+  loadDistributorSelect();
+  const section = document.getElementById('party-master-section');
+  section?.scrollIntoView({ behavior: 'smooth' });
+}
+
+function closePartyMasterSection() {
+  document.getElementById('party-master-section')?.classList.add('hidden');
+}
+
+function openPartyMasterTab(tab) {
+  const distributorTab = document.getElementById('distributor-tab-button');
+  const retailerTab = document.getElementById('retailer-tab-button');
+  const distributorPanel = document.getElementById('distributor-panel');
+  const retailerPanel = document.getElementById('retailer-panel');
+
+  if (tab === 'retailer') {
+    distributorTab?.classList.remove('active');
+    retailerTab?.classList.add('active');
+    distributorPanel?.classList.add('hidden');
+    retailerPanel?.classList.remove('hidden');
+  } else {
+    distributorTab?.classList.add('active');
+    retailerTab?.classList.remove('active');
+    distributorPanel?.classList.remove('hidden');
+    retailerPanel?.classList.add('hidden');
+  }
+}
+
+async function loadDistributors() {
+  try {
+    const response = await fetchWithAuth('/api/v1/parties/distributors?limit=200');
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to load distributors');
+    }
+    partyMasterState.distributors = data.data.results || [];
+    const tbody = document.getElementById('distributor-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = partyMasterState.distributors
+      .map(
+        (d) => `
+          <tr>
+            <td>${d.id}</td>
+            <td>${d.name}</td>
+            <td>${d.gst_number || '-'}</td>
+            <td>${d.territory || '-'}</td>
+            <td>${d.city || '-'}</td>
+            <td>${d.phone || '-'}</td>
+            <td>
+              <button onclick="editDistributor(${d.id})" class="btn btn-secondary">Edit</button>
+              <button onclick="deleteDistributor(${d.id})" class="btn btn-danger">Delete</button>
+            </td>
+          </tr>
+        `
+      )
+      .join('');
+  } catch (error) {
+    console.warn('Failed to load distributors:', error);
+  }
+}
+
+async function loadRetailers() {
+  try {
+    const response = await fetchWithAuth('/api/v1/parties/retailers?limit=200');
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to load retailers');
+    }
+    partyMasterState.retailers = data.data.results || [];
+    const tbody = document.getElementById('retailer-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = partyMasterState.retailers
+      .map((r) => {
+        const distributor = partyMasterState.distributors.find((d) => d.id === r.distributor_id);
+        return `
+          <tr>
+            <td>${r.id}</td>
+            <td>${r.name}</td>
+            <td>${distributor ? distributor.name : r.distributor_id}</td>
+            <td>${r.gst_number || '-'}</td>
+            <td>${r.territory || '-'}</td>
+            <td>${r.phone || '-'}</td>
+            <td>
+              <button onclick="editRetailer(${r.id})" class="btn btn-secondary">Edit</button>
+              <button onclick="deleteRetailer(${r.id})" class="btn btn-danger">Delete</button>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+  } catch (error) {
+    console.warn('Failed to load retailers:', error);
+  }
+}
+
+async function loadDistributorSelect() {
+  try {
+    if (!partyMasterState.distributors.length) {
+      await loadDistributors();
+    }
+    const select = document.getElementById('retailer-distributor');
+    if (!select) return;
+    select.innerHTML = partyMasterState.distributors
+      .map((d) => `<option value="${d.id}">${d.name}</option>`)
+      .join('');
+  } catch (error) {
+    console.warn('Failed to populate distributor select:', error);
+  }
+}
+
+function openDistributorForm() {
+  document.getElementById('distributor-id').value = '';
+  document.getElementById('distributor-form-title').textContent = 'Add Distributor';
+  document.getElementById('dist-name').value = '';
+  document.getElementById('dist-gst').value = '';
+  document.getElementById('dist-territory').value = '';
+  document.getElementById('dist-city').value = '';
+  document.getElementById('dist-phone').value = '';
+  document.getElementById('dist-email').value = '';
+  document.getElementById('dist-address').value = '';
+  toggleModal('distributor-form-modal', true);
+}
+
+function openRetailerForm() {
+  document.getElementById('retailer-id').value = '';
+  document.getElementById('retailer-form-title').textContent = 'Add Retailer';
+  document.getElementById('retailer-name').value = '';
+  document.getElementById('retailer-gst').value = '';
+  document.getElementById('retailer-territory').value = '';
+  document.getElementById('retailer-city').value = '';
+  document.getElementById('retailer-phone').value = '';
+  document.getElementById('retailer-email').value = '';
+  document.getElementById('retailer-address').value = '';
+  loadDistributorSelect();
+  toggleModal('retailer-form-modal', true);
+}
+
+async function saveDistributor(event) {
+  event.preventDefault();
+  const id = document.getElementById('distributor-id').value;
+  const body = {
+    name: document.getElementById('dist-name').value.trim(),
+    gst_number: document.getElementById('dist-gst').value.trim() || undefined,
+    territory: document.getElementById('dist-territory').value.trim() || undefined,
+    city: document.getElementById('dist-city').value.trim() || undefined,
+    phone: document.getElementById('dist-phone').value.trim() || undefined,
+    email: document.getElementById('dist-email').value.trim() || undefined,
+    address: document.getElementById('dist-address').value.trim() || undefined,
+  };
+
+  if (!body.name) {
+    alert('Distributor name is required.');
+    return;
+  }
+
+  try {
+    const url = id ? `/api/v1/parties/distributors/${id}` : '/api/v1/parties/distributors';
+    const method = id ? 'PUT' : 'POST';
+    const response = await fetchWithAuth(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to save distributor');
+    }
+    closeModal('distributor-form-modal');
+    loadDistributors();
+    loadDistributorSelect();
+    alert('Distributor saved successfully.');
+  } catch (error) {
+    alert(error.message || 'Error saving distributor.');
+  }
+}
+
+async function editDistributor(id) {
+  try {
+    const response = await fetchWithAuth(`/api/v1/parties/distributors/${id}`);
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to load distributor');
+    }
+    const distributor = data.data;
+    document.getElementById('distributor-id').value = distributor.id;
+    document.getElementById('distributor-form-title').textContent = 'Edit Distributor';
+    document.getElementById('dist-name').value = distributor.name || '';
+    document.getElementById('dist-gst').value = distributor.gst_number || '';
+    document.getElementById('dist-territory').value = distributor.territory || '';
+    document.getElementById('dist-city').value = distributor.city || '';
+    document.getElementById('dist-phone').value = distributor.phone || '';
+    document.getElementById('dist-email').value = distributor.email || '';
+    document.getElementById('dist-address').value = distributor.address || '';
+    toggleModal('distributor-form-modal', true);
+  } catch (error) {
+    alert(error.message || 'Error loading distributor.');
+  }
+}
+
+async function deleteDistributor(id) {
+  if (!confirm('Delete this distributor? This will mark it inactive.')) {
+    return;
+  }
+  try {
+    const response = await fetchWithAuth(`/api/v1/parties/distributors/${id}`, { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to delete distributor');
+    }
+    loadDistributors();
+    loadRetailers();
+    loadDistributorSelect();
+  } catch (error) {
+    alert(error.message || 'Error deleting distributor.');
+  }
+}
+
+async function saveRetailer(event) {
+  event.preventDefault();
+  const id = document.getElementById('retailer-id').value;
+  const body = {
+    name: document.getElementById('retailer-name').value.trim(),
+    distributor_id: parseInt(document.getElementById('retailer-distributor').value, 10),
+    gst_number: document.getElementById('retailer-gst').value.trim() || undefined,
+    territory: document.getElementById('retailer-territory').value.trim() || undefined,
+    city: document.getElementById('retailer-city').value.trim() || undefined,
+    phone: document.getElementById('retailer-phone').value.trim() || undefined,
+    email: document.getElementById('retailer-email').value.trim() || undefined,
+    address: document.getElementById('retailer-address').value.trim() || undefined,
+  };
+
+  if (!body.name || !body.distributor_id) {
+    alert('Retailer name and distributor are required.');
+    return;
+  }
+
+  try {
+    const url = id ? `/api/v1/parties/retailers/${id}` : '/api/v1/parties/retailers';
+    const method = id ? 'PUT' : 'POST';
+    const response = await fetchWithAuth(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to save retailer');
+    }
+    closeModal('retailer-form-modal');
+    loadRetailers();
+    alert('Retailer saved successfully.');
+  } catch (error) {
+    alert(error.message || 'Error saving retailer.');
+  }
+}
+
+async function editRetailer(id) {
+  try {
+    await loadDistributorSelect();
+    const response = await fetchWithAuth(`/api/v1/parties/retailers/${id}`);
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to load retailer');
+    }
+    const retailer = data.data;
+    document.getElementById('retailer-id').value = retailer.id;
+    document.getElementById('retailer-form-title').textContent = 'Edit Retailer';
+    document.getElementById('retailer-name').value = retailer.name || '';
+    document.getElementById('retailer-gst').value = retailer.gst_number || '';
+    document.getElementById('retailer-territory').value = retailer.territory || '';
+    document.getElementById('retailer-city').value = retailer.city || '';
+    document.getElementById('retailer-phone').value = retailer.phone || '';
+    document.getElementById('retailer-email').value = retailer.email || '';
+    document.getElementById('retailer-address').value = retailer.address || '';
+    document.getElementById('retailer-distributor').value = retailer.distributor_id;
+    toggleModal('retailer-form-modal', true);
+  } catch (error) {
+    alert(error.message || 'Error loading retailer.');
+  }
+}
+
+async function deleteRetailer(id) {
+  if (!confirm('Delete this retailer? This will mark it inactive.')) {
+    return;
+  }
+  try {
+    const response = await fetchWithAuth(`/api/v1/parties/retailers/${id}`, { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to delete retailer');
+    }
+    loadRetailers();
+  } catch (error) {
+    alert(error.message || 'Error deleting retailer.');
+  }
+}
+
 function openTargetSummary() {
   window.location.href = '/reports';
 }
@@ -558,6 +916,51 @@ async function uploadFile() {
 }
 
 // Remove legacy upload handler if not used.
+
+function openModule(moduleName) {
+  console.log('Opening module:', moduleName);
+  const moduleAlert = document.getElementById('module-alert');
+  if (moduleAlert) {
+    moduleAlert.textContent = `Opening ${moduleName} module...`;
+  }
+  alert(`Opening ${moduleName}`);
+}
+
+function updateGreeting() {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const greetingText = document.getElementById('greeting-text');
+  if (greetingText) {
+    greetingText.textContent = `${greeting}, ${authState.username || 'Admin'}!`;
+  }
+}
+
+function loadRecentActivities() {
+  const activities = [
+    { icon: '📈', title: 'Target updated for FY 2026-27', meta: 'Updated by system', time: '12m ago' },
+    { icon: '📤', title: 'Sales report synced', meta: 'Uploaded via Drive', time: '42m ago' },
+    { icon: '💼', title: 'New retailer onboarded', meta: 'Retailer management', time: '1h ago' },
+    { icon: '🔍', title: 'Duplicate party scan completed', meta: 'Party matching', time: '2h ago' },
+  ];
+
+  const feed = document.getElementById('activity-feed');
+  if (!feed) return;
+
+  feed.innerHTML = activities
+    .map(
+      (activity) => `
+        <div class="activity-item">
+          <div class="activity-icon">${activity.icon}</div>
+          <div class="activity-content">
+            <div class="activity-title">${activity.title}</div>
+            <div class="activity-meta">${activity.meta}</div>
+          </div>
+          <div class="activity-time">${activity.time}</div>
+        </div>
+      `
+    )
+    .join('');
+}
 
 function uploadMasters() {
   return;

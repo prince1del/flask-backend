@@ -1155,11 +1155,11 @@ class CentralizedDB:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     year INTEGER NOT NULL,
                     month TEXT NOT NULL,
-                    distributor_id INTEGER NOT NULL,
+                    distributor_id INTEGER,
                     zone TEXT,
                     target_amount REAL NOT NULL DEFAULT 0,
                     achievement_amount REAL NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )

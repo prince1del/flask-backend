@@ -4,7 +4,7 @@ Handles token creation, verification, and authentication
 """
 
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import request, jsonify
 
@@ -18,7 +18,7 @@ class JWTService:
 
     def create_tokens(self, user_id, username, role, workspace_id):
         """Create access token + refresh token"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Access token payload
         access_payload = {
