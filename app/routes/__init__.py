@@ -3,6 +3,7 @@ from .auth import auth_blueprint
 from .data import data_blueprint
 from .reports import reports_blueprint
 from .schemas import schemas_blueprint
+from .storage import bp as storage_blueprint
 from .workspaces import workspaces_blueprint
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "data_blueprint",
     "reports_blueprint",
     "schemas_blueprint",
+    "storage_blueprint",
     "workspaces_blueprint",
 ]

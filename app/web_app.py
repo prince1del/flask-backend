@@ -9,6 +9,7 @@ from app.routes import (
     data_blueprint,
     reports_blueprint,
     schemas_blueprint,
+    storage_blueprint,
     workspaces_blueprint,
 )
 from app.routes.auth import register_auth_hooks
@@ -28,6 +29,7 @@ def create_app() -> Flask:
     app.register_blueprint(data_blueprint)
     app.register_blueprint(analytics_blueprint)
     app.register_blueprint(reports_blueprint)
+    app.register_blueprint(storage_blueprint)
 
     @app.route('/health', methods=['GET'])
     def health() -> str:

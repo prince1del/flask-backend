@@ -45,6 +45,263 @@ class CentralizedDB:
             """)
             conn.commit()
 
+    def ensure_storage_tables(self) -> None:
+        """Create storage account and file index tables if they do not exist."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS storage_accounts (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    workspace_id TEXT DEFAULT 'bombay_dyeing',
+                    provider_type TEXT,
+                    oauth_token TEXT,
+                    connected_at TIMESTAMP,
+                    last_sync TIMESTAMP,
+                    sync_status TEXT,
+                    total_storage_bytes BIGINT,
+                    used_storage_bytes BIGINT,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    UNIQUE(user_id, workspace_id, provider_type)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS file_index (
+                    id INTEGER PRIMARY KEY,
+                    workspace_id TEXT DEFAULT 'bombay_dyeing',
+                    storage_account_id INTEGER,
+                    file_id TEXT,
+                    file_name TEXT,
+                    file_type TEXT,
+                    mime_type TEXT,
+                    folder_path TEXT,
+                    owner_id INTEGER,
+                    company TEXT,
+                    module TEXT,
+                    file_size_bytes BIGINT,
+                    created_at TIMESTAMP,
+                    modified_at TIMESTAMP,
+                    indexed_at TIMESTAMP,
+                    last_synced TIMESTAMP,
+                    sync_status TEXT,
+                    search_tags TEXT,
+                    version_number INTEGER,
+                    ocr_status TEXT,
+                    ai_status TEXT,
+                    processing_status TEXT,
+                    created_by INTEGER,
+                    updated_by INTEGER,
+                    FOREIGN KEY(storage_account_id) REFERENCES storage_accounts(id),
+                    UNIQUE(storage_account_id, file_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS file_versions (
+                    id INTEGER PRIMARY KEY,
+                    file_index_id INTEGER,
+                    version_number INTEGER,
+                    version_file_id TEXT,
+                    created_at TIMESTAMP,
+                    modified_at TIMESTAMP,
+                    created_by INTEGER,
+                    FOREIGN KEY(file_index_id) REFERENCES file_index(id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS file_operations_log (
+                    id INTEGER PRIMARY KEY,
+                    file_index_id INTEGER,
+                    operation_type TEXT,
+                    user_id INTEGER,
+                    operation_status TEXT,
+                    error_message TEXT,
+                    created_at TIMESTAMP,
+                    FOREIGN KEY(file_index_id) REFERENCES file_index(id)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_workspace ON file_index(workspace_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_owner ON file_index(owner_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_module ON file_index(module)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_company ON file_index(company)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_file_index_created ON file_index(created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_storage_accounts_user ON storage_accounts(user_id)")
+            conn.commit()
+
+    def save_storage_account(
+        self,
+        user_id: int,
+        provider_type: str,
+        oauth_token: dict[str, Any],
+        sync_status: str = "connected",
+        total_storage_bytes: int | None = None,
+        used_storage_bytes: int | None = None,
+    ) -> int:
+        """Insert or update a storage account record."""
+        self.ensure_storage_tables()
+        now = datetime.now(timezone.utc).isoformat()
+        token_text = json.dumps(oauth_token)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                    INSERT INTO storage_accounts (
+                        user_id, provider_type, oauth_token, connected_at,
+                        last_sync, sync_status, total_storage_bytes,
+                        used_storage_bytes, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, workspace_id, provider_type) DO UPDATE SET
+                        oauth_token = excluded.oauth_token,
+                        last_sync = excluded.last_sync,
+                        sync_status = excluded.sync_status,
+                        total_storage_bytes = excluded.total_storage_bytes,
+                        used_storage_bytes = excluded.used_storage_bytes,
+                        updated_at = excluded.updated_at
+                """,
+                (
+                    user_id,
+                    provider_type,
+                    token_text,
+                    now,
+                    now,
+                    sync_status,
+                    total_storage_bytes,
+                    used_storage_bytes,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            if cursor.lastrowid:
+                return cursor.lastrowid
+            row = conn.execute(
+                "SELECT id FROM storage_accounts WHERE user_id = ? AND provider_type = ?",
+                (user_id, provider_type),
+            ).fetchone()
+            return int(row[0]) if row else 0
+
+    def get_storage_account(self, user_id: int, provider_type: str | None = None) -> dict[str, Any] | None:
+        """Retrieve a storage account for a user."""
+        self.ensure_storage_tables()
+        query = "SELECT * FROM storage_accounts WHERE user_id = ?"
+        params: tuple[Any, ...] = (user_id,)
+        if provider_type:
+            query += " AND provider_type = ?"
+            params = (user_id, provider_type)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(query, params).fetchone()
+            if row is None:
+                return None
+            data = dict(row)
+            data["oauth_token"] = json.loads(data["oauth_token"]) if data.get("oauth_token") else None
+            return data
+
+    def disconnect_storage_account(self, user_id: int, provider_type: str | None = None) -> bool:
+        """Mark a storage account as disconnected."""
+        self.ensure_storage_tables()
+        query = "UPDATE storage_accounts SET sync_status = ?, oauth_token = NULL, updated_at = ? WHERE user_id = ?"
+        params: tuple[Any, ...] = ("disconnected", datetime.now(timezone.utc).isoformat(), user_id)
+        if provider_type:
+            query += " AND provider_type = ?"
+            params += (provider_type,)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(query, params)
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def upsert_file_index_records(
+        self,
+        workspace_id: str,
+        storage_account_id: int,
+        items: list[dict[str, Any]],
+    ) -> int:
+        """Insert or update file index metadata from synced storage items."""
+        self.ensure_storage_tables()
+        now = datetime.now(timezone.utc).isoformat()
+        count = 0
+        with sqlite3.connect(self.db_path) as conn:
+            for item in items:
+                file_id = item.get("id")
+                if not file_id:
+                    continue
+                conn.execute(
+                    """
+                        INSERT INTO file_index (
+                            workspace_id, storage_account_id, file_id, file_name,
+                            file_type, mime_type, folder_path, file_size_bytes,
+                            modified_at, indexed_at, last_synced, sync_status,
+                            created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(storage_account_id, file_id) DO UPDATE SET
+                            file_name = excluded.file_name,
+                            file_type = excluded.file_type,
+                            mime_type = excluded.mime_type,
+                            folder_path = excluded.folder_path,
+                            file_size_bytes = excluded.file_size_bytes,
+                            modified_at = excluded.modified_at,
+                            indexed_at = excluded.indexed_at,
+                            last_synced = excluded.last_synced,
+                            sync_status = excluded.sync_status,
+                            updated_at = excluded.updated_at
+                    """,
+                    (
+                        workspace_id,
+                        storage_account_id,
+                        file_id,
+                        item.get("name"),
+                        item.get("fileType") or item.get("mimeType"),
+                        item.get("mimeType"),
+                        ",".join(item.get("parents", [])) if item.get("parents") else None,
+                        int(item.get("size")) if item.get("size") else None,
+                        item.get("modifiedTime"),
+                        now,
+                        now,
+                        "synced",
+                        now,
+                        now,
+                    ),
+                )
+                count += 1
+            conn.commit()
+        return count
+
+    def search_file_index(
+        self,
+        user_id: int,
+        query: str,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search indexed files for a specific user."""
+        self.ensure_storage_tables()
+        filters = filters or {}
+        sql = "SELECT fi.* FROM file_index AS fi JOIN storage_accounts AS sa ON fi.storage_account_id = sa.id WHERE sa.user_id = ?"
+        params: list[Any] = [user_id]
+        if query:
+            qparam = f"%{query}%"
+            sql += " AND (fi.file_name LIKE ? OR fi.file_type LIKE ? OR fi.search_tags LIKE ? OR fi.folder_path LIKE ?)"
+            params.extend([qparam, qparam, qparam, qparam])
+        for field in ("file_type", "company", "module", "folder_path"):
+            if field in filters and filters[field]:
+                sql += f" AND fi.{field} = ?"
+                params.append(filters[field])
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(sql, tuple(params)).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_storage_account_summary(self, user_id: int) -> dict[str, Any] | None:
+        """Return connected storage account summary for user."""
+        account = self.get_storage_account(user_id)
+        if not account:
+            return None
+        return {
+            "id": account["id"],
+            "provider_type": account["provider_type"],
+            "connected_at": account["connected_at"],
+            "last_sync": account["last_sync"],
+            "sync_status": account["sync_status"],
+            "total_storage_bytes": account["total_storage_bytes"],
+            "used_storage_bytes": account["used_storage_bytes"],
+        }
     def get_schema_fields(self, entity_type: str) -> list:
         """Entity ke fields lao order ke saath"""
         self.init_schema_manager()
