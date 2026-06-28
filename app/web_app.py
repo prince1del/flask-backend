@@ -29,6 +29,10 @@ def create_app() -> Flask:
     app.register_blueprint(analytics_blueprint)
     app.register_blueprint(reports_blueprint)
 
+    @app.route('/health', methods=['GET'])
+    def health() -> str:
+        return 'OK', 200
+
     return app
 
 
