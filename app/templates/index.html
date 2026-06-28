@@ -43,106 +43,227 @@
                 </div>
                 <div class="stat-card">
                     <h3>Modules</h3>
-                    <p>5 Active</p>
+                    <p>All features available</p>
                 </div>
             </div>
 
-            <div class="tabs">
-                <button class="tab-btn active" data-target="workspaces" onclick="switchTab('workspaces')">Workspaces</button>
-                <button class="tab-btn" data-target="target" onclick="switchTab('target')">Target vs Achievement</button>
-                <button class="tab-btn" data-target="party" onclick="switchTab('party')">Smart Party Matching</button>
-                <button class="tab-btn" data-target="storage" onclick="switchTab('storage')">Google Drive</button>
-                <button class="tab-btn" data-target="uploads" onclick="switchTab('uploads')">Master Uploads</button>
-            </div>
-
-            <div id="workspaces-tab" class="tab-content active">
-                <div class="module-header">
-                    <h2>Workspaces</h2>
-                    <button onclick="loadWorkspaces()" class="btn btn-primary">Refresh</button>
-                </div>
-                <div id="workspaces-list" class="list-container"><p>Loading...</p></div>
-            </div>
-
-            <div id="target-tab" class="tab-content">
-                <div class="module-header">
-                    <h2>Target vs Achievement</h2>
-                    <button onclick="loadYears()" class="btn btn-primary">Refresh</button>
-                </div>
-                <div class="card">
-                    <h3>Overall Summary</h3>
-                    <div id="target-summary" class="summary"><p>Loading...</p></div>
-                </div>
-                <div class="card">
-                    <h3>Fiscal Years</h3>
-                    <div id="years-list" class="list-container"><p>Loading...</p></div>
-                </div>
-            </div>
-
-            <div id="party-tab" class="tab-content">
-                <div class="module-header">
-                    <h2>Smart Party Matching</h2>
-                </div>
-                <div class="card">
-                    <h3>Search Parties</h3>
-                    <div class="form-group">
-                        <input type="text" id="partyQuery" placeholder="Search...">
-                    </div>
-                    <button onclick="searchParties()" class="btn btn-primary">Search</button>
-                </div>
-                <div class="card">
-                    <h3>Results</h3>
-                    <div id="party-results" class="list-container"><p>Enter search term</p></div>
-                </div>
-            </div>
-
-            <div id="storage-tab" class="tab-content">
-                <div class="module-header">
-                    <h2>Google Drive Storage</h2>
-                    <button onclick="loadDashboard()" class="btn btn-primary">Refresh</button>
-                </div>
-                <div class="card">
-                    <h3>Connection Status</h3>
-                    <div id="storage-status" class="summary"><p>Loading...</p></div>
-                </div>
-                <div class="card">
-                    <h3>Storage Information</h3>
-                    <div id="storage-info" class="summary"><p>Loading...</p></div>
-                </div>
-            </div>
-
-            <div id="uploads-tab" class="tab-content">
-                <div class="module-header">
-                    <h2>Bulk Master Upload</h2>
-                    <p class="card-description">Upload distributor or retailer master files and download templates.</p>
-                </div>
-                <div class="card">
-                    <h3>Download Templates</h3>
-                    <div class="template-links">
-                        <a href="/api/v1/masters/template/distributors">Distributor Excel</a>
-                        <a href="/api/v1/masters/template/distributors?format=csv">Distributor CSV</a>
-                        <a href="/api/v1/masters/template/retailers">Retailer Excel</a>
-                        <a href="/api/v1/masters/template/retailers?format=csv">Retailer CSV</a>
+            <!-- MAIN NAVIGATION DASHBOARD -->
+            <div class="navigation-dashboard">
+                <div class="module-section">
+                    <h2>📦 Digital Warehouse</h2>
+                    <p class="module-description">Google Drive integration, file management, storage sync</p>
+                    <div class="card-description" id="storage-status">Storage status loading...</div>
+                    <div class="card-description" id="storage-info">Storage details will appear here after login.</div>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>🔗 Connect Google Drive</h3>
+                            <p>Link your Google Drive account</p>
+                            <button onclick="connectGoogleDrive()" class="btn btn-primary">Connect</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📤 Upload File</h3>
+                            <p>Upload documents to warehouse</p>
+                            <button onclick="showUploadModal()" class="btn btn-primary">Upload</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🔄 Sync Drive</h3>
+                            <p>Synchronize with Google Drive</p>
+                            <button onclick="syncGoogleDrive()" class="btn btn-secondary">Sync Now</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📁 File Library</h3>
+                            <p>View all indexed files</p>
+                            <button onclick="openFileLibrary()" class="btn btn-secondary">Open Library</button>
+                        </div>
                     </div>
                 </div>
-                <div class="card">
-                    <h3>Upload Master File</h3>
-                    <form id="upload-form" class="upload-form">
-                        <div class="form-group">
-                            <label>Master Type</label>
-                            <select id="masterType" name="master_type">
-                                <option value="distributors">Distributors</option>
-                                <option value="retailers">Retailers</option>
-                            </select>
+
+                <div class="module-section">
+                    <h2>🎯 Target vs Achievement</h2>
+                    <p class="module-description">Manage fiscal years, targets, and sales performance</p>
+                    <div class="module-status">
+                    <div id="target-summary" class="card-description">Loading fiscal year summary...</div>
+                    <div id="years-list" class="list-container"></div>
+                </div>
+                <div class="action-cards">
+                        <div class="action-card">
+                            <h3>📅 Add Financial Year</h3>
+                            <p>Create new fiscal year target</p>
+                            <button onclick="showAddYearModal()" class="btn btn-primary">Add Year</button>
                         </div>
-                        <div class="form-group">
-                            <label>Choose File</label>
-                            <input type="file" id="uploadFile" name="file" required />
+                        <div class="action-card">
+                            <h3>✏️ Manual Entry</h3>
+                            <p>Manually add achievement data</p>
+                            <button onclick="showManualEntryModal()" class="btn btn-primary">Enter Data</button>
                         </div>
-                        <button type="submit" class="btn btn-primary">Upload File</button>
-                        <p id="upload-status" class="upload-status"></p>
-                    </form>
+                        <div class="action-card">
+                            <h3>📊 Upload Sales Report</h3>
+                            <p>Import Excel/CSV sales data</p>
+                            <button onclick="showReportUploadModal()" class="btn btn-secondary">Upload</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📈 View Summary</h3>
+                            <p>See year-wise analysis</p>
+                            <button onclick="openTargetSummary()" class="btn btn-secondary">View</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-section">
+                    <h2>👥 Smart Party Matching</h2>
+                    <p class="module-description">Duplicate detection, party consolidation, review queue</p>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>🔍 Scan Duplicates</h3>
+                            <p>Find duplicate party records</p>
+                            <button onclick="scanDuplicates()" class="btn btn-primary">Scan</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>💭 Review Suggestions</h3>
+                            <p>Review AI matching suggestions</p>
+                            <button onclick="openReviewQueue()" class="btn btn-primary">Review</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>✅ Approve / Reject</h3>
+                            <p>Approve or reject matches</p>
+                            <button onclick="openApprovalQueue()" class="btn btn-secondary">Manage</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🏷️ Alias Library</h3>
+                            <p>View party names & aliases</p>
+                            <button onclick="openAliasLibrary()" class="btn btn-secondary">View</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-section">
+                    <h2>📊 Reports & Analytics</h2>
+                    <p class="module-description">Business intelligence and performance metrics</p>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>📉 View Reports</h3>
+                            <p>Sales, distribution, performance</p>
+                            <button onclick="openReports()" class="btn btn-primary">View</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📊 View Dashboard</h3>
+                            <p>Real-time analytics dashboard</p>
+                            <button onclick="openAnalyticsDashboard()" class="btn btn-secondary">Open</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-section">
+                    <h2>⚙️ Settings & Administration</h2>
+                    <p class="module-description">User profile, workspace, connected services</p>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>👤 Profile</h3>
+                            <p>View and edit profile</p>
+                            <button onclick="openProfileSettings()" class="btn btn-primary">Edit</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🏢 Workspace</h3>
+                            <p>Workspace settings and users</p>
+                            <button onclick="openWorkspaceSettings()" class="btn btn-primary">Manage</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🔗 Connected Services</h3>
+                            <p>Manage API connections</p>
+                            <button onclick="openConnectedServices()" class="btn btn-secondary">View</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>ℹ️ App Info</h3>
+                            <p>NEXORA v1.1 | Build info</p>
+                            <button onclick="showAppInfo()" class="btn btn-secondary">Info</button>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN MODALS FOR ACTIONS -->
+    <div id="uploadModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Upload File to Digital Warehouse</h2>
+            <div class="form-group">
+                <label>Master Type</label>
+                <select id="uploadMasterType">
+                    <option value="distributors">Distributors</option>
+                    <option value="retailers">Retailers</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Select file</label>
+                <input type="file" id="fileInput" accept=".pdf,.xlsx,.xls,.csv,.docx" />
+            </div>
+            <div id="upload-status" class="upload-status"></div>
+            <button onclick="uploadFile()" class="btn btn-primary">Upload</button>
+            <button onclick="closeModal('uploadModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="addYearModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add Financial Year</h2>
+            <div class="form-group">
+                <label>Fiscal Year:</label>
+                <input type="text" id="fiscalYear" placeholder="2026-2027" />
+            </div>
+            <div class="form-group">
+                <label>Target Amount (₹):</label>
+                <input type="number" id="targetAmount" placeholder="1000000" />
+            </div>
+            <button onclick="submitAddYear()" class="btn btn-primary">Add</button>
+            <button onclick="closeModal('addYearModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="manualEntryModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Manual Achievement Entry</h2>
+            <div class="form-group">
+                <label>Fiscal Year:</label>
+                <select id="yearSelect"></select>
+            </div>
+            <div class="form-group">
+                <label>Distributor Name:</label>
+                <input type="text" id="distributorName" />
+            </div>
+            <div class="form-group">
+                <label>Achievement Amount (₹):</label>
+                <input type="number" id="achievementAmount" />
+            </div>
+            <button onclick="submitManualEntry()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('manualEntryModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="reportUploadModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Upload Sales Report</h2>
+            <div class="form-group">
+                <label>Choose file</label>
+                <input type="file" id="reportFile" accept=".xlsx,.xls,.csv" />
+            </div>
+            <div class="form-group">
+                <label>Select Fiscal Year:</label>
+                <select id="reportYear"></select>
+            </div>
+            <button onclick="uploadSalesReport()" class="btn btn-primary">Upload</button>
+            <button onclick="closeModal('reportUploadModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="scanModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Scanning for Duplicates...</h2>
+            <p id="scanStatus">Starting scan...</p>
+            <div class="progress-bar">
+                <div id="scanProgress" class="progress-fill"></div>
+            </div>
+            <button onclick="closeScan()" class="btn btn-secondary">Cancel</button>
         </div>
     </div>
 
