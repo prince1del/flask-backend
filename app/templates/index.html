@@ -52,6 +52,7 @@
                 <button class="tab-btn" data-target="target" onclick="switchTab('target')">Target vs Achievement</button>
                 <button class="tab-btn" data-target="party" onclick="switchTab('party')">Smart Party Matching</button>
                 <button class="tab-btn" data-target="storage" onclick="switchTab('storage')">Google Drive</button>
+                <button class="tab-btn" data-target="uploads" onclick="switchTab('uploads')">Master Uploads</button>
             </div>
 
             <div id="workspaces-tab" class="tab-content active">
@@ -106,6 +107,40 @@
                 <div class="card">
                     <h3>Storage Information</h3>
                     <div id="storage-info" class="summary"><p>Loading...</p></div>
+                </div>
+            </div>
+
+            <div id="uploads-tab" class="tab-content">
+                <div class="module-header">
+                    <h2>Bulk Master Upload</h2>
+                    <p class="card-description">Upload distributor or retailer master files and download templates.</p>
+                </div>
+                <div class="card">
+                    <h3>Download Templates</h3>
+                    <div class="template-links">
+                        <a href="/api/v1/masters/template/distributors">Distributor Excel</a>
+                        <a href="/api/v1/masters/template/distributors?format=csv">Distributor CSV</a>
+                        <a href="/api/v1/masters/template/retailers">Retailer Excel</a>
+                        <a href="/api/v1/masters/template/retailers?format=csv">Retailer CSV</a>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Upload Master File</h3>
+                    <form id="upload-form" class="upload-form">
+                        <div class="form-group">
+                            <label>Master Type</label>
+                            <select id="masterType" name="master_type">
+                                <option value="distributors">Distributors</option>
+                                <option value="retailers">Retailers</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Choose File</label>
+                            <input type="file" id="uploadFile" name="file" required />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload File</button>
+                        <p id="upload-status" class="upload-status"></p>
+                    </form>
                 </div>
             </div>
         </div>
