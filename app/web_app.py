@@ -25,7 +25,11 @@ from app.routes.auth import register_auth_hooks
 def create_app() -> Flask:
     init_db()
 
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        static_folder="static",
+        static_url_path="/static",
+    )
     app.secret_key = os.getenv("SECRET_KEY", "change-me")
     app.config["SECRET_KEY"] = app.secret_key
     app.extensions["jwt_service"] = JWTService(secret_key=app.secret_key)
