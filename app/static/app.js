@@ -637,6 +637,166 @@ async function uploadFile() {
   }
 }
 
+// ==================== DISTRIBUTOR DATA ====================
+
+async function loadDistributors() {
+  const result = await apiCall('/masters/distributors');
+  if (result.success && result.data.data) {
+    alert('Distributors: ' + (result.data.data.count || 0) + ' total');
+    // TODO: Show list modal
+  } else {
+    alert('Error loading distributors');
+  }
+}
+
+function showAddDistributorModal() {
+  const name = prompt('Distributor Name:');
+  const gst = prompt('GST Number:');
+  const mobile = prompt('Mobile Number:');
+  
+  if (name && gst && mobile) {
+    alert('Distributor added! (TODO: API integration)');
+  }
+}
+
+function showDistributorAnalytics() {
+  alert('Distributor Analytics - Coming Soon');
+  // TODO: Load analytics data
+}
+
+function showDistributorContacts() {
+  alert('Distributor Contacts - Coming Soon');
+  // TODO: Load and manage contacts
+}
+
+// ==================== RETAILER DATA ====================
+
+async function loadRetailers() {
+  const result = await apiCall('/masters/retailers');
+  if (result.success && result.data.data) {
+    alert('Retailers: ' + (result.data.data.count || 0) + ' total');
+    // TODO: Show list modal
+  } else {
+    alert('Error loading retailers');
+  }
+}
+
+function showAddRetailerModal() {
+  const name = prompt('Retailer Name:');
+  const location = prompt('Location:');
+  const mobile = prompt('Mobile Number:');
+  
+  if (name && location && mobile) {
+    alert('Retailer added! (TODO: API integration)');
+  }
+}
+
+function showRetailerSales() {
+  alert('Retailer Sales Data - Coming Soon');
+  // TODO: Load sales metrics
+}
+
+function showTerritoryMgmt() {
+  alert('Territory Management - Coming Soon');
+  // TODO: Manage territories
+}
+
+// ==================== ORDER MANAGEMENT ====================
+
+async function loadOrderSheets() {
+  const result = await apiCall('/orders/sheets');
+  if (result.success) {
+    alert('Order Sheets - ' + (result.data.data.count || 0) + ' sheets');
+    // TODO: Show order sheets list
+  } else {
+    alert('Error loading order sheets');
+  }
+}
+
+function showCreateOrderModal() {
+  alert('Create Order - Coming Soon');
+  // TODO: Show order creation form
+}
+
+async function loadOrdersPlaced() {
+  const result = await apiCall('/orders/placed');
+  if (result.success) {
+    alert('Orders Placed - ' + (result.data.data.count || 0) + ' orders');
+    // TODO: Show orders list
+  } else {
+    alert('Error loading orders');
+  }
+}
+
+function showOrderFulfillment() {
+  alert('Order Fulfillment - Coming Soon');
+  // TODO: Show fulfillment tracking
+}
+
+// ==================== SALES ORDERS (SO) ====================
+
+async function loadSalesOrders() {
+  const result = await apiCall('/sales-orders');
+  if (result.success) {
+    alert('Sales Orders - ' + (result.data.data.count || 0) + ' SOs');
+    // TODO: Show SO list
+  } else {
+    alert('Error loading sales orders');
+  }
+}
+
+function showGenerateSOModal() {
+  alert('Generate SO - Coming Soon');
+  // TODO: Show SO generation form
+}
+
+async function loadPendingSO() {
+  const result = await apiCall('/sales-orders/pending');
+  if (result.success) {
+    alert('Pending SO - ' + (result.data.data.count || 0) + ' pending');
+    // TODO: Show approval interface
+  } else {
+    alert('Error loading pending SOs');
+  }
+}
+
+function showSOAnalytics() {
+  alert('SO Analytics - Coming Soon');
+  // TODO: Show SO metrics
+}
+
+// ==================== COMMERCIAL INVOICES (CI) ====================
+
+async function loadInvoices() {
+  const result = await apiCall('/invoices');
+  if (result.success) {
+    alert('Invoices - ' + (result.data.data.count || 0) + ' invoices');
+    // TODO: Show invoice list
+  } else {
+    alert('Error loading invoices');
+  }
+}
+
+function showGenerateInvoiceModal() {
+  alert('Generate Invoice - Coming Soon');
+  // TODO: Show invoice generation form
+}
+
+async function loadPaymentStatus() {
+  const result = await apiCall('/invoices/payments');
+  if (result.success) {
+    alert('Payment Status loaded');
+    // TODO: Show payment tracking
+  } else {
+    alert('Error loading payment status');
+  }
+}
+
+function showSendInvoiceModal() {
+  alert('Send Invoice - Coming Soon');
+  // TODO: Show invoice sending interface
+}
+
 // Remove legacy upload handler if not used.
 
 function uploadMasters() {
