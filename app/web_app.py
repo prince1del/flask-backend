@@ -1,7 +1,8 @@
 ﻿import json
 import os
 
-from flask import Flask, current_app, render_template_string, request
+from flask import Flask, current_app, render_template, render_template_string, request
+from flask_cors import CORS
 
 from centralized_db_system.db import CentralizedDB
 
@@ -31,6 +32,26 @@ def create_app() -> Flask:
 
     register_auth_hooks(app)
 
+    CORS(
+        app,
+        resources={
+            r"/api/*": {
+                "origins": ["*"],
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "Authorization"],
+            }
+        },
+    )
+
+    @app.route("/")
+    @app.route("/dashboard")
+    def dashboard():
+        return render_template("index.html")
+
+    @app.route("/health", methods=["GET"])
+    def health() -> str:
+        return "OK", 200
+
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(workspaces_blueprint)
     app.register_blueprint(schemas_blueprint)
@@ -40,10 +61,6 @@ def create_app() -> Flask:
     app.register_blueprint(storage_bp)
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)
-
-    @app.route("/health", methods=["GET"])
-    def health() -> str:
-        return "OK", 200
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:

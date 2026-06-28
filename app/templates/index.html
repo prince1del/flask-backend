@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXORA Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">NEXORA</p>
+          <h1>Business Operations Dashboard</h1>
+          <p class="subtitle">Real-time visibility for distributors, targets, storage, and verification workflows.</p>
+        </div>
+      </header>
+
+      <main class="cards">
+        <section class="card">
+          <h2>Targets & Achievement</h2>
+          <p>Review distributor targets and achievement progress.</p>
+          <a href="/target-achievement">Open</a>
+        </section>
+        <section class="card">
+          <h2>Party Matching</h2>
+          <p>Inspect duplicate and similar parties with review queue support.</p>
+          <a href="/party-matching">Open</a>
+        </section>
+        <section class="card">
+          <h2>Storage</h2>
+          <p>Monitor file storage, syncing, and account details.</p>
+          <a href="/storage/dashboard">Open</a>
+        </section>
+        <section class="card">
+          <h2>Health</h2>
+          <p>Verify the backend is serving the web dashboard.</p>
+          <a href="/health">Open</a>
+        </section>
+      </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
