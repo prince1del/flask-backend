@@ -1,293 +1,408 @@
-import csv
-import io
-import json
-from io import StringIO
+from flask import Blueprint, request, jsonify
+from sqlalchemy import func
+from datetime import datetime, timedelta, timezone
+from dateutil.relativedelta import relativedelta
 
-from flask import Blueprint, Response, request, render_template_string
-
-from centralized_db_system.db import CentralizedDB
+from app.db import db
+from app.models import SalesOrder, Invoice, InvoicePayment, Distributor, Retailer
 from app.routes.auth import require_jwt_auth
-from app.utils import get_monthly_report_data
 
-reports_blueprint = Blueprint("reports", __name__)
-
-REPORTS_TEMPLATE = """
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>NEXORA |Monthly Reports</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; }
-    .card { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background: #f0f0f0; }
-    .summary-box { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    .stat { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 1rem; min-width: 150px; text-align: center; }
-    .stat h3 { margin: 0; font-size: 2rem; color: #0d6efd; }
-    .stat p { margin: 0.25rem 0 0; color: #666; font-size: 0.9rem; }
-  </style>
-</head>
-<body>
-  <h1>📊 Monthly Reports</h1>
-  <div class="card">
-    <h2>Select Month</h2>
-    <form method="get" action="/reports">
-      <input type="month" name="month" value="{{ selected_month }}" style="padding: 0.4rem; margin: 0 1rem;" />
-      <button type="submit">Load Report</button>
-    </form>
-  </div>
-  <div class="card">
-    <h2>Summary — {{ selected_month }}</h2>
-    <div class="summary-box">
-      <div class="stat"><h3>{{ total_uploads }}</h3><p>Total Uploads</p></div>
-      <div class="stat"><h3>{{ total_distributors }}</h3><p>Active Distributors</p></div>
-      <div class="stat"><h3>{{ verified_count }}</h3><p>Verified Orders</p></div>
-      <div class="stat"><h3>{{ pending_count }}</h3><p>Pending Orders</p></div>
-    </div>
-  </div>
-  <div class="card">
-    <h2>Distributor Order Activity</h2>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead>
-          <tr>
-            <th>Distributor</th><th>Total Uploads</th><th>Stage 1</th>
-            <th>Stage 2</th><th>Stage 3</th><th>Stage 4</th><th>Last Upload</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in distributor_activity %}
-          <tr>
-            <td>{{ row.distributor_name or 'Unknown' }}</td>
-            <td>{{ row.total_uploads }}</td>
-            <td>{{ row.stage1 }}</td>
-            <td>{{ row.stage2 }}</td>
-            <td>{{ row.stage3 }}</td>
-            <td>{{ row.stage4 }}</td>
-            <td>{{ row.last_upload }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="7" style="text-align:center;">No data for this month</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <div class="card">
-    <h2>Download Report</h2>
-    <p>
-      <a href="/reports/download/excel?month={{ selected_month }}">📥 Download Excel</a> &nbsp;|&nbsp;
-      <a href="/reports/download/csv?month={{ selected_month }}">📥 Download CSV</a>
-    </p>
-  </div>
-  <p><a href="/">← Back to Dashboard</a> | <a href="/analytics">Analytics</a></p>
-</body>
-</html>
-"""
+reports_bp = Blueprint('reports', __name__, url_prefix='/api/v1/reports')
 
 
-@reports_blueprint.route("/reports")
+def _current_user():
+    return getattr(request, 'user', None)
+
+
+# ========== REPORT 1: SALES REPORT ==========
+@reports_bp.route('/sales', methods=['GET'])
 @require_jwt_auth
-def monthly_reports() -> str:
-    selected_month = request.args.get("month") or "2026-06"
-    data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
-    return render_template_string(
-        REPORTS_TEMPLATE, selected_month=selected_month, **data
-    )
-
-
-@reports_blueprint.route("/reports/download/excel")
-@require_jwt_auth
-def download_monthly_report_excel() -> Response:
-    selected_month = request.args.get("month") or "2026-06"
-    data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
-    import pandas as pd
-
-    df = pd.DataFrame(data["distributor_activity"])
-    if df.empty:
-        df = pd.DataFrame(
-            columns=[
-                "distributor_name",
-                "total_uploads",
-                "stage1",
-                "stage2",
-                "stage3",
-                "stage4",
-                "last_upload",
+def get_sales_report():
+    """Get sales report grouped by distributor/retailer/territory"""
+    group_by = request.args.get('group_by', 'distributor')  # distributor, retailer, territory
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    # Build date filter
+    date_filter = []
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+            date_filter.append(SalesOrder.order_date >= start)
+        except ValueError:
+            return jsonify({'success': False, 'data': None, 'message': 'Invalid start_date format (use YYYY-MM-DD)'}), 400
+    
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+            date_filter.append(SalesOrder.order_date <= end)
+        except ValueError:
+            return jsonify({'success': False, 'data': None, 'message': 'Invalid end_date format (use YYYY-MM-DD)'}), 400
+    
+    try:
+        if group_by == 'distributor':
+            results = db.session.query(
+                SalesOrder.distributor_id,
+                Distributor.name.label('distributor_name'),
+                func.sum(SalesOrder.net_amount).label('total_amount'),
+                func.count(SalesOrder.id).label('order_count'),
+                func.avg(SalesOrder.net_amount).label('avg_amount')
+            ).join(Distributor, SalesOrder.distributor_id == Distributor.id)
+            
+            if date_filter:
+                for f in date_filter:
+                    results = results.filter(f)
+            
+            results = results.group_by(SalesOrder.distributor_id, Distributor.name).all()
+            
+            data = [
+                {
+                    'id': r[0],
+                    'name': r[1],
+                    'total_amount': float(r[2]) if r[2] else 0.0,
+                    'order_count': r[3],
+                    'avg_amount': float(r[4]) if r[4] else 0.0
+                }
+                for r in results
             ]
+        
+        elif group_by == 'retailer':
+            results = db.session.query(
+                SalesOrder.retailer_id,
+                Retailer.name.label('retailer_name'),
+                func.sum(SalesOrder.net_amount).label('total_amount'),
+                func.count(SalesOrder.id).label('order_count'),
+                func.avg(SalesOrder.net_amount).label('avg_amount')
+            ).join(Retailer, SalesOrder.retailer_id == Retailer.id)
+            
+            if date_filter:
+                for f in date_filter:
+                    results = results.filter(f)
+            
+            results = results.group_by(SalesOrder.retailer_id, Retailer.name).all()
+            
+            data = [
+                {
+                    'id': r[0],
+                    'name': r[1],
+                    'total_amount': float(r[2]) if r[2] else 0.0,
+                    'order_count': r[3],
+                    'avg_amount': float(r[4]) if r[4] else 0.0
+                }
+                for r in results
+            ]
+        
+        elif group_by == 'territory':
+            results = db.session.query(
+                Distributor.territory,
+                func.sum(SalesOrder.net_amount).label('total_amount'),
+                func.count(SalesOrder.id).label('order_count'),
+                func.avg(SalesOrder.net_amount).label('avg_amount')
+            ).join(Distributor, SalesOrder.distributor_id == Distributor.id)
+            
+            if date_filter:
+                for f in date_filter:
+                    results = results.filter(f)
+            
+            results = results.group_by(Distributor.territory).all()
+            
+            data = [
+                {
+                    'territory': r[0],
+                    'total_amount': float(r[1]) if r[1] else 0.0,
+                    'order_count': r[2],
+                    'avg_amount': float(r[3]) if r[3] else 0.0
+                }
+                for r in results
+            ]
+        
+        else:
+            return jsonify({'success': False, 'data': None, 'message': 'Invalid group_by parameter. Use: distributor, retailer, or territory'}), 400
+        
+        return jsonify({
+            'success': True,
+            'data': data,
+            'group_by': group_by,
+            'filters': {'start_date': start_date, 'end_date': end_date}
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error generating report: {str(e)}'}), 500
+
+
+# ========== REPORT 2: TRENDS REPORT ==========
+@reports_bp.route('/trends', methods=['GET'])
+@require_jwt_auth
+def get_trends_report():
+    """Calculate month-over-month growth trends"""
+    months_back = request.args.get('months_back', 12, type=int)
+    
+    if months_back < 1 or months_back > 24:
+        return jsonify({'success': False, 'data': None, 'message': 'months_back must be between 1 and 24'}), 400
+    
+    try:
+        today = datetime.now(timezone.utc).date()
+        trends = []
+        
+        for i in range(months_back, 0, -1):
+            month_date = today - relativedelta(months=i)
+            month_start = month_date.replace(day=1)
+            month_end = (month_start + relativedelta(months=1)) - timedelta(days=1)
+            
+            # Get current month sales
+            current_month_sales = db.session.query(
+                func.sum(SalesOrder.net_amount).label('total')
+            ).filter(
+                SalesOrder.order_date >= month_start,
+                SalesOrder.order_date <= month_end
+            ).first()
+            
+            current_total = float(current_month_sales[0]) if current_month_sales[0] else 0.0
+            
+            # Get previous month sales for comparison
+            prev_month_start = (month_start - relativedelta(months=1)).replace(day=1)
+            prev_month_end = month_start - timedelta(days=1)
+            
+            prev_month_sales = db.session.query(
+                func.sum(SalesOrder.net_amount).label('total')
+            ).filter(
+                SalesOrder.order_date >= prev_month_start,
+                SalesOrder.order_date <= prev_month_end
+            ).first()
+            
+            prev_total = float(prev_month_sales[0]) if prev_month_sales[0] else 0.0
+            
+            # Calculate growth percentage
+            if prev_total > 0:
+                growth_percent = ((current_total - prev_total) / prev_total) * 100
+            else:
+                growth_percent = 100.0 if current_total > 0 else 0.0
+            
+            trends.append({
+                'month': month_date.strftime('%Y-%m'),
+                'current_sales': current_total,
+                'previous_sales': prev_total,
+                'growth_percent': round(growth_percent, 2),
+                'trend': 'up' if growth_percent >= 0 else 'down'
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': trends,
+            'months_back': months_back
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error generating trends: {str(e)}'}), 500
+
+
+# ========== REPORT 3: TERRITORY PERFORMANCE ==========
+@reports_bp.route('/territory-performance', methods=['GET'])
+@require_jwt_auth
+def get_territory_performance():
+    """Rank territories by sales performance"""
+    try:
+        # Get total sales by territory
+        territory_sales = db.session.query(
+            Distributor.territory,
+            func.sum(SalesOrder.net_amount).label('total_sales'),
+            func.count(SalesOrder.id).label('order_count')
+        ).join(Distributor, SalesOrder.distributor_id == Distributor.id).group_by(
+            Distributor.territory
+        ).order_by(func.sum(SalesOrder.net_amount).desc()).all()
+        
+        # Calculate total for percentage
+        grand_total = sum(float(r[1]) if r[1] else 0.0 for r in territory_sales)
+        
+        # Build response with rankings
+        data = []
+        for rank, (territory, total_sales, order_count) in enumerate(territory_sales, 1):
+            total_sales_float = float(total_sales) if total_sales else 0.0
+            percent_of_total = ((total_sales_float / grand_total) * 100) if grand_total > 0 else 0.0
+            
+            data.append({
+                'rank': rank,
+                'territory': territory,
+                'total_sales': total_sales_float,
+                'order_count': order_count,
+                'percent_of_total': round(percent_of_total, 2)
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': data,
+            'grand_total': round(grand_total, 2)
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error generating territory report: {str(e)}'}), 500
+
+
+# ========== REPORT 4: DISTRIBUTOR SALES DETAIL ==========
+@reports_bp.route('/distributor-sales/<int:distributor_id>', methods=['GET'])
+@require_jwt_auth
+def get_distributor_sales_detail(distributor_id):
+    """Detailed sales breakdown for a single distributor"""
+    try:
+        distributor = db.session.get(Distributor, distributor_id)
+        if not distributor:
+            return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
+        
+        # Get all sales orders for this distributor
+        sales_orders = SalesOrder.query.filter_by(distributor_id=distributor_id).all()
+        
+        total_orders = len(sales_orders)
+        total_sales = sum(float(so.net_amount) if so.net_amount else 0.0 for so in sales_orders)
+        
+        # Get invoices
+        invoices = db.session.query(
+            func.sum(Invoice.total_amount).label('total_invoiced'),
+            func.count(Invoice.id).label('invoice_count')
+        ).join(SalesOrder).filter(SalesOrder.distributor_id == distributor_id).first()
+        
+        total_invoiced = float(invoices[0]) if invoices[0] else 0.0
+        invoice_count = invoices[1] if invoices[1] else 0
+        
+        # Get payments
+        payments = db.session.query(
+            func.sum(InvoicePayment.amount_paid).label('total_paid')
+        ).join(Invoice, InvoicePayment.invoice_id == Invoice.id).join(
+            SalesOrder, Invoice.so_id == SalesOrder.id
+        ).filter(SalesOrder.distributor_id == distributor_id).first()
+        
+        total_paid = float(payments[0]) if payments[0] else 0.0
+        outstanding = total_invoiced - total_paid
+        
+        data = {
+            'distributor_id': distributor_id,
+            'distributor_name': distributor.name,
+            'total_orders': total_orders,
+            'total_sales': round(total_sales, 2),
+            'total_invoiced': round(total_invoiced, 2),
+            'total_paid': round(total_paid, 2),
+            'outstanding_amount': round(outstanding, 2),
+            'invoice_count': invoice_count
+        }
+        
+        return jsonify({
+            'success': True,
+            'data': data
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error getting distributor details: {str(e)}'}), 500
+
+
+# ========== REPORT 5: CUSTOM REPORTS ==========
+@reports_bp.route('/custom', methods=['POST'])
+@require_jwt_auth
+def create_custom_report():
+    """Dynamic query builder for custom reports"""
+    data = request.get_json(silent=True) or {}
+    
+    group_by = data.get('group_by', 'distributor')  # distributor, retailer, territory
+    filter_by = data.get('filter_by')  # Optional: distributor_id, retailer_id, territory
+    filter_value = data.get('filter_value')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    export_format = data.get('export_format', 'json')  # json, csv
+    
+    if export_format not in ['json', 'csv']:
+        return jsonify({'success': False, 'data': None, 'message': 'export_format must be json or csv'}), 400
+    
+    try:
+        # Build query
+        query = db.session.query(
+            SalesOrder.distributor_id,
+            SalesOrder.retailer_id,
+            Distributor.name.label('distributor_name'),
+            Distributor.territory,
+            Retailer.name.label('retailer_name'),
+            func.sum(SalesOrder.net_amount).label('total_sales'),
+            func.count(SalesOrder.id).label('order_count'),
+            func.avg(SalesOrder.net_amount).label('avg_order_value')
+        ).join(Distributor, SalesOrder.distributor_id == Distributor.id).join(
+            Retailer, SalesOrder.retailer_id == Retailer.id
         )
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Monthly Report")
-    output.seek(0)
-    return Response(
-        output.read(),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.xlsx"
-        },
-    )
-
-
-@reports_blueprint.route("/reports/download/csv")
-@require_jwt_auth
-def download_monthly_report_csv() -> Response:
-    selected_month = request.args.get("month") or "2026-06"
-    data = get_monthly_report_data("centralized_db.sqlite3", selected_month)
-    output = StringIO()
-    writer = csv.DictWriter(
-        output,
-        fieldnames=[
-            "distributor_name",
-            "total_uploads",
-            "stage1",
-            "stage2",
-            "stage3",
-            "stage4",
-            "last_upload",
-        ],
-    )
-    writer.writeheader()
-    writer.writerows(data["distributor_activity"])
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=monthly_report_{selected_month}.csv"
-        },
-    )
-
-
-@reports_blueprint.route("/download/analytics")
-@require_jwt_auth
-def download_analytics() -> Response:
-    db = CentralizedDB("centralized_db.sqlite3")
-    payload = db.get_dashboard_payload()
-    return Response(
-        json.dumps(payload, indent=2),
-        mimetype="application/json",
-        headers={"Content-Disposition": "attachment; filename=analytics.json"},
-    )
-
-
-@reports_blueprint.route("/download/report")
-@require_jwt_auth
-def download_report() -> Response:
-    report_text = request.args.get("report", "")
-    return Response(
-        report_text,
-        mimetype="text/plain",
-        headers={"Content-Disposition": "attachment; filename=verification_report.txt"},
-    )
-
-
-@reports_blueprint.route("/download/distributors")
-@require_jwt_auth
-def download_distributors() -> Response:
-    csv_data = CentralizedDB("centralized_db.sqlite3").export_master_distributors()
-    return Response(
-        csv_data,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=distributors.csv"},
-    )
-
-
-@reports_blueprint.route("/download/distributors/excel")
-@require_jwt_auth
-def download_distributors_excel() -> Response:
-    excel_bytes = CentralizedDB(
-        "centralized_db.sqlite3"
-    ).export_master_distributors_excel()
-    return Response(
-        excel_bytes,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=distributors.xlsx"},
-    )
-
-
-@reports_blueprint.route("/download/distributors/pdf")
-@require_jwt_auth
-def download_distributors_pdf() -> Response:
-    pdf_bytes = CentralizedDB("centralized_db.sqlite3").export_master_distributors_pdf()
-    return Response(
-        pdf_bytes,
-        mimetype="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=distributors.pdf"},
-    )
-
-
-@reports_blueprint.route("/download/retailers")
-@require_jwt_auth
-def download_retailers() -> Response:
-    csv_data = CentralizedDB("centralized_db.sqlite3").export_master_retailers()
-    return Response(
-        csv_data,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=retailers.csv"},
-    )
-
-
-@reports_blueprint.route("/download/retailers/excel")
-@require_jwt_auth
-def download_retailers_excel() -> Response:
-    excel_bytes = CentralizedDB(
-        "centralized_db.sqlite3"
-    ).export_master_retailers_excel()
-    return Response(
-        excel_bytes,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=retailers.xlsx"},
-    )
-
-
-@reports_blueprint.route("/download/targets")
-@require_jwt_auth
-def download_targets() -> Response:
-    csv_data = CentralizedDB("centralized_db.sqlite3").export_targets_achievements()
-    return Response(
-        csv_data,
-        mimetype="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=targets_achievements.csv"
-        },
-    )
-
-
-@reports_blueprint.route("/download/primary-sales")
-@require_jwt_auth
-def download_primary_sales() -> Response:
-    csv_data = CentralizedDB("centralized_db.sqlite3").export_primary_sales()
-    return Response(
-        csv_data,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=primary_sales.csv"},
-    )
-
-
-@reports_blueprint.route("/download/secondary-sales")
-def download_secondary_sales() -> Response:
-    csv_data = CentralizedDB("centralized_db.sqlite3").export_secondary_sales()
-    return Response(
-        csv_data,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=secondary_sales.csv"},
-    )
-
-
-@reports_blueprint.route("/download/dsr")
-def download_dsr() -> Response:
-    report_id = request.args.get("report_id", type=int)
-    if report_id is None:
-        return Response("Missing report_id", status=400)
-    excel_bytes = CentralizedDB("centralized_db.sqlite3").export_dsr_report(
-        report_id, export_format="excel"
-    )
-    return Response(
-        excel_bytes,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f"attachment; filename=dsr_report_{report_id}.xlsx"
-        },
-    )
+        
+        # Apply filters
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                query = query.filter(SalesOrder.order_date >= start)
+            except ValueError:
+                return jsonify({'success': False, 'data': None, 'message': 'Invalid start_date format'}), 400
+        
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                query = query.filter(SalesOrder.order_date <= end)
+            except ValueError:
+                return jsonify({'success': False, 'data': None, 'message': 'Invalid end_date format'}), 400
+        
+        if filter_by == 'distributor_id' and filter_value:
+            query = query.filter(SalesOrder.distributor_id == int(filter_value))
+        elif filter_by == 'retailer_id' and filter_value:
+            query = query.filter(SalesOrder.retailer_id == int(filter_value))
+        elif filter_by == 'territory' and filter_value:
+            query = query.filter(Distributor.territory == filter_value)
+        
+        # Apply grouping
+        if group_by == 'distributor':
+            query = query.group_by(SalesOrder.distributor_id, Distributor.name, Distributor.territory)
+        elif group_by == 'retailer':
+            query = query.group_by(SalesOrder.retailer_id, Retailer.name)
+        elif group_by == 'territory':
+            query = query.group_by(Distributor.territory)
+        
+        results = query.all()
+        
+        # Format results
+        formatted_data = []
+        for row in results:
+            formatted_data.append({
+                'distributor_id': row[0],
+                'retailer_id': row[1],
+                'distributor_name': row[2],
+                'territory': row[3],
+                'retailer_name': row[4],
+                'total_sales': float(row[5]) if row[5] else 0.0,
+                'order_count': row[6],
+                'avg_order_value': float(row[7]) if row[7] else 0.0
+            })
+        
+        if export_format == 'csv':
+            # Return CSV format
+            import io
+            csv_buffer = io.StringIO()
+            if formatted_data:
+                import csv as csv_module
+                fieldnames = list(formatted_data[0].keys())
+                writer = csv_module.DictWriter(csv_buffer, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(formatted_data)
+            
+            return {
+                'success': True,
+                'data': csv_buffer.getvalue(),
+                'format': 'csv'
+            }, 200, {'Content-Type': 'text/csv', 'Content-Disposition': 'attachment;filename=report.csv'}
+        
+        else:  # JSON
+            return jsonify({
+                'success': True,
+                'data': formatted_data,
+                'filters': {
+                    'group_by': group_by,
+                    'filter_by': filter_by,
+                    'filter_value': filter_value,
+                    'start_date': start_date,
+                    'end_date': end_date
+                },
+                'record_count': len(formatted_data)
+            }), 200
+    
+    except ValueError as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Invalid parameter value: {str(e)}'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error generating custom report: {str(e)}'}), 500

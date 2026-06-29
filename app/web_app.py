@@ -15,7 +15,7 @@ from app.routes import (
     data_blueprint,
     party_matching_bp,
     parties_bp,
-    reports_blueprint,
+    reports_bp,
     sales_bp,
     schemas_blueprint,
     storage_bp,
@@ -81,7 +81,7 @@ def create_app() -> Flask:
     app.register_blueprint(schemas_blueprint)
     app.register_blueprint(data_blueprint)
     app.register_blueprint(analytics_blueprint)
-    app.register_blueprint(reports_blueprint)
+    app.register_blueprint(reports_bp)
     app.register_blueprint(storage_bp)
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)
