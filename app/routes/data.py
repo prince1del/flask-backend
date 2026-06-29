@@ -189,6 +189,78 @@ def _get_verification_upload_dir() -> Path:
     return session_dir
 
 
+DASHBOARD_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "dashboard_config.json"
+DEFAULT_DASHBOARD_CONFIG = {
+    "brand_name": "NEXORA",
+    "app_name": "Jarvis Business Platform",
+    "dashboard_title": "Jarvis PWA Dashboard",
+    "short_name": "Jarvis",
+    "theme_color": "#020617",
+    "background_color": "#020617",
+    "enabled_modules": [
+        "dashboard",
+        "verification",
+        "analytics",
+        "masters",
+        "sales",
+        "inventory",
+        "reports",
+        "file_library",
+        "party_match",
+    ],
+    "api_endpoints": {
+        "dashboard_summary": "/api/v1/dashboard/summary",
+        "manifest": "/manifest.json",
+    },
+}
+
+
+def _dashboard_config_path() -> Path:
+    try:
+        from flask import current_app
+
+        config_path = current_app.config.get("DASHBOARD_CONFIG_PATH")
+        if config_path:
+            return Path(config_path)
+    except Exception:
+        pass
+    return DASHBOARD_CONFIG_PATH
+
+
+def _ensure_dashboard_config_exists() -> None:
+    config_path = _dashboard_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    if not config_path.exists():
+        config_path.write_text(
+            json.dumps(DEFAULT_DASHBOARD_CONFIG, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+
+def load_dashboard_config() -> dict[str, Any]:
+    config_path = _dashboard_config_path()
+    _ensure_dashboard_config_exists()
+    try:
+        return json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        config_path.write_text(
+            json.dumps(DEFAULT_DASHBOARD_CONFIG, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return dict(DEFAULT_DASHBOARD_CONFIG)
+
+
+def save_dashboard_config(update_data: dict[str, Any]) -> dict[str, Any]:
+    config = load_dashboard_config()
+    config.update(update_data)
+    config_path = _dashboard_config_path()
+    config_path.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return config
+
+
 @data_blueprint.route("/api/v1/masters/bulk-upload", methods=["GET", "POST"])
 @require_jwt_auth
 def bulk_upload() -> tuple[Response, int] | str:
@@ -1224,17 +1296,84 @@ def dashboard_summary() -> Response:
     )
 
 
+@data_blueprint.route("/api/ui/dashboard-config", methods=["GET", "PUT"])
+@require_jwt_auth
+def dashboard_config() -> Response:
+    if request.method == "GET":
+        return Response(
+            json.dumps(load_dashboard_config(), ensure_ascii=False),
+            mimetype="application/json",
+        )
+
+    request_data = request.get_json(silent=True)
+    if not isinstance(request_data, dict):
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Request body must be a valid JSON object",
+                }
+            ),
+            400,
+        )
+
+    allowed_keys = {
+        "brand_name",
+        "app_name",
+        "dashboard_title",
+        "short_name",
+        "theme_color",
+        "background_color",
+        "enabled_modules",
+    }
+    update_data: dict[str, Any] = {
+        key: value
+        for key, value in request_data.items()
+        if key in allowed_keys
+    }
+
+    if "enabled_modules" in update_data and not isinstance(
+        update_data["enabled_modules"], list
+    ):
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "enabled_modules must be a list",
+                }
+            ),
+            400,
+        )
+
+    if not update_data:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "No valid config fields provided",
+                }
+            ),
+            400,
+        )
+
+    new_config = save_dashboard_config(update_data)
+    return Response(
+        json.dumps(new_config, ensure_ascii=False), mimetype="application/json"
+    )
+
+
 @data_blueprint.route("/manifest.json")
 def manifest() -> Response:
+    config = load_dashboard_config()
     return Response(
         json.dumps(
             {
-                "name": "Jarvis Business Platform",
-                "short_name": "Jarvis",
+                "name": config.get("app_name", "Jarvis Business Platform"),
+                "short_name": config.get("short_name", "Jarvis"),
                 "start_url": "/pwa-dashboard",
                 "display": "standalone",
-                "background_color": "#020617",
-                "theme_color": "#0f172a",
+                "background_color": config.get("background_color", "#020617"),
+                "theme_color": config.get("theme_color", "#020617"),
                 "icons": [
                     {
                         "src": "/icon-192.svg",

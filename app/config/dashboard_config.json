@@ -1,0 +1,21 @@
+{
+  "brand_name": "NEXORA",
+  "app_name": "NEXORA ENTERPRISE",
+  "dashboard_title": "Jarvis PWA Dashboard",
+  "short_name": "Jarvis",
+  "theme_color": "#020617",
+  "background_color": "#020617",
+  "enabled_modules": [
+    "dashboard",
+    "verification",
+    "analytics",
+    "masters",
+    "sales",
+    "inventory",
+    "reports"
+  ],
+  "api_endpoints": {
+    "dashboard_summary": "/api/v1/dashboard/summary",
+    "manifest": "/manifest.json"
+  }
+}

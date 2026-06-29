@@ -551,6 +551,55 @@ def test_dashboard_summary_api_returns_live_backend_metrics():
     assert payload["overview"]["tasks"] >= 0
 
 
+def test_dashboard_config_api_returns_branding_details(tmp_path):
+    app = create_app()
+    app.config["TESTING"] = True
+    app.config["DASHBOARD_CONFIG_PATH"] = str(tmp_path / "dashboard_config.json")
+    client = app.test_client()
+
+    response = client.get("/api/ui/dashboard-config")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["brand_name"] == "NEXORA"
+    assert payload["app_name"] == "Jarvis Business Platform"
+    assert payload["dashboard_title"] == "Jarvis PWA Dashboard"
+    assert payload["short_name"] == "Jarvis"
+    assert "dashboard_summary" in payload["api_endpoints"]
+    assert "/manifest.json" == payload["api_endpoints"]["manifest"]
+
+
+def test_dashboard_config_api_put_updates_runtime_config(tmp_path):
+    app = create_app()
+    app.config["TESTING"] = True
+    app.config["DASHBOARD_CONFIG_PATH"] = str(tmp_path / "dashboard_config.json")
+    client = app.test_client()
+
+    before = client.get("/api/ui/dashboard-config")
+    assert before.status_code == 200
+    config_before = before.get_json()
+    assert "file_library" in config_before["enabled_modules"]
+    assert "party_match" in config_before["enabled_modules"]
+    assert config_before["app_name"] == "Jarvis Business Platform"
+
+    response = client.put(
+        "/api/ui/dashboard-config",
+        json={
+            "enabled_modules": ["dashboard", "verification", "analytics"],
+            "app_name": "Jarvis Business Platform Updated",
+        },
+    )
+    assert response.status_code == 200
+    config_after = response.get_json()
+    assert "file_library" not in config_after["enabled_modules"]
+    assert "party_match" not in config_after["enabled_modules"]
+    assert config_after["app_name"] == "Jarvis Business Platform Updated"
+
+    manifest_response = client.get("/manifest.json")
+    assert manifest_response.status_code == 200
+    manifest = manifest_response.get_json()
+    assert manifest["name"] == "Jarvis Business Platform Updated"
+
+
 def test_bulk_upload_endpoint_serves_upload_form_on_get():
     app = create_app()
     app.config["TESTING"] = True
