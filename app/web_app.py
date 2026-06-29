@@ -22,6 +22,7 @@ from app.routes import (
     storage_bp,
     target_achievement_bp,
     workspaces_blueprint,
+    inventory_bp,
 )
 import app.models  # register SQLAlchemy models
 from app.routes.auth import register_auth_hooks
@@ -84,6 +85,7 @@ def create_app() -> Flask:
     app.register_blueprint(analytics_blueprint)
     app.register_blueprint(reports_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(inventory_bp)
     app.register_blueprint(storage_bp)
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)
