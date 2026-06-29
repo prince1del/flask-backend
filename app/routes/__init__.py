@@ -10,6 +10,8 @@ from .party_matching import party_matching_bp
 from .parties import parties_bp
 from .sales_orders import sales_bp
 from .admin import admin_bp
+from .inventory import inventory_bp
+from .intelligence import intelligence_bp
 
 __all__ = [
     'target_achievement_bp',
@@ -24,4 +26,6 @@ __all__ = [
     'parties_bp',
     'sales_bp',
     'admin_bp',
+    'inventory_bp',
+    'intelligence_bp',
 ]

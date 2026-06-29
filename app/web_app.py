@@ -14,6 +14,7 @@ from app.routes import (
     analytics_blueprint,
     auth_blueprint,
     data_blueprint,
+    intelligence_bp,
     party_matching_bp,
     parties_bp,
     reports_bp,
@@ -90,6 +91,7 @@ def create_app() -> Flask:
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)
     app.register_blueprint(parties_bp)
+    app.register_blueprint(intelligence_bp)
     app.register_blueprint(sales_bp)
 
     @app.route("/scheduler", methods=["GET", "POST"])

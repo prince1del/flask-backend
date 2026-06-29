@@ -318,3 +318,76 @@ class AuditLog(db.Model):
             'user_agent': self.user_agent,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class Inventory(db.Model):
+    """Track inventory levels by item and warehouse"""
+    __tablename__ = 'inventory'
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_code = db.Column(db.String(100), nullable=False, index=True)
+    item_name = db.Column(db.String(255), nullable=False)
+    category = db.Column(db.String(100), nullable=True, index=True)
+    warehouse_id = db.Column(db.String(50), nullable=False, default='default', index=True)
+    quantity_on_hand = db.Column(db.Float, nullable=False, default=0.0)
+    reorder_level = db.Column(db.Float, nullable=False, default=0.0)
+    reorder_quantity = db.Column(db.Float, nullable=False, default=0.0)
+    unit_cost = db.Column(db.Float, nullable=False, default=0.0)
+    unit_price = db.Column(db.Float, nullable=False, default=0.0)
+    last_received = db.Column(db.Date, nullable=True)
+    last_issued = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(20), default='active', index=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    movements = db.relationship('InventoryMovement', backref='inventory', cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'item_code': self.item_code,
+            'item_name': self.item_name,
+            'category': self.category,
+            'warehouse_id': self.warehouse_id,
+            'quantity_on_hand': self.quantity_on_hand,
+            'reorder_level': self.reorder_level,
+            'reorder_quantity': self.reorder_quantity,
+            'unit_cost': self.unit_cost,
+            'unit_price': self.unit_price,
+            'valuation': round(self.quantity_on_hand * self.unit_cost, 2),
+            'last_received': self.last_received.isoformat() if self.last_received else None,
+            'last_issued': self.last_issued.isoformat() if self.last_issued else None,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class InventoryMovement(db.Model):
+    """Track all inventory movements (receipts, issues, adjustments)"""
+    __tablename__ = 'inventory_movements'
+
+    id = db.Column(db.Integer, primary_key=True)
+    inventory_id = db.Column(db.Integer, db.ForeignKey('inventory.id'), nullable=False, index=True)
+    movement_type = db.Column(db.String(50), nullable=False, index=True)  # receipt, issue, adjustment
+    quantity = db.Column(db.Float, nullable=False)
+    reason = db.Column(db.String(255), nullable=True)
+    reference_number = db.Column(db.String(100), nullable=True)
+    warehouse_from = db.Column(db.String(50), nullable=True)
+    warehouse_to = db.Column(db.String(50), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, index=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'inventory_id': self.inventory_id,
+            'movement_type': self.movement_type,
+            'quantity': self.quantity,
+            'reason': self.reason,
+            'reference_number': self.reference_number,
+            'warehouse_from': self.warehouse_from,
+            'warehouse_to': self.warehouse_to,
+            'user_id': self.user_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }

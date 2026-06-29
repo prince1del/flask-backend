@@ -137,3 +137,124 @@ def test_low_stock_items(app, client):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data['total_items'] >= 1
+
+
+def test_list_inventory_filters_and_search(app, client):
+    with app.app_context():
+        item1 = Inventory(
+            item_code='SEARCH001',
+            item_name='Search Item',
+            category='tools',
+            warehouse_id='default',
+            quantity_on_hand=10,
+            reorder_level=5,
+            reorder_quantity=20,
+            unit_cost=5.0,
+            unit_price=8.0
+        )
+        item2 = Inventory(
+            item_code='OTHER001',
+            item_name='Other Item',
+            category='supplies',
+            warehouse_id='secondary',
+            quantity_on_hand=20,
+            reorder_level=5,
+            reorder_quantity=20,
+            unit_cost=5.0,
+            unit_price=8.0
+        )
+        db.session.add(item1)
+        db.session.add(item2)
+        db.session.commit()
+
+    resp = client.get('/api/inventory?search=search&category=tools&warehouse=default')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data['data']) == 1
+    assert data['data'][0]['item_code'] == 'SEARCH001'
+
+
+def test_adjust_inventory_issue_success(app, client):
+    item = create_inventory_item(app)
+    item_id = item['id']
+    resp = client.post('/api/inventory/adjust', json={
+        'item_id': item_id,
+        'quantity': 10,
+        'movement_type': 'issue',
+        'reason': 'Customer order'
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['success'] is True
+    assert data['data']['item']['quantity_on_hand'] == 90
+
+
+def test_adjust_inventory_invalid_movement_type(app, client):
+    item = create_inventory_item(app)
+    item_id = item['id']
+    resp = client.post('/api/inventory/adjust', json={
+        'item_id': item_id,
+        'quantity': 10,
+        'movement_type': 'transfer'
+    })
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert 'Invalid movement_type' in data['message']
+
+
+def test_adjust_inventory_missing_fields(app, client):
+    resp = client.post('/api/inventory/adjust', json={'quantity': 10})
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert 'item_id and quantity required' in data['message']
+
+
+def test_inventory_history_filter_by_type(app, client):
+    item = create_inventory_item(app)
+    item_id = item['id']
+    client.post('/api/inventory/adjust', json={
+        'item_id': item_id,
+        'quantity': 5,
+        'movement_type': 'receipt',
+        'reason': 'Restock'
+    })
+    client.post('/api/inventory/adjust', json={
+        'item_id': item_id,
+        'quantity': 2,
+        'movement_type': 'issue',
+        'reason': 'Sold'
+    })
+    resp = client.get(f'/api/inventory/{item_id}/history?movement_type=receipt')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data['data']['movements']) == 1
+    assert data['data']['movements'][0]['movement_type'] == 'receipt'
+
+
+def test_low_stock_items_with_filters(app, client):
+    with app.app_context():
+        item = Inventory(
+            item_code='LOW002',
+            item_name='Filtered Low Item',
+            category='consumables',
+            warehouse_id='default',
+            quantity_on_hand=1,
+            reorder_level=10,
+            reorder_quantity=20,
+            unit_cost=3.0,
+            unit_price=5.0
+        )
+        db.session.add(item)
+        db.session.commit()
+    resp = client.get('/api/inventory/low-stock?category=consumables&warehouse=default')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['total_items'] == 1
+    assert data['data'][0]['item']['item_code'] == 'LOW002'
+
+
+def test_update_min_max_levels_item_not_found(app, client):
+    resp = client.put('/api/inventory/999/min-max', json={'reorder_level': 5})
+    assert resp.status_code == 404
+    data = resp.get_json()
+    assert 'Item not found' in data['message']

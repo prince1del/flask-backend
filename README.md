@@ -76,6 +76,23 @@ The Firebase sync layer will push records to the cloud when the credentials are 
 pytest
 ```
 
+## API Endpoints
+
+The Flask application exposes HTTP APIs for inventory, sales, workflows, and intelligence services.
+The new intelligence endpoints include:
+
+- `GET /api/intelligence/brain/outstanding/<party_id>`
+- `GET /api/intelligence/brain/order-summary/<order_id>`
+- `POST /api/intelligence/rules/check`
+- `GET /api/intelligence/workflow/<workflow_type>`
+- `POST /api/intelligence/context/summary`
+- `POST /api/intelligence/decision/recommend`
+- `GET /api/intelligence/knowledge-graph/<entity_type>/<entity_id>`
+- `POST /api/intelligence/memory/store`
+- `GET /api/intelligence/memory/recent`
+
+These routes are implemented in `app/routes/intelligence.py` and use mock platform services in `app/platform/`.
+
 ## Project structure
 
 - centralized_db_system/db.py: database layer
