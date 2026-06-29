@@ -9,6 +9,7 @@ from .workspaces import workspaces_blueprint
 from .party_matching import party_matching_bp
 from .parties import parties_bp
 from .sales_orders import sales_bp
+from .admin import admin_bp
 
 __all__ = [
     'target_achievement_bp',
@@ -22,4 +23,5 @@ __all__ = [
     'workspaces_blueprint',
     'parties_bp',
     'sales_bp',
+    'admin_bp',
 ]

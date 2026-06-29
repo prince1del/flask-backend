@@ -1,5 +1,7 @@
 import uuid
 from datetime import date, datetime, timezone
+import hashlib
+import hmac
 
 from app.db import db
 
@@ -14,17 +16,31 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=True, index=True)
     role = db.Column(db.String(50), nullable=False, default='admin')
+    status = db.Column(db.String(20), nullable=False, default='active')
     workspace_id = db.Column(db.String(100), nullable=True, default='default')
     created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    def set_password(self, password):
+        """Hash and set password"""
+        self.password_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    def check_password(self, password):
+        """Verify password"""
+        return self.password_hash == hashlib.sha256(password.encode()).hexdigest()
 
     def to_dict(self):
         return {
             'id': self.id,
             'username': self.username,
+            'email': self.email,
             'role': self.role,
+            'status': self.status,
             'workspace_id': self.workspace_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -273,4 +289,32 @@ class Dispatch(db.Model):
             'delivery_date': self.delivery_date.isoformat() if self.delivery_date else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class AuditLog(db.Model):
+    """Track all system activities for compliance and debugging"""
+    __tablename__ = 'audit_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    action = db.Column(db.String(100), nullable=False, index=True)
+    resource_type = db.Column(db.String(50), nullable=False, index=True)
+    resource_id = db.Column(db.Integer, nullable=True, index=True)
+    details = db.Column(db.Text, nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, index=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'action': self.action,
+            'resource_type': self.resource_type,
+            'resource_id': self.resource_id,
+            'details': self.details,
+            'ip_address': self.ip_address,
+            'user_agent': self.user_agent,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }

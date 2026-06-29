@@ -10,6 +10,7 @@ from app.db import db
 from app.init_db import init_db
 from app.jwt_service import JWTService
 from app.routes import (
+    admin_bp,
     analytics_blueprint,
     auth_blueprint,
     data_blueprint,
@@ -82,6 +83,7 @@ def create_app() -> Flask:
     app.register_blueprint(data_blueprint)
     app.register_blueprint(analytics_blueprint)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(admin_bp)
     app.register_blueprint(storage_bp)
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)
