@@ -198,6 +198,146 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ROW 6: DISTRIBUTOR DATA -->
+            <div class="module-section">
+                <h2>🏭 Distributor Data</h2>
+                <p class="module-description">Manage distributor profiles, performance, and relationships</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 Distributor List</h3>
+                        <p>View all registered distributors</p>
+                        <button onclick="loadDistributors()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>➕ Add Distributor</h3>
+                        <p>Register new distributor</p>
+                        <button onclick="showAddDistributorModal()" class="btn btn-primary">Add</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📊 Distributor Performance</h3>
+                        <p>Sales and achievement metrics</p>
+                        <button onclick="showDistributorAnalytics()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📞 Contact Details</h3>
+                        <p>Update contact information</p>
+                        <button onclick="showDistributorContacts()" class="btn btn-secondary">Manage</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 7: RETAILER DATA -->
+            <div class="module-section">
+                <h2>🛒 Retailer Data</h2>
+                <p class="module-description">Retail network management and point-of-sale tracking</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 Retailer List</h3>
+                        <p>View all registered retailers</p>
+                        <button onclick="loadRetailers()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>➕ Add Retailer</h3>
+                        <p>Register new retail outlet</p>
+                        <button onclick="showAddRetailerModal()" class="btn btn-primary">Add</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📊 Retailer Sales</h3>
+                        <p>Point-of-sale data and trends</p>
+                        <button onclick="showRetailerSales()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>🎯 Territory Assignment</h3>
+                        <p>Manage retail territories</p>
+                        <button onclick="showTerritoryMgmt()" class="btn btn-secondary">Manage</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 8: ORDER MANAGEMENT -->
+            <div class="module-section">
+                <h2>📦 Order Management</h2>
+                <p class="module-description">Order sheets, order placement, and fulfillment tracking</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📄 Order Sheets</h3>
+                        <p>Create and manage order sheets</p>
+                        <button onclick="loadOrderSheets()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>✏️ Create Order</h3>
+                        <p>Place new order</p>
+                        <button onclick="showCreateOrderModal()" class="btn btn-primary">Create</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📨 Orders Placed</h3>
+                        <p>Track placed and pending orders</p>
+                        <button onclick="loadOrdersPlaced()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>🚚 Order Fulfillment</h3>
+                        <p>Monitor delivery and fulfillment</p>
+                        <button onclick="showOrderFulfillment()" class="btn btn-secondary">Track</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 9: SALES ORDERS (SO) -->
+            <div class="module-section">
+                <h2>📝 Sales Orders (SO)</h2>
+                <p class="module-description">Generate, track, and manage sales orders</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 SO List</h3>
+                        <p>View all sales orders</p>
+                        <button onclick="loadSalesOrders()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>➕ Generate SO</h3>
+                        <p>Create new sales order</p>
+                        <button onclick="showGenerateSOModal()" class="btn btn-primary">Generate</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>✅ Approve SO</h3>
+                        <p>Approve pending sales orders</p>
+                        <button onclick="loadPendingSO()" class="btn btn-secondary">Approve</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📊 SO Analytics</h3>
+                        <p>Sales order trends and metrics</p>
+                        <button onclick="showSOAnalytics()" class="btn btn-secondary">View</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 10: COMMERCIAL INVOICES (CI) -->
+            <div class="module-section">
+                <h2>💳 Commercial Invoices (CI)</h2>
+                <p class="module-description">Invoice generation, tracking, and payment management</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 Invoice List</h3>
+                        <p>View all invoices</p>
+                        <button onclick="loadInvoices()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📄 Generate Invoice</h3>
+                        <p>Create new commercial invoice</p>
+                        <button onclick="showGenerateInvoiceModal()" class="btn btn-primary">Generate</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>💰 Payment Status</h3>
+                        <p>Track payments and outstanding</p>
+                        <button onclick="loadPaymentStatus()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📧 Send Invoice</h3>
+                        <p>Email invoices to customers</p>
+                        <button onclick="showSendInvoiceModal()" class="btn btn-secondary">Send</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
