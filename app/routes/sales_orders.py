@@ -27,6 +27,33 @@ def _generate_invoice_number():
     return f'INV-{year}-{counter:04d}'
 
 
+def _recalculate_sales_order_totals(so, items=None, tax_rate=None):
+    if items is None:
+        items = so.items
+
+    total_amount = 0.0
+    for item in items:
+        if isinstance(item, dict):
+            quantity = float(item.get('quantity', 0))
+            unit_price = float(item.get('unit_price', 0))
+        else:
+            quantity = float(getattr(item, 'quantity', 0))
+            unit_price = float(getattr(item, 'unit_price', 0))
+        total_amount += quantity * unit_price
+
+    if tax_rate is None:
+        if so.total_amount and so.tax_amount:
+            tax_rate = (so.tax_amount / so.total_amount) * 100.0
+        else:
+            tax_rate = 0.0
+    else:
+        tax_rate = float(tax_rate)
+
+    so.total_amount = total_amount
+    so.tax_amount = total_amount * (tax_rate / 100.0)
+    so.net_amount = so.total_amount + so.tax_amount
+
+
 # ========== SALES ORDER ENDPOINTS ==========
 
 @sales_bp.route('/sales-orders', methods=['GET'])
@@ -84,6 +111,11 @@ def create_sales_order():
     if not retailer:
         return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
 
+    try:
+        tax_rate = float(data.get('tax_rate', 0.0))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'data': None, 'message': 'Invalid tax rate value'}), 400
+
     so = SalesOrder(
         so_number=_generate_so_number(),
         distributor_id=distributor_id,
@@ -102,10 +134,14 @@ def create_sales_order():
         total_amount += line_total
         so.items.append(SalesOrderItem(product_code=item.get('product_code'), product_name=item.get('product_name'), quantity=quantity, unit_price=unit_price, line_total=line_total))
 
-    tax_rate = float(data.get('tax_rate', 0.0)) / 100.0
-    so.total_amount = total_amount
-    so.tax_amount = total_amount * tax_rate
-    so.net_amount = so.total_amount + so.tax_amount
+    if 'tax_rate' in data:
+        try:
+            tax_rate = float(data.get('tax_rate'))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'data': None, 'message': 'Invalid tax rate value'}), 400
+        _recalculate_sales_order_totals(so, items=items, tax_rate=tax_rate)
+    elif 'items' in data:
+        _recalculate_sales_order_totals(so, items=items)
 
     try:
         db.session.add(so)
@@ -131,22 +167,33 @@ def update_sales_order(id):
     if 'so_date' in data:
         so.so_date = datetime.strptime(data.get('so_date'), '%Y-%m-%d').date()
     if 'distributor_id' in data:
+        distributor = db.session.get(Distributor, data.get('distributor_id'))
+        if not distributor:
+            return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
         so.distributor_id = data.get('distributor_id')
     if 'retailer_id' in data:
+        retailer = db.session.get(Retailer, data.get('retailer_id'))
+        if not retailer:
+            return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
         so.retailer_id = data.get('retailer_id')
 
     if 'items' in data:
         SalesOrderItem.query.filter_by(so_id=id).delete()
-        total_amount = 0.0
         for item in data['items']:
             quantity = float(item.get('quantity', 0))
             unit_price = float(item.get('unit_price', 0))
             line_total = quantity * unit_price
-            total_amount += line_total
             db.session.add(SalesOrderItem(so_id=id, product_code=item.get('product_code'), product_name=item.get('product_name'), quantity=quantity, unit_price=unit_price, line_total=line_total))
-        so.total_amount = total_amount
-        so.tax_amount = total_amount * float(data.get('tax_rate', 0.0)) / 100.0
-        so.net_amount = so.total_amount + so.tax_amount
+
+    update_items = data.get('items')
+    if 'items' in data or 'tax_rate' in data:
+        items_for_totals = []
+        if update_items is not None:
+            items_for_totals = update_items
+        else:
+            items_for_totals = so.items
+        tax_rate = data.get('tax_rate')
+        _recalculate_sales_order_totals(so, items=items_for_totals, tax_rate=tax_rate)
 
     so.updated_at = datetime.now(timezone.utc)
     try:
