@@ -2,12 +2,15 @@ import os
 import pytest
 from app.web_app import create_app
 from app.db import db
+from app.business_platform import AIDecisionFramework, BusinessKnowledgeGraph
 
 
 @pytest.fixture
-def app():
-    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    os.environ["AUTH_ENABLED"] = "false"
+def app(tmp_path, monkeypatch):
+    db_path = tmp_path / "intelligence_api.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
     app = create_app()
     app.config["TESTING"] = True
     with app.app_context():
@@ -74,6 +77,37 @@ def test_recommend_decision(client):
     data = resp.get_json()
     assert data['success'] is True
     assert data['data']['decision']['recommendation'] == 'approve'
+    assert data['data']['decision']['cost'] >= 0
+    assert isinstance(data['data']['decision']['optimization_suggestions'], list)
+    assert data['data']['decision']['optimization_suggestions']
+
+
+def test_ai_decision_framework_tracks_audit_trace():
+    decision = AIDecisionFramework.recommend_purchase(
+        1000,
+        1200,
+        party_status='active',
+        party_id=42,
+        workspace_id='ws-audit',
+    )
+
+    assert decision['recommendation'] == 'approve'
+    assert 'audit_trace' in decision
+    assert any(step['step'] == 'rules_check' for step in decision['audit_trace'])
+    assert any(step['step'] == 'knowledge_graph_lookup' for step in decision['audit_trace'])
+
+
+def test_knowledge_graph_persists_entities_per_workspace(app):
+    BusinessKnowledgeGraph.add_entity('party', 'party-1', 'Acme Traders', {'status': 'active'}, workspace_id='ws-kg')
+    BusinessKnowledgeGraph.add_relationship('party', 'party-1', 'related_to', 'party', 'party-2', {'confidence': 0.92}, workspace_id='ws-kg')
+
+    entity = BusinessKnowledgeGraph.get_entity('party', 'party-1', workspace_id='ws-kg')
+
+    assert entity['entity_id'] == 'party-1'
+    assert entity['name'] == 'Acme Traders'
+    assert entity['properties']['status'] == 'active'
+    assert entity['relationships'][0]['type'] == 'related_to'
+    assert entity['relationships'][0]['target'] == 'party-2'
 
 
 def test_knowledge_graph_lookup(client):

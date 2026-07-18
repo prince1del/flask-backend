@@ -1,20 +1,49 @@
-﻿import json
+import json
 import os
+from pathlib import Path
 
-from flask import Flask, current_app, render_template, render_template_string, request
+from flask import Flask, current_app, jsonify, render_template, render_template_string, request
 from flask_cors import CORS
+from sqlalchemy import text
+
+
+def load_env_file() -> None:
+    root_path = Path(__file__).resolve().parent.parent
+    env_file = root_path / '.env'
+    if not env_file.exists():
+        return
+
+    for raw_line in env_file.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or line.startswith('export '):
+            continue
+        if '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ[key] = value
+
+
+load_env_file()
 
 from centralized_db_system.db import CentralizedDB
 
+from flask_migrate import Migrate
 from app.db import db
 from app.init_db import init_db
 from app.jwt_service import JWTService
+from app.version import APP_NAME, APP_VERSION
 from app.routes import (
     admin_bp,
     analytics_blueprint,
     auth_blueprint,
     data_blueprint,
+    finance_bp,
+    gdrive_bp,
     intelligence_bp,
+    order_sheets_bp,
     party_matching_bp,
     parties_bp,
     reports_bp,
@@ -24,10 +53,89 @@ from app.routes import (
     target_achievement_bp,
     workspaces_blueprint,
     inventory_bp,
+    business_bp,
+    fulfillment_bp,
+    operations_bp,
+    phase2_8_bp,
+    mappings_bp,
+    company_profile_bp,
+    masters_bp,
+    executive_bp,
+    hop_bp,
 )
 import app.models  # register SQLAlchemy models
 from app.routes.auth import register_auth_hooks
 from app.routes.data import index as data_index
+from app.routes.order_reconciliation_api import order_reconciliation_blueprint
+from article_master_routes import article_master_bp
+from filled_orders_routes import filled_orders_bp
+from nexora_ask_routes import nexora_ask_bp
+
+
+def _ensure_compatibility_columns(app: Flask) -> None:
+    with app.app_context():
+        inspector = db.inspect(db.engine)
+        table_columns = {
+            "users": {
+                "email": "email VARCHAR(255)",
+                "updated_at": "updated_at DATETIME",
+                "full_name": "full_name VARCHAR(255)",
+                "phone": "phone VARCHAR(20)",
+                "status": "status VARCHAR(20) DEFAULT 'active'",
+                "role": "role VARCHAR(50) DEFAULT 'unassigned'",
+                "workspace_id": "workspace_id VARCHAR(100) DEFAULT 'default'",
+                "gdrive_access_token": "gdrive_access_token TEXT",
+                "gdrive_refresh_token": "gdrive_refresh_token TEXT",
+                "gdrive_connected": "gdrive_connected INTEGER DEFAULT 0",
+                "gdrive_email": "gdrive_email TEXT",
+            },
+            "distributors": {
+                "uuid": "uuid VARCHAR(36)",
+                "territory": "territory VARCHAR(100)",
+                "pin_code": "pin_code VARCHAR(10)",
+                "workspace_id": "workspace_id VARCHAR(100) DEFAULT 'default'",
+                "created_by": "created_by INTEGER",
+                "updated_at": "updated_at DATETIME",
+            },
+            "retailers": {
+                "uuid": "uuid VARCHAR(36)",
+                "distributor_id": "distributor_id INTEGER",
+                "territory": "territory VARCHAR(100)",
+                "pin_code": "pin_code VARCHAR(10)",
+                "store_type": "store_type VARCHAR(50)",
+                "workspace_id": "workspace_id VARCHAR(100) DEFAULT 'default'",
+                "created_by": "created_by INTEGER",
+                "updated_at": "updated_at DATETIME",
+            },
+            "sales_orders": {
+                "created_by": "created_by INTEGER",
+                "updated_at": "updated_at DATETIME",
+            },
+        }
+        for table_name, columns in table_columns.items():
+            if not inspector.has_table(table_name):
+                continue
+            existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+            with db.engine.begin() as connection:
+                for column_name, definition in columns.items():
+                    if column_name not in existing_columns:
+                        connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {definition}"))
+
+
+def _ensure_filled_orders_schema(app: Flask) -> None:
+    """Run filled-orders DDL + dedupe/unique-slot migration at startup."""
+    import sqlite3
+
+    import filled_orders_db as fodb
+
+    db_path = app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
+    if not db_path or not Path(db_path).exists():
+        return
+    conn = sqlite3.connect(db_path)
+    try:
+        fodb.ensure_schema(conn)
+    finally:
+        conn.close()
 
 
 def create_app() -> Flask:
@@ -38,15 +146,49 @@ def create_app() -> Flask:
         static_folder="static",
         static_url_path="/static",
     )
-    app.secret_key = os.getenv("SECRET_KEY", "change-me")
-    app.config["SECRET_KEY"] = app.secret_key
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-        "DATABASE_URL", "sqlite:///centralized_db.sqlite3"
+    secret_key = os.getenv("SECRET_KEY")
+    if not secret_key:
+        raise RuntimeError(
+            "SECRET_KEY must be set in environment or .env file."
+        )
+    app.secret_key = secret_key
+    app.config["SECRET_KEY"] = secret_key
+    app.config["GEMINI_API_KEY"] = (os.getenv("GEMINI_API_KEY") or "").strip()
+    app.config["NEXORA_ASK_LLM"] = (os.getenv("NEXORA_ASK_LLM") or "").strip()
+
+    database_url = os.getenv("DATABASE_URL")
+    project_root = Path(__file__).resolve().parent.parent
+    root_db = project_root / "centralized_db.sqlite3"
+    instance_db = project_root / "instance" / "centralized_db.sqlite3"
+
+    if not database_url:
+        cloud_url = os.getenv("CLOUD_DATABASE_URL")
+        if cloud_url:
+            if cloud_url.startswith("sqlite:///"):
+                cloud_path = cloud_url[len("sqlite:///") :]
+                if cloud_path == "centralized_db.sqlite3":
+                    database_url = f"sqlite:///{root_db.as_posix()}" if root_db.exists() else f"sqlite:///{instance_db.as_posix()}"
+                else:
+                    database_url = cloud_url
+            else:
+                database_url = cloud_url
+        elif root_db.exists():
+            database_url = f"sqlite:///{root_db.as_posix()}"
+        elif instance_db.exists():
+            database_url = f"sqlite:///{instance_db.as_posix()}"
+        else:
+            database_url = "sqlite:///centralized_db.sqlite3"
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    app.config["DATABASE_PATH"] = os.getenv(
+        "DATABASE_PATH",
+        str(root_db) if root_db.exists() else (str(instance_db) if instance_db.exists() else "centralized_db.sqlite3"),
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.extensions["jwt_service"] = JWTService(secret_key=app.secret_key)
 
     db.init_app(app)
+    Migrate(app, db)
 
     register_auth_hooks(app)
 
@@ -62,7 +204,9 @@ def create_app() -> Flask:
     )
 
     with app.app_context():
+        _ensure_compatibility_columns(app)
         db.create_all()
+        _ensure_filled_orders_schema(app)
 
     @app.route("/", methods=["GET", "POST"])
     @app.route("/dashboard")
@@ -70,6 +214,34 @@ def create_app() -> Flask:
         if request.method == "POST":
             return data_index()
         return render_template("index.html")
+
+    @app.route("/reports")
+    def reports_landing():
+        return render_template_string(
+            """
+            <!doctype html>
+            <html>
+            <head>
+              <meta charset=\"utf-8\">
+              <title>NEXORA | Reports</title>
+              <style>
+                body { font-family: Arial, sans-serif; margin: 2rem; background: #0f0f0f; color: #fff; }
+                .card { max-width: 640px; background: #161616; border: 1px solid #2a2a2a; border-radius: 18px; padding: 2rem; }
+                .badge { display: inline-block; padding: 0.35rem 0.6rem; background: #1d4ed8; border-radius: 999px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; }
+                a { color: #93c5fd; text-decoration: none; }
+              </style>
+            </head>
+            <body>
+              <div class=\"card\">
+                <div class=\"badge\">Reports</div>
+                <h1>Coming Soon</h1>
+                <p>Reports will appear here as soon as business data is available for this workspace.</p>
+                <p><a href=\"/\">← Back to Dashboard</a></p>
+              </div>
+            </body>
+            </html>
+            """
+        )
 
     @app.route("/premium")
     def premium_dashboard():
@@ -79,6 +251,34 @@ def create_app() -> Flask:
     def health() -> str:
         return "OK", 200
 
+    @app.route("/api/v1/app/version", methods=["GET"])
+    def app_version():
+        return jsonify({
+            "success": True,
+            "data": {
+                "app_name": APP_NAME,
+                "app_version": APP_VERSION,
+            },
+        })
+
+    @app.route("/api/v1/app/update-metadata", methods=["GET"])
+    def app_update_metadata():
+        metadata_path = Path(__file__).resolve().parent / "update_metadata.json"
+        if metadata_path.exists():
+            with open(metadata_path, "r", encoding="utf-8") as handle:
+                metadata = json.load(handle)
+        else:
+            metadata = {
+                "app_name": APP_NAME,
+                "version": APP_VERSION,
+                "release_notes": "No update metadata found.",
+                "download_url": "",
+            }
+        return jsonify({
+            "success": True,
+            "data": metadata,
+        })
+
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(workspaces_blueprint)
     app.register_blueprint(schemas_blueprint)
@@ -87,12 +287,28 @@ def create_app() -> Flask:
     app.register_blueprint(reports_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(inventory_bp)
+    app.register_blueprint(business_bp)
     app.register_blueprint(storage_bp)
+    app.register_blueprint(gdrive_bp)
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)
     app.register_blueprint(parties_bp)
     app.register_blueprint(intelligence_bp)
+    app.register_blueprint(order_sheets_bp)
     app.register_blueprint(sales_bp)
+    app.register_blueprint(finance_bp)
+    app.register_blueprint(fulfillment_bp)
+    app.register_blueprint(operations_bp)
+    app.register_blueprint(phase2_8_bp)
+    app.register_blueprint(mappings_bp)
+    app.register_blueprint(company_profile_bp)
+    app.register_blueprint(masters_bp)
+    app.register_blueprint(order_reconciliation_blueprint)
+    app.register_blueprint(article_master_bp)
+    app.register_blueprint(filled_orders_bp)
+    app.register_blueprint(nexora_ask_bp)
+    app.register_blueprint(executive_bp)
+    app.register_blueprint(hop_bp)
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:

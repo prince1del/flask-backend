@@ -83,21 +83,30 @@ class GoogleDriveProvider(StorageProvider):
             raise RuntimeError(f"Google Drive delete failed: {exc}") from exc
 
     def list_files(self, folder_path: str) -> list[dict[str, Any]]:
-        """List files in Google Drive folder."""
+        """List files in Google Drive folder (paginated)."""
         query = "trashed = false"
         if folder_path:
-            query = f"{folder_path!r} in parents and trashed = false"
+            query = f"'{folder_path}' in parents and trashed = false"
         try:
-            response = (
-                self.service.files()
-                .list(
-                    q=query,
-                    pageSize=200,
-                    fields="files(id,name,mimeType,modifiedTime,size,parents)",
+            files: list[dict[str, Any]] = []
+            page_token = None
+            while True:
+                response = (
+                    self.service.files()
+                    .list(
+                        q=query,
+                        pageSize=200,
+                        pageToken=page_token,
+                        fields="nextPageToken, files(id,name,mimeType,modifiedTime,size,parents)",
+                        orderBy="modifiedTime desc",
+                    )
+                    .execute()
                 )
-                .execute()
-            )
-            return response.get("files", [])
+                files.extend(response.get("files", []))
+                page_token = response.get("nextPageToken")
+                if not page_token or len(files) >= 2000:
+                    break
+            return files
         except Exception as exc:
             raise RuntimeError(f"Google Drive list_files failed: {exc}") from exc
 

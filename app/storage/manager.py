@@ -26,7 +26,7 @@ class StorageManager:
         self.providers[provider_type] = provider_instance
 
     def connect_user_storage(
-        self, user_id: int, provider_type: str, oauth_token: Any
+        self, user_id: int, provider_type: str, oauth_token: Any, workspace_id: str = 'default'
     ) -> dict[str, Any]:
         """Connect user's cloud storage account."""
         provider_class = self.providers.get(provider_type)
@@ -40,6 +40,7 @@ class StorageManager:
 
         storage_account_id = self.db.save_storage_account(
             user_id=user_id,
+            workspace_id=workspace_id,
             provider_type=provider_type,
             oauth_token=oauth_token,
             sync_status="connected",
@@ -49,18 +50,20 @@ class StorageManager:
             "oauth_token": oauth_token,
             "provider": provider,
             "storage_account_id": storage_account_id,
+            "workspace_id": workspace_id,
         }
         return {
             "user_id": user_id,
             "provider_type": provider_type,
             "storage_account_id": storage_account_id,
+            "workspace_id": workspace_id,
             "connected": True,
         }
 
-    def disconnect_user_storage(self, user_id: int) -> dict[str, Any]:
+    def disconnect_user_storage(self, user_id: int, workspace_id: str = 'default') -> dict[str, Any]:
         """Disconnect user's cloud storage."""
         connection = self.user_connections.pop(user_id, None)
-        stored_account = self.db.get_storage_account(user_id)
+        stored_account = self.db.get_storage_account(user_id, workspace_id=workspace_id)
         if connection is None and stored_account is None:
             return {
                 "user_id": user_id,
@@ -73,11 +76,13 @@ class StorageManager:
             if connection
             else stored_account["provider_type"]
         )
-        self.db.disconnect_storage_account(user_id, provider_type=provider_type)
+        self.db.disconnect_storage_account(user_id, workspace_id=workspace_id, provider_type=provider_type)
         return {"user_id": user_id, "disconnected": True}
 
-    def _get_persisted_connection(self, user_id: int) -> dict[str, Any] | None:
-        account = self.db.get_storage_account(user_id)
+    def _get_persisted_connection(
+        self, user_id: int, workspace_id: str | None = None
+    ) -> dict[str, Any] | None:
+        account = self.db.get_storage_account(user_id, workspace_id=workspace_id)
         if account is None:
             return None
 
@@ -96,6 +101,7 @@ class StorageManager:
             "oauth_token": account["oauth_token"],
             "provider": provider,
             "storage_account_id": account["id"],
+            "workspace_id": account.get("workspace_id"),
         }
         self.user_connections[user_id] = connection
         return connection
@@ -131,31 +137,50 @@ class StorageManager:
         return provider.list_files(folder_path)
 
     def sync_user_storage(
-        self, user_id: int, incremental: bool = True
+        self,
+        user_id: int,
+        incremental: bool = True,
+        workspace_id: str | None = None,
     ) -> dict[str, Any]:
         """Sync user's storage with metadata DB."""
-        connection = self.user_connections.get(
-            user_id
-        ) or self._get_persisted_connection(user_id)
+        connection = self.user_connections.get(user_id)
+        if connection is None or (
+            workspace_id and connection.get("workspace_id") != workspace_id
+        ):
+            connection = self._get_persisted_connection(user_id, workspace_id)
         if not connection:
             raise KeyError("No storage provider connected for user")
 
         provider = connection["provider"]
+        resolved_workspace = (
+            workspace_id or connection.get("workspace_id") or "default"
+        )
         items = provider.sync(incremental=incremental)
         storage_account_id = connection.get("storage_account_id")
+        synced = 0
         if storage_account_id:
-            self.db.upsert_file_index_records("default", storage_account_id, items)
-        return {"user_id": user_id, "synced_items": len(items)}
+            synced = self.db.upsert_file_index_records(
+                resolved_workspace,
+                storage_account_id,
+                items,
+                user_id=user_id,
+            )
+        return {
+            "user_id": user_id,
+            "synced_items": synced,
+            "files_found": len(items),
+            "workspace_id": resolved_workspace,
+        }
 
     def search_files(
-        self, user_id: int, query: str, filters: dict[str, Any] | None = None
+        self, user_id: int, workspace_id: str, query: str, filters: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """Search indexed files."""
-        return self.db.search_file_index(user_id, query, filters)
+        return self.db.search_file_index(user_id, workspace_id, query, filters)
 
-    def get_storage_account(self, user_id: int) -> dict[str, Any] | None:
+    def get_storage_account(self, user_id: int, workspace_id: str) -> dict[str, Any] | None:
         """Return persisted storage account metadata for the user."""
-        account = self.db.get_storage_account(user_id)
+        account = self.db.get_storage_account(user_id, workspace_id=workspace_id)
         if not account:
             return None
         return {
@@ -169,7 +194,7 @@ class StorageManager:
             "workspace_id": account.get("workspace_id"),
         }
 
-    def get_storage_dashboard(self, user_id: int) -> dict[str, Any]:
+    def get_storage_dashboard(self, user_id: int, workspace_id: str) -> dict[str, Any]:
         """Get storage usage dashboard."""
         connection = self.user_connections.get(
             user_id
@@ -179,7 +204,7 @@ class StorageManager:
 
         provider = connection["provider"]
         storage_info = provider.get_storage_info()
-        summary = self.db.get_storage_account_summary(user_id) or {}
+        summary = self.db.get_storage_account_summary(user_id, workspace_id=workspace_id) or {}
         summary["storage_info"] = storage_info
         summary["connected"] = True
         return summary

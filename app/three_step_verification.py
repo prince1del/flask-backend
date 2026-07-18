@@ -9,6 +9,13 @@ import pandas as pd
 import pdfplumber
 from rapidfuzz import fuzz
 
+try:
+    from azure.ai.documentintelligence import DocumentIntelligenceClient
+    from azure.core.credentials import AzureKeyCredential
+except Exception:
+    DocumentIntelligenceClient = None  # type: ignore[assignment]
+    AzureKeyCredential = None  # type: ignore[assignment]
+
 
 def normalize_text(value: Any) -> str:
     if value is None:
@@ -231,6 +238,33 @@ def _extract_pdf_text(path: str | Path) -> str:
     except Exception:
         pass
 
+    endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+    key = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
+    if endpoint and key and DocumentIntelligenceClient is not None and AzureKeyCredential is not None:
+        try:
+            client = DocumentIntelligenceClient(endpoint, AzureKeyCredential(key))
+            with path.open("rb") as payload:
+                poller = client.begin_analyze_document(
+                    "prebuilt-layout",
+                    analyze_request=payload,
+                    content_type="application/octet-stream",
+                )
+            result = poller.result()
+            content_text = getattr(result, "content", "")
+            if isinstance(content_text, str) and content_text.strip():
+                return content_text.strip()
+            text_lines: list[str] = []
+            for page in getattr(result, "pages", []) or []:
+                for line in getattr(page, "lines", []) or []:
+                    content = getattr(line, "content", "")
+                    if content:
+                        text_lines.append(content)
+            combined_text = "\n".join(text_lines).strip()
+            if combined_text:
+                return combined_text
+        except Exception:
+            pass
+
     try:
         return path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -252,6 +286,60 @@ def _looks_like_item_row(line: str) -> bool:
     if len(line.split()) < 3:
         return False
     return True
+
+
+def _looks_like_code_number(token: str) -> bool:
+    """
+    Identifies tokens that are very likely a product/tax code (like an
+    HSN code, contract number, or similar reference number) rather than
+    a genuine quantity or rate — a bare integer (no decimal point) with
+    5 or more digits.
+
+    Real invoices/contracts often place such a code immediately before
+    the actual quantity column (e.g. "... HSN_CODE QTY RATE ..."). A
+    naive parser that just grabs the first standalone number on the
+    line will wrongly treat the code as the quantity, and the real
+    quantity as the rate — shifting everything by one column. This
+    guard lets the parser skip past code-like tokens when scanning for
+    the genuine quantity/rate pair.
+    """
+    cleaned = token.replace(",", "")
+    if "." in cleaned:
+        return False
+    return cleaned.isdigit() and len(cleaned) >= 5
+
+
+def _find_quantity_rate_pair(line: str) -> tuple[str, str, int, int] | None:
+    """
+    Scans the line for standalone (whitespace-bounded) numeric tokens
+    and returns the first (quantity, rate) pair where the quantity
+    token does not look like a code number (see _looks_like_code_number).
+
+    Only WHOLE whitespace-separated tokens are considered — this
+    deliberately avoids matching digit substrings embedded inside
+    alphanumeric codes (e.g. the "274" inside "274X274" or "7847"
+    inside "7847PNK"), which would otherwise be misread as numbers.
+
+    Supports Indian currency formatting (thousands-comma plus decimal
+    point together, e.g. "1,815.00" or "14,520.00").
+
+    Returns (quantity, rate, quantity_start_index, rate_end_index) or
+    None if no plausible pair is found.
+    """
+    numeric_positions: list[tuple[str, int, int]] = []
+    for match in re.finditer(r"\S+", line):
+        token = match.group()
+        cleaned = token.rstrip(",.")
+        if re.fullmatch(r"[\d,]+(?:\.\d+)?", cleaned):
+            numeric_positions.append((cleaned.replace(",", ""), match.start(), match.end()))
+
+    for i in range(len(numeric_positions) - 1):
+        qty_val, qty_start, _qty_end = numeric_positions[i]
+        rate_val, _rate_start, rate_end = numeric_positions[i + 1]
+        if _looks_like_code_number(qty_val):
+            continue
+        return (qty_val, rate_val, qty_start, rate_end)
+    return None
 
 
 def _parse_pdf_table_like_text(text: str) -> dict[str, Any]:
@@ -293,6 +381,28 @@ def _parse_pdf_table_like_text(text: str) -> dict[str, Any]:
             normalized_key = _normalize_column_name(label)
             extracted[field_map.get(normalized_key, normalized_key)] = value.strip()
             continue
+
+        # Try the code-aware scan FIRST — this correctly skips HSN-code-like
+        # tokens (e.g. an 8-digit HSN code sitting right before the real
+        # quantity) that would otherwise get mistaken for the quantity
+        # itself, shifting every subsequent field by one column.
+        pair = _find_quantity_rate_pair(line)
+        if pair and _looks_like_item_row(line):
+            quantity, rate, qty_start, rate_end = pair
+            product = line[:qty_start].strip()
+            rest = line[rate_end:].strip()
+            gst_numbers = re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", rest)
+            gst_value = gst_numbers[-1].replace(",", "") if gst_numbers else ""
+            if product:
+                parsed_rows.append(
+                    {
+                        "product": product,
+                        "quantity": quantity,
+                        "rate": rate,
+                        "gst": gst_value,
+                    }
+                )
+                continue
 
         row_match = re.match(
             r"^(?P<product>.+?)\s+(?P<quantity>\d+(?:[.,]\d+)?)\s+(?P<rate>[\d,]+(?:\.\d+)?)(?:\s+(?P<gst>.+))?$",

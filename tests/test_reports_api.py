@@ -1,3 +1,4 @@
+import os
 import pytest
 import random
 from datetime import datetime, timedelta, date
@@ -9,12 +10,16 @@ from app.web_app import create_app
 
 
 @pytest.fixture
-def app(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+def app(tmp_path, monkeypatch):
+    db_path = tmp_path / "reports_api.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
     monkeypatch.setenv("AUTH_ENABLED", "false")
     app = create_app()
     app.config["TESTING"] = True
-    return app
+    with app.app_context():
+        db.create_all()
+        yield app
 
 
 @pytest.fixture
@@ -175,6 +180,16 @@ def test_sales_report_invalid_group_by(client):
     assert response.status_code == 400
     data = response.get_json()
     assert data["success"] is False
+
+
+def test_reports_page_shows_coming_soon_when_no_data(client):
+    """The reports view should show a friendly empty state when no report data is available."""
+    response = client.get("/reports?month=2099-01")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "Coming Soon" in html
+    assert "No data for this month" not in html
 
 
 # ========== TEST REPORT 2: TRENDS REPORT ==========

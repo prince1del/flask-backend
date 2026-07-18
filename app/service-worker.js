@@ -1,16 +1,19 @@
-const CACHE_NAME = 'jarvis-pwa-v2';
-const urlsToCache = ['/', '/pwa-dashboard', '/manifest.json', '/icon-192.svg', '/icon-512.svg'];
+const CACHE_NAME = 'nexora-pwa-v3-article-master';
+const STATIC_CACHE_URLS = ['/manifest.json', '/icon-192.svg', '/icon-512.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache)).catch(() => undefined)
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_CACHE_URLS)).catch(() => undefined)
   );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))))
+    caches.keys().then((keys) => Promise.all(
+      keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+    ))
+  );
   self.clients.claim();
 });
 
@@ -21,7 +24,22 @@ self.addEventListener('fetch', (event) => {
   }
 
   const isNavigation = request.mode === 'navigate';
+  const isHtmlPage = isNavigation || request.headers.get('accept')?.includes('text/html');
   const isStaticAsset = /\.(?:css|js|svg|json|png|jpg|jpeg|webp)$/.test(request.url);
+
+  // HTML pages: always network-first so UI updates (e.g. new nav items) show up.
+  if (isHtmlPage) {
+    event.respondWith(
+      fetch(request).then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      }).catch(() => caches.match(request))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(request).then((cached) => {
@@ -29,16 +47,11 @@ self.addEventListener('fetch', (event) => {
         return cached;
       }
       return fetch(request).then((response) => {
-        if (response.ok && (isNavigation || isStaticAsset)) {
+        if (response.ok && isStaticAsset) {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
         }
         return response;
-      }).catch(() => {
-        if (isNavigation) {
-          return caches.match('/pwa-dashboard');
-        }
-        return undefined;
       });
     })
   );

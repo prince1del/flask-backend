@@ -14,11 +14,15 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy import func, desc
 from app.db import db
 from app.models import Inventory, InventoryMovement
-from app.routes.auth import require_jwt_auth
-from app.platform import EventEngine, CacheManager, BusinessBrain, RulesEngine
+from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.business_platform import EventEngine, CacheManager, BusinessBrain, RulesEngine
 from datetime import datetime, timezone
 
 inventory_bp = Blueprint('inventory', __name__, url_prefix='/api/inventory')
+
+
+def _get_workspace_id():
+    return get_workspace_id()
 
 
 # ========== INVENTORY 1: LIST INVENTORY ==========
@@ -33,8 +37,9 @@ def list_inventory():
         warehouse = request.args.get('warehouse')
         status = request.args.get('status', 'active')
         search = request.args.get('search', '').strip()
+        workspace_id = _get_workspace_id()
         
-        query = Inventory.query
+        query = Inventory.query.filter_by(workspace_id=workspace_id)
         
         if status:
             query = query.filter_by(status=status)
@@ -80,7 +85,12 @@ def list_inventory():
 def get_inventory_history(item_id):
     """Get stock movement history for an item"""
     try:
-        item = db.session.get(Inventory, item_id)
+        workspace_id = _get_workspace_id()
+        item = (
+            db.session.query(Inventory)
+            .filter(Inventory.id == item_id, Inventory.workspace_id == workspace_id)
+            .one_or_none()
+        )
         if not item:
             return jsonify({'success': False, 'data': None, 'message': 'Inventory item not found'}), 404
         
@@ -152,7 +162,12 @@ def adjust_inventory():
         return jsonify({'success': False, 'data': None, 'message': 'Invalid movement_type'}), 400
     
     try:
-        item = db.session.get(Inventory, item_id)
+        workspace_id = _get_workspace_id()
+        item = (
+            db.session.query(Inventory)
+            .filter(Inventory.id == item_id, Inventory.workspace_id == workspace_id)
+            .one_or_none()
+        )
         if not item:
             return jsonify({'success': False, 'data': None, 'message': 'Item not found'}), 404
         
@@ -188,7 +203,7 @@ def adjust_inventory():
         db.session.commit()
         
         # Emit event for chain reactions
-        EventEngine.emit('inventory_adjusted', 'default', {
+        EventEngine.emit('inventory_adjusted', _get_workspace_id(), {
             'item_id': item_id,
             'warehouse_id': item.warehouse_id,
             'previous_qty': previous_qty,
@@ -200,7 +215,7 @@ def adjust_inventory():
         })
         
         # Invalidate cache
-        CacheManager.invalidate_inventory('default', item_id)
+        CacheManager.invalidate_inventory(_get_workspace_id(), item_id)
         
         return jsonify({
             'success': True,
@@ -230,7 +245,12 @@ def update_min_max_levels(item_id):
         return jsonify({'success': False, 'data': None, 'message': 'At least one of reorder_level or reorder_quantity required'}), 400
     
     try:
-        item = db.session.get(Inventory, item_id)
+        workspace_id = _get_workspace_id()
+        item = (
+            db.session.query(Inventory)
+            .filter(Inventory.id == item_id, Inventory.workspace_id == workspace_id)
+            .one_or_none()
+        )
         if not item:
             return jsonify({'success': False, 'data': None, 'message': 'Item not found'}), 404
         
@@ -259,10 +279,12 @@ def update_min_max_levels(item_id):
 def get_low_stock_items():
     """Get items that are below reorder level"""
     try:
+        workspace_id = _get_workspace_id()
         warehouse = request.args.get('warehouse')
         category = request.args.get('category')
         
         query = Inventory.query.filter(
+            Inventory.workspace_id == workspace_id,
             Inventory.quantity_on_hand <= Inventory.reorder_level,
             Inventory.status == 'active'
         )

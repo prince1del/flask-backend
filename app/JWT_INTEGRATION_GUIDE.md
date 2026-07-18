@@ -154,7 +154,7 @@ you have access to request.user containing:
     'user_id': 1,
     'username': 'mobile_test_admin',
     'role': 'admin',
-    'workspace_id': 'bombay_dyeing',
+    'workspace_id': 'default',
     'iat': <issued_at_timestamp>,
     'exp': <expiration_timestamp>,
     'type': 'access'

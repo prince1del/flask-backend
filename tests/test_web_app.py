@@ -1,10 +1,32 @@
 import io
+import os
 import uuid
 
 import pandas as pd
 
+import app.routes.auth as app_auth
 from app.web_app import create_app
 from centralized_db_system.db import CentralizedDB
+
+
+def _build_test_pdf(content: str) -> bytes:
+    escaped_content = content.replace("(", "\\(").replace(")", "\\)")
+    stream_bytes = f"BT /F1 12 Tf 72 720 Td ({escaped_content}) Tj ET".encode("utf-8")
+    pdf = (
+        b"%PDF-1.4\n"
+        + b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        + b"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n"
+        + b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
+        + b"4 0 obj<</Length "
+        + str(len(stream_bytes)).encode("utf-8")
+        + b">>stream\n"
+        + stream_bytes
+        + b"\nendstream\nendobj\n"
+        + b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+        + b"xref\n0 6\n0000000000 65535 f \n0000000010 00000 n \n0000000060 00000 n \n0000000111 00000 n \n0000000219 00000 n \n0000000298 00000 n \n"
+        + b"trailer<</Size 6/Root 1 0 R>>\nstartxref\n348\n%%EOF"
+    )
+    return pdf
 
 
 def test_upload_page_runs_three_step_verification():
@@ -147,6 +169,25 @@ def test_upload_page_shows_error_for_unreadable_files():
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "error" in html.lower()
+
+
+def test_parse_sales_order_header_fields_extracts_client_name_and_buyer_code():
+    from app.routes.data import _parse_sales_order_header_fields
+
+    text = (
+        "Product: Milk Powder\n"
+        "Quantity: 10\n"
+        "Rate: 100\n"
+        "GST: 5\n"
+        "Client Name: Rahul Kumar Yadav\n"
+        "Buyer Code: BC123\n"
+        "Invoice Amount: 1000"
+    )
+
+    parsed = _parse_sales_order_header_fields(text)
+
+    assert parsed["buyer_name"] == "Rahul Kumar Yadav"
+    assert parsed["buyer_code"] == "BC123"
 
 
 def test_order_upload_rejects_pdf_file_type():
@@ -302,6 +343,78 @@ def test_run_all_persists_distributor_wise_upload_records(tmp_path):
     assert {"order_file", "filled_file", "sales_order_file", "invoice_file"}.issubset(
         stages
     )
+
+
+def test_sales_order_upload_with_selected_distributor_creates_order_lifecycle_link(tmp_path):
+    app_auth.auth_enabled = lambda: False
+    app = create_app()
+    app.config["TESTING"] = True
+    app.config["DATABASE_PATH"] = str(tmp_path / "web_so_link.sqlite3")
+    client = app.test_client()
+
+    db = CentralizedDB(app.config["DATABASE_PATH"])
+    distributor_id = db.add_master_distributor(
+        name="Alpha Traders",
+        buyer_code="BC123",
+    )
+
+    sales_order_pdf = io.BytesIO(
+        _build_test_pdf(
+            "Buyer Code: BC123\nOrder Ref No: SO-12345\nClient Name: Rahul Kumar\nInvoice Amount: 1000"
+        )
+    )
+
+    response = client.post(
+        "/",
+        data={
+            "sales_order_distributor_id": str(distributor_id),
+            "sales_order_file": (sales_order_pdf, "sales_order.pdf"),
+            "workflow_action": "stage3",
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    linked = db.get_order_lifecycle_by_order_ref_no("SO-12345", workspace_id="default")
+    assert linked is not None
+    assert linked["distributor_id"] == distributor_id
+    assert linked["sales_order_file_reference"] is not None
+    assert linked["sales_order_parsed"] is not None
+
+
+def test_sales_order_upload_with_buyer_code_match_does_not_auto_link_without_selection(tmp_path):
+    app_auth.auth_enabled = lambda: False
+    app = create_app()
+    app.config["TESTING"] = True
+    app.config["DATABASE_PATH"] = str(tmp_path / "web_so_auto_no_link.sqlite3")
+    client = app.test_client()
+
+    db = CentralizedDB(app.config["DATABASE_PATH"])
+    _ = db.add_master_distributor(
+        name="Beta Traders",
+        buyer_code="BC999",
+    )
+
+    sales_order_pdf = io.BytesIO(
+        _build_test_pdf(
+            "Buyer Code: BC999\nOrder Ref No: SO-99999\nClient Name: Rahul Kumar\nInvoice Amount: 1000"
+        )
+    )
+
+    response = client.post(
+        "/",
+        data={
+            "sales_order_file": (sales_order_pdf, "sales_order.pdf"),
+            "workflow_action": "stage3",
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    linked = db.get_order_lifecycle_by_order_ref_no("SO-99999", workspace_id="default")
+    assert linked is None
 
 
 def test_single_uploads_are_accumulated_across_requests():
@@ -508,6 +621,9 @@ def test_database_admin_page_supports_backup_and_audit_log_view():
     assert get_response.status_code == 200
     html = get_response.get_data(as_text=True)
     assert "Database Admin" in html
+    assert "Coming Soon" in html or "No audit logs available yet" in html
+    assert '"created_at"' not in html
+    assert '"details"' not in html
 
     backup_response = client.post(
         "/admin/database",

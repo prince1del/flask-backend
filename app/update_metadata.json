@@ -1,0 +1,6 @@
+{
+  "app_name": "Centralized DB System",
+  "version": "0.1.1",
+  "release_notes": "Added OTA update support, version metadata, and update check UI.",
+  "download_url": "https://example.com/downloads/CentralizedDBSystemInstaller.exe"
+}

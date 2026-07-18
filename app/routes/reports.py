@@ -5,13 +5,13 @@ from dateutil.relativedelta import relativedelta
 
 from app.db import db
 from app.models import SalesOrder, Invoice, InvoicePayment, Distributor, Retailer
-from app.routes.auth import require_jwt_auth
+from app.routes.auth import get_workspace_id, require_jwt_auth
 
 reports_bp = Blueprint('reports', __name__, url_prefix='/api/v1/reports')
 
 
-def _current_user():
-    return getattr(request, 'user', None)
+def _get_workspace_id():
+    return get_workspace_id()
 
 
 # ========== REPORT 1: SALES REPORT ==========
@@ -41,13 +41,18 @@ def get_sales_report():
     
     try:
         if group_by == 'distributor':
-            results = db.session.query(
-                SalesOrder.distributor_id,
-                Distributor.name.label('distributor_name'),
-                func.sum(SalesOrder.net_amount).label('total_amount'),
-                func.count(SalesOrder.id).label('order_count'),
-                func.avg(SalesOrder.net_amount).label('avg_amount')
-            ).join(Distributor, SalesOrder.distributor_id == Distributor.id)
+            workspace_id = _get_workspace_id()
+            results = (
+                db.session.query(
+                    SalesOrder.distributor_id,
+                    Distributor.name.label('distributor_name'),
+                    func.sum(SalesOrder.net_amount).label('total_amount'),
+                    func.count(SalesOrder.id).label('order_count'),
+                    func.avg(SalesOrder.net_amount).label('avg_amount')
+                )
+                .join(Distributor, SalesOrder.distributor_id == Distributor.id)
+                .filter(SalesOrder.workspace_id == workspace_id)
+            )
             
             if date_filter:
                 for f in date_filter:
@@ -67,13 +72,18 @@ def get_sales_report():
             ]
         
         elif group_by == 'retailer':
-            results = db.session.query(
-                SalesOrder.retailer_id,
-                Retailer.name.label('retailer_name'),
-                func.sum(SalesOrder.net_amount).label('total_amount'),
-                func.count(SalesOrder.id).label('order_count'),
-                func.avg(SalesOrder.net_amount).label('avg_amount')
-            ).join(Retailer, SalesOrder.retailer_id == Retailer.id)
+            workspace_id = _get_workspace_id()
+            results = (
+                db.session.query(
+                    SalesOrder.retailer_id,
+                    Retailer.name.label('retailer_name'),
+                    func.sum(SalesOrder.net_amount).label('total_amount'),
+                    func.count(SalesOrder.id).label('order_count'),
+                    func.avg(SalesOrder.net_amount).label('avg_amount')
+                )
+                .join(Retailer, SalesOrder.retailer_id == Retailer.id)
+                .filter(SalesOrder.workspace_id == workspace_id)
+            )
             
             if date_filter:
                 for f in date_filter:
@@ -93,12 +103,17 @@ def get_sales_report():
             ]
         
         elif group_by == 'territory':
-            results = db.session.query(
-                Distributor.territory,
-                func.sum(SalesOrder.net_amount).label('total_amount'),
-                func.count(SalesOrder.id).label('order_count'),
-                func.avg(SalesOrder.net_amount).label('avg_amount')
-            ).join(Distributor, SalesOrder.distributor_id == Distributor.id)
+            workspace_id = _get_workspace_id()
+            results = (
+                db.session.query(
+                    Distributor.territory,
+                    func.sum(SalesOrder.net_amount).label('total_amount'),
+                    func.count(SalesOrder.id).label('order_count'),
+                    func.avg(SalesOrder.net_amount).label('avg_amount')
+                )
+                .join(Distributor, SalesOrder.distributor_id == Distributor.id)
+                .filter(SalesOrder.workspace_id == workspace_id)
+            )
             
             if date_filter:
                 for f in date_filter:
@@ -149,10 +164,12 @@ def get_trends_report():
             month_start = month_date.replace(day=1)
             month_end = (month_start + relativedelta(months=1)) - timedelta(days=1)
             
+            workspace_id = _get_workspace_id()
             # Get current month sales
             current_month_sales = db.session.query(
                 func.sum(SalesOrder.net_amount).label('total')
             ).filter(
+                SalesOrder.workspace_id == workspace_id,
                 SalesOrder.order_date >= month_start,
                 SalesOrder.order_date <= month_end
             ).first()
@@ -166,6 +183,7 @@ def get_trends_report():
             prev_month_sales = db.session.query(
                 func.sum(SalesOrder.net_amount).label('total')
             ).filter(
+                SalesOrder.workspace_id == workspace_id,
                 SalesOrder.order_date >= prev_month_start,
                 SalesOrder.order_date <= prev_month_end
             ).first()
@@ -202,14 +220,20 @@ def get_trends_report():
 def get_territory_performance():
     """Rank territories by sales performance"""
     try:
+        workspace_id = _get_workspace_id()
         # Get total sales by territory
-        territory_sales = db.session.query(
-            Distributor.territory,
-            func.sum(SalesOrder.net_amount).label('total_sales'),
-            func.count(SalesOrder.id).label('order_count')
-        ).join(Distributor, SalesOrder.distributor_id == Distributor.id).group_by(
-            Distributor.territory
-        ).order_by(func.sum(SalesOrder.net_amount).desc()).all()
+        territory_sales = (
+            db.session.query(
+                Distributor.territory,
+                func.sum(SalesOrder.net_amount).label('total_sales'),
+                func.count(SalesOrder.id).label('order_count')
+            )
+            .join(Distributor, SalesOrder.distributor_id == Distributor.id)
+            .filter(SalesOrder.workspace_id == workspace_id)
+            .group_by(Distributor.territory)
+            .order_by(func.sum(SalesOrder.net_amount).desc())
+            .all()
+        )
         
         # Calculate total for percentage
         grand_total = sum(float(r[1]) if r[1] else 0.0 for r in territory_sales)
@@ -244,12 +268,13 @@ def get_territory_performance():
 def get_distributor_sales_detail(distributor_id):
     """Detailed sales breakdown for a single distributor"""
     try:
-        distributor = db.session.get(Distributor, distributor_id)
+        workspace_id = _get_workspace_id()
+        distributor = Distributor.query.filter_by(id=distributor_id, workspace_id=workspace_id).first()
         if not distributor:
             return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
         
         # Get all sales orders for this distributor
-        sales_orders = SalesOrder.query.filter_by(distributor_id=distributor_id).all()
+        sales_orders = SalesOrder.query.filter_by(distributor_id=distributor_id, workspace_id=workspace_id).all()
         
         total_orders = len(sales_orders)
         total_sales = sum(float(so.net_amount) if so.net_amount else 0.0 for so in sales_orders)
@@ -258,7 +283,10 @@ def get_distributor_sales_detail(distributor_id):
         invoices = db.session.query(
             func.sum(Invoice.total_amount).label('total_invoiced'),
             func.count(Invoice.id).label('invoice_count')
-        ).join(SalesOrder).filter(SalesOrder.distributor_id == distributor_id).first()
+        ).join(SalesOrder).filter(
+            SalesOrder.workspace_id == workspace_id,
+            SalesOrder.distributor_id == distributor_id
+        ).first()
         
         total_invoiced = float(invoices[0]) if invoices[0] else 0.0
         invoice_count = invoices[1] if invoices[1] else 0
@@ -268,7 +296,10 @@ def get_distributor_sales_detail(distributor_id):
             func.sum(InvoicePayment.amount_paid).label('total_paid')
         ).join(Invoice, InvoicePayment.invoice_id == Invoice.id).join(
             SalesOrder, Invoice.so_id == SalesOrder.id
-        ).filter(SalesOrder.distributor_id == distributor_id).first()
+        ).filter(
+            SalesOrder.workspace_id == workspace_id,
+            SalesOrder.distributor_id == distributor_id
+        ).first()
         
         total_paid = float(payments[0]) if payments[0] else 0.0
         outstanding = total_invoiced - total_paid
@@ -326,6 +357,8 @@ def create_custom_report():
         )
         
         # Apply filters
+        workspace_id = _get_workspace_id()
+        query = query.filter(SalesOrder.workspace_id == workspace_id)
         if start_date:
             try:
                 start = datetime.strptime(start_date, '%Y-%m-%d').date()

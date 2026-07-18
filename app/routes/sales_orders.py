@@ -3,8 +3,8 @@ from sqlalchemy import func
 from datetime import datetime, date, timezone
 
 from app.db import db
-from app.models import SalesOrder, SalesOrderItem, Invoice, InvoicePayment, Dispatch, Distributor, Retailer
-from app.routes.auth import require_jwt_auth
+from app.models import SalesOrder, SalesOrderItem, Invoice, InvoicePayment, Dispatch, Distributor, Retailer, GSTReturn, VATReturn
+from app.routes.auth import get_workspace_id, require_jwt_auth
 
 sales_bp = Blueprint('sales', __name__, url_prefix='/api/v1')
 
@@ -13,16 +13,24 @@ def _current_user():
     return getattr(request, 'user', None)
 
 
-def _generate_so_number():
+def _get_workspace_id():
+    return get_workspace_id()
+
+
+def _generate_so_number(workspace_id):
     year = datetime.now(timezone.utc).year
-    last = SalesOrder.query.filter(SalesOrder.so_number.like(f'SO-{year}-%')).order_by(SalesOrder.id.desc()).first()
+    last = SalesOrder.query.filter(
+        SalesOrder.so_number.like(f'SO-{year}-%'),
+    ).order_by(SalesOrder.id.desc()).first()
     counter = 1 if not last else int(last.so_number.rsplit('-', 1)[-1]) + 1
     return f'SO-{year}-{counter:04d}'
 
 
-def _generate_invoice_number():
+def _generate_invoice_number(workspace_id):
     year = datetime.now(timezone.utc).year
-    last = Invoice.query.filter(Invoice.invoice_number.like(f'INV-{year}-%')).order_by(Invoice.id.desc()).first()
+    last = Invoice.query.filter(
+        Invoice.invoice_number.like(f'INV-{year}-%'),
+    ).order_by(Invoice.id.desc()).first()
     counter = 1 if not last else int(last.invoice_number.rsplit('-', 1)[-1]) + 1
     return f'INV-{year}-{counter:04d}'
 
@@ -54,6 +62,34 @@ def _recalculate_sales_order_totals(so, items=None, tax_rate=None):
     so.net_amount = so.total_amount + so.tax_amount
 
 
+def _auto_post_invoice_tax(invoice, workspace_id):
+    period = invoice.invoice_date.strftime('%Y-%m') if invoice.invoice_date else date.today().strftime('%Y-%m')
+    tax_rate = 0.0
+    if invoice.total_amount:
+        tax_rate = (invoice.tax_amount / invoice.total_amount) * 100.0
+
+    for model in (GSTReturn, VATReturn):
+        existing = model.query.filter_by(period=period, workspace_id=workspace_id).first()
+        if existing:
+            existing.sales_amount += float(invoice.total_amount or 0.0)
+            existing.tax_amount += float(invoice.tax_amount or 0.0)
+            existing.tax_rate = tax_rate
+            existing.notes = f"Auto-posted from invoice {invoice.invoice_number}"
+        else:
+            db.session.add(
+                model(
+                    period=period,
+                    sales_amount=float(invoice.total_amount or 0.0),
+                    purchase_amount=0.0,
+                    tax_rate=tax_rate,
+                    tax_amount=float(invoice.tax_amount or 0.0),
+                    filed_status='draft',
+                    notes=f"Auto-posted from invoice {invoice.invoice_number}",
+                    workspace_id=workspace_id,
+                )
+            )
+
+
 # ========== SALES ORDER ENDPOINTS ==========
 
 @sales_bp.route('/sales-orders', methods=['GET'])
@@ -65,8 +101,9 @@ def get_sales_orders():
     status = request.args.get('status')
     distributor_id = request.args.get('distributor_id', type=int)
     retailer_id = request.args.get('retailer_id', type=int)
+    workspace_id = _get_workspace_id()
 
-    query = SalesOrder.query
+    query = SalesOrder.query.filter_by(workspace_id=workspace_id)
     if status:
         query = query.filter_by(status=status)
     if distributor_id:
@@ -83,7 +120,8 @@ def get_sales_orders():
 @sales_bp.route('/sales-orders/<int:id>', methods=['GET'])
 @require_jwt_auth
 def get_sales_order(id):
-    so = db.session.get(SalesOrder, id)
+    workspace_id = _get_workspace_id()
+    so = SalesOrder.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not so:
         return jsonify({'success': False, 'data': None, 'message': 'Sales order not found'}), 404
     return jsonify({'success': True, 'data': so.to_dict(include_items=True), 'message': 'Sales order retrieved successfully'}), 200
@@ -104,10 +142,11 @@ def create_sales_order():
     if not items:
         return jsonify({'success': False, 'data': None, 'message': 'At least one sales order item is required'}), 400
 
-    distributor = db.session.get(Distributor, distributor_id)
+    workspace_id = _get_workspace_id()
+    distributor = Distributor.query.filter_by(id=distributor_id, workspace_id=workspace_id).first()
     if not distributor:
         return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
-    retailer = db.session.get(Retailer, retailer_id)
+    retailer = Retailer.query.filter_by(id=retailer_id, workspace_id=workspace_id).first()
     if not retailer:
         return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
 
@@ -117,12 +156,13 @@ def create_sales_order():
         return jsonify({'success': False, 'data': None, 'message': 'Invalid tax rate value'}), 400
 
     so = SalesOrder(
-        so_number=_generate_so_number(),
+        so_number=_generate_so_number(workspace_id),
         distributor_id=distributor_id,
         retailer_id=retailer_id,
         order_date=datetime.strptime(data.get('order_date', date.today().isoformat()), '%Y-%m-%d').date(),
         so_date=datetime.strptime(data.get('so_date', date.today().isoformat()), '%Y-%m-%d').date(),
         status='draft',
+        workspace_id=workspace_id,
         created_by=_current_user().get('user_id') if _current_user() else None,
     )
 
@@ -155,7 +195,8 @@ def create_sales_order():
 @sales_bp.route('/sales-orders/<int:id>', methods=['PUT'])
 @require_jwt_auth
 def update_sales_order(id):
-    so = db.session.get(SalesOrder, id)
+    workspace_id = _get_workspace_id()
+    so = SalesOrder.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not so:
         return jsonify({'success': False, 'data': None, 'message': 'Sales order not found'}), 404
     if so.status != 'draft':
@@ -167,12 +208,12 @@ def update_sales_order(id):
     if 'so_date' in data:
         so.so_date = datetime.strptime(data.get('so_date'), '%Y-%m-%d').date()
     if 'distributor_id' in data:
-        distributor = db.session.get(Distributor, data.get('distributor_id'))
+        distributor = Distributor.query.filter_by(id=data.get('distributor_id'), workspace_id=workspace_id).first()
         if not distributor:
             return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
         so.distributor_id = data.get('distributor_id')
     if 'retailer_id' in data:
-        retailer = db.session.get(Retailer, data.get('retailer_id'))
+        retailer = Retailer.query.filter_by(id=data.get('retailer_id'), workspace_id=workspace_id).first()
         if not retailer:
             return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
         so.retailer_id = data.get('retailer_id')
@@ -207,7 +248,8 @@ def update_sales_order(id):
 @sales_bp.route('/sales-orders/<int:id>/status', methods=['PUT'])
 @require_jwt_auth
 def update_sales_order_status(id):
-    so = db.session.get(SalesOrder, id)
+    workspace_id = _get_workspace_id()
+    so = SalesOrder.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not so:
         return jsonify({'success': False, 'data': None, 'message': 'Sales order not found'}), 404
 
@@ -235,7 +277,8 @@ def get_invoices():
     offset = (page - 1) * limit
     status = request.args.get('status')
 
-    query = Invoice.query
+    workspace_id = _get_workspace_id()
+    query = Invoice.query.filter_by(workspace_id=workspace_id)
     if status:
         query = query.filter_by(payment_status=status)
 
@@ -247,7 +290,8 @@ def get_invoices():
 @sales_bp.route('/invoices/<int:id>', methods=['GET'])
 @require_jwt_auth
 def get_invoice(id):
-    invoice = db.session.get(Invoice, id)
+    workspace_id = _get_workspace_id()
+    invoice = Invoice.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not invoice:
         return jsonify({'success': False, 'data': None, 'message': 'Invoice not found'}), 404
     data = invoice.to_dict()
@@ -263,15 +307,16 @@ def create_invoice():
     if not so_id:
         return jsonify({'success': False, 'data': None, 'message': 'Sales order ID is required'}), 400
 
-    so = db.session.get(SalesOrder, so_id)
+    workspace_id = _get_workspace_id()
+    so = SalesOrder.query.filter_by(id=so_id, workspace_id=workspace_id).first()
     if not so:
         return jsonify({'success': False, 'data': None, 'message': 'Sales order not found'}), 404
-    existing = Invoice.query.filter_by(so_id=so_id).first()
+    existing = Invoice.query.filter_by(so_id=so_id, workspace_id=workspace_id).first()
     if existing:
         return jsonify({'success': False, 'data': None, 'message': 'Invoice already exists for this order'}), 400
 
     invoice = Invoice(
-        invoice_number=_generate_invoice_number(),
+        invoice_number=_generate_invoice_number(workspace_id),
         so_id=so_id,
         invoice_date=datetime.strptime(data.get('invoice_date', date.today().isoformat()), '%Y-%m-%d').date(),
         due_date=datetime.strptime(data.get('due_date', date.today().isoformat()), '%Y-%m-%d').date(),
@@ -279,10 +324,13 @@ def create_invoice():
         tax_amount=so.tax_amount,
         net_amount=so.net_amount,
         payment_status='unpaid',
+        workspace_id=workspace_id,
         created_by=_current_user().get('user_id') if _current_user() else None,
     )
     try:
         db.session.add(invoice)
+        db.session.flush()
+        _auto_post_invoice_tax(invoice, workspace_id)
         db.session.commit()
         return jsonify({'success': True, 'data': invoice.to_dict(), 'message': 'Invoice created successfully'}), 201
     except Exception as exc:
@@ -293,7 +341,8 @@ def create_invoice():
 @sales_bp.route('/invoices/<int:id>/payment', methods=['POST'])
 @require_jwt_auth
 def record_payment(id):
-    invoice = db.session.get(Invoice, id)
+    workspace_id = _get_workspace_id()
+    invoice = Invoice.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not invoice:
         return jsonify({'success': False, 'data': None, 'message': 'Invoice not found'}), 404
 
@@ -338,7 +387,8 @@ def create_dispatch():
     if not so_id:
         return jsonify({'success': False, 'data': None, 'message': 'Sales order ID is required'}), 400
 
-    so = db.session.get(SalesOrder, so_id)
+    workspace_id = _get_workspace_id()
+    so = SalesOrder.query.filter_by(id=so_id, workspace_id=workspace_id).first()
     if not so:
         return jsonify({'success': False, 'data': None, 'message': 'Sales order not found'}), 404
     existing = Dispatch.query.filter_by(so_id=so_id).first()

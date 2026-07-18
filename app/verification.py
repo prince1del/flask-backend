@@ -36,6 +36,8 @@ def parse_distributor_fields_from_text(text: str) -> dict[str, Any]:
             parsed["firm_nick_name"] = cleaned_value
         elif normalized_key in {"gstin", "gst_no", "gst_number"}:
             parsed["gst_no"] = cleaned_value
+        elif normalized_key in {"buyer_code", "buyer_code_", "buyer_id", "buyer_id_"}:
+            parsed["buyer_code"] = cleaned_value
         elif normalized_key in {"zone", "region_name"}:
             parsed["zone"] = cleaned_value
         elif normalized_key in {"region", "area"}:

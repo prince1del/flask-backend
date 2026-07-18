@@ -16,10 +16,12 @@ from app.models import User, AuditLog
 
 
 @pytest.fixture
-def app():
-    """Create and configure a test app instance with in-memory database"""
-    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    os.environ["AUTH_ENABLED"] = "false"
+def app(tmp_path, monkeypatch):
+    """Create and configure a test app instance with a real SQLite database file."""
+    db_path = tmp_path / "admin_api.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
     
     app = create_app()
     app.config["TESTING"] = True

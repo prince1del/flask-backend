@@ -6,9 +6,11 @@ from app.models import Inventory, InventoryMovement
 
 
 @pytest.fixture
-def app():
-    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    os.environ["AUTH_ENABLED"] = "false"
+def app(tmp_path, monkeypatch):
+    db_path = tmp_path / "inventory_api.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
     app = create_app()
     app.config["TESTING"] = True
     with app.app_context():

@@ -8,10 +8,12 @@ Admin endpoints for system management and configuration
 - POST /api/v1/admin/settings - Save app settings
 """
 
+import os
+
 from flask import Blueprint, request, jsonify
 from app.db import db
 from app.models import User, AuditLog
-from app.routes.auth import require_jwt_auth
+from app.routes.auth import require_jwt_auth, require_role
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, desc
 
@@ -20,6 +22,7 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 # ========== ADMIN 1: LIST USERS ==========
 @admin_bp.route('/users', methods=['GET'])
 @require_jwt_auth
+@require_role('admin')
 def list_users():
     """List all users with pagination"""
     try:
@@ -57,6 +60,7 @@ def list_users():
 # ========== ADMIN 2: CREATE USER ==========
 @admin_bp.route('/users', methods=['POST'])
 @require_jwt_auth
+@require_role('admin')
 def create_user():
     """Create a new user account"""
     data = request.get_json(silent=True) or {}
@@ -65,14 +69,31 @@ def create_user():
     username = data.get('username', '').strip()
     email = data.get('email', '').strip()
     password = data.get('password', '').strip()
-    role = data.get('role', 'user')  # admin, distributor, retailer, user
-    
+    role = data.get('role', 'unassigned')  # admin, sales_executive, distributor, retailer, unassigned
+
     if not username or not email or not password:
         return jsonify({'success': False, 'data': None, 'message': 'username, email, password required'}), 400
-    
-    if role not in ['admin', 'distributor', 'retailer', 'user']:
+
+    if role not in ['admin', 'sales_executive', 'distributor', 'retailer', 'unassigned']:
         return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
-    
+
+    if role == 'admin':
+        requester = getattr(request, 'user', {}) or {}
+        founder_username = os.getenv('ADMIN_USERNAME', 'admin')
+        if requester.get('username') != founder_username:
+            return (
+                jsonify(
+                    {
+                        'success': False,
+                        'error': {
+                            'code': 'FORBIDDEN',
+                            'message': 'Insufficient permissions to assign admin role',
+                        },
+                    }
+                ),
+                403,
+            )
+
     try:
         # Check if user already exists
         existing = User.query.filter(
@@ -119,6 +140,7 @@ def create_user():
 # ========== ADMIN 3: UPDATE USER ==========
 @admin_bp.route('/users/<int:user_id>', methods=['PUT'])
 @require_jwt_auth
+@require_role('admin')
 def update_user(user_id):
     """Update user details"""
     data = request.get_json(silent=True) or {}
@@ -132,8 +154,24 @@ def update_user(user_id):
         if 'email' in data:
             user.email = data['email'].strip()
         if 'role' in data:
-            if data['role'] not in ['admin', 'distributor', 'retailer', 'user']:
+            if data['role'] not in ['admin', 'sales_executive', 'distributor', 'retailer', 'unassigned']:
                 return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
+            if data['role'] == 'admin':
+                requester = getattr(request, 'user', {}) or {}
+                founder_username = os.getenv('ADMIN_USERNAME', 'admin')
+                if requester.get('username') != founder_username:
+                    return (
+                        jsonify(
+                            {
+                                'success': False,
+                                'error': {
+                                    'code': 'FORBIDDEN',
+                                    'message': 'Insufficient permissions to assign admin role',
+                                },
+                            }
+                        ),
+                        403,
+                    )
             user.role = data['role']
         if 'status' in data:
             if data['status'] not in ['active', 'inactive']:
@@ -170,6 +208,7 @@ def update_user(user_id):
 # ========== ADMIN 4: DELETE USER ==========
 @admin_bp.route('/users/<int:user_id>', methods=['DELETE'])
 @require_jwt_auth
+@require_role('admin')
 def delete_user(user_id):
     """Delete a user account"""
     try:
@@ -206,6 +245,7 @@ def delete_user(user_id):
 # ========== ADMIN 5: VIEW AUDIT LOGS ==========
 @admin_bp.route('/audit-logs', methods=['GET'])
 @require_jwt_auth
+@require_role('admin')
 def view_audit_logs():
     """View system activity/audit logs"""
     try:
@@ -255,6 +295,7 @@ def view_audit_logs():
 # ========== ADMIN 6: SAVE APP SETTINGS ==========
 @admin_bp.route('/settings', methods=['POST'])
 @require_jwt_auth
+@require_role('admin')
 def save_settings():
     """Save application-wide settings"""
     data = request.get_json(silent=True) or {}

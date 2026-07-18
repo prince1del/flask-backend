@@ -3,28 +3,205 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bombay Dyeing - NEXORA v1.1 Dashboard</title>
+    <title>Business Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260718-timeout-ux">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260718-product-filter">
+    <style>
+        /* Excel-like bordered grid for all data tables (search results,
+           master data grids, party master lists) */
+        .data-table {
+            border-collapse: collapse;
+        }
+        .data-table th,
+        .data-table td {
+            border: 1px solid #444;
+            padding: 6px 10px;
+            white-space: nowrap;
+        }
+        .data-table th {
+            background: #1d1d1d;
+        }
+        .data-table tbody tr {
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .data-table tbody tr:hover {
+            background: rgba(255, 200, 87, 0.08);
+        }
+
+        html, body {
+            overflow-x: hidden !important;
+            max-width: 100vw !important;
+        }
+        /* Customers table layout — does NOT depend on body class or JS */
+        #party-master-section.customers-workspace:not(.hidden) {
+            position: fixed !important;
+            top: 64px !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            z-index: 200 !important;
+            display: block !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            margin: 0 !important;
+            padding: 8px 12px 10px !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            background: #080c14 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .container {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-header,
+        #party-master-section.customers-workspace:not(.hidden) .party-master-tabs,
+        #party-master-section.customers-workspace:not(.hidden) .tab-panel:not(.hidden) .form-group,
+        #party-master-section.customers-workspace:not(.hidden) [id$="-pagination"] {
+            flex: 0 0 auto !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-header {
+            margin-bottom: 4px !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-tabs {
+            margin: 0 0 6px !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-scroll-wrapper {
+            height: calc(100vh - 200px) !important;
+            max-height: calc(100vh - 200px) !important;
+            min-height: 480px !important;
+            flex: none !important;
+            width: 100% !important;
+            overflow: auto !important;
+            overflow-x: auto !important;
+            overflow-y: auto !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
+            border-radius: 12px !important;
+            background: rgba(255,255,255,0.02) !important;
+        }
+        /* BD + HoP shell: big Customers table (original size) beside sticky nav — NOT cramped mount */
+        body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) {
+            position: fixed !important;
+            top: 64px !important;
+            left: 232px !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: calc(100vw - 232px) !important;
+            max-width: calc(100vw - 232px) !important;
+            z-index: 60 !important;
+            display: block !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            margin: 0 !important;
+            padding: 8px 12px 10px !important;
+            box-sizing: border-box !important;
+            background: #080c14 !important;
+            border: 0 !important;
+            border-left: 0.5px solid rgba(255,255,255,0.08) !important;
+            border-radius: 0 !important;
+            pointer-events: auto !important;
+        }
+        body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) .container {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+            max-width: none !important;
+            width: 100% !important;
+        }
+        body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) .party-master-scroll-wrapper {
+            height: calc(100vh - 200px) !important;
+            max-height: calc(100vh - 200px) !important;
+            min-height: 480px !important;
+            flex: none !important;
+            width: 100% !important;
+            overflow: auto !important;
+            overflow-x: auto !important;
+            overflow-y: auto !important;
+        }
+        body.bd-hop-ui #party-master-section .party-master-table th,
+        body.bd-hop-ui #party-master-section .party-master-table td {
+            min-width: 120px !important;
+            max-width: 280px !important;
+            font-size: 0.85rem !important;
+            padding: 8px 12px !important;
+        }
+        body.bd-hop-ui #party-master-section .party-master-header h2 {
+            font-size: 1.45rem !important;
+        }
+        #dashboard-honest-placeholder:not(.hidden) {
+            grid-column: 1 / -1 !important;
+            grid-row: 1 / -1 !important;
+            width: 100% !important;
+            min-height: 280px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            margin: 0 !important;
+        }
+        #party-master-section .party-master-table {
+            width: max-content !important;
+            min-width: 100% !important;
+            table-layout: auto !important;
+            border-collapse: collapse !important;
+        }
+        #party-master-section .party-master-table th,
+        #party-master-section .party-master-table td {
+            min-width: 120px !important;
+            max-width: 280px !important;
+            padding: 5px 10px !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+            vertical-align: top !important;
+            box-sizing: border-box !important;
+        }
+        #party-master-section .party-master-table th:first-child,
+        #party-master-section .party-master-table td:first-child {
+            min-width: 160px !important;
+        }
+        #party-master-section .party-master-table th:last-child,
+        #party-master-section .party-master-table td:last-child {
+            min-width: 150px !important;
+            max-width: none !important;
+        }
+        .party-master-scroll-wrapper table {
+            table-layout: auto;
+        }
+    </style>
 </head>
 <body>
-    <header class="header">
-        <div class="container">
-            <h1>🏢 Bombay Dyeing - NEXORA v1.1 Dashboard</h1>
-            <div class="header-right">
-                <span id="user-info" class="user-info">Admin User</span>
-                <button onclick="logout()" class="btn-logout">Logout</button>
+    <header class="nexora-header">
+        <div class="header-left">
+            <button type="button" class="nexora-logo" onclick="goToHomePage()" title="Go to home" aria-label="NEXORA home"></button>
+        </div>
+        <div class="header-center" id="global-search-shell">
+            <input class="global-search" id="global-search-input" type="search" placeholder="Search parties, articles, orders..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="scheduleGlobalSearch()" onkeydown="if(event.key==='Enter'){runGlobalSearch();}" />
+        </div>
+        <div class="header-right">
+            <div class="header-right-icons">
+                <button id="global-search-trigger" class="icon-btn" aria-label="Search" onclick="runGlobalSearch()">⌕</button>
+                <button class="icon-btn" aria-label="Notifications" type="button">🔔</button>
+            </div>
+            <div class="header-right-actions">
+                <button id="ask-nexora-btn" class="btn btn-primary hidden" type="button" onclick="openNexoraChat()">Ask NEXORA</button>
+                <button class="workspace-selector" type="button">Workspace</button>
+                <button class="profile-btn" id="user-info" type="button">Admin</button>
             </div>
         </div>
     </header>
-    <p class="header-subtitle">Bombay Dyeing Limited | Enterprise Operations Platform</p>
 
     <section class="premium-welcome card-highlight">
         <div class="greeting-row">
             <div>
                 <p class="eyebrow">Premium Operations</p>
-                <h2 id="greeting-text">Welcome to NEXORA Premium</h2>
+                <h2 id="greeting-text">Welcome to Nexora Premium</h2>
             </div>
             <div class="stats-pill">Live status: Online</div>
         </div>
@@ -32,327 +209,1080 @@
     </section>
 
     <div id="loginModal" class="modal">
-        <div class="modal-content">
-            <h2>NEXORA Login</h2>
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Nexora Login</h2>
+            <p class="login-hint nx-text-dim" style="margin:0 0 12px;font-size:0.85rem;color:#94a3b8;">Sign in to continue</p>
             <div class="form-group">
                 <label>Username:</label>
-                <input type="text" id="username" placeholder="mobile_test_admin" value="mobile_test_admin">
+                <input type="text" id="username" placeholder="Username">
             </div>
             <div class="form-group">
                 <label>Password:</label>
-                <input type="password" id="password" placeholder="Password" value="mobile_test_admin_123">
+                <input type="password" id="password" placeholder="Password">
             </div>
             <button onclick="login()" class="btn btn-primary">Login</button>
-            <p id="loginError" class="error"></p>
+            <p id="loginError" class="error" role="status"></p>
+        </div>
+    </div>
+
+    <div id="updateModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Update Available</h2>
+            <p id="updatePromptText">A new version is ready to install.</p>
+            <p id="updateReleaseNotes" class="card-description"></p>
+            <div class="modal-actions">
+                <button onclick="restartToInstallUpdate()" class="btn btn-primary">Install & Restart</button>
+                <button onclick="deferUpdate()" class="btn btn-secondary">Later</button>
+            </div>
         </div>
     </div>
 
     <div id="dashboard" class="dashboard hidden">
-        <div class="container">
-            <div class="stats-bar">
-                <div class="stat-card">
-                    <h3>Backend Status</h3>
-                    <p id="status" class="status-ok">✅ Online</p>
+        <div class="nx-theme hop-shell bd-shell dashboard-grid">
+            <aside class="hop-nav left-nav" aria-label="NEXORA navigation">
+                <div class="hop-nav-brand sidebar-brand" role="button" tabindex="0" onclick="goToHomePage()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goToHomePage();}" title="Go to home" aria-label="NEXORA home">
+                    <div class="nx-core" aria-hidden="true"></div>
+                    <div>
+                        <div class="nx-brand-word">NEXORA</div>
+                        <div class="nx-brand-sub">NORTH HEAD OFFICE</div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <h3>Modules</h3>
-                    <p>All features available</p>
+                <nav class="hop-nav-list nav-list">
+                    <button type="button" id="nav-dashboard" class="nx-nav-item hop-nav-btn nav-item active" onclick="openModule('Dashboard')"><span class="nav-label">Dashboard</span></button>
+                    <button type="button" id="nav-my-day" class="nx-nav-item hop-nav-btn nav-item hidden" onclick="openModule('MyDay')"><span class="nav-label">My Day</span></button>
+                    <div class="hop-nav-group bd-nav-group-crm">CRM</div>
+                    <button type="button" id="nav-customers" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Customers')"><span class="nav-label">Customers</span></button>
+                    <div class="hop-nav-group bd-nav-group-sales">Sales</div>
+                    <button type="button" id="nav-order-desk" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('OrderDesk')"><span class="nav-label">Order Desk</span></button>
+                    <div class="hop-nav-group bd-nav-group-reports">Reports</div>
+                    <button type="button" id="nav-target-vs-achievement" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('TargetVsAchievement')"><span class="nav-label">Target vs Achievement</span></button>
+                    <div class="hop-nav-group bd-nav-group-ops">Ops</div>
+                    <button type="button" id="nav-cloudhub" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('CloudHub')"><span class="nav-label">Cloud Hub</span></button>
+                    <button type="button" id="nav-purchase" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Purchase')"><span class="nav-label">Purchase</span></button>
+                    <button type="button" id="nav-inventory" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Inventory')"><span class="nav-label">Inventory</span></button>
+                    <button type="button" id="nav-finance" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Finance')"><span class="nav-label">Finance</span></button>
+                    <button type="button" id="nav-reports" class="nx-nav-item hop-nav-btn nav-item" onclick="openReports()"><span class="nav-label">Reports</span></button>
+                    <button type="button" id="nav-analytics" class="nx-nav-item hop-nav-btn nav-item" onclick="openAnalyticsDashboard()"><span class="nav-label">Analytics</span></button>
+                    <button type="button" id="nav-orders" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Orders')"><span class="nav-label">Orders</span></button>
+                    <button type="button" id="nav-approvals" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Approvals')"><span class="nav-label">Approvals</span></button>
+                    <button type="button" id="nav-banking" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Banking')"><span class="nav-label">Banking</span></button>
+                    <button type="button" id="nav-settings" class="nx-nav-item hop-nav-btn nav-item" onclick="openWorkspaceSettings()"><span class="nav-label">Settings</span></button>
+                </nav>
+                <button type="button" class="nx-btn hop-nav-logout" onclick="logout()">Logout</button>
+                <div class="sidebar-footer hidden" aria-hidden="true">
+                    <p class="footer-title">GT Executive Pvt. Ltd.</p>
+                    <p class="footer-subtitle">North Head Office</p>
                 </div>
+            </aside>
+            <main class="hop-main main-content">
+                <div class="content-inner" id="bd-home-view">
+                    <header class="hop-view-header bd-home-header">
+                        <div>
+                            <p class="nx-text-faint hop-eyebrow">Executive</p>
+                            <h2 class="nx-display">Dashboard</h2>
+                            <p class="nx-text-dim">North Head live view — Target vs Achievement and filled-order seasons.</p>
+                        </div>
+                    </header>
+                    <div class="dashboard-topbar">
+                        <div>
+                            <div class="page-eyebrow">Executive dashboard</div>
+                            <h1>Business performance</h1>
+                        </div>
+                        <div class="topbar-actions">
+                            <button class="btn btn-primary" onclick="openModule('OrderDesk')">Order Desk</button>
+                            <button class="btn btn-secondary" onclick="openNexoraChat()">Ask NEXORA</button>
+                        </div>
+                    </div>
+
+                    <div class="overview-cards" id="dashboard-fake-overview-cards">
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Sales</div>
+                            <div class="overview-card-value">₹ 18.2 L</div>
+                            <div class="overview-card-meta positive">18.6% ↑</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Profit</div>
+                            <div class="overview-card-value">12.5%</div>
+                            <div class="overview-card-meta negative">2.1% ↓</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Collections</div>
+                            <div class="overview-card-value">₹ 3.1 L</div>
+                            <div class="overview-card-meta positive">5.2% ↑</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Cash</div>
+                            <div class="overview-card-value">₹ 9.4 L</div>
+                            <div class="overview-card-meta positive">8.3% ↑</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Outstanding</div>
+                            <div class="overview-card-value">₹ 2.3 L</div>
+                            <div class="overview-card-meta warning">3 bills</div>
+                        </div>
+                    </div>
+                    <div id="dashboard-honest-placeholder" class="card-highlight hidden" style="padding: 2rem; text-align: center;">
+                        <p class="subtitle">Live dashboard summary is not connected to real data yet — this section will show genuine figures once that integration is complete.</p>
+                    </div>
+
+                    <section id="dashboard-widget-dock" class="dashboard-widget-dock hidden" aria-label="Minimized widgets — click a chip to restore"></section>
+
+                    <section id="dashboard-ta-playing-card" class="dashboard-ta-widget-layer hidden" aria-label="Draggable Target vs Achievement widget">
+                        <article id="dashboard-ta-widget" class="ta-playing-card-compact card-highlight ta-draggable-widget">
+                            <button type="button" class="ta-widget-minimize-btn" onclick="minimizeTaWidget()" aria-label="Minimize widget" title="Minimize to dock bar (bottom-right)">─</button>
+                            <button type="button" class="ta-widget-drag-handle" aria-label="Hold and drag to move widget" title="Hold and drag to move">⠿</button>
+                            <div class="ta-playing-card-inner">
+                                <div class="ta-playing-card-corner" aria-hidden="true">
+                                    <span class="ta-playing-card-suit">🎯</span>
+                                    <span class="ta-playing-card-rank">TA</span>
+                                </div>
+                                <div class="ta-playing-card-header ta-widget-drag-surface">
+                                    <h2>Target vs Achievement</h2>
+                                    <p>Values in lakhs</p>
+                                </div>
+                                <div class="ta-playing-card-table-wrap ta-excel-sheet ta-widget-sheet">
+                                    <table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
+                                        <thead>
+                                            <tr>
+                                                <th>FY</th>
+                                                <th>Target</th>
+                                                <th>Achievement</th>
+                                                <th>%</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dashboard-ta-overview-tbody">
+                                            <tr><td colspan="4">Loading…</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="ta-playing-card-footer">
+                                    <button type="button" class="ta-widget-details-btn" onclick="openModule('TargetVsAchievement')">Open details →</button>
+                                </div>
+                            </div>
+                        </article>
+                    </section>
+
+                    <section id="dashboard-fo-widgets-layer" class="dashboard-fo-widget-layer hidden" aria-label="Filled order season widgets"></section>
+
+                    <section class="ai-summary card-highlight" id="dashboard-fake-ai-summary">
+                        <div class="section-title-row">
+                            <h2>AI Greeting</h2>
+                            <p>Premium executive summary for your team.</p>
+                        </div>
+                        <div class="ai-summary-text">
+                            <p>Good morning, Kunwar.</p>
+                            <div class="summary-tags">
+                                <span class="summary-pill success">Sales up</span>
+                                <span class="summary-pill warning">GST due</span>
+                                <span class="summary-pill neutral">Inventory risk</span>
+                            </div>
+                            <ul>
+                                <li>Sales ₹18.2L — 8% higher than yesterday</li>
+                                <li>Collections ₹3.1L, ₹2.1L below weekly goal</li>
+                                <li>GST due in 2 days (₹2.3L)</li>
+                                <li>Punjab sales need attention, ABC Distributor inactive</li>
+                                <li>Cash position remains strong at ₹9.4L</li>
+                            </ul>
+                        </div>
+                        <div class="ai-summary-actions">
+                            <button class="btn btn-primary" onclick="openAnalyticsDashboard()">Prepare Action Plan</button>
+                            <button class="btn btn-secondary" onclick="openAnalyticsDashboard()">Open Ask NEXORA</button>
+                        </div>
+                    </section>
+
+                    <section class="business-health card-highlight" id="dashboard-fake-health">
+                        <div class="section-title-row">
+                            <h2>Business Health</h2>
+                            <p>Key health indicators at a glance.</p>
+                        </div>
+                        <div class="health-score-row">
+                            <div class="health-score"><span>8.4</span><small>/10</small></div>
+                            <div class="health-summary">Overall health is strong with stable cash and inventory.</div>
+                        </div>
+                        <div class="health-bar"><span></span></div>
+                        <div class="health-factors">
+                            <div><strong>9/10</strong><span>Cash Position</span></div>
+                            <div><strong>7/10</strong><span>Collections</span></div>
+                            <div><strong>8/10</strong><span>Inventory</span></div>
+                            <div><strong>8/10</strong><span>Growth</span></div>
+                            <div><strong>6/10</strong><span>Profitability</span></div>
+                        </div>
+                    </section>
+
+                    <section class="recent-activities card-highlight" id="dashboard-fake-activities">
+                        <div class="section-title-row">
+                            <h2>Recent Activities</h2>
+                            <p>Latest execution updates across operations.</p>
+                        </div>
+                        <div class="activity-table">
+                            <div class="activity-row header"><span>Time</span><span>User</span><span>Action</span><span>Reference</span></div>
+                            <div class="activity-row"><span>2 min</span><span>Kunwar</span><span>Created invoice</span><span>INV-001</span></div>
+                            <div class="activity-row"><span>18 min</span><span>Ayush</span><span>Updated customer</span><span>CUST-045</span></div>
+                            <div class="activity-row"><span>43 min</span><span>Shikhar</span><span>Payment received</span><span>PAY-556</span></div>
+                            <div class="activity-row"><span>1 hr</span><span>Sumit</span><span>Added distributor</span><span>DIST-020</span></div>
+                        </div>
+                    </section>
+
+                    <section class="priorities card-highlight" id="dashboard-fake-priorities">
+                        <div class="section-title-row">
+                            <h2>Today's Priorities</h2>
+                            <p>Focus areas for the next shift.</p>
+                        </div>
+                        <ol>
+                            <li><span>Collect outstanding follow-up</span><small>3 customers to contact</small></li>
+                            <li><span>Prepare GST return</span><small>Due in 23 hours</small></li>
+                            <li><span>Review profit drop</span><small>Compare with last week</small></li>
+                            <li><span>Reactivate ABC Distributor</span><small>Inactive for 5 days</small></li>
+                            <li><span>Approve pending invoices</span><small>Total ₹4.2L</small></li>
+                        </ol>
+                    </section>
+                </div>
+                <div id="bd-module-mount" class="bd-module-mount hidden" aria-live="polite"></div>
+            </main>
+            <aside class="right-sidebar hidden" id="dashboard-fake-rightbar" aria-hidden="true">
+                <section class="rightbar-card">
+                    <div class="rightbar-heading">
+                        <span>Cash Position</span>
+                        <span class="status-pill success">Healthy</span>
+                    </div>
+                    <div class="rightbar-body">
+                        <div class="rightbar-row"><span>Available Cash</span><strong>₹ 9.4 L</strong></div>
+                        <div class="rightbar-row"><span>Collections Due</span><strong>₹ 3.1 L</strong></div>
+                        <div class="rightbar-row"><span>Overdues</span><strong>3 bills</strong></div>
+                        <div class="rightbar-row"><span>Net Flow</span><strong>+₹ 1.2 L</strong></div>
+                    </div>
+                </section>
+                <section class="rightbar-card">
+                    <div class="rightbar-heading">
+                        <span>Alerts</span>
+                        <span class="status-pill warning">3</span>
+                    </div>
+                    <ul class="task-list">
+                        <li><span class="checkbox"></span>GST payment due tomorrow</li>
+                        <li><span class="checkbox"></span>ABC Distributor inactive 5 days</li>
+                        <li><span class="checkbox"></span>3 collections overdue</li>
+                    </ul>
+                </section>
+                <section class="rightbar-card">
+                    <div class="rightbar-heading">
+                        <span>Recommendations</span>
+                        <span class="status-pill success">2</span>
+                    </div>
+                    <ul class="approval-list">
+                        <li>Follow up on overdue accounts</li>
+                        <li>Improve profit margin on SKU X</li>
+                        <li>Review cash reserve for payroll</li>
+                    </ul>
+                </section>
+            </aside>
+        </div>
+    </div>
+
+    <section id="sales-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Sales</span></div>
+                <h2>Sales Workspace</h2>
             </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-subnav">
+            <button id="sales-tab-overview" class="workspace-subitem active">Overview</button>
+            <button id="sales-tab-invoices" class="workspace-subitem">Invoices</button>
+            <button id="sales-tab-orders" class="workspace-subitem">Orders</button>
+            <button id="sales-tab-reports" class="workspace-subitem">Reports</button>
+        </div>
+        <div class="workspace-panels" id="sales-fake-metrics">
+            <div class="metric-card"><span>Revenue</span><strong>₹ 18.4L</strong></div>
+            <div class="metric-card"><span>Orders</span><strong>184</strong></div>
+            <div class="metric-card"><span>Collections</span><strong>₹ 6.1L</strong></div>
+            <div class="metric-card"><span>Pending</span><strong>24</strong></div>
+        </div>
+    </section>
 
-            <!-- MAIN NAVIGATION DASHBOARD -->
-            <div class="navigation-dashboard">
-                <div class="module-section">
-                    <h2>📦 Digital Warehouse</h2>
-                    <p class="module-description">Google Drive integration, file management, storage sync</p>
-                    <div class="card-description" id="storage-status">Storage status loading...</div>
-                    <div class="card-description" id="storage-info">Storage details will appear here after login.</div>
-                    <div class="action-cards">
-                        <div class="action-card">
-                            <h3>🔗 Connect Google Drive</h3>
-                            <p>Link your Google Drive account</p>
-                            <button onclick="connectGoogleDrive()" class="btn btn-primary">Connect</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>📤 Upload File</h3>
-                            <p>Upload documents to warehouse</p>
-                            <button onclick="showUploadModal()" class="btn btn-primary">Upload</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>🔄 Sync Drive</h3>
-                            <p>Synchronize with Google Drive</p>
-                            <button onclick="syncGoogleDrive()" class="btn btn-secondary">Sync Now</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>📁 File Library</h3>
-                            <p>View all indexed files</p>
-                            <button onclick="openFileLibrary()" class="btn btn-secondary">Open Library</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="module-section">
-                    <h2>🎯 Target vs Achievement</h2>
-                    <p class="module-description">Manage fiscal years, targets, and sales performance</p>
-                    <div class="module-status">
-                    <div id="target-summary" class="card-description">Loading fiscal year summary...</div>
-                    <div id="years-list" class="list-container"></div>
-                </div>
-                <div class="action-cards">
-                        <div class="action-card">
-                            <h3>📅 Add Financial Year</h3>
-                            <p>Create new fiscal year target</p>
-                            <button onclick="showAddYearModal()" class="btn btn-primary">Add Year</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>✏️ Manual Entry</h3>
-                            <p>Manually add achievement data</p>
-                            <button onclick="showManualEntryModal()" class="btn btn-primary">Enter Data</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>📊 Upload Sales Report</h3>
-                            <p>Import Excel/CSV sales data</p>
-                            <button onclick="showReportUploadModal()" class="btn btn-secondary">Upload</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>📈 View Summary</h3>
-                            <p>See year-wise analysis</p>
-                            <button onclick="openTargetSummary()" class="btn btn-secondary">View</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="module-section">
-                    <h2>👥 Smart Party Matching</h2>
-                    <p class="module-description">Duplicate detection, party consolidation, review queue</p>
-                    <div class="action-cards">
-                        <div class="action-card">
-                            <h3>🔍 Scan Duplicates</h3>
-                            <p>Find duplicate party records</p>
-                            <button onclick="scanDuplicates()" class="btn btn-primary">Scan</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>💭 Review Suggestions</h3>
-                            <p>Review AI matching suggestions</p>
-                            <button onclick="openReviewQueue()" class="btn btn-primary">Review</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>✅ Approve / Reject</h3>
-                            <p>Approve or reject matches</p>
-                            <button onclick="openApprovalQueue()" class="btn btn-secondary">Manage</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>🏷️ Alias Library</h3>
-                            <p>View party names & aliases</p>
-                            <button onclick="openAliasLibrary()" class="btn btn-secondary">View</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>👥 Party Master</h3>
-                            <p>Manage distributors and retailers</p>
-                            <button onclick="openPartyMasterSection()" class="btn btn-primary">Open Party Master</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="module-section">
-                    <h2>📊 Reports & Analytics</h2>
-                    <p class="module-description">Business intelligence and performance metrics</p>
-                    <div class="action-cards">
-                        <div class="action-card">
-                            <h3>📉 View Reports</h3>
-                            <p>Sales, distribution, performance</p>
-                            <button onclick="openReports()" class="btn btn-primary">View</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>📊 View Dashboard</h3>
-                            <p>Real-time analytics dashboard</p>
-                            <button onclick="openAnalyticsDashboard()" class="btn btn-secondary">Open</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="module-section">
-                    <h2>⚙️ Settings & Administration</h2>
-                    <p class="module-description">User profile, workspace, connected services</p>
-                    <div class="action-cards">
-                        <div class="action-card">
-                            <h3>👤 Profile</h3>
-                            <p>View and edit profile</p>
-                            <button onclick="openProfileSettings()" class="btn btn-primary">Edit</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>🏢 Workspace</h3>
-                            <p>Workspace settings and users</p>
-                            <button onclick="openWorkspaceSettings()" class="btn btn-primary">Manage</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>🔗 Connected Services</h3>
-                            <p>Manage API connections</p>
-                            <button onclick="openConnectedServices()" class="btn btn-secondary">View</button>
-                        </div>
-                        <div class="action-card">
-                            <h3>ℹ️ App Info</h3>
-                            <p>NEXORA v1.1 | Build info</p>
-                            <button onclick="showAppInfo()" class="btn btn-secondary">Info</button>
-                        </div>
-                    </div>
-                </div>
+    <section id="executive-home-workspace" class="workspace-shell hidden" hidden>
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Executive</span><span>›</span><span>My Day</span></div>
+                <h2>My Day</h2>
+                <p class="subtitle" id="executive-home-greeting">Your live field summary — parties, targets, orders, and follow-ups.</p>
             </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
 
-            <!-- ROW 6: DISTRIBUTOR DATA -->
-            <div class="module-section">
-                <h2>🏭 Distributor Data</h2>
-                <p class="module-description">Manage distributor profiles, performance, and relationships</p>
-                <div class="action-cards">
-                    <div class="action-card">
-                        <h3>📋 Distributor List</h3>
-                        <p>View all registered distributors</p>
-                        <button onclick="loadDistributors()" class="btn btn-primary">View</button>
+        <div id="executive-home-loading" class="card-highlight executive-home-loading">Loading your day…</div>
+        <div id="executive-home-content" class="hidden">
+            <div class="executive-stats-grid" id="executive-stats-grid"></div>
+
+            <div class="executive-home-panels">
+                <div class="card-highlight executive-panel hidden" aria-hidden="true">
+                    <p class="subtitle">My Day is temporarily hidden.</p>
+                </div>
+
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>Pending Actions</h2>
+                        <p id="executive-pending-count">—</p>
                     </div>
-                    <div class="action-card">
-                        <h3>➕ Add Distributor</h3>
-                        <p>Register new distributor</p>
-                        <button onclick="showAddDistributorModal()" class="btn btn-primary">Add</button>
+                    <div id="executive-pending-list" class="executive-action-list"></div>
+                </div>
+
+                <div class="card-highlight executive-panel executive-panel-wide">
+                    <div class="section-title-row">
+                        <h2>Order Status Board</h2>
+                        <p>From Order Lifecycle tracking (real uploads)</p>
                     </div>
-                    <div class="action-card">
-                        <h3>📊 Distributor Performance</h3>
-                        <p>Sales and achievement metrics</p>
-                        <button onclick="showDistributorAnalytics()" class="btn btn-secondary">View</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>📞 Contact Details</h3>
-                        <p>Update contact information</p>
-                        <button onclick="showDistributorContacts()" class="btn btn-secondary">Manage</button>
+                    <div class="executive-table-wrap">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Distributor</th>
+                                    <th>Order Ref</th>
+                                    <th>SO</th>
+                                    <th>CI</th>
+                                    <th>Payment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="executive-order-status-tbody"></tbody>
+                        </table>
                     </div>
                 </div>
-            </div>
 
-            <!-- ROW 7: RETAILER DATA -->
-            <div class="module-section">
-                <h2>🛒 Retailer Data</h2>
-                <p class="module-description">Retail network management and point-of-sale tracking</p>
-                <div class="action-cards">
-                    <div class="action-card">
-                        <h3>📋 Retailer List</h3>
-                        <p>View all registered retailers</p>
-                        <button onclick="loadRetailers()" class="btn btn-primary">View</button>
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>Visit Log</h2>
+                        <p>Your field visits (saved to workspace)</p>
                     </div>
-                    <div class="action-card">
-                        <h3>➕ Add Retailer</h3>
-                        <p>Register new retail outlet</p>
-                        <button onclick="showAddRetailerModal()" class="btn btn-primary">Add</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>📊 Retailer Sales</h3>
-                        <p>Point-of-sale data and trends</p>
-                        <button onclick="showRetailerSales()" class="btn btn-secondary">View</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>🎯 Territory Assignment</h3>
-                        <p>Manage retail territories</p>
-                        <button onclick="showTerritoryMgmt()" class="btn btn-secondary">Manage</button>
-                    </div>
+                    <div id="executive-visits-list" class="executive-action-list"></div>
+                    <button class="btn btn-primary" style="margin-top: 10px;" onclick="openExecutiveVisitModal()">Log visit</button>
                 </div>
-            </div>
 
-            <!-- ROW 8: ORDER MANAGEMENT -->
-            <div class="module-section">
-                <h2>📦 Order Management</h2>
-                <p class="module-description">Order sheets, order placement, and fulfillment tracking</p>
-                <div class="action-cards">
-                    <div class="action-card">
-                        <h3>📄 Order Sheets</h3>
-                        <p>Create and manage order sheets</p>
-                        <button onclick="loadOrderSheets()" class="btn btn-primary">View</button>
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>Quick links</h2>
+                        <p>Jump to working modules</p>
                     </div>
-                    <div class="action-card">
-                        <h3>✏️ Create Order</h3>
-                        <p>Place new order</p>
-                        <button onclick="showCreateOrderModal()" class="btn btn-primary">Create</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>📨 Orders Placed</h3>
-                        <p>Track placed and pending orders</p>
-                        <button onclick="loadOrdersPlaced()" class="btn btn-secondary">View</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>🚚 Order Fulfillment</h3>
-                        <p>Monitor delivery and fulfillment</p>
-                        <button onclick="showOrderFulfillment()" class="btn btn-secondary">Track</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ROW 9: SALES ORDERS (SO) -->
-            <div class="module-section">
-                <h2>📝 Sales Orders (SO)</h2>
-                <p class="module-description">Generate, track, and manage sales orders</p>
-                <div class="action-cards">
-                    <div class="action-card">
-                        <h3>📋 SO List</h3>
-                        <p>View all sales orders</p>
-                        <button onclick="loadSalesOrders()" class="btn btn-primary">View</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>➕ Generate SO</h3>
-                        <p>Create new sales order</p>
-                        <button onclick="showGenerateSOModal()" class="btn btn-primary">Generate</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>✅ Approve SO</h3>
-                        <p>Approve pending sales orders</p>
-                        <button onclick="loadPendingSO()" class="btn btn-secondary">Approve</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>📊 SO Analytics</h3>
-                        <p>Sales order trends and metrics</p>
-                        <button onclick="showSOAnalytics()" class="btn btn-secondary">View</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ROW 10: COMMERCIAL INVOICES (CI) -->
-            <div class="module-section">
-                <h2>💳 Commercial Invoices (CI)</h2>
-                <p class="module-description">Invoice generation, tracking, and payment management</p>
-                <div class="action-cards">
-                    <div class="action-card">
-                        <h3>📋 Invoice List</h3>
-                        <p>View all invoices</p>
-                        <button onclick="loadInvoices()" class="btn btn-primary">View</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>📄 Generate Invoice</h3>
-                        <p>Create new commercial invoice</p>
-                        <button onclick="showGenerateInvoiceModal()" class="btn btn-primary">Generate</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>💰 Payment Status</h3>
-                        <p>Track payments and outstanding</p>
-                        <button onclick="loadPaymentStatus()" class="btn btn-secondary">View</button>
-                    </div>
-                    <div class="action-card">
-                        <h3>📧 Send Invoice</h3>
-                        <p>Email invoices to customers</p>
-                        <button onclick="showSendInvoiceModal()" class="btn btn-secondary">Send</button>
+                    <div class="executive-quick-links">
+                        <button class="btn btn-secondary" onclick="openModule('Customers')">Customers / Party 360</button>
+                        <button class="btn btn-secondary" onclick="openModule('OrderDesk')">Order Desk</button>
+                        <button class="btn btn-secondary" onclick="openModule('OrderFulfillment')">Order Fulfillment</button>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <section id="party-master-section" class="card-highlight hidden">
+    <!-- House of Prizm — isolated product shell (hop_admin only). Does not replace NEXORA executive My Day. -->
+    <section id="hop-executive-workspace" class="workspace-shell hidden">
+        <div class="nx-theme hop-shell">
+            <aside class="hop-nav" aria-label="House of Prizm navigation">
+                <div class="hop-nav-brand">
+                    <div class="nx-core" aria-hidden="true"></div>
+                    <div>
+                        <div class="nx-brand-word">PRIZM</div>
+                        <div class="nx-brand-sub">HOUSE OF PRIZM</div>
+                    </div>
+                </div>
+                <nav class="hop-nav-list">
+                    <button type="button" class="nx-nav-item hop-nav-btn active" data-hop-view="dashboard" onclick="openHopView('dashboard')">Dashboard</button>
+                    <div class="hop-nav-group">CRM</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="customers" onclick="openHopView('customers')">Customers</button>
+                    <div class="hop-nav-group">Sales</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="leads" onclick="openHopView('leads')">Leads</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="pipeline" onclick="openHopView('pipeline')">Lead Pipeline</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="meetings" onclick="openHopView('meetings')">Meetings</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="projects" onclick="openHopView('projects')">Projects</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="quotations" onclick="openHopView('quotations')">Quotations</button>
+                    <div class="hop-nav-group">Products</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="products" onclick="openHopView('products')">Catalogue</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="samples" onclick="openHopView('samples')">Samples</button>
+                    <div class="hop-nav-group">Procurement</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="vendors" onclick="openHopView('vendors')">Vendors</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="vendor_cmp" onclick="openHopView('vendor_cmp')">Vendor Compare</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="orders" onclick="openHopView('orders')">Orders / PO</button>
+                    <div class="hop-nav-group">Ops</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="dispatches" onclick="openHopView('dispatches')">Dispatch</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="invoices" onclick="openHopView('invoices')">Invoices</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="payments" onclick="openHopView('payments')">Payments</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="complaints" onclick="openHopView('complaints')">Complaints</button>
+                    <div class="hop-nav-group">Reports</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="funnel" onclick="openHopView('funnel')">Sales Funnel</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="receivables" onclick="openHopView('receivables')">Receivables</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="customer_dash" onclick="openHopView('customer_dash')">Customer Dash</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="daily" onclick="openHopView('daily')">Daily Activity</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="profit" onclick="openHopView('profit')">Profitability</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="targets" onclick="openHopView('targets')">Monthly Target</button>
+                </nav>
+                <button type="button" class="nx-btn hop-nav-logout" onclick="logout()">Logout</button>
+            </aside>
+
+            <main class="hop-main">
+                <div id="hop-view-dashboard" class="hop-view">
+                    <header class="hop-view-header">
+                        <div>
+                            <p class="nx-text-faint hop-eyebrow">Executive</p>
+                            <h2 class="nx-display">Dashboard</h2>
+                            <p class="nx-text-dim">Business health in 30 seconds — click any card to drill in. Live data only.</p>
+                        </div>
+                    </header>
+                    <div id="hop-exec-loading" class="nx-text-dim">Loading snapshot…</div>
+                    <div id="hop-exec-error" class="nx-oc-error hidden"></div>
+                    <div id="hop-exec-content" class="hidden">
+                        <div class="hop-kpi-grid" id="hop-kpi-grid"></div>
+                        <div class="hop-exec-meta nx-text-faint" id="hop-exec-meta"></div>
+                        <div class="hop-exec-notes nx-text-dim" id="hop-exec-notes"></div>
+                    </div>
+                </div>
+
+                <div id="hop-view-project-hub" class="hop-view hidden">
+                    <header class="hop-view-header hop-view-header-row">
+                        <div>
+                            <button type="button" class="nx-btn hop-back-btn" onclick="openHopView('projects')">← Projects</button>
+                            <p class="nx-text-faint hop-eyebrow">Project Hub</p>
+                            <h2 class="nx-display" id="hop-hub-title">Project</h2>
+                            <p class="nx-text-dim" id="hop-hub-sub"></p>
+                        </div>
+                        <div class="hop-hub-stage-wrap">
+                            <label>Funnel stage
+                                <select id="hop-hub-stage" onchange="hopChangeProjectStage()"></select>
+                            </label>
+                        </div>
+                    </header>
+                    <div class="hop-tabs" id="hop-hub-tabs"></div>
+                    <div id="hop-hub-body" class="hop-hub-body"></div>
+                </div>
+
+                <div id="hop-module-mount"></div>
+            </main>
+        </div>
+    </section>
+
+    <section id="target-vs-achievement-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Target vs Achievement</span></div>
+                <h2>Target vs Achievement</h2>
+                <p class="subtitle">Fiscal year targets and achievement at a glance (lakhs).</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="card-highlight ta-fy-overview-panel" style="margin-top: 12px;">
+            <div class="section-title-row">
+                <h2>FY overview</h2>
+                <p>Target · Achievement · Achievement % (lakhs)</p>
+            </div>
+            <div class="ta-fy-overview-full-wrap ta-excel-sheet">
+                <table class="ta-fy-overview-table ta-excel-table ta-excel-table-full data-table">
+                    <thead>
+                        <tr>
+                            <th>FY</th>
+                            <th>Target</th>
+                            <th>Achievement</th>
+                            <th>Achievement %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ta-ws-overview-tbody">
+                        <tr><td colspan="4">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-highlight ta-ws-fy-toolbar" style="margin-top: 12px;">
+            <div class="ta-ws-fy-toolbar-inner">
+                <span class="executive-ta-fy-label">Fiscal year</span>
+                <select id="ta-ws-year-select" class="executive-year-select" onchange="loadTaTargetWorkspace()"></select>
+                <span id="ta-ws-fy-label" class="subtitle"></span>
+            </div>
+        </div>
+
+        <div class="card-highlight executive-panel ta-achievement-panel" style="margin-top: 12px;">
+            <div class="section-title-row">
+                <h2>Achievement from Excel</h2>
+                <p id="ta-ws-ach-summary">Upload your Primary / pivot sales file — category-wise (Bed Sheet, Towels, etc.)</p>
+            </div>
+            <div class="workspace-actions" style="margin-top: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="openSalesExcelUploadModal()">Upload sales Excel</button>
+                <button type="button" id="ta-ws-category-btn" class="btn btn-secondary hidden" onclick="openTaCategoryDetailModal()">Category detail</button>
+                <button type="button" class="btn btn-danger" onclick="deleteTaFyAchievement()">Delete FY achievement</button>
+            </div>
+            <p class="ta-entry-hint">Same format as your <strong>Primary 2025-26</strong> file: NICK, CUSTOMER NAME, CATEGORY, month columns, Grand Total — values in <strong>lakhs</strong>.</p>
+            <div id="ta-ws-category-totals" class="ta-ws-category-totals hidden"></div>
+            <div class="executive-table-wrap" style="margin-top: 12px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Distributor</th>
+                            <th>Target (L)</th>
+                            <th>Excel (L)</th>
+                            <th>CI (L)</th>
+                            <th>Manual (L)</th>
+                            <th>Total (L)</th>
+                            <th>%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ta-ws-ach-tbody">
+                        <tr><td colspan="7">Upload sales Excel to import achievement.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-highlight executive-panel" style="margin-top: 12px;">
+            <div class="section-title-row">
+                <h2>Targets</h2>
+                <p class="subtitle">Distributor-wise FY targets (lakhs)</p>
+            </div>
+            <div class="executive-ta-fy-header">
+                <div class="executive-ta-fy-target">
+                    <span class="executive-ta-fy-label">FY target</span>
+                    <strong id="ta-ws-fy-target">—</strong>
+                </div>
+            </div>
+            <div class="workspace-actions" style="margin-top: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="openFyManualTargetModal()">FY target</button>
+                <button type="button" class="btn btn-secondary" onclick="openDistributorTargetModal()">Distributor target</button>
+                <button type="button" class="btn btn-danger" onclick="deleteTaFyTargets()">Delete FY targets</button>
+            </div>
+            <p class="ta-entry-hint">Manual entry: click <strong>FY target</strong> for the overall year target (lakhs), or <strong>Distributor target</strong> for each distributor name + target.</p>
+            <div class="executive-table-wrap" style="margin-top: 12px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Distributor</th>
+                            <th>Target (L)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ta-ws-target-tbody">
+                        <tr><td colspan="2">Select a fiscal year or add targets.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="cloud-hub-workspace" class="workspace-shell cloud-hub-shell hidden">
+        <div class="workspace-header cloud-hub-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Cloud Hub</span></div>
+                <h2>Cloud Hub</h2>
+                <p class="subtitle">Browse and open your Google Drive files from NEXORA.</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="cloud-hub-layout">
+            <aside class="cloud-hub-side">
+                <div class="cloud-hub-drive-card">
+                    <div class="cloud-hub-drive-brand">
+                        <span class="cloud-hub-drive-icon" aria-hidden="true">☁</span>
+                        <div>
+                            <h3>Google Drive</h3>
+                            <p id="cloud-hub-status" class="cloud-hub-status">Checking connection…</p>
+                        </div>
+                    </div>
+                    <div class="cloud-hub-meter" aria-hidden="true">
+                        <div class="cloud-hub-meter-fill" id="cloud-hub-meter-fill"></div>
+                    </div>
+                    <p id="cloud-hub-info" class="cloud-hub-info">Loading storage details…</p>
+                    <div class="cloud-hub-actions">
+                        <button type="button" class="btn btn-primary" id="cloud-hub-connect-btn" onclick="connectGoogleDrive()">Connect Google Drive</button>
+                        <button type="button" class="btn btn-secondary" id="cloud-hub-sync-btn" onclick="syncGoogleDrive()" disabled>Sync files</button>
+                        <button type="button" class="btn btn-secondary" id="cloud-hub-disconnect-btn" onclick="disconnectGoogleDrive()" disabled>Disconnect</button>
+                        <button type="button" class="btn btn-secondary" onclick="loadCloudHubWorkspace()">Refresh</button>
+                    </div>
+                    <p class="cloud-hub-hint">Click any file to open it in Google Drive.</p>
+                </div>
+            </aside>
+
+            <div class="cloud-hub-main">
+                <div class="cloud-hub-toolbar">
+                    <div>
+                        <h3>Your files</h3>
+                        <p id="cloud-hub-file-count">Indexed from connected Drive</p>
+                    </div>
+                    <label class="cloud-hub-search">
+                        <span class="sr-only">Search files</span>
+                        <input type="search" id="cloud-hub-search-input" placeholder="Search files…" oninput="filterCloudHubFiles()" autocomplete="off">
+                    </label>
+                </div>
+                <div class="cloud-hub-files-wrap">
+                    <table class="cloud-hub-files-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cloud-hub-files-tbody">
+                            <tr class="cloud-hub-empty-row"><td colspan="4">Connect Google Drive to see files.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="order-desk-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Order Desk</span></div>
+                <h2>Order Desk</h2>
+                <p class="subtitle">Central place for Order Fulfillment and Order Cycle workflows.</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="workspace-panels" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+            <div class="card-highlight">
+                <div class="section-title-row">
+                    <h2>Order Fulfillment</h2>
+                    <p>Article Master → Filled Order → SO → CI pipeline</p>
+                </div>
+                <p class="subtitle">Use this for upload, linking, and tracking of order documents.</p>
+                <div class="workspace-actions" style="margin-top: 12px;">
+                    <button class="btn btn-primary" onclick="openModule('OrderFulfillment')">Open Order Fulfillment</button>
+                </div>
+            </div>
+            <div class="card-highlight">
+                <div class="section-title-row">
+                    <h2>Order Cycle</h2>
+                    <p>Year → Distributor → Filled Order / SO / CI hierarchy view</p>
+                </div>
+                <p class="subtitle">Use this for cycle-wise tracking and lifecycle drill-downs.</p>
+                <div class="workspace-actions" style="margin-top: 12px;">
+                    <button class="btn btn-primary" onclick="openModule('OrderCycle')">Open Order Cycle</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="order-fulfillment-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Order Fulfillment</span></div>
+                <h2>Order Fulfillment</h2>
+                <p class="subtitle">Article Master → Filled Order → Sales Order (SO) → Commercial Invoice (CI)</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <section class="card-highlight" style="padding: 1rem; margin-bottom: 1rem;">
+            <div class="section-title-row">
+                <h2>Company Profile</h2>
+                <p>Your own company's name and GST number — used to tell YOUR GST apart from the buyer's when reading Sales Order/Invoice PDFs.</p>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: end;">
+                <div class="form-group">
+                    <label>Company Name</label>
+                    <input type="text" id="of-company-name" placeholder="e.g. The Bombay Dyeing & Manufacturing Co. Ltd." />
+                </div>
+                <div class="form-group">
+                    <label>GST Number</label>
+                    <input type="text" id="of-company-gst" placeholder="e.g. 27AAACT2328K1ZB" />
+                </div>
+                <div>
+                    <button class="btn btn-primary" onclick="saveCompanyProfileV2()">Save</button>
+                </div>
+            </div>
+            <div id="of-company-profile-result" class="upload-result"></div>
+        </section>
+
+        <div class="of-upload-grid">
+
+            <div class="card-highlight" style="padding: 1rem;">
+                <h3>1. Article Master</h3>
+                <p class="subtitle">Product + price catalog (booking form upload). Replaces the old Order Sheet.</p>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: end;">
+                    <div class="form-group" style="margin: 0;">
+                        <input type="file" id="of-am-upload-file" accept=".xlsx,.xls" />
+                    </div>
+                    <button class="btn btn-primary" onclick="uploadArticleMasterSheet(null, null, 'of-am')">Upload Excel</button>
+                    <button class="btn btn-secondary" onclick="openModule('ArticleMaster')">Open full view</button>
+                </div>
+                <div id="of-am-upload-result" class="upload-result" style="margin-top: 8px;"></div>
+                <p id="of-am-summary" class="subtitle" style="margin-top: 8px;">—</p>
+            </div>
+
+            <div class="card-highlight" style="padding: 1rem;">
+                <h3>2. Filled Order (Distributor)</h3>
+                <p class="subtitle">Distributor's placed order — matched to Article Master. Replaces the old raw Filled Order upload.</p>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: end;">
+                    <div class="form-group" style="margin: 0;">
+                        <input type="file" id="of-fo-upload-file" accept=".xlsx,.xls" onchange="onFilledOrderFileSelected('of-fo')" />
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label>Category</label>
+                        <select id="of-fo-category-select" disabled>
+                            <option value="">— Choose file first —</option>
+                            <option value="Bed">Bed</option>
+                            <option value="Bath">Bath</option>
+                            <option value="TOB">TOB</option>
+                            <option value="TOB Pillow">TOB Pillow</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0; min-width: 200px;">
+                        <label>Distributor</label>
+                        <select id="of-fo-distributor-select" disabled><option value="">— Choose file first —</option></select>
+                    </div>
+                    <button class="btn btn-primary" onclick="uploadFilledOrder({}, 'of-fo')">Upload</button>
+                    <button class="btn btn-secondary" onclick="openModule('FilledOrders')">Open full view</button>
+                </div>
+                <div id="of-fo-upload-result" class="upload-result" style="margin-top: 8px;"></div>
+                <p id="of-fo-summary" class="subtitle" style="margin-top: 8px;">—</p>
+            </div>
+
+            <div class="card-highlight" style="padding: 1rem;">
+                <h3>3. Sales Order (SO)</h3>
+                <p class="subtitle">PDF generated after the order is confirmed.</p>
+                <div class="form-group">
+                    <input type="file" id="of-sales-order-file" accept=".pdf" />
+                </div>
+                <button class="btn btn-primary" onclick="uploadSalesOrderV2()">Upload Sales Order</button>
+                <div id="of-sales-order-result" class="upload-result"></div>
+            </div>
+
+            <div class="card-highlight" style="padding: 1rem;">
+                <h3>4. Commercial Invoice (CI)</h3>
+                <p class="subtitle">PDF generated after dispatch/billing.</p>
+                <div class="form-group">
+                    <input type="file" id="of-invoice-file" accept=".pdf" />
+                </div>
+                <button class="btn btn-primary" onclick="uploadInvoiceV2()">Upload Commercial Invoice</button>
+                <div id="of-invoice-result" class="upload-result"></div>
+            </div>
+
+        </div>
+
+        <section class="card-highlight" style="margin-top: 1.5rem;">
+            <div class="section-title-row">
+                <h2>Sales Orders &amp; Commercial Invoices</h2>
+                <p>Track uploaded SO and CI documents.</p>
+            </div>
+            <button class="btn btn-secondary" onclick="loadOrderFulfillmentUploads()" style="margin-bottom: 0.75rem;">Refresh</button>
+
+            <div class="of-tracking-wrap">
+                <table class="data-table" id="of-tracking-table">
+                    <thead><tr><th>Order Ref No</th><th>Distributor</th><th>SO Uploaded</th><th>CI Uploaded</th><th>Payment Status</th><th>Transit Status</th><th>Actions</th></tr></thead>
+                    <tbody id="of-tracking-tbody"><tr><td colspan="6">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </section>
+
+    <section id="order-cycle-workspace" class="workspace-shell hidden">
+        <div class="nx-theme nx-oc-screen">
+            <div class="workspace-header nx-oc-header">
+                <div>
+                    <div class="workspace-breadcrumb nx-text-faint"><span>Dashboard</span><span>›</span><span>Order Cycle</span></div>
+                    <h2 class="nx-display">Order Cycle</h2>
+                    <p class="nx-text-dim nx-oc-subtitle">Financial Year → Distributor → Order Sheet → Filled Order / SO / CI</p>
+                </div>
+                <button class="back-btn" onclick="goBack()">← Back</button>
+            </div>
+
+            <div id="oc-accordion" class="nx-oc-accordion" aria-label="Order Cycle hierarchy"></div>
+            <div id="oc-empty-state" class="nx-text-dim nx-oc-empty hidden">No Order Cycle data yet — upload a Sales Order or Commercial Invoice from the Order Fulfillment page to get started.</div>
+        </div>
+    </section>
+
+    <section id="purchase-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Purchase</span></div>
+                <h2>Purchase Workspace</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-subnav">
+            <button class="workspace-subitem active">Overview</button>
+            <button class="workspace-subitem">Suppliers</button>
+            <button class="workspace-subitem">POs</button>
+            <button class="workspace-subitem">Receipts</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="metric-card"><span>Open PO</span><strong>42</strong></div>
+            <div class="metric-card"><span>Pending GRN</span><strong>6</strong></div>
+            <div class="metric-card"><span>Supplier Credit</span><strong>₹ 2.8L</strong></div>
+        </div>
+    </section>
+
+    <section id="article-master-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Article Master</span></div>
+                <h2>Article Master</h2>
+                <p class="subtitle">Apna product + price catalog — Excel se load, edit, export. Har login ka alag master.</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="workspace-panels" id="am-stats-row">
+            <div class="metric-card"><span>Total Articles</span><strong id="am-stat-total">0</strong></div>
+            <div class="metric-card"><span>Bed</span><strong id="am-stat-bed">0</strong></div>
+            <div class="metric-card"><span>Bath</span><strong id="am-stat-bath">0</strong></div>
+            <div class="metric-card"><span>TOB</span><strong id="am-stat-tob">0</strong></div>
+            <div class="metric-card"><span>TOB Pillow</span><strong id="am-stat-pillow">0</strong></div>
+        </div>
+
+        <div class="card-highlight" style="padding: 1rem; margin: 1rem 0;">
+            <div class="section-title-row">
+                <h3>Upload Booking Form</h3>
+                <p>Mixed sheets are OK — each row saves under its own category. AUTO is recommended in the prompt; or force Bed/Bath/TOB.</p>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: end;">
+                <div class="form-group" style="margin: 0;">
+                    <input type="file" id="am-upload-file" accept=".xlsx,.xls" />
+                </div>
+                <button class="btn btn-primary" onclick="uploadArticleMasterSheet()">Upload Excel</button>
+                <button class="btn btn-secondary" onclick="loadArticleMasterList()">Refresh List</button>
+                <button class="btn btn-secondary" onclick="downloadArticleMasterExcel()">Download Excel</button>
+                <button class="btn btn-secondary" onclick="scanArticleMasterDuplicates()">Merge Duplicates</button>
+                <button class="btn btn-danger" onclick="deleteAllArticleMaster()" title="Delete filtered category or all">Delete All</button>
+            </div>
+            <div id="am-upload-result" class="upload-result" style="margin-top: 8px;"></div>
+        </div>
+
+        <div class="card-highlight" style="padding: 1rem;">
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px;">
+                <div class="form-group" style="margin: 0;">
+                    <label>Category</label>
+                    <select id="am-category-filter" onchange="renderArticleMasterTable()">
+                        <option value="All">All</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Search</label>
+                    <input type="text" id="am-search-filter" placeholder="Brand, size, item key..." oninput="renderArticleMasterTable()" />
+                </div>
+                <span id="am-list-count" class="subtitle" style="margin-left: auto;">0 articles</span>
+            </div>
+            <div style="overflow-x: auto; overflow-y: auto; max-height: 55vh; border: 1px solid #333;">
+                <table class="data-table" style="width: max-content; min-width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Brand</th>
+                            <th>Size</th>
+                            <th>Product</th>
+                            <th>MRP</th>
+                            <th>PTR</th>
+                            <th>Ex-Mill</th>
+                            <th>Bale Pack</th>
+                            <th>Item Key</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="am-articles-tbody">
+                        <tr><td colspan="10">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="filled-orders-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Filled Orders</span></div>
+                <h2>Distributor Filled Orders</h2>
+                <p class="subtitle">Upload the distributor's filled booking form — matches Article Master, normalizes qty (bales/pieces), and flags non-clean bale multiples.</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="card-highlight" style="padding: 1rem; margin: 1rem 0;">
+            <div class="section-title-row">
+                <h3>Upload Filled Order</h3>
+                <p>Upload an Excel file — distributor is auto-suggested from the filename, then confirm Yes/No. Additional prompts appear if quantity column or season needs confirmation.</p>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: end;">
+                <div class="form-group" style="margin: 0;">
+                    <input type="file" id="fo-upload-file" accept=".xlsx,.xls" onchange="onFilledOrderFileSelected()" />
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Category</label>
+                    <select id="fo-category-select" disabled>
+                        <option value="">— Choose a file first —</option>
+                        <option value="Bed">Bed</option>
+                        <option value="Bath">Bath</option>
+                        <option value="TOB">TOB</option>
+                        <option value="TOB Pillow">TOB Pillow</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="uploadFilledOrder()">Upload</button>
+                <button class="btn btn-secondary" onclick="loadFilledOrdersList()">Refresh List</button>
+                <div class="form-group" style="margin: 0; min-width: 220px;">
+                    <label>Distributor</label>
+                    <select id="fo-distributor-select" disabled><option value="">— Choose a file first —</option></select>
+                </div>
+            </div>
+            <div id="fo-upload-result" class="upload-result" style="margin-top: 8px;"></div>
+        </div>
+
+        <div class="card-highlight" style="padding: 1rem;">
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Saved Filled Orders</h3>
+                <span id="fo-list-count" class="subtitle" style="margin-left: auto;">0 orders</span>
+            </div>
+            <div style="overflow-x: auto; overflow-y: auto; max-height: 55vh; border: 1px solid #333;">
+                <table class="data-table" style="width: max-content; min-width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Distributor</th>
+                            <th>Category</th>
+                            <th>Season</th>
+                            <th>Qty Column</th>
+                            <th>Unit</th>
+                            <th>Lines</th>
+                            <th>Bales</th>
+                            <th>Total Pcs</th>
+                            <th>Ex-Mill Value</th>
+                            <th>Matched</th>
+                            <th>Unmatched</th>
+                            <th>Flagged 🚩</th>
+                            <th>Uploaded</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fo-orders-tbody">
+                        <tr><td colspan="14">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="inventory-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Inventory</span></div>
+                <h2>Inventory Workspace</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-subnav">
+            <button class="workspace-subitem active">Overview</button>
+            <button class="workspace-subitem">Stock</button>
+            <button class="workspace-subitem">Movements</button>
+            <button class="workspace-subitem">Alerts</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="metric-card"><span>Available Units</span><strong>12.4K</strong></div>
+            <div class="metric-card"><span>Low Stock</span><strong>18 SKUs</strong></div>
+            <div class="metric-card"><span>Warehouse</span><strong>3</strong></div>
+        </div>
+    </section>
+
+    <section id="finance-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Finance</span></div>
+                <h2>Finance Workspace</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="metric-card"><span>Accounts</span><strong id="finance-accounts-count">0</strong></div>
+            <div class="metric-card"><span>GST Due</span><strong id="finance-gst-due">₹ 0.00</strong></div>
+            <div class="metric-card"><span>VAT Due</span><strong id="finance-vat-due">₹ 0.00</strong></div>
+        </div>
+        <div class="workspace-subnav">
+            <button class="workspace-subitem active" onclick="openFinanceWorkspace()">Overview</button>
+            <button class="workspace-subitem" onclick="openAccountModal()">Accounts</button>
+            <button class="workspace-subitem" onclick="openGSTModal()">GST</button>
+            <button class="workspace-subitem" onclick="openVATModal()">VAT</button>
+        </div>
+        <div class="workspace-panels" style="grid-template-columns:1fr 1fr; margin-top: 16px;">
+            <div class="card-highlight">
+                <h3>Accounts</h3>
+                <button class="btn btn-primary" onclick="openAccountModal()">+ Add Account</button>
+                <ul id="finance-accounts-list" class="approval-list" style="margin-top: 12px;"></ul>
+            </div>
+            <div class="card-highlight">
+                <h3>GST Returns</h3>
+                <button class="btn btn-secondary" onclick="openGSTModal()">+ Add GST Return</button>
+                <ul id="finance-gst-list" class="approval-list" style="margin-top: 12px;"></ul>
+            </div>
+        </div>
+        <div class="workspace-panels" style="grid-template-columns:1fr 1fr; margin-top: 16px;">
+            <div class="card-highlight">
+                <h3>VAT Returns</h3>
+                <button class="btn btn-secondary" onclick="openVATModal()">+ Add VAT Return</button>
+                <ul id="finance-vat-list" class="approval-list" style="margin-top: 12px;"></ul>
+            </div>
+        </div>
+    </section>
+
+    <section id="orders-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Orders</span></div>
+                <h2>Orders</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-actions" style="margin-bottom: 16px;">
+            <button class="btn btn-primary" onclick="openNewOrderModal()">+ New Order</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="card-highlight">
+                <h3>Orders</h3>
+                <div id="orders-list">Loading order list...</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="approvals-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Approvals</span></div>
+                <h2>Approvals</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="card-highlight">
+                <h3>Pending approvals</h3>
+                <div id="approvals-list">Loading approvals...</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="banking-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Banking</span></div>
+                <h2>Banking</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-actions" style="margin-bottom: 16px;">
+            <button class="btn btn-primary" onclick="openAccountModal()">+ Add Bank Account</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="card-highlight">
+                <h3>Bank accounts</h3>
+                <div id="bank-accounts-list">Loading bank accounts...</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="party-master-section" class="customers-workspace hidden">
         <div class="container">
             <div class="party-master-header">
                 <div>
-                    <p class="eyebrow">Party Master</p>
-                    <h2>Distributors & Retailers</h2>
-                    <p class="subtitle">Create, edit and manage distributors and retailers directly from the dashboard.</p>
+                    <p class="eyebrow">Customers</p>
+                    <h2>Distributors &amp; Retailers</h2>
                 </div>
                 <div class="party-master-actions">
                     <button onclick="openDistributorForm()" class="btn btn-primary">+ Add Distributor</button>
                     <button onclick="openRetailerForm()" class="btn btn-secondary">+ Add Retailer</button>
-                    <button onclick="closePartyMasterSection()" class="btn btn-secondary">Close</button>
+                    <button onclick="openMastersBulkModal()" class="btn btn-secondary">Bulk Import / Export (Master Data)</button>
+                    <button onclick="closePartyMasterSection()" class="btn btn-secondary">← Back</button>
                 </div>
             </div>
             <div class="party-master-tabs">
@@ -360,47 +1290,249 @@
                 <button id="retailer-tab-button" class="tab-button" onclick="openPartyMasterTab('retailer')">Retailers</button>
             </div>
             <div id="distributor-panel" class="tab-panel">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Name</th>
-                            <th>GST Number</th>
-                            <th>Territory</th>
-                            <th>City</th>
-                            <th>Phone</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="distributor-tbody"></tbody>
-                </table>
+                <div class="party-master-scroll-wrapper">
+                    <table class="data-table party-master-table">
+                        <thead id="distributor-thead"></thead>
+                        <tbody id="distributor-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="distributor-pagination"></div>
             </div>
             <div id="retailer-panel" class="tab-panel hidden">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Name</th>
-                            <th>Distributor</th>
-                            <th>GST Number</th>
-                            <th>Territory</th>
-                            <th>Phone</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="retailer-tbody"></tbody>
-                </table>
+                <div class="form-group" style="max-width: 320px;">
+                    <label>Filter by Distributor</label>
+                    <select id="retailer-distributor-filter" onchange="filterRetailersByDistributor()">
+                        <option value="">-- All Distributors --</option>
+                    </select>
+                </div>
+                <div class="party-master-scroll-wrapper">
+                    <table class="data-table party-master-table">
+                        <thead id="retailer-thead"></thead>
+                        <tbody id="retailer-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="retailer-pagination"></div>
             </div>
         </div>
     </section>
 
+    <div id="masters-bulk-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h2>Bulk Import / Export — Master Data</h2>
+                <button onclick="closeModal('masters-bulk-modal')" class="btn btn-secondary">Close</button>
+            </div>
+            <p class="subtitle">
+                This works with the fuller "Master Distributors / Retailers" dataset
+                (the one powering Analytics and Order Fulfillment matching) — a
+                separate, richer dataset from the simple list above.
+            </p>
+            <div class="party-master-tabs">
+                <button id="masters-bulk-dist-tab" class="tab-button active" onclick="openMastersBulkTab('distributors')">Distributors</button>
+                <button id="masters-bulk-retail-tab" class="tab-button" onclick="openMastersBulkTab('retailers')">Retailers</button>
+            </div>
+
+            <div id="masters-bulk-distributors-panel" class="tab-panel">
+                <h3>Upload</h3>
+                <div class="form-group">
+                    <input type="file" id="masters-dist-upload-file" accept=".xlsx,.xls,.csv" />
+                    <button onclick="bulkUploadMasters('distributors')" class="btn btn-primary">Upload Distributors</button>
+                </div>
+                <div id="masters-dist-upload-result" class="upload-result"></div>
+
+                <h3>Download</h3>
+                <div class="form-group">
+                    <label>Format</label>
+                    <select id="masters-dist-export-format">
+                        <option value="xlsx">Excel (.xlsx)</option>
+                        <option value="csv">CSV (.csv)</option>
+                    </select>
+                </div>
+                <button onclick="downloadMastersDistributors()" class="btn btn-secondary">Download Distributors</button>
+
+                <h3>View Data</h3>
+                <button onclick="openMastersGrid('distributors')" class="btn btn-secondary">View All Distributors</button>
+                <button onclick="openMasterDistributorForm()" class="btn btn-primary">+ Add New Distributor</button>
+            </div>
+
+            <div id="masters-bulk-retailers-panel" class="tab-panel hidden">
+                <h3>Upload</h3>
+                <div class="form-group">
+                    <input type="file" id="masters-retail-upload-file" accept=".xlsx,.xls,.csv" />
+                    <button onclick="bulkUploadMasters('retailers')" class="btn btn-primary">Upload Retailers</button>
+                </div>
+                <div id="masters-retail-upload-result" class="upload-result"></div>
+
+                <h3>Download</h3>
+                <div class="form-group">
+                    <label>Scope</label>
+                    <select id="masters-retail-export-scope" onchange="toggleMastersRetailDistributorFilter()">
+                        <option value="all">All Data</option>
+                        <option value="distributor">Distributor-wise</option>
+                    </select>
+                </div>
+                <div class="form-group hidden" id="masters-retail-distributor-filter-group">
+                    <label>Distributor</label>
+                    <select id="masters-retail-export-distributor"></select>
+                </div>
+                <div class="form-group">
+                    <label>Format</label>
+                    <select id="masters-retail-export-format">
+                        <option value="xlsx">Excel (.xlsx)</option>
+                        <option value="csv">CSV (.csv)</option>
+                    </select>
+                </div>
+                <button onclick="downloadMastersRetailers()" class="btn btn-secondary">Download Retailers</button>
+
+                <h3>View Data</h3>
+                <button onclick="openMastersGrid('retailers')" class="btn btn-secondary">View All Retailers</button>
+                <button onclick="openMasterRetailerForm()" class="btn btn-primary">+ Add New Retailer</button>
+            </div>
+
+            <div class="modal-actions">
+                <button onclick="closeModal('masters-bulk-modal')" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="masters-grid-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 90vh; max-width: 96vw; width: 96vw; overflow: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h2 id="masters-grid-title">Master Data</h2>
+                <button onclick="closeModal('masters-grid-modal')" class="btn btn-secondary">Close</button>
+            </div>
+            <div id="masters-grid-loading" class="subtitle">Loading...</div>
+            <div style="overflow-x: auto; overflow-y: auto; max-height: 70vh; border: 1px solid #333;">
+                <table class="data-table" id="masters-grid-table" style="width: max-content; min-width: 100%;">
+                    <thead id="masters-grid-thead"></thead>
+                    <tbody id="masters-grid-tbody"></tbody>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button onclick="closeModal('masters-grid-modal')" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="master-distributor-form-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
+            <h2 id="master-distributor-form-title">Add Master Distributor</h2>
+            <input type="hidden" id="master-distributor-id" />
+            <div class="form-group"><label>Firm Name</label><input id="master-distributor-firm-name" type="text" /></div>
+            <div class="form-group"><label>Firm Nickname</label><input id="master-distributor-firm-nick-name" type="text" /></div>
+            <div class="form-group"><label>Contact Person</label><input id="master-distributor-name" type="text" /></div>
+            <div class="form-group"><label>Distributor Code</label><input id="master-distributor-code" type="text" /></div>
+            <div class="form-group"><label>Buyer Code</label><input id="master-distributor-buyer-code" type="text" /></div>
+            <div class="form-group"><label>Phone Number</label><input id="master-distributor-phone" type="text" /></div>
+            <div class="form-group"><label>Phone Number 2</label><input id="master-distributor-phone-2" type="text" /></div>
+            <div class="form-group"><label>Email</label><input id="master-distributor-email" type="email" /></div>
+            <div class="form-group"><label>Address</label><input id="master-distributor-address" type="text" /></div>
+            <div class="form-group"><label>City</label><input id="master-distributor-location" type="text" /></div>
+            <div class="form-group"><label>State/Region</label><input id="master-distributor-region" type="text" /></div>
+            <div class="form-group"><label>Pincode</label><input id="master-distributor-pincode" type="text" /></div>
+            <div class="form-group"><label>GST Number</label><input id="master-distributor-gst" type="text" /></div>
+            <div class="form-group"><label>Zone</label><input id="master-distributor-zone" type="text" /></div>
+            <div class="form-group"><label>Payment Terms</label><input id="master-distributor-payment-terms" type="text" /></div>
+            <div class="form-group"><label>Credit Limit</label><input id="master-distributor-credit-limit" type="number" step="0.01" /></div>
+            <div class="form-group"><label>Birthday</label><input id="master-distributor-birthday" type="text" /></div>
+            <div class="form-group"><label>Anniversary</label><input id="master-distributor-anniversary" type="text" /></div>
+            <div class="form-group"><label>Secondary Distributor Name</label><input id="master-distributor-secondary-name" type="text" /></div>
+            <div class="form-group"><label>Secondary Distributor Phone</label><input id="master-distributor-secondary-phone" type="text" /></div>
+            <div class="form-group"><label>Secondary Distributor Birthday</label><input id="master-distributor-secondary-birthday" type="text" /></div>
+            <div class="form-group"><label>Secondary Distributor Anniversary</label><input id="master-distributor-secondary-anniversary" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Name</label><input id="master-distributor-sales-name" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Phone</label><input id="master-distributor-sales-phone" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Email</label><input id="master-distributor-sales-email" type="email" /></div>
+            <div class="form-group"><label>Sales Executive Birthday</label><input id="master-distributor-sales-birthday" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Anniversary</label><input id="master-distributor-sales-anniversary" type="text" /></div>
+            <div class="modal-actions">
+                <button onclick="saveMasterDistributor(event)" class="btn btn-primary">Save</button>
+                <button onclick="closeModal('master-distributor-form-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="master-retailer-form-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
+            <h2 id="master-retailer-form-title">Add Master Retailer</h2>
+            <input type="hidden" id="master-retailer-id" />
+            <div class="form-group"><label>Shop Name</label><input id="master-retailer-name" type="text" /></div>
+            <div class="form-group"><label>Contact Person</label><input id="master-retailer-contact-person" type="text" /></div>
+            <div class="form-group"><label>Distributor</label><select id="master-retailer-distributor"></select></div>
+            <div class="form-group"><label>Phone Number</label><input id="master-retailer-phone" type="text" /></div>
+            <div class="form-group"><label>Phone Number 2</label><input id="master-retailer-phone-2" type="text" /></div>
+            <div class="form-group"><label>Email</label><input id="master-retailer-email" type="email" /></div>
+            <div class="form-group"><label>Address</label><input id="master-retailer-address" type="text" /></div>
+            <div class="form-group"><label>City</label><input id="master-retailer-location" type="text" /></div>
+            <div class="form-group"><label>State</label><input id="master-retailer-state" type="text" /></div>
+            <div class="form-group"><label>Pincode</label><input id="master-retailer-pincode" type="text" /></div>
+            <div class="form-group"><label>GST Number</label><input id="master-retailer-gst" type="text" /></div>
+            <div class="form-group"><label>Category/Store Type</label><input id="master-retailer-category" type="text" /></div>
+            <div class="form-group"><label>Birthday</label><input id="master-retailer-birthday" type="text" /></div>
+            <div class="form-group"><label>Anniversary</label><input id="master-retailer-anniversary" type="text" /></div>
+            <div class="form-group"><label>Secondary Retailer Name</label><input id="master-retailer-secondary-name" type="text" /></div>
+            <div class="form-group"><label>Secondary Retailer Phone</label><input id="master-retailer-secondary-phone" type="text" /></div>
+            <div class="form-group"><label>Secondary Retailer Birthday</label><input id="master-retailer-secondary-birthday" type="text" /></div>
+            <div class="form-group"><label>Secondary Retailer Anniversary</label><input id="master-retailer-secondary-anniversary" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Name</label><input id="master-retailer-sales-name" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Phone</label><input id="master-retailer-sales-phone" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Email</label><input id="master-retailer-sales-email" type="email" /></div>
+            <div class="form-group"><label>Sales Executive Birthday</label><input id="master-retailer-sales-birthday" type="text" /></div>
+            <div class="form-group"><label>Sales Executive Anniversary</label><input id="master-retailer-sales-anniversary" type="text" /></div>
+            <div class="modal-actions">
+                <button onclick="saveMasterRetailer(event)" class="btn btn-primary">Save</button>
+                <button onclick="closeModal('master-retailer-form-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="global-search-modal" class="modal hidden">
+        <div class="modal-content global-search-modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h2>Search Results for "<span id="global-search-query-label"></span>"</h2>
+                <button onclick="closeModal('global-search-modal')" class="btn btn-secondary">Close</button>
+            </div>
+            <div class="party-master-tabs" id="global-search-tabs"></div>
+            <div id="global-search-loading" class="subtitle">Searching...</div>
+            <div class="global-search-table-wrap" id="global-search-table-wrap">
+                <table class="data-table" id="global-search-table">
+                    <thead id="global-search-thead"></thead>
+                    <tbody id="global-search-tbody"></tbody>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button onclick="closeModal('global-search-modal')" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="party-detail-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h2 id="party-detail-title">Details</h2>
+                <button onclick="closeModal('party-detail-modal')" class="btn btn-secondary">Close</button>
+            </div>
+            <div id="party-detail-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 1rem;"></div>
+            <div id="party-detail-actions" class="executive-contact-actions hidden"></div>
+            <div id="party-detail-360" class="party-detail-360 hidden"></div>
+            <div class="modal-actions">
+                <button id="party-detail-edit-btn" class="btn btn-primary">Edit</button>
+                <button onclick="closeModal('party-detail-modal')" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div id="distributor-form-modal" class="modal hidden">
-        <div class="modal-content">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
             <h2 id="distributor-form-title">Add Distributor</h2>
             <input type="hidden" id="distributor-id" />
             <div class="form-group">
-                <label>Name</label>
-                <input type="text" id="dist-name" placeholder="Distributor name" />
+                <label>Firm Name</label>
+                <input type="text" id="dist-name" placeholder="Firm / company name" />
+            </div>
+            <div class="form-group">
+                <label>Contact Person (Authorized Person)</label>
+                <input type="text" id="dist-contact-person" placeholder="Concerned / authorized person name" />
             </div>
             <div class="form-group">
                 <label>GST Number</label>
@@ -415,6 +1547,14 @@
                 <input type="text" id="dist-city" placeholder="City" />
             </div>
             <div class="form-group">
+                <label>State</label>
+                <input type="text" id="dist-state" placeholder="State" />
+            </div>
+            <div class="form-group">
+                <label>Pincode</label>
+                <input type="text" id="dist-pincode" placeholder="Pincode" />
+            </div>
+            <div class="form-group">
                 <label>Phone</label>
                 <input type="text" id="dist-phone" placeholder="Phone" />
             </div>
@@ -426,6 +1566,10 @@
                 <label>Address</label>
                 <input type="text" id="dist-address" placeholder="Address" />
             </div>
+            <div class="form-group">
+                <label>Credit Limit</label>
+                <input type="number" id="dist-credit-limit" placeholder="Credit limit (₹)" step="0.01" />
+            </div>
             <div class="modal-actions">
                 <button onclick="saveDistributor(event)" class="btn btn-primary">Save Distributor</button>
                 <button onclick="closeModal('distributor-form-modal')" class="btn btn-secondary">Cancel</button>
@@ -434,20 +1578,30 @@
     </div>
 
     <div id="retailer-form-modal" class="modal hidden">
-        <div class="modal-content">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
             <h2 id="retailer-form-title">Add Retailer</h2>
             <input type="hidden" id="retailer-id" />
             <div class="form-group">
-                <label>Name</label>
-                <input type="text" id="retailer-name" placeholder="Retailer name" />
+                <label>Firm Name</label>
+                <input type="text" id="retailer-name" placeholder="Firm / shop name" />
+            </div>
+            <div class="form-group">
+                <label>Contact Person (Authorized Person)</label>
+                <input type="text" id="retailer-contact-person" placeholder="Concerned / authorized person name" />
             </div>
             <div class="form-group">
                 <label>Distributor</label>
-                <select id="retailer-distributor"></select>
+                <select id="retailer-distributor">
+                    <option value="">-- Unassigned --</option>
+                </select>
             </div>
             <div class="form-group">
                 <label>GST Number</label>
                 <input type="text" id="retailer-gst" placeholder="GST number" />
+            </div>
+            <div class="form-group">
+                <label>Store Type</label>
+                <input type="text" id="retailer-store-type" placeholder="e.g. General Store, Supermarket" />
             </div>
             <div class="form-group">
                 <label>Territory</label>
@@ -456,6 +1610,14 @@
             <div class="form-group">
                 <label>City</label>
                 <input type="text" id="retailer-city" placeholder="City" />
+            </div>
+            <div class="form-group">
+                <label>State</label>
+                <input type="text" id="retailer-state" placeholder="State" />
+            </div>
+            <div class="form-group">
+                <label>Pincode</label>
+                <input type="text" id="retailer-pincode" placeholder="Pincode" />
             </div>
             <div class="form-group">
                 <label>Phone</label>
@@ -476,9 +1638,146 @@
         </div>
     </div>
 
+    <div id="finance-account-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add Account</h2>
+            <div class="form-group">
+                <label>Account Name</label>
+                <input type="text" id="finance-account-name" placeholder="Cash, Bank, Payables" />
+            </div>
+            <div class="form-group">
+                <label>Account Type</label>
+                <select id="finance-account-type">
+                    <option value="asset">Asset</option>
+                    <option value="liability">Liability</option>
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Opening Balance</label>
+                <input type="number" id="finance-account-opening-balance" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="finance-account-notes" rows="3" placeholder="Optional details"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveAccount(event)" class="btn btn-primary">Save Account</button>
+                <button onclick="closeModal('finance-account-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="finance-gst-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add GST Return</h2>
+            <div class="form-group">
+                <label>Period</label>
+                <input type="text" id="finance-gst-period" placeholder="2026-06" />
+            </div>
+            <div class="form-group">
+                <label>Sales Amount</label>
+                <input type="number" id="finance-gst-sales" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Purchase Amount</label>
+                <input type="number" id="finance-gst-purchase" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Tax Rate (%)</label>
+                <input type="number" id="finance-gst-rate" step="0.01" value="18" />
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="finance-gst-status">
+                    <option value="draft">Draft</option>
+                    <option value="pending">Pending</option>
+                    <option value="filed">Filed</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="finance-gst-notes" rows="3" placeholder="Optional notes"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveGSTReturn(event)" class="btn btn-primary">Save GST</button>
+                <button onclick="closeModal('finance-gst-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="finance-vat-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add VAT Return</h2>
+            <div class="form-group">
+                <label>Period</label>
+                <input type="text" id="finance-vat-period" placeholder="2026-06" />
+            </div>
+            <div class="form-group">
+                <label>Sales Amount</label>
+                <input type="number" id="finance-vat-sales" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Purchase Amount</label>
+                <input type="number" id="finance-vat-purchase" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Tax Rate (%)</label>
+                <input type="number" id="finance-vat-rate" step="0.01" value="12" />
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="finance-vat-status">
+                    <option value="draft">Draft</option>
+                    <option value="pending">Pending</option>
+                    <option value="filed">Filed</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="finance-vat-notes" rows="3" placeholder="Optional notes"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveVATReturn(event)" class="btn btn-primary">Save VAT</button>
+                <button onclick="closeModal('finance-vat-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="new-order-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>New Order</h2>
+            <div class="form-group">
+                <label>Distributor</label>
+                <select id="order-distributor"></select>
+            </div>
+            <div class="form-group">
+                <label>Retailer</label>
+                <select id="order-retailer"></select>
+            </div>
+            <div class="form-group">
+                <label>Order Date</label>
+                <input type="date" id="order-date" />
+            </div>
+            <div class="form-group">
+                <label>Order Amount</label>
+                <input type="number" id="order-amount" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Tax Rate (%)</label>
+                <input type="number" id="order-tax-rate" step="0.01" value="0" />
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveNewOrder(event)" class="btn btn-primary">Create Order</button>
+                <button onclick="closeModal('new-order-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- HIDDEN MODALS FOR ACTIONS -->
     <div id="uploadModal" class="modal hidden">
-        <div class="modal-content">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
             <h2>Upload File to Digital Warehouse</h2>
             <div class="form-group">
                 <label>Master Type</label>
@@ -497,16 +1796,115 @@
         </div>
     </div>
 
-    <div id="addYearModal" class="modal hidden">
-        <div class="modal-content">
-            <h2>Add Financial Year</h2>
+    <div id="executive-visit-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Log field visit</h2>
             <div class="form-group">
-                <label>Fiscal Year:</label>
-                <input type="text" id="fiscalYear" placeholder="2026-2027" />
+                <label>Party type</label>
+                <select id="executive-visit-party-type">
+                    <option value="distributor">Distributor</option>
+                    <option value="retailer">Retailer</option>
+                </select>
             </div>
             <div class="form-group">
-                <label>Target Amount (₹):</label>
-                <input type="number" id="targetAmount" placeholder="1000000" />
+                <label>Party name</label>
+                <input type="text" id="executive-visit-party-name" placeholder="Firm / shop name" />
+            </div>
+            <div class="form-group">
+                <label>Party ID (optional — from master list)</label>
+                <input type="number" id="executive-visit-party-id" placeholder="Leave blank if unknown" />
+            </div>
+            <div class="form-group">
+                <label>Visit date</label>
+                <input type="date" id="executive-visit-date" />
+            </div>
+            <div class="form-group">
+                <label>Follow-up date (optional)</label>
+                <input type="date" id="executive-visit-follow-up" />
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="executive-visit-notes" rows="3" placeholder="Discussion points, order intent, issues…"></textarea>
+            </div>
+            <button onclick="submitExecutiveVisit()" class="btn btn-primary">Save visit</button>
+            <button onclick="closeModal('executive-visit-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="distributorTargetModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Distributor target (lakhs)</h2>
+            <div id="dist-target-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-group">
+                <label>Fiscal year</label>
+                <select id="dist-target-year-select"></select>
+            </div>
+            <div class="form-group">
+                <label>Nick name (optional)</label>
+                <input type="text" id="dist-target-nick" placeholder="e.g. BND" />
+            </div>
+            <div class="form-group">
+                <label>Distributor / customer name</label>
+                <input type="text" id="dist-target-name" placeholder="e.g. BERNINA INTERNATIONAL P LTD" />
+            </div>
+            <div class="form-group">
+                <label>Target (lakhs)</label>
+                <input type="number" id="dist-target-amount" step="0.01" placeholder="e.g. 300" />
+            </div>
+            <button onclick="submitDistributorTarget()" class="btn btn-primary">Save target</button>
+            <button onclick="closeModal('distributorTargetModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="fyManualTargetModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>FY Manual Target (Lakhs)</h2>
+            <p class="subtitle">Select an existing fiscal year to update its target, or create a new FY with a target.</p>
+            <div id="fy-manual-target-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-radio-row">
+                <label class="form-radio-label" for="fy-target-mode-existing">
+                    <input type="radio" name="fy-target-mode" id="fy-target-mode-existing" value="existing" checked onchange="toggleFyTargetMode()" />
+                    <span>Update existing FY target</span>
+                </label>
+            </div>
+            <div class="form-radio-row">
+                <label class="form-radio-label" for="fy-target-mode-new">
+                    <input type="radio" name="fy-target-mode" id="fy-target-mode-new" value="new" onchange="toggleFyTargetMode()" />
+                    <span>Create new FY</span>
+                </label>
+            </div>
+            <div id="fy-target-existing-fields">
+                <div class="form-group">
+                    <label for="fy-manual-year-select">Fiscal year</label>
+                    <select id="fy-manual-year-select" onchange="prefillFyManualTarget()"></select>
+                </div>
+            </div>
+            <div id="fy-target-new-fields" class="hidden">
+                <div class="form-group">
+                    <label for="fy-manual-new-year">New fiscal year</label>
+                    <input type="text" id="fy-manual-new-year" placeholder="2025-26" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="fy-manual-target-amount">Overall target (lakhs)</label>
+                <input type="number" id="fy-manual-target-amount" step="0.01" placeholder="e.g. 1000" />
+            </div>
+            <button onclick="submitFyManualTarget()" class="btn btn-primary">Save Target</button>
+            <button onclick="closeModal('fyManualTargetModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="addYearModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add Financial Year</h2>
+            <p class="subtitle">All amounts in <strong>lakhs</strong> (same as your sales pivot sheet).</p>
+            <div class="form-group">
+                <label>Fiscal Year:</label>
+                <input type="text" id="fiscalYear" placeholder="2025-26" />
+            </div>
+            <div class="form-group">
+                <label>Overall target (lakhs):</label>
+                <input type="number" id="targetAmount" placeholder="1000" step="0.01" />
             </div>
             <button onclick="submitAddYear()" class="btn btn-primary">Add</button>
             <button onclick="closeModal('addYearModal')" class="btn btn-secondary">Cancel</button>
@@ -514,43 +1912,80 @@
     </div>
 
     <div id="manualEntryModal" class="modal hidden">
-        <div class="modal-content">
-            <h2>Manual Achievement Entry</h2>
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Distributor manual achievement</h2>
+            <p class="subtitle">Enter achievement for one distributor in <strong>lakhs</strong> (channel 2 supplement — per distributor).</p>
+            <div id="manual-entry-status" class="form-inline-status hidden" role="status"></div>
             <div class="form-group">
                 <label>Fiscal Year:</label>
-                <select id="yearSelect"></select>
+                <select id="yearSelect" class="executive-year-select"></select>
             </div>
             <div class="form-group">
                 <label>Distributor Name:</label>
                 <input type="text" id="distributorName" />
             </div>
             <div class="form-group">
-                <label>Achievement Amount (₹):</label>
-                <input type="number" id="achievementAmount" />
+                <label>Achievement (lakhs):</label>
+                <input type="number" id="achievementAmount" step="0.01" />
             </div>
             <button onclick="submitManualEntry()" class="btn btn-primary">Save</button>
             <button onclick="closeModal('manualEntryModal')" class="btn btn-secondary">Cancel</button>
         </div>
     </div>
 
+    <div id="fyAchievementModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>FY manual achievement</h2>
+            <p class="subtitle">Overall achievement for the full fiscal year in <strong>lakhs</strong> (channel 1 — not split by distributor).</p>
+            <div id="fy-achievement-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-group">
+                <label>Fiscal year</label>
+                <select id="fy-achievement-year-select" class="executive-year-select"></select>
+            </div>
+            <div class="form-group">
+                <label>Overall achievement (lakhs)</label>
+                <input type="number" id="fy-achievement-amount" step="0.01" placeholder="e.g. 850" />
+            </div>
+            <button onclick="submitFyAchievement()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('fyAchievementModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
     <div id="reportUploadModal" class="modal hidden">
-        <div class="modal-content">
-            <h2>Upload Sales Report</h2>
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Upload sales Excel (distributor achievement)</h2>
+            <p class="subtitle">Achievement: Primary pivot (NICK, CUSTOMER NAME, CATEGORY, months, Grand Total). Budget/target: CUSTOMER + CATEGORY + months + Budget column — values in <strong>lakhs</strong>.</p>
+            <div id="report-upload-status" class="form-inline-status hidden" role="status"></div>
             <div class="form-group">
                 <label>Choose file</label>
                 <input type="file" id="reportFile" accept=".xlsx,.xls,.csv" />
             </div>
             <div class="form-group">
                 <label>Select Fiscal Year:</label>
-                <select id="reportYear"></select>
+                <select id="reportYear" class="executive-year-select"></select>
             </div>
             <button onclick="uploadSalesReport()" class="btn btn-primary">Upload</button>
             <button onclick="closeModal('reportUploadModal')" class="btn btn-secondary">Cancel</button>
         </div>
     </div>
 
+    <div id="taCategoryDetailModal" class="modal hidden">
+        <div class="modal-content ta-category-modal" style="max-height: 90vh; overflow-y: auto;">
+            <h2 id="ta-category-modal-title">Category achievement detail</h2>
+            <p id="ta-category-modal-subtitle" class="subtitle">Distributor × category breakdown (lakhs) from sales Excel.</p>
+            <div id="ta-category-modal-status" class="form-inline-status hidden" role="status"></div>
+            <div class="executive-table-wrap ta-category-table-wrap">
+                <table class="data-table ta-category-matrix" id="ta-category-matrix-table">
+                    <thead id="ta-category-matrix-thead"></thead>
+                    <tbody id="ta-category-matrix-tbody"></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('taCategoryDetailModal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+        </div>
+    </div>
+
     <div id="scanModal" class="modal hidden">
-        <div class="modal-content">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
             <h2>Scanning for Duplicates...</h2>
             <p id="scanStatus">Starting scan...</p>
             <div class="progress-bar">
@@ -560,11 +1995,194 @@
         </div>
     </div>
 
+    <div id="am-edit-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Edit Article Field</h2>
+            <p id="am-edit-label" class="subtitle"></p>
+            <div class="form-group">
+                <label id="am-edit-field-label">Value</label>
+                <input type="text" id="am-edit-value" />
+            </div>
+            <button onclick="saveArticleMasterEdit()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('am-edit-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="am-full-edit-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 520px; max-height: 90vh; overflow-y: auto;">
+            <h2>Edit Article</h2>
+            <p id="am-full-edit-label" class="subtitle"></p>
+            <div class="form-group">
+                <label>Brand</label>
+                <input type="text" id="am-full-edit-brand" />
+            </div>
+            <div class="form-group">
+                <label>Size</label>
+                <input type="text" id="am-full-edit-size" />
+            </div>
+            <div class="form-group">
+                <label>Product</label>
+                <input type="text" id="am-full-edit-product" />
+            </div>
+            <div class="form-group">
+                <label>MRP (₹)</label>
+                <input type="text" id="am-full-edit-mrp" />
+            </div>
+            <div class="form-group">
+                <label>PTR (₹)</label>
+                <input type="text" id="am-full-edit-ptr" />
+            </div>
+            <div class="form-group">
+                <label>Ex-Mill (₹)</label>
+                <input type="text" id="am-full-edit-exmill" />
+            </div>
+            <div class="form-group">
+                <label>Bale Pack Size</label>
+                <input type="text" id="am-full-edit-bale" />
+            </div>
+            <button onclick="saveArticleMasterFullEdit()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('am-full-edit-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="am-price-history-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 720px; max-height: 85vh; overflow-y: auto;">
+            <h2>Price History</h2>
+            <p id="am-price-history-label" class="subtitle"></p>
+            <div style="overflow-x: auto;">
+                <table class="data-table" style="width: 100%;">
+                    <thead>
+                        <tr><th>Field</th><th>Old</th><th>New</th><th>Changed By</th><th>When</th></tr>
+                    </thead>
+                    <tbody id="am-price-history-tbody"><tr><td colspan="5">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('am-price-history-modal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+        </div>
+    </div>
+
+    <div id="am-new-category-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Confirm New Category</h2>
+            <p class="subtitle">A new category was detected in this file. Confirm the name and matching fields, then upload again.</p>
+            <div class="form-group">
+                <label>Category Name</label>
+                <input type="text" id="am-new-category-name" placeholder="e.g. Curtains" />
+            </div>
+            <div class="form-group">
+                <label>Key Fields (comma-separated)</label>
+                <input type="text" id="am-new-category-keys" value="brand, size" />
+            </div>
+            <button onclick="confirmArticleMasterNewCategory()" class="btn btn-primary">Confirm Category</button>
+            <button onclick="closeModal('am-new-category-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="fo-detail-modal" class="modal hidden">
+        <div class="modal-content fo-detail-modal-content">
+            <h2>Filled Order Detail</h2>
+            <p id="fo-detail-label" class="subtitle"></p>
+            <div style="display:flex; gap:12px; margin-bottom:10px;">
+                <button class="btn btn-secondary" onclick="downloadFilledOrder(filledOrdersState.activeOrderId)">Download Excel</button>
+            </div>
+            <div class="fo-detail-table-scroll">
+                <table class="data-table fo-detail-table">
+                    <thead>
+                        <tr>
+                            <th>Brand</th><th>Size</th><th>Product</th><th>MRP</th><th>PTR</th>
+                            <th>Ex-Mill</th><th>Bale Size</th><th>Raw Qty</th><th>Unit</th>
+                            <th>Final Pcs</th><th>Matched</th><th>Flag</th><th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fo-detail-tbody"><tr><td colspan="13">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('fo-detail-modal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+        </div>
+    </div>
+
+    <div id="nexora-chat-overlay" class="nexora-chat-overlay hidden" aria-hidden="true">
+        <div class="nexora-chat-panel" role="dialog" aria-label="Ask NEXORA">
+            <div class="nexora-chat-header">
+                <div class="nexora-chat-brand">
+                    <div class="nexora-chat-core" aria-hidden="true"></div>
+                    <div>
+                        <p class="nexora-chat-eyebrow">Workspace AI</p>
+                        <h2>Ask NEXORA</h2>
+                    </div>
+                </div>
+                <div class="nexora-chat-header-actions">
+                    <button type="button" class="nexora-chat-icon-btn" onclick="minimizeNexoraChat()" aria-label="Minimize" title="Minimize — also: tap outside or Esc">─</button>
+                    <button type="button" class="nexora-chat-icon-btn nexora-chat-icon-btn-close" onclick="closeNexoraChat()" aria-label="Close and clear chat" title="Close — clears chat">✕</button>
+                </div>
+            </div>
+            <div id="nexora-chat-messages" class="nexora-chat-messages">
+                <div class="nexora-chat-bubble nexora-chat-bubble-bot">
+                    Good evening — how may I help you?
+                </div>
+            </div>
+            <div class="nexora-chat-suggest-block">
+                <p class="nexora-chat-suggest-label">Try asking</p>
+                <div class="nexora-chat-examples" id="nexora-chat-examples"></div>
+            </div>
+            <div id="nexora-chat-teach-panel" class="nexora-chat-teach-panel hidden" aria-hidden="true">
+                <div class="nexora-chat-teach-header">
+                    <strong>Sikhhao</strong>
+                    <span class="nexora-chat-teach-sub">Galat jawab? Sahi sawal likho — NEXORA seekh lega</span>
+                    <button type="button" class="nexora-chat-icon-btn nexora-teach-close" onclick="closeNexoraTeachPanel()" aria-label="Close teach panel">✕</button>
+                </div>
+                <label class="nexora-teach-label">Aapka sawal</label>
+                <input id="nexora-teach-user-phrase" type="text" readonly class="nexora-teach-readonly" />
+                <label class="nexora-teach-label">Sahi sawal (canonical)</label>
+                <input
+                    id="nexora-teach-canonical"
+                    type="text"
+                    placeholder="jaise: jatin arora kon hai"
+                    maxlength="500"
+                    autocomplete="off"
+                />
+                <div class="nexora-chat-teach-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="nexora-teach-suggest-btn" onclick="suggestNexoraTeachCanonical()">Gemini suggest</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="nexora-teach-save-btn" onclick="submitNexoraTeach()">Save / Sikhhao</button>
+                </div>
+                <p id="nexora-teach-status" class="nexora-teach-status hidden"></p>
+            </div>
+            <form class="nexora-chat-form" onsubmit="submitNexoraQuestion(event)">
+                <div class="nexora-chat-composer">
+                    <input
+                        id="nexora-chat-input"
+                        type="text"
+                        placeholder="Apna sawal likho… Hindi ya English"
+                        autocomplete="off"
+                        maxlength="500"
+                    />
+                    <button type="submit" class="nexora-chat-send" id="nexora-chat-send-btn">Send</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="nx-toast-stack" class="nx-toast-stack" aria-live="polite" aria-relevant="additions"></div>
+
+    <div id="nx-confirm-modal" class="nx-confirm-modal hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="nx-confirm-title">
+        <div class="nx-confirm-backdrop" data-nx-confirm-cancel></div>
+        <div class="nx-confirm-card">
+            <div class="nx-confirm-icon" id="nx-confirm-icon" aria-hidden="true">?</div>
+            <h3 id="nx-confirm-title">Confirm</h3>
+            <p id="nx-confirm-message"></p>
+            <div class="nx-confirm-actions">
+                <button type="button" class="btn btn-secondary" id="nx-confirm-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="nx-confirm-ok">OK</button>
+            </div>
+        </div>
+    </div>
+
     <footer class="footer">
         <div class="container">
-            <p>© 2026 Bombay Dyeing Limited. All rights reserved. NEXORA v1.1</p>
+            <p>© 2026</p>
         </div>
     </footer>
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260718-timeout-ux"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260718-timeout-ux"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.three_step_verification import (
+    _extract_pdf_text,
     _load_product_aliases,
     _normalize_product_key,
     compare_step1,
@@ -97,6 +98,38 @@ def test_run_full_verification_skips_missing_steps(tmp_path):
     assert report["step1"]["status"] == "mismatches-found"
     assert report["step2"]["status"] == "ok"
     assert report["step3"]["status"] == "skipped"
+
+
+def test_extract_pdf_text_uses_azure_ocr_when_pdf_parser_fails(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "invoice.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    class FakePollingResult:
+        content = "Invoice Amount 1000\nClient Name Rahul Kumar Yadav"
+
+    class FakePoller:
+        def result(self):
+            return FakePollingResult()
+
+    class FakeClient:
+        def __init__(self, endpoint, credential):
+            self.endpoint = endpoint
+            self.credential = credential
+
+        def begin_analyze_document(self, model, analyze_request=None, content_type=None):
+            assert model == "prebuilt-layout"
+            assert content_type == "application/octet-stream"
+            return FakePoller()
+
+    monkeypatch.setattr("app.three_step_verification.pdfplumber.open", lambda path: (_ for _ in ()).throw(Exception("pdfplumber failed")))
+    monkeypatch.setattr("app.three_step_verification.DocumentIntelligenceClient", FakeClient)
+    monkeypatch.setattr("app.three_step_verification.AzureKeyCredential", lambda key: key)
+    monkeypatch.setenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", "https://example.cognitiveservices.azure.com/")
+    monkeypatch.setenv("AZURE_DOCUMENT_INTELLIGENCE_KEY", "test-key")
+
+    extracted = _extract_pdf_text(pdf_path)
+
+    assert extracted == "Invoice Amount 1000\nClient Name Rahul Kumar Yadav"
 
 
 def test_compare_step1_matches_rows_by_product(tmp_path):

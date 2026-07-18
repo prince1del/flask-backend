@@ -1,7 +1,7 @@
-from flask import Blueprint, redirect, render_template_string, request
+from flask import Blueprint, current_app, redirect, render_template_string, request
 
 from centralized_db_system.db import CentralizedDB
-from app.routes.auth import require_jwt_auth
+from app.routes.auth import get_workspace_id, require_jwt_auth, require_role
 
 schemas_blueprint = Blueprint("schemas", __name__)
 
@@ -99,8 +99,9 @@ def schemas() -> tuple[dict[str, object], int]:
 def schema_manager():
     entity = request.args.get("entity", "distributor")
     message = request.args.get("message", "")
-    db = CentralizedDB("centralized_db.sqlite3")
-    fields = db.get_all_schema_fields(entity)
+    workspace_id = get_workspace_id()
+    db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+    fields = db.get_all_schema_fields(entity, workspace_id=workspace_id)
     return render_template_string(
         SCHEMA_MANAGER_TEMPLATE, entity=entity, fields=fields, message=message
     )
@@ -108,16 +109,21 @@ def schema_manager():
 
 @schemas_blueprint.route("/settings/schema/add", methods=["POST"])
 @require_jwt_auth
+@require_role('admin')
 def schema_add_field():
     entity = request.form.get("entity", "distributor")
     field_name = request.form.get("field_name", "").strip()
     field_label = request.form.get("field_label", "").strip()
     field_type = request.form.get("field_type", "text")
+    workspace_id = get_workspace_id()
     if field_name and field_label:
-        db = CentralizedDB("centralized_db.sqlite3")
-        existing = db.get_all_schema_fields(entity)
+        db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+        existing = db.get_all_schema_fields(entity, workspace_id=workspace_id)
         next_order = max([f["field_order"] for f in existing], default=-1) + 1
-        db.add_schema_field(entity, field_name, field_label, field_type, next_order)
+        db.add_schema_field(
+            entity, field_name, field_label, field_type, next_order,
+            workspace_id=workspace_id,
+        )
         message = f"Field '{field_label}' added!"
     else:
         message = "Field name and label required."
@@ -126,35 +132,41 @@ def schema_add_field():
 
 @schemas_blueprint.route("/settings/schema/delete", methods=["POST"])
 @require_jwt_auth
+@require_role('admin')
 def schema_delete_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
     if field_id:
-        CentralizedDB("centralized_db.sqlite3").delete_schema_field(field_id)
+        db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+        db.delete_schema_field(field_id, workspace_id=get_workspace_id())
     return redirect(f"/settings/schema?entity={entity}&message=Field deleted")
 
 
 @schemas_blueprint.route("/settings/schema/toggle", methods=["POST"])
 @require_jwt_auth
+@require_role('admin')
 def schema_toggle_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
     is_visible = request.form.get("is_visible", type=int)
     if field_id is not None:
-        CentralizedDB("centralized_db.sqlite3").toggle_schema_field_visibility(
-            field_id, is_visible
+        db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+        db.toggle_schema_field_visibility(
+            field_id, is_visible, workspace_id=get_workspace_id()
         )
     return redirect(f"/settings/schema?entity={entity}&message=Visibility updated")
 
 
 @schemas_blueprint.route("/settings/schema/move", methods=["POST"])
 @require_jwt_auth
+@require_role('admin')
 def schema_move_field():
     entity = request.form.get("entity", "distributor")
     field_id = request.form.get("field_id", type=int)
     direction = request.form.get("direction", "up")
-    db = CentralizedDB("centralized_db.sqlite3")
-    fields = db.get_all_schema_fields(entity)
+    workspace_id = get_workspace_id()
+    db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+    fields = db.get_all_schema_fields(entity, workspace_id=workspace_id)
     ids = [f["id"] for f in fields]
     if field_id in ids:
         idx = ids.index(field_id)
@@ -162,14 +174,19 @@ def schema_move_field():
             ids[idx], ids[idx - 1] = ids[idx - 1], ids[idx]
         elif direction == "down" and idx < len(ids) - 1:
             ids[idx], ids[idx + 1] = ids[idx + 1], ids[idx]
-        db.reorder_schema_fields([{"id": fid, "order": i} for i, fid in enumerate(ids)])
+        db.reorder_schema_fields(
+            [{"id": fid, "order": i} for i, fid in enumerate(ids)],
+            workspace_id=workspace_id,
+        )
     return redirect(f"/settings/schema?entity={entity}&message=Reordered")
 
 
 @schemas_blueprint.route("/settings/schema/seed", methods=["POST"])
 @require_jwt_auth
+@require_role('admin')
 def schema_seed():
-    CentralizedDB("centralized_db.sqlite3").seed_default_schema()
+    db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+    db.seed_default_schema(workspace_id=get_workspace_id())
     return redirect(
         "/settings/schema?entity=distributor&message=Default schema loaded!"
     )

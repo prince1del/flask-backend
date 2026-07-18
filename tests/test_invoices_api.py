@@ -1,15 +1,20 @@
+import os
 import pytest
-
 from app.web_app import create_app
+from app.db import db
 
 
 @pytest.fixture
-def app(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+def app(tmp_path, monkeypatch):
+    db_path = tmp_path / "invoices_api.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
     monkeypatch.setenv("AUTH_ENABLED", "false")
     app = create_app()
     app.config["TESTING"] = True
-    return app
+    with app.app_context():
+        db.create_all()
+        yield app
 
 
 @pytest.fixture

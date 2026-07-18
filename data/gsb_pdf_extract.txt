@@ -1,0 +1,599 @@
+TAX INVOICE
+
+e-Invoice
+
+IRN
+
+: f57010c5f258793d546c47c4202dc5eb5d15583d5-
+
+fba06139710195cf0c2068d
+
+Ack No.
+Ack Date : 11-Jun-26
+
+: 182622820684337
+
+GSB ENTERPRISE
+238 , C.R. Avenue , 1st Floor ,
+Girish Park , Kolkata - 700006.
+LL - 033 40015733 , 9831059530
+GSTN : 19AHJPB5666P1ZN
+GSTIN/UIN: 19AHJPB5666P1ZN
+State Name :  West Bengal, Code : 19
+E-Mail : gsblinen@gmail.com
+Buyer (Bill to)
+House Of Prizm
+D97/B, Shyam Park Extension,
+Sahibabad, Gurudwara, Ghaziabad
+Dist: Ghaziabad, Uttar Pradesh - 201005
+M - 8100510591
+GSTIN/UIN
+State Name 
+
+: 09ATGPJ0142D1Z6
+: Uttar Pradesh, Code : 09
+
+Invoice No.
+GSB/26-27/0285
+Delivery Note
+
+Reference No. & Date.
+CN/26-27/0285  dt. 11-Jun-26
+Buyer's Order No.
+CN/26-27/0285
+Dispatch Doc No.
+
+Dated
+11-Jun-26
+Mode/Terms of Payment
+Advance
+Other References
+
+Dated
+11-Jun-26
+Delivery Note Date
+
+Dispatched through
+
+Destination
+
+Terms of Delivery
+Self Pick Up
+
+Sl
+No.
+
+Description of Goods
+
+HSN/SAC
+
+GST
+Rate
+
+Quantity
+
+Rate
+
+per
+
+Disc. %
+
+Amount
+
+1 Spa Bathsheet
+
+Size - 36"x72", Weight - 891grams
+
+2 Spa Bath Towel
+
+Size - 30"x60" , Weight - 620grams
+
+3 Spa Hand Towel
+
+Size - 16"x24" , Weight - 132grams
+
+4 Spa Face Towel
+
+Size - 12"x12" , Weight - 50grams
+
+5 Spa Bath Mat Towel
+
+Size - 20"x30" , Weight - 295grams
+
+6 Hotel Plain Luxury Bath Towel
+
+Size - 30"x60" , Weight - 737grams
+7 Hotel Plain Luxury Hand Towel
+Size - 20"x31" , Weight - 236grams
+8 Hotel Bath Robe (Trident) < 1000
+
+Size - L48" , Weight - 1.2kgs
+Quality - Terry
+
+9 Hotel Bath Robe (Trident) < 1000
+
+Quality - Velour , Size - L48"
+
+10 Waffle Bathrobe New (T)
+
+Size - L48" , Waffle Terry
+
+11 Waffle Bathrobe (T)
+
+Size - L48" , Waffle
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+557.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+383.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+90.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+39.00
+
+Pcs
+
+57024910
+
+5 %
+
+1.00 Pcs
+
+182.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+432.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+148.00
+
+Pcs
+
+557.00
+
+383.00
+
+90.00
+
+39.00
+
+182.00
+
+432.00
+
+148.00
+
+62089110
+
+5 %
+
+1.00 Pcs
+
+1,050.00
+
+Pcs
+
+1,050.00
+
+62089110
+
+5 %
+
+1.00 Pcs
+
+1,342.00
+
+Pcs
+
+62089110
+
+5 %
+
+1.00 Pcs
+
+1,162.00
+
+Pcs
+
+1,342.00
+
+1,162.00
+
+62089110
+
+5 %
+
+1.00 Pcs
+
+675.00
+
+Pcs
+
+12 Hotel Plain Premium Bathsheet 90x180
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+517.00
+
+Pcs
+
+Size - 36"x72" , Weight - 901grams
+13 Hotel Plain Premium Bath Towel
+Size - 30"x60" , Weight - 630grams
+
+14 Hotel Plain Premium Hand Towel
+
+Size - 16"x25" , Weight - 150grams
+15 Hotel Plain Premium Face Towel
+
+Size - 12"x12" , Weight - 53grams
+16 Hotel Plain Premium S Bath Mat (5)
+Size - 20"x30" , Weight - 330grams
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+358.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+91.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+35.00
+
+Pcs
+
+57024910
+
+5 %
+
+1.00 Pcs
+
+199.00
+
+Pcs
+
+17 Hotel Essential Plain Bath Towel 70 x 150cms
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+265.00
+
+Pcs
+
+Size - 28"x60" , Weight - 506grams
+
+18 Hotel Essential Plain Hand Towel 40.6 x 60cms
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+65.00
+
+Pcs
+
+Size - 16"x24" , Weight - 108grams
+
+19 Hotel Pool Towel White/Aqua Blue Stripe
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+668.00
+
+Pcs
+
+Size - 36"x72" , Weight - 926grams
+20 Hotel Pool Towel White/Yellow Stripe
+Size - 36"x72" , Weight - 926grams
+
+21 Hotel Pool Towel White/Indigo
+
+Size - 36"x72" , Weight - 926grams
+
+22 Double Bedsheet (G)
+
+Size - 108"x114" , 300TC Plain
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+668.00
+
+Pcs
+
+63026090
+
+5 %
+
+1.00 Pcs
+
+619.00
+
+Pcs
+
+63041910
+
+5 %
+
+1.00 Pcs
+
+695.00
+
+Pcs
+
+675.00
+
+517.00
+
+358.00
+
+91.00
+
+35.00
+
+199.00
+
+265.00
+
+65.00
+
+668.00
+
+668.00
+
+619.00
+
+695.00
+
+This is a Computer Generated Invoice
+
+continued to page number  2
+
+GSB ENTERPRISE
+238 , C.R. Avenue , 1st Floor ,
+Girish Park , Kolkata - 700006.
+LL - 033 40015733 , 9831059530
+GSTN : 19AHJPB5666P1ZN
+GSTIN/UIN: 19AHJPB5666P1ZN
+State Name :  West Bengal, Code : 19
+E-Mail : gsblinen@gmail.com
+Buyer (Bill to)
+House Of Prizm
+D97/B, Shyam Park Extension,
+Sahibabad, Gurudwara, Ghaziabad
+Dist: Ghaziabad, Uttar Pradesh - 201005
+M - 8100510591
+GSTIN/UIN
+State Name 
+
+: 09ATGPJ0142D1Z6
+: Uttar Pradesh, Code : 09
+
+TAX INVOICE(Page  2)
+
+Invoice No.
+GSB/26-27/0285
+Delivery Note
+
+Reference No. & Date.
+CN/26-27/0285  dt. 11-Jun-26
+Buyer's Order No.
+CN/26-27/0285
+Dispatch Doc No.
+
+Dated
+11-Jun-26
+Mode/Terms of Payment
+Advance
+Other References
+
+Dated
+11-Jun-26
+Delivery Note Date
+
+Dispatched through
+
+Destination
+
+Terms of Delivery
+Self Pick Up
+
+Sl
+No.
+
+Description of Goods
+
+23 Double Bedsheet (G)
+
+Size - 108"x114" , 300TC Stripe
+
+HSN/SAC
+
+GST
+Rate
+
+Quantity
+
+Rate
+
+per
+
+Disc. %
+
+Amount
+
+63041910
+
+5 %
+
+1.00 Pcs
+
+695.00
+
+Pcs
+
+695.00
+
+IGST Output @ 5%
+Round Off
+
+%5
+
+10,935.00
+
+546.75
+0.25
+
+Total
+
+23.00 Pcs
+
+₹ 11,482.00
+E. & O.E
+
+Amount Chargeable (in words)
+Indian Rupees Eleven Thousand Four Hundred Eighty Two Only
+
+HSN/SAC
+
+63026090
+57024910
+62089110
+63041910
+
+Taxable
+Value
+4,935.00
+381.00
+4,229.00
+1,390.00
+10,935.00
+
+Rate
+5%
+5%
+5%
+5%
+
+IGST
+
+Amount
+
+246.75
+19.05
+211.45
+69.50
+546.75
+
+Total
+Tax Amount
+246.75
+19.05
+211.45
+69.50
+546.75
+
+Total
+
+Indian Rupees Five Hundred Forty Six and Seventy Five paise Only
+
+: 19382516042
+: 19382516236
+: AHJPB5666P
+
+Tax Amount (in words)  :
+Company's VAT TIN
+Company's CST No. 
+Company's PAN 
+Declaration
+BANK - STANDARD CHARTERED BANK , 19 N S ROAD 
+BRANCH , KOLKATA-700001 , ACCOUNT NO - 33105903746 , 
+IFSC DODE - SCBL0036008.                                                           
+BANK-   HDFC BANK LTD , CR AVENUE BRANCH, KOLKATA
+-700 006, ACCOUNT NO - 19242000001308           IFSC CODE- HDFC 0001924.
+
+This is a Computer Generated Invoice
+
+for GSB ENTERPRISE
+
+Authorised Signatory
+
+

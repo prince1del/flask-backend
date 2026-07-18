@@ -1,49 +1,29 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, jsonify, request
 from functools import wraps
 import sqlite3
 from datetime import datetime
 import uuid
 import json
 
+from app.routes.auth import require_jwt_auth, get_workspace_id
+
 # Create blueprint
 party_matching_bp = Blueprint('party_matching', __name__, url_prefix='/api/v1/party-matching')
 
-# Database path
-DB_PATH = 'centralized_db.sqlite3'
+def get_db():
+    conn = sqlite3.connect(current_app.config['DATABASE_PATH'])
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# JWT decorator
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'success': False, 'error': 'Token required'}), 401
-        return f(*args, **kwargs)
-    return decorated
-
-def get_user_from_token(token):
-    """Extract user info from token"""
-    try:
-        return {'user_id': 2, 'role': 'admin', 'username': 'mobile_test_admin'}
-    except:
-        return None
 
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'success': False, 'error': 'Unauthorized'}), 401
-        user = get_user_from_token(token)
-        if not user or user['role'] != 'admin':
+        if request.user.get('role') != 'admin':
             return jsonify({'success': False, 'error': 'Admin only'}), 403
         return f(*args, **kwargs)
-    return decorated
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return decorated
 
 def levenshtein_distance(s1, s2):
     """Calculate similarity between two strings (0-1)"""
@@ -116,38 +96,37 @@ def calculate_confidence(party1, party2):
 # ==================== ROUTES ====================
 
 @party_matching_bp.route('/search', methods=['GET'])
-@token_required
+@require_jwt_auth
 def search_parties():
     """Search for parties by name (includes aliases)"""
     try:
         query = request.args.get('query', '').lower()
-        
+
         if not query:
             return jsonify({'success': False, 'error': 'Query required'}), 400
-        
+
+        workspace_id = get_workspace_id()
         conn = get_db()
         cursor = conn.cursor()
-        
-        # Search in master_parties
+
         cursor.execute('''
             SELECT * FROM master_parties 
-            WHERE LOWER(primary_name) LIKE ? OR LOWER(gst_number) LIKE ?
+            WHERE workspace_id = ?
+              AND (LOWER(primary_name) LIKE ? OR LOWER(gst_number) LIKE ?)
             LIMIT 20
-        ''', (f'%{query}%', f'%{query}%'))
-        
+        ''', (workspace_id, f'%{query}%', f'%{query}%'))
+
         results = [dict(row) for row in cursor.fetchall()]
-        
-        # Also search in aliases
+
         cursor.execute('''
             SELECT DISTINCT mp.* FROM master_parties mp
             JOIN party_aliases pa ON mp.party_uuid = pa.party_uuid
-            WHERE LOWER(pa.alias_name) LIKE ?
+            WHERE mp.workspace_id = ? AND LOWER(pa.alias_name) LIKE ?
             LIMIT 20
-        ''', (f'%{query}%',))
-        
+        ''', (workspace_id, f'%{query}%'))
+
         alias_results = [dict(row) for row in cursor.fetchall()]
-        
-        # Merge results
+
         seen = set()
         all_results = []
         for r in results + alias_results:
@@ -155,23 +134,20 @@ def search_parties():
             if uuid not in seen:
                 seen.add(uuid)
                 all_results.append(r)
-        
+
         conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': {'results': all_results}
-        }), 200
+
+        return jsonify({'success': True, 'data': {'results': all_results}}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @party_matching_bp.route('/find-matches', methods=['POST'])
-@token_required
+@require_jwt_auth
 def find_matches():
     """Find potential matching parties"""
     try:
         data = request.get_json()
-        
+
         party = {
             'party_type': data.get('party_type'),
             'primary_name': data.get('primary_name'),
@@ -182,56 +158,54 @@ def find_matches():
             'state': data.get('state'),
             'pin_code': data.get('pin_code')
         }
-        
+
+        workspace_id = get_workspace_id()
         conn = get_db()
         cursor = conn.cursor()
-        
-        # Find similar parties
+
         cursor.execute('''
-            SELECT * FROM master_parties 
-            WHERE party_type = ?
-        ''', (party['party_type'],))
-        
+            SELECT * FROM master_parties
+            WHERE workspace_id = ? AND party_type = ?
+        ''', (workspace_id, party['party_type']))
+
         existing_parties = [dict(row) for row in cursor.fetchall()]
         conn.close()
-        
+
         matches = []
         for existing in existing_parties:
             confidence = calculate_confidence(party, existing)
-            if confidence >= 70:  # Only show >70% matches
+            if confidence >= 70:
                 matches.append({
                     'target_party_uuid': existing['party_uuid'],
                     'target_party_name': existing['primary_name'],
                     'confidence_score': round(confidence, 2),
                     'category': 'very_high' if confidence >= 95 else 'high' if confidence >= 85 else 'possible'
                 })
-        
-        # Sort by confidence
+
         matches = sorted(matches, key=lambda x: x['confidence_score'], reverse=True)
-        
-        return jsonify({
-            'success': True,
-            'data': {'matches': matches}
-        }), 200
+
+        return jsonify({'success': True, 'data': {'matches': matches}}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @party_matching_bp.route('/create-master-party', methods=['POST'])
-@token_required
+@require_jwt_auth
 def create_master_party():
     """Create new master party"""
     try:
         data = request.get_json()
         party_uuid = str(uuid.uuid4())
-        
+        workspace_id = get_workspace_id()
+
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO master_parties 
-            (party_uuid, party_type, primary_name, gst_number, mobile_number, email, city, state, pin_code, status, created_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (party_uuid, workspace_id, party_type, primary_name, gst_number, mobile_number, email, city, state, pin_code, status, created_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             party_uuid,
+            workspace_id,
             data.get('party_type'),
             data.get('primary_name'),
             data.get('gst_number'),
@@ -246,43 +220,37 @@ def create_master_party():
         ))
         conn.commit()
         conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': {
-                'party_uuid': party_uuid,
-                'primary_name': data.get('primary_name'),
-                'created_at': datetime.now().isoformat()
-            }
-        }), 201
+
+        return jsonify({'success': True, 'data': {'party_uuid': party_uuid, 'primary_name': data.get('primary_name'), 'created_at': datetime.now().isoformat()}}), 201
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @party_matching_bp.route('/master-party/<party_uuid>', methods=['GET'])
-@token_required
+@require_jwt_auth
 def get_master_party(party_uuid):
     """Get master party with aliases and merge history"""
     try:
+        workspace_id = get_workspace_id()
         conn = get_db()
         cursor = conn.cursor()
         
         # Get master party
-        cursor.execute('SELECT * FROM master_parties WHERE party_uuid = ?', (party_uuid,))
+        cursor.execute('SELECT * FROM master_parties WHERE party_uuid = ? AND workspace_id = ?', (party_uuid, workspace_id))
         party = dict(cursor.fetchone() or {})
         
         if not party:
             return jsonify({'success': False, 'error': 'Party not found'}), 404
         
         # Get aliases
-        cursor.execute('SELECT * FROM party_aliases WHERE party_uuid = ?', (party_uuid,))
+        cursor.execute('SELECT * FROM party_aliases WHERE party_uuid = ? AND workspace_id = ?', (party_uuid, workspace_id))
         aliases = [dict(row) for row in cursor.fetchall()]
         
         # Get merge history
         cursor.execute('''
             SELECT * FROM party_merges 
-            WHERE target_party_uuid = ? AND merge_status = 'approved'
+            WHERE target_party_uuid = ? AND workspace_id = ? AND merge_status = 'approved'
             ORDER BY merged_at DESC
-        ''', (party_uuid,))
+        ''', (party_uuid, workspace_id))
         merge_history = [dict(row) for row in cursor.fetchall()]
         
         conn.close()
@@ -299,18 +267,20 @@ def get_master_party(party_uuid):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @party_matching_bp.route('/review-queue', methods=['GET'])
+@require_jwt_auth
 @require_admin
 def get_review_queue():
     """Get pending merges for admin approval"""
     try:
+        workspace_id = get_workspace_id()
         conn = get_db()
         cursor = conn.cursor()
         
         cursor.execute('''
             SELECT * FROM party_review_queue
-            WHERE review_status = 'pending'
+            WHERE workspace_id = ? AND review_status = 'pending'
             ORDER BY confidence_score DESC
-        ''')
+        ''', (workspace_id,))
         
         reviews = [dict(row) for row in cursor.fetchall()]
         conn.close()
@@ -323,6 +293,7 @@ def get_review_queue():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @party_matching_bp.route('/approve-merge', methods=['POST'])
+@require_jwt_auth
 @require_admin
 def approve_merge():
     """Approve a party merge"""
@@ -334,11 +305,12 @@ def approve_merge():
         if not match_id:
             return jsonify({'success': False, 'error': 'match_id required'}), 400
         
+        workspace_id = get_workspace_id()
         conn = get_db()
         cursor = conn.cursor()
         
         # Get match info
-        cursor.execute('SELECT * FROM party_matching_history WHERE match_id = ?', (match_id,))
+        cursor.execute('SELECT * FROM party_matching_history WHERE match_id = ? AND workspace_id = ?', (match_id, workspace_id))
         match = dict(cursor.fetchone() or {})
         
         if not match:
@@ -349,9 +321,10 @@ def approve_merge():
         try:
             cursor.execute('''
                 INSERT INTO party_merges 
-                (source_party_uuid, target_party_uuid, confidence_score, merge_reason, merged_by, merged_at, merge_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (workspace_id, source_party_uuid, target_party_uuid, confidence_score, merge_reason, merged_by, merged_at, merge_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
+                workspace_id,
                 match['party1_uuid'],
                 match['party2_uuid'],
                 match['final_confidence_score'],
@@ -366,15 +339,15 @@ def approve_merge():
             cursor.execute('''
                 UPDATE party_aliases 
                 SET party_uuid = ?
-                WHERE party_uuid = ?
-            ''', (match['party2_uuid'], match['party1_uuid']))
+                WHERE party_uuid = ? AND workspace_id = ?
+            ''', (match['party2_uuid'], match['party1_uuid'], workspace_id))
             
             # Mark source as merged
             cursor.execute('''
                 UPDATE master_parties 
                 SET status = 'merged'
-                WHERE party_uuid = ?
-            ''', (match['party1_uuid'],))
+                WHERE party_uuid = ? AND workspace_id = ?
+            ''', (match['party1_uuid'], workspace_id))
             
             conn.commit()
         except Exception as e:
@@ -396,6 +369,7 @@ def approve_merge():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @party_matching_bp.route('/reverse-merge', methods=['POST'])
+@require_jwt_auth
 @require_admin
 def reverse_merge():
     """Reverse/undo a party merge"""
@@ -407,11 +381,12 @@ def reverse_merge():
         if not merge_id:
             return jsonify({'success': False, 'error': 'merge_id required'}), 400
         
+        workspace_id = get_workspace_id()
         conn = get_db()
         cursor = conn.cursor()
         
         # Get merge info
-        cursor.execute('SELECT * FROM party_merges WHERE id = ?', (merge_id,))
+        cursor.execute('SELECT * FROM party_merges WHERE id = ? AND workspace_id = ?', (merge_id, workspace_id))
         merge = dict(cursor.fetchone() or {})
         
         if not merge:
@@ -425,15 +400,15 @@ def reverse_merge():
             cursor.execute('''
                 UPDATE party_aliases 
                 SET party_uuid = ?
-                WHERE party_uuid = ?
-            ''', (merge['source_party_uuid'], merge['target_party_uuid']))
+                WHERE party_uuid = ? AND workspace_id = ?
+            ''', (merge['source_party_uuid'], merge['target_party_uuid'], workspace_id))
             
             # Mark source as active again
             cursor.execute('''
                 UPDATE master_parties 
                 SET status = 'active'
-                WHERE party_uuid = ?
-            ''', (merge['source_party_uuid'],))
+                WHERE party_uuid = ? AND workspace_id = ?
+            ''', (merge['source_party_uuid'], workspace_id))
             
             # Mark merge as reversed
             cursor.execute('''

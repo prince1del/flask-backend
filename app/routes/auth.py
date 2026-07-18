@@ -7,6 +7,7 @@ from flask import (
     current_app,
     jsonify,
     redirect,
+    render_template,
     render_template_string,
     request,
     session,
@@ -54,9 +55,12 @@ def register_auth_hooks(app) -> None:
 def get_jwt_service() -> JWTService:
     service = current_app.extensions.get("jwt_service")
     if service is None:
-        service = JWTService(
-            secret_key=current_app.config.get("SECRET_KEY", "change-me")
-        )
+        secret_key = current_app.config.get("SECRET_KEY")
+        if not secret_key:
+            raise RuntimeError(
+                "SECRET_KEY must be configured in app configuration before JWT service initialization."
+            )
+        service = JWTService(secret_key=secret_key)
         current_app.extensions["jwt_service"] = service
     return service
 
@@ -67,19 +71,70 @@ def require_jwt_auth(fn):
         if not auth_enabled():
             return fn(*args, **kwargs)
 
-        if (
-            request.path.startswith("/api/")
-            or request.headers.get("Authorization")
-            or request.is_json
-        ):
+        # An explicit Authorization header always takes precedence —
+        # this is a genuine token-based caller (mobile app, external
+        # API client, etc.) and must be verified as a real JWT.
+        if request.headers.get("Authorization"):
             return get_jwt_service().require_auth(fn)(*args, **kwargs)
 
+        # CRITICAL FIX: a valid browser session (from the HTML /login
+        # form) is just as trustworthy as a JWT for THIS SAME browser's
+        # own requests — including calls to /api/* endpoints. Before
+        # this fix, the /api/ path check below ran FIRST and ALWAYS
+        # demanded a JWT for any /api/* route, even when the caller
+        # already had a valid, authenticated session — meaning every
+        # fetch() call made by the frontend's own JavaScript (app.js)
+        # against /api/* routes (e.g. /api/v1/target-achievement/years,
+        # /api/v1/storage/account) failed with 401, because nothing in
+        # the browser-form login flow ever issues/stores a JWT Bearer
+        # token for app.js to attach — it only sets a session cookie.
+        # This silently broke entire dashboard sections (e.g. the
+        # "Customers" tab, which fetches its data this way) for every
+        # real browser user, while all our JWT-based automated tests
+        # kept passing.
         if session.get("authenticated"):
+            request.user = {
+                "user_id": session.get("user_id"),
+                "username": session.get("username"),
+                "role": session.get("role", "unassigned"),
+                "workspace_id": session.get("workspace_id", "default"),
+            }
             return fn(*args, **kwargs)
+
+        # No session, no Authorization header — genuine API-style
+        # requests must supply a valid JWT; browser page routes get
+        # redirected to the login form instead.
+        if request.path.startswith("/api/") or request.is_json:
+            return get_jwt_service().require_auth(fn)(*args, **kwargs)
 
         return redirect(url_for("auth.login"))
 
     return decorated
+
+
+def require_role(*allowed_roles):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            user = getattr(request, "user", None)
+            if not isinstance(user, dict) or user.get("role") not in allowed_roles:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": {
+                                "code": "FORBIDDEN",
+                                "message": "Insufficient permissions",
+                            },
+                        }
+                    ),
+                    403,
+                )
+            return fn(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
 
 
 def enforce_auth() -> Response | None:
@@ -95,6 +150,8 @@ def enforce_auth() -> Response | None:
     }:
         return None
     if request.path.startswith("/api/"):
+        return None
+    if request.headers.get("Authorization") or request.is_json:
         return None
     if request.path.startswith("/static/"):
         return None
@@ -112,14 +169,34 @@ def enforce_auth() -> Response | None:
     return redirect(url_for("auth.login"))
 
 
+def _get_auth_db() -> CentralizedDB:
+    configured_db_path = current_app.config.get("DATABASE_PATH")
+    if configured_db_path:
+        return CentralizedDB(str(configured_db_path))
+    return CentralizedDB()
+
+
 def ensure_default_admin() -> None:
     if not auth_enabled():
         return
-    CentralizedDB().ensure_default_admin_user()
+    _get_auth_db().ensure_default_admin_user()
+
+
+def get_workspace_id() -> str:
+    user = getattr(request, 'user', None)
+    if isinstance(user, dict) and 'workspace_id' in user:
+        return user['workspace_id']
+
+    if not auth_enabled():
+        return "default"
+
+    raise RuntimeError(
+        "Workspace ID cannot be determined from request parameters; authentication is required."
+    )
 
 
 def get_user_row(username: str) -> dict[str, object] | None:
-    db = CentralizedDB()
+    db = _get_auth_db()
     conn = sqlite3.connect(str(db.db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -135,7 +212,7 @@ def get_user_row(username: str) -> dict[str, object] | None:
         row = conn.execute(query, (username,)).fetchone()
         data = dict(row) if row is not None else None
         if data is not None and "role" not in data:
-            data["role"] = "admin"
+            data["role"] = "unassigned"
         if data is not None and "workspace_id" not in data:
             data["workspace_id"] = "default"
         return data
@@ -163,8 +240,9 @@ def api_login() -> tuple[Response, int]:
             400,
         )
 
+    db = _get_auth_db()
     user_row = get_user_row(username)
-    if not user_row or not CentralizedDB().authenticate_user(username, password):
+    if not user_row or not db.authenticate_user(username, password):
         return (
             jsonify(
                 {
@@ -182,7 +260,7 @@ def api_login() -> tuple[Response, int]:
     access_token, refresh_token = service.create_tokens(
         user_id=user_row.get("id", 1),
         username=user_row.get("username", username),
-        role=user_row.get("role", "admin"),
+        role=user_row.get("role", "unassigned"),
         workspace_id=user_row.get("workspace_id", "default"),
     )
     return (
@@ -197,7 +275,7 @@ def api_login() -> tuple[Response, int]:
                     "user": {
                         "id": user_row.get("id", 1),
                         "username": user_row.get("username", username),
-                        "role": user_row.get("role", "admin"),
+                        "role": user_row.get("role", "unassigned"),
                         "workspace_id": user_row.get("workspace_id", "default"),
                     },
                 },
@@ -257,7 +335,7 @@ def api_refresh() -> tuple[Response, int]:
     access_token, _ = get_jwt_service().create_tokens(
         user_id=payload.get("user_id", 1),
         username=payload.get("username", "admin"),
-        role=payload.get("role", "admin"),
+        role=payload.get("role", "unassigned"),
         workspace_id=payload.get("workspace_id", "default"),
     )
     return (
@@ -293,13 +371,30 @@ def login() -> str | Response:
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if CentralizedDB().authenticate_user(username, password):
+        # Use _get_auth_db() (Flask-config based) instead of a bare
+        # CentralizedDB() (env-var based) — these two can resolve to
+        # DIFFERENT database files depending on how DATABASE_PATH is
+        # configured, which is exactly the kind of inconsistency that
+        # caused this session-based login to silently authenticate
+        # against the wrong database in testing.
+        if _get_auth_db().authenticate_user(username, password):
+            user_row = get_user_row(username)
             session["authenticated"] = True
             session["username"] = username
+            # CRITICAL: without storing role/workspace_id here, every
+            # route that relies on get_workspace_id() will crash with
+            # "Workspace ID cannot be determined..." for anyone who logs
+            # in through this browser form (as opposed to the JSON API
+            # login) — that gap only surfaced during real-world browser
+            # testing, since all our automated tests used the JWT/API
+            # login path, which sets request.user correctly.
+            session["user_id"] = user_row.get("id") if user_row else None
+            session["role"] = user_row.get("role", "unassigned") if user_row else "unassigned"
+            session["workspace_id"] = user_row.get("workspace_id", "default") if user_row else "default"
             return redirect(request.args.get("next") or "/")
         error = "Invalid username or password"
 
-    return render_template_string(LOGIN_TEMPLATE, error=error)
+    return render_template("index.html", error=error)
 
 
 @auth_blueprint.route("/logout", endpoint="logout")

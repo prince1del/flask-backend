@@ -6,7 +6,10 @@ from typing import Any
 
 
 def auth_enabled() -> bool:
-    return os.getenv("AUTH_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    value = os.getenv("AUTH_ENABLED")
+    if value is None:
+        return True
+    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def expected_upload_format(key: str) -> dict[str, set[str]]:

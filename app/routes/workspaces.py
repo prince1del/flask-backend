@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
-from flask import Blueprint, Response, render_template_string, request
+from flask import Blueprint, Response, current_app, render_template_string, request
 
 from centralized_db_system.db import CentralizedDB
-from app.routes.auth import require_jwt_auth
+from app.routes.auth import require_jwt_auth, require_role
 
 workspaces_blueprint = Blueprint("workspaces", __name__)
 
@@ -71,8 +71,9 @@ def workspaces() -> tuple[dict[str, object], int]:
 
 @workspaces_blueprint.route("/admin/database", methods=["GET", "POST"])
 @require_jwt_auth
+@require_role('admin')
 def database_admin() -> str:
-    db = CentralizedDB("centralized_db.sqlite3")
+    db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
     backup_message = None
     restore_message = None
     cleanup_message = None
@@ -103,7 +104,21 @@ def database_admin() -> str:
             cleanup_message = f"Removed {removed} stale files from {cleanup_dir}"
 
     logs = db.list_audit_logs(limit=20)
-    audit_logs = json.dumps(logs, indent=2) if logs else "No audit logs found"
+    if logs:
+        lines = []
+        for log in logs:
+            details = log.get("details") or {}
+            if isinstance(details, dict):
+                detail_text = ", ".join(f"{key}={value}" for key, value in details.items())
+            else:
+                detail_text = str(details) if details else "No details"
+            lines.append(
+                f"{log.get('created_at', '')} | {log.get('action', 'unknown')} | {log.get('table_name', 'unknown')} | {detail_text}"
+            )
+        audit_logs = "\n".join(lines)
+    else:
+        audit_logs = "Coming Soon"
+
     return render_template_string(
         ADMIN_DATABASE_TEMPLATE,
         backup_message=backup_message,

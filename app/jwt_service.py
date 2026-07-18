@@ -35,6 +35,8 @@ class JWTService:
         refresh_payload = {
             "user_id": user_id,
             "username": username,
+            "role": role,
+            "workspace_id": workspace_id,
             "iat": now,
             "exp": now + timedelta(seconds=self.refresh_token_expiry),
             "type": "refresh",
@@ -55,9 +57,9 @@ class JWTService:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             return payload
         except jwt.ExpiredSignatureError:
-            return {"error": "Token expired"}
+            return {"error": "Session timeout"}
         except jwt.InvalidTokenError:
-            return {"error": "Invalid token"}
+            return {"error": "Invalid session"}
 
     def require_auth(self, f):
         """Decorator to protect endpoints"""

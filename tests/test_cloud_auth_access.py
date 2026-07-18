@@ -1,7 +1,22 @@
 import os
 
-from app.web_app import create_app
+from app.utils import auth_enabled
+from app.web_app import create_app, load_env_file
 from centralized_db_system.db import CentralizedDB
+
+
+def test_auth_enabled_defaults_to_on_when_unset(monkeypatch):
+    monkeypatch.delenv("AUTH_ENABLED", raising=False)
+
+    assert auth_enabled() is True
+
+
+def test_env_file_overrides_existing_auth_enabled(monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+
+    load_env_file()
+
+    assert auth_enabled() is True
 
 
 def test_auth_helpers_support_registration_and_login(tmp_path):
@@ -26,6 +41,23 @@ def test_web_app_redirects_to_login_when_auth_is_enabled(monkeypatch, tmp_path):
     response = client.get("/")
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
+
+
+def test_login_page_uses_branded_approved_ui(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv(
+        "CLOUD_DATABASE_URL", f"sqlite:///{tmp_path / 'login-ui.sqlite3'}"
+    )
+
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    assert b"Nexora Login" in response.data
+    assert b"Sign in" not in response.data
 
 
 def test_jwt_login_allows_access_to_protected_api(monkeypatch, tmp_path):

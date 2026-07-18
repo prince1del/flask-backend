@@ -1,267 +1,327 @@
-from flask import Blueprint, request, jsonify
-from functools import wraps
-import sqlite3
-from datetime import datetime
+from flask import Blueprint, request, jsonify, render_template_string
 import json
+import sqlite3
+
+from app.routes.auth import require_jwt_auth, get_workspace_id
+from app.storage.oauth import GoogleDriveOAuth
+from centralized_db_system.db import CentralizedDB
 
 # Create blueprint
 storage_bp = Blueprint('storage', __name__, url_prefix='/api/v1/storage')
 
-# Database path
-DB_PATH = 'centralized_db.sqlite3'
-
-# JWT decorator
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'success': False, 'error': 'Token required'}), 401
-        return f(*args, **kwargs)
-    return decorated
-
-def get_user_from_token(token):
-    """Extract user info from token"""
-    try:
-        return {'user_id': 2, 'role': 'admin', 'username': 'mobile_test_admin'}
-    except:
-        return None
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 # ==================== ROUTES ====================
 
+def _get_request_user():
+    raw_user = getattr(request, 'user', None)
+    if isinstance(raw_user, dict) and 'user_id' in raw_user and 'workspace_id' in raw_user:
+        return raw_user
+    raise RuntimeError("User context not available; authentication required.")
+
 @storage_bp.route('/connect', methods=['POST'])
-@token_required
+@require_jwt_auth
 def connect_storage():
     """Initiate Google Drive OAuth connection"""
     try:
-        user = get_user_from_token(request.headers.get('Authorization'))
-        
-        # In real app, redirect to Google OAuth
-        # For now, return redirect URL
-        oauth_url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:5000/api/v1/storage/oauth-callback&scope=https://www.googleapis.com/auth/drive&response_type=code"
-        
+        user = _get_request_user()
+        user_id = user['user_id']
+        workspace_id = get_workspace_id()
+
+        # Use GOOGLE_OAUTH_REDIRECT_URI from .env so it matches Google Cloud Console exactly.
+        host = request.host_url.rstrip('/')
+        oauth_url, state = GoogleDriveOAuth.get_auth_url(
+            host_url=host,
+            redirect_uri=None,
+            state_payload={
+                'user_id': user_id,
+                'workspace_id': workspace_id,
+            },
+        )
         return jsonify({
             'success': True,
             'data': {
                 'oauth_url': oauth_url,
-                'message': 'Redirect user to this URL to authorize'
+                'message': 'Redirect user to this URL to authorize',
+                'state': state,
             }
         }), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @storage_bp.route('/account', methods=['GET'])
-@token_required
+@require_jwt_auth
 def get_account():
     """Get connected storage account info"""
     try:
-        user = get_user_from_token(request.headers.get('Authorization'))
+        user = _get_request_user()
         user_id = user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM storage_accounts WHERE user_id = ?', (user_id,))
-        account = dict(cursor.fetchone() or {})
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': {
-                'connected': bool(account),
-                'account': account if account else None
+        workspace_id = get_workspace_id()
+
+        db = CentralizedDB()
+        account = db.get_storage_account(user_id=user_id, workspace_id=workspace_id)
+        connected = bool(
+            account
+            and account.get("sync_status") == "connected"
+            and account.get("oauth_token")
+        )
+        return jsonify(
+            {
+                "success": True,
+                "data": {"connected": connected, "account": account if connected else None},
             }
-        }), 200
+        ), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @storage_bp.route('/oauth-callback', methods=['GET'])
 def oauth_callback():
-    """Handle OAuth callback from Google"""
+    """Handle OAuth callback from Google."""
     try:
         code = request.args.get('code')
-        
+        state = request.args.get('state')
         if not code:
-            return jsonify({'success': False, 'error': 'No code provided'}), 400
-        
-        # In real app, exchange code for token
-        # For now, simulate successful connection
-        
-        return jsonify({
-            'success': True,
-            'data': {'message': 'Connected successfully'},
-            'redirect': '/'
-        }), 200
+            return render_template_string(
+                '<h1>Google Drive Connect Failed</h1><p>No authorization code was returned.</p>'
+            ), 400
+
+        state_data = GoogleDriveOAuth.parse_oauth_state(state)
+        user_id = state_data.get('user_id')
+        workspace_id = (
+            state_data.get('workspace_id')
+            or state_data.get('work_id')
+            or 'default'
+        )
+        if user_id is None:
+            return render_template_string(
+                '<h1>Google Drive Connect Failed</h1><p>Missing user context in OAuth state. Please reconnect from Cloud Hub.</p>'
+            ), 400
+
+        host = request.host_url.rstrip('/')
+        redirect_uri = f'{host}/api/v1/storage/oauth-callback'
+        try:
+            token_data = GoogleDriveOAuth.exchange_code_for_token(
+                auth_code=code,
+                host_url=host,
+                redirect_uri=redirect_uri,
+            )
+        except ValueError as exc:
+            return render_template_string(
+                '<h1>Google Drive Connect Failed</h1><p>{{ message }}</p>',
+                message=str(exc),
+            ), 400
+        except RuntimeError as exc:
+            return render_template_string(
+                '<h1>Google Drive Connect Failed</h1><p>{{ message }}</p>',
+                message=str(exc),
+            ), 500
+
+        db = CentralizedDB()
+        db.ensure_storage_tables()
+        db.save_storage_account(
+            user_id=int(user_id),
+            workspace_id=str(workspace_id),
+            provider_type='google_drive',
+            oauth_token=token_data,
+            sync_status='connected',
+        )
+
+        return render_template_string(
+            '<!doctype html>'
+            '<html><head><meta charset="utf-8"><title>Google Drive Connected</title></head>'
+            '<body>'
+            '<h1>Google Drive Connected</h1>'
+            '<p>Your Google Drive account has been connected successfully.</p>'
+            '<p>You may now close this window and return to the application.</p>'
+            '<script>'
+            'if (window.opener) {'
+            '  window.opener.postMessage({ type: "google_drive_connected" }, "*");'
+            '  setTimeout(function() { window.close(); }, 1500);'
+            '}'
+            '</script>'
+            '</body></html>'
+        ), 200
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return render_template_string(
+            '<!doctype html>'
+            '<html><head><meta charset="utf-8"><title>Google Drive Connect Failed</title></head>'
+            '<body>'
+            '<h1>Google Drive Connect Failed</h1>'
+            '<p>{{ message }}</p>'
+            '<script>'
+            'const errorMessage = {{ message|tojson }};'
+            'if (window.opener) {'
+            '  window.opener.postMessage({ type: "google_drive_connection_failed", message: errorMessage }, "*");'
+            '}'
+            '</script>'
+            '</body></html>',
+            message=str(e),
+        ), 500
 
 @storage_bp.route('/disconnect', methods=['POST'])
-@token_required
+@require_jwt_auth
 def disconnect_storage():
     """Disconnect Google Drive storage"""
     try:
-        user = get_user_from_token(request.headers.get('Authorization'))
+        user = _get_request_user()
         user_id = user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM storage_accounts WHERE user_id = ?', (user_id,))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': {'message': 'Disconnected successfully'}
-        }), 200
+        workspace_id = get_workspace_id()
+
+        db = CentralizedDB()
+        disconnected = db.disconnect_storage_account(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            provider_type='google_drive',
+        )
+        if not disconnected:
+            return jsonify({'success': False, 'error': 'No connected Google Drive account found.'}), 404
+        return jsonify({'success': True, 'data': {'message': 'Disconnected successfully'}}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @storage_bp.route('/dashboard', methods=['GET'])
-@token_required
+@require_jwt_auth
 def get_dashboard():
     """Get storage dashboard with statistics"""
     try:
-        user = get_user_from_token(request.headers.get('Authorization'))
+        user = _get_request_user()
         user_id = user['user_id']
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Check if connected
-        cursor.execute('SELECT * FROM storage_accounts WHERE user_id = ?', (user_id,))
-        account = cursor.fetchone()
-        
+        workspace_id = get_workspace_id()
+
+        db = CentralizedDB()
+        account = db.get_storage_account(user_id=user_id, workspace_id=workspace_id)
+
         if not account:
-            conn.close()
-            return jsonify({
-                'success': True,
-                'data': {
-                    'connected': False,
-                    'storage_info': {},
-                    'user_id': user_id
-                }
-            }), 200
-        
-        # Get file stats
+            return jsonify({'success': True, 'data': {'connected': False, 'storage_info': {}, 'user_id': user_id}}), 200
+
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
         cursor.execute('''
-            SELECT 
-                COUNT(*) as file_count,
-                SUM(file_size) as total_size
-            FROM file_index
-            WHERE user_id = ?
-        ''', (user_id,))
-        
+            SELECT COUNT(*) as file_count,
+                   SUM(COALESCE(fi.file_size_bytes, fi.file_size, 0)) as total_size
+            FROM file_index fi
+            JOIN storage_accounts sa ON fi.storage_account_id = sa.id
+            WHERE sa.user_id = ? AND sa.workspace_id = ?
+        ''', (user_id, workspace_id))
+
         stats = dict(cursor.fetchone() or {})
         conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': {
-                'connected': True,
-                'storage_info': {
-                    'file_count': stats.get('file_count', 0),
-                    'total_size': stats.get('total_size', 0),
-                    'quota': 107374182400  # 100GB in bytes
-                },
-                'user_id': user_id
-            }
-        }), 200
+
+        return jsonify({'success': True, 'data': {'connected': True, 'storage_info': {'file_count': stats.get('file_count', 0), 'total_size': stats.get('total_size', 0), 'quota': 107374182400}, 'user_id': user_id}}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @storage_bp.route('/files', methods=['GET'])
-@token_required
+@require_jwt_auth
 def get_files():
     """Get list of indexed files"""
     try:
-        user = get_user_from_token(request.headers.get('Authorization'))
+        user = _get_request_user()
         user_id = user['user_id']
-        
-        conn = get_db()
+        workspace_id = get_workspace_id()
+
+        db = CentralizedDB()
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
+
         cursor.execute('''
-            SELECT * FROM file_index 
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT 100
-        ''', (user_id,))
-        
+            SELECT fi.*
+            FROM file_index fi
+            JOIN storage_accounts sa ON fi.storage_account_id = sa.id
+            WHERE sa.user_id = ? AND sa.workspace_id = ?
+            ORDER BY COALESCE(fi.modified_at, fi.updated_at, fi.created_at) DESC
+            LIMIT 500
+        ''', (user_id, workspace_id))
+
         files = [dict(row) for row in cursor.fetchall()]
         conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': {'files': files}
-        }), 200
+
+        return jsonify({'success': True, 'data': {'files': files}}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @storage_bp.route('/sync', methods=['POST'])
-@token_required
+@require_jwt_auth
 def sync_files():
-    """Sync files from Google Drive"""
+    """Sync files from Google Drive into the local file index."""
     try:
-        user = get_user_from_token(request.headers.get('Authorization'))
+        user = _get_request_user()
         user_id = user['user_id']
-        
-        # In real app, call Google Drive API to sync
-        # For now, return success
-        
+        workspace_id = get_workspace_id()
+
+        from app.storage.manager import StorageManager
+        from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+        manager = StorageManager()
+        manager.register_provider('google_drive', GoogleDriveProvider)
+        result = manager.sync_user_storage(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            incremental=False,
+        )
+        synced = int(result.get('synced_items') or 0)
+        found = int(result.get('files_found') or synced)
         return jsonify({
             'success': True,
             'data': {
-                'message': 'Sync started',
-                'files_synced': 0
-            }
+                'message': f'Synced {synced} file(s) from Google Drive.',
+                'files_synced': synced,
+                'files_found': found,
+                'workspace_id': workspace_id,
+            },
         }), 200
+    except KeyError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        message = str(e)
+        if 'accessNotConfigured' in message or 'Drive API has not been used' in message:
+            message = (
+                'Google Drive API is not enabled for this OAuth project. '
+                'Enable it at https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=318831882178 '
+                'then wait a minute and click Sync again.'
+            )
+        return jsonify({'success': False, 'error': message}), 500
 
 @storage_bp.route('/search', methods=['GET'])
-@token_required
+@require_jwt_auth
 def search_files():
     """Search indexed files"""
     try:
-        user = get_user_from_token(request.headers.get('Authorization'))
+        user = _get_request_user()
         user_id = user['user_id']
+        workspace_id = get_workspace_id()
         query = request.args.get('query', '').lower()
-        
+
         if not query:
             return jsonify({'success': False, 'error': 'Query required'}), 400
-        
-        conn = get_db()
+
+        db = CentralizedDB()
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
+
         cursor.execute('''
-            SELECT * FROM file_index 
-            WHERE user_id = ? AND (
-                LOWER(file_name) LIKE ? OR 
-                LOWER(file_type) LIKE ? OR
-                LOWER(tags) LIKE ?
-            )
-            ORDER BY created_at DESC
+            SELECT fi.*
+            FROM file_index fi
+            JOIN storage_accounts sa ON fi.storage_account_id = sa.id
+            WHERE sa.user_id = ? AND sa.workspace_id = ?
+              AND (
+                LOWER(fi.file_name) LIKE ? OR
+                LOWER(fi.file_type) LIKE ? OR
+                LOWER(fi.tags) LIKE ?
+              )
+            ORDER BY fi.created_at DESC
             LIMIT 50
-        ''', (user_id, f'%{query}%', f'%{query}%', f'%{query}%'))
-        
+        ''', (user_id, workspace_id, f'%{query}%', f'%{query}%', f'%{query}%'))
+
         files = [dict(row) for row in cursor.fetchall()]
         conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': {'results': files}
-        }), 200
+
+        return jsonify({'success': True, 'data': {'results': files}}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
-# Also handle GET /files/search (without /api prefix internally)
-@storage_bp.route('/search', methods=['GET'])
-@token_required
-def search_files_alt():
-    """Alternative endpoint for file search"""
-    return search_files()

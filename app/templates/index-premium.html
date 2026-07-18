@@ -96,6 +96,37 @@
             </section>
         </main>
 
+        <section id="order-sheets-workspace" class="workspace-shell hidden" style="padding: 2rem; max-width: 1200px; margin: 0 auto;">
+            <div class="workspace-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <div>
+                    <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Order Sheets</span></div>
+                    <h2>Order Sheet Folder</h2>
+                </div>
+                <button class="back-btn" onclick="openModule('Dashboard')">← Back</button>
+            </div>
+            <div class="workspace-actions" style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+                <button type="button" class="btn btn-primary" onclick="showOrderSheetUpload(1)">Upload Order Sheet</button>
+                <button type="button" class="btn btn-secondary" onclick="showOrderSheetUpload(2)">Upload Customer Order</button>
+                <button type="button" class="btn btn-secondary" onclick="showOrderSheetUpload(3)">Upload Sales Order (SO)</button>
+                <button type="button" class="btn btn-secondary" onclick="showOrderSheetUpload(4)">Upload Commercial Invoice (CI)</button>
+                <button type="button" class="btn btn-secondary" onclick="loadOrderSheets()">Refresh</button>
+                <button type="button" class="btn btn-secondary" onclick="openModule('Orders')">Go to Orders</button>
+            </div>
+            <div id="order-sheet-upload-panel" class="hidden" style="margin-bottom: 16px; border: 1px solid #444; border-radius: 10px; padding: 1rem; background: #111;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+                    <div style="font-weight: 600; color: #fff;">Upload stage: <span id="order-sheet-upload-stage-label">Stage 1</span></div>
+                    <button type="button" class="btn btn-secondary" onclick="hideOrderSheetUpload()">Close upload</button>
+                </div>
+                <iframe id="order-sheet-upload-frame" src="" style="width: 100%; min-height: 720px; border: 1px solid #333; border-radius: 10px;"></iframe>
+            </div>
+            <div class="workspace-panels" style="background: #111; border: 1px solid #333; border-radius: 12px; padding: 1.5rem;">
+                <div class="card-highlight" style="background: transparent; border: none; box-shadow: none; padding: 0;">
+                    <h3>All uploaded order sheets</h3>
+                    <p>Review the complete history of order sheets here. New and old uploads are kept in one place.</p>
+                    <div id="order-sheets-list">Loading order sheets...</div>
+                </div>
+            </div>
+        </section>
         <footer class="footer">
             <p>© 2026 Bombay Dyeing Limited · NEXORA Premium UI</p>
         </footer>

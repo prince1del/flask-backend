@@ -4,13 +4,46 @@ from datetime import datetime, timezone
 
 from app.db import db
 from app.models import Distributor, Retailer
-from app.routes.auth import require_jwt_auth
+from app.routes.auth import get_workspace_id, require_jwt_auth
+
+
+def _find_similar_active_party(model, workspace_id, name, phone, exclude_id=None):
+    """
+    Looks for an ACTIVE record with the same phone OR the same name
+    (case-insensitive) in this workspace — used as a soft warning, NOT
+    a hard block, since one person can genuinely run more than one
+    firm sharing a phone number or a similar name. The caller decides
+    whether to proceed after the user confirms.
+    """
+    name = (name or "").strip()
+    phone = (phone or "").strip()
+    if not name and not phone:
+        return None
+
+    query = model.query.filter_by(status="active", workspace_id=workspace_id)
+    if exclude_id is not None:
+        query = query.filter(model.id != exclude_id)
+
+    conditions = []
+    if phone:
+        conditions.append(model.phone == phone)
+    if name:
+        conditions.append(func.lower(model.name) == name.lower())
+    if not conditions:
+        return None
+
+    from sqlalchemy import or_
+    return query.filter(or_(*conditions)).first()
 
 parties_bp = Blueprint('parties', __name__, url_prefix='/api/v1/parties')
 
 
 def _current_user():
     return getattr(request, 'user', None)
+
+
+def _get_workspace_id():
+    return get_workspace_id()
 
 
 # ========== DISTRIBUTOR ENDPOINTS ==========
@@ -23,7 +56,8 @@ def get_distributors():
     offset = (page - 1) * limit
     search = (request.args.get('search') or '').strip()
 
-    query = Distributor.query.filter_by(status='active')
+    workspace_id = _get_workspace_id()
+    query = Distributor.query.filter_by(status='active', workspace_id=workspace_id)
     if search:
         pattern = f'%{search.lower()}%'
         query = query.filter(
@@ -49,7 +83,8 @@ def get_distributors():
 @parties_bp.route('/distributors/<int:id>', methods=['GET'])
 @require_jwt_auth
 def get_distributor(id):
-    distributor = db.session.get(Distributor, id)
+    workspace_id = _get_workspace_id()
+    distributor = Distributor.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not distributor:
         return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
     return jsonify({'success': True, 'data': distributor.to_dict(), 'message': 'Distributor retrieved successfully'}), 200
@@ -64,10 +99,33 @@ def create_distributor():
         return jsonify({'success': False, 'data': None, 'message': 'Name is required'}), 400
 
     gst_number = (data.get('gst_number') or '').strip() or None
+    workspace_id = _get_workspace_id()
     if gst_number:
-        existing = Distributor.query.filter_by(gst_number=gst_number).first()
+        # GST numbers are genuinely unique per real firm by law — this
+        # is a hard block. Scoped to ACTIVE records only: a
+        # soft-deleted (inactive) distributor's old GST must not
+        # permanently block reuse of that same GST for a new record.
+        existing = Distributor.query.filter_by(
+            gst_number=gst_number, workspace_id=workspace_id, status='active'
+        ).first()
         if existing:
-            return jsonify({'success': False, 'data': None, 'message': 'GST number already exists'}), 400
+            return jsonify({'success': False, 'data': None, 'message': 'GST number already exists for an active distributor'}), 400
+
+    # Soft warning only — one person can legitimately run more than
+    # one firm sharing a phone number or a similar name. The frontend
+    # shows this as a confirmation prompt; force_save=true re-submits
+    # to actually proceed.
+    if not data.get('force_save'):
+        similar = _find_similar_active_party(
+            Distributor, workspace_id, name, data.get('phone')
+        )
+        if similar:
+            return jsonify({
+                'success': False,
+                'requires_confirmation': True,
+                'data': {'existing': similar.to_dict()},
+                'message': f"A distributor named '{similar.name}' with similar details already exists. Save anyway?",
+            }), 409
 
     distributor = Distributor(
         name=name,
@@ -82,6 +140,7 @@ def create_distributor():
         phone=data.get('phone'),
         email=data.get('email'),
         status=data.get('status') or 'active',
+        workspace_id=workspace_id,
         created_by=_current_user().get('user_id') if _current_user() else None,
     )
 
@@ -97,7 +156,8 @@ def create_distributor():
 @parties_bp.route('/distributors/<int:id>', methods=['PUT'])
 @require_jwt_auth
 def update_distributor(id):
-    distributor = db.session.get(Distributor, id)
+    workspace_id = _get_workspace_id()
+    distributor = Distributor.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not distributor:
         return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
 
@@ -107,9 +167,11 @@ def update_distributor(id):
     if 'gst_number' in data:
         gst_number = (data.get('gst_number') or '').strip() or None
         if gst_number and gst_number != distributor.gst_number:
-            existing = Distributor.query.filter_by(gst_number=gst_number).first()
+            existing = Distributor.query.filter_by(
+                gst_number=gst_number, workspace_id=workspace_id, status='active'
+            ).first()
             if existing:
-                return jsonify({'success': False, 'data': None, 'message': 'GST number already exists'}), 400
+                return jsonify({'success': False, 'data': None, 'message': 'GST number already exists for an active distributor'}), 400
         distributor.gst_number = gst_number
     for field in ['territory', 'city', 'state', 'pin_code', 'address', 'credit_limit', 'contact_person', 'phone', 'email', 'status']:
         if field in data:
@@ -127,7 +189,8 @@ def update_distributor(id):
 @parties_bp.route('/distributors/<int:id>', methods=['DELETE'])
 @require_jwt_auth
 def delete_distributor(id):
-    distributor = db.session.get(Distributor, id)
+    workspace_id = _get_workspace_id()
+    distributor = Distributor.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not distributor:
         return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
     distributor.status = 'inactive'
@@ -150,8 +213,9 @@ def get_retailers():
     offset = (page - 1) * limit
     search = (request.args.get('search') or '').strip()
     distributor_id = request.args.get('distributor_id', type=int)
+    workspace_id = _get_workspace_id()
 
-    query = Retailer.query.filter_by(status='active')
+    query = Retailer.query.filter_by(status='active', workspace_id=workspace_id)
     if distributor_id:
         query = query.filter_by(distributor_id=distributor_id)
     if search:
@@ -169,7 +233,8 @@ def get_retailers():
 @parties_bp.route('/retailers/<int:id>', methods=['GET'])
 @require_jwt_auth
 def get_retailer(id):
-    retailer = db.session.get(Retailer, id)
+    workspace_id = _get_workspace_id()
+    retailer = Retailer.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not retailer:
         return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
     return jsonify({'success': True, 'data': retailer.to_dict(), 'message': 'Retailer retrieved successfully'}), 200
@@ -186,15 +251,30 @@ def create_retailer():
     if not distributor_id:
         return jsonify({'success': False, 'data': None, 'message': 'Distributor ID is required'}), 400
 
-    distributor = db.session.get(Distributor, distributor_id)
+    workspace_id = _get_workspace_id()
+    distributor = Distributor.query.filter_by(id=distributor_id, workspace_id=workspace_id).first()
     if not distributor:
         return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
 
     gst_number = (data.get('gst_number') or '').strip() or None
     if gst_number:
-        existing = Retailer.query.filter_by(gst_number=gst_number).first()
+        existing = Retailer.query.filter_by(
+            gst_number=gst_number, workspace_id=workspace_id, status='active'
+        ).first()
         if existing:
-            return jsonify({'success': False, 'data': None, 'message': 'GST number already exists'}), 400
+            return jsonify({'success': False, 'data': None, 'message': 'GST number already exists for an active retailer'}), 400
+
+    if not data.get('force_save'):
+        similar = _find_similar_active_party(
+            Retailer, workspace_id, name, data.get('phone')
+        )
+        if similar:
+            return jsonify({
+                'success': False,
+                'requires_confirmation': True,
+                'data': {'existing': similar.to_dict()},
+                'message': f"A retailer named '{similar.name}' with similar details already exists. Save anyway?",
+            }), 409
 
     retailer = Retailer(
         name=name,
@@ -210,6 +290,7 @@ def create_retailer():
         phone=data.get('phone'),
         email=data.get('email'),
         status=data.get('status') or 'active',
+        workspace_id=workspace_id,
         created_by=_current_user().get('user_id') if _current_user() else None,
     )
 
@@ -225,7 +306,8 @@ def create_retailer():
 @parties_bp.route('/retailers/<int:id>', methods=['PUT'])
 @require_jwt_auth
 def update_retailer(id):
-    retailer = db.session.get(Retailer, id)
+    workspace_id = _get_workspace_id()
+    retailer = Retailer.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not retailer:
         return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
 
@@ -235,12 +317,14 @@ def update_retailer(id):
     if 'gst_number' in data:
         gst_number = (data.get('gst_number') or '').strip() or None
         if gst_number and gst_number != retailer.gst_number:
-            existing = Retailer.query.filter_by(gst_number=gst_number).first()
+            existing = Retailer.query.filter_by(
+                gst_number=gst_number, workspace_id=workspace_id, status='active'
+            ).first()
             if existing:
-                return jsonify({'success': False, 'data': None, 'message': 'GST number already exists'}), 400
+                return jsonify({'success': False, 'data': None, 'message': 'GST number already exists for an active retailer'}), 400
         retailer.gst_number = gst_number
     if 'distributor_id' in data:
-        distributor = db.session.get(Distributor, data['distributor_id'])
+        distributor = Distributor.query.filter_by(id=data['distributor_id'], workspace_id=workspace_id).first()
         if not distributor:
             return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
         retailer.distributor_id = data['distributor_id']
@@ -260,7 +344,8 @@ def update_retailer(id):
 @parties_bp.route('/retailers/<int:id>', methods=['DELETE'])
 @require_jwt_auth
 def delete_retailer(id):
-    retailer = db.session.get(Retailer, id)
+    workspace_id = _get_workspace_id()
+    retailer = Retailer.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not retailer:
         return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
     retailer.status = 'inactive'
