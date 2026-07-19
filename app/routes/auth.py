@@ -107,6 +107,23 @@ def require_jwt_auth(fn):
         if request.path.startswith("/api/") or request.is_json:
             return get_jwt_service().require_auth(fn)(*args, **kwargs)
 
+        # Prefer JSON for XHR/fetch callers hitting non-/api routes (e.g. legacy /search)
+        # so the SPA does not try to parse the HTML login page as JSON.
+        wants_json = "application/json" in (request.headers.get("Accept") or "")
+        if wants_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "UNAUTHORIZED",
+                            "message": "Authentication required",
+                        },
+                    }
+                ),
+                401,
+            )
+
         return redirect(url_for("auth.login"))
 
     return decorated

@@ -6022,8 +6022,21 @@ async function runGlobalSearch() {
   toggleModal('global-search-modal', true);
 
   try {
-    const response = await fetchWithAuth(`/search?q=${encodeURIComponent(query)}`);
-    const data = await response.json();
+    const response = await fetchWithAuth(`/api/v1/search?q=${encodeURIComponent(query)}`);
+    const rawText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      throw new Error(
+        response.ok
+          ? 'Search returned invalid JSON'
+          : `Search failed (HTTP ${response.status}). Try logout and login again.`
+      );
+    }
+    if (!response.ok) {
+      throw new Error(data?.error?.message || data?.message || `Search failed (HTTP ${response.status})`);
+    }
 
     // An OLDER, slower keystroke's response can arrive AFTER a newer
     // one — without this check, it would overwrite the newer,

@@ -1816,6 +1816,7 @@ def bale_calculator() -> str:
 
 
 @data_blueprint.route("/search")
+@data_blueprint.route("/api/v1/search")
 @require_jwt_auth
 def search() -> Response:
     query = request.args.get("q", "")
@@ -1825,10 +1826,20 @@ def search() -> Response:
     # searches and returns results mixed across EVERY workspace, the
     # same class of cross-tenant leak already found and fixed for
     # bulk_upload_masters/export functions earlier in this project.
-    results = CentralizedDB(_db_path()).global_search(
-        query, workspace_id=get_workspace_id(), user_id=user_id,
-    )
-    return Response(json.dumps(results, indent=2), mimetype="application/json")
+    try:
+        payload = CentralizedDB(_db_path()).global_search(
+            query, workspace_id=get_workspace_id(), user_id=user_id,
+        )
+        return jsonify(payload)
+    except Exception as exc:
+        return jsonify(
+            {
+                "query": query,
+                "results": {},
+                "success": False,
+                "error": {"code": "SEARCH_FAILED", "message": str(exc)},
+            }
+        ), 500
 
 
 def _compute_financial_year(reference_date: datetime | None = None) -> str:
