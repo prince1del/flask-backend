@@ -1,7 +1,8 @@
 """Visiting / business card OCR → structured CRM fields.
 
 Uses Gemini Vision when GEMINI_API_KEY is set (best on fancy fonts/colours).
-Falls back to local OCR text + regex heuristics so the feature still works offline-ish.
+Heavy local OCR (EasyOCR/Paddle) is OFF on Render — those models OOM kill
+Starter (512MB). Optional light local OCR only if HOP_CARD_LOCAL_OCR=1.
 """
 
 from __future__ import annotations
@@ -131,7 +132,6 @@ def _normalize_fields(data: dict[str, Any] | None) -> dict[str, str]:
             if key in data and _s(data.get(key)):
                 out[field] = _s(data.get(key))
                 break
-    # Clean phone: keep digits / +
     if out["mobile"]:
         cleaned = re.sub(r"[^\d+]", "", out["mobile"])
         if len(re.sub(r"\D", "", cleaned)) >= 8:
@@ -265,13 +265,25 @@ Rules:
     return dict(_EMPTY_FIELDS), last_err or "gemini_failed"
 
 
+def _local_ocr_allowed() -> bool:
+    """Heavy local OCR blows past Render Starter 512MB — off by default on Render."""
+    flag = (os.getenv("HOP_CARD_LOCAL_OCR") or os.getenv("HOP_ALLOW_HEAVY_OCR") or "").strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        return True
+    if (os.getenv("RENDER") or "").strip().lower() in {"true", "1"}:
+        return False
+    if (os.getenv("HOP_LOW_MEMORY") or "").strip().lower() in {"1", "true", "yes"}:
+        return False
+    return False
+
+
 def _local_ocr_text(path: Path) -> tuple[str, str]:
-    """Best-effort plain text from local OCR engines."""
+    """Light local OCR only when explicitly enabled — never EasyOCR/Paddle here."""
+    if not _local_ocr_allowed():
+        return "", ""
     try:
         from app.hop_handwriting_ocr import (
             _cleanup_temps,
-            _extract_easyocr_text,
-            _extract_paddle_text,
             _extract_rapid_text,
             _extract_tesseract_text,
             _prepare_image_variants,
@@ -282,8 +294,6 @@ def _local_ocr_text(path: Path) -> tuple[str, str]:
     variants = _prepare_image_variants(path)
     try:
         engines = (
-            ("easyocr", _extract_easyocr_text),
-            ("paddleocr", _extract_paddle_text),
             ("rapidocr", _extract_rapid_text),
             ("tesseract", _extract_tesseract_text),
         )
@@ -326,7 +336,6 @@ def _heuristic_from_text(text: str) -> dict[str, str]:
 
     pan = pan_re.search(text)
     if pan and not fields["gst_no"].startswith(pan.group(0)):
-        # avoid matching GST substring oddly — PAN standalone
         candidate = pan.group(0).upper()
         if candidate not in (fields["gst_no"] or ""):
             fields["pan"] = candidate
@@ -343,7 +352,6 @@ def _heuristic_from_text(text: str) -> dict[str, str]:
     if phones:
         fields["mobile"] = re.sub(r"[^\d+]", "", phones[0])
 
-    # Company / person: first substantial lines without email/phone/web
     name_candidates: list[str] = []
     for ln in lines[:12]:
         low = ln.lower()
@@ -358,17 +366,14 @@ def _heuristic_from_text(text: str) -> dict[str, str]:
         name_candidates.append(ln)
 
     if name_candidates:
-        # Heuristic: ALL-CAPS or first line = company; next person-like = contact
         fields["company"] = name_candidates[0]
         if len(name_candidates) > 1:
             second = name_candidates[1]
-            # Person names are usually Title Case / shorter
             if len(second.split()) <= 5:
                 fields["contact_person"] = second
             if len(name_candidates) > 2 and not fields["address"]:
                 fields["address"] = ", ".join(name_candidates[2:5])
 
-    # City guess: last address-ish token
     city_hint = re.search(
         r"\b(Mumbai|Delhi|Noida|Gurgaon|Gurugram|Pune|Bengaluru|Bangalore|Hyderabad|Chennai|"
         r"Kolkata|Ahmedabad|Jaipur|Chandigarh|Lucknow|Indore|Surat|Nagpur|Goa|"
@@ -388,26 +393,51 @@ def _heuristic_from_text(text: str) -> dict[str, str]:
 
 
 def scan_visiting_card(path: Path) -> dict[str, Any]:
-    """Return structured card fields + engine metadata. Never auto-saves."""
+    """Return structured card fields + engine metadata. Never auto-saves.
+
+    On Render Starter (512MB): Gemini Vision only — local EasyOCR/Paddle disabled.
+    """
     fields, engine = _extract_gemini(path)
     raw_text = ""
     note = ""
+    gemini_on = bool(_gemini_key())
 
-    has_core = bool(fields.get("company") or fields.get("contact_person") or fields.get("mobile") or fields.get("email"))
+    has_core = bool(
+        fields.get("company")
+        or fields.get("contact_person")
+        or fields.get("mobile")
+        or fields.get("email")
+    )
     if not has_core:
-        raw_text, local_engine = _local_ocr_text(path)
-        fields = _heuristic_from_text(raw_text)
-        engine = local_engine or engine or "local_heuristic"
-        note = "Local OCR used. Review every field carefully before save."
-        if not (fields.get("company") or fields.get("contact_person") or fields.get("mobile") or fields.get("email")):
-            note = (
-                "Could not read enough detail. Try a sharper photo with better light, "
-                "or fill fields manually. Tip: set GEMINI_API_KEY on server for best accuracy."
-            )
+        if _local_ocr_allowed():
+            raw_text, local_engine = _local_ocr_text(path)
+            fields = _heuristic_from_text(raw_text)
+            engine = local_engine or engine or "local_heuristic"
+            note = "Local OCR used. Review every field carefully before save."
+        else:
+            engine = engine or ("gemini_unavailable" if not gemini_on else "gemini_empty")
+            if not gemini_on:
+                note = (
+                    "GEMINI_API_KEY is not set on the server. "
+                    "Add it in Render → Environment, then redeploy. "
+                    "Heavy local OCR is disabled here to stay under 512MB RAM."
+                )
+            else:
+                note = (
+                    "AI could not read enough detail. Try a sharper photo with better light, "
+                    "or fill fields manually before save."
+                )
+        if not (
+            fields.get("company")
+            or fields.get("contact_person")
+            or fields.get("mobile")
+            or fields.get("email")
+        ):
+            if not note:
+                note = "Could not read enough detail. Try a sharper photo, or fill fields manually."
     else:
         note = "AI read complete — please verify every field before saving."
 
-    # Enrich remarks with designation / website for CRM form
     extras = []
     if fields.get("designation"):
         extras.append(f"Title: {fields['designation']}")
@@ -422,7 +452,8 @@ def scan_visiting_card(path: Path) -> dict[str, Any]:
         "engine": engine or "none",
         "note": note,
         "raw_text_preview": (raw_text or "")[:800],
-        "confidence": "high" if engine.startswith("gemini") else ("medium" if has_core else "low"),
+        "confidence": "high" if str(engine).startswith("gemini_vision") else ("medium" if has_core else "low"),
+        "gemini_configured": gemini_on,
     }
 
 

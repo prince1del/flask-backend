@@ -95,4 +95,10 @@ except Exception as e:
     print('HOP SEED err:', e)
 "
 
-exec gunicorn "app.web_app:create_app()"
+exec gunicorn "app.web_app:create_app()" \
+  --bind 0.0.0.0:${PORT:-10000} \
+  --workers 1 \
+  --threads 2 \
+  --timeout 120 \
+  --max-requests 200 \
+  --max-requests-jitter 40

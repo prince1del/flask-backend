@@ -540,12 +540,25 @@ def run_handwriting_ocr(
             best_method = "image_azure_read"
 
         if not skip_local:
-            local_engines: list[tuple[str, Callable[[Path], str]]] = [
-                ("easyocr", _extract_easyocr_text),
-                ("paddleocr", _extract_paddle_text),
-                ("rapidocr", _extract_rapid_text),
-                ("tesseract", _extract_tesseract_text),
-            ]
+            # EasyOCR/Paddle can OOM Render Starter (512MB) — skip unless explicitly allowed
+            allow_heavy = (os.getenv("HOP_ALLOW_HEAVY_OCR") or "").strip().lower() in {
+                "1", "true", "yes", "on",
+            }
+            on_render = (os.getenv("RENDER") or "").strip().lower() in {"true", "1"}
+            local_engines: list[tuple[str, Callable[[Path], str]]] = []
+            if allow_heavy or not on_render:
+                local_engines.extend(
+                    [
+                        ("easyocr", _extract_easyocr_text),
+                        ("paddleocr", _extract_paddle_text),
+                    ]
+                )
+            local_engines.extend(
+                [
+                    ("rapidocr", _extract_rapid_text),
+                    ("tesseract", _extract_tesseract_text),
+                ]
+            )
             for name, fn in local_engines:
                 engines_tried.append(name)
                 best_local = ""
