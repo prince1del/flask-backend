@@ -6,7 +6,7 @@
     <title>Business Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260719-mobile-nav">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260719-mobile-bar">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260718-product-filter">
     <style>
@@ -179,7 +179,7 @@
 <body>
     <header class="nexora-header">
         <div class="header-left">
-            <button type="button" id="mobile-nav-toggle" class="mobile-nav-toggle icon-btn" aria-label="Open menu" aria-controls="bd-left-nav" aria-expanded="false" onclick="toggleMobileNav()">☰</button>
+            <button type="button" id="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Open menu" aria-controls="bd-left-nav" aria-expanded="false" onclick="toggleMobileNav()">Menu</button>
             <button type="button" class="nexora-logo" onclick="goToHomePage()" title="Go to home" aria-label="NEXORA home"></button>
         </div>
         <div class="header-center" id="global-search-shell">
@@ -198,6 +198,12 @@
         </div>
     </header>
     <div id="mobile-nav-backdrop" class="mobile-nav-backdrop" hidden onclick="closeMobileNav()"></div>
+    <nav id="mobile-bottom-nav" class="mobile-bottom-nav" aria-label="Mobile quick navigation">
+        <button type="button" class="mobile-bottom-nav__btn" onclick="toggleMobileNav()">Menu</button>
+        <button type="button" class="mobile-bottom-nav__btn" onclick="openModule('Dashboard')">Home</button>
+        <button type="button" class="mobile-bottom-nav__btn" onclick="openModule('Customers')">CRM</button>
+        <button type="button" class="mobile-bottom-nav__btn" onclick="openModule('OrderDesk')">Orders</button>
+    </nav>
 
     <section class="premium-welcome card-highlight">
         <div class="greeting-row">
@@ -2184,7 +2190,7 @@
             <p>© 2026</p>
         </div>
     </footer>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260719-mobile-nav"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260719-mobile-bar"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260718-timeout-ux"></script>
 </body>
 </html>

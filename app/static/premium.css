@@ -3694,6 +3694,9 @@ body.nexora-ask-open #dashboard-widget-dock {
 .mobile-nav-toggle {
   display: none;
 }
+.mobile-bottom-nav {
+  display: none;
+}
 .mobile-nav-backdrop[hidden] {
   display: none !important;
 }
@@ -3754,18 +3757,23 @@ body.nexora-ask-open #dashboard-widget-dock {
     overflow: visible !important;
   }
 
-  /* Hamburger always visible on phones */
+  /* Hamburger / Menu — always visible on phones */
   .mobile-nav-toggle {
-    display: inline-grid !important;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    margin-right: 4px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.06);
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    height: 36px;
+    margin-right: 6px;
+    padding: 0 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(37, 224, 255, 0.45);
+    background: rgba(37, 224, 255, 0.16);
     color: #e8eef6;
-    font-size: 1.15rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     flex: 0 0 auto;
     z-index: 10060;
   }
@@ -3774,9 +3782,49 @@ body.nexora-ask-open #dashboard-widget-dock {
     align-items: center;
     gap: 4px;
     min-width: 0;
+    overflow: visible !important;
   }
   .nexora-header {
     grid-template-columns: auto minmax(0, 1fr) auto !important;
+    overflow: visible !important;
+  }
+  .nexora-logo {
+    width: 40px !important;
+    min-width: 40px !important;
+    padding-left: 0 !important;
+  }
+
+  /* Fixed bottom bar — cannot be missed on phone */
+  .mobile-bottom-nav {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 10080 !important;
+    height: 56px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
+    background: rgba(6, 9, 18, 0.97);
+    border-top: 1px solid rgba(37, 224, 255, 0.28);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+  }
+  .mobile-bottom-nav__btn {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e8eef6;
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.02em;
+  }
+  body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  #dashboard-widget-dock,
+  .dashboard-widget-dock {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   /* Slide-over drawer — off-canvas until ☰ opens it */
@@ -3869,13 +3917,11 @@ body.nexora-ask-open #dashboard-widget-dock {
   }
 }
 
-/* Desktop: hide hamburger */
+/* Desktop: hide mobile chrome */
 @media (min-width: 901px) {
   .mobile-nav-toggle,
-  .mobile-nav-backdrop {
+  .mobile-nav-backdrop,
+  .mobile-bottom-nav {
     display: none !important;
-  }
-  body.mobile-nav-open {
-    /* no-op on desktop */
   }
 }
