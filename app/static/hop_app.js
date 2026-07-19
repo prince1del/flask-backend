@@ -548,6 +548,7 @@ function openHopView(viewName, opts) {
         vendor_cmp: renderHopVendorCmpModule,
         samples: renderHopSamplesModule,
         products: renderHopProductsModule,
+        fabric_preview: renderHopFabricPreviewModule,
         orders: renderHopOrdersModule,
         dispatches: renderHopDispatchesModule,
         invoices: renderHopInvoicesModule,
@@ -1414,6 +1415,148 @@ async function renderHopProductsModule(mount) {
     )}`;
   mount.innerHTML = hopModuleShell('Products', 'Product Catalogue', 'Margin visible per SKU',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('product')">+ New Product</button>`, body);
+}
+
+async function renderHopFabricPreviewModule(mount) {
+  hopState.fabricPreview = hopState.fabricPreview || {
+    demoFabricId: 'demo-linen-sand',
+    fabricLabel: 'Linen Sand',
+  };
+  let bank = { demo_fabrics: [], catalogue: [], engine: 'demo', hint: '' };
+  try {
+    bank = await hopApi('/api/v1/hop/fabric-preview/fabrics') || bank;
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('Products', 'Fabric Preview', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+
+  const demos = bank.demo_fabrics || [];
+  const demoOptions = demos.map((f) => {
+    const sel = f.id === hopState.fabricPreview.demoFabricId ? ' selected' : '';
+    return `<option value="${foEscapeText(f.id)}"${sel}>${foEscapeText(f.name)} (${foEscapeText(f.category)})</option>`;
+  }).join('');
+
+  const body = `
+    <div class="hop-fabric-banner nx-card">
+      <strong>DEMO mode</strong> — free partner pitch. Paid AI render unlocks after budget approval.
+      <span class="nx-text-dim">Engine: ${foEscapeText(bank.engine || 'demo')}</span>
+    </div>
+    <div class="hop-fabric-grid">
+      <div class="nx-card hop-fabric-card">
+        <h3>1. Client item (sofa / chair)</h3>
+        <p class="nx-text-dim">Client ke saamne camera se click karo</p>
+        <input id="hop-fabric-item" type="file" accept="image/*" capture="environment" />
+        <div id="hop-fabric-item-preview" class="hop-fabric-thumb nx-text-dim">No photo yet</div>
+      </div>
+      <div class="nx-card hop-fabric-card">
+        <h3>2. Fabric</h3>
+        <label class="hop-fabric-label">Demo bank (ready now)</label>
+        <select id="hop-fabric-demo-select" onchange="hopFabricDemoChanged()">
+          ${demoOptions}
+        </select>
+        <label class="hop-fabric-label">Ya fabric photo (camera / gallery / catalogue swatch)</label>
+        <input id="hop-fabric-swatch" type="file" accept="image/*" capture="environment" />
+        <p class="nx-text-dim hop-fabric-hint">${foEscapeText(bank.hint || '')}</p>
+      </div>
+    </div>
+    <div class="hop-fabric-actions">
+      <button type="button" class="nx-btn nx-btn-primary" id="hop-fabric-render-btn" onclick="hopRunFabricPreview()">Render preview</button>
+    </div>
+    <p id="hop-fabric-status" class="nx-text-dim"></p>
+    <div id="hop-fabric-result" class="hop-fabric-result hidden"></div>
+  `;
+
+  mount.innerHTML = hopModuleShell(
+    'Field Sales',
+    'Fabric Preview',
+    'Sofa photo + fabric → instant demo render for the client',
+    '',
+    body,
+  );
+
+  const itemInput = document.getElementById('hop-fabric-item');
+  itemInput?.addEventListener('change', () => {
+    const file = itemInput.files && itemInput.files[0];
+    const box = document.getElementById('hop-fabric-item-preview');
+    if (!file || !box) return;
+    const url = URL.createObjectURL(file);
+    box.innerHTML = `<img src="${url}" alt="Item preview" />`;
+  });
+}
+
+function hopFabricDemoChanged() {
+  const sel = document.getElementById('hop-fabric-demo-select');
+  if (!sel) return;
+  hopState.fabricPreview = hopState.fabricPreview || {};
+  hopState.fabricPreview.demoFabricId = sel.value;
+  hopState.fabricPreview.fabricLabel = sel.options[sel.selectedIndex]?.text || sel.value;
+}
+
+async function hopRunFabricPreview() {
+  const status = document.getElementById('hop-fabric-status');
+  const result = document.getElementById('hop-fabric-result');
+  const btn = document.getElementById('hop-fabric-render-btn');
+  const itemInput = document.getElementById('hop-fabric-item');
+  const fabricInput = document.getElementById('hop-fabric-swatch');
+  const demoSel = document.getElementById('hop-fabric-demo-select');
+  const itemFile = itemInput?.files && itemInput.files[0];
+  if (!itemFile) {
+    if (status) status.textContent = 'Pehle sofa / chair ki photo lo.';
+    return;
+  }
+
+  const form = new FormData();
+  form.append('item_image', itemFile);
+  const fabricFile = fabricInput?.files && fabricInput.files[0];
+  if (fabricFile) {
+    form.append('fabric_image', fabricFile);
+    form.append('fabric_label', fabricFile.name || 'Fabric photo');
+  } else if (demoSel?.value) {
+    form.append('demo_fabric_id', demoSel.value);
+    form.append('fabric_label', demoSel.options[demoSel.selectedIndex]?.text || demoSel.value);
+  } else {
+    if (status) status.textContent = 'Demo fabric choose karo ya fabric photo lo.';
+    return;
+  }
+
+  if (status) status.textContent = 'Rendering demo preview…';
+  if (result) {
+    result.classList.add('hidden');
+    result.innerHTML = '';
+  }
+  if (btn) btn.disabled = true;
+
+  try {
+    const response = await fetchWithAuth('/api/v1/hop/fabric-preview/render', {
+      method: 'POST',
+      body: form,
+    });
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error(getApiErrorMessage(data, 'Render failed'));
+    }
+    const payload = data.data || {};
+    const src = `data:${payload.mime || 'image/jpeg'};base64,${payload.image_base64}`;
+    if (status) {
+      status.textContent = payload.note || 'Done';
+    }
+    if (result) {
+      result.classList.remove('hidden');
+      result.innerHTML = `
+        <div class="nx-card hop-fabric-result-card">
+          <div class="hop-fabric-result-meta">
+            <span>${foEscapeText(payload.fabric_label || 'Fabric')}</span>
+            <span class="nx-text-dim">${foEscapeText(payload.engine || 'demo')} · ${foEscapeText(payload.fabric_source || '')}</span>
+          </div>
+          <img src="${src}" alt="Fabric preview result" />
+          <p class="nx-text-dim">Client ko phone pe dikhao. Paid AI baad me same button se unlock hoga.</p>
+        </div>`;
+    }
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Render failed';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 /* ---------- Orders / Dispatch / Invoices / Payments / Complaints ---------- */

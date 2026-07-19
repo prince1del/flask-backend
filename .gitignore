@@ -11,6 +11,7 @@ instance/verification_uploads/
 .pytest_cache/
 data/hop_rate_uploads/
 data/hop_supplier_quotes/
+data/hop_fabric_previews/
 .vscode/
 .env
 .env.local.backup
@@ -21,15 +22,16 @@ data/hop_supplier_quotes/
 *.csv
 !tests/**/*.csv
 
-# build artifacts
-build/
-dist/
-Output/
-*.zip
-app.zip
-migrations.zip
-scripts.zip
-tests.zip
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/**/captures/
+*.apk
+*.aab
+*.jks
+*.keystore
 
 # backups / junk trees
 _deprecated_backup/

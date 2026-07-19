@@ -986,3 +986,113 @@ def reports_get(report_key: str):
         else:
             return _json_error(f"Unknown report: {report_key}", "NOT_FOUND", 404)
     return jsonify({"success": True, "data": data})
+
+
+# ---------- Fabric Preview (field demo → paid AI later) ----------
+@hop_bp.route("/fabric-preview/fabrics", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def fabric_preview_fabrics():
+    """Demo fabric bank + catalogue product names (swatch upload still via camera)."""
+    from app.services.fabric_preview import list_demo_fabrics, preview_engine
+
+    ensure_hop_schema(_db_path())
+    products = []
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_ops.list_products(conn, _ws(), q=request.args.get("q"))
+    for row in rows[:80]:
+        products.append(
+            {
+                "id": f"product-{row.get('id')}",
+                "product_id": row.get("id"),
+                "name": row.get("name") or row.get("code") or f"SKU {row.get('id')}",
+                "category": row.get("category") or row.get("brand") or "Catalogue",
+                "source": "catalogue",
+                "needs_swatch_photo": True,
+            }
+        )
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "engine": preview_engine(),
+                "demo_fabrics": list_demo_fabrics(),
+                "catalogue": products,
+                "hint": "Demo bank works offline/free. Catalogue row still needs a fabric photo until swatches are stored.",
+            },
+        }
+    )
+
+
+@hop_bp.route("/fabric-preview/render", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def fabric_preview_render():
+    """Apply fabric onto furniture photo. DEMO by default (partner pitch)."""
+    import base64
+    import time
+    from pathlib import Path
+
+    from app.services.fabric_preview import (
+        apply_fabric,
+        ensure_preview_dir,
+        get_demo_fabric_bytes,
+        preview_engine,
+    )
+
+    ensure_hop_schema(_db_path())
+
+    item_file = request.files.get("item_image") or request.files.get("sofa_image")
+    fabric_file = request.files.get("fabric_image")
+    demo_fabric_id = (request.form.get("demo_fabric_id") or "").strip()
+    product_label = (request.form.get("fabric_label") or "").strip()
+
+    if not item_file or not item_file.filename:
+        return _json_error("Sofa / furniture photo required (item_image)")
+
+    item_bytes = item_file.read()
+    if not item_bytes:
+        return _json_error("Empty furniture photo")
+
+    fabric_bytes = None
+    fabric_source = "upload"
+    if fabric_file and fabric_file.filename:
+        fabric_bytes = fabric_file.read()
+        fabric_source = "camera_or_gallery"
+    elif demo_fabric_id:
+        fabric_bytes = get_demo_fabric_bytes(demo_fabric_id)
+        fabric_source = "demo_bank"
+        if not product_label:
+            product_label = demo_fabric_id
+    if not fabric_bytes:
+        return _json_error("Fabric photo required, or pick a demo fabric from the bank")
+
+    try:
+        out_bytes, meta = apply_fabric(item_bytes, fabric_bytes)
+    except Exception as exc:
+        return _json_error(f"Render failed: {exc}", "RENDER_FAILED", 500)
+
+    # Persist under data disk / project for share-back
+    root = Path(current_app.root_path).resolve().parent
+    preview_dir = ensure_preview_dir(root / "data")
+    stamp = int(time.time())
+    filename = f"preview_{stamp}.jpg"
+    out_path = preview_dir / filename
+    out_path.write_bytes(out_bytes)
+
+    b64 = base64.b64encode(out_bytes).decode("ascii")
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                **meta,
+                "engine_requested": preview_engine(),
+                "fabric_source": fabric_source,
+                "fabric_label": product_label or demo_fabric_id or "Fabric",
+                "image_base64": b64,
+                "mime": "image/jpeg",
+                "saved_as": str(out_path.name),
+                "partner_pitch": meta.get("engine") == "demo",
+            },
+        }
+    )

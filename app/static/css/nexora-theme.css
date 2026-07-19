@@ -744,6 +744,34 @@
 .hop-funnel-count{font-weight:700; font-family:var(--nxt-font-display);}
 .hop-funnel-value{font-size:0.78rem; color:var(--nxt-text-dim); text-align:right;}
 .hop-funnel-arrow{text-align:center; color:var(--nxt-text-faint); font-size:0.75rem;}
+
+.hop-fabric-banner{
+  display:flex; flex-direction:column; gap:6px;
+  margin-bottom:14px; padding:12px 14px;
+  border:1px solid rgba(37,224,255,0.28);
+  background:rgba(37,224,255,0.08);
+}
+.hop-fabric-grid{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;
+}
+.hop-fabric-card h3{margin:0 0 6px; font-size:1rem;}
+.hop-fabric-card input[type=file],
+.hop-fabric-card select{
+  width:100%; margin:8px 0; padding:10px;
+  border-radius:10px; border:1px solid rgba(255,255,255,0.12);
+  background:rgba(0,0,0,0.25); color:var(--nxt-text);
+}
+.hop-fabric-label{display:block; margin-top:10px; font-size:0.78rem; color:var(--nxt-text-dim);}
+.hop-fabric-thumb{
+  margin-top:10px; min-height:120px; border-radius:12px;
+  border:1px dashed rgba(255,255,255,0.15);
+  display:flex; align-items:center; justify-content:center; overflow:hidden;
+}
+.hop-fabric-thumb img{width:100%; max-height:220px; object-fit:cover; display:block;}
+.hop-fabric-actions{margin:14px 0;}
+.hop-fabric-result-card img{width:100%; border-radius:14px; display:block; margin:10px 0;}
+.hop-fabric-result-meta{display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;}
+
 @media (max-width: 900px){
   .nx-theme.hop-shell{grid-template-columns:1fr !important; display:block !important;}
   .hop-nav{
