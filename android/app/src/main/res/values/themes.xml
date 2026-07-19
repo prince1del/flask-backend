@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NexoraHoP" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/hop_accent</item>
+        <item name="colorPrimaryVariant">@color/hop_bg</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="android:statusBarColor">@color/hop_bg</item>
+        <item name="android:navigationBarColor">@color/hop_bg</item>
+        <item name="android:windowBackground">@color/hop_bg</item>
+    </style>
+</resources>

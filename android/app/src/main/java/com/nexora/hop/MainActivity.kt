@@ -5,7 +5,10 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
+import android.view.animation.AccelerateInterpolator
 import android.webkit.CookieManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -13,6 +16,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.ProgressBar
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,7 +25,11 @@ import androidx.appcompat.app.AppCompatActivity
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
+    private lateinit var splashOverlay: FrameLayout
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var splashHidden = false
+    private val splashStartedAt = System.currentTimeMillis()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -38,6 +46,7 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webView)
         progressBar = findViewById(R.id.progressBar)
+        splashOverlay = findViewById(R.id.splashOverlay)
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -45,7 +54,6 @@ class MainActivity : AppCompatActivity() {
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
             builtInZoomControls = false
@@ -55,14 +63,11 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = true
             allowContentAccess = true
             setSupportMultipleWindows(false)
-            // Always fetch fresh HTML/JS after deploys (menu fixes).
-            cacheMode = WebSettings.LOAD_NO_CACHE
+            cacheMode = WebSettings.LOAD_DEFAULT
             javaScriptCanOpenWindowsAutomatically = false
         }
 
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        webView.clearCache(true)
-        webView.clearHistory()
 
         webView.webViewClient =
             object : WebViewClient() {
@@ -86,6 +91,7 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     progressBar.visibility = View.GONE
+                    hideSplashWhenReady()
                 }
             }
 
@@ -94,6 +100,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
                     progressBar.progress = newProgress
                     progressBar.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+                    if (newProgress >= 90) hideSplashWhenReady()
                 }
 
                 override fun onShowFileChooser(
@@ -134,11 +141,32 @@ class MainActivity : AppCompatActivity() {
         )
 
         if (savedInstanceState != null) {
+            splashOverlay.visibility = View.GONE
+            splashHidden = true
             webView.restoreState(savedInstanceState)
         } else {
-            // Cache-bust shell so Render deploys are picked up immediately.
             webView.loadUrl("${BuildConfig.START_URL}/?app=hop&v=${BuildConfig.VERSION_CODE}")
         }
+    }
+
+    private fun hideSplashWhenReady() {
+        if (splashHidden) return
+        val elapsed = System.currentTimeMillis() - splashStartedAt
+        val remaining = (1400L - elapsed).coerceAtLeast(0L)
+        mainHandler.postDelayed({
+            if (splashHidden || isFinishing) return@postDelayed
+            splashHidden = true
+            splashOverlay
+                .animate()
+                .alpha(0f)
+                .setDuration(420)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction {
+                    splashOverlay.visibility = View.GONE
+                    splashOverlay.alpha = 1f
+                }
+                .start()
+        }, remaining)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

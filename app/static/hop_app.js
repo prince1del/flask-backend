@@ -573,45 +573,105 @@ function openHopView(viewName, opts) {
   }, 80);
 }
 
-/** Reliable mobile taps — inline onclick alone fails on some Android WebViews. */
+/** Reliable mobile taps — ignore scroll gestures; only open on a real tap. */
 function bindHopNavClicks() {
-  const root = document.getElementById('hop-executive-workspace');
-  if (!root || root.dataset.hopNavBound === '1') return;
-  root.dataset.hopNavBound = '1';
+  const nav = document.querySelector('#hop-executive-workspace .hop-nav');
+  if (!nav || nav.dataset.hopNavBound === '1') return;
+  nav.dataset.hopNavBound = '1';
+
+  const TAP_MOVE_PX = 14;
+  let startX = 0;
+  let startY = 0;
+  let moved = false;
+  let startTarget = null;
+  let suppressClickUntil = 0;
   let lastNavAt = 0;
 
-  const activate = (event) => {
-    const btn = event.target && event.target.closest
-      ? event.target.closest('.hop-nav-btn[data-hop-view]')
-      : null;
-    if (!btn || !root.contains(btn)) return;
-    if (btn.classList.contains('is-soon') || btn.disabled) return;
-    const view = btn.getAttribute('data-hop-view');
-    if (!view) return;
-    const now = Date.now();
-    if (now - lastNavAt < 400) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    lastNavAt = now;
-    event.preventDefault();
-    event.stopPropagation();
-    openHopView(view);
+  const isNavControl = (el) => {
+    if (!el || !el.closest) return null;
+    return el.closest('.hop-nav-btn[data-hop-view], button.hop-nav-logout');
   };
 
-  root.addEventListener('click', activate, true);
-  root.addEventListener(
+  const runNav = (btn) => {
+    if (!btn || btn.disabled || btn.classList.contains('is-soon')) return;
+    const now = Date.now();
+    if (now - lastNavAt < 350) return;
+    lastNavAt = now;
+    if (btn.classList.contains('hop-nav-logout')) {
+      if (typeof logout === 'function') logout();
+      return;
+    }
+    const view = btn.getAttribute('data-hop-view');
+    if (view) openHopView(view);
+  };
+
+  nav.addEventListener(
+    'touchstart',
+    (event) => {
+      const touch = event.changedTouches && event.changedTouches[0];
+      if (!touch) return;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      moved = false;
+      startTarget = isNavControl(event.target);
+    },
+    { capture: true, passive: true },
+  );
+
+  nav.addEventListener(
+    'touchmove',
+    (event) => {
+      const touch = event.changedTouches && event.changedTouches[0];
+      if (!touch) return;
+      if (
+        Math.abs(touch.clientX - startX) > TAP_MOVE_PX
+        || Math.abs(touch.clientY - startY) > TAP_MOVE_PX
+      ) {
+        moved = true;
+      }
+    },
+    { capture: true, passive: true },
+  );
+
+  nav.addEventListener(
     'touchend',
     (event) => {
-      const btn = event.target && event.target.closest
-        ? event.target.closest('.hop-nav-btn[data-hop-view]')
-        : null;
-      if (!btn || !root.contains(btn)) return;
+      const btn = isNavControl(event.target);
+      // Finger moved = scroll — do not open the item under the finger.
+      if (moved || !btn || btn !== startTarget) {
+        startTarget = null;
+        return;
+      }
       event.preventDefault();
-      activate(event);
+      event.stopPropagation();
+      suppressClickUntil = Date.now() + 500;
+      runNav(btn);
+      startTarget = null;
     },
     { capture: true, passive: false },
+  );
+
+  nav.addEventListener(
+    'click',
+    (event) => {
+      if (Date.now() < suppressClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      // Mouse / trackpad only path (phones use touchend above).
+      if (window.matchMedia('(pointer: coarse)').matches) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const btn = isNavControl(event.target);
+      if (!btn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      runNav(btn);
+    },
+    true,
   );
 }
 
