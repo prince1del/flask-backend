@@ -15,7 +15,13 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(connection, table_name):
+    return table_name in sa.inspect(connection).get_table_names()
+
+
 def _column_exists(connection, table_name, column_name):
+    if not _table_exists(connection, table_name):
+        return False
     inspector = sa.inspect(connection)
     return column_name in [col['name'] for col in inspector.get_columns(table_name)]
 
@@ -23,7 +29,7 @@ def _column_exists(connection, table_name, column_name):
 def upgrade():
     conn = op.get_bind()
 
-    if not _column_exists(conn, 'master_distributors', 'workspace_id'):
+    if _table_exists(conn, 'master_distributors') and not _column_exists(conn, 'master_distributors', 'workspace_id'):
         with op.batch_alter_table('master_distributors', schema=None) as batch_op:
             batch_op.add_column(
                 sa.Column(
@@ -33,7 +39,7 @@ def upgrade():
                     server_default=sa.text("'default'"),
                 )
             )
-    if not _column_exists(conn, 'master_retailers', 'workspace_id'):
+    if _table_exists(conn, 'master_retailers') and not _column_exists(conn, 'master_retailers', 'workspace_id'):
         with op.batch_alter_table('master_retailers', schema=None) as batch_op:
             batch_op.add_column(
                 sa.Column(
@@ -44,16 +50,21 @@ def upgrade():
                 )
             )
 
-    op.execute(
-        "UPDATE master_distributors SET workspace_id = 'default' WHERE workspace_id IS NULL OR workspace_id = ''"
-    )
-    op.execute(
-        "UPDATE master_retailers SET workspace_id = 'default' WHERE workspace_id IS NULL OR workspace_id = ''"
-    )
+    if _table_exists(conn, 'master_distributors'):
+        op.execute(
+            "UPDATE master_distributors SET workspace_id = 'default' WHERE workspace_id IS NULL OR workspace_id = ''"
+        )
+    if _table_exists(conn, 'master_retailers'):
+        op.execute(
+            "UPDATE master_retailers SET workspace_id = 'default' WHERE workspace_id IS NULL OR workspace_id = ''"
+        )
 
 
 def downgrade():
-    with op.batch_alter_table('master_retailers', schema=None) as batch_op:
-        batch_op.drop_column('workspace_id')
-    with op.batch_alter_table('master_distributors', schema=None) as batch_op:
-        batch_op.drop_column('workspace_id')
+    conn = op.get_bind()
+    if _table_exists(conn, 'master_retailers') and _column_exists(conn, 'master_retailers', 'workspace_id'):
+        with op.batch_alter_table('master_retailers', schema=None) as batch_op:
+            batch_op.drop_column('workspace_id')
+    if _table_exists(conn, 'master_distributors') and _column_exists(conn, 'master_distributors', 'workspace_id'):
+        with op.batch_alter_table('master_distributors', schema=None) as batch_op:
+            batch_op.drop_column('workspace_id')

@@ -57,7 +57,10 @@ def _partial_index_exists(connection, index_name):
 
 def upgrade():
     conn = op.get_bind()
+    existing_tables = set(sa.inspect(conn).get_table_names())
     for table in TABLES:
+        if table not in existing_tables:
+            continue
         for old_index_name in _find_gst_unique_indexes(conn, table):
             conn.exec_driver_sql(f'DROP INDEX IF EXISTS "{old_index_name}"')
 

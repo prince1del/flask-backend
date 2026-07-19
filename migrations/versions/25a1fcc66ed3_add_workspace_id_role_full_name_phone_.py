@@ -15,13 +15,21 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(connection, table_name):
+    return table_name in sa.inspect(connection).get_table_names()
+
+
 def _column_exists(connection, table_name, column_name):
+    if not _table_exists(connection, table_name):
+        return False
     inspector = sa.inspect(connection)
     return column_name in [col['name'] for col in inspector.get_columns(table_name)]
 
 
 def upgrade():
     conn = op.get_bind()
+    if not _table_exists(conn, 'users'):
+        return
 
     if not _column_exists(conn, 'users', 'workspace_id'):
         op.add_column(
