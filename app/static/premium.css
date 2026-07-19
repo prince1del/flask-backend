@@ -3863,9 +3863,36 @@ body.nexora-ask-open #dashboard-widget-dock {
     left: 0 !important;
     transform: none !important;
   }
-  body.mobile-nav-open #hop-executive-workspace {
+
+  /*
+    CRITICAL: .workspace-shell is position:fixed; z-index:30.
+    Fixed children cannot paint above the full-screen backdrop (z-index 10065),
+    so the menu looks visible under the dim layer but receives ZERO touches/scroll.
+    Lift the whole HoP shell above the backdrop while the drawer is open.
+  */
+  body.mobile-nav-open #hop-executive-workspace:not(.hidden) {
     overflow: visible !important;
+    z-index: 10100 !important;
   }
+  body.mobile-nav-open #hop-executive-workspace .hop-main {
+    pointer-events: none !important;
+  }
+  body.mobile-nav-open #hop-executive-workspace .hop-nav,
+  body.mobile-nav-open aside.hop-nav {
+    pointer-events: auto !important;
+    z-index: 2 !important;
+  }
+  body.mobile-nav-open .mobile-nav-backdrop {
+    z-index: 10050 !important;
+  }
+  body.mobile-nav-open #mobile-bottom-nav {
+    z-index: 10120 !important;
+  }
+  body.mobile-nav-open .nexora-header,
+  body.mobile-nav-open #mobile-nav-toggle {
+    z-index: 10130 !important;
+  }
+
   body.mobile-nav-open #dashboard .left-nav .nav-label,
   body.mobile-nav-open .left-nav .nav-label,
   body.mobile-nav-open #dashboard .left-nav .sidebar-brand div:not(.sidebar-logo):not(.nx-core),
@@ -3911,11 +3938,16 @@ body.nexora-ask-open #dashboard-widget-dock {
   #hop-executive-workspace .hop-nav .hop-nav-logout {
     color: #ffe4e4 !important;
     min-height: 44px !important;
+    pointer-events: auto !important;
+    touch-action: manipulation;
   }
   #hop-executive-workspace .hop-nav-list {
-    overflow: visible !important;
-    flex: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
     pointer-events: auto !important;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* HoP: full-width content — no stacked sidebar eating half the screen */
