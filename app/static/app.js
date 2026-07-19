@@ -990,7 +990,8 @@ async function logout(reason) {
   }
 
   clearAuthLocalState();
-  document.body.classList.remove('bd-hop-ui', 'customers-page-active', 'nexora-ask-open');
+  document.body.classList.remove('bd-hop-ui', 'customers-page-active', 'nexora-ask-open', 'hop-active');
+  document.documentElement.classList.remove('hop-active');
   if (typeof resetNexoraChatForCurrentUser === 'function') {
     resetNexoraChatForCurrentUser(true);
   }
@@ -4817,11 +4818,13 @@ function isHopUserSession() {
   return authState.role === 'hop_admin' || authState.workspaceId === 'house_of_prizm';
 }
 
-/** Keep HoP shell visible while a BD module is open. */
+/** Show only the HoP shell and open a HoP view (never BD modules). */
 function showHopShell(viewName) {
   if (typeof closeMobileNav === 'function') closeMobileNav();
   if (typeof unmountBdModule === 'function') unmountBdModule();
   document.body.classList.remove('customers-page-active');
+  document.body.classList.add('hop-active');
+  document.documentElement.classList.add('hop-active');
   setGlobalSearchBarVisible(false);
   [
     'dashboard',
@@ -4841,6 +4844,11 @@ function showHopShell(viewName) {
   if (typeof bindHopNavClicks === 'function') bindHopNavClicks();
   if (typeof openHopView === 'function') openHopView(viewName || 'dashboard');
   else if (typeof loadHopExecutiveSnapshot === 'function') loadHopExecutiveSnapshot();
+}
+
+function clearHopActiveScrollLock() {
+  document.body.classList.remove('hop-active');
+  document.documentElement.classList.remove('hop-active');
 }
 
 function mobileNavHome() {
@@ -5230,6 +5238,7 @@ function openModule(moduleName) {
   document.getElementById('filled-orders-workspace')?.classList.add('hidden');
   document.getElementById('executive-home-workspace')?.classList.add('hidden');
   document.getElementById('hop-executive-workspace')?.classList.add('hidden');
+  if (typeof clearHopActiveScrollLock === 'function') clearHopActiveScrollLock();
   document.getElementById('target-vs-achievement-workspace')?.classList.add('hidden');
   document.getElementById('cloud-hub-workspace')?.classList.add('hidden');
 

@@ -517,6 +517,15 @@ function hopScrollMainToTop() {
   });
 }
 
+/** Scroll an element into view inside .hop-main (not the locked body). */
+function hopScrollIntoMain(el, offset = 12) {
+  const main = document.querySelector('#hop-executive-workspace .hop-main');
+  if (!main || !el) return;
+  const mainRect = main.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  main.scrollTop += (elRect.top - mainRect.top - offset);
+}
+
 function openHopView(viewName, opts) {
   hopState.view = viewName || 'dashboard';
   hopHideAllViews();
@@ -1551,6 +1560,7 @@ async function hopRunFabricPreview() {
           <img src="${src}" alt="Fabric preview result" />
           <p class="nx-text-dim">Client ko phone pe dikhao. Paid AI baad me same button se unlock hoga.</p>
         </div>`;
+      requestAnimationFrame(() => hopScrollIntoMain(result, 8));
     }
   } catch (e) {
     if (status) status.textContent = e.message || 'Render failed';
@@ -2333,11 +2343,13 @@ async function hopShowForm(kind) {
       </div>`;
   }
 
-  // Vendor Compare used to bury the form under the matrix — bring it into view
+  // Bring form into the .hop-main scrollport (body is locked under HoP)
   try {
-    slot.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    const focusEl = slot.querySelector('input:not([type="file"]), select, textarea');
-    if (focusEl) setTimeout(() => focusEl.focus(), 80);
+    requestAnimationFrame(() => {
+      hopScrollIntoMain(slot, 8);
+      const focusEl = slot.querySelector('input:not([type="file"]), select, textarea');
+      if (focusEl) setTimeout(() => focusEl.focus(), 80);
+    });
   } catch (_) { /* ignore */ }
 }
 

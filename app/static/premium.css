@@ -1626,29 +1626,31 @@ body:has(#dashboard:not(.hidden)) #dashboard {
   overflow: hidden !important;
 }
 
-/* Non-dashboard pages such as order sheet folder, upload stages, reports, settings. */
-body:not(:has(#dashboard:not(.hidden))) {
+/* Non-dashboard pages such as order sheet folder, upload stages, reports, settings.
+   Exclude HoP — when .hop-active, only .hop-main may scroll (body lock). */
+body:not(:has(#dashboard:not(.hidden))):not(.hop-active) {
   overflow-y: auto !important;
   min-height: 100vh !important;
   padding-bottom: 78px !important;
 }
 
-body:not(:has(#dashboard:not(.hidden))) .nexora-header {
+body:not(:has(#dashboard:not(.hidden))):not(.hop-active) .nexora-header {
   position: sticky !important;
   top: 0 !important;
 }
 
-/* Make all routed pages readable and scrollable, instead of clipped inside viewport. */
-body:not(:has(#dashboard:not(.hidden))) .workspace-shell,
+/* Make all routed pages readable and scrollable, instead of clipped inside viewport.
+   Exclude House of Prizm shell — it owns its own .hop-main scroller. */
+body:not(:has(#dashboard:not(.hidden))) .workspace-shell:not(#hop-executive-workspace),
 body:not(:has(#dashboard:not(.hidden))) .module-section,
 body:not(:has(#dashboard:not(.hidden))) .card-highlight,
 body:not(:has(#dashboard:not(.hidden))) .navigation-dashboard,
-body:not(:has(#dashboard:not(.hidden))) main,
+body:not(:has(#dashboard:not(.hidden))) main:not(.hop-main),
 body:not(:has(#dashboard:not(.hidden))) .app-shell {
   overflow: visible !important;
 }
 
-body:not(:has(#dashboard:not(.hidden))) .workspace-shell:not(.hidden) {
+body:not(:has(#dashboard:not(.hidden))) .workspace-shell:not(.hidden):not(#hop-executive-workspace) {
   position: fixed !important;
   top: calc(var(--nx-header-h) + 6px) !important;
   left: 8px !important;
@@ -3950,26 +3952,50 @@ body.nexora-ask-open #dashboard-widget-dock {
     -webkit-overflow-scrolling: touch;
   }
 
-  /* HoP: full-width content — no stacked sidebar eating half the screen */
+  /* HoP: full-width flex column — scroll lives on .hop-main only */
+  #hop-executive-workspace.workspace-shell:not(.hidden) {
+    top: var(--nx-header-h, 56px) !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
   #hop-executive-workspace .nx-theme.hop-shell {
-    display: block !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 0 !important;
     grid-template-columns: 1fr !important;
     width: 100% !important;
     max-width: 100vw !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
   }
   #hop-executive-workspace .hop-main,
   #hop-executive-workspace .main-content {
+    flex: 1 1 0 !important;
     width: 100% !important;
     max-width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: 100% !important;
     margin: 0 !important;
-    padding-left: 12px !important;
-    padding-right: 12px !important;
+    padding: 14px 12px calc(96px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
     position: relative;
     z-index: 1;
   }
-  body.bd-hop-ui .workspace-shell:not(.hidden),
-  body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
-  #hop-executive-workspace:not(.hidden) {
+  body.bd-hop-ui .workspace-shell:not(.hidden):not(#hop-executive-workspace),
+  body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) {
     left: 0 !important;
     width: 100vw !important;
     max-width: 100vw !important;
