@@ -4813,6 +4813,50 @@ function isMobileNavLayout() {
   return window.matchMedia('(max-width: 900px)').matches;
 }
 
+function isHopUserSession() {
+  return authState.role === 'hop_admin' || authState.workspaceId === 'house_of_prizm';
+}
+
+/** Show only the HoP shell and open a HoP view (never BD modules). */
+function showHopShell(viewName) {
+  if (typeof closeMobileNav === 'function') closeMobileNav();
+  if (typeof unmountBdModule === 'function') unmountBdModule();
+  document.body.classList.remove('customers-page-active');
+  setGlobalSearchBarVisible(false);
+  [
+    'dashboard',
+    'sales-workspace',
+    'party-master-section',
+    'order-fulfillment-workspace',
+    'order-cycle-workspace',
+    'order-desk-workspace',
+    'article-master-workspace',
+    'filled-orders-workspace',
+    'executive-home-workspace',
+    'target-vs-achievement-workspace',
+    'cloud-hub-workspace',
+  ].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+  document.getElementById('hop-executive-workspace')?.classList.remove('hidden');
+  currentModuleKey = 'hopexecutive';
+  if (typeof openHopView === 'function') openHopView(viewName || 'dashboard');
+  else if (typeof loadHopExecutiveSnapshot === 'function') loadHopExecutiveSnapshot();
+}
+
+function mobileNavHome() {
+  if (isHopUserSession()) showHopShell('dashboard');
+  else openModule('Dashboard');
+}
+
+function mobileNavCrm() {
+  if (isHopUserSession()) showHopShell('customers');
+  else openModule('Customers');
+}
+
+function mobileNavOrders() {
+  if (isHopUserSession()) showHopShell('orders');
+  else openModule('OrderDesk');
+}
+
 function pinBdNavRail() {
   /** Slim HoP left rail only — does not cover Customers/module content. */
   const dash = document.getElementById('dashboard');
@@ -5141,6 +5185,30 @@ function goBack() {
 function openModule(moduleName) {
   if (typeof closeMobileNav === 'function') closeMobileNav();
   const normalized = (moduleName || '').toLowerCase();
+
+  // HoP users must never land on BD shells (Customers → Distributors & Retailers, etc.).
+  if (isHopUserSession()) {
+    const hopViewByModule = {
+      customers: 'customers',
+      parties: 'customers',
+      dashboard: 'dashboard',
+      home: 'dashboard',
+      myday: 'dashboard',
+      orderdesk: 'orders',
+      orders: 'orders',
+      hopexecutive: 'dashboard',
+      houseofprizm: 'dashboard',
+    };
+    if (Object.prototype.hasOwnProperty.call(hopViewByModule, normalized)) {
+      if (!suppressModuleHistoryPush && currentModuleKey !== 'hopexecutive') {
+        moduleHistoryStack.push(currentModuleKey);
+      }
+      suppressModuleHistoryPush = false;
+      showHopShell(hopViewByModule[normalized]);
+      return;
+    }
+  }
+
   if (!suppressModuleHistoryPush && normalized !== currentModuleKey) {
     moduleHistoryStack.push(currentModuleKey);
   }
@@ -5165,13 +5233,7 @@ function openModule(moduleName) {
   document.getElementById('cloud-hub-workspace')?.classList.add('hidden');
 
   if (normalized === 'hopexecutive' || normalized === 'houseofprizm') {
-    unmountBdModule();
-    document.getElementById('dashboard')?.classList.add('hidden');
-    document.getElementById('sales-workspace')?.classList.add('hidden');
-    document.getElementById('executive-home-workspace')?.classList.add('hidden');
-    document.getElementById('hop-executive-workspace')?.classList.remove('hidden');
-    if (typeof openHopView === 'function') openHopView('dashboard');
-    else if (typeof loadHopExecutiveSnapshot === 'function') loadHopExecutiveSnapshot();
+    showHopShell('dashboard');
     return;
   }
 

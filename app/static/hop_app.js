@@ -518,6 +518,7 @@ function hopScrollMainToTop() {
 }
 
 function openHopView(viewName, opts) {
+  if (typeof closeMobileNav === 'function') closeMobileNav();
   hopState.view = viewName || 'dashboard';
   hopHideAllViews();
   hopScrollMainToTop();
