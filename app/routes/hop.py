@@ -287,6 +287,31 @@ def customers_create():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/customers/scan-card", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def customers_scan_card():
+    """OCR a visiting card image → structured fields. Does NOT save — user confirms in UI."""
+    upload = request.files.get("card_image") or request.files.get("file") or request.files.get("image")
+    if not upload or not getattr(upload, "filename", None):
+        return _json_error("card_image file is required", "VALIDATION_ERROR", 400)
+    from app.services.visiting_card_ocr import save_upload_temp, scan_visiting_card
+
+    path = None
+    try:
+        path = save_upload_temp(upload)
+        result = scan_visiting_card(path)
+    except Exception as exc:
+        return _json_error(f"Card scan failed: {exc}", "OCR_ERROR", 500)
+    finally:
+        if path is not None:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+    return jsonify({"success": True, "data": result})
+
+
 @hop_bp.route("/customers/<int:customer_id>", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

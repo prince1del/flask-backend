@@ -549,6 +549,7 @@ function openHopView(viewName, opts) {
       mount.innerHTML = '<div class="hop-view"><p class="nx-text-dim">Loading…</p></div>';
       const loaders = {
         customers: renderHopCustomersModule,
+        visiting_card: renderHopVisitingCardModule,
         projects: renderHopProjectsModule,
         leads: renderHopLeadsModule,
         meetings: renderHopMeetingsModule,
@@ -840,7 +841,159 @@ async function renderHopCustomersModule(mount) {
       </tr>`).join(''),
     )}`;
   mount.innerHTML = hopModuleShell('CRM', 'Customers', 'Hospitality clients, designers, consultants',
-    `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ New Customer</button>`, body);
+    `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ New Customer</button>
+     <button type="button" class="nx-btn" onclick="openHopView('visiting_card')">Scan visiting card</button>`, body);
+}
+
+/* ---------- Visiting Card Reader ---------- */
+async function renderHopVisitingCardModule(mount) {
+  const body = `
+    <div class="hop-fabric-banner nx-card">
+      <strong>Visiting Card Reader</strong>
+      <span class="nx-text-dim">Camera se card click karo → AI details nikaalega → aap verify karke Save karo. Auto-save nahi hota.</span>
+    </div>
+    <div class="nx-card hop-fabric-card">
+      <h3>1. Capture card</h3>
+      <div class="hop-photo-actions">
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickPhoto('hop-vcard-cam')">Camera</button>
+        <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-vcard-gal')">Gallery</button>
+      </div>
+      <input id="hop-vcard-cam" class="hop-file-hidden" type="file" accept="image/*" capture="environment" />
+      <input id="hop-vcard-gal" class="hop-file-hidden" type="file" accept="image/*" />
+      <div id="hop-vcard-preview" class="hop-fabric-thumb nx-text-dim">No card photo yet</div>
+      <div class="hop-fabric-actions">
+        <button type="button" class="nx-btn nx-btn-primary" id="hop-vcard-scan-btn" onclick="hopScanVisitingCard()">Read card</button>
+      </div>
+      <p id="hop-vcard-status" class="nx-text-dim"></p>
+    </div>
+    <div id="hop-vcard-form" class="nx-card hop-form-card hidden" style="margin-top:14px;"></div>
+  `;
+  mount.innerHTML = hopModuleShell(
+    'CRM',
+    'Visiting Card Reader',
+    'Any font · any colour · review before save',
+    `<button type="button" class="nx-btn" onclick="openHopView('customers')">← Customers</button>`,
+    body,
+  );
+
+  const bindPreview = (inputId) => {
+    const input = document.getElementById(inputId);
+    input?.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      const box = document.getElementById('hop-vcard-preview');
+      if (!file || !box) return;
+      hopState.visitingCardFile = file;
+      // Clear the other input so we don't mix sources
+      const otherId = inputId === 'hop-vcard-cam' ? 'hop-vcard-gal' : 'hop-vcard-cam';
+      const other = document.getElementById(otherId);
+      if (other) other.value = '';
+      const url = URL.createObjectURL(file);
+      box.innerHTML = `<img src="${url}" alt="Visiting card" />`;
+      const status = document.getElementById('hop-vcard-status');
+      if (status) status.textContent = 'Photo ready — tap Read card';
+      document.getElementById('hop-vcard-form')?.classList.add('hidden');
+    });
+  };
+  bindPreview('hop-vcard-cam');
+  bindPreview('hop-vcard-gal');
+}
+
+function hopPickPhoto(inputId) {
+  const el = document.getElementById(inputId);
+  if (el) el.click();
+}
+
+async function hopScanVisitingCard() {
+  const status = document.getElementById('hop-vcard-status');
+  const btn = document.getElementById('hop-vcard-scan-btn');
+  const formWrap = document.getElementById('hop-vcard-form');
+  const file = hopState.visitingCardFile
+    || document.getElementById('hop-vcard-cam')?.files?.[0]
+    || document.getElementById('hop-vcard-gal')?.files?.[0];
+  if (!file) {
+    if (status) status.textContent = 'Pehle visiting card ki photo lo (Camera / Gallery).';
+    return;
+  }
+  if (status) status.textContent = 'Reading card…';
+  if (btn) btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('card_image', file);
+    const response = await fetchWithAuth('/api/v1/hop/customers/scan-card', { method: 'POST', body: fd });
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error(getApiErrorMessage(data, 'Card scan failed'));
+    }
+    const payload = data.data || {};
+    const f = payload.fields || {};
+    hopState.visitingCardDraft = f;
+    if (status) {
+      status.textContent = `${payload.note || 'Review fields below'} · Engine: ${payload.engine || '—'} · ${payload.confidence || ''}`;
+    }
+    if (formWrap) {
+      formWrap.classList.remove('hidden');
+      formWrap.innerHTML = `
+        <strong>2. Review &amp; edit before save</strong>
+        <p class="nx-text-dim" style="font-size:0.78rem;margin:6px 0 10px;">Kuch galat ho to yahin correct karo — Save dabane se pehle kuch bhi database mein nahi jata.</p>
+        <div class="hop-form-grid" style="margin-top:10px;">
+          <label>Company *<input id="vc-company" value="${foEscapeAttr(f.company || '')}" /></label>
+          <label>Contact person<input id="vc-contact" value="${foEscapeAttr(f.contact_person || '')}" /></label>
+          <label>Mobile<input id="vc-mobile" value="${foEscapeAttr(f.mobile || '')}" /></label>
+          <label>Email<input id="vc-email" value="${foEscapeAttr(f.email || '')}" /></label>
+          <label>City<input id="vc-city" value="${foEscapeAttr(f.city || '')}" /></label>
+          <label>Type<input id="vc-type" value="${foEscapeAttr(f.customer_type || '')}" placeholder="Hotel / Designer / …" /></label>
+          <label>GST<input id="vc-gst" value="${foEscapeAttr(f.gst_no || '')}" /></label>
+          <label>PAN<input id="vc-pan" value="${foEscapeAttr(f.pan || '')}" /></label>
+          <label class="hop-form-span-2">Address<input id="vc-address" value="${foEscapeAttr(f.address || '')}" /></label>
+          <label class="hop-form-span-2">Remarks<input id="vc-remarks" value="${foEscapeAttr(f.remarks || '')}" /></label>
+        </div>
+        <div class="hop-form-actions">
+          <button type="button" class="nx-btn nx-btn-primary" onclick="hopSaveVisitingCardCustomer()">Save as customer</button>
+          <button type="button" class="nx-btn" onclick="document.getElementById('hop-vcard-form').classList.add('hidden')">Discard</button>
+        </div>`;
+      requestAnimationFrame(() => hopScrollIntoMain(formWrap, 8));
+    }
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Card scan failed';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function foEscapeAttr(value) {
+  return foEscapeText(value).replace(/"/g, '&quot;');
+}
+
+async function hopSaveVisitingCardCustomer() {
+  const company = document.getElementById('vc-company')?.value?.trim();
+  if (!company) {
+    alert('Company name required — card se miss hua ho to type karo.');
+    return;
+  }
+  const payload = {
+    company,
+    contact_person: document.getElementById('vc-contact')?.value,
+    mobile: document.getElementById('vc-mobile')?.value,
+    email: document.getElementById('vc-email')?.value,
+    city: document.getElementById('vc-city')?.value,
+    customer_type: document.getElementById('vc-type')?.value,
+    gst_no: document.getElementById('vc-gst')?.value,
+    pan: document.getElementById('vc-pan')?.value,
+    address: document.getElementById('vc-address')?.value,
+    remarks: document.getElementById('vc-remarks')?.value,
+    source: 'visiting_card',
+  };
+  try {
+    await hopApi('/api/v1/hop/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    alert('Customer saved.');
+    openHopView('customers');
+  } catch (e) {
+    alert(e.message || 'Save failed');
+  }
 }
 
 /* ---------- Projects ---------- */
@@ -1453,8 +1606,13 @@ async function renderHopFabricPreviewModule(mount) {
     <div class="hop-fabric-grid">
       <div class="nx-card hop-fabric-card">
         <h3>1. Client item (sofa / chair)</h3>
-        <p class="nx-text-dim">Client ke saamne camera se click karo</p>
-        <input id="hop-fabric-item" type="file" accept="image/*" capture="environment" />
+        <p class="nx-text-dim">Camera se live photo lo, ya gallery se choose karo</p>
+        <div class="hop-photo-actions">
+          <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickPhoto('hop-fabric-item-cam')">Camera</button>
+          <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-fabric-item-gal')">Gallery</button>
+        </div>
+        <input id="hop-fabric-item-cam" class="hop-file-hidden" type="file" accept="image/*" capture="environment" />
+        <input id="hop-fabric-item-gal" class="hop-file-hidden" type="file" accept="image/*" />
         <div id="hop-fabric-item-preview" class="hop-fabric-thumb nx-text-dim">No photo yet</div>
       </div>
       <div class="nx-card hop-fabric-card">
@@ -1463,8 +1621,14 @@ async function renderHopFabricPreviewModule(mount) {
         <select id="hop-fabric-demo-select" onchange="hopFabricDemoChanged()">
           ${demoOptions}
         </select>
-        <label class="hop-fabric-label">Ya fabric photo (camera / gallery / catalogue swatch)</label>
-        <input id="hop-fabric-swatch" type="file" accept="image/*" capture="environment" />
+        <label class="hop-fabric-label">Ya fabric photo</label>
+        <div class="hop-photo-actions">
+          <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickPhoto('hop-fabric-swatch-cam')">Camera</button>
+          <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-fabric-swatch-gal')">Gallery</button>
+        </div>
+        <input id="hop-fabric-swatch-cam" class="hop-file-hidden" type="file" accept="image/*" capture="environment" />
+        <input id="hop-fabric-swatch-gal" class="hop-file-hidden" type="file" accept="image/*" />
+        <div id="hop-fabric-swatch-preview" class="hop-fabric-thumb nx-text-dim">Optional fabric photo</div>
         <p class="nx-text-dim hop-fabric-hint">${foEscapeText(bank.hint || '')}</p>
       </div>
     </div>
@@ -1483,14 +1647,25 @@ async function renderHopFabricPreviewModule(mount) {
     body,
   );
 
-  const itemInput = document.getElementById('hop-fabric-item');
-  itemInput?.addEventListener('change', () => {
-    const file = itemInput.files && itemInput.files[0];
-    const box = document.getElementById('hop-fabric-item-preview');
-    if (!file || !box) return;
-    const url = URL.createObjectURL(file);
-    box.innerHTML = `<img src="${url}" alt="Item preview" />`;
-  });
+  const wireFabricFile = (camId, galId, previewId, storeKey) => {
+    const onPick = (input) => {
+      const file = input.files && input.files[0];
+      const box = document.getElementById(previewId);
+      if (!file) return;
+      hopState.fabricPreview = hopState.fabricPreview || {};
+      hopState.fabricPreview[storeKey] = file;
+      const other = document.getElementById(input.id === camId ? galId : camId);
+      if (other) other.value = '';
+      if (box) {
+        const url = URL.createObjectURL(file);
+        box.innerHTML = `<img src="${url}" alt="Preview" />`;
+      }
+    };
+    document.getElementById(camId)?.addEventListener('change', (e) => onPick(e.target));
+    document.getElementById(galId)?.addEventListener('change', (e) => onPick(e.target));
+  };
+  wireFabricFile('hop-fabric-item-cam', 'hop-fabric-item-gal', 'hop-fabric-item-preview', 'itemFile');
+  wireFabricFile('hop-fabric-swatch-cam', 'hop-fabric-swatch-gal', 'hop-fabric-swatch-preview', 'fabricFile');
 }
 
 function hopFabricDemoChanged() {
@@ -1505,18 +1680,20 @@ async function hopRunFabricPreview() {
   const status = document.getElementById('hop-fabric-status');
   const result = document.getElementById('hop-fabric-result');
   const btn = document.getElementById('hop-fabric-render-btn');
-  const itemInput = document.getElementById('hop-fabric-item');
-  const fabricInput = document.getElementById('hop-fabric-swatch');
   const demoSel = document.getElementById('hop-fabric-demo-select');
-  const itemFile = itemInput?.files && itemInput.files[0];
+  const itemFile = hopState.fabricPreview?.itemFile
+    || document.getElementById('hop-fabric-item-cam')?.files?.[0]
+    || document.getElementById('hop-fabric-item-gal')?.files?.[0];
   if (!itemFile) {
-    if (status) status.textContent = 'Pehle sofa / chair ki photo lo.';
+    if (status) status.textContent = 'Pehle sofa / chair ki photo lo (Camera ya Gallery).';
     return;
   }
 
   const form = new FormData();
   form.append('item_image', itemFile);
-  const fabricFile = fabricInput?.files && fabricInput.files[0];
+  const fabricFile = hopState.fabricPreview?.fabricFile
+    || document.getElementById('hop-fabric-swatch-cam')?.files?.[0]
+    || document.getElementById('hop-fabric-swatch-gal')?.files?.[0];
   if (fabricFile) {
     form.append('fabric_image', fabricFile);
     form.append('fabric_label', fabricFile.name || 'Fabric photo');
