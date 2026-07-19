@@ -4809,10 +4809,24 @@ function setActiveSidebarItem(label) {
   });
 }
 
+function isMobileNavLayout() {
+  return window.matchMedia('(max-width: 900px)').matches;
+}
+
 function pinBdNavRail() {
   /** Slim HoP left rail only — does not cover Customers/module content. */
   const dash = document.getElementById('dashboard');
   if (!dash) return;
+  // Phones use bottom Menu bar — do not reserve a blank 232px desktop rail.
+  if (isMobileNavLayout()) {
+    dash.classList.add('hidden');
+    dash.classList.remove('bd-module-mode');
+    dash.style.removeProperty('right');
+    dash.style.removeProperty('width');
+    dash.style.removeProperty('max-width');
+    dash.style.removeProperty('pointer-events');
+    return;
+  }
   dash.classList.remove('hidden');
   dash.classList.add('bd-module-mode');
   document.getElementById('bd-home-view')?.classList.add('hidden');
