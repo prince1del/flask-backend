@@ -850,13 +850,13 @@ async function renderHopVisitingCardModule(mount) {
   const body = `
     <div class="hop-fabric-banner nx-card">
       <strong>Visiting Card Reader</strong>
-      <span class="nx-text-dim">Camera se card click karo → AI details nikaalega → aap verify karke Save karo. Auto-save nahi hota.</span>
+      <span class="nx-text-dim">Phone app, browser, ya desktop — same feature. Camera / file se card padho → verify → Save. Auto-save nahi hota.</span>
     </div>
     <div class="nx-card hop-fabric-card">
       <h3>1. Capture card</h3>
       <div class="hop-photo-actions">
         <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickPhoto('hop-vcard-cam')">Camera</button>
-        <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-vcard-gal')">Gallery</button>
+        <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-vcard-gal')">Files / Gallery</button>
       </div>
       <input id="hop-vcard-cam" class="hop-file-hidden" type="file" accept="image/*" capture="environment" />
       <input id="hop-vcard-gal" class="hop-file-hidden" type="file" accept="image/*" />
@@ -898,9 +898,165 @@ async function renderHopVisitingCardModule(mount) {
   bindPreview('hop-vcard-gal');
 }
 
+function hopIsLikelyMobileDevice() {
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  if (navigator.maxTouchPoints > 2 && Math.min(window.screen.width, window.screen.height) < 920) {
+    return true;
+  }
+  return false;
+}
+
+function hopCloseWebcamCapture() {
+  const overlay = document.getElementById('hop-webcam-overlay');
+  const stream = hopState._webcamStream;
+  if (stream) {
+    try {
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (_) { /* ignore */ }
+    hopState._webcamStream = null;
+  }
+  if (overlay) overlay.remove();
+}
+
+/**
+ * Cross-platform photo pick:
+ * - Phone / Android app: native camera or gallery via <input capture>
+ * - Desktop browser / desktop app: live webcam modal (getUserMedia), else file picker
+ */
 function hopPickPhoto(inputId) {
   const el = document.getElementById(inputId);
-  if (el) el.click();
+  if (!el) return;
+  const wantsCamera = inputId.includes('-cam') || el.hasAttribute('capture');
+
+  if (
+    wantsCamera
+    && !hopIsLikelyMobileDevice()
+    && navigator.mediaDevices
+    && typeof navigator.mediaDevices.getUserMedia === 'function'
+  ) {
+    hopOpenWebcamCapture(
+      (file) => hopApplyCapturedFile(inputId, el, file),
+      () => {
+        // Webcam blocked — fall back to file chooser (same as Gallery/Files)
+        try { el.removeAttribute('capture'); } catch (_) { /* ignore */ }
+        el.click();
+      },
+    );
+    return;
+  }
+  el.click();
+}
+
+function hopApplyCapturedFile(inputId, inputEl, file) {
+  if (!file) return;
+  try {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    if (inputEl) inputEl.files = dt.files;
+  } catch (_) { /* Safari / some WebViews block DataTransfer */ }
+
+  if (inputId.startsWith('hop-vcard')) {
+    hopState.visitingCardFile = file;
+    const box = document.getElementById('hop-vcard-preview');
+    if (box) box.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Visiting card" />`;
+    const status = document.getElementById('hop-vcard-status');
+    if (status) status.textContent = 'Photo ready — tap Read card';
+    document.getElementById('hop-vcard-form')?.classList.add('hidden');
+    return;
+  }
+
+  hopState.fabricPreview = hopState.fabricPreview || {};
+  if (inputId.includes('fabric-item')) {
+    hopState.fabricPreview.itemFile = file;
+    const box = document.getElementById('hop-fabric-item-preview');
+    if (box) box.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Preview" />`;
+  } else if (inputId.includes('fabric-swatch')) {
+    hopState.fabricPreview.fabricFile = file;
+    const box = document.getElementById('hop-fabric-swatch-preview');
+    if (box) box.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Preview" />`;
+  }
+
+  try {
+    inputEl?.dispatchEvent(new Event('change', { bubbles: true }));
+  } catch (_) { /* ignore */ }
+}
+
+function hopOpenWebcamCapture(onCapture, onFallback) {
+  hopCloseWebcamCapture();
+  const overlay = document.createElement('div');
+  overlay.id = 'hop-webcam-overlay';
+  overlay.className = 'hop-webcam-overlay';
+  overlay.innerHTML = `
+    <div class="hop-webcam-dialog" role="dialog" aria-modal="true" aria-label="Camera">
+      <header class="hop-webcam-header">
+        <strong>Camera</strong>
+        <span class="nx-text-dim">Works on web &amp; desktop — allow camera access if asked</span>
+      </header>
+      <video id="hop-webcam-video" class="hop-webcam-video" playsinline autoplay muted></video>
+      <p id="hop-webcam-error" class="nx-oc-error hidden"></p>
+      <div class="hop-webcam-actions">
+        <button type="button" class="nx-btn nx-btn-primary" id="hop-webcam-snap">Capture</button>
+        <button type="button" class="nx-btn" id="hop-webcam-files">Use file instead</button>
+        <button type="button" class="nx-btn" id="hop-webcam-cancel">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const video = document.getElementById('hop-webcam-video');
+  const errEl = document.getElementById('hop-webcam-error');
+  const finishFallback = () => {
+    hopCloseWebcamCapture();
+    if (typeof onFallback === 'function') onFallback();
+  };
+
+  document.getElementById('hop-webcam-cancel')?.addEventListener('click', () => hopCloseWebcamCapture());
+  document.getElementById('hop-webcam-files')?.addEventListener('click', finishFallback);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) hopCloseWebcamCapture();
+  });
+
+  document.getElementById('hop-webcam-snap')?.addEventListener('click', () => {
+    if (!video || !video.videoWidth) {
+      if (errEl) {
+        errEl.textContent = 'Camera not ready yet — wait a second or use file instead.';
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        finishFallback();
+        return;
+      }
+      const file = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      hopCloseWebcamCapture();
+      if (typeof onCapture === 'function') onCapture(file);
+    }, 'image/jpeg', 0.92);
+  });
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false,
+  }).then((stream) => {
+    hopState._webcamStream = stream;
+    if (video) {
+      video.srcObject = stream;
+      video.play?.().catch(() => {});
+    }
+  }).catch((err) => {
+    if (errEl) {
+      errEl.textContent = (err && err.message) ? err.message : 'Camera permission denied';
+      errEl.classList.remove('hidden');
+    }
+    // Auto-offer file fallback after a beat
+    setTimeout(finishFallback, 600);
+  });
 }
 
 async function hopScanVisitingCard() {
@@ -1601,15 +1757,15 @@ async function renderHopFabricPreviewModule(mount) {
   const body = `
     <div class="hop-fabric-banner nx-card">
       <strong>DEMO mode</strong> — free partner pitch. Paid AI render unlocks after budget approval.
-      <span class="nx-text-dim">Engine: ${foEscapeText(bank.engine || 'demo')}</span>
+      <span class="nx-text-dim">Engine: ${foEscapeText(bank.engine || 'demo')} · Same on app, web &amp; desktop</span>
     </div>
     <div class="hop-fabric-grid">
       <div class="nx-card hop-fabric-card">
         <h3>1. Client item (sofa / chair)</h3>
-        <p class="nx-text-dim">Camera se live photo lo, ya gallery se choose karo</p>
+        <p class="nx-text-dim">Camera (phone/webcam) ya Files se photo</p>
         <div class="hop-photo-actions">
           <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickPhoto('hop-fabric-item-cam')">Camera</button>
-          <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-fabric-item-gal')">Gallery</button>
+          <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-fabric-item-gal')">Files / Gallery</button>
         </div>
         <input id="hop-fabric-item-cam" class="hop-file-hidden" type="file" accept="image/*" capture="environment" />
         <input id="hop-fabric-item-gal" class="hop-file-hidden" type="file" accept="image/*" />
@@ -1624,7 +1780,7 @@ async function renderHopFabricPreviewModule(mount) {
         <label class="hop-fabric-label">Ya fabric photo</label>
         <div class="hop-photo-actions">
           <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickPhoto('hop-fabric-swatch-cam')">Camera</button>
-          <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-fabric-swatch-gal')">Gallery</button>
+          <button type="button" class="nx-btn" onclick="hopPickPhoto('hop-fabric-swatch-gal')">Files / Gallery</button>
         </div>
         <input id="hop-fabric-swatch-cam" class="hop-file-hidden" type="file" accept="image/*" capture="environment" />
         <input id="hop-fabric-swatch-gal" class="hop-file-hidden" type="file" accept="image/*" />
