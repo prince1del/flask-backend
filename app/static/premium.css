@@ -3837,7 +3837,7 @@ body.nexora-ask-open #dashboard-widget-dock {
     flex-direction: column !important;
     position: fixed !important;
     top: 0 !important;
-    left: 0 !important;
+    left: -110% !important;
     bottom: 0 !important;
     width: min(300px, 86vw) !important;
     max-width: 300px !important;
@@ -3845,8 +3845,8 @@ body.nexora-ask-open #dashboard-widget-dock {
     z-index: 10090 !important;
     margin: 0 !important;
     border-radius: 0 16px 16px 0 !important;
-    transform: translateX(-105%) !important;
-    transition: transform 0.22s ease !important;
+    transform: none !important;
+    transition: left 0.22s ease !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
     padding: 16px 12px calc(72px + env(safe-area-inset-bottom, 0px)) !important;
@@ -3860,7 +3860,8 @@ body.nexora-ask-open #dashboard-widget-dock {
   body.mobile-nav-open aside.left-nav,
   body.mobile-nav-open #hop-executive-workspace .hop-nav,
   body.mobile-nav-open aside.hop-nav {
-    transform: translateX(0) !important;
+    left: 0 !important;
+    transform: none !important;
   }
   body.mobile-nav-open #hop-executive-workspace {
     overflow: visible !important;

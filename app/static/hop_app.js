@@ -518,10 +518,6 @@ function hopScrollMainToTop() {
 }
 
 function openHopView(viewName, opts) {
-  // Close drawer after the tap finishes — closing during click breaks Android WebView.
-  if (typeof closeMobileNav === 'function') {
-    window.setTimeout(() => closeMobileNav(), 50);
-  }
   hopState.view = viewName || 'dashboard';
   hopHideAllViews();
   hopScrollMainToTop();
@@ -532,45 +528,97 @@ function openHopView(viewName, opts) {
   if (hopState.view === 'dashboard') {
     document.getElementById('hop-view-dashboard')?.classList.remove('hidden');
     Promise.resolve(loadHopExecutiveSnapshot()).finally(() => hopScrollMainToTop());
-    return;
-  }
-  if (hopState.view === 'project-hub' || hopState.view === 'project_hub') {
+  } else if (hopState.view === 'project-hub' || hopState.view === 'project_hub') {
     document.getElementById('hop-view-project-hub')?.classList.remove('hidden');
     const pid = opts?.projectId || hopState.hub?.project?.id;
     if (pid) Promise.resolve(loadHopProjectHub(pid)).finally(() => hopScrollMainToTop());
-    return;
+  } else {
+    const mount = hopMount();
+    if (!mount) {
+      console.error('HoP mount missing');
+    } else {
+      mount.innerHTML = '<div class="hop-view"><p class="nx-text-dim">Loading…</p></div>';
+      const loaders = {
+        customers: renderHopCustomersModule,
+        projects: renderHopProjectsModule,
+        leads: renderHopLeadsModule,
+        meetings: renderHopMeetingsModule,
+        quotations: renderHopQuotationsModule,
+        vendors: renderHopVendorsModule,
+        vendor_cmp: renderHopVendorCmpModule,
+        samples: renderHopSamplesModule,
+        products: renderHopProductsModule,
+        orders: renderHopOrdersModule,
+        dispatches: renderHopDispatchesModule,
+        invoices: renderHopInvoicesModule,
+        payments: renderHopPaymentsModule,
+        complaints: renderHopComplaintsModule,
+        pipeline: renderHopPipelineModule,
+        funnel: renderHopFunnelModule,
+        receivables: renderHopReceivablesModule,
+        customer_dash: renderHopCustomerDashModule,
+        daily: renderHopDailyModule,
+        profit: renderHopProfitModule,
+        targets: renderHopTargetsModule,
+      };
+      const fn = loaders[hopState.view];
+      if (fn) Promise.resolve(fn(mount)).finally(() => hopScrollMainToTop());
+      else mount.innerHTML = `<div class="hop-view"><p class="nx-oc-error">Unknown view</p></div>`;
+    }
   }
 
-  const mount = hopMount();
-  if (!mount) return;
-  mount.innerHTML = '<div class="hop-view"><p class="nx-text-dim">Loading…</p></div>';
+  // Close drawer after navigation so Android WebView does not cancel the tap.
+  window.setTimeout(() => {
+    if (typeof closeMobileNav === 'function') closeMobileNav();
+  }, 80);
+}
 
-  const loaders = {
-    customers: renderHopCustomersModule,
-    projects: renderHopProjectsModule,
-    leads: renderHopLeadsModule,
-    meetings: renderHopMeetingsModule,
-    quotations: renderHopQuotationsModule,
-    vendors: renderHopVendorsModule,
-    vendor_cmp: renderHopVendorCmpModule,
-    samples: renderHopSamplesModule,
-    products: renderHopProductsModule,
-    orders: renderHopOrdersModule,
-    dispatches: renderHopDispatchesModule,
-    invoices: renderHopInvoicesModule,
-    payments: renderHopPaymentsModule,
-    complaints: renderHopComplaintsModule,
-    pipeline: renderHopPipelineModule,
-    funnel: renderHopFunnelModule,
-    receivables: renderHopReceivablesModule,
-    customer_dash: renderHopCustomerDashModule,
-    daily: renderHopDailyModule,
-    profit: renderHopProfitModule,
-    targets: renderHopTargetsModule,
+/** Reliable mobile taps — inline onclick alone fails on some Android WebViews. */
+function bindHopNavClicks() {
+  const root = document.getElementById('hop-executive-workspace');
+  if (!root || root.dataset.hopNavBound === '1') return;
+  root.dataset.hopNavBound = '1';
+  let lastNavAt = 0;
+
+  const activate = (event) => {
+    const btn = event.target && event.target.closest
+      ? event.target.closest('.hop-nav-btn[data-hop-view]')
+      : null;
+    if (!btn || !root.contains(btn)) return;
+    if (btn.classList.contains('is-soon') || btn.disabled) return;
+    const view = btn.getAttribute('data-hop-view');
+    if (!view) return;
+    const now = Date.now();
+    if (now - lastNavAt < 400) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    lastNavAt = now;
+    event.preventDefault();
+    event.stopPropagation();
+    openHopView(view);
   };
-  const fn = loaders[hopState.view];
-  if (fn) Promise.resolve(fn(mount)).finally(() => hopScrollMainToTop());
-  else mount.innerHTML = `<div class="hop-view"><p class="nx-oc-error">Unknown view</p></div>`;
+
+  root.addEventListener('click', activate, true);
+  root.addEventListener(
+    'touchend',
+    (event) => {
+      const btn = event.target && event.target.closest
+        ? event.target.closest('.hop-nav-btn[data-hop-view]')
+        : null;
+      if (!btn || !root.contains(btn)) return;
+      event.preventDefault();
+      activate(event);
+    },
+    { capture: true, passive: false },
+  );
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindHopNavClicks);
+} else {
+  bindHopNavClicks();
 }
 
 function hopDebouncedReload(kind) {

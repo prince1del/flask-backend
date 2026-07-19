@@ -4817,7 +4817,7 @@ function isHopUserSession() {
   return authState.role === 'hop_admin' || authState.workspaceId === 'house_of_prizm';
 }
 
-/** Show only the HoP shell and open a HoP view (never BD modules). */
+/** Keep HoP shell visible while a BD module is open. */
 function showHopShell(viewName) {
   if (typeof closeMobileNav === 'function') closeMobileNav();
   if (typeof unmountBdModule === 'function') unmountBdModule();
@@ -4838,6 +4838,7 @@ function showHopShell(viewName) {
   ].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
   document.getElementById('hop-executive-workspace')?.classList.remove('hidden');
   currentModuleKey = 'hopexecutive';
+  if (typeof bindHopNavClicks === 'function') bindHopNavClicks();
   if (typeof openHopView === 'function') openHopView(viewName || 'dashboard');
   else if (typeof loadHopExecutiveSnapshot === 'function') loadHopExecutiveSnapshot();
 }
