@@ -7,12 +7,19 @@ from pathlib import Path
 
 
 def normalize_database_url(url: str | None) -> str | None:
-    """Render often provides postgres:// — SQLAlchemy needs postgresql://."""
+    """Normalize Render/Postgres URLs for SQLAlchemy + psycopg v3.
+
+    Render often gives postgres://. SQLAlchemy 2.0 defaults postgresql:// to
+    psycopg2 (not installed). We pin postgresql+psycopg:// (psycopg3).
+    """
     if not url:
         return None
     url = url.strip()
     if url.startswith("postgres://"):
-        return "postgresql://" + url[len("postgres://") :]
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://") :]
+    # Already postgresql+psycopg:// or another dialect — leave as-is.
     return url
 
 

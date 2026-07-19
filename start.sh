@@ -24,7 +24,7 @@ with app.app_context():
     from app.db import db
     from flask_migrate import upgrade, stamp
     tables = set(inspect(db.engine).get_table_names())
-    if uri.startswith('postgresql'):
+    if 'postgresql' in uri:
         if 'alembic_version' not in tables:
             stamp(revision='head')
             print('Postgres: stamped alembic head after create_all')
