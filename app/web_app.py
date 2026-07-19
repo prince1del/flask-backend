@@ -33,6 +33,7 @@ from centralized_db_system.db import CentralizedDB
 from flask_migrate import Migrate
 from app.db import db
 from app.init_db import init_db
+from app.db_url import resolve_centralized_db_path, resolve_sqlalchemy_url
 from app.jwt_service import JWTService
 from app.version import APP_NAME, APP_VERSION
 from app.routes import (
@@ -129,8 +130,9 @@ def _ensure_filled_orders_schema(app: Flask) -> None:
     import filled_orders_db as fodb
 
     db_path = app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
-    if not db_path or not Path(db_path).exists():
+    if not db_path:
         return
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     try:
         fodb.ensure_schema(conn)
@@ -174,33 +176,10 @@ def create_app() -> Flask:
     app.config["GEMINI_API_KEY"] = (os.getenv("GEMINI_API_KEY") or "").strip()
     app.config["NEXORA_ASK_LLM"] = (os.getenv("NEXORA_ASK_LLM") or "").strip()
 
-    database_url = os.getenv("DATABASE_URL")
-    project_root = Path(__file__).resolve().parent.parent
-    root_db = project_root / "centralized_db.sqlite3"
-    instance_db = project_root / "instance" / "centralized_db.sqlite3"
-
-    if not database_url:
-        cloud_url = os.getenv("CLOUD_DATABASE_URL")
-        if cloud_url:
-            if cloud_url.startswith("sqlite:///"):
-                cloud_path = cloud_url[len("sqlite:///") :]
-                if cloud_path == "centralized_db.sqlite3":
-                    database_url = f"sqlite:///{root_db.as_posix()}" if root_db.exists() else f"sqlite:///{instance_db.as_posix()}"
-                else:
-                    database_url = cloud_url
-            else:
-                database_url = cloud_url
-        elif root_db.exists():
-            database_url = f"sqlite:///{root_db.as_posix()}"
-        elif instance_db.exists():
-            database_url = f"sqlite:///{instance_db.as_posix()}"
-        else:
-            database_url = "sqlite:///centralized_db.sqlite3"
-
+    database_url = resolve_sqlalchemy_url(project_root=Path(__file__).resolve().parent.parent)
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-    app.config["DATABASE_PATH"] = os.getenv(
-        "DATABASE_PATH",
-        str(root_db) if root_db.exists() else (str(instance_db) if instance_db.exists() else "centralized_db.sqlite3"),
+    app.config["DATABASE_PATH"] = resolve_centralized_db_path(
+        project_root=Path(__file__).resolve().parent.parent
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.extensions["jwt_service"] = JWTService(secret_key=app.secret_key)
