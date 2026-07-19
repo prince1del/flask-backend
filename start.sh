@@ -75,4 +75,24 @@ except Exception as e:
     print('SEED err:', e)
 "
 
+# Seed House of Prizm admin if missing.
+python -c "
+from app.web_app import create_app
+from app.hop_schema import HOP_ROLE, HOP_WORKSPACE_ID, ensure_hop_schema
+from centralized_db_system.db import CentralizedDB
+import os
+app = create_app()
+db_path = app.config['DATABASE_PATH']
+ensure_hop_schema(db_path)
+db = CentralizedDB(db_path)
+username = os.getenv('HOP_ADMIN_USERNAME', 'hop_prizm')
+password = os.getenv('HOP_ADMIN_PASSWORD', 'Prizm@2026!')
+try:
+    print('HOP SEED', db.create_user(username, password, role=HOP_ROLE, workspace_id=HOP_WORKSPACE_ID))
+except ValueError as e:
+    print('HOP SEED skip:', e)
+except Exception as e:
+    print('HOP SEED err:', e)
+"
+
 exec gunicorn "app.web_app:create_app()"
