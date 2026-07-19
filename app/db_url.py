@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 
 def normalize_database_url(url: str | None) -> str | None:
@@ -11,15 +12,23 @@ def normalize_database_url(url: str | None) -> str | None:
 
     Render often gives postgres://. SQLAlchemy 2.0 defaults postgresql:// to
     psycopg2 (not installed). We pin postgresql+psycopg:// (psycopg3).
+    Also ensure sslmode=require (Render Postgres expects TLS).
     """
     if not url:
         return None
-    url = url.strip()
+    url = url.strip().strip('"').strip("'")
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://") :]
     if url.startswith("postgresql://"):
         url = "postgresql+psycopg://" + url[len("postgresql://") :]
-    # Already postgresql+psycopg:// or another dialect — leave as-is.
+
+    if url.startswith("postgresql+psycopg://") or url.startswith("postgresql://"):
+        parsed = urlparse(url)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        if "sslmode" not in query:
+            query["sslmode"] = "require"
+        url = urlunparse(parsed._replace(query=urlencode(query)))
+
     return url
 
 
