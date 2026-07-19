@@ -96,7 +96,10 @@ def get_years():
         _cdb().merge_duplicate_fiscal_years(workspace_id)
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM target_achievement_years WHERE workspace_id = ? ORDER BY COALESCE(financial_year, year) ASC', (workspace_id,))
+        cursor.execute(
+            'SELECT * FROM target_achievement_years WHERE workspace_id = ?',
+            (workspace_id,),
+        )
         years = [_year_row_to_dict(row) for row in cursor.fetchall()]
         child_counts: dict[int, int] = {}
         try:
@@ -127,7 +130,7 @@ def get_fy_overview():
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT * FROM target_achievement_years WHERE workspace_id = ? ORDER BY COALESCE(financial_year, year) ASC',
+            'SELECT * FROM target_achievement_years WHERE workspace_id = ?',
             (workspace_id,),
         )
         years = [_year_row_to_dict(row) for row in cursor.fetchall()]

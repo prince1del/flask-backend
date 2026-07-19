@@ -699,7 +699,7 @@ def _find_ta_year_id(
 
     if not workspace_id:
         return None, None
-    query = "SELECT id, financial_year, year FROM target_achievement_years WHERE workspace_id = ?"
+    query = "SELECT id, financial_year FROM target_achievement_years WHERE workspace_id = ?"
     params: list[Any] = [workspace_id]
     try:
         rows = conn.execute(query, params).fetchall()
@@ -708,10 +708,11 @@ def _find_ta_year_id(
     target = normalize_fiscal_year(fy_label) if fy_label else None
     for row in rows:
         year_id = int(row[0])
-        label = normalize_fiscal_year(row[1] or row[2] or "") or (row[1] or row[2] or "")
+        raw = row[1] or ""
+        label = normalize_fiscal_year(raw) or raw
         if not target:
             continue
-        if label == target or target in str(row[1] or "") or target in str(row[2] or ""):
+        if label == target or target in str(raw):
             return year_id, label
     return None, None
 
@@ -842,7 +843,7 @@ def _answer_ta_question(
     overview_rows = []
     try:
         raw_rows = conn.execute(
-            "SELECT id, financial_year, year FROM target_achievement_years WHERE workspace_id = ?",
+            "SELECT id, financial_year FROM target_achievement_years WHERE workspace_id = ?",
             (workspace_id,),
         ).fetchall()
     except sqlite3.OperationalError:
@@ -851,7 +852,8 @@ def _answer_ta_question(
 
     for row in raw_rows:
         year_id = int(row[0])
-        fy = normalize_fiscal_year(row[1] or row[2] or "") or (row[1] or row[2] or "")
+        raw = row[1] or ""
+        fy = normalize_fiscal_year(raw) or raw
         try:
             summary = cdb.build_fy_achievement_summary(workspace_id, year_id, fy)
         except Exception:
