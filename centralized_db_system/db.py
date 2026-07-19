@@ -6394,44 +6394,49 @@ class CentralizedDB:
             like_query = f"%{normalized_query.lower()}%"
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                am_rows = conn.execute(
-                    """
-                    SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key
-                    FROM article_master
-                    WHERE user_id = ? AND is_active = 1 AND (
-                        LOWER(COALESCE(brand, '')) LIKE ?
-                        OR LOWER(COALESCE(size, '')) LIKE ?
-                        OR LOWER(COALESCE(product_type, '')) LIKE ?
-                        OR LOWER(COALESCE(item_key, '')) LIKE ?
-                        OR LOWER(COALESCE(category, '')) LIKE ?
-                        OR LOWER(COALESCE(extra_attributes, '')) LIKE ?
-                        OR LOWER(COALESCE(brand, '')) IN (
-                            SELECT LOWER(canonical_brand) FROM brand_aliases
-                            WHERE user_id = ? AND LOWER(alias) LIKE ?
+                try:
+                    am_rows = conn.execute(
+                        """
+                        SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key
+                        FROM article_master
+                        WHERE user_id = ? AND is_active = 1 AND (
+                            LOWER(COALESCE(brand, '')) LIKE ?
+                            OR LOWER(COALESCE(size, '')) LIKE ?
+                            OR LOWER(COALESCE(product_type, '')) LIKE ?
+                            OR LOWER(COALESCE(item_key, '')) LIKE ?
+                            OR LOWER(COALESCE(category, '')) LIKE ?
+                            OR LOWER(COALESCE(extra_attributes, '')) LIKE ?
+                            OR LOWER(COALESCE(brand, '')) IN (
+                                SELECT LOWER(canonical_brand) FROM brand_aliases
+                                WHERE user_id = ? AND LOWER(alias) LIKE ?
+                            )
+                            OR LOWER(COALESCE(brand, '')) IN (
+                                SELECT LOWER(alias) FROM brand_aliases
+                                WHERE user_id = ? AND LOWER(canonical_brand) LIKE ?
+                            )
                         )
-                        OR LOWER(COALESCE(brand, '')) IN (
-                            SELECT LOWER(alias) FROM brand_aliases
-                            WHERE user_id = ? AND LOWER(canonical_brand) LIKE ?
-                        )
-                    )
-                    ORDER BY LOWER(COALESCE(brand, '')), LOWER(COALESCE(size, ''))
-                    LIMIT 50
-                    """,
-                    (
-                        user_id,
-                        like_query,
-                        like_query,
-                        like_query,
-                        like_query,
-                        like_query,
-                        like_query,
-                        user_id,
-                        like_query,
-                        user_id,
-                        like_query,
-                    ),
-                ).fetchall()
-                results["article_master"] = [dict(r) for r in am_rows]
+                        ORDER BY LOWER(COALESCE(brand, '')), LOWER(COALESCE(size, ''))
+                        LIMIT 50
+                        """,
+                        (
+                            user_id,
+                            like_query,
+                            like_query,
+                            like_query,
+                            like_query,
+                            like_query,
+                            like_query,
+                            user_id,
+                            like_query,
+                            user_id,
+                            like_query,
+                        ),
+                    ).fetchall()
+                    results["article_master"] = [dict(r) for r in am_rows]
+                except sqlite3.OperationalError:
+                    # Fresh / partial DBs may lack article_master or brand_aliases.
+                    # Party/order search above must still succeed.
+                    results["article_master"] = []
 
         results = self._filter_global_search_results(
             normalized_query, results, terms=search_terms

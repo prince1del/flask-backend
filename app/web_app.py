@@ -138,6 +138,24 @@ def _ensure_filled_orders_schema(app: Flask) -> None:
         conn.close()
 
 
+def _ensure_article_master_schema(app: Flask) -> None:
+    """Ensure article_master + brand_aliases tables exist (needed by global search)."""
+    import sqlite3
+
+    import article_master_db as amdb
+
+    db_path = app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
+    if not db_path:
+        return
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        amdb.ensure_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def create_app() -> Flask:
     init_db()
 
@@ -207,6 +225,7 @@ def create_app() -> Flask:
         _ensure_compatibility_columns(app)
         db.create_all()
         _ensure_filled_orders_schema(app)
+        _ensure_article_master_schema(app)
 
     @app.route("/", methods=["GET", "POST"])
     @app.route("/dashboard")
