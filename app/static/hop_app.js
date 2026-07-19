@@ -518,7 +518,10 @@ function hopScrollMainToTop() {
 }
 
 function openHopView(viewName, opts) {
-  if (typeof closeMobileNav === 'function') closeMobileNav();
+  // Close drawer after the tap finishes — closing during click breaks Android WebView.
+  if (typeof closeMobileNav === 'function') {
+    window.setTimeout(() => closeMobileNav(), 50);
+  }
   hopState.view = viewName || 'dashboard';
   hopHideAllViews();
   hopScrollMainToTop();
