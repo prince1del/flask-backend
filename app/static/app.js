@@ -403,6 +403,7 @@ function initApp() {
   // Keep minimized dock on <body> so Customers / other pages never hide it with #dashboard.
   ensureWidgetDock();
   bindNexoraChatOverlayDismiss();
+  bindMobileNavDismissGestures();
   loadAuthState();
   if (authState.accessToken && authState.role === 'hop_admin') {
     goToHomePage();
@@ -9595,7 +9596,10 @@ function closeMobileNav() {
   const toggle = document.getElementById('mobile-nav-toggle');
   const backdrop = document.getElementById('mobile-nav-backdrop');
   if (toggle) toggle.setAttribute('aria-expanded', 'false');
-  if (backdrop) backdrop.hidden = true;
+  if (backdrop) {
+    backdrop.hidden = true;
+    backdrop.setAttribute('aria-hidden', 'true');
+  }
 }
 
 function openMobileNav() {
@@ -9603,12 +9607,57 @@ function openMobileNav() {
   const toggle = document.getElementById('mobile-nav-toggle');
   const backdrop = document.getElementById('mobile-nav-backdrop');
   if (toggle) toggle.setAttribute('aria-expanded', 'true');
-  if (backdrop) backdrop.hidden = false;
+  if (backdrop) {
+    backdrop.hidden = false;
+    backdrop.setAttribute('aria-hidden', 'false');
+  }
+  bindMobileNavDismissGestures();
 }
 
 function toggleMobileNav() {
   if (document.body.classList.contains('mobile-nav-open')) closeMobileNav();
   else openMobileNav();
+}
+
+/** Outside tap (backdrop) + left swipe closes the drawer. */
+function bindMobileNavDismissGestures() {
+  if (window.__mobileNavGesturesBound) return;
+  window.__mobileNavGesturesBound = true;
+
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+
+  document.addEventListener('touchstart', (e) => {
+    if (!document.body.classList.contains('mobile-nav-open')) return;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    startX = t.clientX;
+    startY = t.clientY;
+    tracking = true;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!tracking || !document.body.classList.contains('mobile-nav-open')) {
+      tracking = false;
+      return;
+    }
+    tracking = false;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    // Left swipe (ignore mostly-vertical scrolls in the menu list)
+    if (dx < -56 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+      closeMobileNav();
+    }
+  }, { passive: true });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('mobile-nav-open')) {
+      closeMobileNav();
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

@@ -20,6 +20,7 @@ import android.widget.FrameLayout
 import android.widget.ProgressBar
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
@@ -130,12 +131,7 @@ class MainActivity : AppCompatActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (webView.canGoBack()) {
-                        webView.goBack()
-                    } else {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
-                    }
+                    handleAppBack()
                 }
             },
         )
@@ -147,6 +143,42 @@ class MainActivity : AppCompatActivity() {
         } else {
             webView.loadUrl("${BuildConfig.START_URL}/?app=hop&v=${BuildConfig.VERSION_CODE}")
         }
+    }
+
+    private fun handleAppBack() {
+        // 1) Close open menu drawer first (no exit)
+        webView.evaluateJavascript(
+            """
+            (function(){
+              try {
+                if (document.body && document.body.classList.contains('mobile-nav-open')
+                    && typeof closeMobileNav === 'function') {
+                  closeMobileNav();
+                  return 'drawer';
+                }
+              } catch (e) {}
+              return 'none';
+            })();
+            """.trimIndent(),
+        ) { raw ->
+            val result = raw?.trim('"') ?: "none"
+            if (result == "drawer") return@evaluateJavascript
+            if (webView.canGoBack()) {
+                webView.goBack()
+            } else {
+                confirmExitApp()
+            }
+        }
+    }
+
+    private fun confirmExitApp() {
+        AlertDialog.Builder(this)
+            .setTitle("Exit app?")
+            .setMessage("Do you want to close House of Prizm?")
+            .setPositiveButton("Exit") { _, _ -> finish() }
+            .setNegativeButton("Cancel", null)
+            .setCancelable(true)
+            .show()
     }
 
     private fun hideSplashWhenReady() {

@@ -3796,10 +3796,10 @@ body.nexora-ask-open #dashboard-widget-dock {
     padding-left: 0 !important;
   }
 
-  /* Fixed bottom bar — cannot be missed on phone */
+  /* Fixed bottom bar — Menu + Home only */
   .mobile-bottom-nav {
     display: grid !important;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     position: fixed !important;
     left: 0 !important;
     right: 0 !important;
@@ -3870,11 +3870,13 @@ body.nexora-ask-open #dashboard-widget-dock {
     CRITICAL: .workspace-shell is position:fixed; z-index:30.
     Fixed children cannot paint above the full-screen backdrop (z-index 10065),
     so the menu looks visible under the dim layer but receives ZERO touches/scroll.
-    Lift the whole HoP shell above the backdrop while the drawer is open.
+    Lift the whole HoP shell above the backdrop while the drawer is open,
+    but pass taps outside the drawer through to the backdrop (close on outside tap).
   */
   body.mobile-nav-open #hop-executive-workspace:not(.hidden) {
     overflow: visible !important;
     z-index: 10100 !important;
+    pointer-events: none !important;
   }
   body.mobile-nav-open #hop-executive-workspace .hop-main {
     pointer-events: none !important;
@@ -3886,13 +3888,17 @@ body.nexora-ask-open #dashboard-widget-dock {
   }
   body.mobile-nav-open .mobile-nav-backdrop {
     z-index: 10050 !important;
+    pointer-events: auto !important;
+    cursor: pointer;
   }
   body.mobile-nav-open #mobile-bottom-nav {
     z-index: 10120 !important;
+    pointer-events: auto !important;
   }
   body.mobile-nav-open .nexora-header,
   body.mobile-nav-open #mobile-nav-toggle {
     z-index: 10130 !important;
+    pointer-events: auto !important;
   }
 
   body.mobile-nav-open #dashboard .left-nav .nav-label,
