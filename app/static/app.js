@@ -5125,6 +5125,7 @@ function goBack() {
 }
 
 function openModule(moduleName) {
+  if (typeof closeMobileNav === 'function') closeMobileNav();
   const normalized = (moduleName || '').toLowerCase();
   if (!suppressModuleHistoryPush && normalized !== currentModuleKey) {
     moduleHistoryStack.push(currentModuleKey);
@@ -9488,6 +9489,27 @@ async function downloadFilledOrder(orderId) {
   } catch (error) {
     alert(error.message || 'Download failed');
   }
+}
+
+function closeMobileNav() {
+  document.body.classList.remove('mobile-nav-open');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  const backdrop = document.getElementById('mobile-nav-backdrop');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  if (backdrop) backdrop.hidden = true;
+}
+
+function openMobileNav() {
+  document.body.classList.add('mobile-nav-open');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  const backdrop = document.getElementById('mobile-nav-backdrop');
+  if (toggle) toggle.setAttribute('aria-expanded', 'true');
+  if (backdrop) backdrop.hidden = false;
+}
+
+function toggleMobileNav() {
+  if (document.body.classList.contains('mobile-nav-open')) closeMobileNav();
+  else openMobileNav();
 }
 
 document.addEventListener('DOMContentLoaded', initApp);
