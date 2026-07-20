@@ -890,12 +890,18 @@ async function renderHopVisitingCardModule(mount) {
       const url = URL.createObjectURL(file);
       box.innerHTML = `<img src="${url}" alt="Visiting card" />`;
       const status = document.getElementById('hop-vcard-status');
-      if (status) status.textContent = 'Photo ready — tap Read card';
+      if (status) status.textContent = 'Photo ready — reading card…';
       document.getElementById('hop-vcard-form')?.classList.add('hidden');
+      hopScheduleVisitingCardScan();
     });
   };
   bindPreview('hop-vcard-cam');
   bindPreview('hop-vcard-gal');
+}
+
+function hopScheduleVisitingCardScan() {
+  window.clearTimeout(hopState._vcardScanTimer);
+  hopState._vcardScanTimer = window.setTimeout(() => hopScanVisitingCard(), 450);
 }
 
 function hopIsLikelyMobileDevice() {
@@ -961,8 +967,9 @@ function hopApplyCapturedFile(inputId, inputEl, file) {
     const box = document.getElementById('hop-vcard-preview');
     if (box) box.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Visiting card" />`;
     const status = document.getElementById('hop-vcard-status');
-    if (status) status.textContent = 'Photo ready — tap Read card';
+    if (status) status.textContent = 'Photo ready — reading card…';
     document.getElementById('hop-vcard-form')?.classList.add('hidden');
+    hopScheduleVisitingCardScan();
     return;
   }
 
@@ -1074,17 +1081,34 @@ async function hopScanVisitingCard() {
   if (btn) btn.disabled = true;
   try {
     const fd = new FormData();
-    fd.append('card_image', file);
+    fd.append('card_image', file, file.name || 'visiting_card.jpg');
     const response = await fetchWithAuth('/api/v1/hop/customers/scan-card', { method: 'POST', body: fd });
-    const data = await parseApiJson(response);
+    let data;
+    try {
+      data = await parseApiJson(response);
+    } catch (parseErr) {
+      throw new Error(
+        response.status === 401
+          ? 'Session expire ho gayi — dubara login karo.'
+          : (parseErr.message || 'Server ne JSON ki jagah error page bheja. Hard refresh karo.'),
+      );
+    }
     if (!response.ok || !data.success) {
       throw new Error(getApiErrorMessage(data, 'Card scan failed'));
     }
     const payload = data.data || {};
     const f = payload.fields || {};
     hopState.visitingCardDraft = f;
+    const preview = (payload.raw_text_preview || '').trim();
     if (status) {
-      status.textContent = `${payload.note || 'Review fields below'} · Engine: ${payload.engine || '—'} · ${payload.confidence || ''}`;
+      let msg = payload.note || 'Neeche fields verify karo';
+      if (payload.engine) msg += ` · Engine: ${payload.engine}`;
+      if (payload.confidence) msg += ` · ${payload.confidence}`;
+      if (!payload.gemini_configured) msg += ' · Tip: GEMINI_API_KEY Render pe set karo (best accuracy).';
+      if (preview && (payload.confidence === 'low' || !f.company)) {
+        msg += ` · OCR preview: ${preview.slice(0, 120)}${preview.length > 120 ? '…' : ''}`;
+      }
+      status.textContent = msg;
     }
     if (formWrap) {
       formWrap.classList.remove('hidden');

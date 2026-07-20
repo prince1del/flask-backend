@@ -50,6 +50,15 @@ def _gemini_key() -> str:
         val = (os.environ.get(name) or "").strip()
         if val:
             return val
+    try:
+        from flask import has_request_context, current_app
+
+        if has_request_context():
+            val = (current_app.config.get("GEMINI_API_KEY") or "").strip()
+            if val:
+                return val
+    except Exception:
+        pass
     return ""
 
 
@@ -207,10 +216,12 @@ Rules:
 """
 
     models = (
-        "gemini-flash-latest",
         "gemini-2.5-flash",
         "gemini-2.0-flash",
         "gemini-2.0-flash-001",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-flash-latest",
         "gemini-2.0-flash-lite",
     )
     last_err = ""
@@ -262,24 +273,24 @@ Rules:
                 last_err = str(exc)
         except Exception as exc:
             last_err = str(exc)
+    _extract_gemini.last_error = last_err or "gemini_failed"  # type: ignore[attr-defined]
     return dict(_EMPTY_FIELDS), last_err or "gemini_failed"
 
 
-def _local_ocr_allowed() -> bool:
-    """Heavy local OCR blows past Render Starter 512MB — off by default on Render."""
-    flag = (os.getenv("HOP_CARD_LOCAL_OCR") or os.getenv("HOP_ALLOW_HEAVY_OCR") or "").strip().lower()
-    if flag in {"1", "true", "yes", "on"}:
-        return True
-    if (os.getenv("RENDER") or "").strip().lower() in {"true", "1"}:
+_extract_gemini.last_error = ""  # type: ignore[attr-defined]
+
+
+def _light_local_ocr_allowed() -> bool:
+    """RapidOCR + Tesseract only — safe on Render Starter (no EasyOCR/Paddle)."""
+    flag = (os.getenv("HOP_CARD_LOCAL_OCR") or "").strip().lower()
+    if flag in {"0", "false", "no", "off"}:
         return False
-    if (os.getenv("HOP_LOW_MEMORY") or "").strip().lower() in {"1", "true", "yes"}:
-        return False
-    return False
+    return True
 
 
 def _local_ocr_text(path: Path) -> tuple[str, str]:
-    """Light local OCR only when explicitly enabled — never EasyOCR/Paddle here."""
-    if not _local_ocr_allowed():
+    """Light local OCR (RapidOCR/Tesseract) — never loads EasyOCR/Paddle."""
+    if not _light_local_ocr_allowed():
         return "", ""
     try:
         from app.hop_handwriting_ocr import (
@@ -395,7 +406,8 @@ def _heuristic_from_text(text: str) -> dict[str, str]:
 def scan_visiting_card(path: Path) -> dict[str, Any]:
     """Return structured card fields + engine metadata. Never auto-saves.
 
-    On Render Starter (512MB): Gemini Vision only — local EasyOCR/Paddle disabled.
+    On Render: tries Gemini Vision first, then light local OCR (RapidOCR/Tesseract).
+    Heavy EasyOCR/Paddle stay off to avoid OOM on 512MB instances.
     """
     fields, engine = _extract_gemini(path)
     raw_text = ""
@@ -408,24 +420,36 @@ def scan_visiting_card(path: Path) -> dict[str, Any]:
         or fields.get("mobile")
         or fields.get("email")
     )
+    gemini_err = getattr(_extract_gemini, "last_error", "") or ""
+
     if not has_core:
-        if _local_ocr_allowed():
-            raw_text, local_engine = _local_ocr_text(path)
+        raw_text, local_engine = _local_ocr_text(path)
+        if raw_text:
             fields = _heuristic_from_text(raw_text)
             engine = local_engine or engine or "local_heuristic"
-            note = "Local OCR used. Review every field carefully before save."
-        else:
+            note = "Local OCR used. Har field verify karke save karo."
+            has_core = bool(
+                fields.get("company")
+                or fields.get("contact_person")
+                or fields.get("mobile")
+                or fields.get("email")
+            )
+        if not has_core:
             engine = engine or ("gemini_unavailable" if not gemini_on else "gemini_empty")
             if not gemini_on:
                 note = (
-                    "GEMINI_API_KEY is not set on the server. "
-                    "Add it in Render → Environment, then redeploy. "
-                    "Heavy local OCR is disabled here to stay under 512MB RAM."
+                    "GEMINI_API_KEY server pe set nahi hai (Render → Environment). "
+                    "Local OCR bhi card se kaafi detail nahi padh paya — fields manually bharo."
+                )
+            elif gemini_err and gemini_err not in ("gemini_failed", "gemini_empty", "unparsed", "no_candidates"):
+                note = (
+                    f"AI read fail ({gemini_err[:120]}). "
+                    "Dobara sharp photo lo ya fields manually bharo."
                 )
             else:
                 note = (
-                    "AI could not read enough detail. Try a sharper photo with better light, "
-                    "or fill fields manually before save."
+                    "Card se data clear nahi pada. Light / focus check karo, "
+                    "phir dubara photo lo — ya neeche fields manually bharo."
                 )
         if not (
             fields.get("company")
@@ -454,6 +478,7 @@ def scan_visiting_card(path: Path) -> dict[str, Any]:
         "raw_text_preview": (raw_text or "")[:800],
         "confidence": "high" if str(engine).startswith("gemini_vision") else ("medium" if has_core else "low"),
         "gemini_configured": gemini_on,
+        "gemini_error": (gemini_err or "")[:200] if not str(engine).startswith("gemini_vision") else "",
     }
 
 
