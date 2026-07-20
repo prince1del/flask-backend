@@ -844,6 +844,69 @@ body.hop-active #mobile-bottom-nav{
   opacity:0 !important; overflow:hidden !important;
   clip:rect(0,0,0,0) !important; pointer-events:none !important;
 }
+.hop-contact-cards{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.hop-contact-card{
+  border:var(--nxt-border);
+  border-radius:12px;
+  background:rgba(255,255,255,0.03);
+}
+.hop-contact-card > summary{
+  list-style:none;
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+  padding:12px;
+  cursor:pointer;
+}
+.hop-contact-card > summary::-webkit-details-marker{display:none;}
+.hop-contact-main{min-width:0;}
+.hop-contact-company{
+  margin:0;
+  font-weight:700;
+  color:var(--nxt-text);
+}
+.hop-contact-sub{
+  margin:4px 0 0;
+  color:var(--nxt-text-dim);
+  font-size:0.78rem;
+  line-height:1.35;
+}
+.hop-contact-actions{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:88px;
+}
+.hop-contact-btn{
+  text-align:center;
+  padding:7px 10px !important;
+  font-size:0.74rem !important;
+}
+.hop-contact-details{
+  border-top:0.5px solid rgba(255,255,255,0.09);
+  padding:10px 12px 12px;
+  display:grid;
+  grid-template-columns:1fr;
+  gap:7px;
+}
+.hop-contact-details p{
+  margin:0;
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  font-size:0.77rem;
+}
+.hop-contact-details span{color:var(--nxt-text-faint);}
+.hop-contact-details strong{
+  color:var(--nxt-text);
+  font-weight:600;
+  text-align:right;
+}
 .hop-webcam-overlay{
   position:fixed; inset:0; z-index:12000;
   display:flex; align-items:center; justify-content:center;

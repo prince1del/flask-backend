@@ -477,6 +477,89 @@ function hopMoney(value) {
   return n.toLocaleString('en-IN');
 }
 
+function hopIsMobileView() {
+  return !!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches);
+}
+
+function hopDigitsOnly(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function hopCallHref(mobile) {
+  const raw = String(mobile || '').trim();
+  if (!raw) return '';
+  const clean = raw.replace(/[^\d+]/g, '');
+  if (!clean) return '';
+  return `tel:${clean}`;
+}
+
+function hopWhatsAppHref(mobile) {
+  const digits = hopDigitsOnly(mobile);
+  if (!digits) return '';
+  const withCountry = digits.length === 10 ? `91${digits}` : digits;
+  return `https://wa.me/${withCountry}`;
+}
+
+function hopRenderQuickContactActions(mobile) {
+  const callHref = hopCallHref(mobile);
+  const waHref = hopWhatsAppHref(mobile);
+  if (!callHref && !waHref) return '';
+  return `
+    <div class="hop-contact-actions">
+      ${callHref ? `<a class="nx-btn hop-contact-btn" href="${callHref}" onclick="event.stopPropagation()">Call</a>` : ''}
+      ${waHref ? `<a class="nx-btn nx-btn-primary hop-contact-btn" href="${waHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">WhatsApp</a>` : ''}
+    </div>`;
+}
+
+function hopRenderMobileContactCards(rows, type) {
+  if (!rows.length) {
+    return '<p class="nx-text-dim">No contacts yet — add your first record.</p>';
+  }
+  const isVendor = type === 'vendors';
+  return `<div class="hop-contact-cards">${
+    rows.map((r) => {
+      const title = hopCell(r.company);
+      const subtitle = hopCell(r.contact_person);
+      const mobile = hopCell(r.mobile);
+      const city = hopCell(r.city);
+      const detailRows = isVendor
+        ? [
+            ['Products', hopCell(r.products)],
+            ['GST', hopCell(r.gst_no)],
+            ['Lead time', hopCell(r.lead_time_days)],
+            ['Payment', hopCell(r.payment_terms)],
+            ['On-time %', hopCell(r.on_time_pct)],
+            ['Quality', hopCell(r.quality_rating)],
+            ['Rating', hopCell(r.rating)],
+          ]
+        : [
+            ['Type', hopCell(r.customer_type)],
+            ['Hotel', hopCell(r.hotel_brand)],
+            ['Architect', hopCell(r.architect)],
+            ['Consultant', hopCell(r.consultant)],
+            ['Potential', hopCell(r.annual_potential)],
+            ['Rating', hopCell(r.potential_rating)],
+            ['Status', hopCell(r.status)],
+            ['Assigned', hopCell(r.assigned_to)],
+          ];
+      return `
+        <details class="hop-contact-card">
+          <summary>
+            <div class="hop-contact-main">
+              <p class="hop-contact-company">${title}</p>
+              <p class="hop-contact-sub">${subtitle} · ${mobile}</p>
+              <p class="hop-contact-sub">${city}</p>
+            </div>
+            ${hopRenderQuickContactActions(r.mobile)}
+          </summary>
+          <div class="hop-contact-details">
+            ${detailRows.map(([k, v]) => `<p><span>${k}</span><strong>${v}</strong></p>`).join('')}
+          </div>
+        </details>`;
+    }).join('')
+  }</div>`;
+}
+
 async function hopApi(path, options) {
   let response;
   try {
@@ -831,15 +914,17 @@ async function renderHopCustomersModule(mount) {
       <input id="hop-q" class="hop-search" type="search" value="${foEscapeText(q)}" placeholder="Search company, contact, city…" oninput="hopFilterModule('customers')" />
     </div>
     <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
-    ${hopTable(
-      ['Company', 'Contact', 'Mobile', 'City', 'Type', 'Hotel', 'Architect', 'Consultant', 'Potential', 'Rating', 'Status', 'Assigned'],
-      rows.map((r) => `<tr>
-        <td>${hopCell(r.company)}</td><td>${hopCell(r.contact_person)}</td><td>${hopCell(r.mobile)}</td>
-        <td>${hopCell(r.city)}</td><td>${hopCell(r.customer_type)}</td><td>${hopCell(r.hotel_brand)}</td>
-        <td>${hopCell(r.architect)}</td><td>${hopCell(r.consultant)}</td><td>${hopCell(r.annual_potential)}</td>
-        <td>${hopCell(r.potential_rating)}</td><td>${hopCell(r.status)}</td><td>${hopCell(r.assigned_to)}</td>
-      </tr>`).join(''),
-    )}`;
+    ${hopIsMobileView()
+      ? hopRenderMobileContactCards(rows, 'customers')
+      : hopTable(
+        ['Company', 'Contact', 'Mobile', 'City', 'Type', 'Hotel', 'Architect', 'Consultant', 'Potential', 'Rating', 'Status', 'Assigned'],
+        rows.map((r) => `<tr>
+          <td>${hopCell(r.company)}</td><td>${hopCell(r.contact_person)}</td><td>${hopCell(r.mobile)}</td>
+          <td>${hopCell(r.city)}</td><td>${hopCell(r.customer_type)}</td><td>${hopCell(r.hotel_brand)}</td>
+          <td>${hopCell(r.architect)}</td><td>${hopCell(r.consultant)}</td><td>${hopCell(r.annual_potential)}</td>
+          <td>${hopCell(r.potential_rating)}</td><td>${hopCell(r.status)}</td><td>${hopCell(r.assigned_to)}</td>
+        </tr>`).join(''),
+      )}`;
   mount.innerHTML = hopModuleShell('CRM', 'Customers', 'Hospitality clients, designers, consultants',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ New Customer</button>
      <button type="button" class="nx-btn" onclick="openHopView('visiting_card')">Scan visiting card</button>`, body);
@@ -1336,15 +1421,17 @@ async function renderHopVendorsModule(mount) {
   }
   const body = `
     <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
-    ${hopTable(
-      ['Company', 'Products', 'GST', 'Contact', 'Mobile', 'City', 'Rating', 'Lead Time', 'Payment Terms', 'On-time %', 'Quality'],
-      rows.map((r) => `<tr>
-        <td>${hopCell(r.company)}</td><td>${hopCell(r.products)}</td><td>${hopCell(r.gst_no)}</td>
-        <td>${hopCell(r.contact_person)}</td><td>${hopCell(r.mobile)}</td><td>${hopCell(r.city)}</td>
-        <td>${hopCell(r.rating)}</td><td>${hopCell(r.lead_time_days)}</td><td>${hopCell(r.payment_terms)}</td>
-        <td>${hopCell(r.on_time_pct)}</td><td>${hopCell(r.quality_rating)}</td>
-      </tr>`).join(''),
-    )}`;
+    ${hopIsMobileView()
+      ? hopRenderMobileContactCards(rows, 'vendors')
+      : hopTable(
+        ['Company', 'Products', 'GST', 'Contact', 'Mobile', 'City', 'Rating', 'Lead Time', 'Payment Terms', 'On-time %', 'Quality'],
+        rows.map((r) => `<tr>
+          <td>${hopCell(r.company)}</td><td>${hopCell(r.products)}</td><td>${hopCell(r.gst_no)}</td>
+          <td>${hopCell(r.contact_person)}</td><td>${hopCell(r.mobile)}</td><td>${hopCell(r.city)}</td>
+          <td>${hopCell(r.rating)}</td><td>${hopCell(r.lead_time_days)}</td><td>${hopCell(r.payment_terms)}</td>
+          <td>${hopCell(r.on_time_pct)}</td><td>${hopCell(r.quality_rating)}</td>
+        </tr>`).join(''),
+      )}`;
   mount.innerHTML = hopModuleShell('Procurement', 'Vendors', 'Supplier performance & terms',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('vendor')">+ New Vendor</button>`, body);
 }
