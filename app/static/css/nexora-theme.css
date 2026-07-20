@@ -910,6 +910,16 @@ body.hop-active #mobile-bottom-nav{
   gap:6px;
   padding:10px 12px 12px;
 }
+.hop-contact-icon-btn{
+  display:grid;
+  place-items:center;
+  min-height:36px;
+  padding:6px !important;
+}
+.hop-contact-icon-btn svg{
+  width:18px;
+  height:18px;
+}
 .hop-contact-edit{
   color:#93c5fd !important;
   border-color:rgba(96,165,250,0.35) !important;
@@ -948,6 +958,44 @@ body.hop-active #mobile-bottom-nav{
   color:var(--nxt-text);
   font-weight:600;
   text-align:right;
+}
+.hop-contact-sheet{
+  position:fixed;
+  inset:0;
+  z-index:13000;
+}
+.hop-contact-sheet-backdrop{
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,0.45);
+}
+.hop-contact-sheet-card{
+  position:absolute;
+  left:12px;
+  right:12px;
+  bottom:calc(16px + env(safe-area-inset-bottom, 0px));
+  border-radius:14px;
+  background:#0b1220;
+  border:var(--nxt-border);
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.hop-contact-sheet-title{
+  margin:0 0 2px;
+  font-size:0.82rem;
+  color:var(--nxt-text-dim);
+}
+.hop-contact-sheet-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+}
+.hop-contact-sheet-btn svg{
+  width:16px;
+  height:16px;
 }
 .hop-webcam-overlay{
   position:fixed; inset:0; z-index:12000;
