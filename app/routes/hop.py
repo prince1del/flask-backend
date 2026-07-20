@@ -318,16 +318,42 @@ def customers_scan_card():
                 pass
 
 
-@hop_bp.route("/customers/<int:customer_id>", methods=["GET"])
+@hop_bp.route("/customers/<int:customer_id>", methods=["GET", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
-def customers_get(customer_id: int):
+def customers_get_or_delete(customer_id: int):
     ensure_hop_schema(_db_path())
+    if request.method == "DELETE":
+        try:
+            with hop_db.connect(_db_path()) as conn:
+                ok = hop_db.delete_customer(conn, _ws(), customer_id)
+        except ValueError as exc:
+            return _json_error(str(exc), "DELETE_BLOCKED", 409)
+        if not ok:
+            return _json_error("Customer not found", "NOT_FOUND", 404)
+        return jsonify({"success": True, "data": {"deleted": customer_id}})
     with hop_db.connect(_db_path()) as conn:
         row = hop_db.get_customer(conn, _ws(), customer_id)
     if not row:
         return _json_error("Customer not found", "NOT_FOUND", 404)
     return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/customers/bulk-delete", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def customers_bulk_delete():
+    ensure_hop_schema(_db_path())
+    ids = _payload().get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return _json_error("ids list is required", "VALIDATION_ERROR", 400)
+    try:
+        id_list = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        return _json_error("ids must be integers", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        result = hop_db.delete_customers_bulk(conn, _ws(), id_list)
+    return jsonify({"success": True, "data": result})
 
 
 # ---------- Projects ----------
@@ -501,6 +527,38 @@ def quotations_revise(quote_id: int):
 
 
 # ---------- Vendors ----------
+@hop_bp.route("/vendors/<int:vendor_id>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def vendors_delete(vendor_id: int):
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            ok = hop_ops.delete_vendor(conn, _ws(), vendor_id)
+    except ValueError as exc:
+        return _json_error(str(exc), "DELETE_BLOCKED", 409)
+    if not ok:
+        return _json_error("Vendor not found", "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": {"deleted": vendor_id}})
+
+
+@hop_bp.route("/vendors/bulk-delete", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def vendors_bulk_delete():
+    ensure_hop_schema(_db_path())
+    ids = _payload().get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return _json_error("ids list is required", "VALIDATION_ERROR", 400)
+    try:
+        id_list = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        return _json_error("ids must be integers", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        result = hop_ops.delete_vendors_bulk(conn, _ws(), id_list)
+    return jsonify({"success": True, "data": result})
+
+
 @hop_bp.route("/vendors", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

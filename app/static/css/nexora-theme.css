@@ -844,6 +844,12 @@ body.hop-active #mobile-bottom-nav{
   opacity:0 !important; overflow:hidden !important;
   clip:rect(0,0,0,0) !important; pointer-events:none !important;
 }
+.hop-contact-toolbar{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
 .hop-contact-cards{
   display:flex;
   flex-direction:column;
@@ -853,18 +859,40 @@ body.hop-active #mobile-bottom-nav{
   border:var(--nxt-border);
   border-radius:12px;
   background:rgba(255,255,255,0.03);
+  overflow:hidden;
 }
-.hop-contact-card > summary{
-  list-style:none;
+.hop-contact-card.is-selected{
+  border-color:rgba(37,224,255,0.45);
+  box-shadow:0 0 0 1px rgba(37,224,255,0.2);
+}
+.hop-contact-card-top{
   display:flex;
-  justify-content:space-between;
   align-items:flex-start;
-  gap:10px;
-  padding:12px;
+  gap:8px;
+  padding:12px 12px 0;
+}
+.hop-contact-check-wrap{
+  display:none;
+  margin-top:4px;
+}
+.hop-contact-cards.is-select-mode .hop-contact-check-wrap{
+  display:block;
+}
+.hop-contact-check{
+  width:18px;
+  height:18px;
+  accent-color:var(--nxt-cyan);
+}
+.hop-contact-main{
+  flex:1;
+  min-width:0;
+  border:none;
+  background:transparent;
+  color:inherit;
+  text-align:left;
+  padding:0;
   cursor:pointer;
 }
-.hop-contact-card > summary::-webkit-details-marker{display:none;}
-.hop-contact-main{min-width:0;}
 .hop-contact-company{
   margin:0;
   font-weight:700;
@@ -877,15 +905,24 @@ body.hop-active #mobile-bottom-nav{
   line-height:1.35;
 }
 .hop-contact-actions{
-  display:flex;
-  flex-direction:column;
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
   gap:6px;
-  min-width:88px;
+  padding:10px 12px 12px;
 }
 .hop-contact-btn{
   text-align:center;
-  padding:7px 10px !important;
-  font-size:0.74rem !important;
+  padding:8px 6px !important;
+  font-size:0.72rem !important;
+  min-height:38px;
+}
+.hop-contact-btn.is-disabled{
+  opacity:0.45;
+  cursor:not-allowed;
+}
+.hop-contact-delete{
+  color:#fca5a5 !important;
+  border-color:rgba(248,113,113,0.35) !important;
 }
 .hop-contact-details{
   border-top:0.5px solid rgba(255,255,255,0.09);
@@ -894,6 +931,7 @@ body.hop-active #mobile-bottom-nav{
   grid-template-columns:1fr;
   gap:7px;
 }
+.hop-contact-details.hidden{display:none;}
 .hop-contact-details p{
   margin:0;
   display:flex;

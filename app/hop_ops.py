@@ -429,6 +429,37 @@ def get_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int) -> d
     return dict(row) if row else None
 
 
+def delete_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int) -> bool:
+    try:
+        cur = conn.execute(
+            "DELETE FROM hop_vendors WHERE workspace_id=? AND id=?",
+            (workspace_id, vendor_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise ValueError(
+            "Cannot delete vendor — linked to rate sheets or comparisons. Remove links first."
+        ) from exc
+
+
+def delete_vendors_bulk(
+    conn: sqlite3.Connection, workspace_id: str, vendor_ids: list[int]
+) -> dict[str, list]:
+    deleted: list[int] = []
+    errors: list[dict[str, Any]] = []
+    for vendor_id in vendor_ids:
+        try:
+            if delete_vendor(conn, workspace_id, int(vendor_id)):
+                deleted.append(int(vendor_id))
+            else:
+                errors.append({"id": int(vendor_id), "error": "Vendor not found"})
+        except ValueError as exc:
+            errors.append({"id": int(vendor_id), "error": str(exc)})
+    return {"deleted": deleted, "errors": errors}
+
+
 def create_vendor(conn: sqlite3.Connection, workspace_id: str, payload: dict) -> dict:
     now = _now()
     company = _s(payload.get("company"))

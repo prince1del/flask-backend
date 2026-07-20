@@ -17,6 +17,10 @@ const hopState = {
   rateMatrix: null,
   rateCart: [],
   rateFilters: { q: '' },
+  contactSelect: {
+    customers: { mode: false, ids: [] },
+    vendors: { mode: false, ids: [] },
+  },
 };
 
 const HOP_RATE_CART_KEY = 'hop_rate_cart_v1';
@@ -500,14 +504,48 @@ function hopWhatsAppHref(mobile) {
   return `https://wa.me/${withCountry}`;
 }
 
-function hopRenderQuickContactActions(mobile) {
+function hopContactSelectState(type) {
+  if (!hopState.contactSelect[type]) {
+    hopState.contactSelect[type] = { mode: false, ids: [] };
+  }
+  return hopState.contactSelect[type];
+}
+
+function hopContactApiBase(type) {
+  return type === 'vendors' ? '/api/v1/hop/vendors' : '/api/v1/hop/customers';
+}
+
+function hopContactLabel(row) {
+  return String(row?.company || row?.contact_person || `ID ${row?.id || ''}`).trim();
+}
+
+function hopRenderQuickContactActions(mobile, type, id, label) {
   const callHref = hopCallHref(mobile);
   const waHref = hopWhatsAppHref(mobile);
-  if (!callHref && !waHref) return '';
+  const safeLabel = foEscapeAttr(label || '');
+  const callBtn = callHref
+    ? `<a class="nx-btn hop-contact-btn" href="${callHref}">Call</a>`
+    : `<button type="button" class="nx-btn hop-contact-btn is-disabled" disabled title="Mobile number missing">Call</button>`;
+  const waBtn = waHref
+    ? `<a class="nx-btn nx-btn-primary hop-contact-btn" href="${waHref}" target="_blank" rel="noopener noreferrer">WhatsApp</a>`
+    : `<button type="button" class="nx-btn nx-btn-primary hop-contact-btn is-disabled" disabled title="Mobile number missing">WhatsApp</button>`;
   return `
     <div class="hop-contact-actions">
-      ${callHref ? `<a class="nx-btn hop-contact-btn" href="${callHref}" onclick="event.stopPropagation()">Call</a>` : ''}
-      ${waHref ? `<a class="nx-btn nx-btn-primary hop-contact-btn" href="${waHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">WhatsApp</a>` : ''}
+      ${callBtn}
+      ${waBtn}
+      <button type="button" class="nx-btn hop-contact-btn hop-contact-delete" onclick="hopDeleteContact('${type}', ${id}, '${safeLabel}')">Delete</button>
+    </div>`;
+}
+
+function hopRenderMobileContactToolbar(type, count) {
+  const state = hopContactSelectState(type);
+  const selected = state.ids.length;
+  const mode = state.mode;
+  return `
+    <div class="hop-contact-toolbar" data-hop-contact-toolbar="${type}">
+      <button type="button" class="nx-btn${mode ? ' nx-btn-primary' : ''}" onclick="hopToggleContactSelectMode('${type}')">${mode ? 'Done' : 'Select'}</button>
+      <button type="button" class="nx-btn${mode ? '' : ' hidden'}" onclick="hopSelectAllContacts('${type}')">All (${count})</button>
+      <button type="button" class="nx-btn hop-contact-delete${mode && selected ? '' : ' hidden'}" onclick="hopBulkDeleteContacts('${type}')">Delete (${selected})</button>
     </div>`;
 }
 
@@ -516,16 +554,21 @@ function hopRenderMobileContactCards(rows, type) {
     return '<p class="nx-text-dim">No contacts yet — add your first record.</p>';
   }
   const isVendor = type === 'vendors';
-  return `<div class="hop-contact-cards">${
+  const state = hopContactSelectState(type);
+  return `${hopRenderMobileContactToolbar(type, rows.length)}<div class="hop-contact-cards${state.mode ? ' is-select-mode' : ''}">${
     rows.map((r) => {
+      const id = Number(r.id);
       const title = hopCell(r.company);
       const subtitle = hopCell(r.contact_person);
       const mobile = hopCell(r.mobile);
       const city = hopCell(r.city);
+      const label = hopContactLabel(r);
+      const checked = state.ids.includes(id) ? ' checked' : '';
       const detailRows = isVendor
         ? [
             ['Products', hopCell(r.products)],
             ['GST', hopCell(r.gst_no)],
+            ['Email', hopCell(r.email)],
             ['Lead time', hopCell(r.lead_time_days)],
             ['Payment', hopCell(r.payment_terms)],
             ['On-time %', hopCell(r.on_time_pct)],
@@ -543,21 +586,164 @@ function hopRenderMobileContactCards(rows, type) {
             ['Assigned', hopCell(r.assigned_to)],
           ];
       return `
-        <details class="hop-contact-card">
-          <summary>
-            <div class="hop-contact-main">
+        <article class="hop-contact-card${checked ? ' is-selected' : ''}" data-hop-contact-type="${type}" data-hop-contact-id="${id}" data-hop-contact-label="${foEscapeAttr(label)}">
+          <div class="hop-contact-card-top">
+            <label class="hop-contact-check-wrap">
+              <input type="checkbox" class="hop-contact-check" value="${id}"${checked} onchange="hopToggleContactSelected('${type}', ${id}, this.checked)" />
+            </label>
+            <button type="button" class="hop-contact-main" onclick="hopToggleContactDetails(this)">
               <p class="hop-contact-company">${title}</p>
-              <p class="hop-contact-sub">${subtitle} · ${mobile}</p>
-              <p class="hop-contact-sub">${city}</p>
-            </div>
-            ${hopRenderQuickContactActions(r.mobile)}
-          </summary>
-          <div class="hop-contact-details">
+              <p class="hop-contact-sub">${subtitle}</p>
+              <p class="hop-contact-sub">${mobile} · ${city}</p>
+            </button>
+          </div>
+          ${hopRenderQuickContactActions(r.mobile, type, id, label)}
+          <div class="hop-contact-details hidden">
             ${detailRows.map(([k, v]) => `<p><span>${k}</span><strong>${v}</strong></p>`).join('')}
           </div>
-        </details>`;
+        </article>`;
     }).join('')
   }</div>`;
+}
+
+function hopToggleContactDetails(btn) {
+  const card = btn?.closest('.hop-contact-card');
+  if (!card) return;
+  const details = card.querySelector('.hop-contact-details');
+  if (!details) return;
+  const open = details.classList.toggle('hidden');
+  btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+}
+
+function hopBindMobileContactCards(type) {
+  const root = document.querySelector(`[data-hop-contact-toolbar="${type}"]`)?.parentElement;
+  if (!root) return;
+  const mains = root.querySelectorAll('.hop-contact-main');
+  mains.forEach((mainBtn) => {
+    if (mainBtn.dataset.hopLongPressBound === '1') return;
+    mainBtn.dataset.hopLongPressBound = '1';
+    let timer = null;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    const clearTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    mainBtn.addEventListener('touchstart', (event) => {
+      const touch = event.changedTouches?.[0];
+      if (!touch) return;
+      moved = false;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      clearTimer();
+      timer = window.setTimeout(() => {
+        timer = null;
+        const card = mainBtn.closest('.hop-contact-card');
+        if (!card) return;
+        const contactType = card.getAttribute('data-hop-contact-type') || type;
+        const contactId = Number(card.getAttribute('data-hop-contact-id'));
+        const label = card.getAttribute('data-hop-contact-label') || '';
+        if (navigator.vibrate) navigator.vibrate(20);
+        hopDeleteContact(contactType, contactId, label);
+      }, 650);
+    }, { passive: true });
+    mainBtn.addEventListener('touchmove', (event) => {
+      const touch = event.changedTouches?.[0];
+      if (!touch) return;
+      if (Math.abs(touch.clientX - startX) > 12 || Math.abs(touch.clientY - startY) > 12) {
+        moved = true;
+        clearTimer();
+      }
+    }, { passive: true });
+    mainBtn.addEventListener('touchend', () => {
+      if (moved) clearTimer();
+      clearTimer();
+    }, { passive: true });
+    mainBtn.addEventListener('touchcancel', clearTimer, { passive: true });
+  });
+}
+
+function hopToggleContactSelectMode(type) {
+  const state = hopContactSelectState(type);
+  state.mode = !state.mode;
+  if (!state.mode) state.ids = [];
+  openHopView(type);
+}
+
+function hopToggleContactSelected(type, id, checked) {
+  const state = hopContactSelectState(type);
+  const numId = Number(id);
+  if (checked) {
+    if (!state.ids.includes(numId)) state.ids.push(numId);
+  } else {
+    state.ids = state.ids.filter((x) => x !== numId);
+  }
+  const card = document.querySelector(`.hop-contact-card[data-hop-contact-type="${type}"][data-hop-contact-id="${numId}"]`);
+  card?.classList.toggle('is-selected', checked);
+  const bulkBtn = document.querySelector(`[data-hop-contact-toolbar="${type}"] .hop-contact-delete`);
+  if (bulkBtn) {
+    bulkBtn.textContent = `Delete (${state.ids.length})`;
+    bulkBtn.classList.toggle('hidden', !state.mode || !state.ids.length);
+  }
+}
+
+function hopSelectAllContacts(type) {
+  const state = hopContactSelectState(type);
+  const rows = type === 'vendors' ? (hopState.vendors || []) : (hopState.customers || []);
+  state.ids = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+  openHopView(type);
+}
+
+async function hopDeleteContact(type, id, label) {
+  const name = label || `contact #${id}`;
+  if (!(await nexoraConfirm(`Delete "${name}"?`, {
+    title: 'Delete contact',
+    danger: true,
+    okText: 'Delete',
+  }))) return;
+  try {
+    await hopApi(`${hopContactApiBase(type)}/${id}`, { method: 'DELETE' });
+    const state = hopContactSelectState(type);
+    state.ids = state.ids.filter((x) => x !== Number(id));
+    if (type === 'vendors') hopState.vendors = [];
+    else hopState.customers = [];
+    openHopView(type);
+  } catch (e) {
+    alert(e.message || 'Delete failed');
+  }
+}
+
+async function hopBulkDeleteContacts(type) {
+  const state = hopContactSelectState(type);
+  const ids = [...state.ids];
+  if (!ids.length) return;
+  if (!(await nexoraConfirm(`Delete ${ids.length} selected contact(s)?`, {
+    title: 'Bulk delete',
+    danger: true,
+    okText: 'Delete all',
+  }))) return;
+  try {
+    const result = await hopApi(`${hopContactApiBase(type)}/bulk-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const deleted = (result?.deleted || []).length;
+    const errors = result?.errors || [];
+    state.ids = [];
+    state.mode = false;
+    if (type === 'vendors') hopState.vendors = [];
+    else hopState.customers = [];
+    openHopView(type);
+    if (errors.length) {
+      alert(`Deleted ${deleted}. ${errors.length} could not be deleted (linked records).`);
+    }
+  } catch (e) {
+    alert(e.message || 'Bulk delete failed');
+  }
 }
 
 async function hopApi(path, options) {
@@ -928,6 +1114,7 @@ async function renderHopCustomersModule(mount) {
   mount.innerHTML = hopModuleShell('CRM', 'Customers', 'Hospitality clients, designers, consultants',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ New Customer</button>
      <button type="button" class="nx-btn" onclick="openHopView('visiting_card')">Scan visiting card</button>`, body);
+  if (hopIsMobileView()) requestAnimationFrame(() => hopBindMobileContactCards('customers'));
 }
 
 /* ---------- Visiting Card Reader ---------- */
@@ -1434,6 +1621,7 @@ async function renderHopVendorsModule(mount) {
       )}`;
   mount.innerHTML = hopModuleShell('Procurement', 'Vendors', 'Supplier performance & terms',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('vendor')">+ New Vendor</button>`, body);
+  if (hopIsMobileView()) requestAnimationFrame(() => hopBindMobileContactCards('vendors'));
 }
 
 function hopReadRateFiltersFromDom() {
@@ -3119,3 +3307,9 @@ window.hopClearAllRates = hopClearAllRates;
 window.hopClearSheetRates = hopClearSheetRates;
 window.hopApplyRateMatrixFilters = hopApplyRateMatrixFilters;
 window.hopResetRateFilters = hopResetRateFilters;
+window.hopToggleContactDetails = hopToggleContactDetails;
+window.hopToggleContactSelectMode = hopToggleContactSelectMode;
+window.hopToggleContactSelected = hopToggleContactSelected;
+window.hopSelectAllContacts = hopSelectAllContacts;
+window.hopDeleteContact = hopDeleteContact;
+window.hopBulkDeleteContacts = hopBulkDeleteContacts;

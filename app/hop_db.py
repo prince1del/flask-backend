@@ -68,6 +68,37 @@ def get_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: int) 
     return dict(row) if row else None
 
 
+def delete_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: int) -> bool:
+    try:
+        cur = conn.execute(
+            "DELETE FROM hop_customers WHERE workspace_id = ? AND id = ?",
+            (workspace_id, customer_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise ValueError(
+            "Cannot delete customer — linked to projects or other records. Remove links first."
+        ) from exc
+
+
+def delete_customers_bulk(
+    conn: sqlite3.Connection, workspace_id: str, customer_ids: list[int]
+) -> dict[str, list]:
+    deleted: list[int] = []
+    errors: list[dict[str, Any]] = []
+    for customer_id in customer_ids:
+        try:
+            if delete_customer(conn, workspace_id, int(customer_id)):
+                deleted.append(int(customer_id))
+            else:
+                errors.append({"id": int(customer_id), "error": "Customer not found"})
+        except ValueError as exc:
+            errors.append({"id": int(customer_id), "error": str(exc)})
+    return {"deleted": deleted, "errors": errors}
+
+
 def create_customer(conn: sqlite3.Connection, workspace_id: str, payload: dict) -> dict:
     now = _now()
     company = (payload.get("company") or "").strip()
