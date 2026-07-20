@@ -21,6 +21,7 @@ const hopState = {
     customers: { mode: false, ids: [] },
     vendors: { mode: false, ids: [] },
   },
+  contactEdit: null,
 };
 
 const HOP_RATE_CART_KEY = 'hop_rate_cart_v1';
@@ -533,6 +534,7 @@ function hopRenderQuickContactActions(mobile, type, id, label) {
     <div class="hop-contact-actions">
       ${callBtn}
       ${waBtn}
+      <button type="button" class="nx-btn hop-contact-btn hop-contact-edit" onclick="hopEditContact('${type}', ${id})">Edit</button>
       <button type="button" class="nx-btn hop-contact-btn hop-contact-delete" onclick="hopDeleteContact('${type}', ${id}, '${safeLabel}')">Delete</button>
     </div>`;
 }
@@ -695,6 +697,21 @@ function hopSelectAllContacts(type) {
   const rows = type === 'vendors' ? (hopState.vendors || []) : (hopState.customers || []);
   state.ids = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
   openHopView(type);
+}
+
+async function hopEditContact(type, id) {
+  const kind = type === 'vendors' ? 'vendor' : 'customer';
+  const rows = type === 'vendors' ? (hopState.vendors || []) : (hopState.customers || []);
+  let row = rows.find((r) => Number(r.id) === Number(id));
+  if (!row) {
+    try {
+      row = await hopApi(`${hopContactApiBase(type)}/${id}`);
+    } catch (e) {
+      alert(e.message || 'Could not load contact');
+      return;
+    }
+  }
+  await hopShowForm(kind, row);
 }
 
 async function hopDeleteContact(type, id, label) {
@@ -2664,7 +2681,7 @@ async function hopChangeProjectStage() {
 }
 
 /* ---------- Forms ---------- */
-async function hopShowForm(kind) {
+async function hopShowForm(kind, editRow) {
   // Rate sheet form does not need CRM lookups — open immediately
   if (kind !== 'rate_sheet') {
     await hopEnsureLookups();
@@ -2675,30 +2692,35 @@ async function hopShowForm(kind) {
     return;
   }
   slot.classList.remove('hidden');
-  const cancel = `document.getElementById('hop-form-slot').classList.add('hidden')`;
+  hopState.contactEdit = null;
+  if (editRow && editRow.id != null && (kind === 'customer' || kind === 'vendor')) {
+    hopState.contactEdit = { kind, id: Number(editRow.id) };
+  }
+  const cancel = `hopState.contactEdit=null; document.getElementById('hop-form-slot').classList.add('hidden')`;
 
   if (kind === 'customer') {
+    const row = editRow || {};
     slot.innerHTML = `
-      <strong>New Customer</strong>
+      <strong>${row.id ? 'Edit Customer' : 'New Customer'}</strong>
       <div class="hop-form-grid" style="margin-top:10px;">
-        <label>Company *<input id="f-company" /></label>
-        <label>Contact<input id="f-contact" /></label>
-        <label>Mobile<input id="f-mobile" /></label>
-        <label>Email<input id="f-email" /></label>
-        <label>City<input id="f-city" /></label>
-        <label>Type<input id="f-type" placeholder="Hotel / Designer" /></label>
-        <label>Hotel Brand<input id="f-hotel" /></label>
-        <label>Architect<input id="f-architect" /></label>
-        <label>Consultant<input id="f-consultant" /></label>
-        <label>Potential<input id="f-potential" type="number" /></label>
-        <label>Rating A/B/C<input id="f-rating" /></label>
-        <label>Assigned<input id="f-assigned" /></label>
-        <label class="hop-form-span-2">Address<input id="f-address" /></label>
-        <label>GST<input id="f-gst" /></label>
-        <label>PAN<input id="f-pan" /></label>
+        <label>Company *<input id="f-company" value="${foEscapeAttr(row.company || '')}" /></label>
+        <label>Contact<input id="f-contact" value="${foEscapeAttr(row.contact_person || '')}" /></label>
+        <label>Mobile<input id="f-mobile" value="${foEscapeAttr(row.mobile || '')}" /></label>
+        <label>Email<input id="f-email" value="${foEscapeAttr(row.email || '')}" /></label>
+        <label>City<input id="f-city" value="${foEscapeAttr(row.city || '')}" /></label>
+        <label>Type<input id="f-type" placeholder="Hotel / Designer" value="${foEscapeAttr(row.customer_type || '')}" /></label>
+        <label>Hotel Brand<input id="f-hotel" value="${foEscapeAttr(row.hotel_brand || '')}" /></label>
+        <label>Architect<input id="f-architect" value="${foEscapeAttr(row.architect || '')}" /></label>
+        <label>Consultant<input id="f-consultant" value="${foEscapeAttr(row.consultant || '')}" /></label>
+        <label>Potential<input id="f-potential" type="number" value="${foEscapeAttr(row.annual_potential ?? '')}" /></label>
+        <label>Rating A/B/C<input id="f-rating" value="${foEscapeAttr(row.potential_rating || '')}" /></label>
+        <label>Assigned<input id="f-assigned" value="${foEscapeAttr(row.assigned_to || '')}" /></label>
+        <label class="hop-form-span-2">Address<input id="f-address" value="${foEscapeAttr(row.address || '')}" /></label>
+        <label>GST<input id="f-gst" value="${foEscapeAttr(row.gst_no || '')}" /></label>
+        <label>PAN<input id="f-pan" value="${foEscapeAttr(row.pan || '')}" /></label>
       </div>
       <div class="hop-form-actions">
-        <button type="button" class="nx-btn nx-btn-primary" onclick="hopSave('customer')">Save</button>
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopSave('customer')">${row.id ? 'Update' : 'Save'}</button>
         <button type="button" class="nx-btn" onclick="${cancel}">Cancel</button>
       </div>`;
   }
@@ -2789,24 +2811,26 @@ async function hopShowForm(kind) {
       </div>`;
   }
   if (kind === 'vendor') {
+    const row = editRow || {};
     slot.innerHTML = `
-      <strong>New Vendor</strong>
+      <strong>${row.id ? 'Edit Vendor' : 'New Vendor'}</strong>
       <div class="hop-form-grid" style="margin-top:10px;">
-        <label>Company *<input id="f-vcompany" /></label>
-        <label>Products<input id="f-vproducts" /></label>
-        <label>GST<input id="f-vgst" /></label>
-        <label>Contact<input id="f-vcontact" /></label>
-        <label>Mobile<input id="f-vmobile" /></label>
-        <label>City<input id="f-vcity" /></label>
-        <label>Rating<input id="f-vrating" type="number" step="0.1" /></label>
-        <label>Lead Time Days<input id="f-vlead" type="number" /></label>
-        <label>Payment Terms<input id="f-vpay" /></label>
-        <label>On-time %<input id="f-vontime" type="number" /></label>
-        <label>Quality Rating<input id="f-vqual" type="number" step="0.1" /></label>
-        <label>Certificates<input id="f-vcert" /></label>
+        <label>Company *<input id="f-vcompany" value="${foEscapeAttr(row.company || '')}" /></label>
+        <label>Products<input id="f-vproducts" value="${foEscapeAttr(row.products || '')}" /></label>
+        <label>GST<input id="f-vgst" value="${foEscapeAttr(row.gst_no || '')}" /></label>
+        <label>Contact<input id="f-vcontact" value="${foEscapeAttr(row.contact_person || '')}" /></label>
+        <label>Mobile<input id="f-vmobile" value="${foEscapeAttr(row.mobile || '')}" /></label>
+        <label>Email<input id="f-vemail" value="${foEscapeAttr(row.email || '')}" /></label>
+        <label>City<input id="f-vcity" value="${foEscapeAttr(row.city || '')}" /></label>
+        <label>Rating<input id="f-vrating" type="number" step="0.1" value="${foEscapeAttr(row.rating ?? '')}" /></label>
+        <label>Lead Time Days<input id="f-vlead" type="number" value="${foEscapeAttr(row.lead_time_days ?? '')}" /></label>
+        <label>Payment Terms<input id="f-vpay" value="${foEscapeAttr(row.payment_terms || '')}" /></label>
+        <label>On-time %<input id="f-vontime" type="number" value="${foEscapeAttr(row.on_time_pct ?? '')}" /></label>
+        <label>Quality Rating<input id="f-vqual" type="number" step="0.1" value="${foEscapeAttr(row.quality_rating ?? '')}" /></label>
+        <label>Certificates<input id="f-vcert" value="${foEscapeAttr(row.certificates || '')}" /></label>
       </div>
       <div class="hop-form-actions">
-        <button type="button" class="nx-btn nx-btn-primary" onclick="hopSave('vendor')">Save</button>
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopSave('vendor')">${row.id ? 'Update' : 'Save'}</button>
         <button type="button" class="nx-btn" onclick="${cancel}">Cancel</button>
       </div>`;
   }
@@ -3092,6 +3116,7 @@ async function hopSave(kind) {
         gst_no: document.getElementById('f-vgst')?.value,
         contact_person: document.getElementById('f-vcontact')?.value,
         mobile: document.getElementById('f-vmobile')?.value,
+        email: document.getElementById('f-vemail')?.value,
         city: document.getElementById('f-vcity')?.value,
         rating: document.getElementById('f-vrating')?.value,
         lead_time_days: document.getElementById('f-vlead')?.value,
@@ -3251,12 +3276,16 @@ async function hopSave(kind) {
   };
   const cfg = map[kind];
   if (!cfg) return;
+  const edit = hopState.contactEdit;
+  const isEdit = edit && edit.kind === kind && edit.id;
   try {
-    await hopApi(cfg.url, {
-      method: 'POST',
+    await hopApi(isEdit ? `${cfg.url}/${edit.id}` : cfg.url, {
+      method: isEdit ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg.payload()),
     });
+    hopState.contactEdit = null;
+    document.getElementById('hop-form-slot')?.classList.add('hidden');
     // invalidate caches
     hopState.customers = [];
     hopState.projects = [];
@@ -3312,4 +3341,5 @@ window.hopToggleContactSelectMode = hopToggleContactSelectMode;
 window.hopToggleContactSelected = hopToggleContactSelected;
 window.hopSelectAllContacts = hopSelectAllContacts;
 window.hopDeleteContact = hopDeleteContact;
+window.hopEditContact = hopEditContact;
 window.hopBulkDeleteContacts = hopBulkDeleteContacts;

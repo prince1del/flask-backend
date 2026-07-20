@@ -318,11 +318,18 @@ def customers_scan_card():
                 pass
 
 
-@hop_bp.route("/customers/<int:customer_id>", methods=["GET", "DELETE"])
+@hop_bp.route("/customers/<int:customer_id>", methods=["GET", "PATCH", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def customers_get_or_delete(customer_id: int):
     ensure_hop_schema(_db_path())
+    if request.method == "PATCH":
+        try:
+            with hop_db.connect(_db_path()) as conn:
+                row = hop_db.update_customer(conn, _ws(), customer_id, _payload())
+        except ValueError as exc:
+            return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc).lower() else "BAD_REQUEST", 404 if "not found" in str(exc).lower() else 400)
+        return jsonify({"success": True, "data": row})
     if request.method == "DELETE":
         try:
             with hop_db.connect(_db_path()) as conn:
@@ -527,11 +534,24 @@ def quotations_revise(quote_id: int):
 
 
 # ---------- Vendors ----------
-@hop_bp.route("/vendors/<int:vendor_id>", methods=["DELETE"])
+@hop_bp.route("/vendors/<int:vendor_id>", methods=["GET", "PATCH", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
-def vendors_delete(vendor_id: int):
+def vendors_get_or_delete(vendor_id: int):
     ensure_hop_schema(_db_path())
+    if request.method == "PATCH":
+        try:
+            with hop_db.connect(_db_path()) as conn:
+                row = hop_ops.update_vendor(conn, _ws(), vendor_id, _payload())
+        except ValueError as exc:
+            return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc).lower() else "BAD_REQUEST", 404 if "not found" in str(exc).lower() else 400)
+        return jsonify({"success": True, "data": row})
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_ops.get_vendor(conn, _ws(), vendor_id)
+        if not row:
+            return _json_error("Vendor not found", "NOT_FOUND", 404)
+        return jsonify({"success": True, "data": row})
     try:
         with hop_db.connect(_db_path()) as conn:
             ok = hop_ops.delete_vendor(conn, _ws(), vendor_id)

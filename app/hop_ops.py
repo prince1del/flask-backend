@@ -429,6 +429,51 @@ def get_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int) -> d
     return dict(row) if row else None
 
 
+def update_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int, payload: dict) -> dict:
+    existing = get_vendor(conn, workspace_id, vendor_id)
+    if not existing:
+        raise ValueError("Vendor not found")
+    company = _s(payload.get("company")) or existing.get("company") or ""
+    if not company:
+        raise ValueError("company is required")
+    now = _now()
+    conn.execute(
+        """
+        UPDATE hop_vendors SET
+            company=?, products=?, gst_no=?, contact_person=?, mobile=?, email=?,
+            rating=?, payment_terms=?, lead_time_days=?, certificates=?, quality_rating=?,
+            on_time_pct=?, price_notes=?, city=?, status=?, updated_at=?
+        WHERE workspace_id=? AND id=?
+        """,
+        (
+            company,
+            _s(payload.get("products")) if "products" in payload else existing.get("products"),
+            _s(payload.get("gst_no")) if "gst_no" in payload else existing.get("gst_no"),
+            _s(payload.get("contact_person")) if "contact_person" in payload else existing.get("contact_person"),
+            _s(payload.get("mobile")) if "mobile" in payload else existing.get("mobile"),
+            _s(payload.get("email")) if "email" in payload else existing.get("email"),
+            _f(payload["rating"]) if payload.get("rating") not in (None, "") else existing.get("rating"),
+            _s(payload.get("payment_terms")) if "payment_terms" in payload else existing.get("payment_terms"),
+            int(payload["lead_time_days"])
+            if payload.get("lead_time_days") not in (None, "")
+            else existing.get("lead_time_days"),
+            _s(payload.get("certificates")) if "certificates" in payload else existing.get("certificates"),
+            _f(payload["quality_rating"])
+            if payload.get("quality_rating") not in (None, "")
+            else existing.get("quality_rating"),
+            _f(payload["on_time_pct"]) if payload.get("on_time_pct") not in (None, "") else existing.get("on_time_pct"),
+            _s(payload.get("price_notes")) if "price_notes" in payload else existing.get("price_notes"),
+            _s(payload.get("city")) if "city" in payload else existing.get("city"),
+            _s(payload.get("status")) or existing.get("status") or "active",
+            now,
+            workspace_id,
+            vendor_id,
+        ),
+    )
+    conn.commit()
+    return get_vendor(conn, workspace_id, vendor_id) or {}
+
+
 def delete_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int) -> bool:
     try:
         cur = conn.execute(
