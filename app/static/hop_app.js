@@ -1087,6 +1087,11 @@ async function hopScanVisitingCard() {
     try {
       data = await parseApiJson(response);
     } catch (parseErr) {
+      if (response.status === 502 || response.status === 503) {
+        throw new Error(
+          'Server crash / busy (502). Render pe GEMINI_API_KEY set karo, 1 min wait karke dubara try karo.',
+        );
+      }
       throw new Error(
         response.status === 401
           ? 'Session expire ho gayi — dubara login karo.'

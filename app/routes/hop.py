@@ -301,6 +301,13 @@ def customers_scan_card():
     try:
         path = save_upload_temp(upload)
         result = scan_visiting_card(path)
+        return jsonify({"success": True, "data": result})
+    except MemoryError:
+        return _json_error(
+            "Server ran out of memory reading the card. Add GEMINI_API_KEY on Render.",
+            "OCR_OOM",
+            503,
+        )
     except Exception as exc:
         return _json_error(f"Card scan failed: {exc}", "OCR_ERROR", 500)
     finally:
@@ -309,7 +316,6 @@ def customers_scan_card():
                 path.unlink(missing_ok=True)
             except Exception:
                 pass
-    return jsonify({"success": True, "data": result})
 
 
 @hop_bp.route("/customers/<int:customer_id>", methods=["GET"])

@@ -216,13 +216,9 @@ Rules:
 """
 
     models = (
-        "gemini-2.5-flash",
         "gemini-2.0-flash",
-        "gemini-2.0-flash-001",
         "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-flash-latest",
-        "gemini-2.0-flash-lite",
+        "gemini-2.5-flash",
     )
     last_err = ""
     for model in models:
@@ -249,7 +245,7 @@ Rules:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=75) as resp:
+            with urllib.request.urlopen(req, timeout=28) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             cands = data.get("candidates") or []
             if not cands:
@@ -281,9 +277,13 @@ _extract_gemini.last_error = ""  # type: ignore[attr-defined]
 
 
 def _light_local_ocr_allowed() -> bool:
-    """RapidOCR + Tesseract only — safe on Render Starter (no EasyOCR/Paddle)."""
+    """RapidOCR + Tesseract — off on Render Starter unless explicitly enabled (OOM risk)."""
     flag = (os.getenv("HOP_CARD_LOCAL_OCR") or "").strip().lower()
     if flag in {"0", "false", "no", "off"}:
+        return False
+    if flag in {"1", "true", "yes", "on"}:
+        return True
+    if (os.getenv("RENDER") or "").strip().lower() in {"true", "1"}:
         return False
     return True
 
@@ -299,29 +299,31 @@ def _local_ocr_text(path: Path) -> tuple[str, str]:
             _extract_tesseract_text,
             _prepare_image_variants,
         )
+
+        variants = _prepare_image_variants(path)
+        try:
+            engines = (
+                ("rapidocr", _extract_rapid_text),
+                ("tesseract", _extract_tesseract_text),
+            )
+            best_text = ""
+            best_name = ""
+            for name, fn in engines:
+                try:
+                    for variant in variants:
+                        text = (fn(variant) or "").strip()
+                        if len(text) > len(best_text):
+                            best_text = text
+                            best_name = name
+                except Exception:
+                    continue
+            return best_text, best_name
+        finally:
+            _cleanup_temps(variants, path)
+    except MemoryError:
+        return "", "oom"
     except Exception:
         return "", ""
-
-    variants = _prepare_image_variants(path)
-    try:
-        engines = (
-            ("rapidocr", _extract_rapid_text),
-            ("tesseract", _extract_tesseract_text),
-        )
-        best_text = ""
-        best_name = ""
-        for name, fn in engines:
-            try:
-                for variant in variants:
-                    text = (fn(variant) or "").strip()
-                    if len(text) > len(best_text):
-                        best_text = text
-                        best_name = name
-            except Exception:
-                continue
-        return best_text, best_name
-    finally:
-        _cleanup_temps(variants, path)
 
 
 def _heuristic_from_text(text: str) -> dict[str, str]:
@@ -406,9 +408,36 @@ def _heuristic_from_text(text: str) -> dict[str, str]:
 def scan_visiting_card(path: Path) -> dict[str, Any]:
     """Return structured card fields + engine metadata. Never auto-saves.
 
-    On Render: tries Gemini Vision first, then light local OCR (RapidOCR/Tesseract).
-    Heavy EasyOCR/Paddle stay off to avoid OOM on 512MB instances.
+    On Render: Gemini Vision only (local OCR opt-in via HOP_CARD_LOCAL_OCR=1).
     """
+    try:
+        return _scan_visiting_card_impl(path)
+    except MemoryError:
+        return {
+            "fields": dict(_EMPTY_FIELDS),
+            "engine": "oom",
+            "note": (
+                "Server memory full — card read fail. Render pe GEMINI_API_KEY set karo "
+                "(best fix). 1 minute wait karke dubara try karo."
+            ),
+            "raw_text_preview": "",
+            "confidence": "low",
+            "gemini_configured": bool(_gemini_key()),
+            "gemini_error": "out_of_memory",
+        }
+    except Exception as exc:
+        return {
+            "fields": dict(_EMPTY_FIELDS),
+            "engine": "error",
+            "note": f"Card read error: {exc}. Fields manually bharo ya dubara try karo.",
+            "raw_text_preview": "",
+            "confidence": "low",
+            "gemini_configured": bool(_gemini_key()),
+            "gemini_error": str(exc)[:200],
+        }
+
+
+def _scan_visiting_card_impl(path: Path) -> dict[str, Any]:
     fields, engine = _extract_gemini(path)
     raw_text = ""
     note = ""
@@ -438,8 +467,9 @@ def scan_visiting_card(path: Path) -> dict[str, Any]:
             engine = engine or ("gemini_unavailable" if not gemini_on else "gemini_empty")
             if not gemini_on:
                 note = (
-                    "GEMINI_API_KEY server pe set nahi hai (Render → Environment). "
-                    "Local OCR bhi card se kaafi detail nahi padh paya — fields manually bharo."
+                    "GEMINI_API_KEY Render pe set nahi hai — isliye cloud OCR nahi chal raha. "
+                    "Render → Environment → GEMINI_API_KEY add karo, redeploy karo. "
+                    "Tab tak fields manually bharo."
                 )
             elif gemini_err and gemini_err not in ("gemini_failed", "gemini_empty", "unparsed", "no_candidates"):
                 note = (
