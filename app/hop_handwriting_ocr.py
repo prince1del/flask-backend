@@ -23,6 +23,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from app.services.gemini_models import get_ocr_gemini_models
+
 
 def _s(v: Any) -> str:
     return str(v or "").strip()
@@ -153,12 +155,7 @@ Rules:
 - If nothing readable, return []
 """
 
-    models = (
-        "gemini-flash-latest",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-1.5-flash",
-    )
+    models = get_ocr_gemini_models()
     last_err = ""
     for model in models:
         # REST accepts both snake_case and camelCase; send camelCase (official REST style)

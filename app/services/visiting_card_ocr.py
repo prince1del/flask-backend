@@ -18,6 +18,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from app.services.gemini_models import get_ocr_gemini_models
+
 
 def _s(v: Any) -> str:
     return str(v or "").strip()
@@ -231,12 +233,7 @@ Rules:
 - Preserve GSTIN / PAN exactly when present
 """
 
-    models = (
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-flash-latest",
-        "gemini-1.5-flash",
-    )
+    models = get_ocr_gemini_models()
     last_err = ""
     for model in models:
         body = {
