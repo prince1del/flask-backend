@@ -178,6 +178,22 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
+def _friendly_gemini_error(raw: str) -> str:
+    """Turn API JSON blobs into a short user-facing message."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+            err = data.get("error")
+            if isinstance(err, dict):
+                return str(err.get("message") or err.get("status") or text)[:160]
+        except Exception:
+            pass
+    return text[:160]
+
+
 def _extract_gemini(path: Path) -> tuple[dict[str, str], str]:
     key = _gemini_key()
     if not key:
@@ -217,8 +233,9 @@ Rules:
 
     models = (
         "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-flash-latest",
         "gemini-1.5-flash",
-        "gemini-2.5-flash",
     )
     last_err = ""
     for model in models:
@@ -264,9 +281,14 @@ Rules:
             last_err = "unparsed"
         except urllib.error.HTTPError as exc:
             try:
-                last_err = exc.read().decode("utf-8", errors="ignore")[:200]
+                last_err = _friendly_gemini_error(
+                    exc.read().decode("utf-8", errors="ignore")
+                )
             except Exception:
                 last_err = str(exc)
+            # Skip unavailable models (404) and try the next one.
+            if exc.code == 404:
+                continue
         except Exception as exc:
             last_err = str(exc)
     _extract_gemini.last_error = last_err or "gemini_failed"  # type: ignore[attr-defined]
@@ -473,7 +495,7 @@ def _scan_visiting_card_impl(path: Path) -> dict[str, Any]:
                 )
             elif gemini_err and gemini_err not in ("gemini_failed", "gemini_empty", "unparsed", "no_candidates"):
                 note = (
-                    f"AI read fail ({gemini_err[:120]}). "
+                    f"AI read fail ({_friendly_gemini_error(gemini_err)}). "
                     "Dobara sharp photo lo ya fields manually bharo."
                 )
             else:
