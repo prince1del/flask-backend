@@ -864,18 +864,22 @@ function hopSelectAllContacts(type, checked) {
 }
 
 async function hopEditContact(type, id) {
-  const kind = type === 'vendors' ? 'vendor' : 'customer';
-  const rows = type === 'vendors' ? (hopState.vendors || []) : (hopState.customers || []);
+  const kind = type === 'vendors' || type === 'vendor' ? 'vendor' : 'customer';
+  const rows = kind === 'vendor' ? (hopState.vendors || []) : (hopState.customers || []);
   let row = rows.find((r) => Number(r.id) === Number(id));
+  if (!row && hopState._parties) {
+    const p = hopState._parties.find((x) => Number(x.id) === Number(id) && x._type === (kind === 'vendor' ? 'vendor' : 'customer'));
+    if (p) row = p;
+  }
   if (!row) {
     try {
-      row = await hopApi(`${hopContactApiBase(type)}/${id}`);
+      row = await hopApi(`${hopContactApiBase(kind === 'vendor' ? 'vendors' : 'customers')}/${id}`);
     } catch (e) {
       alert(e.message || 'Could not load contact');
       return;
     }
   }
-  await hopShowForm(kind, row);
+  hopOpenPartyEditModal(kind, row);
 }
 
 async function hopDeleteContact(type, id, label) {
@@ -889,9 +893,10 @@ async function hopDeleteContact(type, id, label) {
     await hopApi(`${hopContactApiBase(type)}/${id}`, { method: 'DELETE' });
     const state = hopContactSelectState(type);
     state.ids = state.ids.filter((x) => x !== Number(id));
-    if (type === 'vendors') hopState.vendors = [];
+    if (type === 'vendors' || type === 'vendor') hopState.vendors = [];
     else hopState.customers = [];
     hopCloseContactDetail();
+    hopClosePartyEditModal();
     openHopView(hopContactReturnView(type));
   } catch (e) {
     alert(e.message || 'Delete failed');
@@ -1318,6 +1323,277 @@ function hopStageOptions(list, selected) {
   return list.map((s) => `<option value="${s}"${s === selected ? ' selected' : ''}>${foEscapeText(s)}</option>`).join('');
 }
 
+/* ---------- Vyapar-style Edit Party modal (Nexora theme) ---------- */
+const HOP_INDIAN_STATES = [
+  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Delhi','Goa','Gujarat','Haryana',
+  'Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya',
+  'Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura',
+  'Uttar Pradesh','Uttarakhand','West Bengal','Jammu and Kashmir','Ladakh','Puducherry','Chandigarh',
+];
+
+function hopClosePartyEditModal() {
+  document.getElementById('hop-party-edit-modal')?.remove();
+  hopState.contactEdit = null;
+}
+
+function hopPartyModalSetTab(tab) {
+  const root = document.getElementById('hop-party-edit-modal');
+  if (!root) return;
+  root.querySelectorAll('[data-party-tab]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-party-tab') === tab);
+  });
+  root.querySelectorAll('[data-party-panel]').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.getAttribute('data-party-panel') !== tab);
+  });
+}
+
+function hopPartyGstCheck() {
+  const input = document.getElementById('pm-gstin');
+  const mark = document.getElementById('pm-gst-ok');
+  if (!input || !mark) return;
+  const v = String(input.value || '').trim().toUpperCase();
+  input.value = v;
+  const ok = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v);
+  mark.classList.toggle('is-valid', ok);
+  mark.classList.toggle('hidden', !v);
+}
+
+function hopOpenPartyEditModal(kind, row) {
+  const isVendor = kind === 'vendor';
+  const isEdit = !!(row && row.id != null);
+  const data = row || {};
+  hopState.contactEdit = isEdit ? { kind, id: Number(data.id) } : { kind, id: null };
+  const title = isEdit ? 'Edit Party' : 'Add Party';
+  const partyName = data.company || '';
+  const billingName = data.billing_name || data.company || '';
+  const group = isVendor ? 'Supplier' : (data.customer_type || 'Buyer');
+  const gstType = data.gst_type || data.industry || (data.gst_no ? 'Registered Business - Regular' : 'Unregistered');
+  const stateVal = data.state || data.city || '';
+  const bal = Number(data._balance || 0);
+  const stateOpts = HOP_INDIAN_STATES.map((s) =>
+    `<option value="${foEscapeAttr(s)}"${String(stateVal).toLowerCase() === s.toLowerCase() ? ' selected' : ''}>${foEscapeText(s)}</option>`
+  ).join('');
+
+  document.getElementById('hop-party-edit-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'hop-party-edit-modal';
+  modal.className = 'nx-party-modal';
+  modal.innerHTML = `
+    <div class="nx-party-modal-backdrop" onclick="hopClosePartyEditModal()"></div>
+    <div class="nx-party-modal-card" role="dialog" aria-label="${foEscapeAttr(title)}">
+      <div class="nx-party-modal-head">
+        <h2>${foEscapeText(title)}</h2>
+        <button type="button" class="nx-party-modal-close" onclick="hopClosePartyEditModal()" title="Close">&times;</button>
+      </div>
+      <div class="nx-party-modal-body">
+        <div class="nx-party-primary">
+          <label class="nx-party-field">
+            <span>Party Name</span>
+            <input id="pm-name" value="${foEscapeAttr(partyName)}" placeholder="Party / company name" oninput="document.getElementById('pm-bill-hint').textContent=this.value?('“'+this.value+'” will be printed on your invoice.'):''" />
+            <small id="pm-bill-hint" class="nx-party-hint">${partyName ? `“${foEscapeText(partyName)}” will be printed on your invoice.` : ''}</small>
+          </label>
+          <label class="nx-party-field">
+            <span>Billing Name</span>
+            <input id="pm-billing" value="${foEscapeAttr(billingName)}" placeholder="Name on invoice" />
+          </label>
+          <label class="nx-party-field nx-party-gst-wrap">
+            <span>GSTIN</span>
+            <div class="nx-party-gst-row">
+              <input id="pm-gstin" value="${foEscapeAttr(data.gst_no || '')}" placeholder="22AAAAA0000A1Z5" maxlength="15" oninput="hopPartyGstCheck()" />
+              <span id="pm-gst-ok" class="nx-party-gst-ok hidden" title="Valid GSTIN">✓</span>
+            </div>
+          </label>
+          <label class="nx-party-field">
+            <span>Phone Number</span>
+            <input id="pm-phone" value="${foEscapeAttr(data.mobile || '')}" placeholder="10-digit mobile" />
+          </label>
+          <label class="nx-party-field">
+            <span>Party Group</span>
+            <select id="pm-group">
+              <option value="Buyer"${group === 'Buyer' || (!isVendor && group !== 'Supplier') ? ' selected' : ''}>Buyer / Customer</option>
+              <option value="Supplier"${isVendor || group === 'Supplier' ? ' selected' : ''}>Supplier / Vendor</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="nx-party-tabs">
+          <button type="button" class="nx-party-tab is-active" data-party-tab="gst" onclick="hopPartyModalSetTab('gst')">GST &amp; Address</button>
+          <button type="button" class="nx-party-tab" data-party-tab="credit" onclick="hopPartyModalSetTab('credit')">Credit &amp; Balance</button>
+          <button type="button" class="nx-party-tab" data-party-tab="more" onclick="hopPartyModalSetTab('more')">Additional Fields</button>
+        </div>
+
+        <div class="nx-party-panels">
+          <div class="nx-party-panel" data-party-panel="gst">
+            <div class="nx-party-gst-grid">
+              <div class="nx-party-gst-left">
+                <label class="nx-party-field">
+                  <span>GST Type</span>
+                  <select id="pm-gst-type">
+                    <option${gstType.includes('Unregistered') ? ' selected' : ''}>Unregistered</option>
+                    <option${gstType.includes('Regular') ? ' selected' : ''}>Registered Business - Regular</option>
+                    <option${gstType.includes('Composition') ? ' selected' : ''}>Registered Business - Composition</option>
+                  </select>
+                </label>
+                <label class="nx-party-field">
+                  <span>State</span>
+                  <select id="pm-state">
+                    <option value="">Select state</option>
+                    ${stateOpts}
+                  </select>
+                </label>
+                <label class="nx-party-field">
+                  <span>Email ID</span>
+                  <input id="pm-email" type="email" value="${foEscapeAttr(data.email || '')}" placeholder="name@company.com" />
+                </label>
+                <label class="nx-party-field">
+                  <span>City</span>
+                  <input id="pm-city" value="${foEscapeAttr(data.city || '')}" placeholder="City" />
+                </label>
+              </div>
+              <div class="nx-party-addr-col">
+                <div class="nx-party-addr-head">
+                  <strong>Billing Address</strong>
+                </div>
+                <textarea id="pm-address" class="nx-party-addr-box" rows="5" placeholder="Billing address">${foEscapeText(data.address || '')}</textarea>
+              </div>
+              <div class="nx-party-addr-col">
+                <div class="nx-party-addr-head">
+                  <strong>Contact Person</strong>
+                </div>
+                <textarea id="pm-contact" class="nx-party-addr-box" rows="5" placeholder="Contact person / shipping note">${foEscapeText(data.contact_person || '')}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="nx-party-panel hidden" data-party-panel="credit">
+            <div class="nx-party-credit-grid">
+              <label class="nx-party-field">
+                <span>Opening / Current Balance</span>
+                <input id="pm-balance" type="text" value="₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}" readonly />
+                <small class="nx-party-hint">Balance comes from imported transactions (read-only).</small>
+              </label>
+              <label class="nx-party-field">
+                <span>Annual Potential (₹)</span>
+                <input id="pm-potential" type="number" value="${foEscapeAttr(data.annual_potential ?? '')}" placeholder="0" />
+              </label>
+              <label class="nx-party-field">
+                <span>Credit / Payment Terms</span>
+                <input id="pm-payterms" value="${foEscapeAttr(data.payment_terms || data.remarks || '')}" placeholder="e.g. Net 30" />
+              </label>
+              <label class="nx-party-field">
+                <span>Status</span>
+                <select id="pm-status">
+                  <option value="active"${(data.status || 'active') === 'active' ? ' selected' : ''}>Active</option>
+                  <option value="inactive"${data.status === 'inactive' ? ' selected' : ''}>Inactive</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="nx-party-panel hidden" data-party-panel="more">
+            <div class="nx-party-more-grid">
+              <label class="nx-party-field"><span>PAN</span><input id="pm-pan" value="${foEscapeAttr(data.pan || '')}" /></label>
+              <label class="nx-party-field"><span>Hotel Brand</span><input id="pm-hotel" value="${foEscapeAttr(data.hotel_brand || '')}" /></label>
+              <label class="nx-party-field"><span>Architect</span><input id="pm-architect" value="${foEscapeAttr(data.architect || '')}" /></label>
+              <label class="nx-party-field"><span>Consultant</span><input id="pm-consultant" value="${foEscapeAttr(data.consultant || '')}" /></label>
+              <label class="nx-party-field"><span>Rating (A/B/C)</span><input id="pm-rating" value="${foEscapeAttr(data.potential_rating || data.rating || '')}" /></label>
+              <label class="nx-party-field"><span>Assigned To</span><input id="pm-assigned" value="${foEscapeAttr(data.assigned_to || '')}" /></label>
+              <label class="nx-party-field"><span>Products (vendor)</span><input id="pm-products" value="${foEscapeAttr(data.products || '')}" /></label>
+              <label class="nx-party-field nx-party-span2"><span>Remarks</span><input id="pm-remarks" value="${foEscapeAttr(data.remarks || '')}" /></label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="nx-party-modal-foot">
+        ${isEdit ? `<button type="button" class="nx-btn nx-party-btn-delete" onclick="hopDeleteFromPartyModal()">Delete</button>` : '<span></span>'}
+        <div class="nx-party-foot-right">
+          <button type="button" class="nx-btn" onclick="hopClosePartyEditModal()">Cancel</button>
+          <button type="button" class="nx-btn nx-btn-primary" onclick="hopSavePartyModal()">${isEdit ? 'Update' : 'Save'}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => {
+    modal.classList.add('is-open');
+    hopPartyGstCheck();
+    document.getElementById('pm-name')?.focus();
+  });
+}
+
+async function hopDeleteFromPartyModal() {
+  const edit = hopState.contactEdit;
+  if (!edit?.id) return;
+  const type = edit.kind === 'vendor' ? 'vendors' : 'customers';
+  const name = document.getElementById('pm-name')?.value || `contact #${edit.id}`;
+  await hopDeleteContact(type, edit.id, name);
+}
+
+async function hopSavePartyModal() {
+  const edit = hopState.contactEdit || { kind: 'customer', id: null };
+  const group = document.getElementById('pm-group')?.value || 'Buyer';
+  const asVendor = group === 'Supplier';
+  const kind = asVendor ? 'vendor' : 'customer';
+  // If user flipped group on an existing row of the other type, keep original kind for PATCH.
+  const saveKind = edit.id ? edit.kind : kind;
+  const company = String(document.getElementById('pm-name')?.value || '').trim();
+  if (!company) {
+    alert('Party Name is required');
+    document.getElementById('pm-name')?.focus();
+    return;
+  }
+  const state = document.getElementById('pm-state')?.value || '';
+  const city = String(document.getElementById('pm-city')?.value || '').trim() || state || null;
+  const gstType = document.getElementById('pm-gst-type')?.value || '';
+  const payloadCustomer = {
+    company,
+    contact_person: document.getElementById('pm-contact')?.value || document.getElementById('pm-billing')?.value || '',
+    mobile: document.getElementById('pm-phone')?.value || '',
+    email: document.getElementById('pm-email')?.value || '',
+    city,
+    industry: gstType,
+    customer_type: group === 'Supplier' ? 'Vendor' : (group || 'Buyer'),
+    hotel_brand: document.getElementById('pm-hotel')?.value || '',
+    architect: document.getElementById('pm-architect')?.value || '',
+    consultant: document.getElementById('pm-consultant')?.value || '',
+    annual_potential: document.getElementById('pm-potential')?.value || '',
+    potential_rating: document.getElementById('pm-rating')?.value || '',
+    assigned_to: document.getElementById('pm-assigned')?.value || '',
+    address: document.getElementById('pm-address')?.value || '',
+    gst_no: document.getElementById('pm-gstin')?.value || '',
+    pan: document.getElementById('pm-pan')?.value || '',
+    status: document.getElementById('pm-status')?.value || 'active',
+    remarks: document.getElementById('pm-remarks')?.value || document.getElementById('pm-payterms')?.value || '',
+  };
+  const payloadVendor = {
+    company,
+    contact_person: document.getElementById('pm-contact')?.value || document.getElementById('pm-billing')?.value || '',
+    mobile: document.getElementById('pm-phone')?.value || '',
+    email: document.getElementById('pm-email')?.value || '',
+    city,
+    products: document.getElementById('pm-products')?.value || '',
+    gst_no: document.getElementById('pm-gstin')?.value || '',
+    payment_terms: document.getElementById('pm-payterms')?.value || '',
+    rating: document.getElementById('pm-rating')?.value || '',
+    price_notes: [document.getElementById('pm-address')?.value, document.getElementById('pm-remarks')?.value].filter(Boolean).join('\n') || '',
+    status: document.getElementById('pm-status')?.value || 'active',
+  };
+  const payload = saveKind === 'vendor' ? payloadVendor : payloadCustomer;
+  const urlBase = saveKind === 'vendor' ? '/api/v1/hop/vendors' : '/api/v1/hop/customers';
+  try {
+    await hopApi(edit.id ? `${urlBase}/${edit.id}` : urlBase, {
+      method: edit.id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    hopState.customers = [];
+    hopState.vendors = [];
+    hopClosePartyEditModal();
+    openHopView(hopContactReturnView(saveKind === 'vendor' ? 'vendors' : 'customers'));
+  } catch (e) {
+    alert(e.message || 'Save failed');
+  }
+}
+
 /* ---------- Parties (Vyapar-style unified view) ---------- */
 async function renderHopPartiesModule(mount) {
   let customers = [], vendors = [], partyTxns = [];
@@ -1370,7 +1646,7 @@ async function renderHopPartiesModule(mount) {
             <span class="pty-topbar-sub">${parties.length} contacts</span>
           </div>
           <div class="pty-topbar-actions">
-            <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ Add Party</button>
+            <button type="button" class="nx-btn nx-btn-primary" onclick="hopOpenPartyEditModal('customer', null)">+ Add Party</button>
             <button type="button" class="nx-btn" onclick="openHopView('vyapar_import')">Import Vyapar</button>
           </div>
         </div>
@@ -1405,20 +1681,14 @@ function _hopRenderPartyList(parties, filter) {
     const sel = hopState._partySelected && Number(hopState._partySelected.id) === Number(p.id) && hopState._partySelected._type === p._type;
     const bal = p._balance ? `₹ ${Number(p._balance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00';
     const badge = p._type === 'vendor' ? '<span class="pty-badge pty-badge-v">V</span>' : '<span class="pty-badge pty-badge-c">C</span>';
-    const typeKey = p._type === 'vendor' ? 'vendors' : 'customers';
-    const label = foEscapeAttr(p.company || '');
-    return `<div class="pty-item-wrap${sel ? ' is-active' : ''}">
-      <button type="button" class="pty-item${sel ? ' is-active' : ''}" onclick="hopSelectParty('${p._type}', ${p.id})">
-        ${badge}
-        <span class="pty-item-name">${foEscapeText(p.company || '—')}</span>
-        <span class="pty-item-bal${p._balance > 0 ? ' is-due' : ''}">${bal}</span>
-      </button>
-      <div class="pty-item-actions">
-        <button type="button" class="pty-action-btn" onclick="event.stopPropagation();hopOpenContactDetail('${typeKey}', ${p.id})" title="Details">Details</button>
-        <button type="button" class="pty-action-btn" onclick="event.stopPropagation();hopEditContact('${typeKey}', ${p.id})" title="Edit">${hopContactIcon('edit')}</button>
-        <button type="button" class="pty-action-btn pty-action-del" onclick="event.stopPropagation();hopDeleteContact('${typeKey}', ${p.id}, '${label}')" title="Delete">${hopContactIcon('delete')}</button>
-      </div>
-    </div>`;
+    return `<button type="button" class="pty-item${sel ? ' is-active' : ''}"
+      onclick="hopSelectParty('${p._type}', ${p.id})"
+      ondblclick="hopEditContact('${p._type === 'vendor' ? 'vendors' : 'customers'}', ${p.id})"
+      title="Double-click to edit">
+      ${badge}
+      <span class="pty-item-name">${foEscapeText(p.company || '—')}</span>
+      <span class="pty-item-bal${p._balance > 0 ? ' is-due' : ''}">${bal}</span>
+    </button>`;
   }).join('');
 }
 
@@ -1461,7 +1731,6 @@ function _hopRenderPartyDetail(party, partyTxns) {
       <div class="pty-detail-actions">
         ${callHref ? `<a class="pty-action-btn" href="${callHref}" title="Call">${hopContactIcon('call')}</a>` : ''}
         ${waHref ? `<a class="pty-action-btn pty-action-wa" href="${waHref}" target="_blank" title="WhatsApp">${hopContactIcon('whatsapp')}</a>` : ''}
-        <button type="button" class="nx-btn" onclick="hopOpenContactDetail('${party._type === 'vendor' ? 'vendors' : 'customers'}', ${party.id})">Details</button>
         <button type="button" class="nx-btn nx-btn-primary" onclick="hopEditContact('${party._type}s', ${party.id})">${hopContactIcon('edit')} Edit</button>
         <button type="button" class="nx-btn hop-contact-icon-del" onclick="hopDeleteContact('${party._type}s', ${party.id}, '${foEscapeAttr(party.company || '')}')">${hopContactIcon('delete')} Delete</button>
       </div>
@@ -3290,6 +3559,11 @@ async function hopChangeProjectStage() {
 
 /* ---------- Forms ---------- */
 async function hopShowForm(kind, editRow) {
+  // Party create/edit uses Vyapar-style modal (Nexora theme).
+  if (kind === 'customer' || kind === 'vendor') {
+    hopOpenPartyEditModal(kind, editRow || null);
+    return;
+  }
   // Rate sheet form does not need CRM lookups — open immediately
   if (kind !== 'rate_sheet') {
     await hopEnsureLookups();
@@ -3957,6 +4231,12 @@ window.hopBulkDeleteContacts = hopBulkDeleteContacts;
 window.hopCloseContactActionMenu = hopCloseContactActionMenu;
 window.hopOpenContactDetail = hopOpenContactDetail;
 window.hopCloseContactDetail = hopCloseContactDetail;
+window.hopOpenPartyEditModal = hopOpenPartyEditModal;
+window.hopClosePartyEditModal = hopClosePartyEditModal;
+window.hopPartyModalSetTab = hopPartyModalSetTab;
+window.hopPartyGstCheck = hopPartyGstCheck;
+window.hopSavePartyModal = hopSavePartyModal;
+window.hopDeleteFromPartyModal = hopDeleteFromPartyModal;
 window.hopSelectParty = hopSelectParty;
 window.hopFilterParties = hopFilterParties;
 window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
