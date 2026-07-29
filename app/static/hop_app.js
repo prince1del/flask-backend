@@ -1326,8 +1326,8 @@ async function renderHopPartiesModule(mount) {
           </div>
         </div>
         <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
-        <div class="pty-layout">
-          <div class="pty-sidebar">
+        <div class="pty-layout" style="display:flex;flex-direction:row;flex:1;min-height:0;width:100%;">
+          <div class="pty-sidebar" style="flex:0 0 340px;width:340px;min-width:280px;">
             <div class="pty-search-row">
               <input id="pty-search" class="pty-search" type="search" placeholder="Search Party Name" value="${foEscapeText(hopState._partyFilter)}" oninput="hopFilterParties(this.value)" />
             </div>
@@ -1339,12 +1339,13 @@ async function renderHopPartiesModule(mount) {
               ${_hopRenderPartyList(parties, hopState._partyFilter)}
             </div>
           </div>
-          <div id="pty-detail" class="pty-detail">
+          <div id="pty-detail" class="pty-detail" style="flex:1;min-width:0;overflow:auto;">
             ${hopState._partySelected ? _hopRenderPartyDetail(hopState._partySelected, partyTxns) : _hopPartyEmptyDetail()}
           </div>
         </div>
       </div>
     </div>`;
+  hopSetMainFullpage(true);
 }
 
 function _hopRenderPartyList(parties, filter) {
