@@ -985,14 +985,19 @@ function openHopView(viewName, opts) {
     btn.classList.toggle('active', btn.dataset.hopView === hopState.view);
   });
 
-  // Dashboard keeps padded scroll layout; every other menu opens as full-page workspace.
+  // Dashboard keeps padded scroll layout; every other menu opens as full-page workspace
+  // (overwrites Ask NEXORA / Workspace / profile / bell top bar).
   hopSetMainFullpage(hopState.view !== 'dashboard');
 
   if (hopState.view === 'dashboard') {
     document.getElementById('hop-view-dashboard')?.classList.remove('hidden');
+    document.getElementById('hop-view-project-hub')?.classList.remove('hop-view--fullpage');
     Promise.resolve(loadHopExecutiveSnapshot()).finally(() => hopScrollMainToTop());
   } else if (hopState.view === 'project-hub' || hopState.view === 'project_hub') {
-    document.getElementById('hop-view-project-hub')?.classList.remove('hidden');
+    const hub = document.getElementById('hop-view-project-hub');
+    hub?.classList.remove('hidden');
+    hub?.classList.add('hop-view--fullpage', 'hop-view--module');
+    hopSetMainFullpage(true);
     const pid = opts?.projectId || hopState.hub?.project?.id;
     if (pid) Promise.resolve(loadHopProjectHub(pid)).finally(() => hopScrollMainToTop());
   } else {
@@ -1000,7 +1005,8 @@ function openHopView(viewName, opts) {
     if (!mount) {
       console.error('HoP mount missing');
     } else {
-      mount.innerHTML = '<div class="hop-view"><p class="nx-text-dim">Loading…</p></div>';
+      mount.innerHTML = '<div class="hop-view hop-view--fullpage hop-view--module"><div class="mod-page"><div class="mod-body"><p class="nx-text-dim">Loading…</p></div></div></div>';
+      hopSetMainFullpage(true);
       const loaders = {
         parties: renderHopPartiesModule,
         customers: renderHopCustomersModule,
@@ -1029,8 +1035,15 @@ function openHopView(viewName, opts) {
         targets: renderHopTargetsModule,
       };
       const fn = loaders[hopState.view];
-      if (fn) Promise.resolve(fn(mount)).finally(() => hopScrollMainToTop());
-      else mount.innerHTML = `<div class="hop-view"><p class="nx-oc-error">Unknown view</p></div>`;
+      if (fn) {
+        Promise.resolve(fn(mount)).finally(() => {
+          hopSetMainFullpage(true);
+          hopScrollMainToTop();
+        });
+      } else {
+        mount.innerHTML = hopModuleShell('HoP', 'Unknown', '', '', `<p class="nx-oc-error">Unknown view</p>`);
+        hopSetMainFullpage(true);
+      }
     }
   }
 
@@ -1155,9 +1168,26 @@ function hopDebouncedReload(kind) {
 
 function hopModuleShell(eyebrow, title, subtitle, actionsHtml, bodyHtml) {
   const isFullpage = hopState.view && hopState.view !== 'dashboard';
+  if (isFullpage) {
+    // Same full-page chrome as Parties: compact topbar + scrollable body, edge-to-edge.
+    return `
+    <div class="hop-view hop-view--fullpage hop-view--module">
+      <div class="mod-page">
+        <div class="mod-topbar">
+          <div class="mod-topbar-left">
+            ${eyebrow ? `<span class="mod-topbar-eyebrow">${foEscapeText(eyebrow)}</span>` : ''}
+            <h2 class="mod-topbar-title">${foEscapeText(title)}</h2>
+            ${subtitle ? `<span class="mod-topbar-sub">${subtitle}</span>` : ''}
+          </div>
+          <div class="mod-topbar-actions">${actionsHtml || ''}</div>
+        </div>
+        <div class="mod-body hop-view-body">${bodyHtml}</div>
+      </div>
+    </div>`;
+  }
   return `
-    <div class="hop-view${isFullpage ? ' hop-view--fullpage' : ''}">
-      <header class="hop-view-header hop-view-header-row${isFullpage ? ' hop-view-header--compact' : ''}">
+    <div class="hop-view">
+      <header class="hop-view-header hop-view-header-row">
         <div>
           <p class="nx-text-faint hop-eyebrow">${foEscapeText(eyebrow)}</p>
           <h2 class="nx-display">${foEscapeText(title)}</h2>
@@ -2410,7 +2440,8 @@ async function renderHopVendorCmpModule(mount) {
      <button type="button" class="nx-btn hop-rate-clear-btn" onclick="hopClearAllRates()">Clear all rate data</button>
      <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('rate_sheet')">+ Upload / add rates</button>`,
     body,
-  ).replace('class="hop-view hop-view--fullpage"', 'class="hop-view hop-view--fullpage hop-vendor-cmp-compact"')
+  ).replace('class="hop-view hop-view--fullpage hop-view--module"', 'class="hop-view hop-view--fullpage hop-view--module hop-vendor-cmp-compact"')
+   .replace('class="hop-view hop-view--fullpage"', 'class="hop-view hop-view--fullpage hop-vendor-cmp-compact"')
    .replace('class="hop-view"', 'class="hop-view hop-vendor-cmp-compact"');
 
   hopRenderRateCartPanel();

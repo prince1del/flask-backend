@@ -465,8 +465,10 @@ body.hop-module-fullscreen #hop-executive-workspace .hop-main,
   flex-direction:column;
   padding:0;
   padding-bottom:0 !important;
+  overflow:hidden;
 }
-#hop-executive-workspace .hop-view--parties{
+#hop-executive-workspace .hop-view--parties,
+#hop-executive-workspace .hop-view--module{
   overflow:hidden;
   flex:1 1 0;
   min-height:0;
@@ -475,7 +477,7 @@ body.hop-module-fullscreen #hop-executive-workspace .hop-main,
   flex-direction:column;
   padding-bottom:0 !important;
 }
-#hop-executive-workspace .hop-main.hop-main--fullpage #hop-module-mount:has(.hop-view--parties){
+#hop-executive-workspace .hop-main.hop-main--fullpage #hop-module-mount:has(.hop-view--fullpage){
   padding-bottom:0 !important;
 }
 #hop-executive-workspace .hop-view-header--compact{
@@ -493,7 +495,8 @@ body.hop-module-fullscreen #hop-executive-workspace .hop-main,
   font-size:.75rem;
   margin:2px 0 0;
 }
-#hop-executive-workspace .hop-view-body{
+#hop-executive-workspace .hop-view-body,
+#hop-executive-workspace .mod-body{
   flex:1 1 0;
   min-height:0;
   overflow:hidden;
@@ -501,17 +504,77 @@ body.hop-module-fullscreen #hop-executive-workspace .hop-main,
   flex-direction:column;
 }
 #hop-executive-workspace .hop-view-body > .pty-layout,
-#hop-executive-workspace .hop-view--parties .pty-page{
+#hop-executive-workspace .hop-view--parties .pty-page,
+#hop-executive-workspace .hop-view--module .mod-page{
   flex:1 1 0;
   min-height:0;
   height:auto !important;
   border-radius:0;
   border:none;
 }
+/* Shared module page chrome (same room as Parties) */
+.mod-page{
+  flex:1 1 0;
+  min-height:0;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.mod-topbar{
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 16px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  background:rgba(8,10,16,.98);
+}
+.mod-topbar-left{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:8px 12px;
+  min-width:0;
+}
+.mod-topbar-eyebrow{
+  width:100%;
+  font-size:.62rem;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--nxt-text-faint,#64748b);
+}
+.mod-topbar-title{
+  margin:0;
+  font-size:1.2rem;
+  font-weight:700;
+  color:var(--nxt-text,#e2e8f0);
+}
+.mod-topbar-sub{
+  font-size:.72rem;
+  color:var(--nxt-text-dim,#64748b);
+}
+.mod-topbar-actions{
+  display:flex;
+  gap:8px;
+  flex-shrink:0;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
 /* Non-parties modules: body scrolls inside full page */
-#hop-executive-workspace .hop-view-body:not(:has(.pty-layout)){
+#hop-executive-workspace .hop-view-body:not(:has(.pty-layout)),
+#hop-executive-workspace .mod-body:not(:has(.pty-layout)){
   overflow:auto;
   padding:14px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+/* Project hub also fills full page when opened as a module */
+#hop-executive-workspace #hop-view-project-hub.hop-view--fullpage{
+  flex:1 1 0;
+  min-height:0;
+  height:100%;
+  overflow:auto;
+  padding:14px 16px;
 }
 .hop-view-header h2{margin:4px 0 0;}
 .hop-view-header .nx-text-dim{margin:6px 0 0; font-size:0.82rem;}
