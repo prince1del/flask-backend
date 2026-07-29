@@ -544,10 +544,12 @@ function hopRenderQuickContactActions(mobile, type, id, label) {
   const waBtn = waHref
     ? `<a class="nx-btn nx-btn-primary hop-contact-icon-btn" href="${waHref}" target="_blank" rel="noopener noreferrer" title="WhatsApp">${hopContactIcon('whatsapp')}</a>`
     : `<button type="button" class="nx-btn nx-btn-primary hop-contact-icon-btn is-disabled" disabled title="Mobile number missing">${hopContactIcon('whatsapp')}</button>`;
+  const delBtn = `<button type="button" class="nx-btn hop-contact-icon-btn hop-contact-icon-del" onclick="event.stopPropagation();hopDeleteContact('${type}', ${id}, '${foEscapeAttr(label || '')}')" title="Delete">${hopContactIcon('delete')}</button>`;
   return `
     <div class="hop-contact-actions">
       ${callBtn}
       ${waBtn}
+      ${delBtn}
     </div>`;
 }
 
@@ -559,7 +561,7 @@ function hopRenderMobileContactToolbar(type, count) {
     <div class="hop-contact-toolbar" data-hop-contact-toolbar="${type}">
       <button type="button" class="nx-btn${mode ? ' nx-btn-primary' : ''}" onclick="hopToggleContactSelectMode('${type}')">${mode ? 'Done' : 'Select'}</button>
       <button type="button" class="nx-btn${mode ? '' : ' hidden'}" onclick="hopSelectAllContacts('${type}')">All (${count})</button>
-      <button type="button" class="nx-btn hop-contact-delete${mode && selected ? '' : ' hidden'}" onclick="hopBulkDeleteContacts('${type}')">Delete (${selected})</button>
+      <button type="button" class="nx-btn hop-contact-icon-btn hop-toolbar-bulk-del${mode && selected ? '' : ' hidden'}" onclick="hopBulkDeleteContacts('${type}')" title="Delete selected (${selected})">${hopContactIcon('delete')}${selected ? ` ${selected}` : ''}</button>
     </div>`;
 }
 
@@ -623,10 +625,80 @@ function hopRenderMobileContactCards(rows, type) {
 function hopToggleContactDetails(btn) {
   const card = btn?.closest('.hop-contact-card');
   if (!card) return;
-  const details = card.querySelector('.hop-contact-details');
-  if (!details) return;
-  const open = details.classList.toggle('hidden');
-  btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+  const type = card.getAttribute('data-hop-contact-type') || 'customers';
+  const id = Number(card.getAttribute('data-hop-contact-id'));
+  hopOpenContactDetail(type, id);
+}
+
+function hopOpenContactDetail(type, id) {
+  const rows = type === 'vendors' ? (hopState.vendors || []) : (hopState.customers || []);
+  const r = rows.find((x) => Number(x.id) === Number(id));
+  if (!r) return;
+  const isVendor = type === 'vendors';
+  const label = hopContactLabel(r);
+  const mobile = hopCell(r.mobile);
+  const callHref = hopCallHref(r.mobile);
+  const waHref = hopWhatsAppHref(r.mobile);
+
+  const fields = isVendor
+    ? [
+        ['Company', r.company], ['Contact Person', r.contact_person], ['Mobile', r.mobile],
+        ['Email', r.email], ['City', r.city], ['Products', r.products],
+        ['GST No', r.gst_no], ['Lead Time (days)', r.lead_time_days],
+        ['Payment Terms', r.payment_terms], ['On-time %', r.on_time_pct],
+        ['Quality Rating', r.quality_rating], ['Rating', r.rating],
+        ['Remarks', r.remarks], ['Address', r.address],
+      ]
+    : [
+        ['Company', r.company], ['Contact Person', r.contact_person], ['Mobile', r.mobile],
+        ['Email', r.email], ['City', r.city], ['Industry', r.industry],
+        ['Customer Type', r.customer_type], ['Hotel Brand', r.hotel_brand],
+        ['Architect', r.architect], ['Consultant', r.consultant],
+        ['Annual Potential', r.annual_potential], ['Source', r.source],
+        ['Rating', r.potential_rating], ['Status', r.status],
+        ['Assigned To', r.assigned_to], ['GST No', r.gst_no],
+        ['PAN', r.pan], ['Address', r.address], ['Remarks', r.remarks],
+      ];
+
+  const callBtn = callHref
+    ? `<a class="nx-btn hop-detail-action-btn" href="${callHref}">${hopContactIcon('call')} Call</a>`
+    : '';
+  const waBtn = waHref
+    ? `<a class="nx-btn hop-detail-action-btn hop-detail-wa" href="${waHref}" target="_blank" rel="noopener noreferrer">${hopContactIcon('whatsapp')} WhatsApp</a>`
+    : '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'hop-contact-detail-overlay';
+  overlay.className = 'hop-detail-overlay';
+  overlay.innerHTML = `
+    <div class="hop-detail-backdrop" onclick="hopCloseContactDetail()"></div>
+    <div class="hop-detail-panel">
+      <div class="hop-detail-header">
+        <button type="button" class="nx-btn hop-detail-back" onclick="hopCloseContactDetail()" title="Back">&larr;</button>
+        <h3 class="hop-detail-title">${foEscapeText(label)}</h3>
+        <button type="button" class="nx-btn hop-contact-icon-btn hop-detail-edit-btn" onclick="hopCloseContactDetail();hopEditContact('${type}', ${id})" title="Edit">${hopContactIcon('edit')}</button>
+        <button type="button" class="nx-btn hop-contact-icon-btn hop-contact-icon-del" onclick="hopCloseContactDetail();hopDeleteContact('${type}', ${id}, '${foEscapeAttr(label)}')" title="Delete">${hopContactIcon('delete')}</button>
+      </div>
+      <div class="hop-detail-quick-actions">
+        ${callBtn}${waBtn}
+      </div>
+      <div class="hop-detail-fields">
+        ${fields.map(([k, v]) => {
+          const val = hopCell(v);
+          return `<div class="hop-detail-field"><span class="hop-detail-label">${foEscapeText(k)}</span><span class="hop-detail-value">${val}</span></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  document.getElementById('hop-contact-detail-overlay')?.remove();
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('is-open'));
+}
+
+function hopCloseContactDetail() {
+  const el = document.getElementById('hop-contact-detail-overlay');
+  if (!el) return;
+  el.classList.remove('is-open');
+  setTimeout(() => el.remove(), 250);
 }
 
 function hopCloseContactActionMenu() {
@@ -1157,12 +1229,13 @@ async function renderHopCustomersModule(mount) {
     ${hopIsMobileView()
       ? hopRenderMobileContactCards(rows, 'customers')
       : hopTable(
-        ['Company', 'Contact', 'Mobile', 'City', 'Type', 'Hotel', 'Architect', 'Consultant', 'Potential', 'Rating', 'Status', 'Assigned'],
-        rows.map((r) => `<tr>
+        ['Company', 'Contact', 'Mobile', 'City', 'Type', 'Hotel', 'Architect', 'Consultant', 'Potential', 'Rating', 'Status', 'Assigned', ''],
+        rows.map((r) => `<tr class="hop-clickable-row" onclick="hopOpenContactDetail('customers', ${r.id})" style="cursor:pointer">
           <td>${hopCell(r.company)}</td><td>${hopCell(r.contact_person)}</td><td>${hopCell(r.mobile)}</td>
           <td>${hopCell(r.city)}</td><td>${hopCell(r.customer_type)}</td><td>${hopCell(r.hotel_brand)}</td>
           <td>${hopCell(r.architect)}</td><td>${hopCell(r.consultant)}</td><td>${hopCell(r.annual_potential)}</td>
           <td>${hopCell(r.potential_rating)}</td><td>${hopCell(r.status)}</td><td>${hopCell(r.assigned_to)}</td>
+          <td><button type="button" class="nx-btn hop-contact-icon-btn hop-contact-icon-del" onclick="event.stopPropagation();hopDeleteContact('customers', ${r.id}, '${foEscapeAttr(hopContactLabel(r))}')" title="Delete">${hopContactIcon('delete')}</button></td>
         </tr>`).join(''),
       )}`;
   mount.innerHTML = hopModuleShell('CRM', 'Customers', 'Hospitality clients, designers, consultants',
@@ -3485,6 +3558,8 @@ window.hopDeleteContact = hopDeleteContact;
 window.hopEditContact = hopEditContact;
 window.hopBulkDeleteContacts = hopBulkDeleteContacts;
 window.hopCloseContactActionMenu = hopCloseContactActionMenu;
+window.hopOpenContactDetail = hopOpenContactDetail;
+window.hopCloseContactDetail = hopCloseContactDetail;
 window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
 window.hopRunVyaparImport = hopRunVyaparImport;
 window.hopPickVyaparBackup = hopPickVyaparBackup;
