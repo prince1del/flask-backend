@@ -1384,16 +1384,12 @@ function _hopRenderPartyDetail(party, partyTxns) {
     <div class="pty-txn-section">
       <div class="pty-txn-header">
         <strong>Transactions</strong>
-        <div class="pty-txn-tools">
-          <button type="button" class="pty-tool-btn" title="Search">⌕</button>
-          <button type="button" class="pty-tool-btn" title="Filter">⌄</button>
-          <span class="nx-text-dim">${partyRows.length} records</span>
-        </div>
+        <span class="nx-text-dim">${partyRows.length} records</span>
       </div>
       ${partyRows.length ? `
         <table class="pty-txn-table">
           <thead><tr>
-            <th>Type</th><th>Number</th><th>Date</th><th>Total</th><th>Balance / Unused</th><th>Due Date</th><th>Status</th>
+            <th>Type</th><th>Number</th><th>Date</th><th>Total</th><th>Balance</th><th>Status</th>
           </tr></thead>
           <tbody>
             ${partyRows.map((row) => {
@@ -1410,7 +1406,6 @@ function _hopRenderPartyDetail(party, partyTxns) {
                 <td>${foEscapeText((row.txn_date || '').slice(0, 10))}</td>
                 <td class="pty-txn-amt">₹ ${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td class="pty-txn-amt${bal > 0 ? ' is-due' : ''}">₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td>${bal > 0 ? foEscapeText((row.txn_date || '').slice(0, 10)) : '—'}</td>
                 <td><span class="pty-status ${statusClass}">${status}</span></td>
               </tr>`;
             }).join('')}

@@ -20,7 +20,7 @@ def _txn_label(txn_type: int) -> str:
         7: "Expense",
         21: "Sale Return",
         27: "Sale",
-        30: "Estimate",
+        30: "Estimate/Quotation",
         65: "Sales Order",
         81: "Purchase Order",
         82: "Delivery Challan",
