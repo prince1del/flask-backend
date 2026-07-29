@@ -2615,55 +2615,216 @@ function hopOpenPartyTxnInModule(txnId) {
   openHopView(view);
 }
 
-function hopOpenPartyTxnDetail(txnId) {
-  const row = (hopState._partyTxns || []).find((t) => Number(t.id) === Number(txnId));
-  if (!row) {
-    if (typeof nexoraToast === 'function') nexoraToast('Transaction not found.', 'error');
+function hopPreviewMoney(n) {
+  const v = Number(n || 0);
+  return `₹ ${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function hopPreviewDate(ymd) {
+  const s = String(ymd || '').slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return s || '—';
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+function hopPrintPartyTxnPreview() {
+  const sheet = document.getElementById('hop-doc-preview-sheet');
+  if (!sheet) return;
+  const w = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1000');
+  if (!w) {
+    window.print();
     return;
   }
-  const label = hopPartyTxnDisplayLabel(row);
-  const status = hopPartyTxnDisplayStatus(row);
-  const amt = Number(row.total_amount || 0);
-  const bal = Number(row.balance_amount || 0);
-  const money = (n) => `₹ ${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const view = hopTxnModuleViewForType(row.txn_type);
-  const fields = [
-    ['Type', label],
-    ['Number', row.txn_number || '—'],
-    ['Date', String(row.txn_date || '').slice(0, 10) || '—'],
-    ['Party', row.party_name || '—'],
-    ['Party type', row.party_type || '—'],
-    ['Total', money(amt)],
-    ['Balance', money(bal)],
-    ['Status', status],
-    ['Notes', row.notes || '—'],
-    ['Source ID', row.source_txn_id != null ? String(row.source_txn_id) : '—'],
-  ];
+  w.document.write(`<!DOCTYPE html><html><head><title>Preview</title>
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:16px;background:#fff;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{border:1px solid #cbd5e1;padding:6px 8px;font-size:12px;}
+      th{background:#1d4ed8;color:#fff;text-align:left;}
+      .num{text-align:right;}
+      .title{text-align:center;color:#1d4ed8;font-size:22px;font-weight:700;margin:12px 0;}
+      .muted{color:#64748b;font-size:12px;}
+      .tot-bar{background:#0f172a;color:#fff;font-weight:700;}
+      @media print{body{margin:0}}
+    </style></head><body>${sheet.innerHTML}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 250);
+}
+
+async function hopOpenPartyTxnDetail(txnId) {
   hopClosePartyTxnDetail();
   const overlay = document.createElement('div');
   overlay.id = 'hop-party-txn-overlay';
-  overlay.className = 'hop-detail-overlay hop-txn-overlay';
+  overlay.className = 'hop-doc-preview-overlay';
   overlay.innerHTML = `
-    <div class="hop-detail-backdrop" onclick="hopClosePartyTxnDetail()"></div>
-    <div class="hop-detail-panel">
-      <div class="hop-detail-header">
-        <button type="button" class="nx-btn hop-detail-back" onclick="hopClosePartyTxnDetail()" title="Back">&larr;</button>
-        <h3 class="hop-detail-title">${foEscapeText(label)}</h3>
+    <div class="hop-doc-preview-backdrop" onclick="hopClosePartyTxnDetail()"></div>
+    <div class="hop-doc-preview-modal" role="dialog" aria-modal="true" aria-label="Preview">
+      <div class="hop-doc-preview-head">
+        <strong>Preview</strong>
+        <button type="button" class="hop-doc-preview-x" onclick="hopClosePartyTxnDetail()" aria-label="Close">&times;</button>
       </div>
-      <div class="hop-detail-quick-actions">
-        ${view ? `<button type="button" class="nx-btn hop-detail-action-btn nx-btn-primary" onclick="hopOpenPartyTxnInModule(${Number(row.id)})">Open in list</button>` : ''}
-        <button type="button" class="nx-btn hop-detail-action-btn" onclick="hopClosePartyTxnDetail()">Close</button>
+      <div class="hop-doc-preview-scroll" id="hop-doc-preview-body">
+        <div class="hop-doc-preview-loading">Loading document…</div>
       </div>
-      <div class="hop-detail-fields">
-        ${fields.map(([k, v]) => `
-          <div class="hop-detail-field">
-            <span class="hop-detail-label">${foEscapeText(k)}</span>
-            <span class="hop-detail-value">${foEscapeText(String(v ?? '—'))}</span>
-          </div>`).join('')}
+      <div class="hop-doc-preview-foot">
+        <button type="button" class="nx-btn" onclick="hopPrintPartyTxnPreview()">Print</button>
+        <button type="button" class="nx-btn" onclick="hopOpenPartyTxnInModule(${Number(txnId)})">Open in list</button>
+        <button type="button" class="nx-btn hop-doc-preview-close" onclick="hopClosePartyTxnDetail()">Close</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('is-open'));
+
+  try {
+    const data = await hopApi(`/api/v1/hop/party-transactions/${Number(txnId)}/preview`);
+    const body = document.getElementById('hop-doc-preview-body');
+    if (body) body.innerHTML = hopRenderDocPreviewHtml(data);
+  } catch (e) {
+    const body = document.getElementById('hop-doc-preview-body');
+    if (body) {
+      body.innerHTML = `<div class="hop-doc-preview-loading">${foEscapeText(e?.message || 'Failed to load preview')}</div>`;
+    }
+  }
+}
+
+function hopRenderDocPreviewHtml(data) {
+  if (!data) return '<div class="hop-doc-preview-loading">No data</div>';
+  const firm = data.firm || {};
+  const party = data.party || {};
+  const header = data.header || {};
+  const totals = data.totals || {};
+  const lines = data.lines || [];
+  const title = header.doc_title || 'Document';
+  const forLabel = /purchase|payment\s*out|expense/i.test(title) ? `${title} From` : `${title} For`;
+
+  const firmBlock = `
+    <div class="hop-doc-firm">
+      <div class="hop-doc-firm-text">
+        <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'House of Prizm')}</div>
+        ${firm.address ? `<div class="hop-doc-muted">${foEscapeText(firm.address)}</div>` : ''}
+        ${firm.phone ? `<div class="hop-doc-muted">Phone: ${foEscapeText(firm.phone)}</div>` : ''}
+        ${firm.email ? `<div class="hop-doc-muted">Email: ${foEscapeText(firm.email)}</div>` : ''}
+        ${firm.gstin ? `<div class="hop-doc-muted">GSTIN: ${foEscapeText(firm.gstin)}</div>` : ''}
+        ${firm.state ? `<div class="hop-doc-muted">State: ${foEscapeText(firm.state)}</div>` : ''}
+      </div>
+      <div class="hop-doc-logo" aria-hidden="true">${foEscapeText((firm.name || 'HOP').slice(0, 1).toUpperCase())}</div>
+    </div>`;
+
+  const metaBlock = `
+    <div class="hop-doc-meta">
+      <div>
+        <div class="hop-doc-meta-label">${foEscapeText(forLabel)}</div>
+        <div class="hop-doc-party-name">${foEscapeText(party.billing_name || party.name || '—')}</div>
+        ${party.address ? `<div class="hop-doc-muted">${foEscapeText(party.address)}</div>` : ''}
+        ${party.contact_person ? `<div class="hop-doc-muted">Contact: ${foEscapeText(party.contact_person)}</div>` : ''}
+        ${party.phone ? `<div class="hop-doc-muted">Phone: ${foEscapeText(party.phone)}</div>` : ''}
+        ${party.email ? `<div class="hop-doc-muted">Email: ${foEscapeText(party.email)}</div>` : ''}
+        ${party.gstin ? `<div class="hop-doc-muted">GSTIN: ${foEscapeText(party.gstin)}</div>` : ''}
+        ${party.state ? `<div class="hop-doc-muted">State: ${foEscapeText(party.state)}</div>` : ''}
+      </div>
+      <div class="hop-doc-meta-right">
+        <div><span class="hop-doc-meta-label">${foEscapeText(title)} No.</span> ${foEscapeText(header.doc_number || '—')}</div>
+        <div><span class="hop-doc-meta-label">Date</span> ${foEscapeText(hopPreviewDate(header.doc_date))}</div>
+        ${header.status ? `<div><span class="hop-doc-meta-label">Status</span> ${foEscapeText(header.status)}</div>` : ''}
+      </div>
+    </div>`;
+
+  let linesHtml = '';
+  if (lines.length) {
+    const rows = lines.map((ln, i) => {
+      const taxPct = Number(ln.tax_pct || 0);
+      const taxAmt = Number(ln.tax_amount || 0);
+      const taxCell = taxPct > 0
+        ? `${hopPreviewMoney(taxAmt)} (${taxPct}%)`
+        : hopPreviewMoney(taxAmt);
+      return `<tr>
+        <td>${i + 1}</td>
+        <td>
+          <div class="hop-doc-item-name">${foEscapeText(ln.item_name || 'Item')}</div>
+          ${ln.description ? `<div class="hop-doc-muted">${foEscapeText(ln.description)}</div>` : ''}
+        </td>
+        <td>${foEscapeText(ln.hsn || '')}</td>
+        <td class="num">${Number(ln.qty || 0).toLocaleString('en-IN')}</td>
+        <td>${foEscapeText(ln.unit || 'Pcs')}</td>
+        <td class="num">${hopPreviewMoney(ln.rate)}</td>
+        <td class="num">${taxCell}</td>
+        <td class="num">${hopPreviewMoney(ln.line_total)}</td>
+      </tr>`;
+    }).join('');
+    linesHtml = `
+      <table class="hop-doc-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Item Name</th><th>HSN/SAC</th><th>Quantity</th>
+            <th>Unit</th><th>Price/Unit</th><th>GST</th><th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" class="num"><strong>Total</strong></td>
+            <td class="num"><strong>${Number(totals.qty || 0).toLocaleString('en-IN')}</strong></td>
+            <td></td><td></td>
+            <td class="num"><strong>${hopPreviewMoney(totals.tax_total)}</strong></td>
+            <td class="num"><strong>${hopPreviewMoney(totals.grand_total)}</strong></td>
+          </tr>
+        </tfoot>
+      </table>`;
+  } else {
+    linesHtml = `
+      <div class="hop-doc-missing">
+        <strong>No item lines in this preview yet.</strong>
+        <p>${foEscapeText(data.lines_missing_hint || 'Re-import Vyapar backup to load item details.')}</p>
+        <p class="hop-doc-muted">Header total: <strong>${hopPreviewMoney(totals.grand_total || header.total_amount)}</strong>
+        · Balance: <strong>${hopPreviewMoney(header.balance_amount)}</strong></p>
+      </div>`;
+  }
+
+  const taxLabel = totals.tax_pct > 0 ? `Tax @ ${totals.tax_pct}%` : 'Tax';
+  const notes = header.notes || '';
+  const bankBits = [firm.bank_name, firm.bank_account, firm.bank_ifsc, firm.bank_holder].filter(Boolean);
+  const bankHtml = bankBits.length
+    ? `<div class="hop-doc-bank">
+        <div class="hop-doc-meta-label">Bank Details</div>
+        ${firm.bank_name ? `<div>Bank Name: ${foEscapeText(firm.bank_name)}</div>` : ''}
+        ${firm.bank_account ? `<div>Account No: ${foEscapeText(firm.bank_account)}</div>` : ''}
+        ${firm.bank_ifsc ? `<div>IFSC: ${foEscapeText(firm.bank_ifsc)}</div>` : ''}
+        ${firm.bank_holder ? `<div>Account Holder: ${foEscapeText(firm.bank_holder)}</div>` : ''}
+      </div>`
+    : '';
+
+  return `
+    <div class="hop-doc-preview-sheet" id="hop-doc-preview-sheet">
+      ${firmBlock}
+      <div class="hop-doc-title">${foEscapeText(title)}</div>
+      ${metaBlock}
+      ${linesHtml}
+      <div class="hop-doc-bottom">
+        <div class="hop-doc-bottom-left">
+          ${notes ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Description</div><div>${foEscapeText(notes)}</div></div>` : ''}
+          <div class="hop-doc-section">
+            <div class="hop-doc-meta-label">${foEscapeText(title)} Amount in Words</div>
+            <div>${foEscapeText(totals.amount_in_words || '')}</div>
+          </div>
+          <div class="hop-doc-section">
+            <div class="hop-doc-meta-label">Terms and Conditions</div>
+            <div>${foEscapeText(data.terms || 'Thanks for doing business with us!')}</div>
+          </div>
+          ${bankHtml}
+        </div>
+        <div class="hop-doc-totals">
+          <div class="hop-doc-tot-row"><span>Sub Total</span><strong>${hopPreviewMoney(totals.sub_total)}</strong></div>
+          <div class="hop-doc-tot-row"><span>${foEscapeText(taxLabel)}</span><strong>${hopPreviewMoney(totals.tax_total)}</strong></div>
+          <div class="hop-doc-tot-row hop-doc-tot-grand"><span>Total</span><strong>${hopPreviewMoney(totals.grand_total)}</strong></div>
+          <div class="hop-doc-sign">
+            <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
+            <div class="hop-doc-sign-space"></div>
+            <div>Authorized Signatory</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
 async function renderHopPartiesModule(mount) {
@@ -6322,6 +6483,7 @@ window.hopFilterParties = hopFilterParties;
 window.hopOpenPartyTxnDetail = hopOpenPartyTxnDetail;
 window.hopClosePartyTxnDetail = hopClosePartyTxnDetail;
 window.hopOpenPartyTxnInModule = hopOpenPartyTxnInModule;
+window.hopPrintPartyTxnPreview = hopPrintPartyTxnPreview;
 window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
 window.hopRunVyaparImport = hopRunVyaparImport;
 window.hopPickVyaparBackup = hopPickVyaparBackup;

@@ -1283,6 +1283,21 @@ def party_transactions_collection():
     return jsonify({"success": True, "data": rows})
 
 
+@hop_bp.route("/party-transactions/<int:txn_id>/preview", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_preview(txn_id: int):
+    """Vyapar-style document preview (header + firm + party + line items)."""
+    ensure_hop_schema(_db_path())
+    from app.hop_doc_preview import build_txn_preview
+
+    with hop_db.connect(_db_path()) as conn:
+        data = build_txn_preview(conn, _ws(), party_txn_id=txn_id)
+    if not data:
+        return _json_error("Transaction not found", "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/complaints", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

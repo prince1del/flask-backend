@@ -592,6 +592,59 @@ def ensure_hop_schema(db_path: str | Path) -> None:
         ]:
             _ensure_column(conn, "hop_rate_sheets", col, ddl)
 
+        # Document preview: firm letterhead + per-txn line items (from Vyapar import)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hop_firm_profile (
+                workspace_id TEXT PRIMARY KEY,
+                firm_name TEXT,
+                address TEXT,
+                phone TEXT,
+                email TEXT,
+                gstin TEXT,
+                state TEXT,
+                pan TEXT,
+                bank_name TEXT,
+                bank_account TEXT,
+                bank_ifsc TEXT,
+                bank_holder TEXT,
+                logo_url TEXT,
+                terms_default TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hop_txn_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                source_txn_id INTEGER NOT NULL,
+                line_no INTEGER NOT NULL DEFAULT 0,
+                item_name TEXT,
+                item_code TEXT,
+                description TEXT,
+                hsn TEXT,
+                qty REAL DEFAULT 0,
+                unit TEXT,
+                rate REAL DEFAULT 0,
+                discount_amount REAL DEFAULT 0,
+                tax_pct REAL DEFAULT 0,
+                tax_amount REAL DEFAULT 0,
+                line_total REAL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(workspace_id, source_txn_id, line_no)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_hop_txn_lines_ws_txn
+            ON hop_txn_lines(workspace_id, source_txn_id)
+            """
+        )
+
         # Heal stale product_key / size so Delete & vendor matrix never drift after upgrades
         try:
             from app import hop_ops as _hop_ops

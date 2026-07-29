@@ -1182,6 +1182,24 @@ def import_vyapar_backup(
         out["source_items"] = len(items)
         out["source_parties"] = len(parties)
         out["source_transactions"] = len(txns)
+
+        # Firm letterhead + line items for Vyapar-style document preview.
+        out["txn_lines_imported"] = 0
+        try:
+            from app.hop_doc_preview import replace_txn_lines, upsert_firm_profile
+            from app.services.vyapar_line_items import fetch_all_line_items, fetch_firm_profile
+
+            firm = fetch_firm_profile(src)
+            if firm.get("firm_name") or firm.get("gstin"):
+                upsert_firm_profile(target_conn, workspace_id, firm)
+            lines_by_txn = fetch_all_line_items(src)
+            for txn_id, lines in lines_by_txn.items():
+                out["txn_lines_imported"] += replace_txn_lines(
+                    target_conn, workspace_id, int(txn_id), lines
+                )
+        except Exception as exc:
+            out["errors"].append(f"Document preview data import failed ({exc})")
+
         target_conn.commit()
         out["imported_ok"] = (
             out["customers_created"]
@@ -1191,6 +1209,7 @@ def import_vyapar_backup(
             + out["quotations_created"]
             + out["payments_created"]
             + out["party_txns_created"]
+            + out["txn_lines_imported"]
         )
         return out
     finally:
