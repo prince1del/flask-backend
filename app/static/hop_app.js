@@ -1410,6 +1410,93 @@ function hopPartyCopyBillingToShipping() {
   if (ship) ship.value = bill;
 }
 
+const HOP_DEFAULT_PARTY_GROUPS = ['Buyer', 'Supplier'];
+
+function hopPartyGroupStorageKey() {
+  return 'hop_party_groups_v1';
+}
+
+function hopPartyGroupSavedList() {
+  try {
+    const raw = localStorage.getItem(hopPartyGroupStorageKey());
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.map((x) => String(x || '').trim()).filter(Boolean) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function hopPartyGroupPersist(name) {
+  const n = String(name || '').trim();
+  if (!n) return;
+  const all = new Set([...HOP_DEFAULT_PARTY_GROUPS, ...hopPartyGroupSavedList(), n]);
+  localStorage.setItem(hopPartyGroupStorageKey(), JSON.stringify([...all].sort((a, b) => a.localeCompare(b))));
+}
+
+function hopPartyGroupAllOptions() {
+  const fromData = [];
+  (hopState.customers || []).forEach((c) => {
+    if (c.customer_type) fromData.push(String(c.customer_type).trim());
+  });
+  (hopState._parties || []).forEach((p) => {
+    if (p.customer_type) fromData.push(String(p.customer_type).trim());
+    if (p._type === 'vendor') fromData.push('Supplier');
+  });
+  const set = new Set([...HOP_DEFAULT_PARTY_GROUPS, ...hopPartyGroupSavedList(), ...fromData.filter(Boolean)]);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function hopPartyGroupCloseMenu() {
+  document.getElementById('pm-group-menu')?.classList.add('hidden');
+}
+
+function hopPartyGroupOpenMenu() {
+  const menu = document.getElementById('pm-group-menu');
+  const input = document.getElementById('pm-group');
+  if (!menu || !input) return;
+  hopPartyGroupRenderMenu(input.value || '');
+  menu.classList.remove('hidden');
+}
+
+function hopPartyGroupRenderMenu(query) {
+  const menu = document.getElementById('pm-group-menu');
+  if (!menu) return;
+  const q = String(query || '').trim().toLowerCase();
+  const groups = hopPartyGroupAllOptions().filter((g) => !q || g.toLowerCase().includes(q));
+  const exact = hopPartyGroupAllOptions().some((g) => g.toLowerCase() === q);
+  menu.innerHTML = `
+    <button type="button" class="nx-party-group-new" onclick="hopPartyGroupCreateNew()">+ New Group</button>
+    ${groups.map((g) => `
+      <button type="button" class="nx-party-group-opt" onclick="hopPartyGroupSelect('${foEscapeAttr(g)}')">${foEscapeText(g)}</button>
+    `).join('') || '<p class="nx-party-group-empty">No groups yet</p>'}
+    ${q && !exact ? `<button type="button" class="nx-party-group-opt nx-party-group-create" onclick="hopPartyGroupSelect('${foEscapeAttr(String(query || '').trim())}')">Create “${foEscapeText(String(query || '').trim())}”</button>` : ''}
+  `;
+}
+
+function hopPartyGroupSelect(name) {
+  const n = String(name || '').trim();
+  if (!n) return;
+  hopPartyGroupPersist(n);
+  const input = document.getElementById('pm-group');
+  if (input) input.value = n;
+  hopPartyGroupCloseMenu();
+}
+
+function hopPartyGroupCreateNew() {
+  const typed = String(document.getElementById('pm-group')?.value || '').trim();
+  const name = window.prompt('New party group name', typed || '');
+  if (name == null) return;
+  const clean = String(name).trim();
+  if (!clean) return;
+  hopPartyGroupSelect(clean);
+}
+
+function hopPartyGroupOnInput() {
+  const input = document.getElementById('pm-group');
+  hopPartyGroupOpenMenu();
+  hopPartyGroupRenderMenu(input?.value || '');
+}
+
 function hopOpenPartyEditModal(kind, row) {
   const isVendor = kind === 'vendor';
   const isEdit = !!(row && row.id != null);
@@ -1479,12 +1566,17 @@ function hopOpenPartyEditModal(kind, row) {
             <span>Phone Number</span>
             <input id="pm-phone" value="${foEscapeAttr(data.mobile || '')}" placeholder="10-digit mobile" />
           </label>
-          <label class="nx-party-field">
+          <label class="nx-party-field nx-party-group-field">
             <span>Party Group</span>
-            <select id="pm-group">
-              <option value="Buyer"${!isVendor ? ' selected' : ''}>Buyer</option>
-              <option value="Supplier"${isVendor ? ' selected' : ''}>Supplier</option>
-            </select>
+            <div class="nx-party-group-combo">
+              <input id="pm-group" type="text" autocomplete="off" value="${foEscapeAttr(group === 'Vendor' ? 'Supplier' : group)}"
+                placeholder="Search or select group"
+                onfocus="hopPartyGroupOpenMenu()"
+                oninput="hopPartyGroupOnInput()"
+                onkeydown="if(event.key==='Escape'){hopPartyGroupCloseMenu();}" />
+              <button type="button" class="nx-party-group-caret" onclick="hopPartyGroupOpenMenu()" tabindex="-1" aria-label="Open groups">▾</button>
+              <div id="pm-group-menu" class="nx-party-group-menu hidden"></div>
+            </div>
           </label>
         </div>
 
@@ -1610,6 +1702,10 @@ function hopOpenPartyEditModal(kind, row) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  // Close group menu when clicking outside the combo.
+  modal.addEventListener('mousedown', (ev) => {
+    if (!ev.target.closest?.('.nx-party-group-combo')) hopPartyGroupCloseMenu();
+  });
   requestAnimationFrame(() => {
     modal.classList.add('is-open');
     hopPartyGstCheck();
@@ -1660,7 +1756,7 @@ async function hopSavePartyModal() {
     email: document.getElementById('pm-email')?.value || '',
     city,
     industry: gstType,
-    customer_type: group === 'Supplier' ? 'Vendor' : (group || 'Buyer'),
+    customer_type: group,
     hotel_brand: document.getElementById('pm-hotel')?.value || '',
     architect: document.getElementById('pm-architect')?.value || '',
     consultant: document.getElementById('pm-consultant')?.value || '',
@@ -4349,6 +4445,11 @@ window.hopSavePartyModal = hopSavePartyModal;
 window.hopDeleteFromPartyModal = hopDeleteFromPartyModal;
 window.hopPartySetCreditLimitMode = hopPartySetCreditLimitMode;
 window.hopPartyCopyBillingToShipping = hopPartyCopyBillingToShipping;
+window.hopPartyGroupOpenMenu = hopPartyGroupOpenMenu;
+window.hopPartyGroupCloseMenu = hopPartyGroupCloseMenu;
+window.hopPartyGroupOnInput = hopPartyGroupOnInput;
+window.hopPartyGroupSelect = hopPartyGroupSelect;
+window.hopPartyGroupCreateNew = hopPartyGroupCreateNew;
 window.hopSelectParty = hopSelectParty;
 window.hopFilterParties = hopFilterParties;
 window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
