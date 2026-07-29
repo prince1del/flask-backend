@@ -1023,6 +1023,10 @@ function hopGoBack() {
     document.getElementById('nx-confirm-cancel')?.click();
     return;
   }
+  if (document.getElementById('hop-party-txn-overlay')) {
+    hopClosePartyTxnDetail();
+    return;
+  }
   if (document.getElementById('hop-contact-detail-overlay')) {
     hopCloseContactDetail();
     return;
@@ -2540,13 +2544,18 @@ function hopPartyTxnRowHtml(row) {
   const balCell = (isEstimate || isJournal)
     ? `<td class="pty-txn-amt pty-txn-bal-na" title="${foEscapeAttr(isJournal ? 'Journal history only — Balance comes from Sale Paid/Open' : 'Estimates have no receivable balance')}">—</td>`
     : `<td class="pty-txn-amt${bal > 0 ? ' is-due' : ''}">₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>`;
-  return `<tr>
+  const id = Number(row.id || 0);
+  return `<tr class="pty-txn-row" role="button" tabindex="0"
+    onclick="hopOpenPartyTxnDetail(${id})"
+    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();hopOpenPartyTxnDetail(${id});}"
+    title="Click to view transaction">
     <td title="${foEscapeAttr(tip || label)}">${foEscapeText(label)}</td>
     <td class="pty-txn-no" title="${foEscapeAttr(row.txn_number || '')}">${foEscapeText(row.txn_number || '—')}</td>
     <td>${foEscapeText((row.txn_date || '').slice(0, 10))}</td>
     <td class="pty-txn-amt">₹ ${displayAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
     ${balCell}
     <td><span class="pty-status ${statusClass}">${foEscapeText(status)}</span></td>
+    <td class="pty-txn-view"><span class="pty-txn-view-ico" aria-hidden="true">›</span></td>
   </tr>`;
 }
 
@@ -2554,10 +2563,107 @@ function hopPartyTxnTableHtml(rows) {
   if (!rows.length) return '';
   return `<table class="pty-txn-table">
     <thead><tr>
-      <th>Type</th><th>Number</th><th>Date</th><th>Total</th><th>Balance</th><th>Status</th>
+      <th>Type</th><th>Number</th><th>Date</th><th>Total</th><th>Balance</th><th>Status</th><th></th>
     </tr></thead>
     <tbody>${rows.map(hopPartyTxnRowHtml).join('')}</tbody>
   </table>`;
+}
+
+function hopTxnModuleViewForType(ty) {
+  const t = Number(ty || 0);
+  if (HOP_TXN_SALE_INVOICE.has(t)) return 'sale_invoices';
+  if (HOP_TXN_ESTIMATE.has(t)) return 'sale_estimates';
+  if (HOP_TXN_PROFORMA.has(t)) return 'sale_proforma';
+  if (HOP_TXN_PAYMENT_IN.has(t)) return 'sale_payment_in';
+  if (HOP_TXN_SALE_ORDER.has(t)) return 'sale_orders';
+  if (HOP_TXN_CHALLAN.has(t)) return 'sale_challan';
+  if (HOP_TXN_SALE_RETURN.has(t)) return 'sale_returns';
+  if (HOP_TXN_PURCHASE_BILL.has(t)) return 'purchase_bills';
+  if (HOP_TXN_PAYMENT_OUT.has(t)) return 'purchase_payment_out';
+  if (HOP_TXN_EXPENSE.has(t)) return 'purchase_expenses';
+  if (HOP_TXN_PURCHASE_RETURN.has(t)) return 'purchase_returns';
+  if (HOP_TXN_JOURNAL.has(t)) return 'journal_entries';
+  return null;
+}
+
+function hopClosePartyTxnDetail() {
+  const el = document.getElementById('hop-party-txn-overlay');
+  if (!el) return;
+  el.classList.remove('is-open');
+  setTimeout(() => el.remove(), 220);
+}
+
+function hopOpenPartyTxnInModule(txnId) {
+  const row = (hopState._partyTxns || []).find((t) => Number(t.id) === Number(txnId));
+  if (!row) return;
+  const view = hopTxnModuleViewForType(row.txn_type);
+  if (!view) {
+    if (typeof nexoraToast === 'function') nexoraToast('No list module for this document type yet.', 'warn');
+    return;
+  }
+  hopClosePartyTxnDetail();
+  const q = String(row.txn_number || '').trim();
+  hopState.invoiceUi = {
+    ...(hopState.invoiceUi || {}),
+    period: 'all',
+    from: '',
+    to: '',
+    status: 'all',
+    q,
+    party: String(row.party_name || '').trim().toLowerCase(),
+  };
+  openHopView(view);
+}
+
+function hopOpenPartyTxnDetail(txnId) {
+  const row = (hopState._partyTxns || []).find((t) => Number(t.id) === Number(txnId));
+  if (!row) {
+    if (typeof nexoraToast === 'function') nexoraToast('Transaction not found.', 'error');
+    return;
+  }
+  const label = hopPartyTxnDisplayLabel(row);
+  const status = hopPartyTxnDisplayStatus(row);
+  const amt = Number(row.total_amount || 0);
+  const bal = Number(row.balance_amount || 0);
+  const money = (n) => `₹ ${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const view = hopTxnModuleViewForType(row.txn_type);
+  const fields = [
+    ['Type', label],
+    ['Number', row.txn_number || '—'],
+    ['Date', String(row.txn_date || '').slice(0, 10) || '—'],
+    ['Party', row.party_name || '—'],
+    ['Party type', row.party_type || '—'],
+    ['Total', money(amt)],
+    ['Balance', money(bal)],
+    ['Status', status],
+    ['Notes', row.notes || '—'],
+    ['Source ID', row.source_txn_id != null ? String(row.source_txn_id) : '—'],
+  ];
+  hopClosePartyTxnDetail();
+  const overlay = document.createElement('div');
+  overlay.id = 'hop-party-txn-overlay';
+  overlay.className = 'hop-detail-overlay hop-txn-overlay';
+  overlay.innerHTML = `
+    <div class="hop-detail-backdrop" onclick="hopClosePartyTxnDetail()"></div>
+    <div class="hop-detail-panel">
+      <div class="hop-detail-header">
+        <button type="button" class="nx-btn hop-detail-back" onclick="hopClosePartyTxnDetail()" title="Back">&larr;</button>
+        <h3 class="hop-detail-title">${foEscapeText(label)}</h3>
+      </div>
+      <div class="hop-detail-quick-actions">
+        ${view ? `<button type="button" class="nx-btn hop-detail-action-btn nx-btn-primary" onclick="hopOpenPartyTxnInModule(${Number(row.id)})">Open in list</button>` : ''}
+        <button type="button" class="nx-btn hop-detail-action-btn" onclick="hopClosePartyTxnDetail()">Close</button>
+      </div>
+      <div class="hop-detail-fields">
+        ${fields.map(([k, v]) => `
+          <div class="hop-detail-field">
+            <span class="hop-detail-label">${foEscapeText(k)}</span>
+            <span class="hop-detail-value">${foEscapeText(String(v ?? '—'))}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('is-open'));
 }
 
 async function renderHopPartiesModule(mount) {
@@ -6213,6 +6319,9 @@ window.hopInvoiceResetFilters = hopInvoiceResetFilters;
 window.hopInvoiceExportCsv = hopInvoiceExportCsv;
 window.hopSelectParty = hopSelectParty;
 window.hopFilterParties = hopFilterParties;
+window.hopOpenPartyTxnDetail = hopOpenPartyTxnDetail;
+window.hopClosePartyTxnDetail = hopClosePartyTxnDetail;
+window.hopOpenPartyTxnInModule = hopOpenPartyTxnInModule;
 window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
 window.hopRunVyaparImport = hopRunVyaparImport;
 window.hopPickVyaparBackup = hopPickVyaparBackup;

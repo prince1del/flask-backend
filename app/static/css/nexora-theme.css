@@ -2227,6 +2227,12 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   padding:8px;border-bottom:1px solid rgba(255,255,255,.03);
   color:var(--nxt-text,#e2e8f0);
 }
+.pty-txn-row{cursor:pointer;}
+.pty-txn-row:hover{background:rgba(37,224,255,.07);}
+.pty-txn-row:focus-visible{outline:2px solid rgba(37,224,255,.45);outline-offset:-2px;}
+.pty-txn-view{width:28px;text-align:right;color:var(--nxt-text-dim,#64748b);}
+.pty-txn-view-ico{font-size:1.1rem;font-weight:700;opacity:.75;}
+.pty-txn-row:hover .pty-txn-view-ico{color:#25e0ff;opacity:1;}
 .pty-txn-amt{text-align:right;font-variant-numeric:tabular-nums;}
 .pty-txn-amt.is-due{color:#f87171;}
 .pty-status{
