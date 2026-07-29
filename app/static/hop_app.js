@@ -1724,8 +1724,9 @@ async function hopDeleteFromPartyModal() {
 
 async function hopSavePartyModal() {
   const edit = hopState.contactEdit || { kind: 'customer', id: null };
-  const group = document.getElementById('pm-group')?.value || 'Buyer';
-  const asVendor = group === 'Supplier';
+  const group = String(document.getElementById('pm-group')?.value || 'Buyer').trim() || 'Buyer';
+  hopPartyGroupPersist(group);
+  const asVendor = /supplier|vendor/i.test(group);
   const kind = asVendor ? 'vendor' : 'customer';
   const saveKind = edit.id ? edit.kind : kind;
   const company = String(document.getElementById('pm-name')?.value || '').trim();
