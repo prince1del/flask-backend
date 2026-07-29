@@ -1866,15 +1866,21 @@ async function renderHopVendorsModule(mount) {
     <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
     ${hopIsMobileView()
       ? hopRenderMobileContactCards(rows, 'vendors')
-      : hopTable(
-        ['Company', 'Products', 'GST', 'Contact', 'Mobile', 'City', 'Rating', 'Lead Time', 'Payment Terms', 'On-time %', 'Quality'],
-        rows.map((r) => `<tr>
+      : `${hopRenderDesktopContactToolbar('vendors', rows.length)}
+         ${hopTable(
+        ['', 'Company', 'Products', 'GST', 'Contact', 'Mobile', 'City', 'Rating', 'Lead Time', 'Payment Terms', 'On-time %', 'Quality', ''],
+        rows.map((r) => {
+          const state = hopContactSelectState('vendors');
+          const checked = state.ids.includes(Number(r.id)) ? ' checked' : '';
+          return `<tr class="hop-clickable-row" onclick="hopOpenContactDetail('vendors', ${r.id})" style="cursor:pointer">
+          <td onclick="event.stopPropagation()"><input type="checkbox" class="hop-desk-check" value="${r.id}"${checked} onchange="hopToggleContactSelected('vendors', ${r.id}, this.checked)" /></td>
           <td>${hopCell(r.company)}</td><td>${hopCell(r.products)}</td><td>${hopCell(r.gst_no)}</td>
           <td>${hopCell(r.contact_person)}</td><td>${hopCell(r.mobile)}</td><td>${hopCell(r.city)}</td>
           <td>${hopCell(r.rating)}</td><td>${hopCell(r.lead_time_days)}</td><td>${hopCell(r.payment_terms)}</td>
           <td>${hopCell(r.on_time_pct)}</td><td>${hopCell(r.quality_rating)}</td>
-        </tr>`).join(''),
-      )}`;
+          <td><button type="button" class="nx-btn hop-contact-icon-btn hop-contact-icon-del" onclick="event.stopPropagation();hopDeleteContact('vendors', ${r.id}, '${foEscapeAttr(hopContactLabel(r))}')" title="Delete">${hopContactIcon('delete')}</button></td>
+        </tr>`}).join(''),
+      )}`}`;
   mount.innerHTML = hopModuleShell('Procurement', 'Vendors', 'Supplier performance & terms',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('vendor')">+ New Vendor</button>`, body);
   if (hopIsMobileView()) requestAnimationFrame(() => hopBindMobileContactCards('vendors'));
