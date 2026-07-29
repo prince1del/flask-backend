@@ -1706,7 +1706,7 @@ function hopOpenPartyEditModal(kind, row) {
         ${isEdit ? `<button type="button" class="nx-btn nx-party-btn-delete" onclick="hopDeleteFromPartyModal()">Delete</button>` : '<span></span>'}
         <div class="nx-party-foot-right">
           <button type="button" class="nx-btn" onclick="hopClosePartyEditModal()">Cancel</button>
-          <button type="button" class="nx-btn nx-btn-primary" onclick="hopSavePartyModal()">${isEdit ? 'Update' : 'Save'}</button>
+          <button type="button" id="pm-save-btn" class="nx-btn nx-btn-primary" onclick="hopSavePartyModal()">${isEdit ? 'Update' : 'Save'}</button>
         </div>
       </div>
     </div>`;
@@ -1732,81 +1732,115 @@ async function hopDeleteFromPartyModal() {
 }
 
 async function hopSavePartyModal() {
-  const edit = hopState.contactEdit || { kind: 'customer', id: null };
-  const group = String(document.getElementById('pm-group')?.value || 'Buyer').trim() || 'Buyer';
-  hopPartyGroupPersist(group);
-  const asVendor = /supplier|vendor/i.test(group);
-  const kind = asVendor ? 'vendor' : 'customer';
-  const saveKind = edit.id ? edit.kind : kind;
-  const company = String(document.getElementById('pm-name')?.value || '').trim();
-  if (!company) {
-    alert('Party Name is required');
-    document.getElementById('pm-name')?.focus();
-    return;
-  }
-  const state = document.getElementById('pm-state')?.value || '';
-  const city = String(document.getElementById('pm-city')?.value || '').trim() || null;
-  const gstType = document.getElementById('pm-gst-type')?.value || '';
-  const creditNoLimit = document.getElementById('pm-credit-no-limit')?.value === '1' ? 1 : 0;
-  const sharedExtra = {
-    billing_name: document.getElementById('pm-billing')?.value || company,
-    shipping_address: document.getElementById('pm-shipping')?.value || '',
-    state,
-    gst_type: gstType,
-    opening_balance: document.getElementById('pm-opening-balance')?.value || '',
-    opening_balance_date: document.getElementById('pm-opening-date')?.value || '',
-    credit_limit: creditNoLimit ? '' : (document.getElementById('pm-credit-limit')?.value || ''),
-    credit_no_limit: creditNoLimit,
-    additional_fields: hopPartyCollectAdditionalFields(),
-  };
-  const payloadCustomer = {
-    company,
-    contact_person: document.getElementById('pm-contact')?.value || '',
-    mobile: document.getElementById('pm-phone')?.value || '',
-    email: document.getElementById('pm-email')?.value || '',
-    city,
-    industry: gstType,
-    customer_type: group,
-    hotel_brand: document.getElementById('pm-hotel')?.value || '',
-    architect: document.getElementById('pm-architect')?.value || '',
-    consultant: document.getElementById('pm-consultant')?.value || '',
-    potential_rating: document.getElementById('pm-rating')?.value || '',
-    assigned_to: document.getElementById('pm-assigned')?.value || '',
-    address: document.getElementById('pm-address')?.value || '',
-    gst_no: document.getElementById('pm-gstin')?.value || '',
-    pan: document.getElementById('pm-pan')?.value || '',
-    status: document.getElementById('pm-status')?.value || 'active',
-    remarks: document.getElementById('pm-remarks')?.value || '',
-    ...sharedExtra,
-  };
-  const payloadVendor = {
-    company,
-    contact_person: document.getElementById('pm-contact')?.value || '',
-    mobile: document.getElementById('pm-phone')?.value || '',
-    email: document.getElementById('pm-email')?.value || '',
-    city,
-    products: document.getElementById('pm-products')?.value || '',
-    gst_no: document.getElementById('pm-gstin')?.value || '',
-    payment_terms: document.getElementById('pm-payterms')?.value || '',
-    rating: document.getElementById('pm-rating')?.value || '',
-    address: document.getElementById('pm-address')?.value || '',
-    status: document.getElementById('pm-status')?.value || 'active',
-    ...sharedExtra,
-  };
-  const payload = saveKind === 'vendor' ? payloadVendor : payloadCustomer;
-  const urlBase = saveKind === 'vendor' ? '/api/v1/hop/vendors' : '/api/v1/hop/customers';
+  const btn = document.getElementById('pm-save-btn');
+  const prevLabel = btn?.textContent || 'Update';
   try {
-    await hopApi(edit.id ? `${urlBase}/${edit.id}` : urlBase, {
-      method: edit.id ? 'PATCH' : 'POST',
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+    }
+    const edit = hopState.contactEdit || { kind: 'customer', id: null };
+    const group = String(document.getElementById('pm-group')?.value || 'Buyer').trim() || 'Buyer';
+    hopPartyGroupPersist(group);
+    const asVendor = /supplier|vendor/i.test(group);
+    const kind = asVendor ? 'vendor' : 'customer';
+    const saveKind = edit.id ? edit.kind : kind;
+    const company = String(document.getElementById('pm-name')?.value || '').trim();
+    if (!company) {
+      alert('Party Name is required');
+      document.getElementById('pm-name')?.focus();
+      return;
+    }
+
+    // Auto-fill state from address if user left it blank.
+    let state = document.getElementById('pm-state')?.value || '';
+    if (!state) {
+      const blob = `${document.getElementById('pm-address')?.value || ''} ${document.getElementById('pm-shipping')?.value || ''}`;
+      const hit = HOP_INDIAN_STATES.find((s) => blob.toLowerCase().includes(s.toLowerCase()));
+      if (hit) {
+        state = hit;
+        const sel = document.getElementById('pm-state');
+        if (sel) sel.value = hit;
+      }
+    }
+
+    const city = String(document.getElementById('pm-city')?.value || '').trim() || null;
+    const gstType = document.getElementById('pm-gst-type')?.value || '';
+    const creditNoLimit = document.getElementById('pm-credit-no-limit')?.value === '1' ? 1 : 0;
+    let additionalFields = '[]';
+    try {
+      additionalFields = hopPartyCollectAdditionalFields();
+    } catch (_) {
+      additionalFields = '[]';
+    }
+    const sharedExtra = {
+      billing_name: document.getElementById('pm-billing')?.value || company,
+      shipping_address: document.getElementById('pm-shipping')?.value || '',
+      state,
+      gst_type: gstType,
+      opening_balance: document.getElementById('pm-opening-balance')?.value || '',
+      opening_balance_date: document.getElementById('pm-opening-date')?.value || '',
+      credit_limit: creditNoLimit ? '' : (document.getElementById('pm-credit-limit')?.value || ''),
+      credit_no_limit: creditNoLimit,
+      additional_fields: additionalFields,
+    };
+    const payloadCustomer = {
+      company,
+      contact_person: document.getElementById('pm-contact')?.value || '',
+      mobile: document.getElementById('pm-phone')?.value || '',
+      email: document.getElementById('pm-email')?.value || '',
+      city,
+      industry: gstType,
+      customer_type: group,
+      hotel_brand: document.getElementById('pm-hotel')?.value || '',
+      architect: document.getElementById('pm-architect')?.value || '',
+      consultant: document.getElementById('pm-consultant')?.value || '',
+      potential_rating: document.getElementById('pm-rating')?.value || '',
+      assigned_to: document.getElementById('pm-assigned')?.value || '',
+      address: document.getElementById('pm-address')?.value || '',
+      gst_no: document.getElementById('pm-gstin')?.value || '',
+      pan: document.getElementById('pm-pan')?.value || '',
+      status: document.getElementById('pm-status')?.value || 'active',
+      remarks: document.getElementById('pm-remarks')?.value || '',
+      ...sharedExtra,
+    };
+    const payloadVendor = {
+      company,
+      contact_person: document.getElementById('pm-contact')?.value || '',
+      mobile: document.getElementById('pm-phone')?.value || '',
+      email: document.getElementById('pm-email')?.value || '',
+      city,
+      products: document.getElementById('pm-products')?.value || '',
+      gst_no: document.getElementById('pm-gstin')?.value || '',
+      payment_terms: document.getElementById('pm-payterms')?.value || '',
+      rating: document.getElementById('pm-rating')?.value || '',
+      address: document.getElementById('pm-address')?.value || '',
+      status: document.getElementById('pm-status')?.value || 'active',
+      ...sharedExtra,
+    };
+    const payload = saveKind === 'vendor' ? payloadVendor : payloadCustomer;
+    const urlBase = saveKind === 'vendor' ? '/api/v1/hop/vendors' : '/api/v1/hop/customers';
+    const isEdit = !!(edit && edit.id);
+    const result = await hopApi(isEdit ? `${urlBase}/${edit.id}` : urlBase, {
+      method: isEdit ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (result == null) {
+      throw new Error('Session expired or save blocked. Please login again and retry Update.');
+    }
     hopState.customers = [];
     hopState.vendors = [];
     hopClosePartyEditModal();
     openHopView(hopContactReturnView(saveKind === 'vendor' ? 'vendors' : 'customers'));
   } catch (e) {
-    alert(e.message || 'Save failed');
+    console.error('hopSavePartyModal failed', e);
+    alert(e?.message || 'Save failed');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = prevLabel;
+    }
   }
 }
 

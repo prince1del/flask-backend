@@ -382,6 +382,8 @@ def customers_get_or_delete(customer_id: int):
                 row = hop_db.update_customer(conn, _ws(), customer_id, _payload())
         except ValueError as exc:
             return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc).lower() else "BAD_REQUEST", 404 if "not found" in str(exc).lower() else 400)
+        except Exception as exc:
+            return _json_error(f"Update failed: {exc}", "UPDATE_ERROR", 500)
         return jsonify({"success": True, "data": row})
     if request.method == "DELETE":
         try:
@@ -598,6 +600,8 @@ def vendors_get_or_delete(vendor_id: int):
                 row = hop_ops.update_vendor(conn, _ws(), vendor_id, _payload())
         except ValueError as exc:
             return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc).lower() else "BAD_REQUEST", 404 if "not found" in str(exc).lower() else 400)
+        except Exception as exc:
+            return _json_error(f"Update failed: {exc}", "UPDATE_ERROR", 500)
         return jsonify({"success": True, "data": row})
     if request.method == "GET":
         with hop_db.connect(_db_path()) as conn:
