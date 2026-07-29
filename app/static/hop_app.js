@@ -4266,6 +4266,17 @@ async function renderHopSaleDocListModule(mount, kind) {
     hopState.invoiceUi.from = range.from;
     hopState.invoiceUi.to = range.to;
   }
+  // Delivery Challan / older docs: default "This Month" can hide everything.
+  // If the range filters to zero but data exists, open All Time automatically.
+  if (
+    String(hopState.invoiceUi.period || '') === 'this_month'
+    && rows.length > 0
+    && hopFilteredInvoices().length === 0
+  ) {
+    hopState.invoiceUi.period = 'all';
+    hopState.invoiceUi.from = '';
+    hopState.invoiceUi.to = '';
+  }
   const ui = hopState.invoiceUi;
   const parties = [...new Set(rows.map((r) => r.customer_company || r.party_name || r.client_name).filter(Boolean))]
     .sort((a, b) => String(a).localeCompare(String(b)));
@@ -5218,9 +5229,14 @@ function hopInvoiceSummary(rows) {
 }
 
 function hopRenderInvoiceRows(rows) {
-  const empty = hopSaleDocMeta().empty || 'No invoices in this filter.';
+  const meta = hopSaleDocMeta();
+  const empty = meta.empty || 'No invoices in this filter.';
   if (!rows.length) {
-    return `<tr><td colspan="8" class="inv-empty">${foEscapeText(empty)}</td></tr>`;
+    const total = (hopState.invoices || []).length;
+    const tip = total > 0
+      ? `${empty} (${total} total outside this date/status filter — switch period to All Time.)`
+      : empty;
+    return `<tr><td colspan="8" class="inv-empty">${foEscapeText(tip)}</td></tr>`;
   }
   return rows.map((r) => {
     const eff = hopInvoiceEffectiveStatus(r);
