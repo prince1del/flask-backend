@@ -30,6 +30,84 @@ def _json_error(message: str, code: str = "BAD_REQUEST", status: int = 400):
     return jsonify({"success": False, "error": {"code": code, "message": message}}), status
 
 
+def _unique_party_names(matches: list) -> list[str]:
+    """Distinct company names for user-facing duplicate copy (no scores)."""
+    seen: set[str] = set()
+    names: list[str] = []
+    for m in matches or []:
+        name = str((m or {}).get("company") or "").strip()
+        key = name.casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+    return names
+
+
+def _party_duplicate_confirm_payload(matches: list) -> tuple[dict, int]:
+    """Professional 409 body — names only, no % / fuzzy jargon."""
+    names = _unique_party_names(matches)
+    if not names:
+        message = "A party with a similar name is already saved. Do you really want to save this as a new party?"
+    elif len(names) == 1:
+        message = (
+            f'A party is already saved as "{names[0]}". '
+            "Do you really want to save this as a new party?"
+        )
+    else:
+        listed = ", ".join(f'"{n}"' for n in names[:3])
+        message = (
+            f"Similar parties are already saved: {listed}. "
+            "Do you really want to save this as a new party?"
+        )
+    # Deduped matches for UI (keep best score per name, drop technical noise from message).
+    deduped = []
+    seen_keys: set[str] = set()
+    for m in matches or []:
+        key = str((m or {}).get("company") or "").strip().casefold()
+        if not key or key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(m)
+    return (
+        {
+            "success": False,
+            "requires_confirmation": True,
+            "message": message,
+            "data": {"matches": deduped},
+        },
+        409,
+    )
+
+
+def _maybe_party_duplicate_response(
+    payload: dict,
+    *,
+    exclude_id: int | None = None,
+    exclude_party_type: str | None = None,
+):
+    """Return 409 jsonify tuple if similar parties exist (unless force_save)."""
+    if payload.get("force_save"):
+        return None
+    from app.hop_party_match import find_party_matches
+
+    with hop_db.connect(_db_path()) as conn:
+        matches = find_party_matches(
+            conn,
+            _ws(),
+            company=str(payload.get("company") or ""),
+            gst_no=str(payload.get("gst_no") or ""),
+            mobile=str(payload.get("mobile") or ""),
+            party_type="both",
+            exclude_id=exclude_id,
+            exclude_party_type=exclude_party_type,
+        )
+    if not matches:
+        return None
+    body, status = _party_duplicate_confirm_payload(matches)
+    return jsonify(body), status
+
+
 def _count(conn: sqlite3.Connection, sql: str, params: tuple) -> int:
     row = conn.execute(sql, params).fetchone()
     return int(row[0] or 0) if row else 0
@@ -88,6 +166,21 @@ def hop_health():
     )
 
 
+@hop_bp.route("/gstin-lookup", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_gstin_lookup():
+    """Decode GSTIN (state/PAN) and optionally fetch taxpayer address online."""
+    from app.services.gstin_lookup import lookup_gstin, normalize_gstin
+
+    body = _payload() if request.method == "POST" else {}
+    gstin = normalize_gstin(body.get("gstin") or request.args.get("gstin") or "")
+    if not gstin:
+        return _json_error("gstin is required", "VALIDATION_ERROR", 400)
+    data = lookup_gstin(gstin)
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/vyapar-import/preview", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -131,6 +224,24 @@ def vyapar_import_apply():
         return _json_error(str(exc), "BAD_BACKUP", 400)
     except Exception as exc:
         return _json_error(f"Import failed: {exc}", "IMPORT_FAILED", 500)
+    return jsonify({"success": True, "data": result})
+
+
+@hop_bp.route("/settings/wipe-data", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def settings_wipe_data():
+    """Wipe all hop_* business data. Password gate reserved for later."""
+    ensure_hop_schema(_db_path())
+    payload = _payload()
+    # Future: require password when HOP_WIPE_PASSWORD is configured.
+    # For now the UI is open; password field is accepted but not enforced.
+    _ = str(payload.get("password") or "").strip()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            result = hop_ops.wipe_hop_data(conn)
+    except Exception as exc:
+        return _json_error(f"Wipe failed: {exc}", "WIPE_FAILED", 500)
     return jsonify({"success": True, "data": result})
 
 
@@ -332,9 +443,13 @@ def customers_list():
 @require_role(HOP_ROLE)
 def customers_create():
     ensure_hop_schema(_db_path())
+    payload = _payload()
+    blocked = _maybe_party_duplicate_response(payload)
+    if blocked:
+        return blocked
     try:
         with hop_db.connect(_db_path()) as conn:
-            row = hop_db.create_customer(conn, _ws(), _payload())
+            row = hop_db.create_customer(conn, _ws(), payload)
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": row}), 201
@@ -377,9 +492,17 @@ def customers_scan_card():
 def customers_get_or_delete(customer_id: int):
     ensure_hop_schema(_db_path())
     if request.method == "PATCH":
+        payload = _payload()
+        blocked = _maybe_party_duplicate_response(
+            payload,
+            exclude_id=customer_id,
+            exclude_party_type="customer",
+        )
+        if blocked:
+            return blocked
         try:
             with hop_db.connect(_db_path()) as conn:
-                row = hop_db.update_customer(conn, _ws(), customer_id, _payload())
+                row = hop_db.update_customer(conn, _ws(), customer_id, payload)
         except ValueError as exc:
             return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc).lower() else "BAD_REQUEST", 404 if "not found" in str(exc).lower() else 400)
         except Exception as exc:
@@ -595,9 +718,17 @@ def quotations_revise(quote_id: int):
 def vendors_get_or_delete(vendor_id: int):
     ensure_hop_schema(_db_path())
     if request.method == "PATCH":
+        payload = _payload()
+        blocked = _maybe_party_duplicate_response(
+            payload,
+            exclude_id=vendor_id,
+            exclude_party_type="vendor",
+        )
+        if blocked:
+            return blocked
         try:
             with hop_db.connect(_db_path()) as conn:
-                row = hop_ops.update_vendor(conn, _ws(), vendor_id, _payload())
+                row = hop_ops.update_vendor(conn, _ws(), vendor_id, payload)
         except ValueError as exc:
             return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc).lower() else "BAD_REQUEST", 404 if "not found" in str(exc).lower() else 400)
         except Exception as exc:
@@ -645,12 +776,42 @@ def vendors_collection():
         with hop_db.connect(_db_path()) as conn:
             rows = hop_ops.list_vendors(conn, _ws(), q=request.args.get("q"))
         return jsonify({"success": True, "data": rows})
+    payload = _payload()
+    blocked = _maybe_party_duplicate_response(payload)
+    if blocked:
+        return blocked
     try:
         with hop_db.connect(_db_path()) as conn:
-            row = hop_ops.create_vendor(conn, _ws(), _payload())
+            row = hop_ops.create_vendor(conn, _ws(), payload)
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/parties/check-duplicates", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def parties_check_duplicates():
+    """Preview fuzzy/exact duplicate parties before save."""
+    ensure_hop_schema(_db_path())
+    from app.hop_party_match import find_party_matches
+
+    payload = _payload()
+    company = str(payload.get("company") or payload.get("name") or "").strip()
+    if not company:
+        return _json_error("company is required", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        matches = find_party_matches(
+            conn,
+            _ws(),
+            company=company,
+            gst_no=str(payload.get("gst_no") or ""),
+            mobile=str(payload.get("mobile") or ""),
+            party_type=str(payload.get("party_type") or "both"),
+            exclude_id=payload.get("exclude_id"),
+            exclude_party_type=payload.get("exclude_party_type"),
+        )
+    return jsonify({"success": True, "data": {"matches": matches, "count": len(matches)}})
 
 
 @hop_bp.route("/vendor-comparisons", methods=["GET", "POST"])
@@ -1090,6 +1251,13 @@ def party_transactions_collection():
     ensure_hop_schema(_db_path())
     party_type = (request.args.get("party_type") or "").strip().lower()
     party_id = request.args.get("party_id", type=int)
+    txn_types_raw = (request.args.get("txn_types") or request.args.get("txn_type") or "").strip()
+    txn_types: list[int] = []
+    if txn_types_raw:
+        for part in txn_types_raw.replace(" ", "").split(","):
+            if part.isdigit():
+                txn_types.append(int(part))
+    label_q = (request.args.get("label_q") or "").strip()
     with hop_db.connect(_db_path()) as conn:
         sql = """
             SELECT *
@@ -1103,6 +1271,13 @@ def party_transactions_collection():
         if party_id:
             sql += " AND party_id=?"
             params.append(int(party_id))
+        if txn_types:
+            placeholders = ",".join("?" for _ in txn_types)
+            sql += f" AND txn_type IN ({placeholders})"
+            params.extend(txn_types)
+        if label_q:
+            sql += " AND LOWER(COALESCE(txn_label, '')) LIKE ?"
+            params.append(f"%{label_q.lower()}%")
         sql += " ORDER BY date(txn_date) DESC, id DESC"
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     return jsonify({"success": True, "data": rows})

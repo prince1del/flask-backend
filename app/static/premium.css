@@ -3522,7 +3522,8 @@ body.nexora-ask-open #dashboard-widget-dock {
   position: fixed;
   top: calc(var(--nx-header-h, 64px) + 12px);
   right: 16px;
-  z-index: 12000;
+  /* Above .nx-party-modal (13000) so Save/validation errors are visible */
+  z-index: 250000;
   display: flex;
   flex-direction: column;
   gap: 10px;

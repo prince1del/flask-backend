@@ -5,24 +5,35 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import zipfile
+import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-SALE_LIKE_TYPES = {1, 21, 27, 30, 65, 83}
+# Only tax Sale Invoices mirror into hop_invoices.
+# NOTE: In this Vyapar dataset, txn_type 27 is Estimate (UI "Estimate", series HOPPI…),
+# not a Sale bill. Real sales are txn_type 1 (Sale Invoice).
+INVOICE_TYPES = {1}
+# Estimates / quotations (Vyapar type 27 + legacy type 30)
+QUOTATION_TYPES = {27, 30}
 
 
 def _txn_label(txn_type: int) -> str:
     labels = {
         1: "Sale Invoice",
         2: "Purchase Bill",
-        3: "Payment Out",
-        4: "Payment In",
+        # Vyapar: 3 = Payment-In, 4 = Payment-Out (was swapped earlier).
+        3: "Payment In",
+        4: "Payment Out",
         7: "Expense",
+        16: "Purchase Return",
         21: "Sale Return",
-        27: "Sale",
+        # Vyapar stores Estimates as type 27 for this firm (shown as Estimate + HOPPI prefix in UI).
+        27: "Estimate",
         30: "Estimate/Quotation",
         65: "Sales Order",
-        81: "Purchase Order",
+        # In this Vyapar firm, type 81 is Journal Entry (not PO / Sale Order).
+        81: "Journal Entry",
         82: "Delivery Challan",
         83: "Proforma Invoice",
     }
@@ -48,6 +59,233 @@ def _digits(value: Any) -> str:
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _num_or_none(value: Any) -> float | None:
+    """Parse number; treat missing/blank as None. Zero is a valid value (e.g. Paid balance)."""
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _num(value: Any, default: float = 0.0) -> float:
+    n = _num_or_none(value)
+    return default if n is None else n
+
+
+def _vyapar_txn_amount(t: dict[str, Any], paid_mapped: float = 0.0) -> float:
+    """Invoice/doc total as shown in Vyapar Sale Invoices.
+
+    Critical: txn_balance_amount is the *bill total* (not only 'due'). When the bill
+    is paid, current_balance=0 but balance_amount often still holds the original total.
+    Tax-inclusive bills (txn_tax_inclusive=2) must NOT use line+tax — that double-counts.
+    """
+    bal = _num(t.get("txn_balance_amount"))
+    if bal > 0.009:
+        return bal
+    mapped = max(0.0, float(paid_mapped or 0))
+    if mapped > 0.009:
+        return mapped
+    cur = _num_or_none(t.get("txn_current_balance"))
+    if cur is not None and cur > 0.009:
+        return cur
+    line = _num(t.get("line_total"))
+    tax = _num(t.get("line_tax_total")) or _num(t.get("txn_tax_amount"))
+    round_off = _num(t.get("txn_round_off_amount"))
+    inclusive = int(t.get("txn_tax_inclusive") or 0) in (1, 2)
+    if line > 0.009:
+        if inclusive:
+            return line + round_off
+        return line + tax + round_off
+    cash = abs(_num(t.get("txn_cash_amount"))) or abs(_num(t.get("txn_received_amount"))) or abs(
+        _num(t.get("txn_paid_amount"))
+    )
+    if cash > 0.009:
+        return cash
+    return max(bal, line)
+
+
+def _vyapar_due_balance(t: dict[str, Any], amount: float, paid_from_mapping: float) -> float:
+    """Remaining due. CRITICAL: current_balance=0 means Paid — must not fall through via `or`."""
+    # Journals are adjustments, not open bills — never store a "due" on the journal row.
+    if int(t.get("txn_type") or 0) == 81:
+        return 0.0
+    cur = _num_or_none(t.get("txn_current_balance"))
+    if cur is not None:
+        return max(0.0, cur)
+    paid = max(0.0, paid_from_mapping)
+    if paid > 0.009 and amount > 0.009:
+        return max(0.0, amount - paid)
+    bal = _num_or_none(t.get("txn_balance_amount"))
+    if bal is not None:
+        if paid > 0.009 and abs(bal - amount) < 0.05:
+            return max(0.0, amount - paid)
+        return max(0.0, bal)
+    return max(0.0, amount - paid)
+
+
+def _vyapar_status_label(
+    raw_status: Any,
+    due_amt: float,
+    amount: float,
+    *,
+    txn_type: int = 0,
+    paid_mapped: float = 0.0,
+) -> str:
+    """Partial only when money was actually received against the bill."""
+    base = _status_label(raw_status)
+    # Estimates / orders / proforma — not payment-tracked like invoices.
+    # Journals: Posted (write-off / adjustment), never Partial/Paid.
+    if txn_type in (27, 30, 65, 83):
+        return base or "Approved"
+    if txn_type == 81:
+        return "Posted"
+    if due_amt <= 0.009 and amount > 0.009:
+        return "Paid"
+    # Never mark Partial just because line+tax inflated total > balance.
+    if float(paid_mapped or 0) > 0.009 and 0.009 < due_amt < amount - 0.05:
+        return "Partial"
+    return base or "Open"
+
+
+def _table_names(conn: sqlite3.Connection) -> set[str]:
+    return {
+        str(r[0])
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+
+
+def _table_cols(conn: sqlite3.Connection, table: str) -> list[str]:
+    try:
+        return [str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    except Exception:
+        return []
+
+
+def _load_txn_type_prefixes(conn: sqlite3.Connection) -> dict[int, str]:
+    """Best-effort map of Vyapar txn_type -> invoice/doc prefix."""
+    prefixes: dict[int, str] = {}
+    tables = _table_names(conn)
+
+    # 1) Any table that looks like a prefix / number-series table
+    for tname in tables:
+        low = tname.lower()
+        if not any(tok in low for tok in ("prefix", "series", "number_series", "txn_number")):
+            continue
+        cols = {c.lower(): c for c in _table_cols(conn, tname)}
+        type_col = (
+            cols.get("txn_type")
+            or cols.get("transaction_type")
+            or cols.get("txn_type_id")
+            or cols.get("type_id")
+            or cols.get("type")
+        )
+        pfx_col = (
+            cols.get("prefix")
+            or cols.get("invoice_prefix")
+            or cols.get("number_prefix")
+            or cols.get("txn_prefix")
+            or cols.get("series_prefix")
+        )
+        if not type_col or not pfx_col:
+            continue
+        try:
+            for row in conn.execute(f"SELECT {type_col}, {pfx_col} FROM [{tname}]").fetchall():
+                try:
+                    ty = int(row[0])
+                except Exception:
+                    continue
+                pfx = _clean(row[1])
+                if pfx:
+                    prefixes[ty] = pfx
+        except Exception:
+            continue
+
+    # 2) kb_settings keys that mention prefix + type id
+    if "kb_settings" in tables:
+        cols = {c.lower(): c for c in _table_cols(conn, "kb_settings")}
+        key_c = cols.get("setting_key") or cols.get("key")
+        val_c = cols.get("setting_value") or cols.get("value")
+        if key_c and val_c:
+            label_to_type = {
+                "saleinvoice": 1,
+                "sale_invoice": 1,
+                "estimate": 27,
+                "quotation": 27,
+                "estimatequotation": 27,
+                "proforma": 83,
+                "proformainvoice": 83,
+                "salesorder": 65,
+                "saleorder": 65,
+                "purchaseorder": 66,
+                "purchase_order": 66,
+                "journal": 81,
+                "journalentry": 81,
+                "deliverychallan": 82,
+                "challan": 82,
+                "salereturn": 21,
+                "creditnote": 21,
+                "paymentin": 3,
+                "paymentout": 4,
+            }
+            try:
+                for row in conn.execute(f"SELECT {key_c}, {val_c} FROM kb_settings").fetchall():
+                    key = str(row[0] or "")
+                    val = _clean(row[1])
+                    if not val or "prefix" not in key.lower():
+                        continue
+                    m = re.search(r"(?:txn[_\s-]?type|type)[_\s-]?(\d+)|(?:^|[_\-.])(\d+)(?:$|[_\-.])", key, re.I)
+                    if m:
+                        ty = int(m.group(1) or m.group(2))
+                        prefixes.setdefault(ty, val)
+                        continue
+                    low = re.sub(r"[^a-z0-9]+", "", key.lower())
+                    for token, ty in label_to_type.items():
+                        if token in low:
+                            prefixes.setdefault(ty, val)
+                            break
+            except Exception:
+                pass
+    return prefixes
+
+
+def _infer_prefixes_from_refs(txns: list[dict[str, Any]]) -> dict[int, str]:
+    """Infer prefix from full refs already present (e.g. HOPPI327 → HOPPI)."""
+    by_type: dict[int, list[str]] = {}
+    for t in txns:
+        ty = int(t.get("txn_type") or 0)
+        ref = _clean(t.get("txn_ref_number_char") or t.get("doc_number"))
+        if not ref or not re.search(r"[A-Za-z]", ref):
+            continue
+        m = re.match(r"^(.*?)(\d+)$", ref)
+        if m and _clean(m.group(1)):
+            by_type.setdefault(ty, []).append(m.group(1))
+    out: dict[int, str] = {}
+    for ty, cands in by_type.items():
+        if cands:
+            out[ty] = Counter(cands).most_common(1)[0][0]
+    return out
+
+
+def _compose_doc_number(ref: str, txn_type: int, prefixes: dict[int, str]) -> str:
+    """Return full document number (prefix + sequence) when possible."""
+    ref = _clean(ref)
+    if not ref:
+        return ""
+    # Already a full-looking number (letters and/or slash path)
+    if re.search(r"[A-Za-z]", ref) or "/" in ref:
+        return ref
+    pfx = _clean(prefixes.get(int(txn_type or 0), ""))
+    if not pfx:
+        return ref
+    if ref.startswith(pfx):
+        return ref
+    return f"{pfx}{ref}"
 
 
 def _guess_customer_type(name: str) -> str:
@@ -167,18 +405,51 @@ def _fetch_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT t.txn_id, t.txn_type, t.txn_date, t.txn_due_date, t.txn_ref_number_char,
-               t.txn_display_name, t.txn_description, t.txn_balance_amount, t.txn_current_balance,
-               t.txn_tax_amount, t.txn_discount_amount, t.txn_name_id, t.txn_status,
+    cols = set(_table_cols(conn, "kb_transactions"))
+    select_cols = [
+        "t.txn_id",
+        "t.txn_type",
+        "t.txn_date",
+        "t.txn_due_date",
+        "t.txn_ref_number_char",
+        "t.txn_display_name",
+        "t.txn_description",
+        "t.txn_balance_amount",
+        "t.txn_current_balance",
+        "t.txn_tax_amount",
+        "t.txn_discount_amount",
+        "t.txn_name_id",
+        "t.txn_status",
+    ]
+    # Optional columns that may hold a fuller document number / prefix / cash
+    for opt in (
+        "additional_details_json",
+        "txn_prefix",
+        "invoice_prefix",
+        "prefix",
+        "full_ref_number",
+        "txn_full_ref_number",
+        "bill_number",
+        "invoice_number",
+        "txn_cash_amount",
+        "txn_received_amount",
+        "txn_paid_amount",
+        "txn_tax_inclusive",
+        "txn_round_off_amount",
+    ):
+        if opt in cols:
+            select_cols.append(f"t.{opt}")
+
+    sql = f"""
+        SELECT {", ".join(select_cols)},
                n.full_name AS party_name, n.name_group_id
         FROM kb_transactions t
         LEFT JOIN kb_names n ON n.name_id = t.txn_name_id
         WHERE trim(coalesce(t.txn_ref_number_char, '')) != '' OR t.txn_name_id IS NOT NULL
         ORDER BY t.txn_id
-        """
-    ).fetchall()
+    """
+    rows = conn.execute(sql).fetchall()
+    schema_prefixes = _load_txn_type_prefixes(conn)
     out: list[dict[str, Any]] = []
     for r in rows:
         d = dict(r)
@@ -190,7 +461,59 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         d["line_tax_total"] = float(sums[1] or 0)
         d["txn_label"] = _txn_label(int(d.get("txn_type") or 0))
         d["status_label"] = _status_label(d.get("txn_status"))
+
+        # Prefer any explicit prefix column on the row itself
+        row_pfx = _clean(d.get("txn_prefix") or d.get("invoice_prefix") or d.get("prefix"))
+        raw_ref = _clean(
+            d.get("full_ref_number")
+            or d.get("txn_full_ref_number")
+            or d.get("invoice_number")
+            or d.get("bill_number")
+            or d.get("txn_ref_number_char")
+        )
+        # Parse JSON blob if present
+        blob = d.get("additional_details_json")
+        if blob and not re.search(r"[A-Za-z/]", raw_ref):
+            try:
+                import json
+
+                j = json.loads(blob) if isinstance(blob, str) else blob
+                if isinstance(j, dict):
+                    for k in (
+                        "invoiceNumber",
+                        "invoice_number",
+                        "fullNumber",
+                        "full_number",
+                        "txnNumber",
+                        "number",
+                        "billNumber",
+                        "refNumber",
+                    ):
+                        if _clean(j.get(k)):
+                            raw_ref = _clean(j.get(k))
+                            break
+                    if not row_pfx:
+                        row_pfx = _clean(j.get("prefix") or j.get("invoicePrefix") or j.get("numberPrefix"))
+            except Exception:
+                pass
+
+        ty = int(d.get("txn_type") or 0)
+        local_prefixes = dict(schema_prefixes)
+        if row_pfx:
+            local_prefixes[ty] = row_pfx
+        d["doc_number"] = _compose_doc_number(raw_ref, ty, local_prefixes)
+        d["txn_ref_number_char"] = d["doc_number"] or raw_ref
         out.append(d)
+
+    # Second pass: infer prefixes from full numbers already present, fill remaining short refs.
+    inferred = _infer_prefixes_from_refs(out)
+    merged = {**schema_prefixes, **inferred}
+    for d in out:
+        ty = int(d.get("txn_type") or 0)
+        current = _clean(d.get("doc_number") or d.get("txn_ref_number_char"))
+        full = _compose_doc_number(current, ty, merged)
+        d["doc_number"] = full
+        d["txn_ref_number_char"] = full
     return out
 
 
@@ -305,6 +628,11 @@ def import_vyapar_backup(
         existing_products = {
             _clean(r.get("name")).lower(): r for r in hop_ops_module.list_products(target_conn, workspace_id)
         }
+        existing_products_by_code = {
+            _clean(r.get("code")).lower(): r
+            for r in hop_ops_module.list_products(target_conn, workspace_id)
+            if _clean(r.get("code"))
+        }
 
         out = {
             "customers_created": 0,
@@ -315,11 +643,27 @@ def import_vyapar_backup(
             "products_skipped": 0,
             "invoices_created": 0,
             "invoices_skipped": 0,
+            "quotations_created": 0,
+            "quotations_skipped": 0,
             "payments_created": 0,
             "party_txns_created": 0,
             "party_txns_skipped": 0,
+            "party_fuzzy_matched": 0,
             "errors": [],
         }
+
+        from app.hop_party_match import resolve_existing_party
+
+        def _lookup_in_maps(existing_row: dict, prefer: str) -> dict | None:
+            if not existing_row:
+                return None
+            maps = existing_vendors if prefer == "vendor" else existing_customers
+            eid = int(existing_row.get("id") or 0)
+            for row in maps.values():
+                if int(row.get("id") or 0) == eid:
+                    return row
+            key2 = _clean(existing_row.get("company")).lower()
+            return maps.get(key2)
 
         for p in parties:
             name = _clean(p.get("full_name"))
@@ -340,13 +684,32 @@ def import_vyapar_backup(
                 "address": addr,
                 "gst_no": _clean(p.get("name_gstin_number")).upper(),
             }
+            prefer = "vendor" if p.get("name_group_id") == 2 else "customer"
             try:
-                if p.get("name_group_id") == 2:
-                    existing = existing_vendors.get(key)
-                    if existing:
-                        _update_if_empty(hop_ops_module.update_vendor, target_conn, workspace_id, existing, payload)
+                existing, match_kind = resolve_existing_party(
+                    target_conn,
+                    workspace_id,
+                    company=name,
+                    gst_no=payload["gst_no"],
+                    mobile=payload["mobile"],
+                    prefer_type=prefer,
+                    customers_by_key=existing_customers,
+                    vendors_by_key=existing_vendors,
+                )
+                hit = _lookup_in_maps(existing, prefer) if existing else None
+                if hit:
+                    if prefer == "vendor":
+                        _update_if_empty(hop_ops_module.update_vendor, target_conn, workspace_id, hit, payload)
+                        existing_vendors[key] = hit
                         out["vendors_skipped"] += 1
-                        continue
+                    else:
+                        _update_if_empty(hop_db_module.update_customer, target_conn, workspace_id, hit, payload)
+                        existing_customers[key] = hit
+                        out["customers_skipped"] += 1
+                    if match_kind and match_kind != "exact":
+                        out["party_fuzzy_matched"] += 1
+                    continue
+                if prefer == "vendor":
                     payload["products"] = ""
                     payload["remarks"] = "Source: Vyapar Import"
                     payload["rating"] = 3
@@ -354,11 +717,6 @@ def import_vyapar_backup(
                     existing_vendors[key] = row
                     out["vendors_created"] += 1
                 else:
-                    existing = existing_customers.get(key)
-                    if existing:
-                        _update_if_empty(hop_db_module.update_customer, target_conn, workspace_id, existing, payload)
-                        out["customers_skipped"] += 1
-                        continue
                     payload["customer_type"] = _guess_customer_type(name)
                     payload["status"] = "active"
                     payload["source"] = "Vyapar Import"
@@ -373,12 +731,14 @@ def import_vyapar_backup(
             if not name:
                 continue
             key = name.lower()
-            if key in existing_products:
+            code = _clean(i.get("item_code"))
+            code_key = code.lower() if code else ""
+            if key in existing_products or (code_key and code_key in existing_products_by_code):
                 out["products_skipped"] += 1
                 continue
             payload = {
                 "name": name,
-                "code": _clean(i.get("item_code")),
+                "code": code,
                 "category": _clean(i.get("category_name")) or "Imported",
                 "selling_price": float(i.get("item_sale_unit_price") or 0),
                 "purchase_price": float(i.get("item_purchase_unit_price") or 0),
@@ -389,15 +749,57 @@ def import_vyapar_backup(
             try:
                 row = hop_ops_module.create_product(target_conn, workspace_id, payload)
                 existing_products[key] = row
+                if code_key:
+                    existing_products_by_code[code_key] = row
                 out["products_created"] += 1
             except Exception as exc:
                 out["errors"].append(f"Item '{name}': {exc}")
 
+        def _txn_id_from_notes(notes: Any) -> int | None:
+            m = re.search(r"Vyapar txn\s+(\d+)", _clean(notes), flags=re.I)
+            if not m:
+                m = re.search(r"txn_payment_mapping for txn\s+(\d+)", _clean(notes), flags=re.I)
+            if not m:
+                return None
+            try:
+                return int(m.group(1))
+            except ValueError:
+                return None
+
         existing_invoices = {
-            _clean(r.get("invoice_no")).lower(): r
+            f"{_clean(r.get('invoice_no')).lower()}|{_clean(r.get('invoice_date'))[:10]}": r
             for r in hop_ops_module.list_invoices(target_conn, workspace_id)
             if _clean(r.get("invoice_no"))
         }
+        existing_invoices_by_txn: dict[int, dict] = {}
+        for r in hop_ops_module.list_invoices(target_conn, workspace_id):
+            sid = r.get("source_txn_id")
+            if sid is None or sid == "":
+                sid = _txn_id_from_notes(r.get("notes"))
+            if sid is not None:
+                existing_invoices_by_txn[int(sid)] = r
+
+        existing_quotes = {
+            f"{_clean(r.get('quote_no')).lower()}|{_clean(r.get('quote_date'))[:10]}": r
+            for r in hop_ops_module.list_quotations(target_conn, workspace_id)
+            if _clean(r.get("quote_no"))
+        }
+        existing_quotes_by_txn: dict[int, dict] = {}
+        for r in hop_ops_module.list_quotations(target_conn, workspace_id):
+            sid = _txn_id_from_notes(r.get("notes"))
+            if sid is not None:
+                existing_quotes_by_txn[sid] = r
+
+        existing_payment_txns: set[int] = set()
+        for r in hop_ops_module.list_payments(target_conn, workspace_id):
+            sid = r.get("source_txn_id")
+            if sid is None or sid == "":
+                sid = _txn_id_from_notes(r.get("notes"))
+            if sid is not None:
+                existing_payment_txns.add(int(sid))
+
+        out["payments_skipped"] = 0
+        out["invoices_updated"] = 0
 
         customer_by_name = {
             _clean(r.get("company")).lower(): r for r in hop_db_module.list_customers(target_conn, workspace_id)
@@ -423,8 +825,27 @@ def import_vyapar_backup(
             party_type = "vendor" if int(t.get("name_group_id") or 0) == 2 else "customer"
             customer = customer_by_name.get(party_name.lower())
             vendor = vendor_by_name.get(party_name.lower())
-            if not customer:
-                if party_type == "customer":
+            if party_type == "customer" and not customer:
+                existing, match_kind = resolve_existing_party(
+                    target_conn,
+                    workspace_id,
+                    company=party_name,
+                    prefer_type="customer",
+                    customers_by_key=customer_by_name,
+                    vendors_by_key=vendor_by_name,
+                )
+                if existing:
+                    eid = int(existing.get("id") or 0)
+                    for c in customer_by_name.values():
+                        if int(c.get("id") or 0) == eid:
+                            customer = c
+                            break
+                    if customer is None:
+                        customer = existing
+                    customer_by_name[party_name.lower()] = customer
+                    if match_kind and match_kind != "exact":
+                        out["party_fuzzy_matched"] += 1
+                else:
                     try:
                         customer = hop_db_module.create_customer(
                             target_conn,
@@ -440,6 +861,26 @@ def import_vyapar_backup(
                         customer_by_name[party_name.lower()] = customer
                     except Exception as exc:
                         out["errors"].append(f"Txn {txn_id}: customer create failed ({exc})")
+            elif party_type == "vendor" and not vendor:
+                existing, match_kind = resolve_existing_party(
+                    target_conn,
+                    workspace_id,
+                    company=party_name,
+                    prefer_type="vendor",
+                    customers_by_key=customer_by_name,
+                    vendors_by_key=vendor_by_name,
+                )
+                if existing:
+                    eid = int(existing.get("id") or 0)
+                    for v in vendor_by_name.values():
+                        if int(v.get("id") or 0) == eid:
+                            vendor = v
+                            break
+                    if vendor is None:
+                        vendor = existing
+                    vendor_by_name[party_name.lower()] = vendor
+                    if match_kind and match_kind != "exact":
+                        out["party_fuzzy_matched"] += 1
                 else:
                     try:
                         vendor = hop_ops_module.create_vendor(
@@ -457,65 +898,225 @@ def import_vyapar_backup(
                     except Exception as exc:
                         out["errors"].append(f"Txn {txn_id}: vendor create failed ({exc})")
 
-            amount = float(t.get("line_total") or t.get("txn_balance_amount") or t.get("txn_current_balance") or 0)
-            due_amt = float(t.get("txn_current_balance") or t.get("txn_balance_amount") or 0)
-            inv_no = _clean(t.get("txn_ref_number_char")) or f"VYP-{txn_id}"
+            paid_mapped = float(txn_payments.get(txn_id, 0) or 0)
+            amount = _vyapar_txn_amount(t, paid_mapped)
+            due_amt = _vyapar_due_balance(t, amount, paid_mapped)
+            inv_no = _clean(t.get("doc_number") or t.get("txn_ref_number_char")) or f"VYP-{txn_id}"
             inv_date = _clean(t.get("txn_date"))
             note = _clean(t.get("txn_description"))
             txn_label = _clean(t.get("txn_label"))
-            status_label = _clean(t.get("status_label"))
-            # Upsert party transaction row so Parties screen can show all Vyapar types.
-            if txn_id in existing_party_txn_ids:
-                out["party_txns_skipped"] += 1
-            else:
-                try:
+            status_label = _vyapar_status_label(
+                t.get("txn_status"),
+                due_amt,
+                amount,
+                txn_type=int(t.get("txn_type") or 0),
+                paid_mapped=paid_mapped,
+            )
+            inv_date_key = inv_date[:10] if inv_date else ""
+            party_id_val = (customer or {}).get("id") if party_type == "customer" else (vendor or {}).get("id")
+            # Upsert party transaction — always refresh amount/balance so Paid status stays correct.
+            try:
+                if txn_id in existing_party_txn_ids:
                     target_conn.execute(
                         """
-                        INSERT INTO hop_party_transactions (
-                            workspace_id, party_type, party_id, party_name, source_txn_id,
-                            txn_type, txn_label, txn_number, txn_date, total_amount,
-                            balance_amount, status_text, notes, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                        UPDATE hop_party_transactions SET
+                            party_type=?, party_id=?, party_name=?,
+                            txn_type=?, txn_label=?, txn_number=?, txn_date=?,
+                            total_amount=?, balance_amount=?, status_text=?, notes=?,
+                            updated_at=datetime('now')
+                        WHERE workspace_id=? AND source_txn_id=?
                         """,
                         (
-                            workspace_id,
                             party_type,
-                            (customer or {}).get("id") if party_type == "customer" else (vendor or {}).get("id"),
+                            party_id_val,
                             party_name,
-                            txn_id,
                             int(t.get("txn_type") or 0),
                             txn_label,
                             inv_no,
-                            inv_date[:10] if inv_date else "",
+                            inv_date_key,
                             amount,
                             due_amt,
                             status_label,
                             note,
+                            workspace_id,
+                            txn_id,
                         ),
                     )
-                    existing_party_txn_ids.add(txn_id)
-                    out["party_txns_created"] += 1
-                except Exception as exc:
-                    out["errors"].append(f"Txn {txn_id}: party transaction import failed ({exc})")
+                    out["party_txns_skipped"] += 1  # counted as refreshed existing
+                else:
+                    try:
+                        target_conn.execute(
+                            """
+                            INSERT INTO hop_party_transactions (
+                                workspace_id, party_type, party_id, party_name, source_txn_id,
+                                txn_type, txn_label, txn_number, txn_date, total_amount,
+                                balance_amount, status_text, notes, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                            """,
+                            (
+                                workspace_id,
+                                party_type,
+                                party_id_val,
+                                party_name,
+                                txn_id,
+                                int(t.get("txn_type") or 0),
+                                txn_label,
+                                inv_no,
+                                inv_date_key,
+                                amount,
+                                due_amt,
+                                status_label,
+                                note,
+                            ),
+                        )
+                        existing_party_txn_ids.add(txn_id)
+                        out["party_txns_created"] += 1
+                    except sqlite3.IntegrityError:
+                        # Re-import race / already present — update instead of duplicating.
+                        target_conn.execute(
+                            """
+                            UPDATE hop_party_transactions SET
+                                party_type=?, party_id=?, party_name=?,
+                                txn_type=?, txn_label=?, txn_number=?, txn_date=?,
+                                total_amount=?, balance_amount=?, status_text=?, notes=?,
+                                updated_at=datetime('now')
+                            WHERE workspace_id=? AND source_txn_id=?
+                            """,
+                            (
+                                party_type,
+                                party_id_val,
+                                party_name,
+                                int(t.get("txn_type") or 0),
+                                txn_label,
+                                inv_no,
+                                inv_date_key,
+                                amount,
+                                due_amt,
+                                status_label,
+                                note,
+                                workspace_id,
+                                txn_id,
+                            ),
+                        )
+                        existing_party_txn_ids.add(txn_id)
+                        out["party_txns_skipped"] += 1
+            except Exception as exc:
+                out["errors"].append(f"Txn {txn_id}: party transaction import failed ({exc})")
 
-            # Invoice creation is only for sale-like customer transactions.
+            # Route each Vyapar type to its correct native module (ledger already stored above).
             txn_type = int(t.get("txn_type") or 0)
-            if party_type != "customer" or txn_type not in SALE_LIKE_TYPES:
-                out["invoices_skipped"] += 1
-                continue
-            if not customer:
+            if party_type != "customer" or not customer:
                 out["invoices_skipped"] += 1
                 continue
 
-            inv_key = inv_no.lower()
-            if inv_key in existing_invoices:
-                out["invoices_skipped"] += 1
-                continue
-
-            tax_amt = float(t.get("line_tax_total") or t.get("txn_tax_amount") or 0)
-            paid_amt = float(txn_payments.get(txn_id, 0))
+            tax_amt = _num(t.get("line_tax_total")) or _num(t.get("txn_tax_amount"))
+            # Paid amount ONLY from Vyapar txn_payment_mapping — never invent from total−due.
+            paid_amt = max(0.0, float(paid_mapped or 0))
             due = _clean(t.get("txn_due_date"))
+            inv_key = f"{inv_no.lower()}|{inv_date_key}"
+            inv_status = "paid" if due_amt <= 0.009 else ("partial" if paid_amt > 0.009 else "open")
+            inv_notes = f"[{txn_label}] Imported from Vyapar txn {txn_id}. {note}".strip()
+            if txn_type in QUOTATION_TYPES:
+                existing_q = existing_quotes_by_txn.get(txn_id) or existing_quotes.get(inv_key)
+                if existing_q:
+                    try:
+                        qid = existing_q.get("id")
+                        if qid:
+                            target_conn.execute(
+                                """
+                                UPDATE hop_quotations SET
+                                    value=?, notes=?, quote_date=?, updated_at=datetime('now')
+                                WHERE workspace_id=? AND id=?
+                                """,
+                                (amount, inv_notes, inv_date_key, workspace_id, qid),
+                            )
+                    except Exception as exc:
+                        out["errors"].append(f"Txn {txn_id}: quotation refresh failed ({exc})")
+                    out["quotations_skipped"] += 1
+                    continue
+                try:
+                    quote = hop_ops_module.create_quotation(
+                        target_conn,
+                        workspace_id,
+                        {
+                            "quote_no": inv_no,
+                            "customer_id": customer.get("id"),
+                            "quote_date": inv_date_key,
+                            "value": amount,
+                            "status": "sent",
+                            "notes": inv_notes,
+                        },
+                    )
+                    existing_quotes[inv_key] = quote
+                    existing_quotes_by_txn[txn_id] = quote
+                    out["quotations_created"] += 1
+                except Exception as exc:
+                    out["errors"].append(f"Txn {txn_id}: quotation import failed ({exc})")
+                    out["quotations_skipped"] += 1
+                continue
+
+            if txn_type not in INVOICE_TYPES:
+                # Proforma / Sale Return / Sale Order / Challan / Journal stay in party ledger only.
+                # Never create hop_invoices / hop_payments for these — no synthetic settlements.
+                out["invoices_skipped"] += 1
+                continue
+
+            existing_inv = existing_invoices_by_txn.get(txn_id) or existing_invoices.get(inv_key)
+            if existing_inv:
+                try:
+                    iid = existing_inv.get("id")
+                    if iid:
+                        target_conn.execute(
+                            """
+                            UPDATE hop_invoices SET
+                                invoice_no=?, amount=?, paid_amount=?, balance=?, status=?,
+                                gst_amount=?, notes=?, invoice_date=?, source_txn_id=?,
+                                customer_id=COALESCE(?, customer_id),
+                                updated_at=datetime('now')
+                            WHERE workspace_id=? AND id=?
+                            """,
+                            (
+                                inv_no,
+                                amount,
+                                paid_amt,
+                                due_amt,
+                                inv_status,
+                                tax_amt,
+                                inv_notes,
+                                inv_date_key,
+                                txn_id,
+                                customer.get("id"),
+                                workspace_id,
+                                iid,
+                            ),
+                        )
+                        existing_inv = dict(existing_inv)
+                        existing_inv.update(
+                            {
+                                "id": iid,
+                                "invoice_no": inv_no,
+                                "amount": amount,
+                                "paid_amount": paid_amt,
+                                "balance": due_amt,
+                                "status": inv_status,
+                                "source_txn_id": txn_id,
+                            }
+                        )
+                        existing_invoices[inv_key] = existing_inv
+                        existing_invoices_by_txn[txn_id] = existing_inv
+                    out["invoices_updated"] += 1
+                    out["invoices_skipped"] += 1
+                except Exception as exc:
+                    out["errors"].append(f"Txn {txn_id}: invoice refresh failed ({exc})")
+                # Do NOT create another payment on refresh — totals already set from Vyapar.
+                if txn_id in existing_payment_txns:
+                    out["payments_skipped"] += 1
+                continue
+
             try:
+                # If we will insert a hop_payments row, keep invoice paid=0 so create_payment
+                # doesn't double-count paid_amount.
+                will_add_payment = paid_amt > 0.009 and txn_id not in existing_payment_txns
                 inv = hop_ops_module.create_invoice(
                     target_conn,
                     workspace_id,
@@ -523,16 +1124,19 @@ def import_vyapar_backup(
                         "invoice_no": inv_no,
                         "customer_id": customer.get("id"),
                         "amount": amount,
-                        "paid_amount": paid_amt,
+                        "paid_amount": 0.0 if will_add_payment else paid_amt,
                         "due_date": due,
-                        "invoice_date": inv_date[:10] if inv_date else "",
+                        "invoice_date": inv_date_key,
                         "gst_amount": tax_amt,
-                        "notes": f"[{txn_label}] Imported from Vyapar txn {txn_id}. {note}".strip(),
+                        "status": ("open" if will_add_payment else inv_status),
+                        "notes": inv_notes,
+                        "source_txn_id": txn_id,
                     },
                 )
                 existing_invoices[inv_key] = inv
+                existing_invoices_by_txn[txn_id] = inv
                 out["invoices_created"] += 1
-                if paid_amt > 0:
+                if will_add_payment:
                     try:
                         hop_ops_module.create_payment(
                             target_conn,
@@ -540,18 +1144,40 @@ def import_vyapar_backup(
                             {
                                 "invoice_id": inv.get("id"),
                                 "amount": paid_amt,
-                                "paid_at": inv_date[:10] if inv_date else "",
+                                "paid_at": inv_date_key,
                                 "method": "imported",
                                 "notes": f"Imported from txn_payment_mapping for txn {txn_id}",
                                 "customer_id": customer.get("id"),
+                                "source_txn_id": txn_id,
                             },
                         )
+                        existing_payment_txns.add(txn_id)
                         out["payments_created"] += 1
                     except Exception as exc:
-                        out["errors"].append(f"Txn {txn_id}: payment import failed ({exc})")
+                        out["payments_skipped"] += 1
+                        # Restore invoice totals if payment insert failed.
+                        try:
+                            target_conn.execute(
+                                """
+                                UPDATE hop_invoices SET paid_amount=?, balance=?, status=?,
+                                    updated_at=datetime('now')
+                                WHERE workspace_id=? AND id=?
+                                """,
+                                (paid_amt, due_amt, inv_status, workspace_id, inv.get("id")),
+                            )
+                        except Exception:
+                            pass
+                        if "unique" not in str(exc).lower():
+                            out["errors"].append(f"Txn {txn_id}: payment import failed ({exc})")
+                elif paid_amt > 0.009:
+                    out["payments_skipped"] += 1
             except Exception as exc:
-                out["errors"].append(f"Txn {txn_id}: invoice import failed ({exc})")
-                out["invoices_skipped"] += 1
+                msg = str(exc).lower()
+                if "unique" in msg or "source_txn" in msg:
+                    out["invoices_skipped"] += 1
+                else:
+                    out["errors"].append(f"Txn {txn_id}: invoice import failed ({exc})")
+                    out["invoices_skipped"] += 1
 
         out["source_items"] = len(items)
         out["source_parties"] = len(parties)
@@ -562,6 +1188,7 @@ def import_vyapar_backup(
             + out["vendors_created"]
             + out["products_created"]
             + out["invoices_created"]
+            + out["quotations_created"]
             + out["payments_created"]
             + out["party_txns_created"]
         )

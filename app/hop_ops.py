@@ -21,6 +21,31 @@ from app.hop_db import (
 from app.hop_schema import LEAD_STAGES, PROJECT_STAGES
 
 
+def wipe_hop_data(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Delete all House of Prizm (hop_*) business data. Keeps login/users intact.
+
+    Password protection can be layered at the route later; this function always wipes.
+    """
+    tables = [
+        str(r[0])
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'hop_%' ORDER BY name"
+        ).fetchall()
+    ]
+    cleared: dict[str, int] = {}
+    conn.execute("PRAGMA foreign_keys=OFF")
+    for table in tables:
+        before = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] or 0)
+        conn.execute(f"DELETE FROM {table}")
+        cleared[table] = before
+    conn.commit()
+    return {
+        "tables_cleared": len(tables),
+        "rows_deleted": sum(cleared.values()),
+        "details": cleared,
+    }
+
+
 def _f(val, default=0.0):
     if val in (None, ""):
         return default
@@ -1469,8 +1494,25 @@ def next_invoice_no(conn: sqlite3.Connection, workspace_id: str) -> str:
 
 
 def list_invoices(conn: sqlite3.Connection, workspace_id: str, q: str | None = None, project_id: int | None = None) -> list[dict]:
+    _repair_invoice_customer_links(conn, workspace_id)
     sql = """
-        SELECT i.*, c.company AS customer_company, p.project_name
+        SELECT i.*,
+               COALESCE(
+                 NULLIF(TRIM(c.company), ''),
+                 (
+                   SELECT pt.party_name
+                   FROM hop_party_transactions pt
+                   WHERE pt.workspace_id = i.workspace_id
+                     AND pt.txn_number = i.invoice_no
+                     AND pt.party_name IS NOT NULL
+                     AND TRIM(pt.party_name) != ''
+                   ORDER BY
+                     CASE WHEN LOWER(COALESCE(pt.txn_label, '')) LIKE 'sale%' THEN 0 ELSE 1 END,
+                     pt.id DESC
+                   LIMIT 1
+                 )
+               ) AS customer_company,
+               p.project_name
         FROM hop_invoices i
         LEFT JOIN hop_customers c ON c.id = i.customer_id
         LEFT JOIN hop_projects p ON p.id = i.project_id
@@ -1482,16 +1524,86 @@ def list_invoices(conn: sqlite3.Connection, workspace_id: str, q: str | None = N
         params.append(project_id)
     if q:
         like = f"%{q.strip()}%"
-        sql += " AND (i.invoice_no LIKE ? OR c.company LIKE ? OR p.project_name LIKE ?)"
-        params.extend([like, like, like])
+        sql += """ AND (
+            i.invoice_no LIKE ?
+            OR c.company LIKE ?
+            OR p.project_name LIKE ?
+            OR EXISTS (
+              SELECT 1 FROM hop_party_transactions pt
+              WHERE pt.workspace_id = i.workspace_id
+                AND pt.txn_number = i.invoice_no
+                AND pt.party_name LIKE ?
+            )
+        )"""
+        params.extend([like, like, like, like])
     sql += " ORDER BY i.updated_at DESC, i.id DESC"
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
+def _repair_invoice_customer_links(conn: sqlite3.Connection, workspace_id: str) -> None:
+    """Re-link invoices whose customer_id is missing/orphan using party_transactions."""
+    rows = conn.execute(
+        """
+        SELECT i.id, i.invoice_no
+        FROM hop_invoices i
+        LEFT JOIN hop_customers c ON c.id = i.customer_id
+        WHERE i.workspace_id=?
+          AND (i.customer_id IS NULL OR c.id IS NULL)
+        """,
+        (workspace_id,),
+    ).fetchall()
+    for row in rows:
+        inv_id = int(row["id"] if isinstance(row, sqlite3.Row) else row[0])
+        inv_no = row["invoice_no"] if isinstance(row, sqlite3.Row) else row[1]
+        if not inv_no:
+            continue
+        link = conn.execute(
+            """
+            SELECT party_id
+            FROM hop_party_transactions
+            WHERE workspace_id=? AND txn_number=? AND party_type='customer' AND party_id IS NOT NULL
+            ORDER BY
+              CASE WHEN LOWER(COALESCE(txn_label, '')) LIKE 'sale%' THEN 0 ELSE 1 END,
+              id DESC
+            LIMIT 1
+            """,
+            (workspace_id, str(inv_no)),
+        ).fetchone()
+        if not link:
+            continue
+        party_id = int(link["party_id"] if isinstance(link, sqlite3.Row) else link[0])
+        exists = conn.execute(
+            "SELECT 1 FROM hop_customers WHERE workspace_id=? AND id=?",
+            (workspace_id, party_id),
+        ).fetchone()
+        if exists:
+            conn.execute(
+                "UPDATE hop_invoices SET customer_id=? WHERE id=? AND workspace_id=?",
+                (party_id, inv_id, workspace_id),
+            )
+
+
 def get_invoice(conn: sqlite3.Connection, workspace_id: str, invoice_id: int) -> dict | None:
+    _repair_invoice_customer_links(conn, workspace_id)
     row = conn.execute(
         """
-        SELECT i.*, c.company AS customer_company, p.project_name
+        SELECT i.*,
+               COALESCE(
+                 NULLIF(TRIM(c.company), ''),
+                 (
+                   SELECT pt.party_name
+                   FROM hop_party_transactions pt
+                   WHERE pt.workspace_id = i.workspace_id
+                     AND pt.txn_number = i.invoice_no
+                     AND pt.party_name IS NOT NULL
+                     AND TRIM(pt.party_name) != ''
+                   ORDER BY
+                     CASE WHEN LOWER(COALESCE(pt.txn_label, '')) LIKE 'sale%' THEN 0 ELSE 1 END,
+                     pt.id DESC
+                   LIMIT 1
+                 )
+               ) AS customer_company,
+               p.project_name
         FROM hop_invoices i
         LEFT JOIN hop_customers c ON c.id = i.customer_id
         LEFT JOIN hop_projects p ON p.id = i.project_id
@@ -1513,12 +1625,14 @@ def create_invoice(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
     if project_id and not customer_id:
         customer_id = (get_project(conn, workspace_id, project_id) or {}).get("customer_id")
     inv_no = _s(payload.get("invoice_no")) or next_invoice_no(conn, workspace_id)
+    source_txn_id = _i(payload.get("source_txn_id"))
     cur = conn.execute(
         """
         INSERT INTO hop_invoices (
             workspace_id, project_id, order_id, invoice_no, customer_id, amount, due_date,
-            paid_amount, balance, status, invoice_date, gst_amount, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            paid_amount, balance, status, invoice_date, gst_amount, notes, created_at, updated_at,
+            source_txn_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -1536,6 +1650,7 @@ def create_invoice(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             _s(payload.get("notes")),
             now,
             now,
+            source_txn_id,
         ),
     )
     iid = int(cur.lastrowid)
@@ -1597,8 +1712,8 @@ def create_payment(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
         """
         INSERT INTO hop_payments (
             workspace_id, invoice_id, amount, paid_at, method, notes, created_at,
-            customer_id, project_id, reminder_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            customer_id, project_id, reminder_at, source_txn_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -1611,6 +1726,7 @@ def create_payment(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             customer_id,
             project_id,
             _s(payload.get("reminder_at")),
+            _i(payload.get("source_txn_id")),
         ),
     )
     new_paid = float(inv.get("paid_amount") or 0) + amount

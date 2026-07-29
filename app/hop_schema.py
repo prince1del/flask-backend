@@ -553,6 +553,7 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("invoice_date", "TEXT"),
             ("gst_amount", "REAL DEFAULT 0"),
             ("notes", "TEXT"),
+            ("source_txn_id", "INTEGER"),
         ]:
             _ensure_column(conn, "hop_invoices", col, ddl)
 
@@ -560,8 +561,28 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("customer_id", "INTEGER"),
             ("project_id", "INTEGER"),
             ("reminder_at", "TEXT"),
+            ("source_txn_id", "INTEGER"),
         ]:
             _ensure_column(conn, "hop_payments", col, ddl)
+
+        # One Vyapar txn → one HoP invoice / imported payment (safe re-import).
+        try:
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_hop_invoices_ws_source_txn
+                ON hop_invoices(workspace_id, source_txn_id)
+                WHERE source_txn_id IS NOT NULL
+                """
+            )
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_hop_payments_ws_source_txn
+                ON hop_payments(workspace_id, source_txn_id)
+                WHERE source_txn_id IS NOT NULL
+                """
+            )
+        except Exception:
+            pass
 
         for col, ddl in [
             ("source_filename", "TEXT"),
