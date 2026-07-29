@@ -1405,6 +1405,18 @@ body.bd-hop-ui .ta-playing-card-header h2{
 }
 body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 
+/* --- Desktop contact toolbar --- */
+.hop-desk-toolbar{
+  display:flex;align-items:center;gap:12px;
+  padding:8px 0;margin-bottom:4px;
+}
+.hop-desk-select-all{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:.82rem;color:var(--nxt-text-dim,#94a3b8);cursor:pointer;
+}
+.hop-desk-select-all input{cursor:pointer;}
+.hop-desk-check{cursor:pointer;}
+
 /* --- Clickable table rows --- */
 .hop-clickable-row:hover{background:rgba(34,211,238,.06) !important;}
 

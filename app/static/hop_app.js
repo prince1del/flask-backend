@@ -553,6 +553,16 @@ function hopRenderQuickContactActions(mobile, type, id, label) {
     </div>`;
 }
 
+function hopRenderDesktopContactToolbar(type, count) {
+  const state = hopContactSelectState(type);
+  const selected = state.ids.length;
+  return `
+    <div class="hop-desk-toolbar" data-hop-contact-toolbar="${type}">
+      <label class="hop-desk-select-all"><input type="checkbox" onchange="hopSelectAllContacts('${type}', this.checked)" ${selected === count && count > 0 ? 'checked' : ''}/> Select All (${count})</label>
+      <button type="button" class="nx-btn hop-contact-icon-btn hop-toolbar-bulk-del${selected ? '' : ' hidden'}" onclick="hopBulkDeleteContacts('${type}')" title="Delete selected">${hopContactIcon('delete')} Delete (${selected})</button>
+    </div>`;
+}
+
 function hopRenderMobileContactToolbar(type, count) {
   const state = hopContactSelectState(type);
   const selected = state.ids.length;
@@ -800,10 +810,14 @@ function hopToggleContactSelected(type, id, checked) {
   }
 }
 
-function hopSelectAllContacts(type) {
+function hopSelectAllContacts(type, checked) {
   const state = hopContactSelectState(type);
   const rows = type === 'vendors' ? (hopState.vendors || []) : (hopState.customers || []);
-  state.ids = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+  if (checked === false) {
+    state.ids = [];
+  } else {
+    state.ids = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+  }
   openHopView(type);
 }
 
@@ -1228,16 +1242,21 @@ async function renderHopCustomersModule(mount) {
     <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
     ${hopIsMobileView()
       ? hopRenderMobileContactCards(rows, 'customers')
-      : hopTable(
-        ['Company', 'Contact', 'Mobile', 'City', 'Type', 'Hotel', 'Architect', 'Consultant', 'Potential', 'Rating', 'Status', 'Assigned', ''],
-        rows.map((r) => `<tr class="hop-clickable-row" onclick="hopOpenContactDetail('customers', ${r.id})" style="cursor:pointer">
+      : `${hopRenderDesktopContactToolbar('customers', rows.length)}
+         ${hopTable(
+        ['', 'Company', 'Contact', 'Mobile', 'City', 'Type', 'Hotel', 'Architect', 'Consultant', 'Potential', 'Rating', 'Status', 'Assigned', ''],
+        rows.map((r) => {
+          const state = hopContactSelectState('customers');
+          const checked = state.ids.includes(Number(r.id)) ? ' checked' : '';
+          return `<tr class="hop-clickable-row" onclick="hopOpenContactDetail('customers', ${r.id})" style="cursor:pointer">
+          <td onclick="event.stopPropagation()"><input type="checkbox" class="hop-desk-check" value="${r.id}"${checked} onchange="hopToggleContactSelected('customers', ${r.id}, this.checked)" /></td>
           <td>${hopCell(r.company)}</td><td>${hopCell(r.contact_person)}</td><td>${hopCell(r.mobile)}</td>
           <td>${hopCell(r.city)}</td><td>${hopCell(r.customer_type)}</td><td>${hopCell(r.hotel_brand)}</td>
           <td>${hopCell(r.architect)}</td><td>${hopCell(r.consultant)}</td><td>${hopCell(r.annual_potential)}</td>
           <td>${hopCell(r.potential_rating)}</td><td>${hopCell(r.status)}</td><td>${hopCell(r.assigned_to)}</td>
           <td><button type="button" class="nx-btn hop-contact-icon-btn hop-contact-icon-del" onclick="event.stopPropagation();hopDeleteContact('customers', ${r.id}, '${foEscapeAttr(hopContactLabel(r))}')" title="Delete">${hopContactIcon('delete')}</button></td>
-        </tr>`).join(''),
-      )}`;
+        </tr>`}).join(''),
+      )}`}`;
   mount.innerHTML = hopModuleShell('CRM', 'Customers', 'Hospitality clients, designers, consultants',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ New Customer</button>
      <button type="button" class="nx-btn" onclick="openHopView('visiting_card')">Scan visiting card</button>
