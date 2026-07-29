@@ -1358,6 +1358,58 @@ function hopPartyGstCheck() {
   mark.classList.toggle('hidden', !v);
 }
 
+function hopPartyParseAdditionalFields(raw) {
+  const fallback = [
+    { enabled: true, name: 'Mobile Number', show_in_print: true, value: '' },
+    { enabled: false, name: '', show_in_print: false, value: '' },
+    { enabled: false, name: '', show_in_print: false, value: '' },
+    { enabled: false, name: '', show_in_print: false, value: '' },
+  ];
+  if (!raw) return fallback;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed) || !parsed.length) return fallback;
+    while (parsed.length < 4) parsed.push({ enabled: false, name: '', show_in_print: false, value: '' });
+    return parsed.slice(0, 4).map((f) => ({
+      enabled: !!f.enabled,
+      name: f.name || '',
+      show_in_print: !!f.show_in_print,
+      value: f.value || '',
+    }));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function hopPartyCollectAdditionalFields() {
+  const out = [];
+  for (let i = 0; i < 4; i += 1) {
+    out.push({
+      enabled: !!document.getElementById(`pm-af-en-${i}`)?.checked,
+      name: document.getElementById(`pm-af-name-${i}`)?.value || '',
+      show_in_print: !!document.getElementById(`pm-af-print-${i}`)?.checked,
+      value: document.getElementById(`pm-af-val-${i}`)?.value || '',
+    });
+  }
+  return JSON.stringify(out);
+}
+
+function hopPartySetCreditLimitMode(mode) {
+  const custom = mode === 'custom';
+  document.getElementById('pm-credit-no')?.classList.toggle('is-active', !custom);
+  document.getElementById('pm-credit-custom')?.classList.toggle('is-active', custom);
+  const wrap = document.getElementById('pm-credit-limit-wrap');
+  if (wrap) wrap.classList.toggle('hidden', !custom);
+  const flag = document.getElementById('pm-credit-no-limit');
+  if (flag) flag.value = custom ? '0' : '1';
+}
+
+function hopPartyCopyBillingToShipping() {
+  const bill = document.getElementById('pm-address')?.value || '';
+  const ship = document.getElementById('pm-shipping');
+  if (ship) ship.value = bill;
+}
+
 function hopOpenPartyEditModal(kind, row) {
   const isVendor = kind === 'vendor';
   const isEdit = !!(row && row.id != null);
@@ -1368,11 +1420,31 @@ function hopOpenPartyEditModal(kind, row) {
   const billingName = data.billing_name || data.company || '';
   const group = isVendor ? 'Supplier' : (data.customer_type || 'Buyer');
   const gstType = data.gst_type || data.industry || (data.gst_no ? 'Registered Business - Regular' : 'Unregistered');
-  const stateVal = data.state || data.city || '';
-  const bal = Number(data._balance || 0);
+  const stateVal = data.state || '';
+  const txnBal = Number(data._balance || 0);
+  const openingBal = data.opening_balance != null && data.opening_balance !== '' ? data.opening_balance : '';
+  const openingDate = (data.opening_balance_date || new Date().toISOString().slice(0, 10));
+  const noLimit = data.credit_no_limit == null ? 1 : Number(data.credit_no_limit);
+  const creditLimit = data.credit_limit != null && data.credit_limit !== '' ? data.credit_limit : '';
+  const shipping = data.shipping_address || data.address || '';
+  const billingAddr = data.address || '';
+  const addFields = hopPartyParseAdditionalFields(data.additional_fields);
+  if (data.mobile && addFields[0] && addFields[0].name.toLowerCase().includes('mobile') && !addFields[0].value) {
+    addFields[0].value = data.mobile;
+  }
   const stateOpts = HOP_INDIAN_STATES.map((s) =>
     `<option value="${foEscapeAttr(s)}"${String(stateVal).toLowerCase() === s.toLowerCase() ? ' selected' : ''}>${foEscapeText(s)}</option>`
   ).join('');
+  const afRows = addFields.map((f, i) => `
+    <div class="nx-party-af-row">
+      <label class="nx-party-af-check"><input type="checkbox" id="pm-af-en-${i}"${f.enabled ? ' checked' : ''} /></label>
+      <input id="pm-af-name-${i}" class="nx-party-af-name" placeholder="Additional Field ${i + 1} Name" value="${foEscapeAttr(f.name)}" />
+      <label class="nx-party-af-print">
+        <span>Show in Print</span>
+        <input type="checkbox" id="pm-af-print-${i}"${f.show_in_print ? ' checked' : ''} />
+      </label>
+      <input id="pm-af-val-${i}" class="nx-party-af-val" placeholder="Enter value" value="${foEscapeAttr(f.value)}" />
+    </div>`).join('');
 
   document.getElementById('hop-party-edit-modal')?.remove();
   const modal = document.createElement('div');
@@ -1388,7 +1460,7 @@ function hopOpenPartyEditModal(kind, row) {
       <div class="nx-party-modal-body">
         <div class="nx-party-primary">
           <label class="nx-party-field">
-            <span>Party Name</span>
+            <span>Party Name *</span>
             <input id="pm-name" value="${foEscapeAttr(partyName)}" placeholder="Party / company name" oninput="document.getElementById('pm-bill-hint').textContent=this.value?('“'+this.value+'” will be printed on your invoice.'):''" />
             <small id="pm-bill-hint" class="nx-party-hint">${partyName ? `“${foEscapeText(partyName)}” will be printed on your invoice.` : ''}</small>
           </label>
@@ -1410,15 +1482,15 @@ function hopOpenPartyEditModal(kind, row) {
           <label class="nx-party-field">
             <span>Party Group</span>
             <select id="pm-group">
-              <option value="Buyer"${group === 'Buyer' || (!isVendor && group !== 'Supplier') ? ' selected' : ''}>Buyer / Customer</option>
-              <option value="Supplier"${isVendor || group === 'Supplier' ? ' selected' : ''}>Supplier / Vendor</option>
+              <option value="Buyer"${!isVendor ? ' selected' : ''}>Buyer</option>
+              <option value="Supplier"${isVendor ? ' selected' : ''}>Supplier</option>
             </select>
           </label>
         </div>
 
         <div class="nx-party-tabs">
           <button type="button" class="nx-party-tab is-active" data-party-tab="gst" onclick="hopPartyModalSetTab('gst')">GST &amp; Address</button>
-          <button type="button" class="nx-party-tab" data-party-tab="credit" onclick="hopPartyModalSetTab('credit')">Credit &amp; Balance</button>
+          <button type="button" class="nx-party-tab" data-party-tab="credit" onclick="hopPartyModalSetTab('credit')">Credit &amp; Balance <span class="nx-party-tab-badge">New</span></button>
           <button type="button" class="nx-party-tab" data-party-tab="more" onclick="hopPartyModalSetTab('more')">Additional Fields</button>
         </div>
 
@@ -1429,9 +1501,9 @@ function hopOpenPartyEditModal(kind, row) {
                 <label class="nx-party-field">
                   <span>GST Type</span>
                   <select id="pm-gst-type">
-                    <option${gstType.includes('Unregistered') ? ' selected' : ''}>Unregistered</option>
-                    <option${gstType.includes('Regular') ? ' selected' : ''}>Registered Business - Regular</option>
-                    <option${gstType.includes('Composition') ? ' selected' : ''}>Registered Business - Composition</option>
+                    <option${String(gstType).includes('Unregistered') ? ' selected' : ''}>Unregistered</option>
+                    <option${String(gstType).includes('Regular') ? ' selected' : ''}>Registered Business - Regular</option>
+                    <option${String(gstType).includes('Composition') ? ' selected' : ''}>Registered Business - Composition</option>
                   </select>
                 </label>
                 <label class="nx-party-field">
@@ -1446,6 +1518,10 @@ function hopOpenPartyEditModal(kind, row) {
                   <input id="pm-email" type="email" value="${foEscapeAttr(data.email || '')}" placeholder="name@company.com" />
                 </label>
                 <label class="nx-party-field">
+                  <span>Contact Person</span>
+                  <input id="pm-contact" value="${foEscapeAttr(data.contact_person || '')}" placeholder="Contact person" />
+                </label>
+                <label class="nx-party-field">
                   <span>City</span>
                   <input id="pm-city" value="${foEscapeAttr(data.city || '')}" placeholder="City" />
                 </label>
@@ -1453,14 +1529,20 @@ function hopOpenPartyEditModal(kind, row) {
               <div class="nx-party-addr-col">
                 <div class="nx-party-addr-head">
                   <strong>Billing Address</strong>
+                  <button type="button" class="nx-party-addr-add" onclick="document.getElementById('pm-address')?.focus()">+ Add New Address</button>
                 </div>
-                <textarea id="pm-address" class="nx-party-addr-box" rows="5" placeholder="Billing address">${foEscapeText(data.address || '')}</textarea>
+                <div class="nx-party-addr-card">
+                  <textarea id="pm-address" rows="6" placeholder="Billing address">${foEscapeText(billingAddr)}</textarea>
+                </div>
               </div>
               <div class="nx-party-addr-col">
                 <div class="nx-party-addr-head">
-                  <strong>Contact Person</strong>
+                  <strong>Shipping Address</strong>
+                  <button type="button" class="nx-party-addr-add" onclick="hopPartyCopyBillingToShipping()">+ Same as Billing</button>
                 </div>
-                <textarea id="pm-contact" class="nx-party-addr-box" rows="5" placeholder="Contact person / shipping note">${foEscapeText(data.contact_person || '')}</textarea>
+                <div class="nx-party-addr-card">
+                  <textarea id="pm-shipping" rows="6" placeholder="Shipping address">${foEscapeText(shipping)}</textarea>
+                </div>
               </div>
             </div>
           </div>
@@ -1468,17 +1550,28 @@ function hopOpenPartyEditModal(kind, row) {
           <div class="nx-party-panel hidden" data-party-panel="credit">
             <div class="nx-party-credit-grid">
               <label class="nx-party-field">
-                <span>Opening / Current Balance</span>
-                <input id="pm-balance" type="text" value="₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}" readonly />
-                <small class="nx-party-hint">Balance comes from imported transactions (read-only).</small>
+                <span>Opening Balance</span>
+                <input id="pm-opening-balance" type="number" step="0.01" value="${foEscapeAttr(openingBal)}" placeholder="0.00" />
               </label>
               <label class="nx-party-field">
-                <span>Annual Potential (₹)</span>
-                <input id="pm-potential" type="number" value="${foEscapeAttr(data.annual_potential ?? '')}" placeholder="0" />
+                <span>As Of Date</span>
+                <input id="pm-opening-date" type="date" value="${foEscapeAttr(String(openingDate).slice(0, 10))}" />
               </label>
+              <div class="nx-party-field nx-party-span2">
+                <span>Credit Limit</span>
+                <input type="hidden" id="pm-credit-no-limit" value="${noLimit ? '1' : '0'}" />
+                <div class="nx-party-credit-toggle">
+                  <button type="button" id="pm-credit-no" class="nx-party-tog${noLimit ? ' is-active' : ''}" onclick="hopPartySetCreditLimitMode('none')">No Limit</button>
+                  <button type="button" id="pm-credit-custom" class="nx-party-tog${!noLimit ? ' is-active' : ''}" onclick="hopPartySetCreditLimitMode('custom')">Custom Limit</button>
+                </div>
+                <div id="pm-credit-limit-wrap" class="nx-party-credit-limit-wrap${!noLimit ? '' : ' hidden'}">
+                  <input id="pm-credit-limit" type="number" step="0.01" value="${foEscapeAttr(creditLimit)}" placeholder="Enter credit limit" />
+                </div>
+              </div>
               <label class="nx-party-field">
-                <span>Credit / Payment Terms</span>
-                <input id="pm-payterms" value="${foEscapeAttr(data.payment_terms || data.remarks || '')}" placeholder="e.g. Net 30" />
+                <span>Current Receivable (from transactions)</span>
+                <input type="text" value="₹ ${txnBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}" readonly />
+                <small class="nx-party-hint">Auto-calculated from party transactions.</small>
               </label>
               <label class="nx-party-field">
                 <span>Status</span>
@@ -1491,14 +1584,18 @@ function hopOpenPartyEditModal(kind, row) {
           </div>
 
           <div class="nx-party-panel hidden" data-party-panel="more">
-            <div class="nx-party-more-grid">
+            <div class="nx-party-af-list">
+              ${afRows}
+            </div>
+            <div class="nx-party-more-grid" style="margin-top:16px;">
               <label class="nx-party-field"><span>PAN</span><input id="pm-pan" value="${foEscapeAttr(data.pan || '')}" /></label>
               <label class="nx-party-field"><span>Hotel Brand</span><input id="pm-hotel" value="${foEscapeAttr(data.hotel_brand || '')}" /></label>
               <label class="nx-party-field"><span>Architect</span><input id="pm-architect" value="${foEscapeAttr(data.architect || '')}" /></label>
               <label class="nx-party-field"><span>Consultant</span><input id="pm-consultant" value="${foEscapeAttr(data.consultant || '')}" /></label>
-              <label class="nx-party-field"><span>Rating (A/B/C)</span><input id="pm-rating" value="${foEscapeAttr(data.potential_rating || data.rating || '')}" /></label>
+              <label class="nx-party-field"><span>Rating</span><input id="pm-rating" value="${foEscapeAttr(data.potential_rating || data.rating || '')}" /></label>
               <label class="nx-party-field"><span>Assigned To</span><input id="pm-assigned" value="${foEscapeAttr(data.assigned_to || '')}" /></label>
               <label class="nx-party-field"><span>Products (vendor)</span><input id="pm-products" value="${foEscapeAttr(data.products || '')}" /></label>
+              <label class="nx-party-field"><span>Payment Terms</span><input id="pm-payterms" value="${foEscapeAttr(data.payment_terms || '')}" /></label>
               <label class="nx-party-field nx-party-span2"><span>Remarks</span><input id="pm-remarks" value="${foEscapeAttr(data.remarks || '')}" /></label>
             </div>
           </div>
@@ -1516,6 +1613,7 @@ function hopOpenPartyEditModal(kind, row) {
   requestAnimationFrame(() => {
     modal.classList.add('is-open');
     hopPartyGstCheck();
+    hopPartySetCreditLimitMode(noLimit ? 'none' : 'custom');
     document.getElementById('pm-name')?.focus();
   });
 }
@@ -1533,7 +1631,6 @@ async function hopSavePartyModal() {
   const group = document.getElementById('pm-group')?.value || 'Buyer';
   const asVendor = group === 'Supplier';
   const kind = asVendor ? 'vendor' : 'customer';
-  // If user flipped group on an existing row of the other type, keep original kind for PATCH.
   const saveKind = edit.id ? edit.kind : kind;
   const company = String(document.getElementById('pm-name')?.value || '').trim();
   if (!company) {
@@ -1542,11 +1639,23 @@ async function hopSavePartyModal() {
     return;
   }
   const state = document.getElementById('pm-state')?.value || '';
-  const city = String(document.getElementById('pm-city')?.value || '').trim() || state || null;
+  const city = String(document.getElementById('pm-city')?.value || '').trim() || null;
   const gstType = document.getElementById('pm-gst-type')?.value || '';
+  const creditNoLimit = document.getElementById('pm-credit-no-limit')?.value === '1' ? 1 : 0;
+  const sharedExtra = {
+    billing_name: document.getElementById('pm-billing')?.value || company,
+    shipping_address: document.getElementById('pm-shipping')?.value || '',
+    state,
+    gst_type: gstType,
+    opening_balance: document.getElementById('pm-opening-balance')?.value || '',
+    opening_balance_date: document.getElementById('pm-opening-date')?.value || '',
+    credit_limit: creditNoLimit ? '' : (document.getElementById('pm-credit-limit')?.value || ''),
+    credit_no_limit: creditNoLimit,
+    additional_fields: hopPartyCollectAdditionalFields(),
+  };
   const payloadCustomer = {
     company,
-    contact_person: document.getElementById('pm-contact')?.value || document.getElementById('pm-billing')?.value || '',
+    contact_person: document.getElementById('pm-contact')?.value || '',
     mobile: document.getElementById('pm-phone')?.value || '',
     email: document.getElementById('pm-email')?.value || '',
     city,
@@ -1555,18 +1664,18 @@ async function hopSavePartyModal() {
     hotel_brand: document.getElementById('pm-hotel')?.value || '',
     architect: document.getElementById('pm-architect')?.value || '',
     consultant: document.getElementById('pm-consultant')?.value || '',
-    annual_potential: document.getElementById('pm-potential')?.value || '',
     potential_rating: document.getElementById('pm-rating')?.value || '',
     assigned_to: document.getElementById('pm-assigned')?.value || '',
     address: document.getElementById('pm-address')?.value || '',
     gst_no: document.getElementById('pm-gstin')?.value || '',
     pan: document.getElementById('pm-pan')?.value || '',
     status: document.getElementById('pm-status')?.value || 'active',
-    remarks: document.getElementById('pm-remarks')?.value || document.getElementById('pm-payterms')?.value || '',
+    remarks: document.getElementById('pm-remarks')?.value || '',
+    ...sharedExtra,
   };
   const payloadVendor = {
     company,
-    contact_person: document.getElementById('pm-contact')?.value || document.getElementById('pm-billing')?.value || '',
+    contact_person: document.getElementById('pm-contact')?.value || '',
     mobile: document.getElementById('pm-phone')?.value || '',
     email: document.getElementById('pm-email')?.value || '',
     city,
@@ -1574,8 +1683,9 @@ async function hopSavePartyModal() {
     gst_no: document.getElementById('pm-gstin')?.value || '',
     payment_terms: document.getElementById('pm-payterms')?.value || '',
     rating: document.getElementById('pm-rating')?.value || '',
-    price_notes: [document.getElementById('pm-address')?.value, document.getElementById('pm-remarks')?.value].filter(Boolean).join('\n') || '',
+    address: document.getElementById('pm-address')?.value || '',
     status: document.getElementById('pm-status')?.value || 'active',
+    ...sharedExtra,
   };
   const payload = saveKind === 'vendor' ? payloadVendor : payloadCustomer;
   const urlBase = saveKind === 'vendor' ? '/api/v1/hop/vendors' : '/api/v1/hop/customers';
@@ -4237,6 +4347,8 @@ window.hopPartyModalSetTab = hopPartyModalSetTab;
 window.hopPartyGstCheck = hopPartyGstCheck;
 window.hopSavePartyModal = hopSavePartyModal;
 window.hopDeleteFromPartyModal = hopDeleteFromPartyModal;
+window.hopPartySetCreditLimitMode = hopPartySetCreditLimitMode;
+window.hopPartyCopyBillingToShipping = hopPartyCopyBillingToShipping;
 window.hopSelectParty = hopSelectParty;
 window.hopFilterParties = hopFilterParties;
 window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;

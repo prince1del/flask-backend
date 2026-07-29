@@ -91,37 +91,69 @@ def update_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: in
     if not company:
         raise ValueError("company is required")
     now = _now()
+
+    def _pick_str(key: str):
+        if key in payload:
+            return (payload.get(key) or "").strip() or None
+        return existing.get(key)
+
+    def _pick_float(key: str):
+        if key not in payload:
+            return existing.get(key)
+        if payload.get(key) in (None, ""):
+            return None
+        return float(payload[key])
+
+    def _pick_int(key: str, default: int | None = None):
+        if key not in payload:
+            return existing.get(key) if existing.get(key) is not None else default
+        if payload.get(key) in (None, ""):
+            return default
+        return int(payload[key])
+
     conn.execute(
         """
         UPDATE hop_customers SET
             company=?, contact_person=?, mobile=?, email=?, city=?, industry=?,
             architect=?, consultant=?, hotel_brand=?, annual_potential=?, source=?,
             potential_rating=?, remarks=?, customer_type=?, status=?, assigned_to=?,
-            address=?, gst_no=?, pan=?, updated_at=?
+            address=?, gst_no=?, pan=?,
+            billing_name=?, shipping_address=?, state=?, gst_type=?,
+            opening_balance=?, opening_balance_date=?, credit_limit=?, credit_no_limit=?,
+            additional_fields=?, updated_at=?
         WHERE workspace_id=? AND id=?
         """,
         (
             company,
-            (payload.get("contact_person") or existing.get("contact_person") or "").strip() or None,
-            (payload.get("mobile") or existing.get("mobile") or "").strip() or None,
-            (payload.get("email") or existing.get("email") or "").strip() or None,
-            (payload.get("city") or existing.get("city") or "").strip() or None,
-            (payload.get("industry") or existing.get("industry") or "").strip() or None,
-            (payload.get("architect") or existing.get("architect") or "").strip() or None,
-            (payload.get("consultant") or existing.get("consultant") or "").strip() or None,
-            (payload.get("hotel_brand") or existing.get("hotel_brand") or "").strip() or None,
-            float(payload["annual_potential"])
-            if payload.get("annual_potential") not in (None, "")
+            _pick_str("contact_person"),
+            _pick_str("mobile"),
+            _pick_str("email"),
+            _pick_str("city"),
+            _pick_str("industry"),
+            _pick_str("architect"),
+            _pick_str("consultant"),
+            _pick_str("hotel_brand"),
+            _pick_float("annual_potential")
+            if "annual_potential" in payload
             else existing.get("annual_potential"),
-            (payload.get("source") or existing.get("source") or "").strip() or None,
-            (payload.get("potential_rating") or existing.get("potential_rating") or "").strip() or None,
-            (payload.get("remarks") or existing.get("remarks") or "").strip() or None,
-            (payload.get("customer_type") or existing.get("customer_type") or "").strip() or None,
-            (payload.get("status") or existing.get("status") or "active").strip() or "active",
-            (payload.get("assigned_to") or existing.get("assigned_to") or "").strip() or None,
-            (payload.get("address") or existing.get("address") or "").strip() or None,
-            (payload.get("gst_no") or existing.get("gst_no") or "").strip() or None,
-            (payload.get("pan") or existing.get("pan") or "").strip() or None,
+            _pick_str("source"),
+            _pick_str("potential_rating"),
+            _pick_str("remarks"),
+            _pick_str("customer_type"),
+            (_pick_str("status") or "active"),
+            _pick_str("assigned_to"),
+            _pick_str("address"),
+            _pick_str("gst_no"),
+            _pick_str("pan"),
+            _pick_str("billing_name"),
+            _pick_str("shipping_address"),
+            _pick_str("state"),
+            _pick_str("gst_type"),
+            _pick_float("opening_balance"),
+            _pick_str("opening_balance_date"),
+            _pick_float("credit_limit"),
+            _pick_int("credit_no_limit", 1),
+            _pick_str("additional_fields"),
             now,
             workspace_id,
             customer_id,
@@ -158,8 +190,11 @@ def create_customer(conn: sqlite3.Connection, workspace_id: str, payload: dict) 
             workspace_id, company, contact_person, mobile, email, city, industry,
             architect, consultant, hotel_brand, annual_potential, source,
             potential_rating, remarks, customer_type, status, assigned_to,
-            address, gst_no, pan, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            address, gst_no, pan,
+            billing_name, shipping_address, state, gst_type,
+            opening_balance, opening_balance_date, credit_limit, credit_no_limit,
+            additional_fields, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -182,6 +217,15 @@ def create_customer(conn: sqlite3.Connection, workspace_id: str, payload: dict) 
             (payload.get("address") or "").strip() or None,
             (payload.get("gst_no") or "").strip() or None,
             (payload.get("pan") or "").strip() or None,
+            (payload.get("billing_name") or "").strip() or None,
+            (payload.get("shipping_address") or "").strip() or None,
+            (payload.get("state") or "").strip() or None,
+            (payload.get("gst_type") or "").strip() or None,
+            float(payload["opening_balance"]) if payload.get("opening_balance") not in (None, "") else None,
+            (payload.get("opening_balance_date") or "").strip() or None,
+            float(payload["credit_limit"]) if payload.get("credit_limit") not in (None, "") else None,
+            int(payload["credit_no_limit"]) if payload.get("credit_no_limit") not in (None, "") else 1,
+            (payload.get("additional_fields") or "").strip() or None,
             now,
             now,
         ),

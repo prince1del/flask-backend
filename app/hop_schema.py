@@ -462,8 +462,31 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("address", "TEXT"),
             ("gst_no", "TEXT"),
             ("pan", "TEXT"),
+            ("billing_name", "TEXT"),
+            ("shipping_address", "TEXT"),
+            ("state", "TEXT"),
+            ("gst_type", "TEXT"),
+            ("opening_balance", "REAL"),
+            ("opening_balance_date", "TEXT"),
+            ("credit_limit", "REAL"),
+            ("credit_no_limit", "INTEGER DEFAULT 1"),
+            ("additional_fields", "TEXT"),
         ]:
             _ensure_column(conn, "hop_customers", col, ddl)
+
+        for col, ddl in [
+            ("address", "TEXT"),
+            ("shipping_address", "TEXT"),
+            ("billing_name", "TEXT"),
+            ("state", "TEXT"),
+            ("gst_type", "TEXT"),
+            ("opening_balance", "REAL"),
+            ("opening_balance_date", "TEXT"),
+            ("credit_limit", "REAL"),
+            ("credit_no_limit", "INTEGER DEFAULT 1"),
+            ("additional_fields", "TEXT"),
+        ]:
+            _ensure_column(conn, "hop_vendors", col, ddl)
 
         for col, ddl in [
             ("hotel_name", "TEXT"),

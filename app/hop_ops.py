@@ -437,34 +437,65 @@ def update_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int, p
     if not company:
         raise ValueError("company is required")
     now = _now()
+
+    def _pick_s(key: str):
+        if key in payload:
+            return _s(payload.get(key))
+        return existing.get(key)
+
+    def _pick_f(key: str):
+        if key not in payload:
+            return existing.get(key)
+        if payload.get(key) in (None, ""):
+            return None
+        return _f(payload[key])
+
+    def _pick_i(key: str, default: int | None = None):
+        if key not in payload:
+            return existing.get(key) if existing.get(key) is not None else default
+        if payload.get(key) in (None, ""):
+            return default
+        return int(payload[key])
+
     conn.execute(
         """
         UPDATE hop_vendors SET
             company=?, products=?, gst_no=?, contact_person=?, mobile=?, email=?,
             rating=?, payment_terms=?, lead_time_days=?, certificates=?, quality_rating=?,
-            on_time_pct=?, price_notes=?, city=?, status=?, updated_at=?
+            on_time_pct=?, price_notes=?, city=?, status=?,
+            address=?, shipping_address=?, billing_name=?, state=?, gst_type=?,
+            opening_balance=?, opening_balance_date=?, credit_limit=?, credit_no_limit=?,
+            additional_fields=?, updated_at=?
         WHERE workspace_id=? AND id=?
         """,
         (
             company,
-            _s(payload.get("products")) if "products" in payload else existing.get("products"),
-            _s(payload.get("gst_no")) if "gst_no" in payload else existing.get("gst_no"),
-            _s(payload.get("contact_person")) if "contact_person" in payload else existing.get("contact_person"),
-            _s(payload.get("mobile")) if "mobile" in payload else existing.get("mobile"),
-            _s(payload.get("email")) if "email" in payload else existing.get("email"),
-            _f(payload["rating"]) if payload.get("rating") not in (None, "") else existing.get("rating"),
-            _s(payload.get("payment_terms")) if "payment_terms" in payload else existing.get("payment_terms"),
+            _pick_s("products"),
+            _pick_s("gst_no"),
+            _pick_s("contact_person"),
+            _pick_s("mobile"),
+            _pick_s("email"),
+            _pick_f("rating"),
+            _pick_s("payment_terms"),
             int(payload["lead_time_days"])
             if payload.get("lead_time_days") not in (None, "")
             else existing.get("lead_time_days"),
-            _s(payload.get("certificates")) if "certificates" in payload else existing.get("certificates"),
-            _f(payload["quality_rating"])
-            if payload.get("quality_rating") not in (None, "")
-            else existing.get("quality_rating"),
-            _f(payload["on_time_pct"]) if payload.get("on_time_pct") not in (None, "") else existing.get("on_time_pct"),
-            _s(payload.get("price_notes")) if "price_notes" in payload else existing.get("price_notes"),
-            _s(payload.get("city")) if "city" in payload else existing.get("city"),
-            _s(payload.get("status")) or existing.get("status") or "active",
+            _pick_s("certificates"),
+            _pick_f("quality_rating"),
+            _pick_f("on_time_pct"),
+            _pick_s("price_notes"),
+            _pick_s("city"),
+            _pick_s("status") or "active",
+            _pick_s("address"),
+            _pick_s("shipping_address"),
+            _pick_s("billing_name"),
+            _pick_s("state"),
+            _pick_s("gst_type"),
+            _pick_f("opening_balance"),
+            _pick_s("opening_balance_date"),
+            _pick_f("credit_limit"),
+            _pick_i("credit_no_limit", 1),
+            _pick_s("additional_fields"),
             now,
             workspace_id,
             vendor_id,
@@ -515,8 +546,11 @@ def create_vendor(conn: sqlite3.Connection, workspace_id: str, payload: dict) ->
         INSERT INTO hop_vendors (
             workspace_id, company, products, gst_no, contact_person, mobile, email,
             rating, payment_terms, lead_time_days, certificates, quality_rating,
-            on_time_pct, price_notes, city, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            on_time_pct, price_notes, city, status,
+            address, shipping_address, billing_name, state, gst_type,
+            opening_balance, opening_balance_date, credit_limit, credit_no_limit,
+            additional_fields, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -535,6 +569,16 @@ def create_vendor(conn: sqlite3.Connection, workspace_id: str, payload: dict) ->
             _s(payload.get("price_notes")),
             _s(payload.get("city")),
             _s(payload.get("status")) or "active",
+            _s(payload.get("address")),
+            _s(payload.get("shipping_address")),
+            _s(payload.get("billing_name")),
+            _s(payload.get("state")),
+            _s(payload.get("gst_type")),
+            _f(payload["opening_balance"]) if payload.get("opening_balance") not in (None, "") else None,
+            _s(payload.get("opening_balance_date")),
+            _f(payload["credit_limit"]) if payload.get("credit_limit") not in (None, "") else None,
+            int(payload["credit_no_limit"]) if payload.get("credit_no_limit") not in (None, "") else 1,
+            _s(payload.get("additional_fields")),
             now,
             now,
         ),

@@ -2116,9 +2116,54 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .nx-party-gst-left{display:flex;flex-direction:column;gap:10px;}
 .nx-party-addr-head{
   display:flex;justify-content:space-between;align-items:center;
-  margin-bottom:8px;
+  margin-bottom:8px;gap:8px;
 }
 .nx-party-addr-head strong{font-size:.78rem;color:#cbd5e1;}
+.nx-party-addr-add{
+  border:none;background:transparent;cursor:pointer;
+  color:#22d3ee;font-size:.72rem;font-weight:650;padding:0;
+}
+.nx-party-addr-add:hover{text-decoration:underline;}
+.nx-party-addr-card{
+  border:1px solid rgba(34,211,238,.28);
+  border-radius:10px;
+  background:rgba(34,211,238,.04);
+  padding:8px;
+  min-height:120px;
+}
+.nx-party-addr-card textarea{
+  width:100%;min-height:110px;resize:vertical;border:none;outline:none;
+  background:transparent;color:#e2e8f0;font-size:.84rem;line-height:1.45;padding:4px;
+}
+.nx-party-tab-badge{
+  display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;
+  background:#ef4444;color:#fff;font-size:.58rem;font-weight:700;vertical-align:middle;
+}
+.nx-party-credit-toggle{
+  display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;overflow:hidden;margin-top:6px;
+}
+.nx-party-tog{
+  border:none;background:transparent;color:#94a3b8;cursor:pointer;
+  padding:8px 14px;font-size:.78rem;font-weight:650;
+}
+.nx-party-tog.is-active{background:rgba(34,211,238,.18);color:#22d3ee;}
+.nx-party-credit-limit-wrap{margin-top:10px;}
+.nx-party-af-list{display:flex;flex-direction:column;gap:10px;}
+.nx-party-af-row{
+  display:grid;
+  grid-template-columns:28px minmax(140px,1.1fr) auto minmax(160px,1fr);
+  gap:10px;align-items:center;
+  padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;
+  background:rgba(255,255,255,.03);
+}
+.nx-party-af-check{display:flex;justify-content:center;}
+.nx-party-af-name,.nx-party-af-val{
+  width:100%;border:1px solid rgba(255,255,255,.12);border-radius:8px;
+  background:rgba(255,255,255,.04);color:#e2e8f0;padding:8px 10px;font-size:.82rem;
+}
+.nx-party-af-print{
+  display:flex;align-items:center;gap:8px;font-size:.72rem;color:#94a3b8;white-space:nowrap;
+}
 .nx-party-addr-box{min-height:110px;resize:vertical;line-height:1.45;}
 .nx-party-credit-grid,
 .nx-party-more-grid{
@@ -2149,6 +2194,8 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   .nx-party-credit-grid,
   .nx-party-more-grid{grid-template-columns:1fr;}
   .nx-party-span2{grid-column:span 1;}
+  .nx-party-af-row{grid-template-columns:28px 1fr;}
+  .nx-party-af-print,.nx-party-af-val{grid-column:2;}
   .nx-party-modal{padding:8px;align-items:flex-end;}
   .nx-party-modal-card{max-height:94vh;border-radius:14px 14px 0 0;}
 }
