@@ -986,6 +986,7 @@ function openHopView(viewName, opts) {
     } else {
       mount.innerHTML = '<div class="hop-view"><p class="nx-text-dim">Loading…</p></div>';
       const loaders = {
+        parties: renderHopPartiesModule,
         customers: renderHopCustomersModule,
         vyapar_import: renderHopVyaparImportModule,
         visiting_card: renderHopVisitingCardModule,
@@ -1255,6 +1256,183 @@ function hopOrderOptions(selectedId) {
 
 function hopStageOptions(list, selected) {
   return list.map((s) => `<option value="${s}"${s === selected ? ' selected' : ''}>${foEscapeText(s)}</option>`).join('');
+}
+
+/* ---------- Parties (Vyapar-style unified view) ---------- */
+async function renderHopPartiesModule(mount) {
+  let customers = [], vendors = [], invoices = [];
+  try {
+    [customers, vendors, invoices] = await Promise.all([
+      hopApi('/api/v1/hop/customers') || [],
+      hopApi('/api/v1/hop/vendors') || [],
+      hopApi('/api/v1/hop/invoices') || [],
+    ]);
+    hopState.customers = customers;
+    hopState.vendors = vendors;
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('CRM', 'Parties', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+
+  const parties = [
+    ...customers.map(c => ({ ...c, _type: 'customer', _balance: 0 })),
+    ...vendors.map(v => ({ ...v, _type: 'vendor', _balance: 0 })),
+  ];
+
+  // Calculate balances from invoices
+  const balByCustomer = {};
+  for (const inv of invoices) {
+    const cid = inv.customer_id;
+    if (!cid) continue;
+    const amt = parseFloat(inv.amount || 0);
+    const paid = parseFloat(inv.paid_amount || 0);
+    balByCustomer[cid] = (balByCustomer[cid] || 0) + (amt - paid);
+  }
+  for (const p of parties) {
+    if (p._type === 'customer' && balByCustomer[p.id]) {
+      p._balance = balByCustomer[p.id];
+    }
+  }
+
+  parties.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+
+  hopState._parties = parties;
+  hopState._partyInvoices = invoices;
+  hopState._partySelected = hopState._partySelected || null;
+  hopState._partyFilter = hopState._partyFilter || '';
+
+  const body = `
+    <div class="pty-layout">
+      <div class="pty-sidebar">
+        <div class="pty-search-row">
+          <input id="pty-search" class="pty-search" type="search" placeholder="Search Party Name" value="${foEscapeText(hopState._partyFilter)}" oninput="hopFilterParties(this.value)" />
+        </div>
+        <div class="pty-list-header">
+          <span class="pty-lh-name">Party Name</span>
+          <span class="pty-lh-amt">Balance</span>
+        </div>
+        <div id="pty-list" class="pty-list">
+          ${_hopRenderPartyList(parties, hopState._partyFilter)}
+        </div>
+      </div>
+      <div id="pty-detail" class="pty-detail">
+        ${hopState._partySelected ? _hopRenderPartyDetail(hopState._partySelected, invoices) : _hopPartyEmptyDetail()}
+      </div>
+    </div>`;
+
+  mount.innerHTML = hopModuleShell('CRM', 'Parties', 'Customers & Vendors',
+    `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ Add Party</button>
+     <button type="button" class="nx-btn" onclick="openHopView('vyapar_import')">Import Vyapar</button>`, body);
+}
+
+function _hopRenderPartyList(parties, filter) {
+  const q = (filter || '').toLowerCase().trim();
+  const filtered = q ? parties.filter(p => (p.company || '').toLowerCase().includes(q) || (p.contact_person || '').toLowerCase().includes(q)) : parties;
+  if (!filtered.length) return '<p class="pty-empty-list">No parties found.</p>';
+  return filtered.map(p => {
+    const sel = hopState._partySelected && hopState._partySelected.id === p.id && hopState._partySelected._type === p._type;
+    const bal = p._balance ? `₹ ${Number(p._balance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00';
+    const badge = p._type === 'vendor' ? '<span class="pty-badge pty-badge-v">V</span>' : '<span class="pty-badge pty-badge-c">C</span>';
+    return `<button type="button" class="pty-item${sel ? ' is-active' : ''}" onclick="hopSelectParty('${p._type}', ${p.id})">
+      ${badge}
+      <span class="pty-item-name">${foEscapeText(p.company || '—')}</span>
+      <span class="pty-item-bal${p._balance > 0 ? ' is-due' : ''}">${bal}</span>
+    </button>`;
+  }).join('');
+}
+
+function _hopPartyEmptyDetail() {
+  return `<div class="pty-no-selection">
+    <svg viewBox="0 0 24 24" width="40" height="40" fill="currentColor" style="opacity:.1"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z"/></svg>
+    <p>Select a party to view details</p>
+  </div>`;
+}
+
+function _hopRenderPartyDetail(party, invoices) {
+  const isVendor = party._type === 'vendor';
+  const typeName = isVendor ? 'Vendor' : 'Customer';
+  const address = party.address || '';
+  const mobile = party.mobile || '';
+  const email = party.email || '';
+  const gst = party.gst_no || '';
+  const city = party.city || '';
+
+  const partyInvoices = isVendor ? [] : invoices.filter(inv => inv.customer_id === party.id);
+  partyInvoices.sort((a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || ''));
+
+  const callHref = hopCallHref(mobile);
+  const waHref = hopWhatsAppHref(mobile);
+
+  return `
+    <div class="pty-detail-header">
+      <div class="pty-detail-info">
+        <h3 class="pty-detail-name">${foEscapeText(party.company || '—')}</h3>
+        <span class="pty-detail-type">${typeName}</span>
+        ${gst ? `<p class="pty-detail-gst">GSTIN: ${foEscapeText(gst)}</p>` : ''}
+        ${address ? `<p class="pty-detail-addr">${foEscapeText(address)}</p>` : ''}
+        <div class="pty-detail-contact">
+          ${mobile ? `<span>${foEscapeText(mobile)}</span>` : ''}
+          ${email ? `<span>${foEscapeText(email)}</span>` : ''}
+          ${city ? `<span>${foEscapeText(city)}</span>` : ''}
+        </div>
+      </div>
+      <div class="pty-detail-actions">
+        ${callHref ? `<a class="pty-action-btn" href="${callHref}" title="Call">${hopContactIcon('call')}</a>` : ''}
+        ${waHref ? `<a class="pty-action-btn pty-action-wa" href="${waHref}" target="_blank" title="WhatsApp">${hopContactIcon('whatsapp')}</a>` : ''}
+        <button type="button" class="pty-action-btn" onclick="hopEditContact('${party._type}s', ${party.id})" title="Edit">${hopContactIcon('edit')}</button>
+        <button type="button" class="pty-action-btn pty-action-del" onclick="hopDeleteContact('${party._type}s', ${party.id}, '${foEscapeAttr(party.company || '')}')" title="Delete">${hopContactIcon('delete')}</button>
+      </div>
+    </div>
+
+    <div class="pty-txn-section">
+      <div class="pty-txn-header">
+        <strong>Transactions</strong>
+        <span class="nx-text-dim">${partyInvoices.length} records</span>
+      </div>
+      ${partyInvoices.length ? `
+        <table class="pty-txn-table">
+          <thead><tr>
+            <th>Type</th><th>Number</th><th>Date</th><th>Total</th><th>Balance</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${partyInvoices.map(inv => {
+              const amt = parseFloat(inv.amount || 0);
+              const paid = parseFloat(inv.paid_amount || 0);
+              const bal = amt - paid;
+              const status = bal <= 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Unpaid');
+              const statusClass = bal <= 0 ? 'is-paid' : (paid > 0 ? 'is-partial' : 'is-unpaid');
+              return `<tr>
+                <td>Invoice</td>
+                <td>${foEscapeText(inv.invoice_no || '—')}</td>
+                <td>${foEscapeText((inv.invoice_date || '').slice(0, 10))}</td>
+                <td class="pty-txn-amt">₹ ${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="pty-txn-amt${bal > 0 ? ' is-due' : ''}">₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td><span class="pty-status ${statusClass}">${status}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="pty-no-txn">No transactions yet.</p>'}
+    </div>`;
+}
+
+function hopSelectParty(type, id) {
+  const parties = hopState._parties || [];
+  const party = parties.find(p => p._type === type && p.id === id);
+  if (!party) return;
+  hopState._partySelected = party;
+  // Update list active state
+  document.querySelectorAll('.pty-item').forEach(el => el.classList.remove('is-active'));
+  event?.target?.closest?.('.pty-item')?.classList.add('is-active');
+  // Render detail
+  const detail = document.getElementById('pty-detail');
+  if (detail) detail.innerHTML = _hopRenderPartyDetail(party, hopState._partyInvoices || []);
+}
+
+function hopFilterParties(q) {
+  hopState._partyFilter = q || '';
+  const list = document.getElementById('pty-list');
+  if (list) list.innerHTML = _hopRenderPartyList(hopState._parties || [], q);
 }
 
 /* ---------- Customers ---------- */
@@ -3685,6 +3863,8 @@ window.hopBulkDeleteContacts = hopBulkDeleteContacts;
 window.hopCloseContactActionMenu = hopCloseContactActionMenu;
 window.hopOpenContactDetail = hopOpenContactDetail;
 window.hopCloseContactDetail = hopCloseContactDetail;
+window.hopSelectParty = hopSelectParty;
+window.hopFilterParties = hopFilterParties;
 window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
 window.hopRunVyaparImport = hopRunVyaparImport;
 window.hopPickVyaparBackup = hopPickVyaparBackup;

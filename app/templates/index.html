@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260720-web-desktop-cam">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260729-vyp-loader">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260729-parties">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -609,7 +609,7 @@
                 <nav class="hop-nav-list">
                     <button type="button" class="nx-nav-item hop-nav-btn active" data-hop-view="dashboard" onclick="openHopView('dashboard')">Dashboard</button>
                     <div class="hop-nav-group">CRM</div>
-                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="customers" onclick="openHopView('customers')">Customers</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="parties" onclick="openHopView('parties')">Parties</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="visiting_card" onclick="openHopView('visiting_card')">Visiting Card</button>
                     <div class="hop-nav-group">Sales</div>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="leads" onclick="openHopView('leads')">Leads</button>
@@ -622,7 +622,6 @@
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="samples" onclick="openHopView('samples')">Samples</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="fabric_preview" onclick="openHopView('fabric_preview')">Fabric Preview</button>
                     <div class="hop-nav-group">Procurement</div>
-                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="vendors" onclick="openHopView('vendors')">Vendors</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="vendor_cmp" onclick="openHopView('vendor_cmp')">Vendor Compare</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="orders" onclick="openHopView('orders')">Orders / PO</button>
                     <div class="hop-nav-group">Ops</div>
@@ -2208,6 +2207,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260720-web-desktop-cam"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260729-source"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260729-parties"></script>
 </body>
 </html>
