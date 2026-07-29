@@ -991,8 +991,9 @@ async function logout(reason) {
   }
 
   clearAuthLocalState();
-  document.body.classList.remove('bd-hop-ui', 'customers-page-active', 'nexora-ask-open', 'hop-active');
-  document.documentElement.classList.remove('hop-active');
+  document.body.classList.remove('bd-hop-ui', 'customers-page-active', 'nexora-ask-open', 'hop-active', 'hop-module-fullscreen');
+  document.documentElement.classList.remove('hop-active', 'hop-module-fullscreen');
+  document.getElementById('hop-executive-workspace')?.classList.remove('hop-ws--fullscreen');
   if (typeof resetNexoraChatForCurrentUser === 'function') {
     resetNexoraChatForCurrentUser(true);
   }
@@ -4848,8 +4849,9 @@ function showHopShell(viewName) {
 }
 
 function clearHopActiveScrollLock() {
-  document.body.classList.remove('hop-active');
-  document.documentElement.classList.remove('hop-active');
+  document.body.classList.remove('hop-active', 'hop-module-fullscreen');
+  document.documentElement.classList.remove('hop-active', 'hop-module-fullscreen');
+  document.getElementById('hop-executive-workspace')?.classList.remove('hop-ws--fullscreen');
 }
 
 function mobileNavHome() {

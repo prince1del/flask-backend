@@ -965,10 +965,16 @@ function hopScrollIntoMain(el, offset = 12) {
 }
 
 function hopSetMainFullpage(enabled) {
+  const on = !!enabled;
   const main = document.querySelector('#hop-executive-workspace .hop-main');
   const shell = document.querySelector('#hop-executive-workspace .hop-shell');
-  main?.classList.toggle('hop-main--fullpage', !!enabled);
-  shell?.classList.toggle('hop-shell--module', !!enabled);
+  const ws = document.getElementById('hop-executive-workspace');
+  main?.classList.toggle('hop-main--fullpage', on);
+  shell?.classList.toggle('hop-shell--module', on);
+  ws?.classList.toggle('hop-ws--fullscreen', on);
+  // Overwrite NEXORA top bar (Ask NEXORA / Workspace / profile / bell) for max work room.
+  document.body.classList.toggle('hop-module-fullscreen', on);
+  document.documentElement.classList.toggle('hop-module-fullscreen', on);
 }
 
 function openHopView(viewName, opts) {
