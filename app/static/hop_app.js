@@ -532,6 +532,15 @@ function hopContactIcon(name) {
   if (name === 'edit') {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm2.92 2.33H5v-.92l9.1-9.1.92.92-9.1 9.1ZM20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.3a1 1 0 0 0-1.41 0l-1.7 1.7L19 8.74l1.71-1.7Z" fill="currentColor"/></svg>';
   }
+  if (name === 'email') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm0 4-8 5L4 8V6l8 5 8-5v2Z" fill="currentColor"/></svg>';
+  }
+  if (name === 'pin') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5Z" fill="currentColor"/></svg>';
+  }
+  if (name === 'gst') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm4 18H6V4h7v5h5v11ZM8 13h8v2H8v-2Zm0 4h5v2H8v-2Z" fill="currentColor"/></svg>';
+  }
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 14H7L6 7Zm3-3h6l1 2H8l1-2Z" fill="currentColor"/></svg>';
 }
 
@@ -1882,18 +1891,23 @@ async function renderHopPartiesModule(mount) {
 
 function _hopRenderPartyList(parties, filter) {
   const q = (filter || '').toLowerCase().trim();
-  const filtered = q ? parties.filter(p => (p.company || '').toLowerCase().includes(q) || (p.contact_person || '').toLowerCase().includes(q)) : parties;
+  const filtered = q ? parties.filter(p => (p.company || '').toLowerCase().includes(q) || (p.contact_person || '').toLowerCase().includes(q) || String(p.customer_type || '').toLowerCase().includes(q)) : parties;
   if (!filtered.length) return '<p class="pty-empty-list">No parties found.</p>';
   return filtered.map(p => {
     const sel = hopState._partySelected && Number(hopState._partySelected.id) === Number(p.id) && hopState._partySelected._type === p._type;
     const bal = p._balance ? `₹ ${Number(p._balance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00';
-    const badge = p._type === 'vendor' ? '<span class="pty-badge pty-badge-v">V</span>' : '<span class="pty-badge pty-badge-c">C</span>';
+    const group = String(p.customer_type || (p._type === 'vendor' ? 'Supplier' : 'Buyer')).trim() || (p._type === 'vendor' ? 'Supplier' : 'Buyer');
+    const initial = (group.charAt(0) || 'P').toUpperCase();
+    const badgeClass = p._type === 'vendor' ? 'pty-badge-v' : 'pty-badge-c';
     return `<button type="button" class="pty-item${sel ? ' is-active' : ''}"
       onclick="hopSelectParty('${p._type}', ${p.id})"
       ondblclick="hopEditContact('${p._type === 'vendor' ? 'vendors' : 'customers'}', ${p.id})"
       title="Double-click to edit">
-      ${badge}
-      <span class="pty-item-name">${foEscapeText(p.company || '—')}</span>
+      <span class="pty-badge ${badgeClass}" title="${foEscapeAttr(group)}">${foEscapeText(initial)}</span>
+      <span class="pty-item-main">
+        <span class="pty-item-name">${foEscapeText(p.company || '—')}</span>
+        <span class="pty-item-group">${foEscapeText(group)}</span>
+      </span>
       <span class="pty-item-bal${p._balance > 0 ? ' is-due' : ''}">${bal}</span>
     </button>`;
   }).join('');
@@ -1908,12 +1922,18 @@ function _hopPartyEmptyDetail() {
 
 function _hopRenderPartyDetail(party, partyTxns) {
   const isVendor = party._type === 'vendor';
-  const typeName = isVendor ? 'Vendor' : 'Customer';
+  const partyGroup = String(
+    party.customer_type || party.party_group || (isVendor ? 'Supplier' : 'Buyer')
+  ).trim() || (isVendor ? 'Supplier' : 'Buyer');
   const address = party.address || '';
+  const shipping = party.shipping_address || '';
   const mobile = party.mobile || '';
   const email = party.email || '';
   const gst = party.gst_no || '';
   const city = party.city || '';
+  const state = party.state || '';
+  const contactPerson = party.contact_person || '';
+  const place = [city, state].filter(Boolean).join(', ');
 
   const partyRows = (partyTxns || [])
     .filter((t) => t.party_type === party._type && Number(t.party_id) === Number(party.id))
@@ -1921,25 +1941,36 @@ function _hopRenderPartyDetail(party, partyTxns) {
 
   const callHref = hopCallHref(mobile);
   const waHref = hopWhatsAppHref(mobile);
+  const typeKey = isVendor ? 'vendors' : 'customers';
 
   return `
     <div class="pty-detail-header">
       <div class="pty-detail-info">
-        <h3 class="pty-detail-name">${foEscapeText(party.company || '—')}</h3>
-        <span class="pty-detail-type">${typeName}</span>
-        ${gst ? `<p class="pty-detail-gst">GSTIN: ${foEscapeText(gst)}</p>` : ''}
-        ${address ? `<p class="pty-detail-addr">${foEscapeText(address)}</p>` : ''}
-        <div class="pty-detail-contact">
-          ${mobile ? `<span>${foEscapeText(mobile)}</span>` : ''}
-          ${email ? `<span>${foEscapeText(email)}</span>` : ''}
-          ${city ? `<span>${foEscapeText(city)}</span>` : ''}
+        <div class="pty-detail-title-row">
+          <div class="pty-detail-heading">
+            <h3 class="pty-detail-name">${foEscapeText(party.company || '—')}</h3>
+            <span class="pty-detail-type" title="Party Group">${foEscapeText(partyGroup)}</span>
+          </div>
+          <div class="pty-detail-actions">
+            ${callHref ? `<a class="pty-action-btn" href="${callHref}" title="Call">${hopContactIcon('call')}</a>` : ''}
+            ${waHref ? `<a class="pty-action-btn pty-action-wa" href="${waHref}" target="_blank" title="WhatsApp">${hopContactIcon('whatsapp')}</a>` : ''}
+            <button type="button" class="nx-btn nx-btn-primary pty-detail-edit" onclick="hopEditContact('${typeKey}', ${party.id})">${hopContactIcon('edit')} Edit</button>
+            <button type="button" class="nx-btn hop-contact-icon-del pty-detail-del" onclick="hopDeleteContact('${typeKey}', ${party.id}, '${foEscapeAttr(party.company || '')}')">${hopContactIcon('delete')} Delete</button>
+          </div>
         </div>
-      </div>
-      <div class="pty-detail-actions">
-        ${callHref ? `<a class="pty-action-btn" href="${callHref}" title="Call">${hopContactIcon('call')}</a>` : ''}
-        ${waHref ? `<a class="pty-action-btn pty-action-wa" href="${waHref}" target="_blank" title="WhatsApp">${hopContactIcon('whatsapp')}</a>` : ''}
-        <button type="button" class="nx-btn nx-btn-primary" onclick="hopEditContact('${party._type}s', ${party.id})">${hopContactIcon('edit')} Edit</button>
-        <button type="button" class="nx-btn hop-contact-icon-del" onclick="hopDeleteContact('${party._type}s', ${party.id}, '${foEscapeAttr(party.company || '')}')">${hopContactIcon('delete')} Delete</button>
+
+        <div class="pty-detail-meta">
+          ${gst ? `<div class="pty-meta-row"><span class="pty-meta-ico">${hopContactIcon('gst')}</span><span class="pty-meta-text"><em>GSTIN</em> ${foEscapeText(gst)}</span></div>` : ''}
+          ${contactPerson ? `<div class="pty-meta-row"><span class="pty-meta-ico">${hopContactIcon('edit')}</span><span class="pty-meta-text"><em>Contact</em> ${foEscapeText(contactPerson)}</span></div>` : ''}
+          ${address ? `<div class="pty-meta-row"><span class="pty-meta-ico">${hopContactIcon('pin')}</span><span class="pty-meta-text"><em>Billing</em> ${foEscapeText(address)}</span></div>` : ''}
+          ${shipping && shipping !== address ? `<div class="pty-meta-row"><span class="pty-meta-ico">${hopContactIcon('pin')}</span><span class="pty-meta-text"><em>Shipping</em> ${foEscapeText(shipping)}</span></div>` : ''}
+        </div>
+
+        <div class="pty-detail-contact">
+          ${mobile ? `<${callHref ? `a href="${callHref}"` : 'span'} class="pty-chip pty-chip-phone">${hopContactIcon('call')}<span>${foEscapeText(mobile)}</span></${callHref ? 'a' : 'span'}>` : ''}
+          ${email ? `<a class="pty-chip pty-chip-mail" href="mailto:${foEscapeAttr(email)}">${hopContactIcon('email')}<span>${foEscapeText(email)}</span></a>` : ''}
+          ${place ? `<span class="pty-chip pty-chip-place">${hopContactIcon('pin')}<span>${foEscapeText(place)}</span></span>` : ''}
+        </div>
       </div>
     </div>
 
