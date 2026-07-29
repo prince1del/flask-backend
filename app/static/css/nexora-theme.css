@@ -1095,19 +1095,21 @@ body.hop-module-fullscreen #hop-executive-workspace .hop-main,
 }
 .hop-contact-actions{
   display:grid;
-  grid-template-columns:repeat(3, minmax(0, 1fr));
+  grid-template-columns:repeat(4, minmax(0, 1fr));
   gap:6px;
-  padding:10px 12px 12px;
+  padding:8px 12px 12px;
 }
 .hop-contact-icon-btn{
-  display:grid;
-  place-items:center;
-  min-height:36px;
-  padding:6px !important;
+  min-height:40px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:8px !important;
 }
 .hop-contact-icon-btn svg{
   width:18px;
   height:18px;
+  display:block;
 }
 .hop-contact-edit{
   color:#93c5fd !important;
@@ -1831,6 +1833,49 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   border-bottom:1px solid rgba(255,255,255,.06);
 }
 .pty-list{flex:1;overflow-y:auto;}
+.pty-item-wrap{
+  display:flex;
+  flex-direction:column;
+  border-bottom:1px solid rgba(255,255,255,.03);
+}
+.pty-item-wrap.is-active{
+  background:rgba(34,211,238,.06);
+}
+.pty-item-wrap .pty-item{
+  border-bottom:none;
+}
+.pty-item-actions{
+  display:flex;
+  gap:6px;
+  padding:0 10px 8px 40px;
+  flex-wrap:wrap;
+}
+.pty-item-actions .pty-action-btn,
+.pty-item-actions .nx-btn{
+  min-height:30px;
+  font-size:.7rem;
+  padding:4px 8px;
+}
+.pty-detail-actions{
+  display:flex;
+  gap:6px;
+  flex-shrink:0;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.pty-detail-actions .nx-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  min-height:34px;
+  font-size:.75rem;
+}
+.pty-detail-actions .nx-btn svg{
+  width:14px;
+  height:14px;
+}
+
 .pty-item{
   display:flex;align-items:center;gap:8px;
   width:100%;padding:9px 12px;border:none;
@@ -1877,14 +1922,14 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;
   font-size:.72rem;color:var(--nxt-text-dim,#94a3b8);
 }
-.pty-detail-actions{
-  display:flex;gap:6px;flex-shrink:0;align-items:center;
-}
 .pty-action-btn{
-  width:32px;height:32px;border-radius:6px;border:none;
+  min-width:32px;height:32px;border-radius:6px;border:none;
   display:inline-flex;align-items:center;justify-content:center;
+  gap:4px;
+  padding:0 8px;
   background:rgba(255,255,255,.05);color:var(--nxt-text-dim,#94a3b8);
   cursor:pointer;transition:all .12s;text-decoration:none;
+  font-size:.7rem;
 }
 .pty-action-btn svg{width:16px;height:16px;}
 .pty-action-btn:hover{background:rgba(255,255,255,.1);color:var(--nxt-text,#e2e8f0);}
@@ -1973,7 +2018,7 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 
 /* --- Contact Detail Overlay --- */
 .hop-detail-overlay{
-  position:fixed;inset:0;z-index:9000;
+  position:fixed;inset:0;z-index:12000;
   display:flex;align-items:stretch;justify-content:flex-end;
   opacity:0;pointer-events:none;transition:opacity .25s ease;
 }
@@ -2017,6 +2062,10 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 }
 .hop-detail-action-btn svg{width:16px;height:16px;}
 .hop-detail-wa{color:#25d366 !important;border-color:#25d366 !important;}
+.hop-detail-del{color:#f87171 !important;border-color:rgba(248,113,113,.45) !important;}
+.hop-detail-quick-actions{
+  flex-wrap:wrap;
+}
 .hop-detail-fields{padding:16px;display:flex;flex-direction:column;gap:2px;}
 .hop-detail-field{
   display:flex;justify-content:space-between;align-items:baseline;

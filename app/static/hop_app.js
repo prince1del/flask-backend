@@ -539,18 +539,28 @@ function hopRenderQuickContactActions(mobile, type, id, label) {
   const callHref = hopCallHref(mobile);
   const waHref = hopWhatsAppHref(mobile);
   const callBtn = callHref
-    ? `<a class="nx-btn hop-contact-icon-btn" href="${callHref}" title="Call">${hopContactIcon('call')}</a>`
+    ? `<a class="nx-btn hop-contact-icon-btn" href="${callHref}" title="Call" onclick="event.stopPropagation()">${hopContactIcon('call')}</a>`
     : `<button type="button" class="nx-btn hop-contact-icon-btn is-disabled" disabled title="Mobile number missing">${hopContactIcon('call')}</button>`;
   const waBtn = waHref
-    ? `<a class="nx-btn nx-btn-primary hop-contact-icon-btn" href="${waHref}" target="_blank" rel="noopener noreferrer" title="WhatsApp">${hopContactIcon('whatsapp')}</a>`
+    ? `<a class="nx-btn nx-btn-primary hop-contact-icon-btn" href="${waHref}" target="_blank" rel="noopener noreferrer" title="WhatsApp" onclick="event.stopPropagation()">${hopContactIcon('whatsapp')}</a>`
     : `<button type="button" class="nx-btn nx-btn-primary hop-contact-icon-btn is-disabled" disabled title="Mobile number missing">${hopContactIcon('whatsapp')}</button>`;
+  const editBtn = `<button type="button" class="nx-btn hop-contact-icon-btn hop-contact-edit" onclick="event.stopPropagation();hopEditContact('${type}', ${id})" title="Edit">${hopContactIcon('edit')}</button>`;
   const delBtn = `<button type="button" class="nx-btn hop-contact-icon-btn hop-contact-icon-del" onclick="event.stopPropagation();hopDeleteContact('${type}', ${id}, '${foEscapeAttr(label || '')}')" title="Delete">${hopContactIcon('delete')}</button>`;
   return `
     <div class="hop-contact-actions">
       ${callBtn}
       ${waBtn}
+      ${editBtn}
       ${delBtn}
     </div>`;
+}
+
+/** Prefer Parties workspace when that is the active CRM view. */
+function hopContactReturnView(type) {
+  if (hopState.view === 'parties') return 'parties';
+  if (type === 'vendors' || type === 'vendor') return hopState.view === 'parties' ? 'parties' : 'vendors';
+  if (type === 'customers' || type === 'customer') return hopState.view === 'parties' ? 'parties' : 'customers';
+  return hopState.view || 'parties';
 }
 
 function hopRenderDesktopContactToolbar(type, count) {
@@ -697,6 +707,8 @@ function hopOpenContactDetail(type, id) {
       </div>
       <div class="hop-detail-quick-actions">
         ${callBtn}${waBtn}
+        <button type="button" class="nx-btn hop-detail-action-btn" onclick="hopCloseContactDetail();hopEditContact('${type}', ${id})">${hopContactIcon('edit')} Edit</button>
+        <button type="button" class="nx-btn hop-detail-action-btn hop-detail-del" onclick="hopCloseContactDetail();hopDeleteContact('${type}', ${id}, '${foEscapeAttr(label)}')">${hopContactIcon('delete')} Delete</button>
       </div>
       <div class="hop-detail-fields">
         ${fields.map(([k, v]) => {
@@ -879,7 +891,8 @@ async function hopDeleteContact(type, id, label) {
     state.ids = state.ids.filter((x) => x !== Number(id));
     if (type === 'vendors') hopState.vendors = [];
     else hopState.customers = [];
-    openHopView(type);
+    hopCloseContactDetail();
+    openHopView(hopContactReturnView(type));
   } catch (e) {
     alert(e.message || 'Delete failed');
   }
@@ -906,7 +919,7 @@ async function hopBulkDeleteContacts(type) {
     state.mode = false;
     if (type === 'vendors') hopState.vendors = [];
     else hopState.customers = [];
-    openHopView(type);
+    openHopView(hopContactReturnView(type));
     if (errors.length) {
       alert(`Deleted ${deleted}. ${errors.length} could not be deleted (linked records).`);
     }
@@ -1389,14 +1402,23 @@ function _hopRenderPartyList(parties, filter) {
   const filtered = q ? parties.filter(p => (p.company || '').toLowerCase().includes(q) || (p.contact_person || '').toLowerCase().includes(q)) : parties;
   if (!filtered.length) return '<p class="pty-empty-list">No parties found.</p>';
   return filtered.map(p => {
-    const sel = hopState._partySelected && hopState._partySelected.id === p.id && hopState._partySelected._type === p._type;
+    const sel = hopState._partySelected && Number(hopState._partySelected.id) === Number(p.id) && hopState._partySelected._type === p._type;
     const bal = p._balance ? `₹ ${Number(p._balance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00';
     const badge = p._type === 'vendor' ? '<span class="pty-badge pty-badge-v">V</span>' : '<span class="pty-badge pty-badge-c">C</span>';
-    return `<button type="button" class="pty-item${sel ? ' is-active' : ''}" onclick="hopSelectParty('${p._type}', ${p.id})">
-      ${badge}
-      <span class="pty-item-name">${foEscapeText(p.company || '—')}</span>
-      <span class="pty-item-bal${p._balance > 0 ? ' is-due' : ''}">${bal}</span>
-    </button>`;
+    const typeKey = p._type === 'vendor' ? 'vendors' : 'customers';
+    const label = foEscapeAttr(p.company || '');
+    return `<div class="pty-item-wrap${sel ? ' is-active' : ''}">
+      <button type="button" class="pty-item${sel ? ' is-active' : ''}" onclick="hopSelectParty('${p._type}', ${p.id})">
+        ${badge}
+        <span class="pty-item-name">${foEscapeText(p.company || '—')}</span>
+        <span class="pty-item-bal${p._balance > 0 ? ' is-due' : ''}">${bal}</span>
+      </button>
+      <div class="pty-item-actions">
+        <button type="button" class="pty-action-btn" onclick="event.stopPropagation();hopOpenContactDetail('${typeKey}', ${p.id})" title="Details">Details</button>
+        <button type="button" class="pty-action-btn" onclick="event.stopPropagation();hopEditContact('${typeKey}', ${p.id})" title="Edit">${hopContactIcon('edit')}</button>
+        <button type="button" class="pty-action-btn pty-action-del" onclick="event.stopPropagation();hopDeleteContact('${typeKey}', ${p.id}, '${label}')" title="Delete">${hopContactIcon('delete')}</button>
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -1439,8 +1461,9 @@ function _hopRenderPartyDetail(party, partyTxns) {
       <div class="pty-detail-actions">
         ${callHref ? `<a class="pty-action-btn" href="${callHref}" title="Call">${hopContactIcon('call')}</a>` : ''}
         ${waHref ? `<a class="pty-action-btn pty-action-wa" href="${waHref}" target="_blank" title="WhatsApp">${hopContactIcon('whatsapp')}</a>` : ''}
-        <button type="button" class="pty-action-btn" onclick="hopEditContact('${party._type}s', ${party.id})" title="Edit">${hopContactIcon('edit')}</button>
-        <button type="button" class="pty-action-btn pty-action-del" onclick="hopDeleteContact('${party._type}s', ${party.id}, '${foEscapeAttr(party.company || '')}')" title="Delete">${hopContactIcon('delete')}</button>
+        <button type="button" class="nx-btn" onclick="hopOpenContactDetail('${party._type === 'vendor' ? 'vendors' : 'customers'}', ${party.id})">Details</button>
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopEditContact('${party._type}s', ${party.id})">${hopContactIcon('edit')} Edit</button>
+        <button type="button" class="nx-btn hop-contact-icon-del" onclick="hopDeleteContact('${party._type}s', ${party.id}, '${foEscapeAttr(party.company || '')}')">${hopContactIcon('delete')} Delete</button>
       </div>
     </div>
 
@@ -1480,14 +1503,18 @@ function _hopRenderPartyDetail(party, partyTxns) {
 
 function hopSelectParty(type, id) {
   const parties = hopState._parties || [];
-  const party = parties.find(p => p._type === type && p.id === id);
+  const party = parties.find(p => p._type === type && Number(p.id) === Number(id));
   if (!party) return;
   hopState._partySelected = party;
   const list = document.getElementById('pty-list');
   if (list) list.innerHTML = _hopRenderPartyList(hopState._parties || [], hopState._partyFilter || '');
-  // Render detail
+  // Render detail pane (desktop split)
   const detail = document.getElementById('pty-detail');
   if (detail) detail.innerHTML = _hopRenderPartyDetail(party, hopState._partyTxns || []);
+  // Mobile / narrow: open full contact card overlay so Edit / Delete / details are usable.
+  if (hopIsMobileView()) {
+    hopOpenContactDetail(type === 'vendor' ? 'vendors' : 'customers', party.id);
+  }
 }
 
 function hopFilterParties(q) {
@@ -3873,7 +3900,10 @@ async function hopSave(kind) {
     hopState.vendors = [];
     hopState.invoices = [];
     hopState.orders = [];
-    openHopView(cfg.view);
+    const nextView = (kind === 'customer' || kind === 'vendor')
+      ? hopContactReturnView(kind === 'vendor' ? 'vendors' : 'customers')
+      : cfg.view;
+    openHopView(nextView);
   } catch (e) {
     alert(e.message);
   }
