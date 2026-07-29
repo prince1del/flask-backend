@@ -1298,6 +1298,30 @@ def party_transaction_preview(txn_id: int):
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/documents/preview", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def documents_preview():
+    """Preview by party_txn_id or Vyapar source_txn_id (for Sale Invoice list extras)."""
+    ensure_hop_schema(_db_path())
+    from app.hop_doc_preview import build_txn_preview
+
+    party_txn_id = request.args.get("party_txn_id", type=int)
+    source_txn_id = request.args.get("source_txn_id", type=int)
+    if not party_txn_id and not source_txn_id:
+        return _json_error("party_txn_id or source_txn_id is required", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        data = build_txn_preview(
+            conn,
+            _ws(),
+            party_txn_id=party_txn_id,
+            source_txn_id=source_txn_id,
+        )
+    if not data:
+        return _json_error("Transaction not found", "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/complaints", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

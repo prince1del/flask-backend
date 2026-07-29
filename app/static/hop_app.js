@@ -2653,10 +2653,28 @@ function hopPrintPartyTxnPreview() {
 }
 
 async function hopOpenPartyTxnDetail(txnId) {
+  return hopOpenSaleDocPreview(txnId, 0);
+}
+
+/** Open Vyapar-style Preview from Sale/Purchase lists or Parties ledger. */
+async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
+  const pid = Number(partyTxnId || 0) || 0;
+  const sid = Number(sourceTxnId || 0) || 0;
+  if (!pid && !sid) {
+    if (typeof nexoraToast === 'function') {
+      nexoraToast('Preview not available for this row yet.', 'warn');
+    } else {
+      alert('Preview not available for this row yet.');
+    }
+    return;
+  }
   hopClosePartyTxnDetail();
   const overlay = document.createElement('div');
   overlay.id = 'hop-party-txn-overlay';
   overlay.className = 'hop-doc-preview-overlay';
+  const openListBtn = pid
+    ? `<button type="button" class="nx-btn" onclick="hopOpenPartyTxnInModule(${pid})">Open in list</button>`
+    : '';
   overlay.innerHTML = `
     <div class="hop-doc-preview-backdrop" onclick="hopClosePartyTxnDetail()"></div>
     <div class="hop-doc-preview-modal" role="dialog" aria-modal="true" aria-label="Preview">
@@ -2669,7 +2687,7 @@ async function hopOpenPartyTxnDetail(txnId) {
       </div>
       <div class="hop-doc-preview-foot">
         <button type="button" class="nx-btn" onclick="hopPrintPartyTxnPreview()">Print</button>
-        <button type="button" class="nx-btn" onclick="hopOpenPartyTxnInModule(${Number(txnId)})">Open in list</button>
+        ${openListBtn}
         <button type="button" class="nx-btn hop-doc-preview-close" onclick="hopClosePartyTxnDetail()">Close</button>
       </div>
     </div>`;
@@ -2677,7 +2695,10 @@ async function hopOpenPartyTxnDetail(txnId) {
   requestAnimationFrame(() => overlay.classList.add('is-open'));
 
   try {
-    const data = await hopApi(`/api/v1/hop/party-transactions/${Number(txnId)}/preview`);
+    const url = pid
+      ? `/api/v1/hop/party-transactions/${pid}/preview`
+      : `/api/v1/hop/documents/preview?source_txn_id=${sid}`;
+    const data = await hopApi(url);
     const body = document.getElementById('hop-doc-preview-body');
     if (body) body.innerHTML = hopRenderDocPreviewHtml(data);
   } catch (e) {
@@ -4041,6 +4062,14 @@ function hopNormalizeLedgerToInvoice(r, fallbackLabel) {
     notes: r.txn_label || r.notes || fallbackLabel || '',
     txn_type: Number.isFinite(txnType) ? txnType : undefined,
     txn_label: r.txn_label || fallbackLabel || '',
+    // Preview keys: party ledger id preferred; else Vyapar source_txn_id.
+    party_txn_id: (() => {
+      if (r.party_txn_id != null && r.party_txn_id !== '') return Number(r.party_txn_id);
+      // hop_party_transactions rows expose txn_number (ledger API).
+      if (r.txn_number !== undefined && r.id != null && r.id !== '') return Number(r.id);
+      return null;
+    })(),
+    source_txn_id: r.source_txn_id != null && r.source_txn_id !== '' ? Number(r.source_txn_id) : null,
   };
 }
 
@@ -4090,7 +4119,21 @@ async function hopLoadSaleDocRows(kind) {
       // Prefer ledger when the same serial exists there (avoids showing stale year collision).
       if (no && ledgerNos.has(no)) return false;
       return true;
-    });
+    }).map((inv) => hopNormalizeLedgerToInvoice({
+      invoice_date: inv.invoice_date,
+      invoice_no: inv.invoice_no,
+      customer_company: inv.customer_company,
+      amount: inv.amount,
+      paid_amount: inv.paid_amount,
+      balance: inv.balance,
+      due_date: inv.due_date,
+      status: inv.status,
+      notes: inv.notes || 'Sale Invoice',
+      txn_label: 'Sale Invoice',
+      txn_type: 1,
+      source_txn_id: inv.source_txn_id,
+      project_name: inv.project_name,
+    }, 'Sale Invoice'));
     return [...fromLedger, ...fromInv];
   }
   if (kind === 'sale_estimates') {
@@ -4099,27 +4142,27 @@ async function hopLoadSaleDocRows(kind) {
       hopApi('/api/v1/hop/quotations').catch(() => []),
     ]);
     hopState.quotations = quotes || [];
-    const quoteNos = new Set(
-      (quotes || []).map((q) => String(q.quote_no || '').trim().toLowerCase()).filter(Boolean),
-    );
-    const fromQuotes = (quotes || []).map((q) => hopNormalizeLedgerToInvoice({
-      quote_date: q.quote_date,
-      quote_no: q.quote_no,
-      customer_company: q.customer_company,
-      value: q.value,
-      balance: Number(q.value || 0),
-      paid_amount: 0,
-      status: q.status || 'sent',
-      notes: 'Estimate/Quotation',
-      txn_label: 'Estimate/Quotation',
-      txn_type: 30,
-      project_name: q.project_name,
-    }, 'Estimate/Quotation'));
     const ledger = hopFilterRowsByTxnTypes(ledgerRaw, [27, 30]);
-    const fromLedger = ledger
-      .filter((r) => !quoteNos.has(String(r.txn_number || '').trim().toLowerCase()))
-      .map((r) => hopNormalizeLedgerToInvoice(r, 'Estimate/Quotation'));
-    return [...fromQuotes, ...fromLedger];
+    const fromLedger = ledger.map((r) => hopNormalizeLedgerToInvoice(r, 'Estimate/Quotation'));
+    const ledgerNos = new Set(
+      ledger.map((r) => String(r.txn_number || '').trim().toLowerCase()).filter(Boolean),
+    );
+    const fromQuotes = (quotes || [])
+      .filter((q) => !ledgerNos.has(String(q.quote_no || '').trim().toLowerCase()))
+      .map((q) => hopNormalizeLedgerToInvoice({
+        quote_date: q.quote_date,
+        quote_no: q.quote_no,
+        customer_company: q.customer_company,
+        value: q.value,
+        balance: Number(q.value || 0),
+        paid_amount: 0,
+        status: q.status || 'sent',
+        notes: 'Estimate/Quotation',
+        txn_label: 'Estimate/Quotation',
+        txn_type: 30,
+        project_name: q.project_name,
+      }, 'Estimate/Quotation'));
+    return [...fromLedger, ...fromQuotes];
   }
   if (kind === 'sale_payment_in') {
     const [ledgerRaw, payments] = await Promise.all([
@@ -5182,7 +5225,15 @@ function hopRenderInvoiceRows(rows) {
   return rows.map((r) => {
     const eff = hopInvoiceEffectiveStatus(r);
     const party = r.customer_company || r.party_name || r.client_name || '';
-    return `<tr>
+    const partyTxnId = Number(r.party_txn_id || 0) || 0;
+    const sourceTxnId = Number(r.source_txn_id || 0) || 0;
+    const canPreview = partyTxnId > 0 || sourceTxnId > 0;
+    const click = canPreview
+      ? ` class="inv-row is-clickable" role="button" tabindex="0" title="Click to preview"
+         onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})"
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId});}"`
+      : ' class="inv-row"';
+    return `<tr${click}>
       <td class="inv-date">${hopCell(String(r.invoice_date || '').slice(0, 10))}</td>
       <td class="inv-no" title="${foEscapeAttr(r.invoice_no || '')}">${hopCell(r.invoice_no)}</td>
       <td>${hopCell(party)}</td>
@@ -5190,7 +5241,8 @@ function hopRenderInvoiceRows(rows) {
       <td class="inv-num">${hopMoney(r.balance)}</td>
       <td>${hopCell(r.due_date)}</td>
       <td>${hopInvoiceStatusBadge(eff)}</td>
-      <td class="inv-actions">
+      <td class="inv-actions" onclick="event.stopPropagation()">
+        ${canPreview ? `<button type="button" class="inv-ico-btn" title="Preview" onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})">👁</button>` : ''}
         <button type="button" class="inv-ico-btn" title="Record payment" onclick="hopShowForm('payment')">₹</button>
       </td>
     </tr>`;
@@ -6481,6 +6533,7 @@ window.hopInvoiceExportCsv = hopInvoiceExportCsv;
 window.hopSelectParty = hopSelectParty;
 window.hopFilterParties = hopFilterParties;
 window.hopOpenPartyTxnDetail = hopOpenPartyTxnDetail;
+window.hopOpenSaleDocPreview = hopOpenSaleDocPreview;
 window.hopClosePartyTxnDetail = hopClosePartyTxnDetail;
 window.hopOpenPartyTxnInModule = hopOpenPartyTxnInModule;
 window.hopPrintPartyTxnPreview = hopPrintPartyTxnPreview;

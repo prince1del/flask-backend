@@ -2988,7 +2988,10 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .inv-badge--overdue{background:rgba(248,113,113,.15);color:#f87171;}
 .inv-badge--partial{background:rgba(251,191,36,.15);color:#fbbf24;}
 .inv-badge--unpaid,.inv-badge--open{background:rgba(56,189,248,.12);color:#38bdf8;}
-.inv-actions{white-space:nowrap;width:36px;}
+.inv-actions{white-space:nowrap;width:auto;}
+.inv-row.is-clickable{cursor:pointer;}
+.inv-row.is-clickable:hover{background:rgba(37,224,255,.07);}
+.inv-row.is-clickable:focus-visible{outline:2px solid rgba(37,224,255,.45);outline-offset:-2px;}
 .inv-ico-btn{
   border:1px solid rgba(255,255,255,.12);background:transparent;
   color:#94a3b8;border-radius:5px;width:24px;height:24px;cursor:pointer;
