@@ -1260,12 +1260,12 @@ function hopStageOptions(list, selected) {
 
 /* ---------- Parties (Vyapar-style unified view) ---------- */
 async function renderHopPartiesModule(mount) {
-  let customers = [], vendors = [], invoices = [];
+  let customers = [], vendors = [], partyTxns = [];
   try {
-    [customers, vendors, invoices] = await Promise.all([
+    [customers, vendors, partyTxns] = await Promise.all([
       hopApi('/api/v1/hop/customers') || [],
       hopApi('/api/v1/hop/vendors') || [],
-      hopApi('/api/v1/hop/invoices') || [],
+      hopApi('/api/v1/hop/party-transactions') || [],
     ]);
     hopState.customers = customers;
     hopState.vendors = vendors;
@@ -1279,25 +1279,21 @@ async function renderHopPartiesModule(mount) {
     ...vendors.map(v => ({ ...v, _type: 'vendor', _balance: 0 })),
   ];
 
-  // Calculate balances from invoices
-  const balByCustomer = {};
-  for (const inv of invoices) {
-    const cid = inv.customer_id;
-    if (!cid) continue;
-    const amt = parseFloat(inv.amount || 0);
-    const paid = parseFloat(inv.paid_amount || 0);
-    balByCustomer[cid] = (balByCustomer[cid] || 0) + (amt - paid);
+  // Calculate balances from imported party transactions.
+  const balByParty = {};
+  for (const t of partyTxns) {
+    const key = `${t.party_type}:${t.party_id}`;
+    balByParty[key] = (balByParty[key] || 0) + parseFloat(t.balance_amount || 0);
   }
   for (const p of parties) {
-    if (p._type === 'customer' && balByCustomer[p.id]) {
-      p._balance = balByCustomer[p.id];
-    }
+    const key = `${p._type}:${p.id}`;
+    p._balance = balByParty[key] || 0;
   }
 
   parties.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
 
   hopState._parties = parties;
-  hopState._partyInvoices = invoices;
+  hopState._partyTxns = partyTxns;
   hopState._partySelected = hopState._partySelected || null;
   hopState._partyFilter = hopState._partyFilter || '';
 
@@ -1316,7 +1312,7 @@ async function renderHopPartiesModule(mount) {
         </div>
       </div>
       <div id="pty-detail" class="pty-detail">
-        ${hopState._partySelected ? _hopRenderPartyDetail(hopState._partySelected, invoices) : _hopPartyEmptyDetail()}
+        ${hopState._partySelected ? _hopRenderPartyDetail(hopState._partySelected, partyTxns) : _hopPartyEmptyDetail()}
       </div>
     </div>`;
 
@@ -1348,7 +1344,7 @@ function _hopPartyEmptyDetail() {
   </div>`;
 }
 
-function _hopRenderPartyDetail(party, invoices) {
+function _hopRenderPartyDetail(party, partyTxns) {
   const isVendor = party._type === 'vendor';
   const typeName = isVendor ? 'Vendor' : 'Customer';
   const address = party.address || '';
@@ -1357,8 +1353,9 @@ function _hopRenderPartyDetail(party, invoices) {
   const gst = party.gst_no || '';
   const city = party.city || '';
 
-  const partyInvoices = isVendor ? [] : invoices.filter(inv => inv.customer_id === party.id);
-  partyInvoices.sort((a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || ''));
+  const partyRows = (partyTxns || [])
+    .filter((t) => t.party_type === party._type && Number(t.party_id) === Number(party.id))
+    .sort((a, b) => String(b.txn_date || '').localeCompare(String(a.txn_date || '')));
 
   const callHref = hopCallHref(mobile);
   const waHref = hopWhatsAppHref(mobile);
@@ -1387,24 +1384,26 @@ function _hopRenderPartyDetail(party, invoices) {
     <div class="pty-txn-section">
       <div class="pty-txn-header">
         <strong>Transactions</strong>
-        <span class="nx-text-dim">${partyInvoices.length} records</span>
+        <span class="nx-text-dim">${partyRows.length} records</span>
       </div>
-      ${partyInvoices.length ? `
+      ${partyRows.length ? `
         <table class="pty-txn-table">
           <thead><tr>
             <th>Type</th><th>Number</th><th>Date</th><th>Total</th><th>Balance</th><th>Status</th>
           </tr></thead>
           <tbody>
-            ${partyInvoices.map(inv => {
-              const amt = parseFloat(inv.amount || 0);
-              const paid = parseFloat(inv.paid_amount || 0);
-              const bal = amt - paid;
-              const status = bal <= 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Unpaid');
-              const statusClass = bal <= 0 ? 'is-paid' : (paid > 0 ? 'is-partial' : 'is-unpaid');
+            ${partyRows.map((row) => {
+              const amt = parseFloat(row.total_amount || 0);
+              const bal = parseFloat(row.balance_amount || 0);
+              const status = row.status_text || (bal <= 0 ? 'Paid' : 'Open');
+              const s = String(status).toLowerCase();
+              const statusClass = s.includes('paid')
+                ? 'is-paid'
+                : (s.includes('cancel') ? 'is-unpaid' : (s.includes('open') ? 'is-partial' : 'is-partial'));
               return `<tr>
-                <td>Invoice</td>
-                <td>${foEscapeText(inv.invoice_no || '—')}</td>
-                <td>${foEscapeText((inv.invoice_date || '').slice(0, 10))}</td>
+                <td>${foEscapeText(row.txn_label || `Txn ${row.txn_type || ''}`)}</td>
+                <td>${foEscapeText(row.txn_number || '—')}</td>
+                <td>${foEscapeText((row.txn_date || '').slice(0, 10))}</td>
                 <td class="pty-txn-amt">₹ ${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td class="pty-txn-amt${bal > 0 ? ' is-due' : ''}">₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td><span class="pty-status ${statusClass}">${status}</span></td>
@@ -1421,12 +1420,11 @@ function hopSelectParty(type, id) {
   const party = parties.find(p => p._type === type && p.id === id);
   if (!party) return;
   hopState._partySelected = party;
-  // Update list active state
-  document.querySelectorAll('.pty-item').forEach(el => el.classList.remove('is-active'));
-  event?.target?.closest?.('.pty-item')?.classList.add('is-active');
+  const list = document.getElementById('pty-list');
+  if (list) list.innerHTML = _hopRenderPartyList(hopState._parties || [], hopState._partyFilter || '');
   // Render detail
   const detail = document.getElementById('pty-detail');
-  if (detail) detail.innerHTML = _hopRenderPartyDetail(party, hopState._partyInvoices || []);
+  if (detail) detail.innerHTML = _hopRenderPartyDetail(party, hopState._partyTxns || []);
 }
 
 function hopFilterParties(q) {
@@ -1628,6 +1626,7 @@ async function hopRunVyaparImport() {
       `<span class="vyp-r-label">Products</span> <strong>${data.products_created}</strong> created, ${data.products_skipped} skipped`,
       `<span class="vyp-r-label">Invoices</span> <strong>${data.invoices_created || 0}</strong> created`,
       `<span class="vyp-r-label">Payments</span> <strong>${data.payments_created || 0}</strong> created`,
+      `<span class="vyp-r-label">All Txns</span> <strong>${data.party_txns_created || 0}</strong> imported`,
     ];
     if (data.errors && data.errors.length) {
       lines.push(`<span class="vyp-r-warn">${data.errors.length} error(s) during import</span>`);

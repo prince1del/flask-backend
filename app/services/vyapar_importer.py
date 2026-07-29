@@ -8,6 +8,39 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+SALE_LIKE_TYPES = {1, 21, 27, 30, 65, 83}
+
+
+def _txn_label(txn_type: int) -> str:
+    labels = {
+        1: "Sale Invoice",
+        2: "Purchase Bill",
+        3: "Payment Out",
+        4: "Payment In",
+        7: "Expense",
+        21: "Sale Return",
+        27: "Sale",
+        30: "Estimate/Quotation",
+        65: "Sales Order",
+        81: "Purchase Order",
+        82: "Delivery Challan",
+        83: "Proforma Invoice",
+    }
+    return labels.get(int(txn_type or 0), f"Txn Type {txn_type}")
+
+
+def _status_label(status_code: Any) -> str:
+    try:
+        code = int(status_code)
+    except Exception:
+        return "Unknown"
+    return {
+        1: "Open",
+        2: "Approved",
+        3: "Draft",
+        4: "Cancelled",
+    }.get(code, f"Status {code}")
+
 
 def _digits(value: Any) -> str:
     return "".join(ch for ch in str(value or "") if ch.isdigit())
@@ -138,11 +171,11 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         """
         SELECT t.txn_id, t.txn_type, t.txn_date, t.txn_due_date, t.txn_ref_number_char,
                t.txn_display_name, t.txn_description, t.txn_balance_amount, t.txn_current_balance,
-               t.txn_tax_amount, t.txn_discount_amount, t.txn_name_id,
-               n.full_name AS party_name
+               t.txn_tax_amount, t.txn_discount_amount, t.txn_name_id, t.txn_status,
+               n.full_name AS party_name, n.name_group_id
         FROM kb_transactions t
         LEFT JOIN kb_names n ON n.name_id = t.txn_name_id
-        WHERE t.txn_type IN (27, 2, 4)
+        WHERE trim(coalesce(t.txn_ref_number_char, '')) != '' OR t.txn_name_id IS NOT NULL
         ORDER BY t.txn_id
         """
     ).fetchall()
@@ -155,6 +188,8 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         ).fetchone()
         d["line_total"] = float(sums[0] or 0)
         d["line_tax_total"] = float(sums[1] or 0)
+        d["txn_label"] = _txn_label(int(d.get("txn_type") or 0))
+        d["status_label"] = _status_label(d.get("txn_status"))
         out.append(d)
     return out
 
@@ -229,6 +264,8 @@ def preview_vyapar_backup(file_bytes: bytes, filename: str) -> dict[str, Any]:
                     {
                         "txn_id": int(t.get("txn_id") or 0),
                         "txn_type": int(t.get("txn_type") or 0),
+                        "txn_label": _clean(t.get("txn_label")),
+                        "status": _clean(t.get("status_label")),
                         "party_name": _clean(t.get("party_name") or t.get("txn_display_name")),
                         "amount": float(t.get("line_total") or t.get("txn_balance_amount") or 0),
                         "paid": float(txn_pay.get(int(t.get("txn_id") or 0), 0)),
@@ -279,6 +316,8 @@ def import_vyapar_backup(
             "invoices_created": 0,
             "invoices_skipped": 0,
             "payments_created": 0,
+            "party_txns_created": 0,
+            "party_txns_skipped": 0,
             "errors": [],
         }
 
@@ -363,6 +402,17 @@ def import_vyapar_backup(
         customer_by_name = {
             _clean(r.get("company")).lower(): r for r in hop_db_module.list_customers(target_conn, workspace_id)
         }
+        vendor_by_name = {
+            _clean(r.get("company")).lower(): r for r in hop_ops_module.list_vendors(target_conn, workspace_id)
+        }
+
+        existing_party_txn_ids = {
+            int(r[0])
+            for r in target_conn.execute(
+                "SELECT source_txn_id FROM hop_party_transactions WHERE workspace_id=?",
+                (workspace_id,),
+            ).fetchall()
+        }
 
         for t in txns:
             txn_id = int(t.get("txn_id") or 0)
@@ -370,37 +420,101 @@ def import_vyapar_backup(
             if not party_name:
                 out["invoices_skipped"] += 1
                 continue
+            party_type = "vendor" if int(t.get("name_group_id") or 0) == 2 else "customer"
             customer = customer_by_name.get(party_name.lower())
+            vendor = vendor_by_name.get(party_name.lower())
             if not customer:
-                try:
-                    customer = hop_db_module.create_customer(
-                        target_conn,
-                        workspace_id,
-                        {
-                            "company": party_name,
-                            "contact_person": party_name if len(party_name.split()) <= 4 else "",
-                            "customer_type": _guess_customer_type(party_name),
-                            "status": "active",
-                        },
-                    )
-                    customer_by_name[party_name.lower()] = customer
-                except Exception as exc:
-                    out["errors"].append(f"Txn {txn_id}: customer create failed ({exc})")
-                    out["invoices_skipped"] += 1
-                    continue
+                if party_type == "customer":
+                    try:
+                        customer = hop_db_module.create_customer(
+                            target_conn,
+                            workspace_id,
+                            {
+                                "company": party_name,
+                                "contact_person": party_name if len(party_name.split()) <= 4 else "",
+                                "customer_type": _guess_customer_type(party_name),
+                                "status": "active",
+                                "source": "Vyapar Import",
+                            },
+                        )
+                        customer_by_name[party_name.lower()] = customer
+                    except Exception as exc:
+                        out["errors"].append(f"Txn {txn_id}: customer create failed ({exc})")
+                else:
+                    try:
+                        vendor = hop_ops_module.create_vendor(
+                            target_conn,
+                            workspace_id,
+                            {
+                                "company": party_name,
+                                "contact_person": party_name if len(party_name.split()) <= 4 else "",
+                                "products": "",
+                                "remarks": "Source: Vyapar Import",
+                                "rating": 3,
+                            },
+                        )
+                        vendor_by_name[party_name.lower()] = vendor
+                    except Exception as exc:
+                        out["errors"].append(f"Txn {txn_id}: vendor create failed ({exc})")
 
+            amount = float(t.get("line_total") or t.get("txn_balance_amount") or t.get("txn_current_balance") or 0)
+            due_amt = float(t.get("txn_current_balance") or t.get("txn_balance_amount") or 0)
             inv_no = _clean(t.get("txn_ref_number_char")) or f"VYP-{txn_id}"
+            inv_date = _clean(t.get("txn_date"))
+            note = _clean(t.get("txn_description"))
+            txn_label = _clean(t.get("txn_label"))
+            status_label = _clean(t.get("status_label"))
+            # Upsert party transaction row so Parties screen can show all Vyapar types.
+            if txn_id in existing_party_txn_ids:
+                out["party_txns_skipped"] += 1
+            else:
+                try:
+                    target_conn.execute(
+                        """
+                        INSERT INTO hop_party_transactions (
+                            workspace_id, party_type, party_id, party_name, source_txn_id,
+                            txn_type, txn_label, txn_number, txn_date, total_amount,
+                            balance_amount, status_text, notes, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                        """,
+                        (
+                            workspace_id,
+                            party_type,
+                            (customer or {}).get("id") if party_type == "customer" else (vendor or {}).get("id"),
+                            party_name,
+                            txn_id,
+                            int(t.get("txn_type") or 0),
+                            txn_label,
+                            inv_no,
+                            inv_date[:10] if inv_date else "",
+                            amount,
+                            due_amt,
+                            status_label,
+                            note,
+                        ),
+                    )
+                    existing_party_txn_ids.add(txn_id)
+                    out["party_txns_created"] += 1
+                except Exception as exc:
+                    out["errors"].append(f"Txn {txn_id}: party transaction import failed ({exc})")
+
+            # Invoice creation is only for sale-like customer transactions.
+            txn_type = int(t.get("txn_type") or 0)
+            if party_type != "customer" or txn_type not in SALE_LIKE_TYPES:
+                out["invoices_skipped"] += 1
+                continue
+            if not customer:
+                out["invoices_skipped"] += 1
+                continue
+
             inv_key = inv_no.lower()
             if inv_key in existing_invoices:
                 out["invoices_skipped"] += 1
                 continue
 
-            amount = float(t.get("line_total") or t.get("txn_balance_amount") or t.get("txn_current_balance") or 0)
             tax_amt = float(t.get("line_tax_total") or t.get("txn_tax_amount") or 0)
             paid_amt = float(txn_payments.get(txn_id, 0))
             due = _clean(t.get("txn_due_date"))
-            inv_date = _clean(t.get("txn_date"))
-            note = _clean(t.get("txn_description"))
             try:
                 inv = hop_ops_module.create_invoice(
                     target_conn,
@@ -413,7 +527,7 @@ def import_vyapar_backup(
                         "due_date": due,
                         "invoice_date": inv_date[:10] if inv_date else "",
                         "gst_amount": tax_amt,
-                        "notes": f"Imported from Vyapar txn {txn_id}. {note}".strip(),
+                        "notes": f"[{txn_label}] Imported from Vyapar txn {txn_id}. {note}".strip(),
                     },
                 )
                 existing_invoices[inv_key] = inv
@@ -442,12 +556,14 @@ def import_vyapar_backup(
         out["source_items"] = len(items)
         out["source_parties"] = len(parties)
         out["source_transactions"] = len(txns)
+        target_conn.commit()
         out["imported_ok"] = (
             out["customers_created"]
             + out["vendors_created"]
             + out["products_created"]
             + out["invoices_created"]
             + out["payments_created"]
+            + out["party_txns_created"]
         )
         return out
     finally:

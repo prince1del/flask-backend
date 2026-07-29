@@ -1079,6 +1079,31 @@ def payments_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/party-transactions", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transactions_collection():
+    ensure_hop_schema(_db_path())
+    party_type = (request.args.get("party_type") or "").strip().lower()
+    party_id = request.args.get("party_id", type=int)
+    with hop_db.connect(_db_path()) as conn:
+        sql = """
+            SELECT *
+            FROM hop_party_transactions
+            WHERE workspace_id=?
+        """
+        params: list[object] = [_ws()]
+        if party_type:
+            sql += " AND party_type=?"
+            params.append(party_type)
+        if party_id:
+            sql += " AND party_id=?"
+            params.append(int(party_id))
+        sql += " ORDER BY date(txn_date) DESC, id DESC"
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    return jsonify({"success": True, "data": rows})
+
+
 @hop_bp.route("/complaints", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

@@ -227,6 +227,26 @@ def ensure_hop_schema(db_path: str | Path) -> None:
                 FOREIGN KEY(invoice_id) REFERENCES hop_invoices(id)
             );
 
+            CREATE TABLE IF NOT EXISTS hop_party_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                party_type TEXT NOT NULL,
+                party_id INTEGER,
+                party_name TEXT,
+                source_txn_id INTEGER NOT NULL,
+                txn_type INTEGER,
+                txn_label TEXT,
+                txn_number TEXT,
+                txn_date TEXT,
+                total_amount REAL DEFAULT 0,
+                balance_amount REAL DEFAULT 0,
+                status_text TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(workspace_id, source_txn_id)
+            );
+
             CREATE TABLE IF NOT EXISTS hop_targets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 workspace_id TEXT NOT NULL,
@@ -365,6 +385,8 @@ def ensure_hop_schema(db_path: str | Path) -> None:
                 ON hop_dispatches(workspace_id, status);
             CREATE INDEX IF NOT EXISTS idx_hop_payments_ws_paid
                 ON hop_payments(workspace_id, paid_at);
+            CREATE INDEX IF NOT EXISTS idx_hop_party_txn_ws_party
+                ON hop_party_transactions(workspace_id, party_type, party_id, txn_date);
             CREATE INDEX IF NOT EXISTS idx_hop_projects_ws
                 ON hop_projects(workspace_id, stage);
             CREATE INDEX IF NOT EXISTS idx_hop_customers_ws
