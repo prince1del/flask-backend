@@ -964,6 +964,13 @@ function hopScrollIntoMain(el, offset = 12) {
   main.scrollTop += (elRect.top - mainRect.top - offset);
 }
 
+function hopSetMainFullpage(enabled) {
+  const main = document.querySelector('#hop-executive-workspace .hop-main');
+  const shell = document.querySelector('#hop-executive-workspace .hop-shell');
+  main?.classList.toggle('hop-main--fullpage', !!enabled);
+  shell?.classList.toggle('hop-shell--module', !!enabled);
+}
+
 function openHopView(viewName, opts) {
   hopState.view = viewName || 'dashboard';
   hopHideAllViews();
@@ -971,6 +978,9 @@ function openHopView(viewName, opts) {
   document.querySelectorAll('.hop-nav-btn[data-hop-view]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.hopView === hopState.view);
   });
+
+  // Dashboard keeps padded scroll layout; every other menu opens as full-page workspace.
+  hopSetMainFullpage(hopState.view !== 'dashboard');
 
   if (hopState.view === 'dashboard') {
     document.getElementById('hop-view-dashboard')?.classList.remove('hidden');
@@ -1138,9 +1148,10 @@ function hopDebouncedReload(kind) {
 }
 
 function hopModuleShell(eyebrow, title, subtitle, actionsHtml, bodyHtml) {
+  const isFullpage = hopState.view && hopState.view !== 'dashboard';
   return `
-    <div class="hop-view">
-      <header class="hop-view-header hop-view-header-row">
+    <div class="hop-view${isFullpage ? ' hop-view--fullpage' : ''}">
+      <header class="hop-view-header hop-view-header-row${isFullpage ? ' hop-view-header--compact' : ''}">
         <div>
           <p class="nx-text-faint hop-eyebrow">${foEscapeText(eyebrow)}</p>
           <h2 class="nx-display">${foEscapeText(title)}</h2>
@@ -1148,7 +1159,7 @@ function hopModuleShell(eyebrow, title, subtitle, actionsHtml, bodyHtml) {
         </div>
         <div class="hop-header-actions">${actionsHtml || ''}</div>
       </header>
-      ${bodyHtml}
+      <div class="hop-view-body">${bodyHtml}</div>
     </div>`;
 }
 
