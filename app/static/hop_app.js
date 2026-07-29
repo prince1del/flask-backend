@@ -809,10 +809,34 @@ function hopToggleContactSelected(type, id, checked) {
   }
   const card = document.querySelector(`.hop-contact-card[data-hop-contact-type="${type}"][data-hop-contact-id="${numId}"]`);
   card?.classList.toggle('is-selected', checked);
+  // Update mobile toolbar
   const bulkBtn = document.querySelector(`[data-hop-contact-toolbar="${type}"] .hop-contact-delete`);
   if (bulkBtn) {
     bulkBtn.textContent = `Delete (${state.ids.length})`;
     bulkBtn.classList.toggle('hidden', !state.mode || !state.ids.length);
+  }
+  // Update desktop toolbar
+  _hopUpdateDesktopBulkBtn(type);
+}
+
+function _hopUpdateDesktopBulkBtn(type) {
+  const state = hopContactSelectState(type);
+  const toolbar = document.querySelector(`.hop-desk-toolbar[data-hop-contact-toolbar="${type}"]`);
+  if (!toolbar) return;
+  const existing = toolbar.querySelector('.hop-desk-bulk-del-btn');
+  if (state.ids.length) {
+    if (existing) {
+      existing.innerHTML = `${hopContactIcon('delete')} Delete ${state.ids.length} selected`;
+    } else {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'nx-btn hop-desk-bulk-del-btn';
+      btn.onclick = () => hopBulkDeleteContacts(type);
+      btn.innerHTML = `${hopContactIcon('delete')} Delete ${state.ids.length} selected`;
+      toolbar.appendChild(btn);
+    }
+  } else if (existing) {
+    existing.remove();
   }
 }
 
