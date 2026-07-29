@@ -100,8 +100,22 @@ def fetch_all_line_items(conn: sqlite3.Connection) -> dict[int, list[dict[str, A
     item_c = _pick_col(li_cols, "lineitem_item_id", "item_id")
     unit_c = _pick_col(li_cols, "lineitem_unit_id", "unit_id")
     qty_c = _pick_col(li_cols, "quantity", "qty", "lineitem_quantity")
-    rate_c = _pick_col(li_cols, "price_per_unit", "rate", "unit_price", "price")
-    disc_c = _pick_col(li_cols, "discount_amount", "lineitem_discount_amount")
+    # Vyapar stores unit price as priceperunit (no underscores).
+    rate_c = _pick_col(
+        li_cols,
+        "priceperunit",
+        "price_per_unit",
+        "lineitem_priceperunit",
+        "rate",
+        "unit_price",
+        "price",
+    )
+    disc_c = _pick_col(
+        li_cols,
+        "lineitem_discount_amount",
+        "discount_amount",
+        "lineitem_discount",
+    )
     tax_amt_c = _pick_col(li_cols, "lineitem_tax_amount", "tax_amount")
     total_c = _pick_col(li_cols, "total_amount", "line_total", "amount")
     desc_c = _pick_col(li_cols, "lineitem_description", "description", "item_description")
@@ -167,6 +181,10 @@ def fetch_all_line_items(conn: sqlite3.Connection) -> dict[int, list[dict[str, A
         disc = _num(d.get(disc_c) if disc_c else 0)
         tax_amt = _num(d.get(tax_amt_c) if tax_amt_c else 0)
         total = _num(d.get(total_c) if total_c else 0)
+        # If unit price column was missing/zero, derive from taxable amount.
+        if rate <= 0 and qty > 0 and total > 0:
+            taxable = max(0.0, total - tax_amt + disc)
+            rate = round(taxable / qty, 6)
         name = item.get("name") or _clean(d.get(desc_c) if desc_c else "") or "Item"
         desc = _clean(d.get(desc_c) if desc_c else "") or item.get("description") or ""
         if desc and desc.lower() == name.lower():

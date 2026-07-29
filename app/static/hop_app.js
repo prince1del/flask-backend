@@ -2756,6 +2756,14 @@ function hopRenderDocPreviewHtml(data) {
     const rows = lines.map((ln, i) => {
       const taxPct = Number(ln.tax_pct || 0);
       const taxAmt = Number(ln.tax_amount || 0);
+      const qty = Number(ln.qty || 0);
+      const disc = Number(ln.discount_amount || 0);
+      const lineTotal = Number(ln.line_total || 0);
+      let rate = Number(ln.rate || 0);
+      // Fallback when import missed Vyapar priceperunit.
+      if (!(rate > 0) && qty > 0 && lineTotal > 0) {
+        rate = (lineTotal - taxAmt + disc) / qty;
+      }
       const taxCell = taxPct > 0
         ? `${hopPreviewMoney(taxAmt)} (${taxPct}%)`
         : hopPreviewMoney(taxAmt);
@@ -2766,11 +2774,11 @@ function hopRenderDocPreviewHtml(data) {
           ${ln.description ? `<div class="hop-doc-muted">${foEscapeText(ln.description)}</div>` : ''}
         </td>
         <td>${foEscapeText(ln.hsn || '')}</td>
-        <td class="num">${Number(ln.qty || 0).toLocaleString('en-IN')}</td>
+        <td class="num">${qty.toLocaleString('en-IN')}</td>
         <td>${foEscapeText(ln.unit || 'Pcs')}</td>
-        <td class="num">${hopPreviewMoney(ln.rate)}</td>
+        <td class="num">${hopPreviewMoney(rate)}</td>
         <td class="num">${taxCell}</td>
-        <td class="num">${hopPreviewMoney(ln.line_total)}</td>
+        <td class="num">${hopPreviewMoney(lineTotal)}</td>
       </tr>`;
     }).join('');
     linesHtml = `
