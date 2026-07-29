@@ -1420,7 +1420,7 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   opacity:0;pointer-events:none;transition:opacity .25s ease;
 }
 .hop-detail-overlay.is-open{opacity:1;pointer-events:auto;}
-.hop-detail-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);}
+.hop-detail-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
 .hop-detail-panel{
   position:relative;z-index:1;
   width:100%;max-width:480px;

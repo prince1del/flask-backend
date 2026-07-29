@@ -54,25 +54,63 @@ def _with_source_db(sqlite_bytes: bytes):
     return conn, Path(tmp.name)
 
 
+def _update_if_empty(update_fn, conn, workspace_id, existing: dict, new_data: dict):
+    """Fill in blank fields on an existing record with data from Vyapar."""
+    patch: dict[str, Any] = {}
+    for field in ("mobile", "email", "city", "address", "gst_no"):
+        old_val = _clean(existing.get(field))
+        new_val = _clean(new_data.get(field))
+        if not old_val and new_val:
+            patch[field] = new_val
+    if patch:
+        try:
+            update_fn(conn, workspace_id, int(existing["id"]), patch)
+        except Exception:
+            pass
+
+
+def _parse_city_from_address(address: str) -> str:
+    """Try to extract city name from a full Indian address string."""
+    if not address:
+        return ""
+    parts = [p.strip() for p in address.replace("\n", ",").split(",") if p.strip()]
+    if len(parts) >= 3:
+        return parts[-3]
+    if len(parts) >= 2:
+        return parts[-2]
+    return ""
+
+
 def _fetch_parties(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT n.name_id, n.full_name, n.phone_number, n.email, n.name_type, n.name_group_id,
-               n.name_gstin_number, n.name_state, n.address
+        SELECT DISTINCT n.name_id, n.full_name, n.phone_number, n.email, n.name_type,
+               n.name_group_id, n.name_gstin_number, n.name_state, n.address, n.pincode
         FROM kb_names n
         WHERE n.name_type = 1 AND trim(coalesce(n.full_name, '')) != ''
         ORDER BY n.name_id
         """
     ).fetchall()
+    seen: set[int] = set()
     out: list[dict[str, Any]] = []
     for r in rows:
+        if r["name_id"] in seen:
+            continue
+        seen.add(r["name_id"])
         party = dict(r)
-        addr = conn.execute(
-            "SELECT address FROM kb_address WHERE name_id=? ORDER BY address_id DESC LIMIT 1",
+        addr_row = conn.execute(
+            "SELECT address, city, pincode, state_name FROM kb_address WHERE name_id=? ORDER BY address_id DESC LIMIT 1",
             (r["name_id"],),
         ).fetchone()
-        if addr and _clean(addr["address"]):
-            party["address"] = _clean(addr["address"])
+        if addr_row:
+            if _clean(addr_row["address"]):
+                party["address"] = _clean(addr_row["address"])
+            if _clean(addr_row["city"]):
+                party["_city"] = _clean(addr_row["city"])
+            if _clean(addr_row["pincode"]):
+                party["pincode"] = _clean(addr_row["pincode"])
+        if not party.get("_city"):
+            party["_city"] = _parse_city_from_address(_clean(party.get("address")))
         out.append(party)
     return out
 
@@ -247,18 +285,25 @@ def import_vyapar_backup(
             if not name:
                 continue
             key = name.lower()
+            city = _clean(p.get("_city")) or _clean(p.get("name_state"))
+            addr = _clean(p.get("address"))
+            pincode = _clean(p.get("pincode"))
+            if pincode and addr and pincode not in addr:
+                addr = f"{addr}, {pincode}"
             payload = {
                 "company": name,
                 "contact_person": name if len(name.split()) <= 4 else "",
                 "mobile": _digits(p.get("phone_number")),
                 "email": _clean(p.get("email")),
-                "city": _clean(p.get("name_state")),
-                "address": _clean(p.get("address")),
+                "city": city,
+                "address": addr,
                 "gst_no": _clean(p.get("name_gstin_number")).upper(),
             }
             try:
                 if p.get("name_group_id") == 2:
-                    if key in existing_vendors:
+                    existing = existing_vendors.get(key)
+                    if existing:
+                        _update_if_empty(hop_ops_module.update_vendor, target_conn, workspace_id, existing, payload)
                         out["vendors_skipped"] += 1
                         continue
                     payload["products"] = "Imported from Vyapar"
@@ -267,7 +312,9 @@ def import_vyapar_backup(
                     existing_vendors[key] = row
                     out["vendors_created"] += 1
                 else:
-                    if key in existing_customers:
+                    existing = existing_customers.get(key)
+                    if existing:
+                        _update_if_empty(hop_db_module.update_customer, target_conn, workspace_id, existing, payload)
                         out["customers_skipped"] += 1
                         continue
                     payload["customer_type"] = _guess_customer_type(name)
