@@ -2388,7 +2388,8 @@ async function renderHopVendorCmpModule(mount) {
      <button type="button" class="nx-btn hop-rate-clear-btn" onclick="hopClearAllRates()">Clear all rate data</button>
      <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('rate_sheet')">+ Upload / add rates</button>`,
     body,
-  ).replace('class="hop-view"', 'class="hop-view hop-vendor-cmp-compact"');
+  ).replace('class="hop-view hop-view--fullpage"', 'class="hop-view hop-view--fullpage hop-vendor-cmp-compact"')
+   .replace('class="hop-view"', 'class="hop-view hop-vendor-cmp-compact"');
 
   hopRenderRateCartPanel();
   hopApplyRateMatrixFilters();
