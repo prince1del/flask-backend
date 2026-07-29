@@ -1199,8 +1199,8 @@ async function renderHopVyaparImportModule(mount) {
           preview
             ? `
               <p>Firm: <strong>${foEscapeText(src.firm_name || '—')}</strong> · Tables: ${foEscapeText(src.tables || 0)} · Size: ${foEscapeText(src.sqlite_bytes || 0)} bytes</p>
-              <p>Parties: ${foEscapeText(det.parties_total || 0)} · Items: ${foEscapeText(det.items_total || 0)}</p>
-              <p>Group split: ${foEscapeText(JSON.stringify(det.group_split || {}))}</p>
+              <p>Parties: ${foEscapeText(det.parties_total || 0)} · Items: ${foEscapeText(det.items_total || 0)} · Transactions: ${foEscapeText(det.transactions_total || 0)}</p>
+              <p>Txn types: ${foEscapeText(JSON.stringify(det.txn_type_split || {}))} (27=Sale, 2=Purchase, 4=Payment-In)</p>
             `
             : 'Preview pending. Upload and click Preview.'
         }
@@ -1261,7 +1261,7 @@ async function hopRunVyaparImport() {
   if (status) status.textContent = 'Import running… please wait';
   try {
     const data = await hopApi('/api/v1/hop/vyapar-import/apply', { method: 'POST', body: fd });
-    if (status) status.textContent = `Import done · customers ${data.customers_created}, vendors ${data.vendors_created}, products ${data.products_created}`;
+    if (status) status.textContent = `Import done · customers ${data.customers_created}, vendors ${data.vendors_created}, products ${data.products_created}, invoices ${data.invoices_created || 0}, payments ${data.payments_created || 0}`;
     hopState.customers = [];
     hopState.vendors = [];
     openHopView('customers');
