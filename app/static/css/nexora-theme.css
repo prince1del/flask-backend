@@ -2051,7 +2051,7 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .hop-detail-edit-btn{color:#93c5fd !important;}
 .hop-detail-edit-btn:hover{background:rgba(147,197,253,.12) !important;}
 .hop-detail-quick-actions{
-  display:flex;gap:10px;padding:12px 16px;
+  display:flex;flex-wrap:wrap;gap:10px;padding:12px 16px;
   border-bottom:1px solid var(--nxt-border-color,#1e293b);
 }
 .hop-detail-action-btn{
@@ -2063,9 +2063,6 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .hop-detail-action-btn svg{width:16px;height:16px;}
 .hop-detail-wa{color:#25d366 !important;border-color:#25d366 !important;}
 .hop-detail-del{color:#f87171 !important;border-color:rgba(248,113,113,.45) !important;}
-.hop-detail-quick-actions{
-  flex-wrap:wrap;
-}
 .hop-detail-fields{padding:16px;display:flex;flex-direction:column;gap:2px;}
 .hop-detail-field{
   display:flex;justify-content:space-between;align-items:baseline;
