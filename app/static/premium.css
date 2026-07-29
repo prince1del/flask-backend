@@ -7,7 +7,11 @@
 
 :root {
   color-scheme: dark;
-  --nx-header-h: 64px;
+  --nx-safe-top: env(safe-area-inset-top, 0px);
+  --nx-safe-right: env(safe-area-inset-right, 0px);
+  --nx-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nx-safe-left: env(safe-area-inset-left, 0px);
+  --nx-header-h: calc(64px + env(safe-area-inset-top, 0px));
   --nx-bg: #05070d;
   --nx-bg-2: #090e1a;
   --nx-panel: rgba(13, 19, 33, 0.94);
@@ -81,7 +85,8 @@ button { cursor: pointer; }
   grid-template-columns: 240px minmax(260px, 1fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 0 16px;
+  padding: var(--nx-safe-top, 0px) 16px 0;
+  box-sizing: border-box;
   background: rgba(6, 9, 18, 0.94);
   border-bottom: 1px solid rgba(37, 224, 255, 0.16);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
@@ -3521,7 +3526,7 @@ body.nexora-ask-open #dashboard-widget-dock {
 .nx-toast-stack {
   position: fixed;
   top: calc(var(--nx-header-h, 64px) + 12px);
-  right: 16px;
+  right: max(16px, env(safe-area-inset-right, 0px));
   /* Above .nx-party-modal (13000) so Save/validation errors are visible */
   z-index: 250000;
   display: flex;
@@ -3529,6 +3534,9 @@ body.nexora-ask-open #dashboard-widget-dock {
   gap: 10px;
   width: min(380px, calc(100vw - 24px));
   pointer-events: none;
+}
+body.hop-module-fullscreen .nx-toast-stack {
+  top: calc(12px + env(safe-area-inset-top, 0px));
 }
 
 .nx-toast {
@@ -3719,7 +3727,7 @@ body.nexora-ask-open #dashboard-widget-dock {
 
   .nexora-header {
     grid-template-columns: 44px minmax(0, 1fr) auto !important;
-    padding: 0 8px !important;
+    padding: var(--nx-safe-top, 0px) 8px 0 !important;
     gap: 6px !important;
   }
   .nexora-logo::after,

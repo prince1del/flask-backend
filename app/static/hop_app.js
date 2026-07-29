@@ -2,6 +2,7 @@
 
 const hopState = {
   view: 'dashboard',
+  viewHistory: [],
   customers: [],
   projects: [],
   leads: [],
@@ -1012,10 +1013,49 @@ function hopSetMainFullpage(enabled) {
   document.documentElement.classList.toggle('hop-module-fullscreen', on);
 }
 
+/** Mobile / fullscreen back — closes overlays first, then pops view history. */
+function hopGoBack() {
+  if (document.getElementById('hop-party-edit-modal')) {
+    hopClosePartyEditModal();
+    return;
+  }
+  if (document.getElementById('nx-confirm-modal') && !document.getElementById('nx-confirm-modal').classList.contains('hidden')) {
+    document.getElementById('nx-confirm-cancel')?.click();
+    return;
+  }
+  if (document.getElementById('hop-contact-detail-overlay')) {
+    hopCloseContactDetail();
+    return;
+  }
+  if (document.getElementById('hop-contact-action-sheet')) {
+    hopCloseContactActionMenu();
+    return;
+  }
+  const stack = hopState.viewHistory || [];
+  const prev = stack.pop();
+  hopState.viewHistory = stack;
+  openHopView(prev || 'dashboard', { skipHistory: true });
+}
+
+function hopBackButtonHtml(label) {
+  const text = label || 'Back';
+  return `<button type="button" class="nx-btn hop-mobile-back" onclick="hopGoBack()" aria-label="${foEscapeAttr(text)}" title="${foEscapeAttr(text)}">
+    <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12.7 4.3a1 1 0 0 1 0 1.4L8.4 10l4.3 4.3a1 1 0 1 1-1.4 1.4l-5-5a1 1 0 0 1 0-1.4l5-5a1 1 0 0 1 1.4 0Z"/></svg>
+    <span>${foEscapeText(text)}</span>
+  </button>`;
+}
+
 function openHopView(viewName, opts) {
   // Legacy alias
   if (viewName === 'quotations') viewName = 'sale_estimates';
-  hopState.view = viewName || 'dashboard';
+  const next = viewName || 'dashboard';
+  const prev = hopState.view;
+  if (!opts?.skipHistory && prev && prev !== next) {
+    if (!Array.isArray(hopState.viewHistory)) hopState.viewHistory = [];
+    hopState.viewHistory.push(prev);
+    if (hopState.viewHistory.length > 40) hopState.viewHistory.shift();
+  }
+  hopState.view = next;
   hopHideAllViews();
   hopScrollMainToTop();
   document.querySelectorAll('.hop-nav-btn[data-hop-view]').forEach((btn) => {
@@ -1055,6 +1095,7 @@ function openHopView(viewName, opts) {
   hopSetMainFullpage(hopState.view !== 'dashboard');
 
   if (hopState.view === 'dashboard') {
+    hopState.viewHistory = [];
     document.getElementById('hop-view-dashboard')?.classList.remove('hidden');
     document.getElementById('hop-view-project-hub')?.classList.remove('hop-view--fullpage');
     Promise.resolve(loadHopExecutiveSnapshot()).finally(() => hopScrollMainToTop());
@@ -1265,7 +1306,10 @@ function hopModuleShell(eyebrow, title, subtitle, actionsHtml, bodyHtml) {
     <div class="hop-view hop-view--fullpage hop-view--module hop-view--tx">
       <div class="mod-page inv-shell">
         <div class="inv-topbar">
-          <h2 class="inv-title">${foEscapeText(title)}</h2>
+          <div class="inv-topbar-left">
+            ${hopBackButtonHtml('Back')}
+            <h2 class="inv-title">${foEscapeText(title)}</h2>
+          </div>
           <div class="inv-topbar-actions">${actionsHtml || ''}</div>
         </div>
         <div class="inv-body hop-tx-body">${bodyHtml || ''}</div>
@@ -2586,6 +2630,7 @@ async function renderHopPartiesModule(mount) {
       <div class="pty-page">
         <div class="pty-topbar">
           <div class="pty-topbar-left">
+            ${hopBackButtonHtml('Back')}
             <h2 class="pty-topbar-title">Parties</h2>
             <span class="pty-topbar-sub">${parties.length} contacts</span>
           </div>
@@ -6091,6 +6136,7 @@ function hopFilterModule(view) {
 
 window.loadHopExecutiveSnapshot = loadHopExecutiveSnapshot;
 window.openHopView = openHopView;
+window.hopGoBack = hopGoBack;
 window.hopToggleNavFold = hopToggleNavFold;
 window.openHopProjectHub = openHopProjectHub;
 window.hopDebouncedReload = hopDebouncedReload;

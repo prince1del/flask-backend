@@ -2,13 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#05070d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Business Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260729-party-save-fix">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260730-mobile-back-safe">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260729-party-save-fix">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-mobile-back-safe">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -696,7 +699,7 @@
                 <div id="hop-view-project-hub" class="hop-view hidden">
                     <header class="hop-view-header hop-view-header-row">
                         <div>
-                            <button type="button" class="nx-btn hop-back-btn" onclick="openHopView('projects')">← Projects</button>
+                            <button type="button" class="nx-btn hop-back-btn hop-mobile-back" onclick="hopGoBack()">← Back</button>
                             <p class="nx-text-faint hop-eyebrow">Project Hub</p>
                             <h2 class="nx-display" id="hop-hub-title">Project</h2>
                             <p class="nx-text-dim" id="hop-hub-sub"></p>
@@ -2242,6 +2245,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260729-module-fullscreen"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260729-dup-on-update"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-mobile-back-safe"></script>
 </body>
 </html>
