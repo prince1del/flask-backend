@@ -619,6 +619,7 @@
                       </button>
                       <div class="hop-nav-fold-items">
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="invoices" onclick="openHopView('invoices')">Sale Invoices</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="commission" onclick="openHopView('commission')">Commission</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_estimates" onclick="openHopView('sale_estimates')">Estimate / Quotation</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_proforma" onclick="openHopView('sale_proforma')">Proforma Invoice</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="payments" onclick="openHopView('payments')">Payment-In</button>
@@ -2245,6 +2246,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260729-module-fullscreen"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-price-unit"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-commission"></script>
 </body>
 </html>

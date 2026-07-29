@@ -1244,6 +1244,24 @@ def payments_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/commission/sale-invoices", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def commission_sale_invoices():
+    """List tax invoices with commission on amount before tax (default 2%)."""
+    ensure_hop_schema(_db_path())
+    pct_raw = request.args.get("pct", type=float)
+    q = (request.args.get("q") or "").strip() or None
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_ops.list_sale_invoice_commissions(
+            conn,
+            _ws(),
+            commission_pct=pct_raw,
+            q=q,
+        )
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/party-transactions", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

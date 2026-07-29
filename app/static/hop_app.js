@@ -1073,6 +1073,7 @@ function openHopView(viewName, opts) {
       String(hopState.view || '').startsWith('sale_')
       || hopState.view === 'invoices'
       || hopState.view === 'payments'
+      || hopState.view === 'commission'
     )
   ) {
     saleFold.classList.remove('is-collapsed');
@@ -1152,6 +1153,7 @@ function openHopView(viewName, opts) {
         orders: renderHopOrdersModule,
         dispatches: renderHopDispatchesModule,
         invoices: renderHopInvoicesModule,
+        commission: renderHopCommissionModule,
         payments: renderHopPaymentInModule,
         complaints: renderHopComplaintsModule,
         pipeline: renderHopPipelineModule,
@@ -5543,6 +5545,82 @@ async function renderHopFunnelModule(mount) {
     ${hopTable(['Stage', 'Projects', 'Value'],
       rows.map((r) => `<tr><td>${hopCell(r.stage)}</td><td>${hopCell(r.count)}</td><td>${hopMoney(r.value)}</td></tr>`).join(''))}`;
   mount.innerHTML = hopModuleShell('Reports', 'Sales Funnel', 'Lead → … → Payment', '', body);
+}
+
+async function renderHopCommissionModule(mount) {
+  if (!hopState.commissionUi) hopState.commissionUi = { pct: 2, q: '' };
+  const ui = hopState.commissionUi;
+  let data = {};
+  try {
+    const qs = new URLSearchParams();
+    if (ui.pct != null && ui.pct !== '') qs.set('pct', String(ui.pct));
+    if (ui.q) qs.set('q', ui.q);
+    data = await hopApi(`/api/v1/hop/commission/sale-invoices?${qs.toString()}`) || {};
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('Sale', 'Commission', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const rule = data.rule || {};
+  const sum = data.summary || {};
+  const rows = data.rows || [];
+  const pct = Number(rule.commission_pct != null ? rule.commission_pct : ui.pct) || 2;
+
+  const body = `
+    <p class="nx-text-dim hop-comm-rule">
+      Tax Invoice · commission on <strong>amount before tax</strong> ·
+      default <strong>${foEscapeText(String(pct))}%</strong>
+      <span class="hop-doc-muted">(${foEscapeText(rule.formula || '')})</span>
+    </p>
+    ${hopTxToolbar(`
+      <label class="inv-ctrl hop-comm-pct-wrap">Rate %
+        <input id="hop-comm-pct" class="inv-ctrl" type="number" min="0" step="0.1" value="${foEscapeAttr(String(pct))}"
+          onchange="hopCommissionReload()" style="width:4.5rem;margin-left:0.35rem" />
+      </label>
+      <button type="button" class="nx-btn" onclick="hopCommissionReload()">Apply</button>
+      <button type="button" class="nx-btn" onclick="hopCommissionReset()">Reset 2%</button>
+    `)}
+    ${hopTxCards([
+      { label: 'Invoices', value: String(sum.invoice_count || 0), tone: 'neutral' },
+      { label: 'Invoice Total', valueHtml: hopMoney(sum.invoice_total), tone: 'total' },
+      { label: 'Before Tax', valueHtml: hopMoney(sum.amount_before_tax), tone: 'unpaid' },
+      { label: `Commission (${pct}%)`, valueHtml: hopMoney(sum.commission_total), tone: 'paid' },
+    ])}
+    ${hopTable(
+      ['Date', 'Invoice No', 'Party', 'Invoice Total', 'Tax', 'Before Tax', `Comm ${pct}%`, 'Status'],
+      rows.map((r) => `<tr class="inv-row" style="cursor:pointer"
+        onclick="hopOpenSaleDocPreview(${Number(r.party_txn_id) || 0}, ${Number(r.source_txn_id) || 0})">
+        <td>${hopCell(r.invoice_date)}</td>
+        <td>${hopCell(r.invoice_no)}</td>
+        <td>${hopCell(r.party_name)}</td>
+        <td class="inv-num">${hopMoney(r.invoice_total)}</td>
+        <td class="inv-num">${hopMoney(r.tax_amount)}</td>
+        <td class="inv-num">${hopMoney(r.amount_before_tax)}</td>
+        <td class="inv-num"><strong>${hopMoney(r.commission_amount)}</strong></td>
+        <td>${hopCell(r.status)}</td>
+      </tr>`).join(''),
+      { label: 'Sale invoices · commission', count: rows.length, searchPlaceholder: 'Search party / invoice…' },
+    )}`;
+
+  mount.innerHTML = hopModuleShell(
+    'Sale',
+    'Commission',
+    '',
+    '',
+    body,
+  );
+}
+
+function hopCommissionReload() {
+  if (!hopState.commissionUi) hopState.commissionUi = { pct: 2, q: '' };
+  const el = document.getElementById('hop-comm-pct');
+  const v = Number(el?.value);
+  hopState.commissionUi.pct = Number.isFinite(v) && v >= 0 ? v : 2;
+  openHopView('commission', { skipHistory: true });
+}
+
+function hopCommissionReset() {
+  hopState.commissionUi = { pct: 2, q: '' };
+  openHopView('commission', { skipHistory: true });
 }
 
 async function renderHopReceivablesModule(mount) {

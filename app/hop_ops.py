@@ -1493,6 +1493,136 @@ def next_invoice_no(conn: sqlite3.Connection, workspace_id: str) -> str:
     return f"INV-{year}-{int(row[0] or 0) + 1:04d}"
 
 
+DEFAULT_SALE_COMMISSION_PCT = 2.0
+
+
+def list_sale_invoice_commissions(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    *,
+    commission_pct: float | None = None,
+    q: str | None = None,
+) -> dict[str, Any]:
+    """Tax invoices (txn_type=1): commission on amount before tax.
+
+    Default rule: 2% of taxable value (qty × rate − discount; fallback total − tax).
+    """
+    pct = float(commission_pct if commission_pct is not None else DEFAULT_SALE_COMMISSION_PCT)
+    if pct < 0:
+        pct = 0.0
+    rows = conn.execute(
+        """
+        SELECT
+            t.id AS party_txn_id,
+            t.source_txn_id,
+            t.txn_number AS invoice_no,
+            t.txn_date AS invoice_date,
+            t.party_name,
+            t.total_amount,
+            t.balance_amount,
+            t.status_text,
+            i.id AS invoice_id,
+            i.amount AS invoice_amount,
+            i.gst_amount,
+            COALESCE(SUM(
+                CASE
+                    WHEN COALESCE(l.qty, 0) > 0 AND COALESCE(l.rate, 0) > 0
+                        THEN (l.qty * l.rate) - COALESCE(l.discount_amount, 0)
+                    ELSE COALESCE(l.line_total, 0) - COALESCE(l.tax_amount, 0)
+                END
+            ), 0) AS lines_taxable,
+            COALESCE(SUM(l.tax_amount), 0) AS line_tax,
+            COUNT(l.id) AS line_count
+        FROM hop_party_transactions t
+        LEFT JOIN hop_txn_lines l
+            ON l.workspace_id = t.workspace_id
+           AND l.source_txn_id = t.source_txn_id
+        LEFT JOIN hop_invoices i
+            ON i.workspace_id = t.workspace_id
+           AND i.source_txn_id = t.source_txn_id
+        WHERE t.workspace_id = ?
+          AND t.txn_type = 1
+        GROUP BY t.id
+        ORDER BY date(t.txn_date) DESC, t.id DESC
+        """,
+        (workspace_id,),
+    ).fetchall()
+
+    out: list[dict[str, Any]] = []
+    total_invoice = 0.0
+    total_taxable = 0.0
+    total_commission = 0.0
+    needle = (q or "").strip().lower()
+
+    for r in rows:
+        d = dict(r)
+        party = str(d.get("party_name") or "")
+        inv_no = str(d.get("invoice_no") or "")
+        if needle and needle not in party.lower() and needle not in inv_no.lower():
+            continue
+
+        grand = float(d.get("total_amount") or d.get("invoice_amount") or 0)
+        lines_taxable = float(d.get("lines_taxable") or 0)
+        line_tax = float(d.get("line_tax") or 0)
+        gst = float(d.get("gst_amount") or 0)
+        line_count = int(d.get("line_count") or 0)
+
+        base_source = "invoice_total"
+        if line_count > 0 and lines_taxable > 0:
+            taxable = lines_taxable
+            tax = line_tax if line_tax > 0 else gst
+            base_source = "line_items"
+        elif gst > 0 and grand > gst:
+            taxable = grand - gst
+            tax = gst
+            base_source = "invoice_minus_gst"
+        else:
+            taxable = grand
+            tax = gst or line_tax
+            base_source = "invoice_total"
+
+        taxable = round(max(0.0, taxable), 2)
+        commission = round(taxable * pct / 100.0, 2)
+        total_invoice += grand
+        total_taxable += taxable
+        total_commission += commission
+
+        out.append(
+            {
+                "party_txn_id": d.get("party_txn_id"),
+                "invoice_id": d.get("invoice_id"),
+                "source_txn_id": d.get("source_txn_id"),
+                "invoice_no": inv_no,
+                "invoice_date": d.get("invoice_date"),
+                "party_name": party,
+                "status": d.get("status_text") or "",
+                "invoice_total": round(grand, 2),
+                "tax_amount": round(float(tax or 0), 2),
+                "amount_before_tax": taxable,
+                "commission_pct": pct,
+                "commission_amount": commission,
+                "base_source": base_source,
+                "balance_amount": round(float(d.get("balance_amount") or 0), 2),
+            }
+        )
+
+    return {
+        "rule": {
+            "doc": "Sale Invoice (Tax Invoice)",
+            "base": "Amount before tax",
+            "commission_pct": pct,
+            "formula": f"commission = amount_before_tax × {pct}%",
+        },
+        "summary": {
+            "invoice_count": len(out),
+            "invoice_total": round(total_invoice, 2),
+            "amount_before_tax": round(total_taxable, 2),
+            "commission_total": round(total_commission, 2),
+        },
+        "rows": out,
+    }
+
+
 def list_invoices(conn: sqlite3.Connection, workspace_id: str, q: str | None = None, project_id: int | None = None) -> list[dict]:
     _repair_invoice_customer_links(conn, workspace_id)
     sql = """
