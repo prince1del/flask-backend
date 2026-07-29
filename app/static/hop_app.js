@@ -1346,49 +1346,95 @@ async function renderHopVyaparImportModule(mount) {
   });
 }
 
+function _vypShowLoader(msg) {
+  _vypHideLoader();
+  const el = document.createElement('div');
+  el.id = 'vyp-loader-overlay';
+  el.className = 'vyp-loader';
+  el.innerHTML = `
+    <div class="vyp-loader-card">
+      <div class="vyp-spinner"></div>
+      <p class="vyp-loader-msg">${foEscapeText(msg)}</p>
+    </div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('is-open'));
+}
+function _vypHideLoader() {
+  const el = document.getElementById('vyp-loader-overlay');
+  if (el) { el.classList.remove('is-open'); setTimeout(() => el.remove(), 200); }
+}
+function _vypResultDialog(success, title, lines) {
+  _vypHideLoader();
+  const el = document.createElement('div');
+  el.id = 'vyp-result-overlay';
+  el.className = 'vyp-result';
+  el.innerHTML = `
+    <div class="vyp-result-backdrop" onclick="document.getElementById('vyp-result-overlay')?.remove()"></div>
+    <div class="vyp-result-card">
+      <div class="vyp-result-icon ${success ? 'is-ok' : 'is-fail'}">
+        ${success
+          ? '<svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z"/></svg>'
+          : '<svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z"/></svg>'
+        }
+      </div>
+      <h4 class="vyp-result-title">${foEscapeText(title)}</h4>
+      <div class="vyp-result-body">${lines.map(l => `<p>${l}</p>`).join('')}</div>
+      <button type="button" class="vyp-btn vyp-btn-import" onclick="document.getElementById('vyp-result-overlay')?.remove()" style="margin-top:12px;width:100%">OK</button>
+    </div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('is-open'));
+}
+
 async function hopPreviewVyaparBackup() {
-  const status = document.getElementById('hop-vyapar-status');
   const file = hopState.vyaparBackupFile;
   if (!file) {
-    if (status) status.textContent = 'Please select .vyb/.vyp backup first.';
+    _vypResultDialog(false, 'No file selected', ['Please select a .vyb or .vyp backup file first.']);
     return;
   }
   const fd = new FormData();
   fd.append('backup_file', file, file.name || 'backup.vyb');
-  if (status) status.textContent = 'Reading backup preview…';
+  _vypShowLoader('Scanning backup…');
   try {
     const data = await hopApi('/api/v1/hop/vyapar-import/preview', { method: 'POST', body: fd });
     hopState.vyaparImportPreview = data;
-    if (status) status.textContent = 'Preview ready. Please verify and then import.';
+    _vypHideLoader();
     openHopView('vyapar_import');
   } catch (e) {
-    if (status) status.textContent = e.message || 'Preview failed';
+    _vypResultDialog(false, 'Preview Failed', [e.message || 'Could not read the backup file.']);
   }
 }
 
 async function hopRunVyaparImport() {
-  const status = document.getElementById('hop-vyapar-status');
   const file = hopState.vyaparBackupFile;
   if (!file) {
-    if (status) status.textContent = 'Please select .vyb/.vyp backup first.';
+    _vypResultDialog(false, 'No file selected', ['Please select a .vyb or .vyp backup file first.']);
     return;
   }
-  if (!(await nexoraConfirm('Run Vyapar import into House of Prizm workspace now?', {
-    title: 'Import backup',
+  if (!(await nexoraConfirm('Import Vyapar data into House of Prizm?', {
+    title: 'Confirm Import',
     danger: true,
     okText: 'Import',
   }))) return;
   const fd = new FormData();
   fd.append('backup_file', file, file.name || 'backup.vyb');
-  if (status) status.textContent = 'Import running… please wait';
+  _vypShowLoader('Importing data…');
   try {
     const data = await hopApi('/api/v1/hop/vyapar-import/apply', { method: 'POST', body: fd });
-    if (status) status.textContent = `Import done · customers ${data.customers_created}, vendors ${data.vendors_created}, products ${data.products_created}, invoices ${data.invoices_created || 0}, payments ${data.payments_created || 0}`;
+    const lines = [
+      `<span class="vyp-r-label">Customers</span> <strong>${data.customers_created}</strong> created, ${data.customers_skipped} skipped`,
+      `<span class="vyp-r-label">Vendors</span> <strong>${data.vendors_created}</strong> created, ${data.vendors_skipped} skipped`,
+      `<span class="vyp-r-label">Products</span> <strong>${data.products_created}</strong> created, ${data.products_skipped} skipped`,
+      `<span class="vyp-r-label">Invoices</span> <strong>${data.invoices_created || 0}</strong> created`,
+      `<span class="vyp-r-label">Payments</span> <strong>${data.payments_created || 0}</strong> created`,
+    ];
+    if (data.errors && data.errors.length) {
+      lines.push(`<span class="vyp-r-warn">${data.errors.length} error(s) during import</span>`);
+    }
+    _vypResultDialog(true, 'Import Successful', lines);
     hopState.customers = [];
     hopState.vendors = [];
-    openHopView('customers');
   } catch (e) {
-    if (status) status.textContent = e.message || 'Import failed';
+    _vypResultDialog(false, 'Import Failed', [e.message || 'Something went wrong during import.']);
   }
 }
 
