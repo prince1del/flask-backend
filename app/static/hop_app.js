@@ -556,10 +556,16 @@ function hopRenderQuickContactActions(mobile, type, id, label) {
 function hopRenderDesktopContactToolbar(type, count) {
   const state = hopContactSelectState(type);
   const selected = state.ids.length;
+  const allChecked = selected === count && count > 0;
   return `
     <div class="hop-desk-toolbar" data-hop-contact-toolbar="${type}">
-      <label class="hop-desk-select-all"><input type="checkbox" onchange="hopSelectAllContacts('${type}', this.checked)" ${selected === count && count > 0 ? 'checked' : ''}/> Select All (${count})</label>
-      <button type="button" class="nx-btn hop-contact-icon-btn hop-toolbar-bulk-del${selected ? '' : ' hidden'}" onclick="hopBulkDeleteContacts('${type}')" title="Delete selected">${hopContactIcon('delete')} Delete (${selected})</button>
+      <button type="button" class="nx-btn hop-desk-select-btn${allChecked ? ' is-active' : ''}" onclick="hopSelectAllContacts('${type}', ${allChecked ? 'false' : 'undefined'})">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z${allChecked ? 'M14.3 7.3a1 1 0 0 0-1.4-1.4L8.5 10.3 7.1 8.9a1 1 0 0 0-1.4 1.4l2.1 2.1a1 1 0 0 0 1.4 0l5.1-5.1Z' : ''}"/></svg>
+        ${allChecked ? 'Deselect All' : 'Select All'}
+      </button>
+      <span class="hop-desk-count">${count} records</span>
+      <span class="hop-desk-toolbar-spacer"></span>
+      ${selected ? `<button type="button" class="nx-btn hop-desk-bulk-del-btn" onclick="hopBulkDeleteContacts('${type}')">${hopContactIcon('delete')} Delete ${selected} selected</button>` : ''}
     </div>`;
 }
 
