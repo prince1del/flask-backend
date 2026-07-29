@@ -1308,28 +1308,40 @@ async function renderHopPartiesModule(mount) {
   hopState._partySelected = hopState._partySelected || null;
   hopState._partyFilter = hopState._partyFilter || '';
 
-  const body = `
-    <div class="pty-layout">
-      <div class="pty-sidebar">
-        <div class="pty-search-row">
-          <input id="pty-search" class="pty-search" type="search" placeholder="Search Party Name" value="${foEscapeText(hopState._partyFilter)}" oninput="hopFilterParties(this.value)" />
+  // True full-page side workspace (no CRM eyebrow shell).
+  mount.innerHTML = `
+    <div class="hop-view hop-view--fullpage hop-view--parties">
+      <div class="pty-page">
+        <div class="pty-topbar">
+          <div class="pty-topbar-left">
+            <h2 class="pty-topbar-title">Parties</h2>
+            <span class="pty-topbar-sub">${parties.length} contacts</span>
+          </div>
+          <div class="pty-topbar-actions">
+            <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ Add Party</button>
+            <button type="button" class="nx-btn" onclick="openHopView('vyapar_import')">Import Vyapar</button>
+          </div>
         </div>
-        <div class="pty-list-header">
-          <span class="pty-lh-name">Party Name</span>
-          <span class="pty-lh-amt">Balance</span>
+        <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
+        <div class="pty-layout">
+          <div class="pty-sidebar">
+            <div class="pty-search-row">
+              <input id="pty-search" class="pty-search" type="search" placeholder="Search Party Name" value="${foEscapeText(hopState._partyFilter)}" oninput="hopFilterParties(this.value)" />
+            </div>
+            <div class="pty-list-header">
+              <span class="pty-lh-name">Party Name</span>
+              <span class="pty-lh-amt">Balance</span>
+            </div>
+            <div id="pty-list" class="pty-list">
+              ${_hopRenderPartyList(parties, hopState._partyFilter)}
+            </div>
+          </div>
+          <div id="pty-detail" class="pty-detail">
+            ${hopState._partySelected ? _hopRenderPartyDetail(hopState._partySelected, partyTxns) : _hopPartyEmptyDetail()}
+          </div>
         </div>
-        <div id="pty-list" class="pty-list">
-          ${_hopRenderPartyList(parties, hopState._partyFilter)}
-        </div>
-      </div>
-      <div id="pty-detail" class="pty-detail">
-        ${hopState._partySelected ? _hopRenderPartyDetail(hopState._partySelected, partyTxns) : _hopPartyEmptyDetail()}
       </div>
     </div>`;
-
-  mount.innerHTML = hopModuleShell('CRM', 'Parties', 'Customers & Vendors',
-    `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ Add Party</button>
-     <button type="button" class="nx-btn" onclick="openHopView('vyapar_import')">Import Vyapar</button>`, body);
 }
 
 function _hopRenderPartyList(parties, filter) {
