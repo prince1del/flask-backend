@@ -1814,15 +1814,33 @@ async function hopSavePartyModal() {
 async function renderHopPartiesModule(mount) {
   let customers = [], vendors = [], partyTxns = [];
   try {
-    [customers, vendors, partyTxns] = await Promise.all([
-      hopApi('/api/v1/hop/customers') || [],
-      hopApi('/api/v1/hop/vendors') || [],
-      hopApi('/api/v1/hop/party-transactions') || [],
+    const settled = await Promise.allSettled([
+      hopApi('/api/v1/hop/customers'),
+      hopApi('/api/v1/hop/vendors'),
+      hopApi('/api/v1/hop/party-transactions'),
     ]);
+    const pick = (i, fallback = []) => {
+      const r = settled[i];
+      if (r.status === 'fulfilled' && Array.isArray(r.value)) return r.value;
+      if (r.status === 'fulfilled' && r.value == null) return fallback;
+      return fallback;
+    };
+    customers = pick(0);
+    vendors = pick(1);
+    partyTxns = pick(2);
+    const fatal = settled.slice(0, 2).every((r) => r.status === 'rejected');
+    if (fatal) {
+      const err = settled[0].status === 'rejected' ? settled[0].reason : settled[1].reason;
+      throw err || new Error('Could not load parties');
+    }
     hopState.customers = customers;
     hopState.vendors = vendors;
   } catch (e) {
-    mount.innerHTML = hopModuleShell('CRM', 'Parties', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    const msg = String(e?.message || e || 'Request failed');
+    const hint = /502|503|error page/i.test(msg)
+      ? `${msg} — Render server restart/deploy ho raha ho sakta hai. 30–60 sec wait karke Ctrl+Shift+R try karo.`
+      : msg;
+    mount.innerHTML = hopModuleShell('CRM', 'Parties', '', '', `<p class="nx-oc-error">${foEscapeText(hint)}</p>`);
     return;
   }
 
