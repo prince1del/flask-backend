@@ -62,6 +62,8 @@ def _update_if_empty(update_fn, conn, workspace_id, existing: dict, new_data: di
         new_val = _clean(new_data.get(field))
         if not old_val and new_val:
             patch[field] = new_val
+    if _clean(existing.get("products")) == "Imported from Vyapar":
+        patch["products"] = ""
     if patch:
         try:
             update_fn(conn, workspace_id, int(existing["id"]), patch)
@@ -306,7 +308,7 @@ def import_vyapar_backup(
                         _update_if_empty(hop_ops_module.update_vendor, target_conn, workspace_id, existing, payload)
                         out["vendors_skipped"] += 1
                         continue
-                    payload["products"] = "Imported from Vyapar"
+                    payload["products"] = ""
                     payload["rating"] = 3
                     row = hop_ops_module.create_vendor(target_conn, workspace_id, payload)
                     existing_vendors[key] = row
