@@ -1275,39 +1275,74 @@ async function renderHopVyaparImportModule(mount) {
   const preview = hopState.vyaparImportPreview;
   const src = preview?.source || {};
   const det = preview?.detected || {};
-  const body = `
-    <div class="hop-fabric-banner nx-card">
-      <strong>Vyapar Backup Converter</strong>
-      <span class="nx-text-dim">Upload .vyb/.vyp → preview data → import clean records into House of Prizm.</span>
-    </div>
-    <div class="nx-card hop-fabric-card">
-      <h3>1. Upload backup</h3>
-      <input id="hop-vyapar-file" class="hop-file-hidden" type="file" accept=".vyb,.vyp,application/octet-stream" />
-      <div class="hop-photo-actions">
-        <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickVyaparBackup()">Pick .vyb / .vyp</button>
-        <button type="button" class="nx-btn" onclick="hopPreviewVyaparBackup()">Preview</button>
-        <button type="button" class="nx-btn" onclick="hopRunVyaparImport()">Import now</button>
+
+  const sizeKB = src.sqlite_bytes ? (src.sqlite_bytes / 1024).toFixed(0) : '—';
+  const salesCount = (det.txn_type_split || {})['27'] || 0;
+  const purchaseCount = (det.txn_type_split || {})['2'] || 0;
+  const paymentCount = (det.txn_type_split || {})['4'] || 0;
+
+  const previewHtml = preview ? `
+    <div class="vyp-preview-grid">
+      <div class="vyp-preview-firm">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="opacity:.5"><path d="M12 7V3H2v18h20V7H12ZM6 19H4v-2h2v2Zm0-4H4v-2h2v2Zm0-4H4V9h2v2Zm0-4H4V5h2v2Zm4 12H8v-2h2v2Zm0-4H8v-2h2v2Zm0-4H8V9h2v2Zm0-4H8V5h2v2Zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10Zm-2-8h-2v2h2v-2Zm0 4h-2v2h2v-2Z"/></svg>
+        <div>
+          <strong>${foEscapeText(src.firm_name || '—')}</strong>
+          <span class="nx-text-dim">${foEscapeText(src.tables || 0)} tables · ${sizeKB} KB</span>
+        </div>
       </div>
-      <p id="hop-vyapar-status" class="nx-text-dim">No backup selected.</p>
-    </div>
-    <div class="nx-card hop-form-card" style="margin-top:12px;">
-      <strong>2. Preview</strong>
-      <div id="hop-vyapar-preview" class="nx-text-dim" style="margin-top:8px;">
-        ${
-          preview
-            ? `
-              <p>Firm: <strong>${foEscapeText(src.firm_name || '—')}</strong> · Tables: ${foEscapeText(src.tables || 0)} · Size: ${foEscapeText(src.sqlite_bytes || 0)} bytes</p>
-              <p>Parties: ${foEscapeText(det.parties_total || 0)} · Items: ${foEscapeText(det.items_total || 0)} · Transactions: ${foEscapeText(det.transactions_total || 0)}</p>
-              <p>Txn types: ${foEscapeText(JSON.stringify(det.txn_type_split || {}))} (27=Sale, 2=Purchase, 4=Payment-In)</p>
-            `
-            : 'Preview pending. Upload and click Preview.'
-        }
+      <div class="vyp-preview-stats">
+        <div class="vyp-stat"><span class="vyp-stat-num">${foEscapeText(det.parties_total || 0)}</span><span class="vyp-stat-label">Parties</span></div>
+        <div class="vyp-stat"><span class="vyp-stat-num">${foEscapeText(det.items_total || 0)}</span><span class="vyp-stat-label">Products</span></div>
+        <div class="vyp-stat"><span class="vyp-stat-num">${foEscapeText(det.transactions_total || 0)}</span><span class="vyp-stat-label">Transactions</span></div>
+      </div>
+      <div class="vyp-preview-txn-split">
+        <span class="vyp-txn-tag vyp-txn-sale">${salesCount} Sales</span>
+        <span class="vyp-txn-tag vyp-txn-purchase">${purchaseCount} Purchases</span>
+        <span class="vyp-txn-tag vyp-txn-payment">${paymentCount} Payments</span>
+      </div>
+    </div>` : '<p class="nx-text-dim" style="margin:0">Upload a backup to see preview.</p>';
+
+  const body = `
+    <div class="vyp-import-layout">
+      <div class="vyp-step-card nx-card">
+        <div class="vyp-step-header">
+          <span class="vyp-step-badge">1</span>
+          <span>Select Backup File</span>
+        </div>
+        <input id="hop-vyapar-file" class="hop-file-hidden" type="file" accept=".vyb,.vyp,application/octet-stream" />
+        <button type="button" class="nx-btn nx-btn-primary vyp-pick-btn" onclick="hopPickVyaparBackup()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96ZM14 13v4h-4v-4H7l5-5 5 5h-3Z"/></svg>
+          Pick .vyb / .vyp
+        </button>
+        <p id="hop-vyapar-status" class="vyp-status">No file selected</p>
+      </div>
+
+      <div class="vyp-step-card nx-card">
+        <div class="vyp-step-header">
+          <span class="vyp-step-badge">2</span>
+          <span>Preview Data</span>
+          <button type="button" class="nx-btn vyp-action-sm" onclick="hopPreviewVyaparBackup()">Scan</button>
+        </div>
+        <div id="hop-vyapar-preview">${previewHtml}</div>
+      </div>
+
+      <div class="vyp-step-card nx-card">
+        <div class="vyp-step-header">
+          <span class="vyp-step-badge">3</span>
+          <span>Import into HoP</span>
+        </div>
+        <p class="nx-text-dim vyp-import-note">Imports customers, vendors, products, invoices &amp; payments. Duplicates are skipped.</p>
+        <button type="button" class="nx-btn nx-btn-primary vyp-import-btn" onclick="hopRunVyaparImport()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7ZM5 18v2h14v-2H5Z"/></svg>
+          Import Now
+        </button>
       </div>
     </div>`;
+
   mount.innerHTML = hopModuleShell(
     'Migration',
-    'Import from Vyapar backup',
-    'Customers / Vendors / Products converter',
+    'Vyapar Import',
+    'Convert & import your Vyapar backup',
     `<button type="button" class="nx-btn" onclick="openHopView('customers')">← Customers</button>`,
     body,
   );
@@ -1318,7 +1353,7 @@ async function renderHopVyaparImportModule(mount) {
     if (!file) return;
     hopState.vyaparBackupFile = file;
     const status = document.getElementById('hop-vyapar-status');
-    if (status) status.textContent = `Selected: ${file.name} (${file.size} bytes)`;
+    if (status) { status.textContent = `${file.name} (${(file.size / 1024).toFixed(0)} KB)`; status.classList.add('is-selected'); }
   });
 }
 
