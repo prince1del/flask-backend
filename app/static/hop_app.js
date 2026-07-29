@@ -5549,13 +5549,12 @@ async function renderHopFunnelModule(mount) {
 
 async function renderHopCommissionModule(mount) {
   if (!hopState.commissionUi) {
-    hopState.commissionUi = { q: '', selectedId: null, sheet: null };
+    hopState.commissionUi = { q: '', selectedId: null, sheet: null, filter: 'all' };
   }
   const ui = hopState.commissionUi;
   let invoices = [];
   try {
-    const qs = ui.q ? `?q=${encodeURIComponent(ui.q)}` : '';
-    invoices = await hopApi(`/api/v1/hop/commission/invoices${qs}`) || [];
+    invoices = await hopApi('/api/v1/hop/commission/invoices') || [];
   } catch (e) {
     mount.innerHTML = hopModuleShell('Sale', 'Commission', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
     return;
@@ -5572,6 +5571,20 @@ async function renderHopCommissionModule(mount) {
     }
   }
 
+  const q = String(ui.q || '').trim().toLowerCase();
+  let rows = invoices.filter((r) => {
+    if (ui.filter === 'saved' && !r.has_entry) return false;
+    if (ui.filter === 'pending' && r.has_entry) return false;
+    if (!q) return true;
+    return String(r.party_name || '').toLowerCase().includes(q)
+      || String(r.invoice_no || '').toLowerCase().includes(q);
+  });
+
+  const saved = invoices.filter((r) => r.has_entry);
+  const sumComm = saved.reduce((s, r) => s + Number(r.commission_amount || 0), 0);
+  const sumTds = saved.reduce((s, r) => s + Number(r.tds_amount || 0), 0);
+  const sumNet = saved.reduce((s, r) => s + Number(r.net_commission || 0), 0);
+
   const bill = sheet?.bill || null;
   const entry = sheet?.entry || {};
   const cPct = entry.commission_pct != null ? entry.commission_pct : '';
@@ -5579,94 +5592,132 @@ async function renderHopCommissionModule(mount) {
   const notes = entry.notes || '';
 
   const worksheetHtml = bill ? `
-    <div class="nx-card hop-form-card hop-comm-sheet">
-      <div class="hop-comm-bill-head">
-        <div>
-          <div class="hop-doc-meta-label">Selected bill</div>
-          <div class="hop-doc-party-name">Invoice ${foEscapeText(bill.invoice_no)} · ${foEscapeText(bill.party_name)}</div>
-          <div class="hop-doc-muted">${foEscapeText(bill.invoice_date || '')} · ${foEscapeText(bill.status || '')}</div>
+    <div class="hop-comm-bar" id="hop-comm-bar">
+      <div class="hop-comm-bar-main">
+        <div class="hop-comm-bar-title">
+          <strong>Invoice ${foEscapeText(bill.invoice_no)}</strong>
+          <span class="hop-comm-bar-party">${foEscapeText(bill.party_name)}</span>
+          <span class="hop-comm-bar-meta">${foEscapeText(bill.invoice_date || '')} · Before tax <b>${hopMoney(bill.amount_before_tax)}</b></span>
         </div>
+        <div class="hop-comm-bar-fields">
+          <label>Comm %<input id="hop-comm-pct" type="number" min="0" step="0.01" value="${foEscapeAttr(String(cPct))}" oninput="hopCommissionRecalc()" /></label>
+          <label>TDS %<input id="hop-comm-tds" type="number" min="0" step="0.01" value="${foEscapeAttr(String(tPct))}" oninput="hopCommissionRecalc()" /></label>
+          <label class="hop-comm-notes">Notes<input id="hop-comm-notes" type="text" value="${foEscapeAttr(notes)}" placeholder="Optional" /></label>
+        </div>
+        <div class="hop-comm-bar-results">
+          <div><span>Commission</span><strong id="hop-comm-amt">${hopMoney(entry.commission_amount || 0)}</strong></div>
+          <div><span>TDS</span><strong id="hop-comm-tds-amt">${hopMoney(entry.tds_amount || 0)}</strong></div>
+          <div><span>Net</span><strong id="hop-comm-net">${hopMoney(entry.net_commission || 0)}</strong></div>
+        </div>
+      </div>
+      <div class="hop-comm-bar-actions">
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopCommissionSave()">Save</button>
         <button type="button" class="nx-btn" onclick="hopOpenSaleDocPreview(${Number(bill.party_txn_id) || 0}, ${Number(bill.source_txn_id) || 0})">Preview</button>
-      </div>
-      ${hopTxCards([
-        { label: 'Invoice Total', valueHtml: hopMoney(bill.invoice_total), tone: 'total' },
-        { label: 'Tax', valueHtml: hopMoney(bill.tax_amount), tone: 'neutral' },
-        { label: 'Before Tax', valueHtml: hopMoney(bill.amount_before_tax), tone: 'unpaid' },
-      ])}
-      <div class="hop-form-grid" style="margin-top:12px">
-        <label>Commission %
-          <input id="hop-comm-pct" type="number" min="0" step="0.01" value="${foEscapeAttr(String(cPct))}"
-            oninput="hopCommissionRecalc()" />
-        </label>
-        <label>TDS %
-          <input id="hop-comm-tds" type="number" min="0" step="0.01" value="${foEscapeAttr(String(tPct))}"
-            oninput="hopCommissionRecalc()" />
-        </label>
-        <label class="hop-form-span-2">Notes
-          <input id="hop-comm-notes" type="text" value="${foEscapeAttr(notes)}" placeholder="Optional" />
-        </label>
-      </div>
-      ${hopTxCards([
-        { label: 'Commission', valueHtml: `<span id="hop-comm-amt">${hopMoney(entry.commission_amount || 0)}</span>`, tone: 'paid', id: null },
-        { label: 'TDS', valueHtml: `<span id="hop-comm-tds-amt">${hopMoney(entry.tds_amount || 0)}</span>`, tone: 'overdue' },
-        { label: 'Net Payable', valueHtml: `<span id="hop-comm-net">${hopMoney(entry.net_commission || 0)}</span>`, tone: 'unpaid' },
-      ])}
-      <p class="nx-text-dim hop-comm-rule" style="margin-top:8px">
-        Commission = Before Tax × Comm% · TDS = Commission × TDS% · Net = Commission − TDS
-      </p>
-      <div class="hop-form-actions">
-        <button type="button" class="nx-btn nx-btn-primary" onclick="hopCommissionSave()">Save against this bill</button>
+        <button type="button" class="inv-text-btn" onclick="hopCommissionClearSelection()">Close</button>
         <span id="hop-comm-status" class="nx-text-dim"></span>
       </div>
-    </div>` : `
-    <div class="nx-card hop-form-card">
-      <p class="nx-text-dim">Neeche list se bill select karo — phir Commission % aur TDS % fill karo.</p>
-    </div>`;
+    </div>` : '';
+
+  const tbody = rows.length
+    ? rows.map((r) => {
+      const sel = Number(ui.selectedId) === Number(r.party_txn_id);
+      const status = r.has_entry
+        ? '<span class="inv-badge inv-badge--paid">Saved</span>'
+        : '<span class="inv-badge inv-badge--open">Set</span>';
+      return `<tr class="inv-row is-clickable${sel ? ' is-selected' : ''}"
+        onclick="hopCommissionSelectBill(${Number(r.party_txn_id) || 0})">
+        <td>${hopCell(r.invoice_date)}</td>
+        <td>${hopCell(r.invoice_no)}</td>
+        <td>${hopCell(r.party_name)}</td>
+        <td class="inv-num">${hopMoney(r.invoice_total)}</td>
+        <td class="inv-num">${r.has_entry ? `${hopCell(r.commission_pct)}%` : '—'}</td>
+        <td class="inv-num">${r.has_entry ? `${hopCell(r.tds_pct)}%` : '—'}</td>
+        <td class="inv-num">${r.has_entry ? hopMoney(r.commission_amount) : '—'}</td>
+        <td class="inv-num">${r.has_entry ? hopMoney(r.tds_amount) : '—'}</td>
+        <td class="inv-num"><strong>${r.has_entry ? hopMoney(r.net_commission) : '—'}</strong></td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('')
+    : `<tr><td colspan="10" class="inv-empty">No tax invoices match this filter.</td></tr>`;
 
   const body = `
-    <p class="nx-text-dim">Har tax invoice pe apna <strong>Commission %</strong> aur <strong>TDS %</strong> daalo. Amount before tax pe calculate hota hai.</p>
-    ${worksheetHtml}
-    ${hopTable(
-      ['Date', 'Invoice', 'Party', 'Total', 'Comm %', 'TDS %', 'Net Comm', ''],
-      invoices.map((r) => {
-        const sel = Number(ui.selectedId) === Number(r.party_txn_id);
-        return `<tr class="inv-row${sel ? ' is-selected' : ''}" style="cursor:pointer"
-          onclick="hopCommissionSelectBill(${Number(r.party_txn_id) || 0})">
-          <td>${hopCell(r.invoice_date)}</td>
-          <td>${hopCell(r.invoice_no)}</td>
-          <td>${hopCell(r.party_name)}</td>
-          <td class="inv-num">${hopMoney(r.invoice_total)}</td>
-          <td class="inv-num">${r.has_entry ? hopCell(r.commission_pct) + '%' : '—'}</td>
-          <td class="inv-num">${r.has_entry ? hopCell(r.tds_pct) + '%' : '—'}</td>
-          <td class="inv-num">${r.has_entry ? hopMoney(r.net_commission) : '—'}</td>
-          <td>${r.has_entry ? '<span class="hop-doc-muted">Saved</span>' : '<span class="hop-doc-muted">Set</span>'}</td>
-        </tr>`;
-      }).join(''),
-      {
-        label: 'Tax invoices',
-        count: invoices.length,
-        searchPlaceholder: 'Search party / invoice…',
-        searchValue: ui.q || '',
-        searchId: 'hop-comm-q',
-      },
-    )}`;
+        ${hopTxToolbar(`
+          <select id="hop-comm-filter" class="inv-ctrl" onchange="hopCommissionSetFilter(this.value)">
+            <option value="all"${ui.filter === 'all' ? ' selected' : ''}>All invoices</option>
+            <option value="saved"${ui.filter === 'saved' ? ' selected' : ''}>Commission saved</option>
+            <option value="pending"${ui.filter === 'pending' ? ' selected' : ''}>Not set yet</option>
+          </select>
+          <span class="inv-toolbar-spacer"></span>
+          <button type="button" class="inv-text-btn" onclick="hopCommissionClearSelection()">Clear selection</button>
+        `)}
+        ${hopTxCards([
+          { label: 'Bills', value: String(invoices.length), tone: 'neutral' },
+          { label: 'Commission', valueHtml: hopMoney(sumComm), tone: 'paid' },
+          { label: 'TDS', valueHtml: hopMoney(sumTds), tone: 'overdue', op: '+' },
+          { label: 'Net Payable', valueHtml: hopMoney(sumNet), tone: 'total', op: '=' },
+        ])}
+        ${worksheetHtml}
+        <div class="inv-table-card">
+          <div class="inv-table-head">
+            <strong>Transactions</strong>
+            <span class="inv-count">${rows.length} txns</span>
+            <input id="hop-comm-q" class="inv-search" type="search" placeholder="Search…"
+              value="${foEscapeAttr(ui.q || '')}" oninput="hopCommissionOnSearch(this.value)" />
+          </div>
+          <div class="inv-table-wrap">
+            <table class="inv-table hop-comm-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Invoice no</th>
+                  <th>Party Name</th>
+                  <th class="inv-num">Amount</th>
+                  <th class="inv-num">Comm %</th>
+                  <th class="inv-num">TDS %</th>
+                  <th class="inv-num">Commission</th>
+                  <th class="inv-num">TDS</th>
+                  <th class="inv-num">Net</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="hop-comm-tbody">${tbody}</tbody>
+            </table>
+          </div>
+        </div>`;
 
   mount.innerHTML = hopModuleShell('Sale', 'Commission', '', '', body);
-
-  const search = document.getElementById('hop-comm-q');
-  if (search) {
-    search.oninput = () => {
-      // live filter table only
-      hopFilterListTable(search, search.closest('.inv-table-wrap')?.querySelector('tbody')?.id || '');
-    };
-    search.onkeydown = (ev) => {
-      if (ev.key === 'Enter') {
-        hopState.commissionUi.q = search.value.trim();
-        openHopView('commission', { skipHistory: true });
-      }
-    };
-  }
   hopCommissionRecalc();
+}
+
+function hopCommissionOnSearch(value) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  hopState.commissionUi.q = String(value || '');
+  // Debounced-ish soft re-render of list only via filter in-place
+  const tbody = document.getElementById('hop-comm-tbody');
+  if (!tbody) return;
+  const q = String(value || '').trim().toLowerCase();
+  let visible = 0;
+  tbody.querySelectorAll('tr').forEach((tr) => {
+    if (tr.querySelector('.inv-empty')) return;
+    const show = !q || (tr.textContent || '').toLowerCase().includes(q);
+    tr.style.display = show ? '' : 'none';
+    if (show) visible += 1;
+  });
+  const count = document.querySelector('.hop-view--tx .inv-count');
+  if (count) count.textContent = `${visible} txns`;
+}
+
+function hopCommissionSetFilter(value) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  hopState.commissionUi.filter = value || 'all';
+  openHopView('commission', { skipHistory: true });
+}
+
+function hopCommissionClearSelection() {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  hopState.commissionUi.selectedId = null;
+  hopState.commissionUi.sheet = null;
+  openHopView('commission', { skipHistory: true });
 }
 
 function hopCommissionSelectBill(partyTxnId) {
@@ -5687,9 +5738,9 @@ function hopCommissionRecalc() {
   const amt = document.getElementById('hop-comm-amt');
   const tdsEl = document.getElementById('hop-comm-tds-amt');
   const netEl = document.getElementById('hop-comm-net');
-  if (amt) amt.innerHTML = hopMoney(commission);
-  if (tdsEl) tdsEl.innerHTML = hopMoney(tds);
-  if (netEl) netEl.innerHTML = hopMoney(net);
+  if (amt) amt.textContent = hopMoney(commission);
+  if (tdsEl) tdsEl.textContent = hopMoney(tds);
+  if (netEl) netEl.textContent = hopMoney(net);
 }
 
 async function hopCommissionSave() {
@@ -5710,7 +5761,7 @@ async function hopCommissionSave() {
     });
     hopState.commissionUi.sheet = data;
     if (status) status.textContent = 'Saved';
-    if (typeof nexoraToast === 'function') nexoraToast('Commission saved against bill', 'ok');
+    if (typeof nexoraToast === 'function') nexoraToast('Commission saved', 'ok');
     openHopView('commission', { skipHistory: true });
   } catch (e) {
     if (status) status.textContent = e.message || 'Save failed';

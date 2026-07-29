@@ -2993,10 +2993,113 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .inv-row.is-clickable:hover{background:rgba(37,224,255,.07);}
 .inv-row.is-clickable:focus-visible{outline:2px solid rgba(37,224,255,.45);outline-offset:-2px;}
 .inv-row.is-selected{background:rgba(37,224,255,.12);}
-.hop-comm-bill-head{
-  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;
+.hop-comm-bar{
+  flex:0 0 auto;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px 16px;
+  padding:12px 14px;
+  margin-bottom:10px;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:10px;
+  background:rgba(15,23,42,.72);
 }
-.hop-comm-sheet .inv-cards{margin-top:4px;}
+.hop-comm-bar-main{
+  flex:1 1 420px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  min-width:0;
+}
+.hop-comm-bar-title{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:8px 12px;
+}
+.hop-comm-bar-title strong{
+  font-size:.95rem;
+  color:#f8fafc;
+}
+.hop-comm-bar-party{
+  color:#e2e8f0;
+  font-size:.86rem;
+}
+.hop-comm-bar-meta{
+  color:#94a3b8;
+  font-size:.78rem;
+}
+.hop-comm-bar-meta b{color:#67e8f9;font-weight:600;}
+.hop-comm-bar-fields{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:flex-end;
+}
+.hop-comm-bar-fields label{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  font-size:.68rem;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:#94a3b8;
+}
+.hop-comm-bar-fields input{
+  width:5.5rem;
+  height:34px;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,.14);
+  background:#0b1220;
+  color:#f8fafc;
+  padding:0 10px;
+  font-size:.86rem;
+}
+.hop-comm-bar-fields .hop-comm-notes{flex:1 1 180px;}
+.hop-comm-bar-fields .hop-comm-notes input{width:100%;min-width:140px;}
+.hop-comm-bar-results{
+  display:flex;
+  flex-wrap:wrap;
+  gap:16px 22px;
+}
+.hop-comm-bar-results div{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  min-width:88px;
+}
+.hop-comm-bar-results span{
+  font-size:.64rem;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+  color:#94a3b8;
+}
+.hop-comm-bar-results strong{
+  font-size:1rem;
+  color:#f8fafc;
+  font-variant-numeric:tabular-nums;
+}
+.hop-comm-bar-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  flex:0 0 auto;
+}
+.hop-comm-table{
+  font-size:.82rem !important;
+}
+.hop-comm-table th{
+  font-size:.68rem !important;
+  color:#a5f3fc !important;
+}
+.hop-comm-table td{
+  padding:9px 12px !important;
+  color:#f1f5f9 !important;
+  font-size:.82rem;
+}
 .inv-ico-btn{
   border:1px solid rgba(255,255,255,.12);background:transparent;
   color:#94a3b8;border-radius:5px;width:24px;height:24px;cursor:pointer;
