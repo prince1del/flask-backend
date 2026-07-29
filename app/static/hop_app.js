@@ -663,7 +663,7 @@ function hopOpenContactDetail(type, id) {
         ['GST No', r.gst_no], ['Lead Time (days)', r.lead_time_days],
         ['Payment Terms', r.payment_terms], ['On-time %', r.on_time_pct],
         ['Quality Rating', r.quality_rating], ['Rating', r.rating],
-        ['Remarks', r.remarks], ['Address', r.address],
+        ['Address', r.address], ['Remarks', r.remarks],
       ]
     : [
         ['Company', r.company], ['Contact Person', r.contact_person], ['Mobile', r.mobile],
@@ -673,7 +673,7 @@ function hopOpenContactDetail(type, id) {
         ['Annual Potential', r.annual_potential], ['Source', r.source],
         ['Rating', r.potential_rating], ['Status', r.status],
         ['Assigned To', r.assigned_to], ['GST No', r.gst_no],
-        ['PAN', r.pan], ['Address', r.address], ['Remarks', r.remarks],
+        ['PAN', r.pan], ['Address', r.address], ['Source', r.source], ['Remarks', r.remarks],
       ];
 
   const callBtn = callHref

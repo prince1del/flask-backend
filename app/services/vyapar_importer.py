@@ -309,6 +309,7 @@ def import_vyapar_backup(
                         out["vendors_skipped"] += 1
                         continue
                     payload["products"] = ""
+                    payload["remarks"] = "Source: Vyapar Import"
                     payload["rating"] = 3
                     row = hop_ops_module.create_vendor(target_conn, workspace_id, payload)
                     existing_vendors[key] = row
@@ -321,6 +322,7 @@ def import_vyapar_backup(
                         continue
                     payload["customer_type"] = _guess_customer_type(name)
                     payload["status"] = "active"
+                    payload["source"] = "Vyapar Import"
                     row = hop_db_module.create_customer(target_conn, workspace_id, payload)
                     existing_customers[key] = row
                     out["customers_created"] += 1
