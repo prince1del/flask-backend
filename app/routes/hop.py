@@ -44,6 +44,13 @@ def _payload():
     return request.get_json(silent=True) or {}
 
 
+def _uploaded_backup_file():
+    f = request.files.get("backup_file") or request.files.get("file")
+    if not f or not getattr(f, "filename", None):
+        return None, _json_error("backup_file is required", "VALIDATION_ERROR", 400)
+    return f, None
+
+
 @hop_bp.route("/meta", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -79,6 +86,52 @@ def hop_health():
             },
         }
     )
+
+
+@hop_bp.route("/vyapar-import/preview", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def vyapar_import_preview():
+    ensure_hop_schema(_db_path())
+    uploaded, err = _uploaded_backup_file()
+    if err:
+        return err
+    from app.services.vyapar_importer import preview_vyapar_backup
+
+    try:
+        data = preview_vyapar_backup(uploaded.read(), uploaded.filename or "backup.vyb")
+    except ValueError as exc:
+        return _json_error(str(exc), "BAD_BACKUP", 400)
+    except Exception as exc:
+        return _json_error(f"Preview failed: {exc}", "IMPORT_PREVIEW_FAILED", 500)
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/vyapar-import/apply", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def vyapar_import_apply():
+    ensure_hop_schema(_db_path())
+    uploaded, err = _uploaded_backup_file()
+    if err:
+        return err
+    from app.services.vyapar_importer import import_vyapar_backup
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            result = import_vyapar_backup(
+                file_bytes=uploaded.read(),
+                filename=uploaded.filename or "backup.vyb",
+                target_conn=conn,
+                workspace_id=_ws(),
+                hop_db_module=hop_db,
+                hop_ops_module=hop_ops,
+            )
+    except ValueError as exc:
+        return _json_error(str(exc), "BAD_BACKUP", 400)
+    except Exception as exc:
+        return _json_error(f"Import failed: {exc}", "IMPORT_FAILED", 500)
+    return jsonify({"success": True, "data": result})
 
 
 @hop_bp.route("/executive/snapshot", methods=["GET"])

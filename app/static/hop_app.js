@@ -17,6 +17,8 @@ const hopState = {
   rateMatrix: null,
   rateCart: [],
   rateFilters: { q: '' },
+  vyaparBackupFile: null,
+  vyaparImportPreview: null,
   contactSelect: {
     customers: { mode: false, ids: [] },
     vendors: { mode: false, ids: [] },
@@ -869,6 +871,7 @@ function openHopView(viewName, opts) {
       mount.innerHTML = '<div class="hop-view"><p class="nx-text-dim">Loading…</p></div>';
       const loaders = {
         customers: renderHopCustomersModule,
+        vyapar_import: renderHopVyaparImportModule,
         visiting_card: renderHopVisitingCardModule,
         projects: renderHopProjectsModule,
         leads: renderHopLeadsModule,
@@ -1164,8 +1167,112 @@ async function renderHopCustomersModule(mount) {
       )}`;
   mount.innerHTML = hopModuleShell('CRM', 'Customers', 'Hospitality clients, designers, consultants',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('customer')">+ New Customer</button>
-     <button type="button" class="nx-btn" onclick="openHopView('visiting_card')">Scan visiting card</button>`, body);
+     <button type="button" class="nx-btn" onclick="openHopView('visiting_card')">Scan visiting card</button>
+     <button type="button" class="nx-btn" onclick="openHopView('vyapar_import')">Import Vyapar backup</button>`, body);
   if (hopIsMobileView()) requestAnimationFrame(() => hopBindMobileContactCards('customers'));
+}
+
+/* ---------- Visiting Card Reader ---------- */
+async function renderHopVyaparImportModule(mount) {
+  const preview = hopState.vyaparImportPreview;
+  const src = preview?.source || {};
+  const det = preview?.detected || {};
+  const body = `
+    <div class="hop-fabric-banner nx-card">
+      <strong>Vyapar Backup Converter</strong>
+      <span class="nx-text-dim">Upload .vyb/.vyp → preview data → import clean records into House of Prizm.</span>
+    </div>
+    <div class="nx-card hop-fabric-card">
+      <h3>1. Upload backup</h3>
+      <input id="hop-vyapar-file" class="hop-file-hidden" type="file" accept=".vyb,.vyp,application/octet-stream" />
+      <div class="hop-photo-actions">
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopPickVyaparBackup()">Pick .vyb / .vyp</button>
+        <button type="button" class="nx-btn" onclick="hopPreviewVyaparBackup()">Preview</button>
+        <button type="button" class="nx-btn" onclick="hopRunVyaparImport()">Import now</button>
+      </div>
+      <p id="hop-vyapar-status" class="nx-text-dim">No backup selected.</p>
+    </div>
+    <div class="nx-card hop-form-card" style="margin-top:12px;">
+      <strong>2. Preview</strong>
+      <div id="hop-vyapar-preview" class="nx-text-dim" style="margin-top:8px;">
+        ${
+          preview
+            ? `
+              <p>Firm: <strong>${foEscapeText(src.firm_name || '—')}</strong> · Tables: ${foEscapeText(src.tables || 0)} · Size: ${foEscapeText(src.sqlite_bytes || 0)} bytes</p>
+              <p>Parties: ${foEscapeText(det.parties_total || 0)} · Items: ${foEscapeText(det.items_total || 0)}</p>
+              <p>Group split: ${foEscapeText(JSON.stringify(det.group_split || {}))}</p>
+            `
+            : 'Preview pending. Upload and click Preview.'
+        }
+      </div>
+    </div>`;
+  mount.innerHTML = hopModuleShell(
+    'Migration',
+    'Import from Vyapar backup',
+    'Customers / Vendors / Products converter',
+    `<button type="button" class="nx-btn" onclick="openHopView('customers')">← Customers</button>`,
+    body,
+  );
+
+  const input = document.getElementById('hop-vyapar-file');
+  input?.addEventListener('change', () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    hopState.vyaparBackupFile = file;
+    const status = document.getElementById('hop-vyapar-status');
+    if (status) status.textContent = `Selected: ${file.name} (${file.size} bytes)`;
+  });
+}
+
+async function hopPreviewVyaparBackup() {
+  const status = document.getElementById('hop-vyapar-status');
+  const file = hopState.vyaparBackupFile;
+  if (!file) {
+    if (status) status.textContent = 'Please select .vyb/.vyp backup first.';
+    return;
+  }
+  const fd = new FormData();
+  fd.append('backup_file', file, file.name || 'backup.vyb');
+  if (status) status.textContent = 'Reading backup preview…';
+  try {
+    const data = await hopApi('/api/v1/hop/vyapar-import/preview', { method: 'POST', body: fd });
+    hopState.vyaparImportPreview = data;
+    if (status) status.textContent = 'Preview ready. Please verify and then import.';
+    openHopView('vyapar_import');
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Preview failed';
+  }
+}
+
+async function hopRunVyaparImport() {
+  const status = document.getElementById('hop-vyapar-status');
+  const file = hopState.vyaparBackupFile;
+  if (!file) {
+    if (status) status.textContent = 'Please select .vyb/.vyp backup first.';
+    return;
+  }
+  if (!(await nexoraConfirm('Run Vyapar import into House of Prizm workspace now?', {
+    title: 'Import backup',
+    danger: true,
+    okText: 'Import',
+  }))) return;
+  const fd = new FormData();
+  fd.append('backup_file', file, file.name || 'backup.vyb');
+  if (status) status.textContent = 'Import running… please wait';
+  try {
+    const data = await hopApi('/api/v1/hop/vyapar-import/apply', { method: 'POST', body: fd });
+    if (status) status.textContent = `Import done · customers ${data.customers_created}, vendors ${data.vendors_created}, products ${data.products_created}`;
+    hopState.customers = [];
+    hopState.vendors = [];
+    openHopView('customers');
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Import failed';
+  }
+}
+
+function hopPickVyaparBackup() {
+  const input = document.getElementById('hop-vyapar-file');
+  if (input) input.click();
 }
 
 /* ---------- Visiting Card Reader ---------- */
@@ -3378,3 +3485,6 @@ window.hopDeleteContact = hopDeleteContact;
 window.hopEditContact = hopEditContact;
 window.hopBulkDeleteContacts = hopBulkDeleteContacts;
 window.hopCloseContactActionMenu = hopCloseContactActionMenu;
+window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
+window.hopRunVyaparImport = hopRunVyaparImport;
+window.hopPickVyaparBackup = hopPickVyaparBackup;
