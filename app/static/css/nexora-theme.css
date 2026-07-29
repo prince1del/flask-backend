@@ -2992,6 +2992,11 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .inv-row.is-clickable{cursor:pointer;}
 .inv-row.is-clickable:hover{background:rgba(37,224,255,.07);}
 .inv-row.is-clickable:focus-visible{outline:2px solid rgba(37,224,255,.45);outline-offset:-2px;}
+.inv-row.is-selected{background:rgba(37,224,255,.12);}
+.hop-comm-bill-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;
+}
+.hop-comm-sheet .inv-cards{margin-top:4px;}
 .inv-ico-btn{
   border:1px solid rgba(255,255,255,.12);background:transparent;
   color:#94a3b8;border-radius:5px;width:24px;height:24px;cursor:pointer;

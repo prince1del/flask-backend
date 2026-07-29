@@ -1244,22 +1244,59 @@ def payments_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/commission/invoices", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def commission_invoices_list():
+    """Tax invoices for commission worksheet (with saved entry flags)."""
+    ensure_hop_schema(_db_path())
+    q = (request.args.get("q") or "").strip() or None
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_ops.list_tax_invoices_for_commission(conn, _ws(), q=q)
+    return jsonify({"success": True, "data": rows})
+
+
+@hop_bp.route("/commission/worksheet", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def commission_worksheet_get():
+    """Load one tax invoice + saved/manual commission & TDS fields."""
+    ensure_hop_schema(_db_path())
+    party_txn_id = request.args.get("party_txn_id", type=int)
+    if not party_txn_id:
+        return _json_error("party_txn_id is required", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_ops.get_commission_worksheet(conn, _ws(), party_txn_id)
+    if not data:
+        return _json_error("Tax invoice not found", "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/commission/worksheet", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def commission_worksheet_save():
+    """Save manual commission % + TDS % against a tax invoice."""
+    ensure_hop_schema(_db_path())
+    payload = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_ops.upsert_commission_entry(conn, _ws(), payload)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/commission/sale-invoices", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def commission_sale_invoices():
-    """List tax invoices with commission on amount before tax (default 2%)."""
+    """Legacy list alias — returns invoices with any saved commission."""
     ensure_hop_schema(_db_path())
-    pct_raw = request.args.get("pct", type=float)
     q = (request.args.get("q") or "").strip() or None
     with hop_db.connect(_db_path()) as conn:
-        data = hop_ops.list_sale_invoice_commissions(
-            conn,
-            _ws(),
-            commission_pct=pct_raw,
-            q=q,
-        )
-    return jsonify({"success": True, "data": data})
+        rows = hop_ops.list_tax_invoices_for_commission(conn, _ws(), q=q)
+    return jsonify({"success": True, "data": {"rows": rows}})
 
 
 @hop_bp.route("/party-transactions", methods=["GET"])

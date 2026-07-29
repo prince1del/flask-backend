@@ -1493,24 +1493,30 @@ def next_invoice_no(conn: sqlite3.Connection, workspace_id: str) -> str:
     return f"INV-{year}-{int(row[0] or 0) + 1:04d}"
 
 
-DEFAULT_SALE_COMMISSION_PCT = 2.0
+def compute_commission_amounts(
+    amount_before_tax: float,
+    commission_pct: float,
+    tds_pct: float,
+) -> dict[str, float]:
+    """Commission on before-tax amount; TDS on commission; net = commission − TDS."""
+    base = max(0.0, _f(amount_before_tax))
+    c_pct = max(0.0, _f(commission_pct))
+    t_pct = max(0.0, _f(tds_pct))
+    commission = round(base * c_pct / 100.0, 2)
+    tds = round(commission * t_pct / 100.0, 2)
+    net = round(commission - tds, 2)
+    return {
+        "amount_before_tax": round(base, 2),
+        "commission_pct": c_pct,
+        "tds_pct": t_pct,
+        "commission_amount": commission,
+        "tds_amount": tds,
+        "net_commission": net,
+    }
 
 
-def list_sale_invoice_commissions(
-    conn: sqlite3.Connection,
-    workspace_id: str,
-    *,
-    commission_pct: float | None = None,
-    q: str | None = None,
-) -> dict[str, Any]:
-    """Tax invoices (txn_type=1): commission on amount before tax.
-
-    Default rule: 2% of taxable value (qty × rate − discount; fallback total − tax).
-    """
-    pct = float(commission_pct if commission_pct is not None else DEFAULT_SALE_COMMISSION_PCT)
-    if pct < 0:
-        pct = 0.0
-    rows = conn.execute(
+def _tax_invoice_base_row(conn: sqlite3.Connection, workspace_id: str, party_txn_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
         """
         SELECT
             t.id AS party_txn_id,
@@ -1541,86 +1547,233 @@ def list_sale_invoice_commissions(
             ON i.workspace_id = t.workspace_id
            AND i.source_txn_id = t.source_txn_id
         WHERE t.workspace_id = ?
+          AND t.id = ?
           AND t.txn_type = 1
         GROUP BY t.id
+        """,
+        (workspace_id, int(party_txn_id)),
+    ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    grand = _f(d.get("total_amount") or d.get("invoice_amount"))
+    lines_taxable = _f(d.get("lines_taxable"))
+    line_tax = _f(d.get("line_tax"))
+    gst = _f(d.get("gst_amount"))
+    line_count = int(d.get("line_count") or 0)
+    if line_count > 0 and lines_taxable > 0:
+        taxable = lines_taxable
+        tax = line_tax if line_tax > 0 else gst
+    elif gst > 0 and grand > gst:
+        taxable = grand - gst
+        tax = gst
+    else:
+        taxable = grand
+        tax = gst or line_tax
+    return {
+        "party_txn_id": d.get("party_txn_id"),
+        "invoice_id": d.get("invoice_id"),
+        "source_txn_id": d.get("source_txn_id"),
+        "invoice_no": str(d.get("invoice_no") or ""),
+        "invoice_date": d.get("invoice_date"),
+        "party_name": str(d.get("party_name") or ""),
+        "status": d.get("status_text") or "",
+        "invoice_total": round(grand, 2),
+        "tax_amount": round(_f(tax), 2),
+        "amount_before_tax": round(max(0.0, taxable), 2),
+        "balance_amount": round(_f(d.get("balance_amount")), 2),
+    }
+
+
+def list_tax_invoices_for_commission(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    *,
+    q: str | None = None,
+) -> list[dict[str, Any]]:
+    """Sale tax invoices with any saved manual commission/TDS entry."""
+    rows = conn.execute(
+        """
+        SELECT
+            t.id AS party_txn_id,
+            t.source_txn_id,
+            t.txn_number AS invoice_no,
+            t.txn_date AS invoice_date,
+            t.party_name,
+            t.total_amount,
+            t.status_text,
+            e.commission_pct,
+            e.tds_pct,
+            e.commission_amount,
+            e.tds_amount,
+            e.net_commission,
+            e.id AS entry_id
+        FROM hop_party_transactions t
+        LEFT JOIN hop_commission_entries e
+            ON e.workspace_id = t.workspace_id
+           AND e.source_txn_id = t.source_txn_id
+        WHERE t.workspace_id = ?
+          AND t.txn_type = 1
         ORDER BY date(t.txn_date) DESC, t.id DESC
         """,
         (workspace_id,),
     ).fetchall()
-
-    out: list[dict[str, Any]] = []
-    total_invoice = 0.0
-    total_taxable = 0.0
-    total_commission = 0.0
     needle = (q or "").strip().lower()
-
+    out: list[dict[str, Any]] = []
     for r in rows:
         d = dict(r)
         party = str(d.get("party_name") or "")
         inv_no = str(d.get("invoice_no") or "")
         if needle and needle not in party.lower() and needle not in inv_no.lower():
             continue
-
-        grand = float(d.get("total_amount") or d.get("invoice_amount") or 0)
-        lines_taxable = float(d.get("lines_taxable") or 0)
-        line_tax = float(d.get("line_tax") or 0)
-        gst = float(d.get("gst_amount") or 0)
-        line_count = int(d.get("line_count") or 0)
-
-        base_source = "invoice_total"
-        if line_count > 0 and lines_taxable > 0:
-            taxable = lines_taxable
-            tax = line_tax if line_tax > 0 else gst
-            base_source = "line_items"
-        elif gst > 0 and grand > gst:
-            taxable = grand - gst
-            tax = gst
-            base_source = "invoice_minus_gst"
-        else:
-            taxable = grand
-            tax = gst or line_tax
-            base_source = "invoice_total"
-
-        taxable = round(max(0.0, taxable), 2)
-        commission = round(taxable * pct / 100.0, 2)
-        total_invoice += grand
-        total_taxable += taxable
-        total_commission += commission
-
         out.append(
             {
                 "party_txn_id": d.get("party_txn_id"),
-                "invoice_id": d.get("invoice_id"),
                 "source_txn_id": d.get("source_txn_id"),
                 "invoice_no": inv_no,
                 "invoice_date": d.get("invoice_date"),
                 "party_name": party,
+                "invoice_total": round(_f(d.get("total_amount")), 2),
                 "status": d.get("status_text") or "",
-                "invoice_total": round(grand, 2),
-                "tax_amount": round(float(tax or 0), 2),
-                "amount_before_tax": taxable,
-                "commission_pct": pct,
-                "commission_amount": commission,
-                "base_source": base_source,
-                "balance_amount": round(float(d.get("balance_amount") or 0), 2),
+                "entry_id": d.get("entry_id"),
+                "has_entry": bool(d.get("entry_id")),
+                "commission_pct": _f(d.get("commission_pct")) if d.get("entry_id") else None,
+                "tds_pct": _f(d.get("tds_pct")) if d.get("entry_id") else None,
+                "commission_amount": _f(d.get("commission_amount")) if d.get("entry_id") else None,
+                "tds_amount": _f(d.get("tds_amount")) if d.get("entry_id") else None,
+                "net_commission": _f(d.get("net_commission")) if d.get("entry_id") else None,
             }
         )
+    return out
 
+
+def get_commission_worksheet(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    party_txn_id: int,
+) -> dict[str, Any] | None:
+    bill = _tax_invoice_base_row(conn, workspace_id, party_txn_id)
+    if not bill:
+        return None
+    entry = None
+    sid = bill.get("source_txn_id")
+    if sid is not None:
+        erow = conn.execute(
+            """
+            SELECT * FROM hop_commission_entries
+            WHERE workspace_id=? AND source_txn_id=?
+            """,
+            (workspace_id, int(sid)),
+        ).fetchone()
+        if erow:
+            entry = dict(erow)
+    if not entry:
+        erow = conn.execute(
+            """
+            SELECT * FROM hop_commission_entries
+            WHERE workspace_id=? AND party_txn_id=?
+            """,
+            (workspace_id, int(party_txn_id)),
+        ).fetchone()
+        if erow:
+            entry = dict(erow)
+
+    c_pct = _f(entry.get("commission_pct")) if entry else 0.0
+    t_pct = _f(entry.get("tds_pct")) if entry else 0.0
+    amounts = compute_commission_amounts(bill["amount_before_tax"], c_pct, t_pct)
     return {
-        "rule": {
-            "doc": "Sale Invoice (Tax Invoice)",
+        "bill": bill,
+        "entry": {
+            "id": entry.get("id") if entry else None,
+            "notes": (entry or {}).get("notes") or "",
+            **amounts,
+        },
+        "formula": {
             "base": "Amount before tax",
-            "commission_pct": pct,
-            "formula": f"commission = amount_before_tax × {pct}%",
+            "commission": "before_tax × commission_%",
+            "tds": "commission × tds_%",
+            "net": "commission − tds",
         },
-        "summary": {
-            "invoice_count": len(out),
-            "invoice_total": round(total_invoice, 2),
-            "amount_before_tax": round(total_taxable, 2),
-            "commission_total": round(total_commission, 2),
-        },
-        "rows": out,
     }
+
+
+def upsert_commission_entry(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    party_txn_id = int(payload.get("party_txn_id") or 0)
+    if not party_txn_id:
+        raise ValueError("party_txn_id is required")
+    bill = _tax_invoice_base_row(conn, workspace_id, party_txn_id)
+    if not bill:
+        raise ValueError("Tax invoice not found")
+    c_pct = _f(payload.get("commission_pct"))
+    t_pct = _f(payload.get("tds_pct"))
+    notes = str(payload.get("notes") or "").strip()
+    amounts = compute_commission_amounts(bill["amount_before_tax"], c_pct, t_pct)
+    now = _now()
+    sid = bill.get("source_txn_id")
+    existing = None
+    if sid is not None:
+        existing = conn.execute(
+            "SELECT id FROM hop_commission_entries WHERE workspace_id=? AND source_txn_id=?",
+            (workspace_id, int(sid)),
+        ).fetchone()
+    if not existing:
+        existing = conn.execute(
+            "SELECT id FROM hop_commission_entries WHERE workspace_id=? AND party_txn_id=?",
+            (workspace_id, party_txn_id),
+        ).fetchone()
+
+    vals = (
+        party_txn_id,
+        int(sid) if sid is not None else None,
+        bill["invoice_no"],
+        bill["party_name"],
+        bill.get("invoice_date"),
+        bill["invoice_total"],
+        amounts["amount_before_tax"],
+        bill["tax_amount"],
+        amounts["commission_pct"],
+        amounts["tds_pct"],
+        amounts["commission_amount"],
+        amounts["tds_amount"],
+        amounts["net_commission"],
+        notes,
+        now,
+    )
+    if existing:
+        conn.execute(
+            """
+            UPDATE hop_commission_entries SET
+                party_txn_id=?, source_txn_id=?, invoice_no=?, party_name=?, invoice_date=?,
+                invoice_total=?, amount_before_tax=?, tax_amount=?,
+                commission_pct=?, tds_pct=?, commission_amount=?, tds_amount=?, net_commission=?,
+                notes=?, updated_at=?
+            WHERE id=? AND workspace_id=?
+            """,
+            (*vals, int(existing["id"]), workspace_id),
+        )
+        entry_id = int(existing["id"])
+    else:
+        cur = conn.execute(
+            """
+            INSERT INTO hop_commission_entries (
+                workspace_id, party_txn_id, source_txn_id, invoice_no, party_name, invoice_date,
+                invoice_total, amount_before_tax, tax_amount,
+                commission_pct, tds_pct, commission_amount, tds_amount, net_commission,
+                notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (workspace_id, *vals[:-1], now, now),
+        )
+        entry_id = int(cur.lastrowid)
+    conn.commit()
+    sheet = get_commission_worksheet(conn, workspace_id, party_txn_id)
+    assert sheet is not None
+    sheet["entry"]["id"] = entry_id
+    return sheet
 
 
 def list_invoices(conn: sqlite3.Connection, workspace_id: str, q: str | None = None, project_id: int | None = None) -> list[dict]:

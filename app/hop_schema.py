@@ -645,6 +645,39 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             """
         )
 
+        # Manual commission + TDS against a tax invoice (Sale Invoice)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hop_commission_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                party_txn_id INTEGER,
+                source_txn_id INTEGER,
+                invoice_no TEXT,
+                party_name TEXT,
+                invoice_date TEXT,
+                invoice_total REAL DEFAULT 0,
+                amount_before_tax REAL DEFAULT 0,
+                tax_amount REAL DEFAULT 0,
+                commission_pct REAL DEFAULT 0,
+                tds_pct REAL DEFAULT 0,
+                commission_amount REAL DEFAULT 0,
+                tds_amount REAL DEFAULT 0,
+                net_commission REAL DEFAULT 0,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(workspace_id, source_txn_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_hop_commission_ws_date
+            ON hop_commission_entries(workspace_id, invoice_date DESC)
+            """
+        )
+
         # Heal stale product_key / size so Delete & vendor matrix never drift after upgrades
         try:
             from app import hop_ops as _hop_ops
