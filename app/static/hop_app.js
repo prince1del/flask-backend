@@ -1305,8 +1305,11 @@ async function renderHopPartiesModule(mount) {
 
   hopState._parties = parties;
   hopState._partyTxns = partyTxns;
-  hopState._partySelected = hopState._partySelected || null;
   hopState._partyFilter = hopState._partyFilter || '';
+  // Keep previous selection if still present; otherwise auto-select first party.
+  const prev = hopState._partySelected;
+  const stillThere = prev && parties.some((p) => p._type === prev._type && Number(p.id) === Number(prev.id));
+  hopState._partySelected = stillThere ? parties.find((p) => p._type === prev._type && Number(p.id) === Number(prev.id)) : (parties[0] || null);
 
   // True full-page side workspace (no CRM eyebrow shell).
   mount.innerHTML = `
