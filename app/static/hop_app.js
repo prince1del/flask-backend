@@ -271,6 +271,16 @@ function hopPreviewCustomTheme() {
   const swMain = document.querySelector('.hop-theme-swatch--custom .hop-theme-swatch-main');
   if (swSide) swSide.style.background = colors.sidebar;
   if (swMain) swMain.style.background = colors.bg;
+  const live = document.getElementById('hop-custom-live-frame');
+  if (live) {
+    live.style.setProperty('--hop-preview-sidebar', colors.sidebar);
+    live.style.setProperty('--hop-preview-bg', colors.bg);
+    live.style.setProperty('--hop-preview-text', colors.text);
+    live.style.setProperty('--hop-preview-accent', colors.accent);
+    live.style.setProperty('--hop-preview-border', colors.border);
+    live.style.setProperty('--hop-preview-card', colors.card);
+    live.style.setProperty('--hop-preview-muted', colors.muted);
+  }
 }
 
 function hopApplyCustomThemeFromForm() {
@@ -3387,87 +3397,136 @@ async function renderHopCustomersModule(mount) {
 async function renderHopThemeModule(mount) {
   const current = hopGetTheme();
   const c = hopGetCustomColors();
-  const presetBtns = Object.entries(HOP_CUSTOM_PRESETS).map(([key, p]) => (
-    `<button type="button" class="nx-btn hop-custom-preset-btn" onclick="hopLoadCustomPreset('${key}')">${p.label}</button>`
-  )).join('');
+  const presetBtns = Object.entries(HOP_CUSTOM_PRESETS).map(([key, p]) => {
+    const col = p.colors;
+    return `<button type="button" class="nx-btn hop-custom-preset-btn" onclick="hopLoadCustomPreset('${key}')">
+      <span class="hop-custom-preset-swatches" aria-hidden="true">
+        <i style="background:${col.sidebar}"></i>
+        <i style="background:${col.bg}"></i>
+        <i style="background:${col.accent}"></i>
+      </span>
+      ${p.label}
+    </button>`;
+  }).join('');
   const colorField = (id, label, value) => `
     <label class="hop-custom-color-field">
       <span>${label}</span>
       <span class="hop-custom-color-row">
         <input type="color" id="${id}" value="${value}" oninput="hopPreviewCustomTheme()" />
-        <input type="text" id="${id}-hex" value="${value}" maxlength="7"
+        <input type="text" id="${id}-hex" value="${value}" maxlength="7" spellcheck="false"
           onchange="document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();"
           oninput="if(/^#[0-9A-Fa-f]{6}$/.test(this.value)){document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();}" />
       </span>
     </label>`;
+  const themeCard = ({ id, swatchClass, title, desc, chip, dots }) => {
+    const active = current === id;
+    const dotsHtml = (dots || []).map((d) => `<span class="hop-theme-dot" style="background:${d}"></span>`).join('');
+    return `
+      <button type="button" class="hop-theme-card${active ? ' is-active' : ''}" onclick="hopApplyTheme('${id}')">
+        ${active ? '<span class="hop-theme-badge">Active</span>' : ''}
+        <div class="hop-theme-swatch ${swatchClass || ''}" aria-hidden="true">
+          <div class="hop-theme-swatch-side"${id === 'custom' ? ` style="background:${c.sidebar}"` : ''}></div>
+          <div class="hop-theme-swatch-main"${id === 'custom' ? ` style="background:${c.bg}"` : ''}></div>
+        </div>
+        <div class="hop-theme-card-body">
+          <div class="hop-theme-card-top">
+            <h3>${title}</h3>
+            ${chip || ''}
+          </div>
+          <p>${desc}</p>
+          <div class="hop-theme-dots" aria-hidden="true">${dotsHtml}</div>
+        </div>
+      </button>`;
+  };
   const body = `
-    <p class="nx-text-dim" style="margin:0 0 14px;max-width:44rem;line-height:1.45">
-      Choose a ready theme, or build your own — sidebar, background, text, accent, borders.
-      Preference saves on this device and applies immediately.
-    </p>
-    <div class="hop-theme-grid">
-      <button type="button" class="hop-theme-card${current === 'nexora' ? ' is-active' : ''}" onclick="hopApplyTheme('nexora')">
-        <div class="hop-theme-swatch" aria-hidden="true">
-          <div class="hop-theme-swatch-side"></div>
-          <div class="hop-theme-swatch-main"></div>
-        </div>
-        <h3>NEXORA (Default)</h3>
-        <p>Dark void with cyan / violet accents — original NEXORA look.</p>
-        ${current === 'nexora' ? '<span class="hop-theme-badge">Active</span>' : ''}
-      </button>
-      <button type="button" class="hop-theme-card${current === 'bright' ? ' is-active' : ''}" onclick="hopApplyTheme('bright')">
-        <div class="hop-theme-swatch hop-theme-swatch--bright" aria-hidden="true">
-          <div class="hop-theme-swatch-side"></div>
-          <div class="hop-theme-swatch-main"></div>
-        </div>
-        <h3>Bright · Navy + Teal</h3>
-        <p>Clean light workspace — strong for invoices &amp; data tables.</p>
-        ${current === 'bright' ? '<span class="hop-theme-badge">Active</span>' : ''}
-      </button>
-      <button type="button" class="hop-theme-card${current === 'emerald' ? ' is-active' : ''}" onclick="hopApplyTheme('emerald')">
-        <div class="hop-theme-swatch hop-theme-swatch--emerald" aria-hidden="true">
-          <div class="hop-theme-swatch-side"></div>
-          <div class="hop-theme-swatch-main"></div>
-        </div>
-        <h3>Emerald Gold</h3>
-        <p>Deep emerald sidebar, ivory workspace, muted gold accents — luxury furnishing / hospitality.</p>
-        ${current === 'emerald' ? '<span class="hop-theme-badge">Active</span>' : ''}
-      </button>
-      <button type="button" class="hop-theme-card${current === 'custom' ? ' is-active' : ''}" onclick="hopApplyTheme('custom')">
-        <div class="hop-theme-swatch hop-theme-swatch--custom" aria-hidden="true">
-          <div class="hop-theme-swatch-side" style="background:${c.sidebar}"></div>
-          <div class="hop-theme-swatch-main" style="background:${c.bg}"></div>
-        </div>
-        <h3>Custom</h3>
-        <p>Your colours — pick below and apply. Starts from Emerald Gold.</p>
-        ${current === 'custom' ? '<span class="hop-theme-badge">Active</span>' : ''}
-      </button>
-    </div>
+    <div class="hop-theme-studio">
+      <div class="hop-theme-studio-intro">
+        <p class="hop-theme-studio-kicker">Appearance</p>
+        <p class="hop-theme-studio-lead">
+          Pick a curated look for House of Prizm, or craft your own palette.
+          Saved on this device — applies instantly across the workspace.
+        </p>
+      </div>
 
-    <div class="nx-card hop-custom-theme-panel" style="margin-top:18px;padding:18px 20px;max-width:52rem">
-      <h3 class="nx-display" style="margin:0 0 6px;font-size:1.05rem">Build your theme</h3>
-      <p class="nx-text-dim" style="margin:0 0 14px;line-height:1.4;font-size:0.85rem">
-        Change any colour — preview updates live. Click <strong>Apply custom theme</strong> to save &amp; use it.
-      </p>
-      <div class="hop-custom-presets" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
-        ${presetBtns}
+      <div class="hop-theme-grid">
+        ${themeCard({
+          id: 'nexora',
+          title: 'NEXORA',
+          desc: 'Dark void with cyan & violet accents — the original signature look.',
+          dots: ['#05070c', '#25E0FF', '#8B5CF6'],
+        })}
+        ${themeCard({
+          id: 'bright',
+          swatchClass: 'hop-theme-swatch--bright',
+          title: 'Bright',
+          desc: 'Navy sidebar + teal accents — crisp for invoices and dense tables.',
+          chip: '<span class="hop-theme-chip">Workday</span>',
+          dots: ['#0f2744', '#f4f7fb', '#0d9488'],
+        })}
+        ${themeCard({
+          id: 'emerald',
+          swatchClass: 'hop-theme-swatch--emerald',
+          title: 'Emerald Gold',
+          desc: 'Deep emerald, ivory workspace, muted gold — luxury hospitality feel.',
+          chip: '<span class="hop-theme-chip hop-theme-chip--rec">Recommended</span>',
+          dots: ['#123C32', '#F8F4EA', '#C9A227'],
+        })}
+        ${themeCard({
+          id: 'custom',
+          swatchClass: 'hop-theme-swatch--custom',
+          title: 'Custom',
+          desc: 'Your colours. Start from a preset below, then fine-tune every surface.',
+          chip: '<span class="hop-theme-chip">Studio</span>',
+          dots: [c.sidebar, c.bg, c.accent],
+        })}
       </div>
-      <div class="hop-custom-color-grid">
-        ${colorField('hop-c-sidebar', 'Sidebar / header', c.sidebar)}
-        ${colorField('hop-c-bg', 'Background', c.bg)}
-        ${colorField('hop-c-text', 'Text', c.text)}
-        ${colorField('hop-c-accent', 'Accent (buttons)', c.accent)}
-        ${colorField('hop-c-border', 'Borders', c.border)}
-        ${colorField('hop-c-card', 'Cards / panels', c.card)}
-        ${colorField('hop-c-muted', 'Secondary text', c.muted)}
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px">
-        <button type="button" class="nx-btn nx-btn-primary" onclick="hopApplyCustomThemeFromForm()">Apply custom theme</button>
-        <button type="button" class="nx-btn" onclick="hopResetCustomTheme()">Reset to Emerald Gold</button>
+
+      <div class="nx-card hop-custom-theme-panel">
+        <div class="hop-custom-panel-head">
+          <div>
+            <h3 class="nx-display">Theme studio</h3>
+            <p>Adjust colours — the preview updates live. Apply when it feels right.</p>
+          </div>
+        </div>
+        <div class="hop-custom-panel-layout">
+          <aside class="hop-custom-live" aria-hidden="true">
+            <p class="hop-custom-live-label">Live preview</p>
+            <div class="hop-custom-live-frame" id="hop-custom-live-frame"
+              style="--hop-preview-sidebar:${c.sidebar};--hop-preview-bg:${c.bg};--hop-preview-text:${c.text};--hop-preview-accent:${c.accent};--hop-preview-border:${c.border};--hop-preview-card:${c.card};--hop-preview-muted:${c.muted}">
+              <div class="hop-custom-live-nav">
+                <span></span><span class="is-active"></span><span></span>
+              </div>
+              <div class="hop-custom-live-main">
+                <div class="hop-custom-live-bar"></div>
+                <div class="hop-custom-live-card">
+                  <i></i><i></i>
+                  <div class="hop-custom-live-btn"></div>
+                </div>
+              </div>
+            </div>
+          </aside>
+          <div class="hop-custom-panel-controls">
+            <p class="hop-custom-section-label">Start from a preset</p>
+            <div class="hop-custom-presets">${presetBtns}</div>
+            <p class="hop-custom-section-label">Fine-tune colours</p>
+            <div class="hop-custom-color-grid">
+              ${colorField('hop-c-sidebar', 'Sidebar / header', c.sidebar)}
+              ${colorField('hop-c-bg', 'Background', c.bg)}
+              ${colorField('hop-c-text', 'Text', c.text)}
+              ${colorField('hop-c-accent', 'Accent', c.accent)}
+              ${colorField('hop-c-border', 'Borders', c.border)}
+              ${colorField('hop-c-card', 'Cards', c.card)}
+              ${colorField('hop-c-muted', 'Secondary text', c.muted)}
+            </div>
+            <div class="hop-custom-actions">
+              <button type="button" class="nx-btn nx-btn-primary" onclick="hopApplyCustomThemeFromForm()">Apply custom theme</button>
+              <button type="button" class="nx-btn" onclick="hopResetCustomTheme()">Reset to Emerald Gold</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>`;
   mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);
-  // Keep hex text inputs in sync when color picker moves
   ['sidebar', 'bg', 'text', 'accent', 'border', 'card', 'muted'].forEach((k) => {
     const picker = document.getElementById('hop-c-' + k);
     const hex = document.getElementById('hop-c-' + k + '-hex');
