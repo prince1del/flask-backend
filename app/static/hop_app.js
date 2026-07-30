@@ -331,48 +331,100 @@ function hopThemeDisplayName(themeId) {
   return m.title || m.label || themeId;
 }
 
+/** Baseline when user opened Theme page — used to confirm on leave. */
+let hopThemePageBaseline = null;
+let hopThemeLeavePending = null;
+
+function hopCaptureThemeBaseline() {
+  hopThemePageBaseline = {
+    theme: hopGetTheme(),
+    colors: { ...hopGetCustomColors() },
+  };
+}
+
+function hopThemePageDirty() {
+  if (!hopThemePageBaseline) return false;
+  const cur = hopGetTheme();
+  if (cur !== hopThemePageBaseline.theme) return true;
+  if (!hopThemeUsesCustomCss(cur)) return false;
+  const c = hopGetCustomColors();
+  const b = hopThemePageBaseline.colors || {};
+  return ['sidebar', 'bg', 'text', 'accent', 'border', 'card', 'muted']
+    .some((k) => String(c[k] || '').toUpperCase() !== String(b[k] || '').toUpperCase());
+}
+
 function hopCloseThemeConfirm() {
   const el = document.getElementById('hop-theme-confirm-overlay');
   if (el) el.remove();
+  hopThemeLeavePending = null;
 }
 
+/** Live-preview a theme while browsing — no confirm until leaving the page. */
 function hopRequestTheme(themeId) {
   if (!hopIsKnownTheme(themeId) || themeId === 'custom') return;
-  if (themeId === hopGetTheme()) {
-    if (typeof nexoraToast === 'function') nexoraToast('Already using this theme', 'ok');
-    return;
-  }
+  hopApplyTheme(themeId, { silent: true });
+}
+
+function hopPromptThemeLeave(nextView, opts) {
+  const themeId = hopGetTheme();
   const name = hopThemeDisplayName(themeId);
-  hopCloseThemeConfirm();
+  const prevName = hopThemeDisplayName(hopThemePageBaseline?.theme || 'nexora');
+  hopThemeLeavePending = { nextView, opts };
+  const existing = document.getElementById('hop-theme-confirm-overlay');
+  if (existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.id = 'hop-theme-confirm-overlay';
   overlay.className = 'hop-theme-confirm-overlay is-open';
   overlay.innerHTML = `
-    <div class="hop-theme-confirm-backdrop" onclick="hopCloseThemeConfirm()"></div>
-    <div class="hop-theme-confirm-dialog" role="dialog" aria-modal="true" aria-label="Confirm theme">
-      <p class="hop-theme-confirm-kicker">Change theme</p>
-      <h3>Apply <em>${foEscapeText(name)}</em>?</h3>
-      <p class="hop-theme-confirm-copy">This will update colours across House of Prizm on this device.</p>
+    <div class="hop-theme-confirm-backdrop" onclick="hopStayOnThemePage()"></div>
+    <div class="hop-theme-confirm-dialog" role="dialog" aria-modal="true" aria-label="Keep theme">
+      <p class="hop-theme-confirm-kicker">Leaving Theme</p>
+      <h3>Keep <em>${foEscapeText(name)}</em>?</h3>
+      <p class="hop-theme-confirm-copy">
+        You previewed a new look. Keep it on this device, or discard and return to
+        <strong>${foEscapeText(prevName)}</strong>.
+      </p>
       <div class="hop-theme-confirm-actions">
-        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopCloseThemeConfirm()">Cancel</button>
-        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary" onclick="hopConfirmThemeApply('${foEscapeAttr(themeId)}')">Yes, apply</button>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopDiscardThemeAndLeave()">Discard</button>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopStayOnThemePage()">Stay</button>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary" onclick="hopKeepThemeAndLeave()">Keep theme</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
 }
 
-function hopConfirmThemeApply(themeId) {
-  hopCloseThemeConfirm();
-  hopApplyTheme(themeId, { silent: true, skipRerender: true });
+function hopStayOnThemePage() {
+  const el = document.getElementById('hop-theme-confirm-overlay');
+  if (el) el.remove();
+  hopThemeLeavePending = null;
+}
+
+function hopKeepThemeAndLeave() {
+  const pending = hopThemeLeavePending;
+  const themeId = hopGetTheme();
+  const el = document.getElementById('hop-theme-confirm-overlay');
+  if (el) el.remove();
+  hopThemeLeavePending = null;
+  hopThemePageBaseline = null;
   hopPlayThemeSetAnimation(themeId, () => {
-    if (hopState.view === 'theme') {
-      const mount = hopMount();
-      if (mount) renderHopThemeModule(mount);
-    }
     if (typeof nexoraToast === 'function') {
       nexoraToast(`${hopThemeDisplayName(themeId)} is now active`, 'ok');
     }
+    if (pending) openHopView(pending.nextView, { ...(pending.opts || {}), skipThemeConfirm: true });
   });
+}
+
+function hopDiscardThemeAndLeave() {
+  const pending = hopThemeLeavePending;
+  const el = document.getElementById('hop-theme-confirm-overlay');
+  if (el) el.remove();
+  hopThemeLeavePending = null;
+  if (hopThemePageBaseline) {
+    hopSaveCustomColors(hopThemePageBaseline.colors);
+    hopApplyTheme(hopThemePageBaseline.theme, { silent: true, skipRerender: true });
+  }
+  hopThemePageBaseline = null;
+  if (pending) openHopView(pending.nextView, { ...(pending.opts || {}), skipThemeConfirm: true });
 }
 
 function hopPlayThemeSetAnimation(themeId, done) {
@@ -1652,6 +1704,23 @@ function openHopView(viewName, opts) {
   if (viewName === 'quotations') viewName = 'sale_estimates';
   const next = viewName || 'dashboard';
   const prev = hopState.view;
+
+  // Leaving Theme with an unsaved preview → ask keep / discard first
+  if (
+    prev === 'theme'
+    && next !== 'theme'
+    && !(opts && opts.skipThemeConfirm)
+  ) {
+    if (hopThemePageDirty()) {
+      hopPromptThemeLeave(next, opts);
+      return;
+    }
+    hopThemePageBaseline = null;
+  }
+  if (next === 'theme' && prev !== 'theme') {
+    hopCaptureThemeBaseline();
+  }
+
   if (!opts?.skipHistory && prev && prev !== next) {
     if (!Array.isArray(hopState.viewHistory)) hopState.viewHistory = [];
     hopState.viewHistory.push(prev);
@@ -3800,7 +3869,7 @@ async function renderHopThemeModule(mount) {
       <div class="hop-theme-studio-intro hop-theme-studio-intro--compact">
         <p class="hop-theme-studio-kicker">Appearance</p>
         <p class="hop-theme-studio-lead">
-          Choose a theme — confirm to apply. Custom studio is last.
+          Browse and try any theme live. When you leave this page, we ask whether to keep it.
         </p>
       </div>
       <div class="hop-theme-grid hop-theme-grid--compact">
