@@ -1853,6 +1853,7 @@ function hopOpenNavFoldExclusive(id) {
     const fid = el.getAttribute('data-hop-fold');
     hopSetNavFoldOpen(fid, Boolean(id) && fid === id);
   });
+  if (id) hopScrollNavFoldIntoView(id);
 }
 
 function hopToggleNavFold(id) {
@@ -1861,6 +1862,37 @@ function hopToggleNavFold(id) {
   const willOpen = fold.classList.contains('is-collapsed');
   if (willOpen) hopOpenNavFoldExclusive(id);
   else hopSetNavFoldOpen(id, false);
+}
+
+/** After expand, bring the group (+ items) into the visible sidebar scroll area. */
+function hopScrollNavFoldIntoView(id) {
+  const fold = document.querySelector(`#hop-executive-workspace .hop-nav-fold[data-hop-fold="${CSS.escape(String(id || ''))}"]`);
+  if (!fold) return;
+  const list = fold.closest('.hop-nav-list') || document.querySelector('#hop-executive-workspace .hop-nav-list');
+  if (!list) {
+    fold.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return;
+  }
+  const run = () => {
+    const listRect = list.getBoundingClientRect();
+    const foldRect = fold.getBoundingClientRect();
+    const pad = 10;
+    // If fold top is above visible area, or bottom (with items) below — scroll
+    if (foldRect.top < listRect.top + pad) {
+      list.scrollTop += foldRect.top - listRect.top - pad;
+    } else if (foldRect.bottom > listRect.bottom - pad) {
+      list.scrollTop += foldRect.bottom - listRect.bottom + pad;
+    }
+    // Prefer keeping the whole open group visible when possible
+    const stillBelow = fold.getBoundingClientRect().bottom > list.getBoundingClientRect().bottom - pad;
+    if (stillBelow) {
+      const maxScroll = list.scrollHeight - list.clientHeight;
+      const target = Math.min(maxScroll, list.scrollTop + (fold.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom) + pad);
+      list.scrollTo({ top: target, behavior: 'smooth' });
+    }
+  };
+  // Wait a frame so expanded items have laid out
+  requestAnimationFrame(() => requestAnimationFrame(run));
 }
 
 /** Reliable mobile taps — ignore scroll gestures; only open on a real tap. */
