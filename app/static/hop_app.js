@@ -2176,9 +2176,14 @@ async function hopEnsureLookups() {
 
 function hopCustomerOptions(selectedId, opts) {
   const withAdd = opts && opts.withAddNew;
-  const rows = ['<option value="">— Select customer —</option>']
-    .concat(hopState.customers.map((c) => `<option value="${c.id}"${String(c.id) === String(selectedId || '') ? ' selected' : ''}>${foEscapeText(c.company)}</option>`));
-  if (withAdd) rows.push('<option value="__new__">+ Add new customer…</option>');
+  const rows = [];
+  if (withAdd) {
+    rows.push('<option value="__new__">+ Add new customer…</option>');
+  }
+  rows.push('<option value="">— Select customer —</option>');
+  hopState.customers.forEach((c) => {
+    rows.push(`<option value="${c.id}"${String(c.id) === String(selectedId || '') ? ' selected' : ''}>${foEscapeText(c.company)}</option>`);
+  });
   return rows.join('');
 }
 
@@ -2220,23 +2225,8 @@ function hopLeadCustomerChange() {
   }
 }
 
-function hopLeadProjectChange() {
-  const projectSel = document.getElementById('f-lproject');
-  const nameInput = document.getElementById('f-lpname');
-  if (!projectSel || !nameInput) return;
-  if (projectSel.value) {
-    const opt = projectSel.options[projectSel.selectedIndex];
-    nameInput.value = opt ? opt.textContent : '';
-  }
-}
-
 function hopLeadProjectNameInput() {
-  const projectSel = document.getElementById('f-lproject');
-  const nameInput = document.getElementById('f-lpname');
-  if (!projectSel || !nameInput) return;
-  if (String(nameInput.value || '').trim()) {
-    projectSel.value = '';
-  }
+  /* project is free-text only on lead form */
 }
 
 async function hopEnsureProductCatalogue() {
@@ -2265,12 +2255,16 @@ function hopLeadProductsRenderChips() {
       <button type="button" aria-label="Remove" onclick="hopLeadProductsRemove(${idx})">×</button>
     </span>`).join('');
   hopLeadProductsSyncHidden();
+  const countEl = document.getElementById('f-lproducts-count');
+  if (countEl) countEl.textContent = list.length ? `${list.length} selected` : 'None selected';
 }
 
 function hopLeadProductsRemove(idx) {
   if (!Array.isArray(hopState._leadProducts)) return;
   hopState._leadProducts.splice(idx, 1);
   hopLeadProductsRenderChips();
+  // Refresh picker list if open
+  if (document.getElementById('hop-lead-prod-overlay')) hopLeadProductsFillPicker();
 }
 
 function hopLeadProductsAdd(name) {
@@ -2279,58 +2273,101 @@ function hopLeadProductsAdd(name) {
   if (!Array.isArray(hopState._leadProducts)) hopState._leadProducts = [];
   const exists = hopState._leadProducts.some((x) => x.toLowerCase() === n.toLowerCase());
   if (!exists) hopState._leadProducts.push(n);
-  const q = document.getElementById('f-lproducts-q');
-  if (q) q.value = '';
-  hopLeadProductsHideMenu();
   hopLeadProductsRenderChips();
+  const q = document.getElementById('hop-lead-prod-q');
+  if (q) {
+    q.value = '';
+    q.focus();
+  }
+  hopLeadProductsFillPicker();
 }
 
-function hopLeadProductsHideMenu() {
-  document.getElementById('f-lproducts-menu')?.classList.add('hidden');
+function hopCloseLeadProductsPicker() {
+  document.getElementById('hop-lead-prod-overlay')?.remove();
 }
 
-function hopLeadProductsOutsideClick(e) {
-  const wrap = document.querySelector('.hop-prod-interest-input-wrap');
-  if (!wrap) return;
-  if (wrap.contains(e.target)) return;
-  hopLeadProductsHideMenu();
-}
-
-async function hopLeadProductsSearch() {
-  const qEl = document.getElementById('f-lproducts-q');
-  const menu = document.getElementById('f-lproducts-menu');
-  if (!qEl || !menu) return;
-  const q = String(qEl.value || '').trim();
+async function hopOpenLeadProductsPicker() {
   await hopEnsureProductCatalogue();
-  const all = hopState._productCatalogue || [];
+  hopCloseLeadProductsPicker();
+  const overlay = document.createElement('div');
+  overlay.id = 'hop-lead-prod-overlay';
+  overlay.className = 'hop-lead-prod-overlay is-open';
+  overlay.innerHTML = `
+    <div class="hop-lead-prod-backdrop" onclick="hopCloseLeadProductsPicker()"></div>
+    <div class="hop-lead-prod-dialog" role="dialog" aria-modal="true" aria-label="Products interested">
+      <div class="hop-lead-prod-head">
+        <div>
+          <p class="hop-lead-prod-kicker">Products interested</p>
+          <h3>Select products</h3>
+          <p class="hop-lead-prod-sub">Search catalogue or add a name manually. Select multiple — after each pick, search stays open for the next.</p>
+        </div>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopCloseLeadProductsPicker()">Done</button>
+      </div>
+      <div class="hop-lead-prod-selected" id="hop-lead-prod-selected-chips"></div>
+      <div class="hop-lead-prod-search">
+        <input id="hop-lead-prod-q" type="search" autocomplete="off" placeholder="Type product name…"
+          oninput="hopLeadProductsFillPicker()" />
+      </div>
+      <div class="hop-lead-prod-table-wrap">
+        <div class="hop-lead-prod-table-head">
+          <span>Item</span><span>Sale price</span><span>Purchase price</span><span>Stock</span><span></span>
+        </div>
+        <div id="hop-lead-prod-rows" class="hop-lead-prod-rows"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  hopLeadProductsSyncPickerChips();
+  hopLeadProductsFillPicker();
+  requestAnimationFrame(() => document.getElementById('hop-lead-prod-q')?.focus());
+}
+
+function hopLeadProductsSyncPickerChips() {
+  const wrap = document.getElementById('hop-lead-prod-selected-chips');
+  if (!wrap) return;
+  const list = hopState._leadProducts || [];
+  wrap.innerHTML = list.length
+    ? list.map((name, idx) => `
+      <span class="hop-prod-chip">
+        ${foEscapeText(name)}
+        <button type="button" aria-label="Remove" onclick="hopLeadProductsRemove(${idx})">×</button>
+      </span>`).join('')
+    : '<span class="hop-lead-prod-empty">No products selected yet</span>';
+}
+
+function hopLeadProductsFillPicker() {
+  const qEl = document.getElementById('hop-lead-prod-q');
+  const rowsEl = document.getElementById('hop-lead-prod-rows');
+  if (!rowsEl) return;
+  const q = String(qEl?.value || '').trim();
   const ql = q.toLowerCase();
-  const matches = !ql
-    ? all.slice(0, 8)
-    : all.filter((p) => {
-      const blob = `${p.name || ''} ${p.code || ''} ${p.brand || ''} ${p.category || ''}`.toLowerCase();
-      return blob.includes(ql);
-    }).slice(0, 12);
+  const all = hopState._productCatalogue || [];
+  const selected = new Set((hopState._leadProducts || []).map((x) => x.toLowerCase()));
+  const matches = (!ql ? all.slice(0, 40) : all.filter((p) => {
+    const blob = `${p.name || ''} ${p.code || ''} ${p.brand || ''} ${p.category || ''}`.toLowerCase();
+    return blob.includes(ql);
+  }).slice(0, 50));
+
+  const addBtn = q
+    ? `<button type="button" class="hop-lead-prod-add-row" onclick="hopLeadProductsAdd(${JSON.stringify(q)})">
+        + Add “${foEscapeText(q)}” as custom product
+      </button>`
+    : '';
 
   const rows = matches.map((p) => {
     const label = p.name || p.code || `Product #${p.id}`;
-    return `<button type="button" class="hop-prod-interest-row" role="option" onclick="hopLeadProductsAdd(${JSON.stringify(label)})">
+    const already = selected.has(String(label).toLowerCase());
+    return `<div class="hop-lead-prod-row${already ? ' is-picked' : ''}">
       <strong>${foEscapeText(label)}</strong>
       <span>${hopMoney(p.selling_price)}</span>
       <span>${hopMoney(p.purchase_price)}</span>
       <span>${foEscapeText(p.stock_qty ?? '—')}</span>
-    </button>`;
+      <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary hop-lead-prod-pick"
+        ${already ? 'disabled' : ''} onclick="hopLeadProductsAdd(${JSON.stringify(label)})">${already ? 'Added' : 'Select'}</button>
+    </div>`;
   }).join('');
 
-  const addLabel = q || 'new item';
-  menu.innerHTML = `
-    <button type="button" class="hop-prod-interest-add" onclick="hopLeadProductsAdd(${JSON.stringify(q || '')})">
-      + Add ${q ? `"${foEscapeText(q)}"` : 'typed item'}
-    </button>
-    <div class="hop-prod-interest-menu-head">
-      <span>Item</span><span>Sale price</span><span>Purchase price</span><span>Stock</span>
-    </div>
-    ${rows || `<p class="nx-text-dim" style="padding:10px 12px;margin:0;font-size:0.8rem">No catalogue match — use + Add to save “${foEscapeText(addLabel)}” on this lead.</p>`}`;
-  menu.classList.remove('hidden');
+  rowsEl.innerHTML = `${addBtn}${rows || `<p class="hop-lead-prod-empty">No catalogue match.${q ? ' Use + Add above to keep this name.' : ''}</p>`}`;
+  hopLeadProductsSyncPickerChips();
 }
 
 /* ---------- Vyapar-style Edit Party modal (Nexora theme) ---------- */
@@ -7016,7 +7053,7 @@ async function hopShowForm(kind, editRow) {
   if (editRow && editRow.id != null && (kind === 'customer' || kind === 'vendor')) {
     hopState.contactEdit = { kind, id: Number(editRow.id) };
   }
-  const cancel = `hopState.contactEdit=null; hopState._leadFormAwaitingCustomer=false; document.removeEventListener('click', hopLeadProductsOutsideClick, true); document.getElementById('hop-form-slot').classList.add('hidden')`;
+  const cancel = `hopState.contactEdit=null; hopState._leadFormAwaitingCustomer=false; hopCloseLeadProductsPicker(); document.getElementById('hop-form-slot').classList.add('hidden')`;
 
   if (kind === 'customer') {
     const row = editRow || {};
@@ -7068,17 +7105,13 @@ async function hopShowForm(kind, editRow) {
   if (kind === 'lead') {
     slot.innerHTML = `
       <strong>New Lead</strong>
-      <p class="nx-text-dim" style="font-size:0.78rem;">Pick a project, or type a new project name below — it will be created on save.</p>
+      <p class="nx-text-dim" style="font-size:0.78rem;">Type a project name — a new project is created on save if needed.</p>
       <div class="hop-form-grid" style="margin-top:10px;">
         <label>Customer
           <select id="f-lcustomer" onchange="hopLeadCustomerChange()">${hopCustomerOptions(null, { withAddNew: true })}</select>
         </label>
-        <label>Project
-          <select id="f-lproject" onchange="hopLeadProjectChange()">${hopProjectOptions()}</select>
-        </label>
-        <label class="hop-form-span-2">Project name (manual)
-          <input id="f-lpname" placeholder="e.g. Holiday Inn Dwarka" oninput="hopLeadProjectNameInput()" />
-          <span class="hop-lead-project-hint">Leave project dropdown empty and type here to create a new project.</span>
+        <label class="hop-form-span-2">Project name
+          <input id="f-lpname" placeholder="e.g. Holiday Inn Dwarka" />
         </label>
         <label>Source<input id="f-lsource" /></label>
         <label>Expected Value<input id="f-lvalue" type="number" /></label>
@@ -7090,13 +7123,12 @@ async function hopShowForm(kind, editRow) {
         <label>Expected Closure<input id="f-lclosure" type="date" /></label>
         <div class="hop-form-span-2 hop-prod-interest">
           <span>Products Interested</span>
-          <div class="hop-prod-interest-box">
+          <div class="hop-prod-interest-box hop-prod-interest-box--trigger">
             <div id="f-lproducts-chips" class="hop-prod-interest-chips"></div>
-            <div class="hop-prod-interest-input-wrap">
-              <input id="f-lproducts-q" type="search" autocomplete="off" placeholder="Type to search catalogue or add manually…"
-                oninput="hopLeadProductsSearch()" onfocus="hopLeadProductsSearch()" />
-              <div id="f-lproducts-menu" class="hop-prod-interest-menu hidden" role="listbox"></div>
-            </div>
+            <button type="button" class="hop-prod-interest-open" onclick="hopOpenLeadProductsPicker()">
+              <span>Search &amp; select products…</span>
+              <span id="f-lproducts-count" class="hop-prod-interest-count">None selected</span>
+            </button>
             <input type="hidden" id="f-lproducts" value="" />
           </div>
         </div>
@@ -7108,7 +7140,6 @@ async function hopShowForm(kind, editRow) {
     hopState._leadProducts = [];
     hopLeadProductsRenderChips();
     hopEnsureProductCatalogue();
-    document.addEventListener('click', hopLeadProductsOutsideClick, true);
   }
   if (kind === 'meeting') {
     const nowLocal = new Date();
@@ -7401,7 +7432,7 @@ async function hopSave(kind) {
       view: 'leads',
       payload: () => ({
         customer_id: document.getElementById('f-lcustomer')?.value,
-        project_id: document.getElementById('f-lproject')?.value,
+        project_id: '',
         project_name: document.getElementById('f-lpname')?.value,
         source: document.getElementById('f-lsource')?.value,
         expected_value: document.getElementById('f-lvalue')?.value,
@@ -7628,7 +7659,7 @@ async function hopSave(kind) {
     });
     hopState.contactEdit = null;
     hopState._leadFormAwaitingCustomer = false;
-    document.removeEventListener('click', hopLeadProductsOutsideClick, true);
+    hopCloseLeadProductsPicker();
     document.getElementById('hop-form-slot')?.classList.add('hidden');
     // invalidate caches
     hopState.customers = [];
@@ -7658,9 +7689,9 @@ window.openHopProjectHub = openHopProjectHub;
 window.hopDebouncedReload = hopDebouncedReload;
 window.hopShowForm = hopShowForm;
 window.hopLeadCustomerChange = hopLeadCustomerChange;
-window.hopLeadProjectChange = hopLeadProjectChange;
-window.hopLeadProjectNameInput = hopLeadProjectNameInput;
-window.hopLeadProductsSearch = hopLeadProductsSearch;
+window.hopOpenLeadProductsPicker = hopOpenLeadProductsPicker;
+window.hopCloseLeadProductsPicker = hopCloseLeadProductsPicker;
+window.hopLeadProductsFillPicker = hopLeadProductsFillPicker;
 window.hopLeadProductsAdd = hopLeadProductsAdd;
 window.hopLeadProductsRemove = hopLeadProductsRemove;
 window.hopSave = hopSave;
