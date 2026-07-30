@@ -257,14 +257,16 @@ function hopReadCustomFormColors() {
   };
 }
 
+let hopThemeStudioSnapshot = null;
+
 function hopPreviewCustomTheme() {
-  const colors = hopSaveCustomColors(hopReadCustomFormColors());
+  // Live preview only — colours persist on Apply, not while editing
+  const colors = hopReadCustomFormColors();
   hopApplyCustomVars(colors);
   document.documentElement.setAttribute('data-hop-theme', 'custom');
   const ws = document.getElementById('hop-executive-workspace');
   if (ws) ws.setAttribute('data-hop-theme', 'custom');
   document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', 'custom'));
-  try { localStorage.setItem(HOP_THEME_KEY, 'custom'); } catch (e) { /* ignore */ }
   const meta = document.getElementById('hop-theme-color-meta');
   if (meta) meta.setAttribute('content', colors.bg);
   const swSide = document.querySelector('.hop-theme-swatch--custom .hop-theme-swatch-side');
@@ -311,16 +313,24 @@ function hopBindCustomColorSync() {
   });
 }
 
+function hopRestoreThemeStudioSnapshot() {
+  if (!hopThemeStudioSnapshot) return;
+  const snap = hopThemeStudioSnapshot;
+  hopThemeStudioSnapshot = null;
+  hopSaveCustomColors(snap.colors);
+  hopApplyTheme(snap.theme || 'nexora', { silent: true, skipRerender: true });
+}
+
 function hopCustomStudioMarkup(c) {
   const presetBtns = Object.entries(HOP_CUSTOM_PRESETS).map(([key, p]) => {
     const col = p.colors;
-    return `<button type="button" class="nx-btn hop-custom-preset-btn" onclick="hopLoadCustomPreset('${key}')">
+    return `<button type="button" class="hop-custom-preset-btn" onclick="hopLoadCustomPreset('${key}')">
       <span class="hop-custom-preset-swatches" aria-hidden="true">
         <i style="background:${col.sidebar}"></i>
         <i style="background:${col.bg}"></i>
         <i style="background:${col.accent}"></i>
       </span>
-      ${p.label}
+      <span class="hop-custom-preset-label">${p.label}</span>
     </button>`;
   }).join('');
   const colorField = (id, label, value) => `
@@ -339,9 +349,9 @@ function hopCustomStudioMarkup(c) {
         <div>
           <p class="hop-theme-studio-kicker" style="margin:0 0 4px">Custom</p>
           <h3 class="nx-display">Theme studio</h3>
-          <p>Adjust colours — preview updates live. Apply when it feels right.</p>
+          <p>Try colours freely — Apply to save, or Cancel to keep your current theme.</p>
         </div>
-        <button type="button" class="nx-btn hop-custom-studio-close" onclick="hopCloseCustomThemeStudio()" aria-label="Close">Close</button>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopCancelCustomThemeStudio()" aria-label="Cancel">Cancel</button>
       </div>
       <div class="hop-custom-panel-layout">
         <aside class="hop-custom-live" aria-hidden="true">
@@ -374,8 +384,9 @@ function hopCustomStudioMarkup(c) {
             ${colorField('hop-c-muted', 'Secondary text', c.muted)}
           </div>
           <div class="hop-custom-actions">
-            <button type="button" class="nx-btn nx-btn-primary" onclick="hopApplyCustomThemeFromForm()">Apply custom theme</button>
-            <button type="button" class="nx-btn" onclick="hopResetCustomTheme()">Reset to Emerald Gold</button>
+            <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary" onclick="hopApplyCustomThemeFromForm()">Apply</button>
+            <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopResetCustomTheme()">Reset</button>
+            <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopCancelCustomThemeStudio()">Cancel</button>
           </div>
         </div>
       </div>
@@ -383,9 +394,16 @@ function hopCustomStudioMarkup(c) {
 }
 
 function hopOpenCustomThemeStudio() {
-  hopApplyTheme('custom', { silent: true, skipRerender: true });
+  hopThemeStudioSnapshot = {
+    theme: hopGetTheme(),
+    colors: { ...hopGetCustomColors() },
+  };
   const c = hopGetCustomColors();
   hopApplyCustomVars(c);
+  document.documentElement.setAttribute('data-hop-theme', 'custom');
+  const ws = document.getElementById('hop-executive-workspace');
+  if (ws) ws.setAttribute('data-hop-theme', 'custom');
+  document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', 'custom'));
   let overlay = document.getElementById('hop-custom-studio-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -394,7 +412,7 @@ function hopOpenCustomThemeStudio() {
     document.body.appendChild(overlay);
   }
   overlay.innerHTML = `
-    <div class="hop-custom-studio-backdrop" onclick="hopCloseCustomThemeStudio()"></div>
+    <div class="hop-custom-studio-backdrop" onclick="hopCancelCustomThemeStudio()"></div>
     <div class="hop-custom-studio-dialog" role="dialog" aria-modal="true" aria-label="Theme studio">
       ${hopCustomStudioMarkup(c)}
     </div>`;
@@ -403,13 +421,9 @@ function hopOpenCustomThemeStudio() {
   hopBindCustomColorSync();
   if (!window._hopCustomStudioEsc) {
     window._hopCustomStudioEsc = (e) => {
-      if (e.key === 'Escape') hopCloseCustomThemeStudio();
+      if (e.key === 'Escape') hopCancelCustomThemeStudio();
     };
     document.addEventListener('keydown', window._hopCustomStudioEsc);
-  }
-  if (hopState.view === 'theme') {
-    const mount = hopMount();
-    if (mount) renderHopThemeModule(mount);
   }
 }
 
@@ -430,26 +444,28 @@ function hopCloseCustomThemeStudio() {
   }
 }
 
+function hopCancelCustomThemeStudio() {
+  hopRestoreThemeStudioSnapshot();
+  hopCloseCustomThemeStudio();
+}
+
 function hopApplyCustomThemeFromForm() {
-  hopPreviewCustomTheme();
+  const colors = hopSaveCustomColors(hopReadCustomFormColors());
+  hopThemeStudioSnapshot = null;
+  hopApplyCustomVars(colors);
   hopApplyTheme('custom', { silent: true, skipRerender: true });
   hopCloseCustomThemeStudio();
-  if (typeof nexoraToast === 'function') nexoraToast('Custom theme on', 'ok');
+  if (typeof nexoraToast === 'function') nexoraToast('Custom theme saved', 'ok');
 }
 
 function hopLoadCustomPreset(key) {
   const preset = HOP_CUSTOM_PRESETS[key];
   if (!preset) return;
-  hopSaveCustomColors(preset.colors);
-  hopApplyTheme('custom', { silent: true, skipRerender: true });
   hopFillCustomForm(preset.colors);
   hopPreviewCustomTheme();
-  if (typeof nexoraToast === 'function') nexoraToast(preset.label + ' applied', 'ok');
 }
 
 function hopResetCustomTheme() {
-  hopSaveCustomColors(HOP_CUSTOM_DEFAULTS);
-  hopApplyTheme('custom', { silent: true, skipRerender: true });
   hopFillCustomForm(HOP_CUSTOM_DEFAULTS);
   hopPreviewCustomTheme();
 }

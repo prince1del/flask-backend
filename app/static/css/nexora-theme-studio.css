@@ -333,12 +333,28 @@
   margin-bottom: 16px;
 }
 .hop-custom-preset-btn {
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.75rem !important;
-  padding: 7px 11px !important;
-  border-radius: 999px !important;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #DED3BE;
+  background: #ffffff;
+  color: #1F1F1F !important;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.hop-custom-preset-btn:hover {
+  border-color: #C9A227;
+  background: #FBF7EE;
+}
+.hop-custom-preset-label {
+  color: #1F1F1F !important;
+  opacity: 1 !important;
+  white-space: nowrap;
 }
 .hop-custom-preset-swatches {
   display: inline-flex;
@@ -432,10 +448,49 @@
 .hop-custom-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid rgba(127, 127, 127, 0.14);
+}
+
+.hop-custom-studio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 11px;
+  min-height: 28px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #DED3BE;
+  background: #ffffff;
+  color: #1F1F1F;
+  line-height: 1;
+}
+.hop-custom-studio-btn--primary {
+  background: #C9A227;
+  border-color: #C9A227;
+  color: #ffffff;
+}
+.hop-custom-studio-btn--primary:hover {
+  background: #A8861F;
+  border-color: #A8861F;
+}
+.hop-custom-studio-btn--ghost {
+  background: #ffffff;
+  color: #3F3A32;
+}
+.hop-custom-studio-btn--ghost:hover {
+  background: #F5EFE0;
+  border-color: #C9A227;
+}
+
+.hop-custom-theme-panel--modal .hop-custom-panel-head .hop-custom-studio-btn {
+  flex-shrink: 0;
 }
 
 /* Light theme surfaces */
