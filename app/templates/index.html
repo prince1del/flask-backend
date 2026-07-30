@@ -50,11 +50,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260730-mobile-back-safe">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-studio-modal">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-studio-modal">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-studio-modal">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260730-studio-modal">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260730-studio-modal">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-nav-accordion">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-nav-accordion">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-nav-accordion">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260730-nav-accordion">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260730-nav-accordion">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -658,7 +658,7 @@
                     <div class="hop-nav-fold" data-hop-fold="sale">
                       <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="true" onclick="hopToggleNavFold('sale')">
                         <span class="nav-label">Sale</span>
-                        <span class="hop-nav-caret" aria-hidden="true">▾</span>
+                        <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
                       </button>
                       <div class="hop-nav-fold-items">
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="invoices" onclick="openHopView('invoices')">Sale Invoices</button>
@@ -672,10 +672,10 @@
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_fa" onclick="openHopView('sale_fa')">Sale FA</button>
                       </div>
                     </div>
-                    <div class="hop-nav-fold" data-hop-fold="purchase">
-                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="true" onclick="hopToggleNavFold('purchase')">
+                    <div class="hop-nav-fold is-collapsed" data-hop-fold="purchase">
+                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="false" onclick="hopToggleNavFold('purchase')">
                         <span class="nav-label">Purchase &amp; Expense</span>
-                        <span class="hop-nav-caret" aria-hidden="true">▾</span>
+                        <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
                       </button>
                       <div class="hop-nav-fold-items">
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="purchase_bills" onclick="openHopView('purchase_bills')">Purchase Bills</button>
@@ -708,10 +708,10 @@
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="daily" onclick="openHopView('daily')">Daily Activity</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="profit" onclick="openHopView('profit')">Profitability</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="targets" onclick="openHopView('targets')">Monthly Target</button>
-                    <div class="hop-nav-fold" data-hop-fold="settings">
-                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="true" onclick="hopToggleNavFold('settings')">
+                    <div class="hop-nav-fold is-collapsed" data-hop-fold="settings">
+                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="false" onclick="hopToggleNavFold('settings')">
                         <span class="nav-label">Settings</span>
-                        <span class="hop-nav-caret" aria-hidden="true">▾</span>
+                        <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
                       </button>
                       <div class="hop-nav-fold-items">
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="theme" onclick="openHopView('theme')">Theme</button>
@@ -2290,6 +2290,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260729-module-fullscreen"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-studio-modal"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-nav-accordion"></script>
 </body>
 </html>

@@ -1482,35 +1482,24 @@ function openHopView(viewName, opts) {
   document.querySelectorAll('.hop-nav-btn[data-hop-view]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.hopView === hopState.view);
   });
-  // Keep Sale / Purchase / Settings folds open when a child is active
-  const saleFold = document.querySelector('[data-hop-fold="sale"]');
+  // Accordion: keep only the active group's fold open
+  const v = String(hopState.view || '');
+  let foldId = null;
   if (
-    saleFold
-    && (
-      String(hopState.view || '').startsWith('sale_')
-      || hopState.view === 'invoices'
-      || hopState.view === 'payments'
-      || hopState.view === 'commission'
-    )
+    v.startsWith('sale_')
+    || v === 'invoices'
+    || v === 'payments'
+    || v === 'commission'
   ) {
-    saleFold.classList.remove('is-collapsed');
-    saleFold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', 'true');
+    foldId = 'sale';
+  } else if (v.startsWith('purchase_')) {
+    foldId = 'purchase';
+  } else if (v === 'journal_entries') {
+    foldId = 'accounting';
+  } else if (v === 'vyapar_import' || v === 'wipe_data' || v === 'theme') {
+    foldId = 'settings';
   }
-  const purchaseFold = document.querySelector('[data-hop-fold="purchase"]');
-  if (purchaseFold && String(hopState.view || '').startsWith('purchase_')) {
-    purchaseFold.classList.remove('is-collapsed');
-    purchaseFold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', 'true');
-  }
-  const accountingFold = document.querySelector('[data-hop-fold="accounting"]');
-  if (accountingFold && hopState.view === 'journal_entries') {
-    accountingFold.classList.remove('is-collapsed');
-    accountingFold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', 'true');
-  }
-  const settingsFold = document.querySelector('[data-hop-fold="settings"]');
-  if (settingsFold && (hopState.view === 'vyapar_import' || hopState.view === 'wipe_data' || hopState.view === 'theme')) {
-    settingsFold.classList.remove('is-collapsed');
-    settingsFold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', 'true');
-  }
+  if (foldId) hopOpenNavFoldExclusive(foldId);
 
   // Dashboard keeps padded scroll layout; every other menu opens as full-page workspace
   // (overwrites Ask NEXORA / Workspace / profile / bell top bar).
@@ -1601,12 +1590,27 @@ function openHopView(viewName, opts) {
   }, 80);
 }
 
-function hopToggleNavFold(id) {
-  const fold = document.querySelector(`[data-hop-fold="${id}"]`);
+function hopSetNavFoldOpen(id, open) {
+  const fold = document.querySelector(`[data-hop-fold="${CSS.escape(String(id || ''))}"]`);
   if (!fold) return;
-  fold.classList.toggle('is-collapsed');
-  const open = !fold.classList.contains('is-collapsed');
+  fold.classList.toggle('is-collapsed', !open);
   fold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+/** Accordion: open one fold, collapse all others. Pass null to collapse all. */
+function hopOpenNavFoldExclusive(id) {
+  document.querySelectorAll('#hop-executive-workspace .hop-nav-fold[data-hop-fold]').forEach((el) => {
+    const fid = el.getAttribute('data-hop-fold');
+    hopSetNavFoldOpen(fid, Boolean(id) && fid === id);
+  });
+}
+
+function hopToggleNavFold(id) {
+  const fold = document.querySelector(`[data-hop-fold="${CSS.escape(String(id || ''))}"]`);
+  if (!fold) return;
+  const willOpen = fold.classList.contains('is-collapsed');
+  if (willOpen) hopOpenNavFoldExclusive(id);
+  else hopSetNavFoldOpen(id, false);
 }
 
 /** Reliable mobile taps — ignore scroll gestures; only open on a real tap. */
