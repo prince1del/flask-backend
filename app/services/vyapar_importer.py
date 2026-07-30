@@ -13,9 +13,10 @@ from typing import Any
 # Only tax Sale Invoices mirror into hop_invoices.
 # NOTE: In this Vyapar dataset, txn_type 27 is Estimate (UI "Estimate", series HOPPI…),
 # not a Sale bill. Real sales are txn_type 1 (Sale Invoice).
+# txn_type 30 is Delivery Challan (UI "Delivery Challan", serial 1/2/3) — NOT quotation.
 INVOICE_TYPES = {1}
-# Estimates / quotations (Vyapar type 27 + legacy type 30)
-QUOTATION_TYPES = {27, 30}
+# Estimates only (type 27). Do not treat 30 as quotation.
+QUOTATION_TYPES = {27}
 
 
 def _txn_label(txn_type: int) -> str:
@@ -30,7 +31,8 @@ def _txn_label(txn_type: int) -> str:
         21: "Sale Return",
         # Vyapar stores Estimates as type 27 for this firm (shown as Estimate + HOPPI prefix in UI).
         27: "Estimate",
-        30: "Estimate/Quotation",
+        # This firm's Vyapar: type 30 = Delivery Challan (not Estimate/Quotation).
+        30: "Delivery Challan",
         65: "Sales Order",
         # In this Vyapar firm, type 81 is Journal Entry (not PO / Sale Order).
         81: "Journal Entry",
@@ -139,10 +141,10 @@ def _vyapar_status_label(
 ) -> str:
     """Partial only when money was actually received against the bill."""
     base = _status_label(raw_status)
-    # Estimates / orders / proforma — not payment-tracked like invoices.
+    # Estimates / orders / proforma / challan — not payment-tracked like invoices.
     # Journals: Posted (write-off / adjustment), never Partial/Paid.
-    if txn_type in (27, 30, 65, 83):
-        return base or "Approved"
+    if txn_type in (27, 30, 65, 82, 83):
+        return base or "Open"
     if txn_type == 81:
         return "Posted"
     if due_amt <= 0.009 and amount > 0.009:

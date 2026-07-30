@@ -55,11 +55,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260730-mobile-back-safe">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-party-theme">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-party-theme">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-party-theme">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260730-party-theme">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260730-party-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-fuzzy-live">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-deals-crm">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-deals-crm">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260730-deals-crm">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260730-deal-form">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -660,8 +660,8 @@
                 <nav class="hop-nav-list">
                     <button type="button" class="nx-nav-item hop-nav-btn active" data-hop-view="dashboard" onclick="openHopView('dashboard')">Dashboard</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="parties" onclick="openHopView('parties')">Parties</button>
-                    <div class="hop-nav-fold" data-hop-fold="sale">
-                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="true" onclick="hopToggleNavFold('sale')">
+                    <div class="hop-nav-fold is-collapsed" data-hop-fold="sale">
+                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="false" onclick="hopToggleNavFold('sale')">
                         <span class="nav-label">Sale</span>
                         <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
                       </button>
@@ -692,10 +692,7 @@
                       </div>
                     </div>
                     <div class="hop-nav-group">CRM</div>
-                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="leads" onclick="openHopView('leads')">Leads</button>
-                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="pipeline" onclick="openHopView('pipeline')">Lead Pipeline</button>
-                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="meetings" onclick="openHopView('meetings')">Meetings</button>
-                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="projects" onclick="openHopView('projects')">Projects</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="deals" onclick="openHopView('deals')">Deals</button>
                     <div class="hop-nav-group">Products</div>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="products" onclick="openHopView('products')">Catalogue</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="samples" onclick="openHopView('samples')">Samples</button>
@@ -707,7 +704,6 @@
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="dispatches" onclick="openHopView('dispatches')">Dispatch</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="complaints" onclick="openHopView('complaints')">Complaints</button>
                     <div class="hop-nav-group">Reports</div>
-                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="funnel" onclick="openHopView('funnel')">Sales Funnel</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="receivables" onclick="openHopView('receivables')">Receivables</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="customer_dash" onclick="openHopView('customer_dash')">Customer Dash</button>
                     <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="daily" onclick="openHopView('daily')">Daily Activity</button>
@@ -2295,6 +2291,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260729-module-fullscreen"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-party-theme"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-challan30"></script>
 </body>
 </html>

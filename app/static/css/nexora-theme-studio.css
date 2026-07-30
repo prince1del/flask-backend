@@ -765,6 +765,26 @@ body.hop-custom-studio-open {
   flex-direction: column;
   gap: 6px;
 }
+.hop-lead-add-party-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.hop-lead-add-party-btn:hover {
+  text-decoration: underline;
+}
+html[data-hop-theme="nexora"] .hop-lead-add-party-btn {
+  color: #7dd3c0;
+}
 .hop-prod-interest-box {
   border: 1px solid rgba(127, 127, 127, 0.28);
   border-radius: 10px;
@@ -921,21 +941,23 @@ html[data-hop-theme="nexora"] .hop-prod-interest-box {
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 13500;
+  z-index: 16000;
   align-items: center;
   justify-content: center;
   padding: 16px;
+  pointer-events: auto;
 }
 .hop-lead-prod-overlay.is-open { display: flex; }
 .hop-lead-prod-backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0;
   background: rgba(8, 12, 10, 0.55);
   backdrop-filter: blur(3px);
 }
 .hop-lead-prod-dialog {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: min(820px, 100%);
   max-height: min(86vh, 720px);
   display: flex;
@@ -946,6 +968,7 @@ html[data-hop-theme="nexora"] .hop-prod-interest-box {
   border-radius: 14px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
   overflow: hidden;
+  pointer-events: auto;
 }
 .hop-lead-prod-head {
   display: flex;
@@ -993,7 +1016,21 @@ html[data-hop-theme="nexora"] .hop-prod-interest-box {
   border-radius: 8px;
   padding: 10px 12px;
   font: inherit;
-  background: #fff;
+  font-size: 0.95rem;
+  background: #fff !important;
+  color: #1F1F1F !important;
+  caret-color: #1F1F1F;
+  outline: none;
+  -webkit-text-fill-color: #1F1F1F;
+}
+.hop-lead-prod-search input::placeholder {
+  color: #6B6254 !important;
+  opacity: 1;
+  -webkit-text-fill-color: #6B6254;
+}
+.hop-lead-prod-search input:focus {
+  border-color: #C9A227;
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18);
 }
 .hop-lead-prod-table-wrap {
   flex: 1 1 auto;
@@ -1081,3 +1118,237 @@ html[data-hop-theme="nexora"] .hop-prod-interest-box {
   .hop-lead-prod-row span:nth-child(4) { display: none; }
   .hop-lead-prod-pick { grid-column: 2; }
 }
+
+/* —— Deals CRM —— */
+.hop-deal-detail{max-width:1080px;}
+.hop-deal-hero{
+  display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  align-items:flex-start;margin-bottom:14px;
+  padding-bottom:14px;border-bottom:1px solid #E8E0D1;
+}
+.hop-deal-hero-top{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+.hop-deal-code{
+  margin:0;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;
+  color:#6B6254;font-weight:650;
+}
+.hop-deal-title{margin:0 0 8px;font-size:1.35rem;font-weight:700;color:#1F1F1F;line-height:1.2;}
+.hop-deal-meta{display:flex;flex-wrap:wrap;gap:6px;margin:0;}
+.hop-deal-meta-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:8px;font-size:.78rem;color:#3F3A32;
+  background:#fff;border:1px solid #DED3BE;
+}
+.hop-deal-meta-pill em{
+  font-style:normal;font-size:.62rem;font-weight:650;letter-spacing:.06em;
+  text-transform:uppercase;color:#6B6254;
+}
+.hop-deal-status{
+  padding:2px 9px;border-radius:999px;font-size:.68rem;font-weight:650;
+  text-transform:uppercase;letter-spacing:.04em;
+  background:#EFE7D8;color:#3F3A32;
+}
+.hop-deal-status--open{background:#ecfdf5;color:#047857;}
+.hop-deal-status--lost{background:#fef2f2;color:#b91c1c;}
+.hop-deal-status--closed{background:#eff6ff;color:#1d4ed8;}
+.hop-deal-detail-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;}
+
+.hop-deal-grid{
+  display:grid;grid-template-columns:minmax(0,1.4fr) minmax(220px,.85fr);
+  gap:12px;margin-bottom:14px;align-items:start;
+}
+@media (max-width:900px){
+  .hop-deal-grid{grid-template-columns:1fr;}
+}
+
+.hop-deal-progress-card,
+.hop-deal-snapshot{
+  padding:14px 16px;border-radius:12px;
+  border:1px solid #DED3BE;background:#fff;
+}
+.hop-deal-progress-head{
+  display:flex;justify-content:space-between;gap:12px;align-items:flex-start;
+}
+.hop-deal-kicker{
+  margin:0 0 4px;font-size:.62rem;font-weight:650;letter-spacing:.1em;
+  text-transform:uppercase;color:#6B6254;
+}
+.hop-deal-now-title{margin:0;font-size:1.12rem;font-weight:700;color:#1F1F1F;}
+.hop-deal-progress-sub{margin:4px 0 0;font-size:.75rem;color:#6B6254;}
+.hop-deal-progress-pct{
+  min-width:52px;height:52px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.95rem;font-weight:700;color:#7a5f12;
+  background:linear-gradient(145deg,#F7EEC8,#E8D48B);
+  border:1px solid #DED3BE;font-variant-numeric:tabular-nums;
+}
+.hop-deal-progress-bar{
+  margin-top:12px;height:8px;border-radius:999px;background:#EFE7D8;overflow:hidden;
+}
+.hop-deal-progress-bar > span{
+  display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg,#C9A227,#E8D48B);
+}
+.hop-deal-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 10px;}
+.hop-deal-lost-btn{color:#b91c1c !important;border-color:rgba(185,28,28,.35) !important;}
+.hop-deal-note-label{
+  display:flex;flex-direction:column;gap:4px;
+  font-size:.72rem;font-weight:650;color:#6B6254;text-transform:uppercase;letter-spacing:.04em;
+}
+.hop-deal-note-input{
+  width:100%;box-sizing:border-box;
+  border:1px solid #DED3BE;border-radius:8px;padding:9px 11px;
+  font:inherit;font-size:.84rem;font-weight:400;text-transform:none;letter-spacing:normal;
+  background:#fff;color:#1F1F1F;
+}
+.hop-deal-next-hint{
+  margin:10px 0 0;font-size:.78rem;color:#6B6254;
+}
+.hop-deal-next-hint strong{color:#1F1F1F;font-weight:650;}
+
+.hop-deal-snap-row{
+  display:flex;justify-content:space-between;gap:10px;
+  padding:8px 0;border-bottom:1px solid #EFE7D8;font-size:.8rem;
+}
+.hop-deal-snap-row span{color:#6B6254;}
+.hop-deal-snap-row strong{color:#1F1F1F;font-weight:650;text-align:right;word-break:break-word;}
+.hop-deal-snap-notes{
+  margin:10px 0 0;font-size:.8rem;color:#3F3A32;line-height:1.4;
+  padding:8px 10px;border-radius:8px;background:#F8F4EA;
+}
+.hop-deal-snap-empty{margin:10px 0 0;font-size:.78rem;color:#6B6254;}
+
+.hop-deal-journey{margin-bottom:16px;}
+.hop-deal-phases{display:flex;flex-direction:column;gap:0;}
+.hop-deal-phase{
+  position:relative;padding:0 0 4px 18px;
+  border-left:2px solid #E8E0D1;margin-left:7px;
+}
+.hop-deal-phase:last-child{border-left-color:transparent;}
+.hop-deal-phase-head{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 0 8px;font-size:.88rem;color:#6B6254;
+}
+.hop-deal-phase-head strong{font-weight:700;color:#3F3A32;}
+.hop-deal-phase-dot{
+  position:absolute;left:-7px;top:10px;width:12px;height:12px;border-radius:50%;
+  background:#EFE7D8;border:2px solid #DED3BE;box-sizing:border-box;
+}
+.hop-deal-phase--done .hop-deal-phase-dot{background:#15803d;border-color:#15803d;}
+.hop-deal-phase--done .hop-deal-phase-head strong{color:#15803d;}
+.hop-deal-phase--current .hop-deal-phase-dot{
+  background:#C9A227;border-color:#C9A227;
+  box-shadow:0 0 0 3px rgba(201,162,39,.22);
+}
+.hop-deal-phase--current .hop-deal-phase-head strong{color:#1F1F1F;}
+.hop-deal-phase--lost .hop-deal-phase-dot{background:#b91c1c;border-color:#b91c1c;}
+.hop-deal-phase--locked{opacity:.45;}
+.hop-deal-phase-now{
+  font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:2px 7px;border-radius:999px;background:#F7EEC8;color:#7a5f12;
+}
+.hop-deal-phase-steps{
+  list-style:none;margin:0 0 10px;padding:8px 10px;border-radius:10px;
+  background:#fff;border:1px solid #DED3BE;display:flex;flex-direction:column;gap:4px;
+}
+.hop-deal-phase-step{
+  display:flex;align-items:center;gap:8px;font-size:.8rem;color:#6B6254;padding:3px 0;
+}
+.hop-deal-phase-step em{font-style:normal;font-size:.65rem;opacity:.7;}
+.hop-deal-phase-mark{
+  width:20px;height:20px;border-radius:50%;flex:0 0 auto;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:.65rem;font-weight:700;background:#EFE7D8;color:#6B6254;
+}
+.hop-deal-phase-step--done .hop-deal-phase-mark{background:#15803d;color:#fff;}
+.hop-deal-phase-step--done{color:#3F3A32;}
+.hop-deal-phase-step--current .hop-deal-phase-mark{background:#C9A227;color:#fff;}
+.hop-deal-phase-step--current{color:#1F1F1F;font-weight:650;}
+.hop-deal-phase-step--lost .hop-deal-phase-mark{background:#b91c1c;color:#fff;}
+
+.hop-deal-activity-wrap{margin-bottom:8px;}
+.hop-deal-timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0;}
+.hop-deal-event{
+  display:grid;grid-template-columns:118px minmax(0,1fr);gap:4px 12px;
+  padding:10px 0;border-bottom:1px solid #E8E0D1;font-size:.8rem;
+}
+.hop-deal-event-body{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.hop-deal-event-time{color:#6B6254;font-variant-numeric:tabular-nums;}
+.hop-deal-event-title{color:#1F1F1F;font-weight:600;}
+.hop-deal-event-detail{color:#6B6254;font-size:.75rem;}
+.hop-deal-event--empty{grid-template-columns:1fr;color:#6B6254;border:0;}
+
+/* —— Deal create/edit form (reuses nx-party-modal shell + theme) —— */
+.hop-deal-form-card{width:min(640px, 100%) !important;}
+.hop-deal-form-head-copy{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.hop-deal-form-kicker{
+  margin:0;font-size:.62rem;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:#C9A227;
+}
+.hop-deal-form-body{display:flex;flex-direction:column;gap:16px;padding:16px 18px !important;}
+.hop-deal-form-section{margin:0;}
+.hop-deal-form-sec-title{
+  margin:0 0 10px;font-size:.72rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:#94a3b8;
+}
+.hop-deal-form-sec-title--sub{margin:12px 0 8px;font-size:.66rem;color:#64748b;}
+.hop-deal-form-sec-hint{
+  margin:-4px 0 10px;font-size:.78rem;line-height:1.35;color:#64748b;
+}
+.hop-deal-form-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;
+}
+.hop-deal-form-span-2{grid-column:1 / -1;}
+.hop-deal-form-newparty{
+  margin-top:4px;padding:12px 12px 4px;border-radius:10px;
+  border:1px dashed rgba(201,162,39,.35);
+  background:rgba(201,162,39,.06);
+}
+.hop-deal-form-body .nx-party-field textarea{
+  border:1px solid rgba(255,255,255,.12);border-radius:8px;
+  padding:9px 11px;font:inherit;font-size:.88rem;resize:vertical;min-height:64px;
+  background:rgba(255,255,255,.04);color:#e2e8f0;
+}
+.hop-deal-form-body .nx-party-field textarea:focus{
+  outline:none;border-color:rgba(201,162,39,.65);
+  box-shadow:0 0 0 3px rgba(201,162,39,.15);
+}
+@media (max-width:560px){
+  .hop-deal-form-grid{grid-template-columns:1fr;}
+}
+
+/* Light themes (emerald / bright / custom) — readable labels + gold primary */
+.nx-party-modal.hop-party-theme-light .hop-deal-form-kicker{color:#A8861F;}
+.nx-party-modal.hop-party-theme-light .hop-deal-form-sec-title{color:#6B6254;}
+.nx-party-modal.hop-party-theme-light .hop-deal-form-sec-title--sub{color:#8A7F6E;}
+.nx-party-modal.hop-party-theme-light .hop-deal-form-sec-hint{color:#6B6254;}
+.nx-party-modal.hop-party-theme-light .hop-deal-form-newparty{
+  border-color:rgba(201,162,39,.45);
+  background:rgba(201,162,39,.08);
+}
+.nx-party-modal.hop-party-theme-light .hop-deal-form-body .nx-party-field textarea{
+  background:#fff;border-color:#DED3BE;color:#1F1F1F;
+}
+.nx-party-modal.hop-party-theme-light .hop-deal-form-body .nx-party-field textarea:focus{
+  border-color:#C9A227;box-shadow:0 0 0 3px rgba(201,162,39,.18);
+}
+
+html[data-hop-theme="nexora"] .hop-deal-title,
+html[data-hop-theme="nexora"] .hop-deal-now-title,
+html[data-hop-theme="nexora"] .hop-deal-event-title,
+html[data-hop-theme="nexora"] .hop-deal-snap-row strong,
+html[data-hop-theme="nexora"] .hop-deal-phase-head strong{color:#e2e8f0;}
+html[data-hop-theme="nexora"] .hop-deal-progress-card,
+html[data-hop-theme="nexora"] .hop-deal-snapshot,
+html[data-hop-theme="nexora"] .hop-deal-phase-steps,
+html[data-hop-theme="nexora"] .hop-deal-meta-pill{
+  background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);
+}
+html[data-hop-theme="nexora"] .hop-deal-note-input{
+  background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12);color:#e2e8f0;
+}
+html[data-hop-theme="nexora"] .hop-deal-progress-bar{background:rgba(255,255,255,.08);}
+html[data-hop-theme="nexora"] .hop-deal-event,
+html[data-hop-theme="nexora"] .hop-deal-hero,
+html[data-hop-theme="nexora"] .hop-deal-snap-row{border-color:rgba(255,255,255,.08);}
+html[data-hop-theme="nexora"] .hop-deal-phase{border-left-color:rgba(255,255,255,.12);}
+html[data-hop-theme="nexora"] .hop-deal-snap-notes{background:rgba(255,255,255,.05);color:#cbd5e1;}

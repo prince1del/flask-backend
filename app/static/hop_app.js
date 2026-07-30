@@ -6,6 +6,8 @@ const hopState = {
   customers: [],
   projects: [],
   leads: [],
+  deals: [],
+  dealDetail: null,
   meetings: [],
   vendors: [],
   quotations: [],
@@ -1552,19 +1554,72 @@ async function hopEditContact(type, id) {
 
 async function hopDeleteContact(type, id, label) {
   const name = label || `contact #${id}`;
-  if (!(await nexoraConfirm(`Delete "${name}"?`, {
-    title: 'Delete contact',
-    danger: true,
-    okText: 'Delete',
-  }))) return;
+  const base = hopContactApiBase(type);
+  let usage = null;
   try {
-    await hopApi(`${hopContactApiBase(type)}/${id}`, { method: 'DELETE' });
+    usage = await hopApi(`${base}/${id}/usage`);
+  } catch (_) {
+    usage = null;
+  }
+  let inUse = !!(usage && usage.in_use && Number(usage.total || 0) > 0);
+  let summary = (usage && usage.summary) || '';
+  let msg = `Delete "${name}"?`;
+  let title = 'Delete contact';
+  if (inUse) {
+    title = 'Party is in use';
+    msg = `"${name}" is used in ${summary}. Delete anyway? Linked records (deals, invoices, etc.) will keep the name, but the party link will be removed.`;
+  }
+  if (!(await nexoraConfirm(msg, {
+    title,
+    danger: true,
+    okText: inUse ? 'Delete anyway' : 'Delete',
+  }))) return;
+
+  const doDelete = async (force) => {
+    const url = force ? `${base}/${id}?force=true` : `${base}/${id}`;
+    let response;
+    try {
+      response = await fetchWithAuth(url, { method: 'DELETE' });
+    } catch (e) {
+      if (isSessionTimeoutError(e)) return null;
+      throw e;
+    }
+    const data = await parseApiJson(response);
+    return { response, data };
+  };
+
+  try {
+    let { response, data } = await doDelete(inUse);
+    if (response == null) return;
+    if (response.status === 409 && data.requires_confirmation) {
+      const u = data.data?.usage || {};
+      summary = u.summary || summary || 'linked records';
+      const ok = await nexoraConfirm(
+        data.message
+          || `"${name}" is used in ${summary}. Delete anyway?`,
+        {
+          title: 'Party is in use',
+          danger: true,
+          okText: 'Delete anyway',
+        },
+      );
+      if (!ok) return;
+      ({ response, data } = await doDelete(true));
+      if (response == null) return;
+      inUse = true;
+    }
+    if (!response.ok || !data.success) {
+      throw new Error(getApiErrorMessage(data, 'Delete failed'));
+    }
     const state = hopContactSelectState(type);
     state.ids = state.ids.filter((x) => x !== Number(id));
     if (type === 'vendors' || type === 'vendor') hopState.vendors = [];
     else hopState.customers = [];
     hopCloseContactDetail();
     hopClosePartyEditModal();
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(inUse ? 'Party deleted (links cleared).' : 'Party deleted.', 'ok');
+    }
     openHopView(hopContactReturnView(type));
   } catch (e) {
     alert(e.message || 'Delete failed');
@@ -1580,21 +1635,54 @@ async function hopBulkDeleteContacts(type) {
     danger: true,
     okText: 'Delete all',
   }))) return;
+  const base = hopContactApiBase(type);
   try {
-    const result = await hopApi(`${hopContactApiBase(type)}/bulk-delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    });
-    const deleted = (result?.deleted || []).length;
-    const errors = result?.errors || [];
+    let response;
+    try {
+      response = await fetchWithAuth(`${base}/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+    } catch (e) {
+      if (isSessionTimeoutError(e)) return;
+      throw e;
+    }
+    let data = await parseApiJson(response);
+    if (response.status === 409 && data.requires_confirmation) {
+      const blockedN = (data.data?.blocked || []).length;
+      const ok = await nexoraConfirm(
+        data.message
+          || `${blockedN || 'Some'} contact(s) are used in deals/invoices. Delete anyway?`,
+        {
+          title: 'Parties in use',
+          danger: true,
+          okText: 'Delete anyway',
+        },
+      );
+      if (!ok) return;
+      response = await fetchWithAuth(`${base}/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, force: true }),
+      });
+      data = await parseApiJson(response);
+    }
+    if (!response.ok || !data.success) {
+      throw new Error(getApiErrorMessage(data, 'Bulk delete failed'));
+    }
+    const result = data.data || {};
+    const deleted = (result.deleted || []).length;
+    const errors = result.errors || [];
     state.ids = [];
     state.mode = false;
     if (type === 'vendors') hopState.vendors = [];
     else hopState.customers = [];
     openHopView(hopContactReturnView(type));
     if (errors.length) {
-      alert(`Deleted ${deleted}. ${errors.length} could not be deleted (linked records).`);
+      alert(`Deleted ${deleted}. ${errors.length} could not be deleted.`);
+    } else if (typeof nexoraToast === 'function') {
+      nexoraToast(`Deleted ${deleted} contact(s).`, 'ok');
     }
   } catch (e) {
     alert(e.message || 'Bulk delete failed');
@@ -1702,6 +1790,15 @@ function hopBackButtonHtml(label) {
 function openHopView(viewName, opts) {
   // Legacy alias
   if (viewName === 'quotations') viewName = 'sale_estimates';
+  // Temporary: old CRM modules hidden — new Deals CRM is enabled
+  const hopCrmDisabled = new Set([
+    'leads', 'pipeline', 'meetings', 'projects', 'project-hub', 'project_hub', 'funnel',
+  ]);
+  if (viewName === 'deal') viewName = 'deals';
+  if (hopCrmDisabled.has(String(viewName || ''))) {
+    if (typeof nexoraToast === 'function') nexoraToast('Old CRM is hidden — use Deals', 'ok');
+    viewName = 'deals';
+  }
   const next = viewName || 'dashboard';
   const prev = hopState.view;
 
@@ -1749,7 +1846,7 @@ function openHopView(viewName, opts) {
   } else if (v === 'vyapar_import' || v === 'wipe_data' || v === 'theme') {
     foldId = 'settings';
   }
-  if (foldId) hopOpenNavFoldExclusive(foldId);
+  hopOpenNavFoldExclusive(foldId);
 
   // Dashboard keeps padded scroll layout; every other menu opens as full-page workspace
   // (overwrites Ask NEXORA / Workspace / profile / bell top bar).
@@ -1785,6 +1882,7 @@ function openHopView(viewName, opts) {
           openHopView('parties');
           requestAnimationFrame(() => hopOpenAddPartyChooser());
         },
+        deals: renderHopDealsModule,
         projects: renderHopProjectsModule,
         leads: renderHopLeadsModule,
         meetings: renderHopMeetingsModule,
@@ -2133,13 +2231,9 @@ async function loadHopExecutiveSnapshot() {
       ? `${sales.toLocaleString('en-IN')} / ${target.toLocaleString('en-IN')}`
       : (sales > 0 ? `${sales.toLocaleString('en-IN')} / no target set` : '0 / no target set');
     grid.innerHTML = [
-      renderHopKpiCard('New Leads', today.new_leads, 'leads'),
-      renderHopKpiCard('Meetings Today', today.meetings_today, 'meetings'),
-      renderHopKpiCard('Pending Follow-ups', today.pending_followups, 'leads'),
       renderHopKpiCard('Quotations Pending', today.quotations_pending, 'quotations'),
       renderHopKpiCard('Quotations Sent', today.quotations_sent, 'quotations'),
       renderHopKpiCard('Orders Won', today.orders_won, 'orders'),
-      renderHopKpiCard('Orders Lost', today.orders_lost, 'pipeline'),
       renderHopKpiCard('Production', today.production_orders, 'orders'),
       renderHopKpiCard('Dispatch Due', today.dispatches_due, 'dispatches'),
       renderHopKpiCard('Outstanding', today.outstanding_receivables, 'receivables'),
@@ -2177,12 +2271,13 @@ async function hopEnsureLookups() {
 function hopCustomerOptions(selectedId, opts) {
   const withAdd = opts && opts.withAddNew;
   const rows = [];
+  const sel = selectedId != null && selectedId !== '' ? String(selectedId) : '';
+  rows.push(`<option value=""${sel === '' ? ' selected' : ''}>— Select customer —</option>`);
   if (withAdd) {
-    rows.push('<option value="__new__">+ Add new customer…</option>');
+    rows.push('<option value="__new__">+ Add new party…</option>');
   }
-  rows.push('<option value="">— Select customer —</option>');
   hopState.customers.forEach((c) => {
-    rows.push(`<option value="${c.id}"${String(c.id) === String(selectedId || '') ? ' selected' : ''}>${foEscapeText(c.company)}</option>`);
+    rows.push(`<option value="${c.id}"${String(c.id) === sel ? ' selected' : ''}>${foEscapeText(c.company)}</option>`);
   });
   return rows.join('');
 }
@@ -2215,13 +2310,22 @@ function hopStageOptions(list, selected) {
   return list.map((s) => `<option value="${s}"${s === selected ? ' selected' : ''}>${foEscapeText(s)}</option>`).join('');
 }
 
+function hopLeadAddNewParty() {
+  const sel = document.getElementById('f-lcustomer');
+  if (sel) sel.value = '';
+  hopState._leadFormAwaitingCustomer = true;
+  if (typeof hopOpenPartyEditModal === 'function') {
+    hopOpenPartyEditModal('customer', null);
+  } else if (typeof window.hopOpenPartyEditModal === 'function') {
+    window.hopOpenPartyEditModal('customer', null);
+  }
+}
+
 function hopLeadCustomerChange() {
   const sel = document.getElementById('f-lcustomer');
   if (!sel) return;
   if (sel.value === '__new__') {
-    sel.value = '';
-    hopState._leadFormAwaitingCustomer = true;
-    hopOpenPartyEditModal('customer', null);
+    hopLeadAddNewParty();
   }
 }
 
@@ -2287,13 +2391,15 @@ function hopCloseLeadProductsPicker() {
 }
 
 async function hopOpenLeadProductsPicker() {
-  await hopEnsureProductCatalogue();
+  try {
+    await hopEnsureProductCatalogue();
+  } catch (_) { /* ignore */ }
   hopCloseLeadProductsPicker();
   const overlay = document.createElement('div');
   overlay.id = 'hop-lead-prod-overlay';
   overlay.className = 'hop-lead-prod-overlay is-open';
   overlay.innerHTML = `
-    <div class="hop-lead-prod-backdrop" onclick="hopCloseLeadProductsPicker()"></div>
+    <div class="hop-lead-prod-backdrop" data-hop-prod-backdrop="1"></div>
     <div class="hop-lead-prod-dialog" role="dialog" aria-modal="true" aria-label="Products interested">
       <div class="hop-lead-prod-head">
         <div>
@@ -2301,12 +2407,11 @@ async function hopOpenLeadProductsPicker() {
           <h3>Select products</h3>
           <p class="hop-lead-prod-sub">Search catalogue or add a name manually. Select multiple — after each pick, search stays open for the next.</p>
         </div>
-        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopCloseLeadProductsPicker()">Done</button>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" data-hop-prod-done="1">Done</button>
       </div>
       <div class="hop-lead-prod-selected" id="hop-lead-prod-selected-chips"></div>
       <div class="hop-lead-prod-search">
-        <input id="hop-lead-prod-q" type="search" autocomplete="off" placeholder="Type product name…"
-          oninput="hopLeadProductsFillPicker()" />
+        <input id="hop-lead-prod-q" type="text" autocomplete="off" placeholder="Type product name…" />
       </div>
       <div class="hop-lead-prod-table-wrap">
         <div class="hop-lead-prod-table-head">
@@ -2316,9 +2421,23 @@ async function hopOpenLeadProductsPicker() {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  const dialog = overlay.querySelector('.hop-lead-prod-dialog');
+  dialog?.addEventListener('mousedown', (e) => e.stopPropagation());
+  dialog?.addEventListener('click', (e) => e.stopPropagation());
+  overlay.querySelector('[data-hop-prod-backdrop]')?.addEventListener('click', () => hopCloseLeadProductsPicker());
+  overlay.querySelector('[data-hop-prod-done]')?.addEventListener('click', () => hopCloseLeadProductsPicker());
+  const q = document.getElementById('hop-lead-prod-q');
+  q?.addEventListener('input', () => hopLeadProductsFillPicker());
+  q?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = String(q.value || '').trim();
+      if (val) hopLeadProductsAdd(val);
+    }
+  });
   hopLeadProductsSyncPickerChips();
   hopLeadProductsFillPicker();
-  requestAnimationFrame(() => document.getElementById('hop-lead-prod-q')?.focus());
+  requestAnimationFrame(() => q?.focus());
 }
 
 function hopLeadProductsSyncPickerChips() {
@@ -2329,9 +2448,16 @@ function hopLeadProductsSyncPickerChips() {
     ? list.map((name, idx) => `
       <span class="hop-prod-chip">
         ${foEscapeText(name)}
-        <button type="button" aria-label="Remove" onclick="hopLeadProductsRemove(${idx})">×</button>
+        <button type="button" aria-label="Remove" data-hop-prod-remove="${idx}">×</button>
       </span>`).join('')
     : '<span class="hop-lead-prod-empty">No products selected yet</span>';
+  wrap.querySelectorAll('[data-hop-prod-remove]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      hopLeadProductsRemove(Number(btn.getAttribute('data-hop-prod-remove')));
+    });
+  });
 }
 
 function hopLeadProductsFillPicker() {
@@ -2347,26 +2473,34 @@ function hopLeadProductsFillPicker() {
     return blob.includes(ql);
   }).slice(0, 50));
 
-  const addBtn = q
-    ? `<button type="button" class="hop-lead-prod-add-row" onclick="hopLeadProductsAdd(${JSON.stringify(q)})">
-        + Add “${foEscapeText(q)}” as custom product
-      </button>`
-    : '';
-
-  const rows = matches.map((p) => {
+  const parts = [];
+  if (q) {
+    parts.push(`<button type="button" class="hop-lead-prod-add-row" data-hop-prod-add="${foEscapeAttr(q)}">+ Add “${foEscapeText(q)}” as custom product</button>`);
+  }
+  matches.forEach((p) => {
     const label = p.name || p.code || `Product #${p.id}`;
     const already = selected.has(String(label).toLowerCase());
-    return `<div class="hop-lead-prod-row${already ? ' is-picked' : ''}">
+    parts.push(`<div class="hop-lead-prod-row${already ? ' is-picked' : ''}">
       <strong>${foEscapeText(label)}</strong>
       <span>${hopMoney(p.selling_price)}</span>
       <span>${hopMoney(p.purchase_price)}</span>
       <span>${foEscapeText(p.stock_qty ?? '—')}</span>
       <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary hop-lead-prod-pick"
-        ${already ? 'disabled' : ''} onclick="hopLeadProductsAdd(${JSON.stringify(label)})">${already ? 'Added' : 'Select'}</button>
-    </div>`;
-  }).join('');
-
-  rowsEl.innerHTML = `${addBtn}${rows || `<p class="hop-lead-prod-empty">No catalogue match.${q ? ' Use + Add above to keep this name.' : ''}</p>`}`;
+        data-hop-prod-add="${foEscapeAttr(label)}" ${already ? 'disabled' : ''}>${already ? 'Added' : 'Select'}</button>
+    </div>`);
+  });
+  if (!matches.length) {
+    parts.push(`<p class="hop-lead-prod-empty">No catalogue match.${q ? ' Use + Add above to keep this name.' : ''}</p>`);
+  }
+  rowsEl.innerHTML = parts.join('');
+  rowsEl.querySelectorAll('[data-hop-prod-add]').forEach((btn) => {
+    if (btn.disabled) return;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      hopLeadProductsAdd(btn.getAttribute('data-hop-prod-add') || '');
+    });
+  });
   hopLeadProductsSyncPickerChips();
 }
 
@@ -2679,12 +2813,22 @@ function hopCloseAddPartyChooser() {
   document.getElementById('hop-add-party-chooser')?.remove();
 }
 
+/** Party modals live on document.body (outside workspace) — stamp active theme so CSS can match. */
+function hopDecoratePartyModalTheme(modal) {
+  if (!modal) return;
+  const theme = document.documentElement.getAttribute('data-hop-theme') || 'nexora';
+  modal.setAttribute('data-party-theme', theme);
+  modal.classList.remove('hop-party-theme-dark', 'hop-party-theme-light');
+  modal.classList.add(theme === 'nexora' ? 'hop-party-theme-dark' : 'hop-party-theme-light');
+}
+
 function hopOpenAddPartyChooser() {
   hopCloseAddPartyChooser();
   hopClosePartyScanModal();
   const modal = document.createElement('div');
   modal.id = 'hop-add-party-chooser';
   modal.className = 'nx-party-modal hop-add-party-chooser';
+  hopDecoratePartyModalTheme(modal);
   modal.innerHTML = `
     <div class="nx-party-modal-backdrop" onclick="hopCloseAddPartyChooser()"></div>
     <div class="nx-party-modal-card hop-add-party-card" role="dialog" aria-label="Add Party">
@@ -2729,6 +2873,7 @@ function hopOpenPartyScanModal() {
   const modal = document.createElement('div');
   modal.id = 'hop-party-scan-modal';
   modal.className = 'nx-party-modal hop-party-scan-modal';
+  hopDecoratePartyModalTheme(modal);
   modal.innerHTML = `
     <div class="nx-party-modal-backdrop" onclick="hopClosePartyScanModal()"></div>
     <div class="nx-party-modal-card hop-party-scan-card" role="dialog" aria-label="Scan visiting card">
@@ -2845,6 +2990,7 @@ function hopOpenPartyEditModal(kind, row) {
   const modal = document.createElement('div');
   modal.id = 'hop-party-edit-modal';
   modal.className = 'nx-party-modal';
+  hopDecoratePartyModalTheme(modal);
   modal.innerHTML = `
     <div class="nx-party-modal-backdrop" onclick="hopClosePartyEditModal()"></div>
     <div class="nx-party-modal-card" role="dialog" aria-label="${foEscapeAttr(title)}">
@@ -2856,8 +3002,10 @@ function hopOpenPartyEditModal(kind, row) {
         <div class="nx-party-primary">
           <label class="nx-party-field">
             <span>Party Name *</span>
-            <input id="pm-name" value="${foEscapeAttr(partyName)}" placeholder="Party / company name" oninput="document.getElementById('pm-bill-hint').textContent=this.value?('“'+this.value+'” will be printed on your invoice.'):''" />
+            <input id="pm-name" value="${foEscapeAttr(partyName)}" placeholder="Party / company name"
+              oninput="hopPartyNameOnInput(this)" />
             <small id="pm-bill-hint" class="nx-party-hint">${partyName ? `“${foEscapeText(partyName)}” will be printed on your invoice.` : ''}</small>
+            <div id="pm-live-dup" class="hop-party-live-dup hidden" aria-live="polite"></div>
           </label>
           <label class="nx-party-field">
             <span>Billing Name</span>
@@ -2868,7 +3016,7 @@ function hopOpenPartyEditModal(kind, row) {
             <div class="nx-party-gst-row">
               <div class="nx-party-gst-input-wrap">
                 <input id="pm-gstin" value="${foEscapeAttr(data.gst_no || '')}" placeholder="22AAAAA0000A1Z5" maxlength="15"
-                  oninput="hopPartyGstCheck()" onblur="hopPartyGstCheck()" />
+                  oninput="hopPartyGstCheck();hopPartyLiveDupCheck()" onblur="hopPartyGstCheck();hopPartyLiveDupCheck()" />
                 <span id="pm-gst-ok" class="nx-party-gst-ok hidden" title="Valid GSTIN">✓</span>
               </div>
               <button type="button" id="pm-gst-fetch" class="nx-party-gst-fetch" onclick="hopPartyFetchGstDetails(true)" disabled title="Auto-fill name, state &amp; address from GSTIN">Fetch details</button>
@@ -2877,7 +3025,7 @@ function hopOpenPartyEditModal(kind, row) {
           </label>
           <label class="nx-party-field">
             <span>Phone Number</span>
-            <input id="pm-phone" value="${foEscapeAttr(data.mobile || '')}" placeholder="10-digit mobile" />
+            <input id="pm-phone" value="${foEscapeAttr(data.mobile || '')}" placeholder="10-digit mobile" oninput="hopPartyLiveDupCheck()" />
           </label>
           <label class="nx-party-field nx-party-group-field">
             <span>Party Group</span>
@@ -3037,6 +3185,76 @@ async function hopDeleteFromPartyModal() {
 
 function hopPartyDupBannerClear() {
   document.getElementById('pm-dup-banner')?.remove();
+}
+
+function hopPartyNameOnInput(el) {
+  const hint = document.getElementById('pm-bill-hint');
+  if (hint) {
+    const v = String(el?.value || '').trim();
+    hint.textContent = v ? `“${v}” will be printed on your invoice.` : '';
+  }
+  hopPartyLiveDupCheck();
+}
+
+let hopPartyLiveDupTimer = null;
+
+function hopPartyLiveDupClear(slotId) {
+  const slot = document.getElementById(slotId || 'pm-live-dup');
+  if (!slot) return;
+  slot.classList.add('hidden');
+  slot.innerHTML = '';
+}
+
+/** Live fuzzy party match while typing (Add/Edit Party + Deal new party). */
+function hopPartyLiveDupCheck(opts = {}) {
+  const nameId = opts.nameId || 'pm-name';
+  const phoneId = opts.phoneId || 'pm-phone';
+  const gstId = opts.gstId || 'pm-gstin';
+  const slotId = opts.slotId || 'pm-live-dup';
+  const nameEl = document.getElementById(nameId);
+  const slot = document.getElementById(slotId);
+  if (!nameEl || !slot) return;
+  const company = String(nameEl.value || '').trim();
+  clearTimeout(hopPartyLiveDupTimer);
+  if (company.length < 3) {
+    hopPartyLiveDupClear(slotId);
+    return;
+  }
+  hopPartyLiveDupTimer = setTimeout(async () => {
+    try {
+      const edit = hopState.contactEdit;
+      const payload = {
+        company,
+        mobile: document.getElementById(phoneId)?.value || '',
+        gst_no: document.getElementById(gstId)?.value || '',
+        party_type: 'both',
+      };
+      if (edit?.id && nameId === 'pm-name') {
+        payload.exclude_id = edit.id;
+        payload.exclude_party_type = edit.kind === 'vendor' ? 'vendor' : 'customer';
+      }
+      const data = await hopApi('/api/v1/hop/parties/check-duplicates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const matches = data?.matches || [];
+      if (!matches.length || String(nameEl.value || '').trim() !== company) {
+        hopPartyLiveDupClear(slotId);
+        return;
+      }
+      const names = hopPartyUniqueNames(matches).slice(0, 4);
+      slot.classList.remove('hidden');
+      slot.innerHTML = `
+        <div class="hop-party-live-dup-title">Similar party already in system</div>
+        <ul class="hop-party-live-dup-list">
+          ${names.map((n) => `<li>${foEscapeText(n)}</li>`).join('')}
+        </ul>
+        <p class="hop-party-live-dup-hint">Saving will ask confirmation — use the existing party if it’s the same person.</p>`;
+    } catch (_) {
+      /* ignore preview errors */
+    }
+  }, 380);
 }
 
 function hopPartyUniqueNames(matches) {
@@ -3260,17 +3478,17 @@ async function hopCreatePartyWithDupConfirm(url, payload, options = {}) {
 
 /** Vyapar txn_type → Sale / Purchase menus (single source of truth). */
 const HOP_TXN_SALE_INVOICE = new Set([1]);           // Sale Invoice only (real sale)
-const HOP_TXN_ESTIMATE = new Set([27, 30]);          // 27 = Estimate in this Vyapar data (HOPPI…)
+const HOP_TXN_ESTIMATE = new Set([27]);             // Estimate (HOPPI…) — not type 30
 const HOP_TXN_SALE_RETURN = new Set([21]);           // Sale Return / Credit Note
 const HOP_TXN_PAYMENT_IN = new Set([3]);            // Payment-In (Vyapar type 3)
 const HOP_TXN_PAYMENT_OUT = new Set([4]);           // Payment-Out (Vyapar type 4)
 const HOP_TXN_PURCHASE_BILL = new Set([2]);
 const HOP_TXN_EXPENSE = new Set([7]);
 const HOP_TXN_PURCHASE_RETURN = new Set([16]);
-const HOP_TXN_OTHER_DOCS = new Set([65, 81, 82, 83]); // Sale Order, Journal, Challan, Proforma
+const HOP_TXN_OTHER_DOCS = new Set([65, 81, 82, 83, 30]); // SO, Journal, Challan, Proforma
 const HOP_TXN_SALE_ORDER = new Set([65]);
 const HOP_TXN_JOURNAL = new Set([81]);               // Journal Entry (menu hidden until Accounting)
-const HOP_TXN_CHALLAN = new Set([82]);
+const HOP_TXN_CHALLAN = new Set([30, 82]);           // 30 = this firm’s Delivery Challan; 82 = other Vyapar builds
 const HOP_TXN_PROFORMA = new Set([83]);
 
 /** Every imported type must appear in exactly one bucket (journal stays hidden in nav). */
@@ -4751,15 +4969,524 @@ async function hopSaveVisitingCardCustomer() {
     source: 'visiting_card',
   };
   try {
-    await hopApi('/api/v1/hop/customers', {
+    const result = await hopCreatePartyWithDupConfirm('/api/v1/hop/customers', payload, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
     });
-    alert('Party saved.');
+    if (result === false) {
+      if (typeof nexoraToast === 'function') {
+        nexoraToast('Save cancelled. Existing similar party rakha gaya.', 'warn', { duration: 4500 });
+      }
+      return;
+    }
+    if (result == null) return;
+    if (typeof nexoraToast === 'function') nexoraToast('Party saved.', 'ok');
+    else alert('Party saved.');
     openHopView('parties');
   } catch (e) {
     alert(e.message || 'Save failed');
+  }
+}
+
+/* ---------- Deals (new stepwise CRM) ---------- */
+const HOP_DEAL_STEPS = [
+  { id: 'lead', label: 'Lead received', optional: false },
+  { id: 'contacting', label: 'Call / Mail / Message / Visit', optional: false },
+  { id: 'appointment', label: 'Appointment', optional: false },
+  { id: 'discovery', label: 'Requirement meeting', optional: false },
+  { id: 'cataloging', label: 'Cataloging', optional: false },
+  { id: 'quotation', label: 'Quotation', optional: false },
+  { id: 'negotiation', label: 'Negotiation', optional: false },
+  { id: 'po_received', label: 'Customer PO', optional: false },
+  { id: 'advance', label: 'Advance payment', optional: true },
+  { id: 'vendor_order', label: 'Vendor order', optional: false },
+  { id: 'inbound', label: 'Vendor dispatch / inbound track', optional: false },
+  { id: 'godown', label: 'Goods at godown', optional: true },
+  { id: 'repack', label: 'Repacking', optional: true },
+  { id: 'outbound', label: 'Ship to client', optional: false },
+  { id: 'delivered', label: 'Delivered', optional: false },
+  { id: 'installation', label: 'Installation', optional: true },
+  { id: 'collection', label: 'Payment follow-up', optional: false },
+  { id: 'closed', label: 'Closed / Won', optional: false },
+];
+
+function hopDealStepLabel(id) {
+  return (HOP_DEAL_STEPS.find((s) => s.id === id) || {}).label || id || '—';
+}
+
+async function renderHopDealsModule(mount) {
+  const q = hopState.search.deals || '';
+  const detailId = hopState.dealDetailId;
+  if (detailId) {
+    await renderHopDealDetail(mount, detailId);
+    return;
+  }
+  let rows = [];
+  try {
+    rows = await hopApi(`/api/v1/hop/deals?q=${encodeURIComponent(q)}`) || [];
+    hopState.deals = rows;
+    if (!hopState.customers.length) {
+      hopState.customers = await hopApi('/api/v1/hop/customers') || [];
+    }
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('CRM', 'Deals', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const openN = rows.filter((r) => r.status === 'open').length;
+  const lostN = rows.filter((r) => r.status === 'lost').length;
+  const body = `
+    <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
+    ${hopTxCards([
+      { label: 'All deals', value: rows.length, tone: 'unpaid' },
+      { label: 'Open', value: openN, tone: 'unpaid' },
+      { label: 'Lost', value: lostN, tone: 'overdue' },
+    ])}
+    ${hopTable(
+      ['Deal #', 'Title', 'Party', 'Step', 'Value', 'Status', 'Updated', ''],
+      rows.map((r) => `<tr class="hop-clickable-row" onclick="hopOpenDeal(${r.id})">
+        <td>${hopCell(r.deal_number)}</td>
+        <td><strong>${hopCell(r.title)}</strong></td>
+        <td>${hopCell(r.customer_company || r.party_name)}</td>
+        <td><span class="hop-stage-pill">${hopCell(hopDealStepLabel(r.current_step))}</span></td>
+        <td class="inv-num">${hopMoney(r.expected_value)}</td>
+        <td>${hopCell(r.status)}</td>
+        <td>${hopCell(String(r.updated_at || '').slice(0, 10))}</td>
+        <td onclick="event.stopPropagation()">
+          <button type="button" class="nx-btn" onclick="hopOpenDeal(${r.id})">Open</button>
+          <button type="button" class="nx-btn" onclick="hopEditDeal(${r.id})">Edit</button>
+          <button type="button" class="nx-btn hop-contact-icon-del" onclick="hopDeleteDeal(${r.id}, '${foEscapeAttr(r.title || '')}')">Delete</button>
+        </td>
+      </tr>`).join(''),
+      { label: 'Deals', count: rows.length, searchValue: q, searchId: 'hop-q-deals', className: 'hop-deals-table' },
+    )}`;
+  mount.innerHTML = hopModuleShell(
+    'CRM',
+    'Deals',
+    '',
+    `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowDealForm()">+ New Deal</button>`,
+    body,
+  );
+  const search = document.getElementById('hop-q-deals');
+  if (search) {
+    search.oninput = () => {
+      hopState.search.deals = search.value || '';
+      hopDebouncedReload('deals');
+    };
+  }
+}
+
+const HOP_DEAL_PHASES = [
+  { id: 'engage', label: 'Engage', from: 0, to: 2 },
+  { id: 'discover', label: 'Discover', from: 3, to: 4 },
+  { id: 'sell', label: 'Sell', from: 5, to: 8 },
+  { id: 'fulfill', label: 'Fulfill', from: 9, to: 13 },
+  { id: 'close', label: 'Close', from: 14, to: 17 },
+];
+
+function hopDealPhaseForIndex(idx) {
+  return HOP_DEAL_PHASES.find((p) => idx >= p.from && idx <= p.to) || HOP_DEAL_PHASES[0];
+}
+
+async function renderHopDealDetail(mount, dealId) {
+  let deal;
+  try {
+    deal = await hopApi(`/api/v1/hop/deals/${dealId}`);
+  } catch (e) {
+    hopState.dealDetailId = null;
+    mount.innerHTML = hopModuleShell('CRM', 'Deal', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  hopState.dealDetail = deal;
+  const steps = deal.steps || HOP_DEAL_STEPS;
+  const idx = Number(deal.step_index || 0);
+  const isOpen = deal.status === 'open';
+  const partyLabel = deal.customer_company || deal.party_name || '—';
+  const total = steps.length;
+  const progressPct = deal.status === 'closed'
+    ? 100
+    : Math.round((Math.min(idx, total - 1) / Math.max(total - 1, 1)) * 100);
+  const cur = steps[idx] || steps[0];
+  const phase = hopDealPhaseForIndex(idx);
+  const nextStep = isOpen && idx + 1 < total ? steps[idx + 1] : null;
+
+  const phasesHtml = HOP_DEAL_PHASES.map((p) => {
+    let pState = 'locked';
+    if (deal.status === 'closed') pState = 'done';
+    else if (deal.status === 'lost' && idx >= p.from && idx <= p.to) pState = 'lost';
+    else if (idx > p.to) pState = 'done';
+    else if (idx >= p.from && idx <= p.to) pState = 'current';
+    const phaseSteps = steps.slice(p.from, p.to + 1).map((s, j) => {
+      const si = p.from + j;
+      let st = 'locked';
+      if (deal.status === 'closed' || si < idx) st = 'done';
+      else if (deal.status === 'lost' && si === idx) st = 'lost';
+      else if (si === idx) st = 'current';
+      return `<li class="hop-deal-phase-step hop-deal-phase-step--${st}">
+        <span class="hop-deal-phase-mark">${st === 'done' ? '✓' : si + 1}</span>
+        <span>${foEscapeText(s.label)}${s.optional ? ' <em>opt</em>' : ''}</span>
+      </li>`;
+    }).join('');
+    return `<div class="hop-deal-phase hop-deal-phase--${pState}">
+      <div class="hop-deal-phase-head">
+        <span class="hop-deal-phase-dot"></span>
+        <strong>${foEscapeText(p.label)}</strong>
+        ${pState === 'current' ? '<span class="hop-deal-phase-now">Now</span>' : ''}
+      </div>
+      ${pState === 'current' || pState === 'lost' ? `<ul class="hop-deal-phase-steps">${phaseSteps}</ul>` : ''}
+    </div>`;
+  }).join('');
+
+  const actions = isOpen ? `
+    <div class="hop-deal-actions">
+      <button type="button" class="nx-btn nx-btn-primary" onclick="hopDealAction('complete_step')">Complete step</button>
+      ${cur?.optional ? `<button type="button" class="nx-btn" onclick="hopDealAction('skip_step')">Skip</button>` : ''}
+      <button type="button" class="nx-btn hop-deal-lost-btn" onclick="hopDealAction('mark_lost')">Mark lost</button>
+    </div>
+    <label class="hop-deal-note-label">Note
+      <input id="hop-deal-step-note" class="hop-deal-note-input" placeholder="What happened on this step?" />
+    </label>
+    ${nextStep ? `<p class="hop-deal-next-hint">Next → <strong>${foEscapeText(nextStep.label)}</strong></p>` : ''}
+  ` : `
+    <div class="hop-deal-actions">
+      <button type="button" class="nx-btn nx-btn-primary" onclick="hopDealAction('reopen')">Reopen deal</button>
+    </div>
+  `;
+
+  const events = (deal.events || []).slice(0, 12).map((ev) => `
+    <li class="hop-deal-event">
+      <span class="hop-deal-event-time">${foEscapeText(String(ev.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+      <div class="hop-deal-event-body">
+        <span class="hop-deal-event-title">${foEscapeText(ev.title || ev.event_type)}</span>
+        ${ev.detail ? `<span class="hop-deal-event-detail">${foEscapeText(ev.detail)}</span>` : ''}
+      </div>
+    </li>
+  `).join('') || '<li class="hop-deal-event hop-deal-event--empty">No activity yet</li>';
+
+  const snapRow = (label, value) => value
+    ? `<div class="hop-deal-snap-row"><span>${foEscapeText(label)}</span><strong>${value}</strong></div>`
+    : '';
+
+  const body = `
+    <div class="hop-deal-detail">
+      <header class="hop-deal-hero">
+        <div class="hop-deal-hero-main">
+          <div class="hop-deal-hero-top">
+            <span class="hop-deal-code">${foEscapeText(deal.deal_number || '')}</span>
+            <span class="hop-deal-status hop-deal-status--${foEscapeAttr(deal.status || 'open')}">${foEscapeText(deal.status || 'open')}</span>
+          </div>
+          <h3 class="hop-deal-title">${foEscapeText(deal.title)}</h3>
+          <p class="hop-deal-meta">
+            <span class="hop-deal-meta-pill"><em>Party</em> ${foEscapeText(partyLabel)}</span>
+            ${deal.customer_mobile ? `<span class="hop-deal-meta-pill"><em>Mobile</em> ${foEscapeText(deal.customer_mobile)}</span>` : ''}
+            <span class="hop-deal-meta-pill"><em>Value</em> ${hopMoney(deal.expected_value)}</span>
+            <span class="hop-deal-meta-pill"><em>Phase</em> ${foEscapeText(phase.label)}</span>
+          </p>
+        </div>
+        <div class="hop-deal-detail-btns">
+          <button type="button" class="nx-btn" onclick="hopCloseDealDetail()">Back</button>
+          <button type="button" class="nx-btn" onclick="hopEditDeal(${deal.id})">Edit</button>
+          <button type="button" class="nx-btn hop-contact-icon-del" onclick="hopDeleteDeal(${deal.id}, '${foEscapeAttr(deal.title || '')}')">Delete</button>
+        </div>
+      </header>
+
+      <div class="hop-deal-grid">
+        <section class="hop-deal-progress-card">
+          <div class="hop-deal-progress-head">
+            <div>
+              <p class="hop-deal-kicker">Current step</p>
+              <h4 class="hop-deal-now-title">${foEscapeText(cur?.label || deal.current_step)}</h4>
+              <p class="hop-deal-progress-sub">${foEscapeText(phase.label)} · Step ${Math.min(idx + 1, total)} of ${total}</p>
+            </div>
+            <div class="hop-deal-progress-pct" aria-label="${progressPct} percent">${progressPct}%</div>
+          </div>
+          <div class="hop-deal-progress-bar" aria-hidden="true"><span style="width:${progressPct}%"></span></div>
+          ${actions}
+        </section>
+
+        <aside class="hop-deal-snapshot">
+          <p class="hop-deal-kicker">Deal facts</p>
+          ${snapRow('Party', foEscapeText(partyLabel))}
+          ${snapRow('Value', hopMoney(deal.expected_value))}
+          ${snapRow('Source', foEscapeText(deal.source || ''))}
+          ${snapRow('Assigned', foEscapeText(deal.assigned_to || ''))}
+          ${snapRow('Fulfillment', foEscapeText(deal.fulfillment_mode === 'drop_ship' ? 'Drop-ship' : (deal.fulfillment_mode === 'godown' ? 'Via godown' : '')))}
+          ${snapRow('Products', foEscapeText(deal.products_interested || ''))}
+          ${deal.notes ? `<p class="hop-deal-snap-notes">${foEscapeText(deal.notes)}</p>` : '<p class="hop-deal-snap-empty">No extra notes</p>'}
+        </aside>
+      </div>
+
+      <section class="hop-deal-journey">
+        <p class="hop-deal-kicker">Journey</p>
+        <div class="hop-deal-phases">${phasesHtml}</div>
+      </section>
+
+      <section class="hop-deal-activity-wrap">
+        <p class="hop-deal-kicker">Activity</p>
+        <ul class="hop-deal-timeline">${events}</ul>
+      </section>
+    </div>`;
+  mount.innerHTML = hopModuleShell(
+    'CRM',
+    deal.title || 'Deal',
+    `${deal.deal_number || ''} · ${partyLabel}`,
+    `<button type="button" class="nx-btn" onclick="hopEditDeal(${deal.id})">Edit</button>`,
+    body,
+  );
+}
+
+function hopOpenDeal(id) {
+  hopState.dealDetailId = Number(id);
+  openHopView('deals', { skipHistory: true });
+}
+
+function hopCloseDealDetail() {
+  hopState.dealDetailId = null;
+  hopState.dealDetail = null;
+  openHopView('deals', { skipHistory: true });
+}
+
+async function hopDealAction(action) {
+  const deal = hopState.dealDetail;
+  if (!deal?.id) return;
+  const note = document.getElementById('hop-deal-step-note')?.value || '';
+  let payload = { action };
+  if (action === 'complete_step' || action === 'skip_step') payload.step_note = note;
+  if (action === 'mark_lost') {
+    const reason = prompt('Lost reason?', note || 'Lost before payment');
+    if (reason == null) return;
+    payload.lost_reason = reason;
+  }
+  try {
+    await hopApi(`/api/v1/hop/deals/${deal.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (typeof nexoraToast === 'function') nexoraToast('Deal updated', 'ok');
+    openHopView('deals', { skipHistory: true });
+  } catch (e) {
+    alert(e.message || 'Update failed');
+  }
+}
+
+function hopCloseDealFormModal() {
+  document.getElementById('hop-deal-form-modal')?.remove();
+}
+
+async function hopShowDealForm(editRow) {
+  hopCloseDealFormModal();
+  if (!(hopState.customers || []).length) {
+    try { hopState.customers = await hopApi('/api/v1/hop/customers') || []; } catch (_) { /* ignore */ }
+  }
+  const row = editRow || {};
+  const isEdit = !!row.id;
+  const custOpts = ['<option value="">Select existing party…</option>']
+    .concat((hopState.customers || []).map((c) =>
+      `<option value="${c.id}"${String(c.id) === String(row.customer_id || '') ? ' selected' : ''}>${foEscapeText(c.company)}</option>`))
+    .join('');
+  const modal = document.createElement('div');
+  modal.id = 'hop-deal-form-modal';
+  modal.className = 'nx-party-modal hop-deal-form-modal';
+  hopDecoratePartyModalTheme(modal);
+  modal.innerHTML = `
+    <div class="nx-party-modal-backdrop" onclick="hopCloseDealFormModal()"></div>
+    <div class="nx-party-modal-card hop-deal-form-card" role="dialog" aria-modal="true" aria-label="${isEdit ? 'Edit Deal' : 'New Deal'}">
+      <div class="nx-party-modal-head">
+        <div class="hop-deal-form-head-copy">
+          <p class="hop-deal-form-kicker">CRM · Deal</p>
+          <h2>${isEdit ? 'Edit Deal' : 'New Deal'}</h2>
+        </div>
+        <button type="button" class="nx-party-modal-close" onclick="hopCloseDealFormModal()" title="Close">&times;</button>
+      </div>
+      <div class="nx-party-modal-body hop-deal-form-body">
+        <section class="hop-deal-form-section">
+          <p class="hop-deal-form-sec-title">Deal</p>
+          <div class="hop-deal-form-grid">
+            <label class="nx-party-field hop-deal-form-span-2">
+              <span>Deal title *</span>
+              <input id="f-dtitle" value="${foEscapeAttr(row.title || '')}" placeholder="e.g. Sofa Lead · Westin curtains" autocomplete="off" />
+            </label>
+            <label class="nx-party-field">
+              <span>Expected value</span>
+              <input id="f-dvalue" type="number" min="0" step="1" value="${foEscapeAttr(row.expected_value ?? '')}" placeholder="₹" />
+            </label>
+            <label class="nx-party-field">
+              <span>Source</span>
+              <input id="f-dsource" value="${foEscapeAttr(row.source || '')}" placeholder="Walk-in · Referral · WhatsApp" />
+            </label>
+            <label class="nx-party-field">
+              <span>Assigned to</span>
+              <input id="f-dassigned" value="${foEscapeAttr(row.assigned_to || '')}" placeholder="Sales person" />
+            </label>
+            <label class="nx-party-field">
+              <span>Fulfillment</span>
+              <select id="f-dfulfill">
+                <option value="">Decide later</option>
+                <option value="godown"${row.fulfillment_mode === 'godown' ? ' selected' : ''}>Via godown</option>
+                <option value="drop_ship"${row.fulfillment_mode === 'drop_ship' ? ' selected' : ''}>Drop-ship</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="hop-deal-form-section">
+          <p class="hop-deal-form-sec-title">Party</p>
+          <p class="hop-deal-form-sec-hint">Pick an existing Vyapar / CRM party, or add a new one below.</p>
+          <div class="hop-deal-form-grid">
+            <label class="nx-party-field hop-deal-form-span-2">
+              <span>Existing party</span>
+              <select id="f-dcustomer">${custOpts}</select>
+            </label>
+          </div>
+          <div class="hop-deal-form-newparty">
+            <p class="hop-deal-form-sec-title hop-deal-form-sec-title--sub">Or create new party</p>
+            <div class="hop-deal-form-grid">
+              <label class="nx-party-field hop-deal-form-span-2">
+                <span>Company / party name</span>
+                <input id="f-dnewparty" placeholder="Type name — similar parties appear below" autocomplete="off"
+                  oninput="hopPartyLiveDupCheck({nameId:'f-dnewparty',phoneId:'f-dnewmobile',gstId:'f-dnewgst',slotId:'f-dnewparty-dup'})" />
+                <div id="f-dnewparty-dup" class="hop-party-live-dup hidden" aria-live="polite"></div>
+              </label>
+              <label class="nx-party-field">
+                <span>Mobile</span>
+                <input id="f-dnewmobile" inputmode="tel" placeholder="10-digit"
+                  oninput="hopPartyLiveDupCheck({nameId:'f-dnewparty',phoneId:'f-dnewmobile',gstId:'f-dnewgst',slotId:'f-dnewparty-dup'})" />
+              </label>
+              <label class="nx-party-field">
+                <span>GSTIN</span>
+                <input id="f-dnewgst" placeholder="Optional"
+                  oninput="hopPartyLiveDupCheck({nameId:'f-dnewparty',phoneId:'f-dnewmobile',gstId:'f-dnewgst',slotId:'f-dnewparty-dup'})" />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="hop-deal-form-section">
+          <p class="hop-deal-form-sec-title">Notes</p>
+          <div class="hop-deal-form-grid">
+            <label class="nx-party-field hop-deal-form-span-2">
+              <span>Products interested</span>
+              <input id="f-dproducts" value="${foEscapeAttr(row.products_interested || '')}" placeholder="Sofa, curtains, mattress…" />
+            </label>
+            <label class="nx-party-field hop-deal-form-span-2">
+              <span>Internal notes</span>
+              <textarea id="f-dnotes" rows="2" placeholder="Anything the team should know…">${foEscapeText(row.notes || '')}</textarea>
+            </label>
+          </div>
+        </section>
+      </div>
+      <div class="nx-party-modal-foot">
+        <button type="button" class="nx-btn" onclick="hopCloseDealFormModal()">Cancel</button>
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopSaveDeal(${isEdit ? row.id : 'null'})">${isEdit ? 'Update deal' : 'Create deal'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => modal.classList.add('is-open'));
+  document.getElementById('f-dtitle')?.focus();
+}
+
+async function hopEditDeal(id) {
+  let row = (hopState.deals || []).find((d) => Number(d.id) === Number(id));
+  if (!row && hopState.dealDetail && Number(hopState.dealDetail.id) === Number(id)) {
+    row = hopState.dealDetail;
+  }
+  if (!row) {
+    try { row = await hopApi(`/api/v1/hop/deals/${id}`); } catch (e) {
+      alert(e.message || 'Load failed');
+      return;
+    }
+  }
+  await hopShowDealForm(row);
+}
+
+async function hopSaveDeal(editId) {
+  const title = document.getElementById('f-dtitle')?.value?.trim();
+  if (!title) {
+    alert('Deal title required');
+    return;
+  }
+  const customerId = document.getElementById('f-dcustomer')?.value || '';
+  const newPartyName = document.getElementById('f-dnewparty')?.value?.trim();
+  const payload = {
+    title,
+    customer_id: customerId || null,
+    source: document.getElementById('f-dsource')?.value,
+    expected_value: document.getElementById('f-dvalue')?.value,
+    assigned_to: document.getElementById('f-dassigned')?.value,
+    fulfillment_mode: document.getElementById('f-dfulfill')?.value || null,
+    products_interested: document.getElementById('f-dproducts')?.value,
+    notes: document.getElementById('f-dnotes')?.value,
+  };
+  if (!customerId && newPartyName) {
+    payload.new_party = {
+      company: newPartyName,
+      mobile: document.getElementById('f-dnewmobile')?.value,
+      gst_no: document.getElementById('f-dnewgst')?.value,
+      source: payload.source || 'CRM Deal',
+    };
+  }
+  try {
+    const url = editId ? `/api/v1/hop/deals/${editId}` : '/api/v1/hop/deals';
+    const method = editId ? 'PATCH' : 'POST';
+    let response;
+    try {
+      response = await fetchWithAuth(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      if (isSessionTimeoutError(e)) return;
+      throw e;
+    }
+    let data = await parseApiJson(response);
+    if (response.status === 409 && data.requires_confirmation) {
+      const matches = data.data?.matches || [];
+      const msg = typeof hopPartyDupConfirmMessage === 'function'
+        ? hopPartyDupConfirmMessage(matches, data.message)
+        : (data.message || 'A similar party already exists. Save as a new party anyway?');
+      const ok = await nexoraConfirm(msg, {
+        title: 'Party already saved',
+        okText: 'Yes, save new party',
+        cancelText: 'Cancel',
+      });
+      if (!ok) return;
+      response = await fetchWithAuth(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, force_save: true, new_party: payload.new_party
+          ? { ...payload.new_party, force_save: true }
+          : undefined }),
+      });
+      data = await parseApiJson(response);
+    }
+    if (!response.ok || !data.success) {
+      throw new Error(getApiErrorMessage(data, 'Save failed'));
+    }
+    hopState.customers = [];
+    hopCloseDealFormModal();
+    if (typeof nexoraToast === 'function') nexoraToast(editId ? 'Deal updated' : 'Deal created', 'ok');
+    openHopView('deals', { skipHistory: true });
+  } catch (e) {
+    alert(e.message || 'Save failed');
+  }
+}
+
+async function hopDeleteDeal(id, title) {
+  const ok = typeof nexoraConfirm === 'function'
+    ? await nexoraConfirm(`Delete deal “${title || id}”? Ye undo nahi hoga.`, {
+      title: 'Delete deal',
+      danger: true,
+      okText: 'Delete',
+    })
+    : window.confirm(`Delete deal “${title || id}”?`);
+  if (!ok) return;
+  try {
+    await hopApi(`/api/v1/hop/deals/${id}`, { method: 'DELETE' });
+    hopState.dealDetailId = null;
+    if (typeof nexoraToast === 'function') nexoraToast('Deal deleted', 'ok');
+    openHopView('deals', { skipHistory: true });
+  } catch (e) {
+    alert(e.message || 'Delete failed');
   }
 }
 
@@ -5110,12 +5837,12 @@ async function hopLoadSaleDocRows(kind) {
   }
   if (kind === 'sale_estimates') {
     const [ledgerRaw, quotes] = await Promise.all([
-      hopApi('/api/v1/hop/party-transactions?txn_types=27,30').catch(() => []),
+      hopApi('/api/v1/hop/party-transactions?txn_types=27').catch(() => []),
       hopApi('/api/v1/hop/quotations').catch(() => []),
     ]);
     hopState.quotations = quotes || [];
-    const ledger = hopFilterRowsByTxnTypes(ledgerRaw, [27, 30]);
-    const fromLedger = ledger.map((r) => hopNormalizeLedgerToInvoice(r, 'Estimate/Quotation'));
+    const ledger = hopFilterRowsByTxnTypes(ledgerRaw, [27]);
+    const fromLedger = ledger.map((r) => hopNormalizeLedgerToInvoice(r, 'Estimate'));
     const ledgerNos = new Set(
       ledger.map((r) => String(r.txn_number || '').trim().toLowerCase()).filter(Boolean),
     );
@@ -5129,11 +5856,11 @@ async function hopLoadSaleDocRows(kind) {
         balance: Number(q.value || 0),
         paid_amount: 0,
         status: q.status || 'sent',
-        notes: 'Estimate/Quotation',
-        txn_label: 'Estimate/Quotation',
-        txn_type: 30,
+        notes: 'Estimate',
+        txn_label: 'Estimate',
+        txn_type: 27,
         project_name: q.project_name,
-      }, 'Estimate/Quotation'));
+      }, 'Estimate'));
     return [...fromLedger, ...fromQuotes];
   }
   if (kind === 'sale_payment_in') {
@@ -6858,14 +7585,9 @@ async function hopSaveTarget() {
 
 /* ---------- Project Hub ---------- */
 async function openHopProjectHub(projectId) {
-  hopState.view = 'project-hub';
-  hopHideAllViews();
-  hopScrollMainToTop();
-  document.getElementById('hop-view-project-hub')?.classList.remove('hidden');
-  document.querySelectorAll('.hop-nav-btn[data-hop-view]').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.hopView === 'projects');
-  });
-  await loadHopProjectHub(projectId);
+  // CRM / Project Hub temporarily disabled
+  if (typeof nexoraToast === 'function') nexoraToast('CRM is temporarily hidden', 'ok');
+  openHopView('dashboard');
 }
 
 async function loadHopProjectHub(projectId) {
@@ -7107,9 +7829,12 @@ async function hopShowForm(kind, editRow) {
       <strong>New Lead</strong>
       <p class="nx-text-dim" style="font-size:0.78rem;">Type a project name — a new project is created on save if needed.</p>
       <div class="hop-form-grid" style="margin-top:10px;">
-        <label>Customer
-          <select id="f-lcustomer" onchange="hopLeadCustomerChange()">${hopCustomerOptions(null, { withAddNew: true })}</select>
-        </label>
+        <div>
+          <label>Customer
+            <select id="f-lcustomer" onchange="hopLeadCustomerChange()">${hopCustomerOptions(null, { withAddNew: true })}</select>
+          </label>
+          <button type="button" class="hop-lead-add-party-btn" onclick="hopLeadAddNewParty()">+ Add new party</button>
+        </div>
         <label class="hop-form-span-2">Project name
           <input id="f-lpname" placeholder="e.g. Holiday Inn Dwarka" />
         </label>
@@ -7652,11 +8377,21 @@ async function hopSave(kind) {
   const edit = hopState.contactEdit;
   const isEdit = edit && edit.kind === kind && edit.id;
   try {
-    await hopApi(isEdit ? `${cfg.url}/${edit.id}` : cfg.url, {
-      method: isEdit ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cfg.payload()),
-    });
+    const url = isEdit ? `${cfg.url}/${edit.id}` : cfg.url;
+    const method = isEdit ? 'PATCH' : 'POST';
+    const body = cfg.payload();
+    let saved;
+    if (kind === 'customer' || kind === 'vendor') {
+      saved = await hopCreatePartyWithDupConfirm(url, body, { method });
+      if (saved === false) return;
+      if (saved == null) return;
+    } else {
+      await hopApi(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
     hopState.contactEdit = null;
     hopState._leadFormAwaitingCustomer = false;
     hopCloseLeadProductsPicker();
@@ -7688,7 +8423,16 @@ window.hopToggleNavFold = hopToggleNavFold;
 window.openHopProjectHub = openHopProjectHub;
 window.hopDebouncedReload = hopDebouncedReload;
 window.hopShowForm = hopShowForm;
+window.hopOpenDeal = hopOpenDeal;
+window.hopCloseDealDetail = hopCloseDealDetail;
+window.hopDealAction = hopDealAction;
+window.hopShowDealForm = hopShowDealForm;
+window.hopCloseDealFormModal = hopCloseDealFormModal;
+window.hopEditDeal = hopEditDeal;
+window.hopSaveDeal = hopSaveDeal;
+window.hopDeleteDeal = hopDeleteDeal;
 window.hopLeadCustomerChange = hopLeadCustomerChange;
+window.hopLeadAddNewParty = hopLeadAddNewParty;
 window.hopOpenLeadProductsPicker = hopOpenLeadProductsPicker;
 window.hopCloseLeadProductsPicker = hopCloseLeadProductsPicker;
 window.hopLeadProductsFillPicker = hopLeadProductsFillPicker;
@@ -7745,6 +8489,8 @@ window.hopPartyGstCheck = hopPartyGstCheck;
 window.hopPartyFetchGstDetails = hopPartyFetchGstDetails;
 window.hopSavePartyModal = hopSavePartyModal;
 window.hopCreatePartyWithDupConfirm = hopCreatePartyWithDupConfirm;
+window.hopPartyLiveDupCheck = hopPartyLiveDupCheck;
+window.hopPartyNameOnInput = hopPartyNameOnInput;
 window.hopDeleteFromPartyModal = hopDeleteFromPartyModal;
 window.hopPartySetCreditLimitMode = hopPartySetCreditLimitMode;
 window.hopPartyCopyBillingToShipping = hopPartyCopyBillingToShipping;

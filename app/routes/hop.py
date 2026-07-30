@@ -11,8 +11,15 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
-from app import hop_db, hop_ops
-from app.hop_schema import HOP_ROLE, HOP_WORKSPACE_ID, LEAD_STAGES, PROJECT_STAGES, ensure_hop_schema
+from app import hop_db, hop_ops, hop_deals
+from app.hop_schema import (
+    DEAL_STEPS,
+    HOP_ROLE,
+    HOP_WORKSPACE_ID,
+    LEAD_STAGES,
+    PROJECT_STAGES,
+    ensure_hop_schema,
+)
 from app.routes.auth import require_jwt_auth, require_role
 
 hop_bp = Blueprint("hop", __name__, url_prefix="/api/v1/hop")
@@ -28,6 +35,40 @@ def _ws() -> str:
 
 def _json_error(message: str, code: str = "BAD_REQUEST", status: int = 400):
     return jsonify({"success": False, "error": {"code": code, "message": message}}), status
+
+
+def _force_flag(payload: dict | None = None) -> bool:
+    """Accept force / force_delete from query or JSON body."""
+    data = payload if isinstance(payload, dict) else {}
+    raw = (
+        request.args.get("force")
+        or request.args.get("force_delete")
+        or data.get("force")
+        or data.get("force_delete")
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _party_in_use_response(exc) -> tuple:
+    usage = getattr(exc, "usage", None) or {}
+    summary = usage.get("summary") or "linked records"
+    return (
+        jsonify(
+            {
+                "success": False,
+                "requires_confirmation": True,
+                "message": (
+                    f"This party is used in {summary}. "
+                    "Delete anyway? Linked records will keep names but the party link will be removed."
+                ),
+                "error": {"code": "PARTY_IN_USE", "message": str(exc)},
+                "data": {"usage": usage},
+            }
+        ),
+        409,
+    )
 
 
 def _unique_party_names(matches: list) -> list[str]:
@@ -143,6 +184,7 @@ def hop_meta():
                 "workspace_id": HOP_WORKSPACE_ID,
                 "project_stages": PROJECT_STAGES,
                 "lead_stages": LEAD_STAGES,
+                "deal_steps": DEAL_STEPS,
             },
         }
     )
@@ -509,10 +551,15 @@ def customers_get_or_delete(customer_id: int):
             return _json_error(f"Update failed: {exc}", "UPDATE_ERROR", 500)
         return jsonify({"success": True, "data": row})
     if request.method == "DELETE":
+        force = _force_flag(_payload())
         try:
             with hop_db.connect(_db_path()) as conn:
-                ok = hop_db.delete_customer(conn, _ws(), customer_id)
-        except ValueError as exc:
+                ok = hop_db.delete_customer(conn, _ws(), customer_id, force=force)
+        except Exception as exc:
+            from app.hop_party_usage import PartyInUseError
+
+            if isinstance(exc, PartyInUseError):
+                return _party_in_use_response(exc)
             return _json_error(str(exc), "DELETE_BLOCKED", 409)
         if not ok:
             return _json_error("Customer not found", "NOT_FOUND", 404)
@@ -524,20 +571,54 @@ def customers_get_or_delete(customer_id: int):
     return jsonify({"success": True, "data": row})
 
 
+@hop_bp.route("/customers/<int:customer_id>/usage", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def customers_usage(customer_id: int):
+    ensure_hop_schema(_db_path())
+    from app.hop_party_usage import get_customer_usage
+
+    with hop_db.connect(_db_path()) as conn:
+        row = hop_db.get_customer(conn, _ws(), customer_id)
+        if not row:
+            return _json_error("Customer not found", "NOT_FOUND", 404)
+        usage = get_customer_usage(conn, _ws(), customer_id)
+    usage["company"] = row.get("company")
+    return jsonify({"success": True, "data": usage})
+
+
 @hop_bp.route("/customers/bulk-delete", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def customers_bulk_delete():
     ensure_hop_schema(_db_path())
-    ids = _payload().get("ids") or []
+    payload = _payload()
+    ids = payload.get("ids") or []
     if not isinstance(ids, list) or not ids:
         return _json_error("ids list is required", "VALIDATION_ERROR", 400)
     try:
         id_list = [int(x) for x in ids]
     except (TypeError, ValueError):
         return _json_error("ids must be integers", "VALIDATION_ERROR", 400)
+    force = _force_flag(payload)
     with hop_db.connect(_db_path()) as conn:
-        result = hop_db.delete_customers_bulk(conn, _ws(), id_list)
+        result = hop_db.delete_customers_bulk(conn, _ws(), id_list, force=force)
+    if result.get("blocked") and not force:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "requires_confirmation": True,
+                    "message": (
+                        f"{len(result['blocked'])} contact(s) are used in deals, invoices, or other records. "
+                        "Delete anyway? Party links will be removed from those records."
+                    ),
+                    "error": {"code": "PARTY_IN_USE", "message": "Some contacts are in use"},
+                    "data": result,
+                }
+            ),
+            409,
+        )
     return jsonify({"success": True, "data": result})
 
 
@@ -631,6 +712,89 @@ def leads_patch(lead_id: int):
     except ValueError as exc:
         return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
     return jsonify({"success": True, "data": row})
+
+
+# ---------- Deals (new stepwise CRM) ----------
+@hop_bp.route("/deals", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_list():
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_deals.list_deals(conn, _ws(), q=request.args.get("q"))
+    return jsonify({"success": True, "data": rows})
+
+
+@hop_bp.route("/deals", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_create():
+    ensure_hop_schema(_db_path())
+    payload = _payload()
+    new_party = payload.get("new_party") if isinstance(payload.get("new_party"), dict) else None
+    if new_party and (new_party.get("company") or "").strip():
+        # Same fuzzy gate as party modal — "Kunwar" vs "Kunwar Julka".
+        blocked = _maybe_party_duplicate_response(
+            {
+                **new_party,
+                "force_save": payload.get("force_save") or new_party.get("force_save"),
+            }
+        )
+        if blocked:
+            return blocked
+        # Confirmed (or no match): avoid a second check if create_customer later gains one.
+        payload = {
+            **payload,
+            "new_party": {**new_party, "force_save": True},
+            "force_save": True,
+        }
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_deals.create_deal(conn, _ws(), payload)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/deals/<int:deal_id>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_get(deal_id: int):
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        row = hop_deals.get_deal(conn, _ws(), deal_id)
+        if not row:
+            return _json_error("Deal not found", "NOT_FOUND", 404)
+        events = hop_deals.list_deal_events(conn, _ws(), deal_id)
+    row = dict(row)
+    row["events"] = events
+    row["steps"] = DEAL_STEPS
+    return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/deals/<int:deal_id>", methods=["PATCH"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_patch(deal_id: int):
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_deals.update_deal(conn, _ws(), deal_id, _payload())
+    except ValueError as exc:
+        return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/deals/<int:deal_id>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_delete(deal_id: int):
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        ok = hop_deals.delete_deal(conn, _ws(), deal_id)
+    if not ok:
+        return _json_error("Deal not found", "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": {"deleted": True, "id": deal_id}})
 
 
 # ---------- Meetings ----------
@@ -740,14 +904,35 @@ def vendors_get_or_delete(vendor_id: int):
         if not row:
             return _json_error("Vendor not found", "NOT_FOUND", 404)
         return jsonify({"success": True, "data": row})
+    force = _force_flag(_payload())
     try:
         with hop_db.connect(_db_path()) as conn:
-            ok = hop_ops.delete_vendor(conn, _ws(), vendor_id)
-    except ValueError as exc:
+            ok = hop_ops.delete_vendor(conn, _ws(), vendor_id, force=force)
+    except Exception as exc:
+        from app.hop_party_usage import PartyInUseError
+
+        if isinstance(exc, PartyInUseError):
+            return _party_in_use_response(exc)
         return _json_error(str(exc), "DELETE_BLOCKED", 409)
     if not ok:
         return _json_error("Vendor not found", "NOT_FOUND", 404)
     return jsonify({"success": True, "data": {"deleted": vendor_id}})
+
+
+@hop_bp.route("/vendors/<int:vendor_id>/usage", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def vendors_usage(vendor_id: int):
+    ensure_hop_schema(_db_path())
+    from app.hop_party_usage import get_vendor_usage
+
+    with hop_db.connect(_db_path()) as conn:
+        row = hop_ops.get_vendor(conn, _ws(), vendor_id)
+        if not row:
+            return _json_error("Vendor not found", "NOT_FOUND", 404)
+        usage = get_vendor_usage(conn, _ws(), vendor_id)
+    usage["company"] = row.get("company")
+    return jsonify({"success": True, "data": usage})
 
 
 @hop_bp.route("/vendors/bulk-delete", methods=["POST"])
@@ -755,15 +940,33 @@ def vendors_get_or_delete(vendor_id: int):
 @require_role(HOP_ROLE)
 def vendors_bulk_delete():
     ensure_hop_schema(_db_path())
-    ids = _payload().get("ids") or []
+    payload = _payload()
+    ids = payload.get("ids") or []
     if not isinstance(ids, list) or not ids:
         return _json_error("ids list is required", "VALIDATION_ERROR", 400)
     try:
         id_list = [int(x) for x in ids]
     except (TypeError, ValueError):
         return _json_error("ids must be integers", "VALIDATION_ERROR", 400)
+    force = _force_flag(payload)
     with hop_db.connect(_db_path()) as conn:
-        result = hop_ops.delete_vendors_bulk(conn, _ws(), id_list)
+        result = hop_ops.delete_vendors_bulk(conn, _ws(), id_list, force=force)
+    if result.get("blocked") and not force:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "requires_confirmation": True,
+                    "message": (
+                        f"{len(result['blocked'])} vendor(s) are used in rate sheets or other records. "
+                        "Delete anyway? Party links will be removed from those records."
+                    ),
+                    "error": {"code": "PARTY_IN_USE", "message": "Some vendors are in use"},
+                    "data": result,
+                }
+            ),
+            409,
+        )
     return jsonify({"success": True, "data": result})
 
 

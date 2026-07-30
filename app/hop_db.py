@@ -43,6 +43,10 @@ class _ClosingConnection:
 def connect(db_path: str) -> _ClosingConnection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA foreign_keys=ON")
+    except sqlite3.Error:
+        pass
     return _ClosingConnection(conn)
 
 
@@ -68,8 +72,21 @@ def get_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: int) 
     return dict(row) if row else None
 
 
-def delete_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: int) -> bool:
+def delete_customer(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    customer_id: int,
+    *,
+    force: bool = False,
+) -> bool:
+    from app.hop_party_usage import PartyInUseError, get_customer_usage, nullify_customer_refs
+
+    usage = get_customer_usage(conn, workspace_id, customer_id)
+    if usage.get("in_use") and not force:
+        raise PartyInUseError(usage)
     try:
+        if force and usage.get("in_use"):
+            nullify_customer_refs(conn, workspace_id, customer_id)
         cur = conn.execute(
             "DELETE FROM hop_customers WHERE workspace_id = ? AND id = ?",
             (workspace_id, customer_id),
@@ -81,6 +98,32 @@ def delete_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: in
         raise ValueError(
             "Cannot delete customer — linked to projects or other records. Remove links first."
         ) from exc
+
+
+def delete_customers_bulk(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    customer_ids: list[int],
+    *,
+    force: bool = False,
+) -> dict[str, list]:
+    deleted: list[int] = []
+    errors: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    for customer_id in customer_ids:
+        try:
+            if delete_customer(conn, workspace_id, int(customer_id), force=force):
+                deleted.append(int(customer_id))
+            else:
+                errors.append({"id": int(customer_id), "error": "Customer not found"})
+        except Exception as exc:
+            from app.hop_party_usage import PartyInUseError
+
+            if isinstance(exc, PartyInUseError):
+                blocked.append({"id": int(customer_id), "usage": exc.usage, "error": str(exc)})
+            else:
+                errors.append({"id": int(customer_id), "error": str(exc)})
+    return {"deleted": deleted, "errors": errors, "blocked": blocked}
 
 
 def update_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: int, payload: dict) -> dict:
@@ -161,22 +204,6 @@ def update_customer(conn: sqlite3.Connection, workspace_id: str, customer_id: in
     )
     conn.commit()
     return get_customer(conn, workspace_id, customer_id) or {}
-
-
-def delete_customers_bulk(
-    conn: sqlite3.Connection, workspace_id: str, customer_ids: list[int]
-) -> dict[str, list]:
-    deleted: list[int] = []
-    errors: list[dict[str, Any]] = []
-    for customer_id in customer_ids:
-        try:
-            if delete_customer(conn, workspace_id, int(customer_id)):
-                deleted.append(int(customer_id))
-            else:
-                errors.append({"id": int(customer_id), "error": "Customer not found"})
-        except ValueError as exc:
-            errors.append({"id": int(customer_id), "error": str(exc)})
-    return {"deleted": deleted, "errors": errors}
 
 
 def create_customer(conn: sqlite3.Connection, workspace_id: str, payload: dict) -> dict:

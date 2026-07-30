@@ -44,6 +44,30 @@ LEAD_STAGES = [
     "lost",
 ]
 
+# New CRM Deal pipeline — stepwise unlock (Phase 1+)
+DEAL_STEPS = [
+    {"id": "lead", "label": "Lead received", "optional": False},
+    {"id": "contacting", "label": "Call / Mail / Message / Visit", "optional": False},
+    {"id": "appointment", "label": "Appointment", "optional": False},
+    {"id": "discovery", "label": "Requirement meeting", "optional": False},
+    {"id": "cataloging", "label": "Cataloging", "optional": False},
+    {"id": "quotation", "label": "Quotation", "optional": False},
+    {"id": "negotiation", "label": "Negotiation", "optional": False},
+    {"id": "po_received", "label": "Customer PO", "optional": False},
+    {"id": "advance", "label": "Advance payment", "optional": True},
+    {"id": "vendor_order", "label": "Vendor order", "optional": False},
+    {"id": "inbound", "label": "Vendor dispatch / inbound track", "optional": False},
+    {"id": "godown", "label": "Goods at godown", "optional": True},
+    {"id": "repack", "label": "Repacking", "optional": True},
+    {"id": "outbound", "label": "Ship to client", "optional": False},
+    {"id": "delivered", "label": "Delivered", "optional": False},
+    {"id": "installation", "label": "Installation", "optional": True},
+    {"id": "collection", "label": "Payment follow-up", "optional": False},
+    {"id": "closed", "label": "Closed / Won", "optional": False},
+]
+
+DEAL_STEP_IDS = [s["id"] for s in DEAL_STEPS]
+
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
     try:
@@ -675,6 +699,56 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_hop_commission_ws_date
             ON hop_commission_entries(workspace_id, invoice_date DESC)
+            """
+        )
+
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS hop_deals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                deal_number TEXT,
+                title TEXT NOT NULL,
+                customer_id INTEGER,
+                party_name TEXT,
+                source TEXT,
+                assigned_to TEXT,
+                expected_value REAL DEFAULT 0,
+                current_step TEXT NOT NULL DEFAULT 'lead',
+                step_index INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'open',
+                fulfillment_mode TEXT,
+                products_interested TEXT,
+                requirement_notes TEXT,
+                next_follow_up TEXT,
+                advance_amount REAL DEFAULT 0,
+                advance_received REAL DEFAULT 0,
+                lost_reason TEXT,
+                lost_at TEXT,
+                closed_at TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(customer_id) REFERENCES hop_customers(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hop_deals_ws
+            ON hop_deals(workspace_id, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS hop_deal_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                deal_id INTEGER NOT NULL,
+                step_id TEXT,
+                event_type TEXT NOT NULL,
+                title TEXT,
+                detail TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(deal_id) REFERENCES hop_deals(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hop_deal_events_deal
+            ON hop_deal_events(workspace_id, deal_id, id DESC);
             """
         )
 

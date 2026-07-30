@@ -530,8 +530,21 @@ def update_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int, p
     return get_vendor(conn, workspace_id, vendor_id) or {}
 
 
-def delete_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int) -> bool:
+def delete_vendor(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    vendor_id: int,
+    *,
+    force: bool = False,
+) -> bool:
+    from app.hop_party_usage import PartyInUseError, get_vendor_usage, nullify_vendor_refs
+
+    usage = get_vendor_usage(conn, workspace_id, vendor_id)
+    if usage.get("in_use") and not force:
+        raise PartyInUseError(usage)
     try:
+        if force and usage.get("in_use"):
+            nullify_vendor_refs(conn, workspace_id, vendor_id)
         cur = conn.execute(
             "DELETE FROM hop_vendors WHERE workspace_id=? AND id=?",
             (workspace_id, vendor_id),
@@ -546,19 +559,29 @@ def delete_vendor(conn: sqlite3.Connection, workspace_id: str, vendor_id: int) -
 
 
 def delete_vendors_bulk(
-    conn: sqlite3.Connection, workspace_id: str, vendor_ids: list[int]
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    vendor_ids: list[int],
+    *,
+    force: bool = False,
 ) -> dict[str, list]:
     deleted: list[int] = []
     errors: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
     for vendor_id in vendor_ids:
         try:
-            if delete_vendor(conn, workspace_id, int(vendor_id)):
+            if delete_vendor(conn, workspace_id, int(vendor_id), force=force):
                 deleted.append(int(vendor_id))
             else:
                 errors.append({"id": int(vendor_id), "error": "Vendor not found"})
-        except ValueError as exc:
-            errors.append({"id": int(vendor_id), "error": str(exc)})
-    return {"deleted": deleted, "errors": errors}
+        except Exception as exc:
+            from app.hop_party_usage import PartyInUseError
+
+            if isinstance(exc, PartyInUseError):
+                blocked.append({"id": int(vendor_id), "usage": exc.usage, "error": str(exc)})
+            else:
+                errors.append({"id": int(vendor_id), "error": str(exc)})
+    return {"deleted": deleted, "errors": errors, "blocked": blocked}
 
 
 def create_vendor(conn: sqlite3.Connection, workspace_id: str, payload: dict) -> dict:
