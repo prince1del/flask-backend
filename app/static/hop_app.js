@@ -37,11 +37,174 @@ const hopState = {
 
 const HOP_RATE_CART_KEY = 'hop_rate_cart_v1';
 const HOP_THEME_KEY = 'hop_theme_v1';
+const HOP_CUSTOM_COLORS_KEY = 'hop_theme_custom_v1';
 const HOP_THEMES = {
   nexora: { id: 'nexora', label: 'NEXORA theme on', color: '#05070d' },
   bright: { id: 'bright', label: 'Bright theme on', color: '#f4f7fb' },
   emerald: { id: 'emerald', label: 'Emerald Gold theme on', color: '#F8F4EA' },
+  custom: { id: 'custom', label: 'Custom theme on', color: '#F8F4EA' },
 };
+
+const HOP_CUSTOM_DEFAULTS = {
+  sidebar: '#123C32',
+  bg: '#F8F4EA',
+  text: '#1F1F1F',
+  accent: '#C9A227',
+  border: '#DED3BE',
+  card: '#FFFFFF',
+  muted: '#6B6254',
+};
+
+const HOP_CUSTOM_PRESETS = {
+  emerald: {
+    label: 'Emerald + Gold',
+    colors: { ...HOP_CUSTOM_DEFAULTS },
+  },
+  navy: {
+    label: 'Navy + Gold',
+    colors: {
+      sidebar: '#102A43', bg: '#F4F7FB', text: '#0F172A',
+      accent: '#C9A227', border: '#C5D0DC', card: '#FFFFFF', muted: '#5B6B7C',
+    },
+  },
+  charcoal: {
+    label: 'Charcoal + Gold',
+    colors: {
+      sidebar: '#202124', bg: '#F5F5F4', text: '#1A1A1A',
+      accent: '#D4AF37', border: '#D4D0C8', card: '#FFFFFF', muted: '#6B6B6B',
+    },
+  },
+  burgundy: {
+    label: 'Burgundy + Gold',
+    colors: {
+      sidebar: '#641C2F', bg: '#FBF6F2', text: '#1F1F1F',
+      accent: '#C6A15B', border: '#E0D2C4', card: '#FFFFFF', muted: '#7A6458',
+    },
+  },
+  cream: {
+    label: 'Cream + Gold',
+    colors: {
+      sidebar: '#3D3428', bg: '#FFF8E8', text: '#1F1F1F',
+      accent: '#B99545', border: '#E8DFC8', card: '#FFFFFF', muted: '#6E6454',
+    },
+  },
+};
+
+function hopHexToRgb(hex) {
+  const h = String(hex || '').replace('#', '').trim();
+  if (h.length === 3) {
+    const r = parseInt(h[0] + h[0], 16);
+    const g = parseInt(h[1] + h[1], 16);
+    const b = parseInt(h[2] + h[2], 16);
+    return { r, g, b };
+  }
+  if (h.length !== 6) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+function hopRgbToHex(r, g, b) {
+  const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+  return '#' + [clamp(r), clamp(g), clamp(b)].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function hopMixHex(a, b, t) {
+  const A = hopHexToRgb(a);
+  const B = hopHexToRgb(b);
+  return hopRgbToHex(
+    A.r + (B.r - A.r) * t,
+    A.g + (B.g - A.g) * t,
+    A.b + (B.b - A.b) * t,
+  );
+}
+
+function hopLuminance(hex) {
+  const { r, g, b } = hopHexToRgb(hex);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+function hopNormalizeHex(hex, fallback) {
+  const s = String(hex || '').trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(s)) return s.toUpperCase();
+  if (/^#[0-9A-Fa-f]{3}$/.test(s)) {
+    return ('#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3]).toUpperCase();
+  }
+  return fallback;
+}
+
+function hopGetCustomColors() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HOP_CUSTOM_COLORS_KEY) || '{}');
+    return {
+      sidebar: hopNormalizeHex(raw.sidebar, HOP_CUSTOM_DEFAULTS.sidebar),
+      bg: hopNormalizeHex(raw.bg, HOP_CUSTOM_DEFAULTS.bg),
+      text: hopNormalizeHex(raw.text, HOP_CUSTOM_DEFAULTS.text),
+      accent: hopNormalizeHex(raw.accent, HOP_CUSTOM_DEFAULTS.accent),
+      border: hopNormalizeHex(raw.border, HOP_CUSTOM_DEFAULTS.border),
+      card: hopNormalizeHex(raw.card, HOP_CUSTOM_DEFAULTS.card),
+      muted: hopNormalizeHex(raw.muted, HOP_CUSTOM_DEFAULTS.muted),
+    };
+  } catch (e) {
+    return { ...HOP_CUSTOM_DEFAULTS };
+  }
+}
+
+function hopSaveCustomColors(colors) {
+  const c = {
+    sidebar: hopNormalizeHex(colors.sidebar, HOP_CUSTOM_DEFAULTS.sidebar),
+    bg: hopNormalizeHex(colors.bg, HOP_CUSTOM_DEFAULTS.bg),
+    text: hopNormalizeHex(colors.text, HOP_CUSTOM_DEFAULTS.text),
+    accent: hopNormalizeHex(colors.accent, HOP_CUSTOM_DEFAULTS.accent),
+    border: hopNormalizeHex(colors.border, HOP_CUSTOM_DEFAULTS.border),
+    card: hopNormalizeHex(colors.card, HOP_CUSTOM_DEFAULTS.card),
+    muted: hopNormalizeHex(colors.muted, HOP_CUSTOM_DEFAULTS.muted),
+  };
+  try { localStorage.setItem(HOP_CUSTOM_COLORS_KEY, JSON.stringify(c)); } catch (e) { /* ignore */ }
+  return c;
+}
+
+function hopApplyCustomVars(colors) {
+  const c = colors || hopGetCustomColors();
+  const root = document.documentElement;
+  const accentDark = hopMixHex(c.accent, '#000000', 0.22);
+  const accentLight = hopMixHex(c.accent, '#FFFFFF', 0.45);
+  const bgSoft = hopMixHex(c.bg, c.border, 0.35);
+  const { r, g, b } = hopHexToRgb(c.accent);
+  const sideLum = hopLuminance(c.sidebar);
+  const navText = sideLum < 0.45 ? hopMixHex(c.bg, '#FFFFFF', 0.15) : hopMixHex(c.text, '#000000', 0.15);
+  const navMuted = hopMixHex(navText, c.sidebar, 0.45);
+
+  const vars = {
+    '--hop-c-sidebar': c.sidebar,
+    '--hop-c-bg': c.bg,
+    '--hop-c-bg-soft': bgSoft,
+    '--hop-c-text': c.text,
+    '--hop-c-muted': c.muted,
+    '--hop-c-border': c.border,
+    '--hop-c-accent': c.accent,
+    '--hop-c-accent-dark': accentDark,
+    '--hop-c-accent-light': accentLight,
+    '--hop-c-accent-soft': `rgba(${r}, ${g}, ${b}, 0.22)`,
+    '--hop-c-accent-glow': `rgba(${r}, ${g}, ${b}, 0.45)`,
+    '--hop-c-card': c.card,
+    '--hop-c-nav-text': navText,
+    '--hop-c-nav-muted': navMuted,
+  };
+  Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
+  HOP_THEMES.custom.color = c.bg;
+  return c;
+}
+
+function hopClearCustomVars() {
+  [
+    '--hop-c-sidebar', '--hop-c-bg', '--hop-c-bg-soft', '--hop-c-text', '--hop-c-muted',
+    '--hop-c-border', '--hop-c-accent', '--hop-c-accent-dark', '--hop-c-accent-light',
+    '--hop-c-accent-soft', '--hop-c-accent-glow', '--hop-c-card', '--hop-c-nav-text', '--hop-c-nav-muted',
+  ].forEach((k) => document.documentElement.style.removeProperty(k));
+}
 
 function hopGetTheme() {
   try {
@@ -59,13 +222,16 @@ function hopApplyTheme(theme, opts) {
   const ws = document.getElementById('hop-executive-workspace');
   if (ws) ws.setAttribute('data-hop-theme', t);
   document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', t));
+  if (t === 'custom') hopApplyCustomVars();
+  else hopClearCustomVars();
   const meta = document.getElementById('hop-theme-color-meta')
     || document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', HOP_THEMES[t].color);
+  const themeColor = t === 'custom' ? hopGetCustomColors().bg : HOP_THEMES[t].color;
+  if (meta) meta.setAttribute('content', themeColor);
   if (!(opts && opts.silent) && typeof nexoraToast === 'function') {
     nexoraToast(HOP_THEMES[t].label, 'ok');
   }
-  if (hopState.view === 'theme') {
+  if (!(opts && opts.skipRerender) && hopState.view === 'theme') {
     const mount = hopMount();
     if (mount) renderHopThemeModule(mount);
   }
@@ -73,6 +239,55 @@ function hopApplyTheme(theme, opts) {
 
 function hopInitTheme() {
   hopApplyTheme(hopGetTheme(), { silent: true });
+}
+
+function hopReadCustomFormColors() {
+  const pick = (id, fallback) => {
+    const el = document.getElementById(id);
+    return hopNormalizeHex(el && el.value, fallback);
+  };
+  return {
+    sidebar: pick('hop-c-sidebar', HOP_CUSTOM_DEFAULTS.sidebar),
+    bg: pick('hop-c-bg', HOP_CUSTOM_DEFAULTS.bg),
+    text: pick('hop-c-text', HOP_CUSTOM_DEFAULTS.text),
+    accent: pick('hop-c-accent', HOP_CUSTOM_DEFAULTS.accent),
+    border: pick('hop-c-border', HOP_CUSTOM_DEFAULTS.border),
+    card: pick('hop-c-card', HOP_CUSTOM_DEFAULTS.card),
+    muted: pick('hop-c-muted', HOP_CUSTOM_DEFAULTS.muted),
+  };
+}
+
+function hopPreviewCustomTheme() {
+  const colors = hopSaveCustomColors(hopReadCustomFormColors());
+  hopApplyCustomVars(colors);
+  document.documentElement.setAttribute('data-hop-theme', 'custom');
+  const ws = document.getElementById('hop-executive-workspace');
+  if (ws) ws.setAttribute('data-hop-theme', 'custom');
+  document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', 'custom'));
+  try { localStorage.setItem(HOP_THEME_KEY, 'custom'); } catch (e) { /* ignore */ }
+  const meta = document.getElementById('hop-theme-color-meta');
+  if (meta) meta.setAttribute('content', colors.bg);
+  const swSide = document.querySelector('.hop-theme-swatch--custom .hop-theme-swatch-side');
+  const swMain = document.querySelector('.hop-theme-swatch--custom .hop-theme-swatch-main');
+  if (swSide) swSide.style.background = colors.sidebar;
+  if (swMain) swMain.style.background = colors.bg;
+}
+
+function hopApplyCustomThemeFromForm() {
+  hopPreviewCustomTheme();
+  hopApplyTheme('custom', { silent: false, skipRerender: false });
+}
+
+function hopLoadCustomPreset(key) {
+  const preset = HOP_CUSTOM_PRESETS[key];
+  if (!preset) return;
+  hopSaveCustomColors(preset.colors);
+  hopApplyTheme('custom');
+}
+
+function hopResetCustomTheme() {
+  hopSaveCustomColors(HOP_CUSTOM_DEFAULTS);
+  hopApplyTheme('custom');
 }
 
 function hopLoadRateCart() {
@@ -3171,10 +3386,24 @@ async function renderHopCustomersModule(mount) {
 
 async function renderHopThemeModule(mount) {
   const current = hopGetTheme();
+  const c = hopGetCustomColors();
+  const presetBtns = Object.entries(HOP_CUSTOM_PRESETS).map(([key, p]) => (
+    `<button type="button" class="nx-btn hop-custom-preset-btn" onclick="hopLoadCustomPreset('${key}')">${p.label}</button>`
+  )).join('');
+  const colorField = (id, label, value) => `
+    <label class="hop-custom-color-field">
+      <span>${label}</span>
+      <span class="hop-custom-color-row">
+        <input type="color" id="${id}" value="${value}" oninput="hopPreviewCustomTheme()" />
+        <input type="text" id="${id}-hex" value="${value}" maxlength="7"
+          onchange="document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();"
+          oninput="if(/^#[0-9A-Fa-f]{6}$/.test(this.value)){document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();}" />
+      </span>
+    </label>`;
   const body = `
-    <p class="nx-text-dim" style="margin:0 0 14px;max-width:40rem;line-height:1.45">
-      Choose how House of Prizm looks. Preference saves on this device and applies immediately.
-      For furnishing / hospitality, <strong>Emerald Gold</strong> is the premium pick.
+    <p class="nx-text-dim" style="margin:0 0 14px;max-width:44rem;line-height:1.45">
+      Choose a ready theme, or build your own — sidebar, background, text, accent, borders.
+      Preference saves on this device and applies immediately.
     </p>
     <div class="hop-theme-grid">
       <button type="button" class="hop-theme-card${current === 'nexora' ? ' is-active' : ''}" onclick="hopApplyTheme('nexora')">
@@ -3204,8 +3433,47 @@ async function renderHopThemeModule(mount) {
         <p>Deep emerald sidebar, ivory workspace, muted gold accents — luxury furnishing / hospitality.</p>
         ${current === 'emerald' ? '<span class="hop-theme-badge">Active</span>' : ''}
       </button>
+      <button type="button" class="hop-theme-card${current === 'custom' ? ' is-active' : ''}" onclick="hopApplyTheme('custom')">
+        <div class="hop-theme-swatch hop-theme-swatch--custom" aria-hidden="true">
+          <div class="hop-theme-swatch-side" style="background:${c.sidebar}"></div>
+          <div class="hop-theme-swatch-main" style="background:${c.bg}"></div>
+        </div>
+        <h3>Custom</h3>
+        <p>Your colours — pick below and apply. Starts from Emerald Gold.</p>
+        ${current === 'custom' ? '<span class="hop-theme-badge">Active</span>' : ''}
+      </button>
+    </div>
+
+    <div class="nx-card hop-custom-theme-panel" style="margin-top:18px;padding:18px 20px;max-width:52rem">
+      <h3 class="nx-display" style="margin:0 0 6px;font-size:1.05rem">Build your theme</h3>
+      <p class="nx-text-dim" style="margin:0 0 14px;line-height:1.4;font-size:0.85rem">
+        Change any colour — preview updates live. Click <strong>Apply custom theme</strong> to save &amp; use it.
+      </p>
+      <div class="hop-custom-presets" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+        ${presetBtns}
+      </div>
+      <div class="hop-custom-color-grid">
+        ${colorField('hop-c-sidebar', 'Sidebar / header', c.sidebar)}
+        ${colorField('hop-c-bg', 'Background', c.bg)}
+        ${colorField('hop-c-text', 'Text', c.text)}
+        ${colorField('hop-c-accent', 'Accent (buttons)', c.accent)}
+        ${colorField('hop-c-border', 'Borders', c.border)}
+        ${colorField('hop-c-card', 'Cards / panels', c.card)}
+        ${colorField('hop-c-muted', 'Secondary text', c.muted)}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px">
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopApplyCustomThemeFromForm()">Apply custom theme</button>
+        <button type="button" class="nx-btn" onclick="hopResetCustomTheme()">Reset to Emerald Gold</button>
+      </div>
     </div>`;
   mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);
+  // Keep hex text inputs in sync when color picker moves
+  ['sidebar', 'bg', 'text', 'accent', 'border', 'card', 'muted'].forEach((k) => {
+    const picker = document.getElementById('hop-c-' + k);
+    const hex = document.getElementById('hop-c-' + k + '-hex');
+    if (!picker || !hex) return;
+    picker.addEventListener('input', () => { hex.value = picker.value.toUpperCase(); });
+  });
 }
 
 async function renderHopWipeDataModule(mount) {

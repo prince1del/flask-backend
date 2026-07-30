@@ -7,12 +7,37 @@
     <script>
       (function () {
         try {
-          var allowed = { nexora: '#05070d', bright: '#f4f7fb', emerald: '#F8F4EA' };
+          var allowed = { nexora: '#05070d', bright: '#f4f7fb', emerald: '#F8F4EA', custom: '#F8F4EA' };
           var t = localStorage.getItem('hop_theme_v1') || 'nexora';
           if (!allowed[t]) t = 'nexora';
           document.documentElement.setAttribute('data-hop-theme', t);
           var meta = document.getElementById('hop-theme-color-meta');
-          if (meta) meta.setAttribute('content', allowed[t]);
+          var themeColor = allowed[t];
+          if (t === 'custom') {
+            try {
+              var c = JSON.parse(localStorage.getItem('hop_theme_custom_v1') || '{}');
+              var root = document.documentElement.style;
+              function ok(h, fb) {
+                return /^#[0-9A-Fa-f]{6}$/.test(h || '') ? h : fb;
+              }
+              var sidebar = ok(c.sidebar, '#123C32');
+              var bg = ok(c.bg, '#F8F4EA');
+              var text = ok(c.text, '#1F1F1F');
+              var accent = ok(c.accent, '#C9A227');
+              var border = ok(c.border, '#DED3BE');
+              var card = ok(c.card, '#FFFFFF');
+              var muted = ok(c.muted, '#6B6254');
+              root.setProperty('--hop-c-sidebar', sidebar);
+              root.setProperty('--hop-c-bg', bg);
+              root.setProperty('--hop-c-text', text);
+              root.setProperty('--hop-c-accent', accent);
+              root.setProperty('--hop-c-border', border);
+              root.setProperty('--hop-c-card', card);
+              root.setProperty('--hop-c-muted', muted);
+              themeColor = bg;
+            } catch (e2) {}
+          }
+          if (meta) meta.setAttribute('content', themeColor);
         } catch (e) {
           document.documentElement.setAttribute('data-hop-theme', 'nexora');
         }
@@ -25,9 +50,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260730-mobile-back-safe">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-emerald-gold">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-emerald-gold">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-emerald-gold">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-custom-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-custom-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-custom-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260730-custom-theme">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -2263,6 +2289,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260729-module-fullscreen"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-emerald-gold"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-custom-theme"></script>
 </body>
 </html>
