@@ -322,6 +322,86 @@ function hopApplyTheme(theme, opts) {
   }
 }
 
+function hopThemeDisplayName(themeId) {
+  const m = hopThemeMeta(themeId);
+  if (themeId === 'nexora') return 'NEXORA';
+  if (themeId === 'bright') return 'Bright';
+  if (themeId === 'emerald') return 'Emerald Gold';
+  if (themeId === 'custom') return 'Custom';
+  return m.title || m.label || themeId;
+}
+
+function hopCloseThemeConfirm() {
+  const el = document.getElementById('hop-theme-confirm-overlay');
+  if (el) el.remove();
+}
+
+function hopRequestTheme(themeId) {
+  if (!hopIsKnownTheme(themeId) || themeId === 'custom') return;
+  if (themeId === hopGetTheme()) {
+    if (typeof nexoraToast === 'function') nexoraToast('Already using this theme', 'ok');
+    return;
+  }
+  const name = hopThemeDisplayName(themeId);
+  hopCloseThemeConfirm();
+  const overlay = document.createElement('div');
+  overlay.id = 'hop-theme-confirm-overlay';
+  overlay.className = 'hop-theme-confirm-overlay is-open';
+  overlay.innerHTML = `
+    <div class="hop-theme-confirm-backdrop" onclick="hopCloseThemeConfirm()"></div>
+    <div class="hop-theme-confirm-dialog" role="dialog" aria-modal="true" aria-label="Confirm theme">
+      <p class="hop-theme-confirm-kicker">Change theme</p>
+      <h3>Apply <em>${foEscapeText(name)}</em>?</h3>
+      <p class="hop-theme-confirm-copy">This will update colours across House of Prizm on this device.</p>
+      <div class="hop-theme-confirm-actions">
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopCloseThemeConfirm()">Cancel</button>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary" onclick="hopConfirmThemeApply('${foEscapeAttr(themeId)}')">Yes, apply</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function hopConfirmThemeApply(themeId) {
+  hopCloseThemeConfirm();
+  hopApplyTheme(themeId, { silent: true, skipRerender: true });
+  hopPlayThemeSetAnimation(themeId, () => {
+    if (hopState.view === 'theme') {
+      const mount = hopMount();
+      if (mount) renderHopThemeModule(mount);
+    }
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(`${hopThemeDisplayName(themeId)} is now active`, 'ok');
+    }
+  });
+}
+
+function hopPlayThemeSetAnimation(themeId, done) {
+  const existing = document.getElementById('hop-theme-set-flash');
+  if (existing) existing.remove();
+  const name = hopThemeDisplayName(themeId);
+  const flash = document.createElement('div');
+  flash.id = 'hop-theme-set-flash';
+  flash.className = 'hop-theme-set-flash';
+  flash.innerHTML = `
+    <div class="hop-theme-set-flash-card">
+      <span class="hop-theme-set-check" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+      </span>
+      <strong>Theme set</strong>
+      <span>${foEscapeText(name)}</span>
+    </div>`;
+  document.body.appendChild(flash);
+  requestAnimationFrame(() => flash.classList.add('is-on'));
+  window.setTimeout(() => {
+    flash.classList.remove('is-on');
+    flash.classList.add('is-out');
+    window.setTimeout(() => {
+      flash.remove();
+      if (typeof done === 'function') done();
+    }, 220);
+  }, 720);
+}
+
 function hopInitTheme() {
   hopApplyTheme(hopGetTheme(), { silent: true });
 }
@@ -3656,15 +3736,15 @@ async function renderHopCustomersModule(mount) {
 async function renderHopThemeModule(mount) {
   const current = hopGetTheme();
   const c = hopGetCustomColors();
-  const themeCard = ({ id, swatchClass, title, desc, chip, dots, onclick, side, main }) => {
+  const themeCard = ({ id, swatchClass, title, chip, dots, onclick, side, main }) => {
     const active = current === id;
     const dotsHtml = (dots || []).map((d) => `<span class="hop-theme-dot" style="background:${d}"></span>`).join('');
     const sideStyle = side ? ` style="background:${side}"` : (id === 'custom' ? ` style="background:${c.sidebar}"` : '');
     const mainStyle = main ? ` style="background:${main}"` : (id === 'custom' ? ` style="background:${c.bg}"` : '');
     return `
-      <button type="button" class="hop-theme-card${active ? ' is-active' : ''}" onclick="${onclick || `hopApplyTheme('${id}')`}">
+      <button type="button" class="hop-theme-card hop-theme-card--compact${active ? ' is-active' : ''}" onclick="${onclick || `hopRequestTheme('${id}')`}">
         ${active ? '<span class="hop-theme-badge">Active</span>' : ''}
-        <div class="hop-theme-swatch ${swatchClass || ''}" aria-hidden="true">
+        <div class="hop-theme-swatch hop-theme-swatch--compact ${swatchClass || ''}" aria-hidden="true">
           <div class="hop-theme-swatch-side"${sideStyle}></div>
           <div class="hop-theme-swatch-main"${mainStyle}></div>
         </div>
@@ -3673,76 +3753,60 @@ async function renderHopThemeModule(mount) {
             <h3>${title}</h3>
             ${chip || ''}
           </div>
-          <p>${desc}</p>
           <div class="hop-theme-dots" aria-hidden="true">${dotsHtml}</div>
         </div>
       </button>`;
   };
+  const coreCards = [
+    themeCard({
+      id: 'nexora',
+      title: 'NEXORA',
+      dots: ['#05070c', '#25E0FF', '#8B5CF6'],
+    }),
+    themeCard({
+      id: 'bright',
+      swatchClass: 'hop-theme-swatch--bright',
+      title: 'Bright',
+      chip: '<span class="hop-theme-chip">Workday</span>',
+      dots: ['#0f2744', '#f4f7fb', '#0d9488'],
+    }),
+    themeCard({
+      id: 'emerald',
+      swatchClass: 'hop-theme-swatch--emerald',
+      title: 'Emerald Gold',
+      chip: '<span class="hop-theme-chip hop-theme-chip--rec">Signature</span>',
+      dots: ['#123C32', '#F8F4EA', '#C9A227'],
+    }),
+  ].join('');
   const luxuryCards = Object.values(HOP_LUXURY_THEMES).map((t) => themeCard({
     id: t.id,
     swatchClass: 'hop-theme-swatch--luxury',
     title: t.title,
-    desc: t.desc,
     chip: t.chip ? `<span class="hop-theme-chip hop-theme-chip--rec">${t.chip}</span>` : '',
     dots: [t.colors.sidebar, t.colors.bg, t.colors.accent],
     side: t.colors.sidebar,
     main: t.colors.bg,
   })).join('');
+  const customCard = themeCard({
+    id: 'custom',
+    swatchClass: 'hop-theme-swatch--custom',
+    title: 'Custom studio',
+    chip: '<span class="hop-theme-chip">Studio</span>',
+    dots: [c.sidebar, c.bg, c.accent],
+    onclick: 'hopOpenCustomThemeStudio()',
+  });
   const body = `
-    <div class="hop-theme-studio">
-      <div class="hop-theme-studio-intro">
+    <div class="hop-theme-studio hop-theme-studio--compact">
+      <div class="hop-theme-studio-intro hop-theme-studio-intro--compact">
         <p class="hop-theme-studio-kicker">Appearance</p>
         <p class="hop-theme-studio-lead">
-          Pick a curated look for House of Prizm, browse the luxury collection, or open Custom to craft your own.
-          Preference saves on this device.
+          Choose a theme — confirm to apply. Custom studio is last.
         </p>
       </div>
-
-      <div class="hop-theme-grid">
-        ${themeCard({
-          id: 'nexora',
-          title: 'NEXORA',
-          desc: 'Dark void with cyan & violet accents — the original signature look.',
-          dots: ['#05070c', '#25E0FF', '#8B5CF6'],
-        })}
-        ${themeCard({
-          id: 'bright',
-          swatchClass: 'hop-theme-swatch--bright',
-          title: 'Bright',
-          desc: 'Navy sidebar + teal accents — crisp for invoices and dense tables.',
-          chip: '<span class="hop-theme-chip">Workday</span>',
-          dots: ['#0f2744', '#f4f7fb', '#0d9488'],
-        })}
-        ${themeCard({
-          id: 'emerald',
-          swatchClass: 'hop-theme-swatch--emerald',
-          title: 'Emerald Gold',
-          desc: 'Signature luxury — deep emerald, ivory, muted gold. Best customer-facing look.',
-          chip: '<span class="hop-theme-chip hop-theme-chip--rec">Signature</span>',
-          dots: ['#123C32', '#F8F4EA', '#C9A227'],
-        })}
-        ${themeCard({
-          id: 'custom',
-          swatchClass: 'hop-theme-swatch--custom',
-          title: 'Custom',
-          desc: 'Open the studio to pick your colours — all luxury presets live inside too.',
-          chip: '<span class="hop-theme-chip">Studio</span>',
-          dots: [c.sidebar, c.bg, c.accent],
-          onclick: 'hopOpenCustomThemeStudio()',
-        })}
-      </div>
-
-      <div class="hop-theme-luxury-block">
-        <div class="hop-theme-studio-intro" style="margin-top:1.4rem;margin-bottom:0.85rem">
-          <p class="hop-theme-studio-kicker">Luxury collection</p>
-          <p class="hop-theme-studio-lead">
-            Elegant palettes for hospitality, furnishing &amp; premium interiors.
-            Top picks: Royal Navy, Emerald Gold, Chocolate &amp; Caramel.
-          </p>
-        </div>
-        <div class="hop-theme-grid hop-theme-grid--luxury">
-          ${luxuryCards}
-        </div>
+      <div class="hop-theme-grid hop-theme-grid--compact">
+        ${coreCards}
+        ${luxuryCards}
+        ${customCard}
       </div>
     </div>`;
   mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);

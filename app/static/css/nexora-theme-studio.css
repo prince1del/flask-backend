@@ -614,3 +614,147 @@ body.hop-custom-studio-open {
     max-height: 92vh;
   }
 }
+
+/* —— Compact theme picker (single screen) —— */
+.hop-theme-studio--compact { max-width: 68rem; }
+.hop-theme-studio-intro--compact { margin: 0 0 0.75rem; }
+.hop-theme-studio-intro--compact .hop-theme-studio-lead {
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.hop-theme-grid--compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 1100px) {
+  .hop-theme-grid--compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 800px) {
+  .hop-theme-grid--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+}
+.hop-theme-card--compact { border-radius: 10px; }
+.hop-theme-card--compact .hop-theme-card-body { padding: 8px 9px 9px; gap: 5px; }
+.hop-theme-card--compact h3 { font-size: 0.78rem; line-height: 1.25; }
+.hop-theme-swatch--compact { height: 52px; }
+.hop-theme-swatch--compact .hop-theme-swatch-main { padding: 6px 8px; }
+.hop-theme-swatch--compact .hop-theme-swatch-main::before {
+  left: 8px; right: 8px; top: 8px; height: 5px;
+}
+.hop-theme-swatch--compact .hop-theme-swatch-main::after {
+  left: 8px; width: 38%; top: 18px; height: 16px;
+  box-shadow: 28px 0 0 rgba(255, 255, 255, 0.08);
+}
+.hop-theme-swatch--compact.hop-theme-swatch--bright .hop-theme-swatch-main::after {
+  box-shadow: 28px 0 0 rgba(15, 39, 68, 0.08);
+}
+.hop-theme-swatch--compact.hop-theme-swatch--emerald .hop-theme-swatch-main::after {
+  box-shadow: 28px 0 0 rgba(222, 211, 190, 0.7);
+}
+.hop-theme-swatch--compact.hop-theme-swatch--custom .hop-theme-swatch-main::after {
+  box-shadow: 28px 0 0 var(--hop-c-border, #DED3BE);
+}
+.hop-theme-swatch--compact.hop-theme-swatch--luxury .hop-theme-swatch-main::after {
+  box-shadow: 28px 0 0 rgba(184, 177, 167, 0.65);
+}
+
+/* Confirm + set animation */
+.hop-theme-confirm-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 13000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.hop-theme-confirm-overlay.is-open { display: flex; }
+.hop-theme-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 10, 0.5);
+  backdrop-filter: blur(3px);
+}
+.hop-theme-confirm-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(360px, 100%);
+  padding: 18px 18px 16px;
+  border-radius: 14px;
+  background: #F8F4EA;
+  color: #1F1F1F;
+  border: 1px solid #DED3BE;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.28);
+}
+.hop-theme-confirm-kicker {
+  margin: 0 0 4px;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6B6254;
+}
+.hop-theme-confirm-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+.hop-theme-confirm-dialog h3 em {
+  font-style: normal;
+  color: #A8861F;
+}
+.hop-theme-confirm-copy {
+  margin: 0 0 14px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #6B6254;
+}
+.hop-theme-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.hop-theme-set-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 14000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.hop-theme-set-flash.is-on { opacity: 1; }
+.hop-theme-set-flash.is-out { opacity: 0; }
+.hop-theme-set-flash-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 22px;
+  border-radius: 16px;
+  background: rgba(18, 60, 50, 0.92);
+  color: #F8F4EA;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  transform: scale(0.86);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hop-theme-set-flash.is-on .hop-theme-set-flash-card { transform: scale(1); }
+.hop-theme-set-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #C9A227;
+  color: #fff;
+  animation: hopThemeCheckPop 0.45s ease both;
+}
+.hop-theme-set-flash-card strong { font-size: 0.95rem; }
+.hop-theme-set-flash-card > span:last-child { font-size: 0.78rem; opacity: 0.85; }
+@keyframes hopThemeCheckPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
