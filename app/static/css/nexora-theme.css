@@ -2753,9 +2753,18 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 /* --- Sale Invoices (compact Vyapar density) --- */
 #hop-executive-workspace .hop-view--invoices .mod-body,
 #hop-executive-workspace .hop-view--invoices .inv-body,
+#hop-executive-workspace .hop-view--tx .inv-body:has(.inv-table-card),
+#hop-executive-workspace .hop-view--tx .hop-tx-body:has(.inv-table-card),
+#hop-executive-workspace .hop-view--tx .hop-tx-body:has(.hop-vcard-page){
+  overflow:hidden !important;
+  padding:0 !important;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  flex:1 1 0;
+}
 #hop-executive-workspace .hop-view--tx .inv-body,
 #hop-executive-workspace .hop-view--tx .hop-tx-body{
-  overflow:hidden !important;
   padding:0 !important;
   display:flex;
   flex-direction:column;
@@ -2820,9 +2829,13 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .hop-tx-body > .hop-vcard-page{flex:1 1 0;min-height:0;}
 .hop-tx-body > .inv-table-card,
 .inv-body > .inv-table-card{flex:1 1 0;min-height:0;}
-/* Scrollable content modules (fabric, import) still work */
-.hop-tx-body:not(:has(.inv-table-card)){
+/* Content modules (Theme, fabric, import, wipe…) — body scrolls */
+#hop-executive-workspace .hop-view--tx .hop-tx-body:not(:has(.inv-table-card)):not(:has(.hop-vcard-page)),
+#hop-executive-workspace .hop-view--tx .inv-body:not(:has(.inv-table-card)),
+.hop-tx-body:not(:has(.inv-table-card)):not(:has(.hop-vcard-page)){
   overflow:auto !important;
+  padding:8px 12px 24px !important;
+  -webkit-overflow-scrolling:touch;
 }
 
 .inv-toolbar{
