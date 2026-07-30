@@ -758,3 +758,131 @@ body.hop-custom-studio-open {
   60% { transform: scale(1.12); opacity: 1; }
   100% { transform: scale(1); }
 }
+
+/* —— Lead form: products interested (Vyapar-style) —— */
+.hop-prod-interest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hop-prod-interest-box {
+  border: 1px solid rgba(127, 127, 127, 0.28);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+}
+html[data-hop-theme="nexora"] .hop-prod-interest-box {
+  background: rgba(255, 255, 255, 0.04);
+}
+.hop-prod-interest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.hop-prod-interest-chips:empty { display: none; margin: 0; }
+.hop-prod-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: rgba(201, 162, 39, 0.14);
+  border: 1px solid rgba(201, 162, 39, 0.35);
+  color: inherit;
+}
+.hop-prod-chip button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0;
+}
+.hop-prod-chip button:hover { opacity: 1; }
+.hop-prod-interest-input-wrap {
+  position: relative;
+}
+.hop-prod-interest-input-wrap input {
+  width: 100%;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  background: transparent;
+  color: inherit;
+}
+.hop-prod-interest-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid #d4d0c8;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14);
+  max-height: 240px;
+  overflow: auto;
+}
+.hop-prod-interest-menu.hidden { display: none; }
+.hop-prod-interest-menu-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) 88px 96px 64px;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a847a;
+  border-bottom: 1px solid #eee;
+}
+.hop-prod-interest-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 0.82rem;
+  border-bottom: 1px solid #f0eee8;
+}
+.hop-prod-interest-add:hover { background: #f5f8ff; }
+.hop-prod-interest-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) 88px 96px 64px;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 9px 12px;
+  cursor: pointer;
+  color: #1f1f1f;
+  font-size: 0.82rem;
+}
+.hop-prod-interest-row:hover { background: #f7f5f0; }
+.hop-prod-interest-row strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hop-prod-interest-row span {
+  color: #5b564c;
+  font-variant-numeric: tabular-nums;
+}
+.hop-lead-project-hint {
+  font-size: 0.72rem;
+  opacity: 0.7;
+  margin-top: 2px;
+}

@@ -408,6 +408,14 @@ html[data-hop-theme="bright"] #hop-executive-workspace .hop-nav-fold-toggle:hove
   background:linear-gradient(180deg, transparent, rgba(5,7,12,0.96) 30%);
   z-index:2;
 }
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-form-actions,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-form-actions,
+html[data-hop-theme="custom"] #hop-executive-workspace .hop-form-actions{
+  background:linear-gradient(180deg, transparent, rgba(248,244,234,0.97) 28%) !important;
+  border-top:1px solid rgba(31,31,31,0.06);
+  margin-top:14px;
+  padding-top:12px;
+}
 
 /* Stop background/home page from scrolling under HoP.
    Must beat body:not(:has(#dashboard…)) { overflow-y:auto } in premium.css */

@@ -2174,10 +2174,12 @@ async function hopEnsureLookups() {
   } catch (_) { /* ignore */ }
 }
 
-function hopCustomerOptions(selectedId) {
-  return ['<option value="">— Select customer —</option>']
-    .concat(hopState.customers.map((c) => `<option value="${c.id}"${String(c.id) === String(selectedId || '') ? ' selected' : ''}>${foEscapeText(c.company)}</option>`))
-    .join('');
+function hopCustomerOptions(selectedId, opts) {
+  const withAdd = opts && opts.withAddNew;
+  const rows = ['<option value="">— Select customer —</option>']
+    .concat(hopState.customers.map((c) => `<option value="${c.id}"${String(c.id) === String(selectedId || '') ? ' selected' : ''}>${foEscapeText(c.company)}</option>`));
+  if (withAdd) rows.push('<option value="__new__">+ Add new customer…</option>');
+  return rows.join('');
 }
 
 function hopProjectOptions(selectedId) {
@@ -2206,6 +2208,129 @@ function hopOrderOptions(selectedId) {
 
 function hopStageOptions(list, selected) {
   return list.map((s) => `<option value="${s}"${s === selected ? ' selected' : ''}>${foEscapeText(s)}</option>`).join('');
+}
+
+function hopLeadCustomerChange() {
+  const sel = document.getElementById('f-lcustomer');
+  if (!sel) return;
+  if (sel.value === '__new__') {
+    sel.value = '';
+    hopState._leadFormAwaitingCustomer = true;
+    hopOpenPartyEditModal('customer', null);
+  }
+}
+
+function hopLeadProjectChange() {
+  const projectSel = document.getElementById('f-lproject');
+  const nameInput = document.getElementById('f-lpname');
+  if (!projectSel || !nameInput) return;
+  if (projectSel.value) {
+    const opt = projectSel.options[projectSel.selectedIndex];
+    nameInput.value = opt ? opt.textContent : '';
+  }
+}
+
+function hopLeadProjectNameInput() {
+  const projectSel = document.getElementById('f-lproject');
+  const nameInput = document.getElementById('f-lpname');
+  if (!projectSel || !nameInput) return;
+  if (String(nameInput.value || '').trim()) {
+    projectSel.value = '';
+  }
+}
+
+async function hopEnsureProductCatalogue() {
+  if (Array.isArray(hopState._productCatalogue) && hopState._productCatalogue.length) return hopState._productCatalogue;
+  try {
+    hopState._productCatalogue = await hopApi('/api/v1/hop/products') || [];
+  } catch (_) {
+    hopState._productCatalogue = [];
+  }
+  return hopState._productCatalogue;
+}
+
+function hopLeadProductsSyncHidden() {
+  const list = hopState._leadProducts || [];
+  const hidden = document.getElementById('f-lproducts');
+  if (hidden) hidden.value = list.join(', ');
+}
+
+function hopLeadProductsRenderChips() {
+  const wrap = document.getElementById('f-lproducts-chips');
+  if (!wrap) return;
+  const list = hopState._leadProducts || [];
+  wrap.innerHTML = list.map((name, idx) => `
+    <span class="hop-prod-chip">
+      ${foEscapeText(name)}
+      <button type="button" aria-label="Remove" onclick="hopLeadProductsRemove(${idx})">×</button>
+    </span>`).join('');
+  hopLeadProductsSyncHidden();
+}
+
+function hopLeadProductsRemove(idx) {
+  if (!Array.isArray(hopState._leadProducts)) return;
+  hopState._leadProducts.splice(idx, 1);
+  hopLeadProductsRenderChips();
+}
+
+function hopLeadProductsAdd(name) {
+  const n = String(name || '').trim();
+  if (!n) return;
+  if (!Array.isArray(hopState._leadProducts)) hopState._leadProducts = [];
+  const exists = hopState._leadProducts.some((x) => x.toLowerCase() === n.toLowerCase());
+  if (!exists) hopState._leadProducts.push(n);
+  const q = document.getElementById('f-lproducts-q');
+  if (q) q.value = '';
+  hopLeadProductsHideMenu();
+  hopLeadProductsRenderChips();
+}
+
+function hopLeadProductsHideMenu() {
+  document.getElementById('f-lproducts-menu')?.classList.add('hidden');
+}
+
+function hopLeadProductsOutsideClick(e) {
+  const wrap = document.querySelector('.hop-prod-interest-input-wrap');
+  if (!wrap) return;
+  if (wrap.contains(e.target)) return;
+  hopLeadProductsHideMenu();
+}
+
+async function hopLeadProductsSearch() {
+  const qEl = document.getElementById('f-lproducts-q');
+  const menu = document.getElementById('f-lproducts-menu');
+  if (!qEl || !menu) return;
+  const q = String(qEl.value || '').trim();
+  await hopEnsureProductCatalogue();
+  const all = hopState._productCatalogue || [];
+  const ql = q.toLowerCase();
+  const matches = !ql
+    ? all.slice(0, 8)
+    : all.filter((p) => {
+      const blob = `${p.name || ''} ${p.code || ''} ${p.brand || ''} ${p.category || ''}`.toLowerCase();
+      return blob.includes(ql);
+    }).slice(0, 12);
+
+  const rows = matches.map((p) => {
+    const label = p.name || p.code || `Product #${p.id}`;
+    return `<button type="button" class="hop-prod-interest-row" role="option" onclick="hopLeadProductsAdd(${JSON.stringify(label)})">
+      <strong>${foEscapeText(label)}</strong>
+      <span>${hopMoney(p.selling_price)}</span>
+      <span>${hopMoney(p.purchase_price)}</span>
+      <span>${foEscapeText(p.stock_qty ?? '—')}</span>
+    </button>`;
+  }).join('');
+
+  const addLabel = q || 'new item';
+  menu.innerHTML = `
+    <button type="button" class="hop-prod-interest-add" onclick="hopLeadProductsAdd(${JSON.stringify(q || '')})">
+      + Add ${q ? `"${foEscapeText(q)}"` : 'typed item'}
+    </button>
+    <div class="hop-prod-interest-menu-head">
+      <span>Item</span><span>Sale price</span><span>Purchase price</span><span>Stock</span>
+    </div>
+    ${rows || `<p class="nx-text-dim" style="padding:10px 12px;margin:0;font-size:0.8rem">No catalogue match — use + Add to save “${foEscapeText(addLabel)}” on this lead.</p>`}`;
+  menu.classList.remove('hidden');
 }
 
 /* ---------- Vyapar-style Edit Party modal (Nexora theme) ---------- */
@@ -3030,6 +3155,19 @@ async function hopSavePartyModal() {
     hopClosePartyEditModal();
     if (typeof nexoraToast === 'function') {
       nexoraToast(isEdit ? 'Party updated.' : 'Party saved.', 'success');
+    }
+    if (hopState._leadFormAwaitingCustomer && saveKind === 'customer') {
+      hopState._leadFormAwaitingCustomer = false;
+      try {
+        hopState.customers = await hopApi('/api/v1/hop/customers') || [];
+      } catch (_) { hopState.customers = []; }
+      const sel = document.getElementById('f-lcustomer');
+      if (sel) {
+        const newId = result?.id || result?.customer_id;
+        sel.innerHTML = hopCustomerOptions(newId, { withAddNew: true });
+        if (newId) sel.value = String(newId);
+      }
+      return;
     }
     openHopView(hopContactReturnView(saveKind === 'vendor' ? 'vendors' : 'customers'));
   } catch (e) {
@@ -6878,7 +7016,7 @@ async function hopShowForm(kind, editRow) {
   if (editRow && editRow.id != null && (kind === 'customer' || kind === 'vendor')) {
     hopState.contactEdit = { kind, id: Number(editRow.id) };
   }
-  const cancel = `hopState.contactEdit=null; document.getElementById('hop-form-slot').classList.add('hidden')`;
+  const cancel = `hopState.contactEdit=null; hopState._leadFormAwaitingCustomer=false; document.removeEventListener('click', hopLeadProductsOutsideClick, true); document.getElementById('hop-form-slot').classList.add('hidden')`;
 
   if (kind === 'customer') {
     const row = editRow || {};
@@ -6930,11 +7068,18 @@ async function hopShowForm(kind, editRow) {
   if (kind === 'lead') {
     slot.innerHTML = `
       <strong>New Lead</strong>
-      <p class="nx-text-dim" style="font-size:0.78rem;">No project selected → project auto-created.</p>
+      <p class="nx-text-dim" style="font-size:0.78rem;">Pick a project, or type a new project name below — it will be created on save.</p>
       <div class="hop-form-grid" style="margin-top:10px;">
-        <label>Customer<select id="f-lcustomer">${hopCustomerOptions()}</select></label>
-        <label>Project<select id="f-lproject">${hopProjectOptions()}</select></label>
-        <label>New Project Name<input id="f-lpname" placeholder="Holiday Inn Dwarka" /></label>
+        <label>Customer
+          <select id="f-lcustomer" onchange="hopLeadCustomerChange()">${hopCustomerOptions(null, { withAddNew: true })}</select>
+        </label>
+        <label>Project
+          <select id="f-lproject" onchange="hopLeadProjectChange()">${hopProjectOptions()}</select>
+        </label>
+        <label class="hop-form-span-2">Project name (manual)
+          <input id="f-lpname" placeholder="e.g. Holiday Inn Dwarka" oninput="hopLeadProjectNameInput()" />
+          <span class="hop-lead-project-hint">Leave project dropdown empty and type here to create a new project.</span>
+        </label>
         <label>Source<input id="f-lsource" /></label>
         <label>Expected Value<input id="f-lvalue" type="number" /></label>
         <label>Priority<input id="f-lpriority" /></label>
@@ -6943,12 +7088,27 @@ async function hopShowForm(kind, editRow) {
         <label>Probability %<input id="f-lprob" type="number" /></label>
         <label>Next Follow-up<input id="f-lfollow" type="date" /></label>
         <label>Expected Closure<input id="f-lclosure" type="date" /></label>
-        <label class="hop-form-span-2">Products Interested<input id="f-lproducts" /></label>
+        <div class="hop-form-span-2 hop-prod-interest">
+          <span>Products Interested</span>
+          <div class="hop-prod-interest-box">
+            <div id="f-lproducts-chips" class="hop-prod-interest-chips"></div>
+            <div class="hop-prod-interest-input-wrap">
+              <input id="f-lproducts-q" type="search" autocomplete="off" placeholder="Type to search catalogue or add manually…"
+                oninput="hopLeadProductsSearch()" onfocus="hopLeadProductsSearch()" />
+              <div id="f-lproducts-menu" class="hop-prod-interest-menu hidden" role="listbox"></div>
+            </div>
+            <input type="hidden" id="f-lproducts" value="" />
+          </div>
+        </div>
       </div>
       <div class="hop-form-actions">
         <button type="button" class="nx-btn nx-btn-primary" onclick="hopSave('lead')">Save</button>
         <button type="button" class="nx-btn" onclick="${cancel}">Cancel</button>
       </div>`;
+    hopState._leadProducts = [];
+    hopLeadProductsRenderChips();
+    hopEnsureProductCatalogue();
+    document.addEventListener('click', hopLeadProductsOutsideClick, true);
   }
   if (kind === 'meeting') {
     const nowLocal = new Date();
@@ -7467,6 +7627,8 @@ async function hopSave(kind) {
       body: JSON.stringify(cfg.payload()),
     });
     hopState.contactEdit = null;
+    hopState._leadFormAwaitingCustomer = false;
+    document.removeEventListener('click', hopLeadProductsOutsideClick, true);
     document.getElementById('hop-form-slot')?.classList.add('hidden');
     // invalidate caches
     hopState.customers = [];
@@ -7495,6 +7657,12 @@ window.hopToggleNavFold = hopToggleNavFold;
 window.openHopProjectHub = openHopProjectHub;
 window.hopDebouncedReload = hopDebouncedReload;
 window.hopShowForm = hopShowForm;
+window.hopLeadCustomerChange = hopLeadCustomerChange;
+window.hopLeadProjectChange = hopLeadProjectChange;
+window.hopLeadProjectNameInput = hopLeadProjectNameInput;
+window.hopLeadProductsSearch = hopLeadProductsSearch;
+window.hopLeadProductsAdd = hopLeadProductsAdd;
+window.hopLeadProductsRemove = hopLeadProductsRemove;
 window.hopSave = hopSave;
 window.hopPatchLead = hopPatchLead;
 window.hopPatchQuote = hopPatchQuote;
