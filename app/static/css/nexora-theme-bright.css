@@ -1,0 +1,412 @@
+/*
+  NEXORA bright theme (Navy + Teal)
+  Activated when html[data-hop-theme="bright"] is set.
+  Default NEXORA dark remains when attribute is missing or "nexora".
+*/
+
+html[data-hop-theme="bright"] {
+  color-scheme: light;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace.workspace-shell:not(.hidden) {
+  background: #f4f7fb !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-theme.hop-shell {
+  background: #f4f7fb !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-nav {
+  background: #0f2744 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #c8d6e8 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-nav-group,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-nav-caret {
+  color: #7f95b0 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-nav-item,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-nav-btn {
+  color: #c8d6e8 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-nav-item:hover,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-nav-item.active,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-nav-btn.active {
+  background: rgba(13, 148, 136, 0.22) !important;
+  color: #5eead4 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-core {
+  background: radial-gradient(circle at 30% 30%, #5eead4, #0d9488 70%) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 14px 2px rgba(13, 148, 136, 0.45) !important;
+  animation: none !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-brand-word {
+  color: #ffffff !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-brand-sub {
+  color: #7f95b0 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-main {
+  background: #f4f7fb !important;
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-display,
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-title,
+html[data-hop-theme="bright"] #hop-executive-workspace h2 {
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-text-dim,
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-text-faint,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-eyebrow {
+  color: #64748b !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-card,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-form-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-card::before {
+  background: transparent !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-card:hover,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-form-card:hover {
+  background: #ffffff !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-btn {
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-btn:hover {
+  border-color: #99f6e4 !important;
+  background: #f0fdfa !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-btn-primary {
+  background: #0d9488 !important;
+  border-color: #0d9488 !important;
+  color: #ffffff !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .nx-btn-primary:hover {
+  background: #0f766e !important;
+  border-color: #0f766e !important;
+  color: #ffffff !important;
+}
+
+/* KPI / dashboard cards */
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-kpi-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-kpi-card:hover {
+  background: #ffffff !important;
+  border-color: #99f6e4 !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-kpi-label {
+  color: #64748b !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-kpi-value {
+  color: #0f172a !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-kpi-value.is-na {
+  color: #94a3b8 !important;
+}
+
+/* Invoice / ledger chrome */
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-topbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-title {
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-mobile-back {
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-ctrl,
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-search,
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-party-toggle,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-form-grid input,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-form-grid select,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-form-grid textarea {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-text-btn {
+  color: #0f766e !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-sep {
+  color: #64748b !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.05);
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card span {
+  color: #64748b !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card strong {
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card--paid {
+  border-left: 3px solid #15803d !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card--paid strong { color: #15803d !important; }
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card--unpaid {
+  border-left: 3px solid #0369a1 !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card--unpaid strong { color: #0369a1 !important; }
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card--overdue {
+  border-left: 3px solid #b91c1c !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card--overdue strong { color: #b91c1c !important; }
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-card--total {
+  border-left: 3px solid #334155 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-op {
+  color: #94a3b8 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-table-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-table-head {
+  border-bottom: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-table-head strong {
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-count {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-table th {
+  color: #0f766e !important;
+  background: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-table td {
+  color: #0f172a !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-table tbody tr:hover {
+  background: #f0fdfa !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-row.is-selected {
+  background: #ccfbf1 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-empty {
+  color: #64748b !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-badge--paid {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-badge--unpaid,
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-badge--open {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-badge--overdue {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .inv-badge--partial {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+}
+
+/* Party / module tables */
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-table,
+html[data-hop-theme="bright"] #hop-executive-workspace .pty-txn-table {
+  color: #0f172a;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-table th,
+html[data-hop-theme="bright"] #hop-executive-workspace .pty-txn-table th {
+  color: #0f766e !important;
+  background: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-table td,
+html[data-hop-theme="bright"] #hop-executive-workspace .pty-txn-table td {
+  color: #0f172a !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+/* Commission bar */
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-title strong,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-party,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-results strong {
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-meta,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-fields label,
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-results span {
+  color: #64748b !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-meta b {
+  color: #0f766e !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-bar-fields input {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-table th {
+  color: #0f766e !important;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-comm-table td {
+  color: #0f172a !important;
+}
+
+/* Theme picker cards */
+.hop-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  max-width: 720px;
+}
+.hop-theme-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.hop-theme-card:hover { border-color: rgba(37, 224, 255, 0.35); }
+.hop-theme-card.is-active {
+  border-color: rgba(37, 224, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(37, 224, 255, 0.25);
+}
+.hop-theme-swatch {
+  height: 72px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 28% 1fr;
+}
+.hop-theme-swatch-side { background: #05070c; }
+.hop-theme-swatch-main {
+  background: linear-gradient(180deg, #0a0e18, #0e1524);
+  position: relative;
+}
+.hop-theme-swatch-main::after {
+  content: "";
+  position: absolute;
+  left: 10px; right: 10px; top: 14px; height: 10px;
+  border-radius: 4px;
+  background: rgba(37, 224, 255, 0.25);
+}
+.hop-theme-swatch--bright .hop-theme-swatch-side { background: #0f2744; }
+.hop-theme-swatch--bright .hop-theme-swatch-main {
+  background: #f4f7fb;
+}
+.hop-theme-swatch--bright .hop-theme-swatch-main::after {
+  background: #99f6e4;
+}
+.hop-theme-card h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+.hop-theme-card p {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+.hop-theme-card .hop-theme-badge {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #67e8f9;
+}
+
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-theme-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-theme-card.is-active {
+  border-color: #0d9488 !important;
+  box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.25);
+}
+html[data-hop-theme="bright"] #hop-executive-workspace .hop-theme-card .hop-theme-badge {
+  color: #0f766e !important;
+}
+
+/* Doc preview modal stays readable in bright mode */
+html[data-hop-theme="bright"] .hop-doc-preview-modal {
+  color: #0f172a;
+}

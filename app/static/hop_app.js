@@ -36,6 +36,40 @@ const hopState = {
 };
 
 const HOP_RATE_CART_KEY = 'hop_rate_cart_v1';
+const HOP_THEME_KEY = 'hop_theme_v1';
+
+function hopGetTheme() {
+  try {
+    const t = localStorage.getItem(HOP_THEME_KEY) || 'nexora';
+    return t === 'bright' ? 'bright' : 'nexora';
+  } catch (e) {
+    return 'nexora';
+  }
+}
+
+function hopApplyTheme(theme, opts) {
+  const t = theme === 'bright' ? 'bright' : 'nexora';
+  try { localStorage.setItem(HOP_THEME_KEY, t); } catch (e) { /* ignore */ }
+  document.documentElement.setAttribute('data-hop-theme', t);
+  const ws = document.getElementById('hop-executive-workspace');
+  if (ws) ws.setAttribute('data-hop-theme', t);
+  document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', t));
+  const meta = document.getElementById('hop-theme-color-meta')
+    || document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t === 'bright' ? '#f4f7fb' : '#05070d');
+  if (!(opts && opts.silent) && typeof nexoraToast === 'function') {
+    nexoraToast(t === 'bright' ? 'Bright theme on' : 'NEXORA theme on', 'ok');
+  }
+  if (hopState.view === 'theme') {
+    // Refresh picker active state without history push
+    const mount = hopMount();
+    if (mount) renderHopThemeModule(mount);
+  }
+}
+
+function hopInitTheme() {
+  hopApplyTheme(hopGetTheme(), { silent: true });
+}
 
 function hopLoadRateCart() {
   try {
@@ -1090,7 +1124,7 @@ function openHopView(viewName, opts) {
     accountingFold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', 'true');
   }
   const settingsFold = document.querySelector('[data-hop-fold="settings"]');
-  if (settingsFold && (hopState.view === 'vyapar_import' || hopState.view === 'wipe_data')) {
+  if (settingsFold && (hopState.view === 'vyapar_import' || hopState.view === 'wipe_data' || hopState.view === 'theme')) {
     settingsFold.classList.remove('is-collapsed');
     settingsFold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', 'true');
   }
@@ -1123,6 +1157,7 @@ function openHopView(viewName, opts) {
         customers: renderHopCustomersModule,
         vyapar_import: renderHopVyaparImportModule,
         wipe_data: renderHopWipeDataModule,
+        theme: renderHopThemeModule,
         visiting_card: () => {
           // Visiting card lives under Parties → Add Party → Scan
           openHopView('parties');
@@ -1294,8 +1329,12 @@ function bindHopNavClicks() {
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bindHopNavClicks);
+  document.addEventListener('DOMContentLoaded', () => {
+    hopInitTheme();
+    bindHopNavClicks();
+  });
 } else {
+  hopInitTheme();
   bindHopNavClicks();
 }
 
@@ -3125,6 +3164,35 @@ async function renderHopCustomersModule(mount) {
 }
 
 /* ---------- Visiting Card Reader ---------- */
+
+async function renderHopThemeModule(mount) {
+  const current = hopGetTheme();
+  const body = `
+    <p class="nx-text-dim" style="margin:0 0 14px;max-width:36rem;line-height:1.45">
+      Choose how House of Prizm looks. Preference saves on this device and applies immediately.
+    </p>
+    <div class="hop-theme-grid">
+      <button type="button" class="hop-theme-card${current === 'nexora' ? ' is-active' : ''}" onclick="hopApplyTheme('nexora')">
+        <div class="hop-theme-swatch" aria-hidden="true">
+          <div class="hop-theme-swatch-side"></div>
+          <div class="hop-theme-swatch-main"></div>
+        </div>
+        <h3>NEXORA (Default)</h3>
+        <p>Dark void background with cyan / violet accents — original NEXORA look.</p>
+        ${current === 'nexora' ? '<span class="hop-theme-badge">Active</span>' : ''}
+      </button>
+      <button type="button" class="hop-theme-card${current === 'bright' ? ' is-active' : ''}" onclick="hopApplyTheme('bright')">
+        <div class="hop-theme-swatch hop-theme-swatch--bright" aria-hidden="true">
+          <div class="hop-theme-swatch-side"></div>
+          <div class="hop-theme-swatch-main"></div>
+        </div>
+        <h3>Bright · Navy + Teal</h3>
+        <p>Light workspace, navy sidebar, teal actions — easier for invoices &amp; tables.</p>
+        ${current === 'bright' ? '<span class="hop-theme-badge">Active</span>' : ''}
+      </button>
+    </div>`;
+  mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);
+}
 
 async function renderHopWipeDataModule(mount) {
   const body = `
