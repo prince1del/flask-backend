@@ -191,6 +191,19 @@
   box-shadow: 48px 0 0 var(--hop-c-border, #DED3BE);
 }
 
+.hop-theme-swatch--luxury .hop-theme-swatch-main::before { background: rgba(31, 31, 31, 0.1); }
+.hop-theme-swatch--luxury .hop-theme-swatch-main::after {
+  background: rgba(198, 161, 91, 0.55);
+  box-shadow: 48px 0 0 rgba(184, 177, 167, 0.65);
+}
+
+.hop-theme-grid--luxury {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.hop-theme-luxury-block .hop-theme-card h3 {
+  font-size: 0.88rem;
+}
+
 /* —— Custom builder panel —— */
 .hop-custom-theme-panel {
   margin-top: 1.5rem;

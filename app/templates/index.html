@@ -7,13 +7,18 @@
     <script>
       (function () {
         try {
-          var allowed = { nexora: '#05070d', bright: '#f4f7fb', emerald: '#F8F4EA', custom: '#F8F4EA' };
+          var core = { nexora: '#05070d', bright: '#f4f7fb', emerald: '#F8F4EA', custom: '#F8F4EA' };
+          var luxury = {
+            royal_navy:1, burgundy_antique:1, black_soft_gold:1, deep_teal_brass:1,
+            chocolate_gold:1, plum_rose:1, olive_brass:1, midnight_copper:1
+          };
           var t = localStorage.getItem('hop_theme_v1') || 'nexora';
-          if (!allowed[t]) t = 'nexora';
-          document.documentElement.setAttribute('data-hop-theme', t);
+          if (!core[t] && !luxury[t]) t = 'nexora';
+          var useCustomCss = (t === 'custom' || luxury[t]);
+          document.documentElement.setAttribute('data-hop-theme', useCustomCss ? 'custom' : t);
           var meta = document.getElementById('hop-theme-color-meta');
-          var themeColor = allowed[t];
-          if (t === 'custom') {
+          var themeColor = core[t] || '#F8F4EA';
+          if (useCustomCss) {
             try {
               var c = JSON.parse(localStorage.getItem('hop_theme_custom_v1') || '{}');
               var root = document.documentElement.style;
@@ -50,11 +55,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260730-mobile-back-safe">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-studio-btns">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-studio-btns">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-studio-btns">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260730-studio-btns">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260730-studio-btns">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-luxury-themes">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-luxury-themes">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-luxury-themes">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260730-luxury-themes">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260730-luxury-themes">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -2290,6 +2295,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260729-module-fullscreen"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-studio-btns"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-luxury-themes"></script>
 </body>
 </html>

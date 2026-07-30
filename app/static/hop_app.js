@@ -55,40 +55,114 @@ const HOP_CUSTOM_DEFAULTS = {
   muted: '#6B6254',
 };
 
+/** Luxury palettes — reuse custom CSS vars (data-hop-theme="custom"). */
+const HOP_LUXURY_THEMES = {
+  royal_navy: {
+    id: 'royal_navy',
+    title: 'Royal Navy & Champagne',
+    label: 'Royal Navy theme on',
+    desc: 'Royal, premium, professional — hospitality & large project clients.',
+    chip: 'Top pick',
+    colors: {
+      sidebar: '#0B1F3A', bg: '#F8F4EA', text: '#0B1F3A',
+      accent: '#C6A15B', border: '#B8B1A7', card: '#FFFFFF', muted: '#6E675F',
+    },
+  },
+  burgundy_antique: {
+    id: 'burgundy_antique',
+    title: 'Burgundy & Antique Gold',
+    label: 'Burgundy theme on',
+    desc: 'Rich, warm luxury — curtains, fabrics & premium interiors.',
+    colors: {
+      sidebar: '#5A1828', bg: '#FFF8ED', text: '#262324',
+      accent: '#B9975B', border: '#E2D2C0', card: '#FFFFFF', muted: '#7A6458',
+    },
+  },
+  black_soft_gold: {
+    id: 'black_soft_gold',
+    title: 'Black & Soft Gold',
+    label: 'Black & Soft Gold on',
+    desc: 'Modern, bold, high-end — minimal luxury.',
+    colors: {
+      sidebar: '#171717', bg: '#F5F2EB', text: '#171717',
+      accent: '#C5A059', border: '#A69B8D', card: '#FFFFFF', muted: '#6F675C',
+    },
+  },
+  deep_teal_brass: {
+    id: 'deep_teal_brass',
+    title: 'Deep Teal & Brass',
+    label: 'Deep Teal theme on',
+    desc: 'Contemporary & sophisticated — furnishing & wallcovering.',
+    colors: {
+      sidebar: '#0D3B3E', bg: '#FAF7F0', text: '#1A2A2B',
+      accent: '#B68D40', border: '#E8DDCB', card: '#FFFFFF', muted: '#6B6558',
+    },
+  },
+  chocolate_gold: {
+    id: 'chocolate_gold',
+    title: 'Chocolate & Caramel Gold',
+    label: 'Chocolate Gold theme on',
+    desc: 'Warm, earthy & expensive — upholstery, leatherette, hotels.',
+    chip: 'Top pick',
+    colors: {
+      sidebar: '#3A251C', bg: '#FFF9F0', text: '#3A251C',
+      accent: '#C49346', border: '#E5D4BE', card: '#FFFFFF', muted: '#7A6550',
+    },
+  },
+  plum_rose: {
+    id: 'plum_rose',
+    title: 'Plum & Rose Gold',
+    label: 'Plum & Rose Gold on',
+    desc: 'Soft luxury with a fashionable feel — residential & designer.',
+    colors: {
+      sidebar: '#48263B', bg: '#FAF6F1', text: '#2C1A24',
+      accent: '#B98276', border: '#EBDCD4', card: '#FFFFFF', muted: '#7A645C',
+    },
+  },
+  olive_brass: {
+    id: 'olive_brass',
+    title: 'Olive & Antique Brass',
+    label: 'Olive Brass theme on',
+    desc: 'Natural, elegant, timeless — fabrics, wallpapers, sustainable.',
+    colors: {
+      sidebar: '#3F4934', bg: '#E8E0D1', text: '#302A24',
+      accent: '#B09150', border: '#D4CBB8', card: '#F7F3EA', muted: '#6A6356',
+    },
+  },
+  midnight_copper: {
+    id: 'midnight_copper',
+    title: 'Midnight Blue & Copper',
+    label: 'Midnight Copper theme on',
+    desc: 'Distinctive & modern — premium look beyond typical gold.',
+    colors: {
+      sidebar: '#101B2D', bg: '#F7F5F0', text: '#101B2D',
+      accent: '#B8734C', border: '#C5C8CE', card: '#FFFFFF', muted: '#626872',
+    },
+  },
+};
+
 const HOP_CUSTOM_PRESETS = {
   emerald: {
     label: 'Emerald + Gold',
     colors: { ...HOP_CUSTOM_DEFAULTS },
   },
-  navy: {
-    label: 'Navy + Gold',
-    colors: {
-      sidebar: '#102A43', bg: '#F4F7FB', text: '#0F172A',
-      accent: '#C9A227', border: '#C5D0DC', card: '#FFFFFF', muted: '#5B6B7C',
-    },
-  },
-  charcoal: {
-    label: 'Charcoal + Gold',
-    colors: {
-      sidebar: '#202124', bg: '#F5F5F4', text: '#1A1A1A',
-      accent: '#D4AF37', border: '#D4D0C8', card: '#FFFFFF', muted: '#6B6B6B',
-    },
-  },
-  burgundy: {
-    label: 'Burgundy + Gold',
-    colors: {
-      sidebar: '#641C2F', bg: '#FBF6F2', text: '#1F1F1F',
-      accent: '#C6A15B', border: '#E0D2C4', card: '#FFFFFF', muted: '#7A6458',
-    },
-  },
-  cream: {
-    label: 'Cream + Gold',
-    colors: {
-      sidebar: '#3D3428', bg: '#FFF8E8', text: '#1F1F1F',
-      accent: '#B99545', border: '#E8DFC8', card: '#FFFFFF', muted: '#6E6454',
-    },
-  },
+  ...Object.fromEntries(
+    Object.entries(HOP_LUXURY_THEMES).map(([key, t]) => [key, { label: t.title, colors: { ...t.colors } }]),
+  ),
 };
+
+function hopIsKnownTheme(t) {
+  return Boolean(HOP_THEMES[t] || HOP_LUXURY_THEMES[t]);
+}
+
+function hopThemeUsesCustomCss(t) {
+  return t === 'custom' || Boolean(HOP_LUXURY_THEMES[t]);
+}
+
+function hopThemeMeta(t) {
+  if (HOP_LUXURY_THEMES[t]) return HOP_LUXURY_THEMES[t];
+  return HOP_THEMES[t] || HOP_THEMES.nexora;
+}
 
 function hopHexToRgb(hex) {
   const h = String(hex || '').replace('#', '').trim();
@@ -209,27 +283,38 @@ function hopClearCustomVars() {
 function hopGetTheme() {
   try {
     const t = localStorage.getItem(HOP_THEME_KEY) || 'nexora';
-    return HOP_THEMES[t] ? t : 'nexora';
+    return hopIsKnownTheme(t) ? t : 'nexora';
   } catch (e) {
     return 'nexora';
   }
 }
 
 function hopApplyTheme(theme, opts) {
-  const t = HOP_THEMES[theme] ? theme : 'nexora';
+  const t = hopIsKnownTheme(theme) ? theme : 'nexora';
   try { localStorage.setItem(HOP_THEME_KEY, t); } catch (e) { /* ignore */ }
-  document.documentElement.setAttribute('data-hop-theme', t);
+
+  if (HOP_LUXURY_THEMES[t]) {
+    hopSaveCustomColors(HOP_LUXURY_THEMES[t].colors);
+  }
+
+  const cssTheme = hopThemeUsesCustomCss(t) ? 'custom' : t;
+  document.documentElement.setAttribute('data-hop-theme', cssTheme);
   const ws = document.getElementById('hop-executive-workspace');
-  if (ws) ws.setAttribute('data-hop-theme', t);
-  document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', t));
-  if (t === 'custom') hopApplyCustomVars();
+  if (ws) ws.setAttribute('data-hop-theme', cssTheme);
+  document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', cssTheme));
+
+  if (hopThemeUsesCustomCss(t)) hopApplyCustomVars();
   else hopClearCustomVars();
+
   const meta = document.getElementById('hop-theme-color-meta')
     || document.querySelector('meta[name="theme-color"]');
-  const themeColor = t === 'custom' ? hopGetCustomColors().bg : HOP_THEMES[t].color;
+  const metaInfo = hopThemeMeta(t);
+  const themeColor = hopThemeUsesCustomCss(t)
+    ? hopGetCustomColors().bg
+    : (metaInfo.color || '#05070d');
   if (meta) meta.setAttribute('content', themeColor);
   if (!(opts && opts.silent) && typeof nexoraToast === 'function') {
-    nexoraToast(HOP_THEMES[t].label, 'ok');
+    nexoraToast(metaInfo.label || 'Theme on', 'ok');
   }
   if (!(opts && opts.skipRerender) && hopState.view === 'theme') {
     const mount = hopMount();
@@ -3571,15 +3656,17 @@ async function renderHopCustomersModule(mount) {
 async function renderHopThemeModule(mount) {
   const current = hopGetTheme();
   const c = hopGetCustomColors();
-  const themeCard = ({ id, swatchClass, title, desc, chip, dots, onclick }) => {
+  const themeCard = ({ id, swatchClass, title, desc, chip, dots, onclick, side, main }) => {
     const active = current === id;
     const dotsHtml = (dots || []).map((d) => `<span class="hop-theme-dot" style="background:${d}"></span>`).join('');
+    const sideStyle = side ? ` style="background:${side}"` : (id === 'custom' ? ` style="background:${c.sidebar}"` : '');
+    const mainStyle = main ? ` style="background:${main}"` : (id === 'custom' ? ` style="background:${c.bg}"` : '');
     return `
       <button type="button" class="hop-theme-card${active ? ' is-active' : ''}" onclick="${onclick || `hopApplyTheme('${id}')`}">
         ${active ? '<span class="hop-theme-badge">Active</span>' : ''}
         <div class="hop-theme-swatch ${swatchClass || ''}" aria-hidden="true">
-          <div class="hop-theme-swatch-side"${id === 'custom' ? ` style="background:${c.sidebar}"` : ''}></div>
-          <div class="hop-theme-swatch-main"${id === 'custom' ? ` style="background:${c.bg}"` : ''}></div>
+          <div class="hop-theme-swatch-side"${sideStyle}></div>
+          <div class="hop-theme-swatch-main"${mainStyle}></div>
         </div>
         <div class="hop-theme-card-body">
           <div class="hop-theme-card-top">
@@ -3591,12 +3678,22 @@ async function renderHopThemeModule(mount) {
         </div>
       </button>`;
   };
+  const luxuryCards = Object.values(HOP_LUXURY_THEMES).map((t) => themeCard({
+    id: t.id,
+    swatchClass: 'hop-theme-swatch--luxury',
+    title: t.title,
+    desc: t.desc,
+    chip: t.chip ? `<span class="hop-theme-chip hop-theme-chip--rec">${t.chip}</span>` : '',
+    dots: [t.colors.sidebar, t.colors.bg, t.colors.accent],
+    side: t.colors.sidebar,
+    main: t.colors.bg,
+  })).join('');
   const body = `
     <div class="hop-theme-studio">
       <div class="hop-theme-studio-intro">
         <p class="hop-theme-studio-kicker">Appearance</p>
         <p class="hop-theme-studio-lead">
-          Pick a curated look for House of Prizm, or open Custom to craft your own palette.
+          Pick a curated look for House of Prizm, browse the luxury collection, or open Custom to craft your own.
           Preference saves on this device.
         </p>
       </div>
@@ -3620,19 +3717,32 @@ async function renderHopThemeModule(mount) {
           id: 'emerald',
           swatchClass: 'hop-theme-swatch--emerald',
           title: 'Emerald Gold',
-          desc: 'Deep emerald, ivory workspace, muted gold — luxury hospitality feel.',
-          chip: '<span class="hop-theme-chip hop-theme-chip--rec">Recommended</span>',
+          desc: 'Signature luxury — deep emerald, ivory, muted gold. Best customer-facing look.',
+          chip: '<span class="hop-theme-chip hop-theme-chip--rec">Signature</span>',
           dots: ['#123C32', '#F8F4EA', '#C9A227'],
         })}
         ${themeCard({
           id: 'custom',
           swatchClass: 'hop-theme-swatch--custom',
           title: 'Custom',
-          desc: 'Open the studio to pick your colours — presets and fine-tune inside.',
+          desc: 'Open the studio to pick your colours — all luxury presets live inside too.',
           chip: '<span class="hop-theme-chip">Studio</span>',
           dots: [c.sidebar, c.bg, c.accent],
           onclick: 'hopOpenCustomThemeStudio()',
         })}
+      </div>
+
+      <div class="hop-theme-luxury-block">
+        <div class="hop-theme-studio-intro" style="margin-top:1.4rem;margin-bottom:0.85rem">
+          <p class="hop-theme-studio-kicker">Luxury collection</p>
+          <p class="hop-theme-studio-lead">
+            Elegant palettes for hospitality, furnishing &amp; premium interiors.
+            Top picks: Royal Navy, Emerald Gold, Chocolate &amp; Caramel.
+          </p>
+        </div>
+        <div class="hop-theme-grid hop-theme-grid--luxury">
+          ${luxuryCards}
+        </div>
       </div>
     </div>`;
   mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);
