@@ -7,11 +7,12 @@
     <script>
       (function () {
         try {
+          var allowed = { nexora: '#05070d', bright: '#f4f7fb', emerald: '#F8F4EA' };
           var t = localStorage.getItem('hop_theme_v1') || 'nexora';
-          if (t !== 'bright' && t !== 'nexora') t = 'nexora';
+          if (!allowed[t]) t = 'nexora';
           document.documentElement.setAttribute('data-hop-theme', t);
           var meta = document.getElementById('hop-theme-color-meta');
-          if (meta) meta.setAttribute('content', t === 'bright' ? '#f4f7fb' : '#05070d');
+          if (meta) meta.setAttribute('content', allowed[t]);
         } catch (e) {
           document.documentElement.setAttribute('data-hop-theme', 'nexora');
         }
@@ -24,8 +25,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260730-mobile-back-safe">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-bright-parties">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-bright-parties">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260730-emerald-gold">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260730-emerald-gold">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260730-emerald-gold">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -2261,6 +2263,6 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260729-module-fullscreen"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-theme-switch"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260730-emerald-gold"></script>
 </body>
 </html>

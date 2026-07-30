@@ -1,0 +1,642 @@
+/*
+  NEXORA premium theme (Emerald + Muted Gold + Ivory)
+  Activated when html[data-hop-theme="emerald"] is set.
+  Palette: Emerald #123C32 · Gold #C9A227 · Ivory #F8F4EA · Text #1F1F1F · Beige #DED3BE.
+  Default NEXORA dark remains when attribute is missing or "nexora".
+*/
+
+html[data-hop-theme="emerald"] {
+  color-scheme: light;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace.workspace-shell:not(.hidden) {
+  background: #F8F4EA !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-theme.hop-shell {
+  background: #F8F4EA !important;
+  color: #1F1F1F !important;
+  border-color: #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-nav {
+  background: #123C32 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #D6CFC0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-nav-group,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-nav-caret {
+  color: #9A9080 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-nav-item,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-nav-btn {
+  color: #D6CFC0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-nav-item:hover,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-nav-item.active,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-nav-btn.active {
+  background: rgba(201, 162, 39, 0.22) !important;
+  color: #E8D48B !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-core {
+  background: radial-gradient(circle at 30% 30%, #E8D48B, #C9A227 70%) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 14px 2px rgba(201, 162, 39, 0.45) !important;
+  animation: none !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-brand-word {
+  color: #ffffff !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-brand-sub {
+  color: #9A9080 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-main {
+  background: #F8F4EA !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-display,
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-title,
+html[data-hop-theme="emerald"] #hop-executive-workspace h2 {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-text-dim,
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-text-faint,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-eyebrow {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-card,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-form-card {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-card::before {
+  background: transparent !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-card:hover,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-form-card:hover {
+  background: #ffffff !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-btn {
+  border: 1px solid #DED3BE !important;
+  background: #ffffff !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-btn:hover {
+  border-color: #DED3BE !important;
+  background: #F5EFE0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-btn-primary {
+  background: #C9A227 !important;
+  border-color: #C9A227 !important;
+  color: #ffffff !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .nx-btn-primary:hover {
+  background: #A8861F !important;
+  border-color: #A8861F !important;
+  color: #ffffff !important;
+}
+
+/* KPI / dashboard cards */
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-kpi-card {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-kpi-card:hover {
+  background: #ffffff !important;
+  border-color: #DED3BE !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-kpi-label {
+  color: #6B6254 !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-kpi-value {
+  color: #1F1F1F !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-kpi-value.is-na {
+  color: #8A7F6E !important;
+}
+
+/* Invoice / ledger chrome */
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-topbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-title {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-mobile-back {
+  border: 1px solid #DED3BE !important;
+  background: #ffffff !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-ctrl,
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-search,
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-party-toggle,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-form-grid input,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-form-grid select,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-form-grid textarea {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-text-btn {
+  color: #A8861F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-sep {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.05);
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card span {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card strong {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card--paid {
+  border-left: 3px solid #15803d !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card--paid strong { color: #15803d !important; }
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card--unpaid {
+  border-left: 3px solid #1F5C70 !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card--unpaid strong { color: #1F5C70 !important; }
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card--overdue {
+  border-left: 3px solid #b91c1c !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card--overdue strong { color: #b91c1c !important; }
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-card--total {
+  border-left: 3px solid #3F3A32 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-op {
+  color: #8A7F6E !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-table-card {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-table-head {
+  border-bottom: 1px solid #DED3BE !important;
+  background: #ffffff !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-table-head strong {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-count {
+  background: #EFE7D8 !important;
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-table th {
+  color: #A8861F !important;
+  background: #FBF7EE !important;
+  border-bottom: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-table td {
+  color: #1F1F1F !important;
+  border-bottom: 1px solid #EFE7D8 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-table tbody tr:hover {
+  background: #F5EFE0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-row.is-selected {
+  background: #F3EBD0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-empty {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-badge--paid {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-badge--unpaid,
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-badge--open {
+  background: #E8F0F2 !important;
+  color: #1F5C70 !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-badge--overdue {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .inv-badge--partial {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+}
+
+/* Party / module tables */
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-table,
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-table {
+  color: #1F1F1F;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-table th,
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-table th {
+  color: #A8861F !important;
+  background: #FBF7EE !important;
+  border-bottom: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-table td,
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-table td {
+  color: #1F1F1F !important;
+  border-bottom: 1px solid #EFE7D8 !important;
+}
+
+/* Commission bar */
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-title strong,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-party,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-results strong {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-meta,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-fields label,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-results span {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-meta b {
+  color: #A8861F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-bar-fields input {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-table th {
+  color: #A8861F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-comm-table td {
+  color: #1F1F1F !important;
+}
+
+/* Theme picker cards */
+.hop-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  max-width: 720px;
+}
+.hop-theme-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.hop-theme-card:hover { border-color: rgba(37, 224, 255, 0.35); }
+.hop-theme-card.is-active {
+  border-color: rgba(37, 224, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(37, 224, 255, 0.25);
+}
+.hop-theme-swatch {
+  height: 72px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 28% 1fr;
+}
+.hop-theme-swatch-side { background: #05070c; }
+.hop-theme-swatch-main {
+  background: linear-gradient(180deg, #0a0e18, #0e1524);
+  position: relative;
+}
+.hop-theme-swatch-main::after {
+  content: "";
+  position: absolute;
+  left: 10px; right: 10px; top: 14px; height: 10px;
+  border-radius: 4px;
+  background: rgba(37, 224, 255, 0.25);
+}
+.hop-theme-swatch--emerald .hop-theme-swatch-side { background: #123C32; }
+.hop-theme-swatch--emerald .hop-theme-swatch-main {
+  background: #F8F4EA;
+}
+.hop-theme-swatch--emerald .hop-theme-swatch-main::after {
+  background: #C9A227;
+}
+.hop-theme-card h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+.hop-theme-card p {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+.hop-theme-card .hop-theme-badge {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #67e8f9;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-theme-card {
+  background: #ffffff !important;
+  border: 1px solid #DED3BE !important;
+  color: #1F1F1F !important;
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-theme-card.is-active {
+  border-color: #C9A227 !important;
+  box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.25);
+}
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-theme-card .hop-theme-badge {
+  color: #A8861F !important;
+}
+
+/* Doc preview modal stays readable in bright mode */
+html[data-hop-theme="emerald"] .hop-doc-preview-modal {
+  color: #1F1F1F;
+}
+
+/* ========== Parties (full light surface — was broken/mixed) ========== */
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-view--parties,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-view--parties .pty-page,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-view--parties .mod-page {
+  background: #F8F4EA !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-topbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-topbar-title {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-topbar-sub {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-layout {
+  background: #F8F4EA !important;
+  border: none !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-sidebar {
+  background: #ffffff !important;
+  border-right: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-detail {
+  background: #ffffff !important;
+  border-left: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-search {
+  background: #FBF7EE !important;
+  border: 1px solid #DED3BE !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-search:focus {
+  border-color: #C9A227 !important;
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.15);
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-list-header {
+  color: #6B6254 !important;
+  border-bottom: 1px solid #DED3BE !important;
+  background: #FBF7EE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item-wrap {
+  border-bottom: 1px solid #EFE7D8 !important;
+  background: transparent !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item-wrap.is-active {
+  background: #F5EFE0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item {
+  background: transparent !important;
+  color: #1F1F1F !important;
+  border-bottom: none !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item:hover {
+  background: #FBF7EE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item.is-active {
+  background: #F3EBD0 !important;
+  border-left: 3px solid #C9A227 !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item-name {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item-bal {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-item-bal.is-due {
+  color: #b91c1c !important;
+  font-weight: 600;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-badge-c {
+  background: #F3EBD0 !important;
+  color: #A8861F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-badge-v {
+  background: #ede9fe !important;
+  color: #6d28d9 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-empty-list,
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-no-selection,
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-no-selection p {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-detail-header {
+  background: #ffffff !important;
+  border-bottom: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-detail-name {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-detail-type {
+  background: #F3EBD0 !important;
+  border: 1px solid #DED3BE !important;
+  color: #A8861F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-meta-row {
+  color: #3F3A32 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-meta-text em {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-meta-ico {
+  background: #EFE7D8 !important;
+  color: #C9A227 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-chip {
+  background: #FBF7EE !important;
+  border: 1px solid #DED3BE !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-chip:hover {
+  border-color: #DED3BE !important;
+  background: #F5EFE0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-chip svg {
+  color: #C9A227 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-action-btn {
+  background: #EFE7D8 !important;
+  color: #5C5346 !important;
+  border: 1px solid #DED3BE;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-action-btn:hover {
+  background: #DED3BE !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-section {
+  background: #ffffff !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-header strong {
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-total-sale {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-total-sale em {
+  color: #A8861F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-other {
+  border-top: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-other summary,
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-other-hint {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-other summary span {
+  background: #EFE7D8 !important;
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-table th {
+  color: #A8861F !important;
+  background: #FBF7EE !important;
+  border-bottom: 1px solid #DED3BE !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-table td {
+  color: #1F1F1F !important;
+  border-bottom: 1px solid #EFE7D8 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-row:hover {
+  background: #F5EFE0 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-view {
+  color: #6B6254 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-row:hover .pty-txn-view-ico {
+  color: #C9A227 !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .pty-txn-amt.is-due {
+  color: #b91c1c !important;
+}
+
+/* Generic module pages in bright mode */
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-view--module .mod-page,
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-view--fullpage {
+  background: #F8F4EA !important;
+  color: #1F1F1F !important;
+}
+
+html[data-hop-theme="emerald"] #hop-executive-workspace .hop-view-header {
+  color: #1F1F1F;
+}

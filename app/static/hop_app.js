@@ -37,18 +37,23 @@ const hopState = {
 
 const HOP_RATE_CART_KEY = 'hop_rate_cart_v1';
 const HOP_THEME_KEY = 'hop_theme_v1';
+const HOP_THEMES = {
+  nexora: { id: 'nexora', label: 'NEXORA theme on', color: '#05070d' },
+  bright: { id: 'bright', label: 'Bright theme on', color: '#f4f7fb' },
+  emerald: { id: 'emerald', label: 'Emerald Gold theme on', color: '#F8F4EA' },
+};
 
 function hopGetTheme() {
   try {
     const t = localStorage.getItem(HOP_THEME_KEY) || 'nexora';
-    return t === 'bright' ? 'bright' : 'nexora';
+    return HOP_THEMES[t] ? t : 'nexora';
   } catch (e) {
     return 'nexora';
   }
 }
 
 function hopApplyTheme(theme, opts) {
-  const t = theme === 'bright' ? 'bright' : 'nexora';
+  const t = HOP_THEMES[theme] ? theme : 'nexora';
   try { localStorage.setItem(HOP_THEME_KEY, t); } catch (e) { /* ignore */ }
   document.documentElement.setAttribute('data-hop-theme', t);
   const ws = document.getElementById('hop-executive-workspace');
@@ -56,12 +61,11 @@ function hopApplyTheme(theme, opts) {
   document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', t));
   const meta = document.getElementById('hop-theme-color-meta')
     || document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', t === 'bright' ? '#f4f7fb' : '#05070d');
+  if (meta) meta.setAttribute('content', HOP_THEMES[t].color);
   if (!(opts && opts.silent) && typeof nexoraToast === 'function') {
-    nexoraToast(t === 'bright' ? 'Bright theme on' : 'NEXORA theme on', 'ok');
+    nexoraToast(HOP_THEMES[t].label, 'ok');
   }
   if (hopState.view === 'theme') {
-    // Refresh picker active state without history push
     const mount = hopMount();
     if (mount) renderHopThemeModule(mount);
   }
@@ -3168,8 +3172,9 @@ async function renderHopCustomersModule(mount) {
 async function renderHopThemeModule(mount) {
   const current = hopGetTheme();
   const body = `
-    <p class="nx-text-dim" style="margin:0 0 14px;max-width:36rem;line-height:1.45">
+    <p class="nx-text-dim" style="margin:0 0 14px;max-width:40rem;line-height:1.45">
       Choose how House of Prizm looks. Preference saves on this device and applies immediately.
+      For furnishing / hospitality, <strong>Emerald Gold</strong> is the premium pick.
     </p>
     <div class="hop-theme-grid">
       <button type="button" class="hop-theme-card${current === 'nexora' ? ' is-active' : ''}" onclick="hopApplyTheme('nexora')">
@@ -3178,7 +3183,7 @@ async function renderHopThemeModule(mount) {
           <div class="hop-theme-swatch-main"></div>
         </div>
         <h3>NEXORA (Default)</h3>
-        <p>Dark void background with cyan / violet accents — original NEXORA look.</p>
+        <p>Dark void with cyan / violet accents — original NEXORA look.</p>
         ${current === 'nexora' ? '<span class="hop-theme-badge">Active</span>' : ''}
       </button>
       <button type="button" class="hop-theme-card${current === 'bright' ? ' is-active' : ''}" onclick="hopApplyTheme('bright')">
@@ -3187,8 +3192,17 @@ async function renderHopThemeModule(mount) {
           <div class="hop-theme-swatch-main"></div>
         </div>
         <h3>Bright · Navy + Teal</h3>
-        <p>Light workspace, navy sidebar, teal actions — easier for invoices &amp; tables.</p>
+        <p>Clean light workspace — strong for invoices &amp; data tables.</p>
         ${current === 'bright' ? '<span class="hop-theme-badge">Active</span>' : ''}
+      </button>
+      <button type="button" class="hop-theme-card${current === 'emerald' ? ' is-active' : ''}" onclick="hopApplyTheme('emerald')">
+        <div class="hop-theme-swatch hop-theme-swatch--emerald" aria-hidden="true">
+          <div class="hop-theme-swatch-side"></div>
+          <div class="hop-theme-swatch-main"></div>
+        </div>
+        <h3>Emerald Gold</h3>
+        <p>Deep emerald sidebar, ivory workspace, muted gold accents — luxury furnishing / hospitality.</p>
+        ${current === 'emerald' ? '<span class="hop-theme-badge">Active</span>' : ''}
       </button>
     </div>`;
   mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);
