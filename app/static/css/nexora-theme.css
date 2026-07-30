@@ -2699,6 +2699,255 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   .nx-party-modal-card{max-height:94vh;border-radius:14px 14px 0 0;}
 }
 
+/* Light themes: Add/Edit Party follows app theme (not locked to NEXORA dark) */
+html[data-hop-theme="bright"] .nx-party-modal-backdrop,
+html[data-hop-theme="emerald"] .nx-party-modal-backdrop,
+html[data-hop-theme="custom"] .nx-party-modal-backdrop{
+  background:rgba(15,23,42,.45);
+}
+html[data-hop-theme="bright"] .nx-party-modal-card,
+html[data-hop-theme="emerald"] .nx-party-modal-card,
+html[data-hop-theme="custom"] .nx-party-modal-card{
+  background:#ffffff;
+  border:1px solid #DED3BE;
+  box-shadow:0 24px 64px rgba(15,23,42,.18);
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-modal-head,
+html[data-hop-theme="emerald"] .nx-party-modal-head,
+html[data-hop-theme="custom"] .nx-party-modal-head{
+  border-bottom-color:#E8E0D1;
+  background:#FBF8F1;
+}
+html[data-hop-theme="bright"] .nx-party-modal-head h2,
+html[data-hop-theme="emerald"] .nx-party-modal-head h2,
+html[data-hop-theme="custom"] .nx-party-modal-head h2{
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-modal-close,
+html[data-hop-theme="emerald"] .nx-party-modal-close,
+html[data-hop-theme="custom"] .nx-party-modal-close{
+  background:rgba(31,31,31,.06);
+  color:#5b564c;
+}
+html[data-hop-theme="bright"] .nx-party-modal-close:hover,
+html[data-hop-theme="emerald"] .nx-party-modal-close:hover,
+html[data-hop-theme="custom"] .nx-party-modal-close:hover{
+  background:rgba(31,31,31,.1);
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-field > span,
+html[data-hop-theme="emerald"] .nx-party-field > span,
+html[data-hop-theme="custom"] .nx-party-field > span{
+  color:#6B6254;
+}
+html[data-hop-theme="bright"] .nx-party-field input,
+html[data-hop-theme="bright"] .nx-party-field select,
+html[data-hop-theme="bright"] .nx-party-addr-box,
+html[data-hop-theme="bright"] .nx-party-group-combo input,
+html[data-hop-theme="bright"] .nx-party-af-name,
+html[data-hop-theme="bright"] .nx-party-af-val,
+html[data-hop-theme="emerald"] .nx-party-field input,
+html[data-hop-theme="emerald"] .nx-party-field select,
+html[data-hop-theme="emerald"] .nx-party-addr-box,
+html[data-hop-theme="emerald"] .nx-party-group-combo input,
+html[data-hop-theme="emerald"] .nx-party-af-name,
+html[data-hop-theme="emerald"] .nx-party-af-val,
+html[data-hop-theme="custom"] .nx-party-field input,
+html[data-hop-theme="custom"] .nx-party-field select,
+html[data-hop-theme="custom"] .nx-party-addr-box,
+html[data-hop-theme="custom"] .nx-party-group-combo input,
+html[data-hop-theme="custom"] .nx-party-af-name,
+html[data-hop-theme="custom"] .nx-party-af-val{
+  background:#fff;
+  border-color:#DED3BE;
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-field input:focus,
+html[data-hop-theme="bright"] .nx-party-field select:focus,
+html[data-hop-theme="bright"] .nx-party-addr-box:focus,
+html[data-hop-theme="bright"] .nx-party-group-combo input:focus{
+  border-color:#0d9488;
+  box-shadow:0 0 0 3px rgba(13,148,136,.15);
+}
+html[data-hop-theme="emerald"] .nx-party-field input:focus,
+html[data-hop-theme="emerald"] .nx-party-field select:focus,
+html[data-hop-theme="emerald"] .nx-party-addr-box:focus,
+html[data-hop-theme="emerald"] .nx-party-group-combo input:focus,
+html[data-hop-theme="custom"] .nx-party-field input:focus,
+html[data-hop-theme="custom"] .nx-party-field select:focus,
+html[data-hop-theme="custom"] .nx-party-addr-box:focus,
+html[data-hop-theme="custom"] .nx-party-group-combo input:focus{
+  border-color:var(--hop-c-accent,#C9A227);
+  box-shadow:0 0 0 3px rgba(201,162,39,.18);
+}
+html[data-hop-theme="bright"] .nx-party-hint,
+html[data-hop-theme="emerald"] .nx-party-hint,
+html[data-hop-theme="custom"] .nx-party-hint{
+  color:#6B6254;
+}
+html[data-hop-theme="bright"] .nx-party-gst-fetch{
+  border-color:rgba(13,148,136,.4);
+  background:rgba(13,148,136,.1);
+  color:#0f766e;
+}
+html[data-hop-theme="emerald"] .nx-party-gst-fetch,
+html[data-hop-theme="custom"] .nx-party-gst-fetch{
+  border-color:rgba(201,162,39,.45);
+  background:rgba(201,162,39,.12);
+  color:#A8861F;
+}
+html[data-hop-theme="bright"] .nx-party-tabs,
+html[data-hop-theme="emerald"] .nx-party-tabs,
+html[data-hop-theme="custom"] .nx-party-tabs{
+  border-bottom-color:#E8E0D1;
+}
+html[data-hop-theme="bright"] .nx-party-tab,
+html[data-hop-theme="emerald"] .nx-party-tab,
+html[data-hop-theme="custom"] .nx-party-tab{
+  color:#6B6254;
+}
+html[data-hop-theme="bright"] .nx-party-tab:hover,
+html[data-hop-theme="emerald"] .nx-party-tab:hover,
+html[data-hop-theme="custom"] .nx-party-tab:hover{
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-tab.is-active{
+  color:#0d9488;
+  border-bottom-color:#0d9488;
+}
+html[data-hop-theme="emerald"] .nx-party-tab.is-active,
+html[data-hop-theme="custom"] .nx-party-tab.is-active{
+  color:#A8861F;
+  border-bottom-color:#C9A227;
+}
+html[data-hop-theme="bright"] .nx-party-group-menu,
+html[data-hop-theme="emerald"] .nx-party-group-menu,
+html[data-hop-theme="custom"] .nx-party-group-menu{
+  background:#fff;
+  border-color:#DED3BE;
+  box-shadow:0 12px 32px rgba(15,23,42,.12);
+}
+html[data-hop-theme="bright"] .nx-party-group-new{color:#0d9488;}
+html[data-hop-theme="emerald"] .nx-party-group-new,
+html[data-hop-theme="custom"] .nx-party-group-new{color:#A8861F;}
+html[data-hop-theme="bright"] .nx-party-group-opt,
+html[data-hop-theme="emerald"] .nx-party-group-opt,
+html[data-hop-theme="custom"] .nx-party-group-opt{color:#1F1F1F;}
+html[data-hop-theme="bright"] .nx-party-group-opt:hover,
+html[data-hop-theme="emerald"] .nx-party-group-opt:hover,
+html[data-hop-theme="custom"] .nx-party-group-opt:hover{background:rgba(31,31,31,.05);}
+html[data-hop-theme="bright"] .nx-party-group-create{color:#0f766e;}
+html[data-hop-theme="emerald"] .nx-party-group-create,
+html[data-hop-theme="custom"] .nx-party-group-create{color:#A8861F;}
+html[data-hop-theme="bright"] .nx-party-group-caret,
+html[data-hop-theme="emerald"] .nx-party-group-caret,
+html[data-hop-theme="custom"] .nx-party-group-caret{color:#6B6254;}
+html[data-hop-theme="bright"] .nx-party-addr-head strong,
+html[data-hop-theme="emerald"] .nx-party-addr-head strong,
+html[data-hop-theme="custom"] .nx-party-addr-head strong{color:#3F3A32;}
+html[data-hop-theme="bright"] .nx-party-addr-add{color:#0d9488;}
+html[data-hop-theme="emerald"] .nx-party-addr-add,
+html[data-hop-theme="custom"] .nx-party-addr-add{color:#A8861F;}
+html[data-hop-theme="bright"] .nx-party-addr-card{
+  border-color:rgba(13,148,136,.28);
+  background:rgba(13,148,136,.05);
+}
+html[data-hop-theme="emerald"] .nx-party-addr-card,
+html[data-hop-theme="custom"] .nx-party-addr-card{
+  border-color:rgba(201,162,39,.3);
+  background:rgba(201,162,39,.06);
+}
+html[data-hop-theme="bright"] .nx-party-addr-card textarea,
+html[data-hop-theme="emerald"] .nx-party-addr-card textarea,
+html[data-hop-theme="custom"] .nx-party-addr-card textarea{
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-credit-toggle,
+html[data-hop-theme="emerald"] .nx-party-credit-toggle,
+html[data-hop-theme="custom"] .nx-party-credit-toggle{
+  border-color:#DED3BE;
+}
+html[data-hop-theme="bright"] .nx-party-tog,
+html[data-hop-theme="emerald"] .nx-party-tog,
+html[data-hop-theme="custom"] .nx-party-tog{color:#6B6254;}
+html[data-hop-theme="bright"] .nx-party-tog.is-active{
+  background:rgba(13,148,136,.15);
+  color:#0f766e;
+}
+html[data-hop-theme="emerald"] .nx-party-tog.is-active,
+html[data-hop-theme="custom"] .nx-party-tog.is-active{
+  background:rgba(201,162,39,.18);
+  color:#A8861F;
+}
+html[data-hop-theme="bright"] .nx-party-af-row,
+html[data-hop-theme="emerald"] .nx-party-af-row,
+html[data-hop-theme="custom"] .nx-party-af-row{
+  border-color:#E8E0D1;
+  background:#FBF8F1;
+}
+html[data-hop-theme="bright"] .nx-party-af-print,
+html[data-hop-theme="emerald"] .nx-party-af-print,
+html[data-hop-theme="custom"] .nx-party-af-print{color:#6B6254;}
+html[data-hop-theme="bright"] .nx-party-modal-foot,
+html[data-hop-theme="emerald"] .nx-party-modal-foot,
+html[data-hop-theme="custom"] .nx-party-modal-foot{
+  border-top-color:#E8E0D1;
+  background:#FBF8F1;
+}
+html[data-hop-theme="bright"] .nx-party-foot-right .nx-btn,
+html[data-hop-theme="emerald"] .nx-party-foot-right .nx-btn,
+html[data-hop-theme="custom"] .nx-party-foot-right .nx-btn{
+  border-color:#DED3BE;
+  background:#fff;
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-foot-right .nx-btn-primary{
+  background:#0d9488 !important;
+  border-color:#0d9488 !important;
+  color:#fff !important;
+}
+html[data-hop-theme="emerald"] .nx-party-foot-right .nx-btn-primary,
+html[data-hop-theme="custom"] .nx-party-foot-right .nx-btn-primary{
+  background:var(--hop-c-accent,#C9A227) !important;
+  border-color:var(--hop-c-accent,#C9A227) !important;
+  color:#fff !important;
+}
+html[data-hop-theme="bright"] .nx-party-dup-banner,
+html[data-hop-theme="emerald"] .nx-party-dup-banner,
+html[data-hop-theme="custom"] .nx-party-dup-banner{
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .nx-party-dup-title,
+html[data-hop-theme="emerald"] .nx-party-dup-title,
+html[data-hop-theme="custom"] .nx-party-dup-title{color:#92400e;}
+html[data-hop-theme="bright"] .hop-add-party-card .nx-btn-primary,
+html[data-hop-theme="emerald"] .hop-add-party-card .nx-btn-primary,
+html[data-hop-theme="custom"] .hop-add-party-card .nx-btn-primary{
+  color:#fff !important;
+}
+html[data-hop-theme="bright"] .hop-add-party-choice,
+html[data-hop-theme="emerald"] .hop-add-party-choice,
+html[data-hop-theme="custom"] .hop-add-party-choice{
+  border-color:#DED3BE;
+  background:#fff;
+  color:#1F1F1F;
+}
+html[data-hop-theme="bright"] .hop-add-party-choice:hover{
+  border-color:#0d9488;
+  background:rgba(13,148,136,.08);
+}
+html[data-hop-theme="emerald"] .hop-add-party-choice:hover,
+html[data-hop-theme="custom"] .hop-add-party-choice:hover{
+  border-color:#C9A227;
+  background:rgba(201,162,39,.08);
+}
+html[data-hop-theme="bright"] .hop-add-party-choice span,
+html[data-hop-theme="emerald"] .hop-add-party-choice span,
+html[data-hop-theme="custom"] .hop-add-party-choice span{
+  color:#6B6254;
+}
+
 /* --- Clickable table rows --- */
 .hop-clickable-row:hover{background:rgba(34,211,238,.06) !important;}
 
