@@ -473,3 +473,76 @@ html[data-hop-theme="emerald"] .hop-custom-theme-panel,
 html[data-hop-theme="custom"] .hop-custom-theme-panel {
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.04), 0 12px 32px rgba(15, 39, 68, 0.06);
 }
+
+/* —— Custom studio popup —— */
+.hop-custom-studio-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.hop-custom-studio-overlay.is-open {
+  display: flex;
+}
+.hop-custom-studio-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 10, 0.55);
+  backdrop-filter: blur(4px);
+}
+.hop-custom-studio-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(920px, 100%);
+  max-height: min(88vh, 860px);
+  overflow: auto;
+  border-radius: 16px;
+  -webkit-overflow-scrolling: touch;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+.hop-custom-theme-panel--modal {
+  margin: 0 !important;
+  background: #F8F4EA;
+  color: #1F1F1F;
+  border: 1px solid #DED3BE;
+}
+.hop-custom-theme-panel--modal .hop-custom-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #F8F4EA;
+}
+.hop-custom-theme-panel--modal .hop-custom-panel-head h3,
+.hop-custom-theme-panel--modal .nx-display {
+  color: #1F1F1F;
+}
+.hop-custom-theme-panel--modal .hop-custom-panel-head p,
+.hop-custom-theme-panel--modal .hop-custom-section-label,
+.hop-custom-theme-panel--modal .hop-theme-studio-kicker {
+  color: #6B6254;
+  opacity: 1;
+}
+.hop-custom-theme-panel--modal .hop-custom-live {
+  background: rgba(18, 60, 50, 0.05);
+}
+.hop-custom-theme-panel--modal .hop-custom-color-field {
+  background: #fff;
+  border-color: #DED3BE;
+  color: #1F1F1F;
+}
+.hop-custom-theme-panel--modal .hop-custom-color-row input[type="text"] {
+  background: #fff;
+  border-color: #DED3BE;
+  color: #1F1F1F;
+}
+body.hop-custom-studio-open {
+  overflow: hidden;
+}
+@media (max-width: 800px) {
+  .hop-custom-studio-dialog {
+    max-height: 92vh;
+  }
+}

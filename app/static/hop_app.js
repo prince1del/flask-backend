@@ -283,21 +283,175 @@ function hopPreviewCustomTheme() {
   }
 }
 
+function hopFillCustomForm(colors) {
+  const c = colors || hopGetCustomColors();
+  const map = {
+    sidebar: 'hop-c-sidebar',
+    bg: 'hop-c-bg',
+    text: 'hop-c-text',
+    accent: 'hop-c-accent',
+    border: 'hop-c-border',
+    card: 'hop-c-card',
+    muted: 'hop-c-muted',
+  };
+  Object.entries(map).forEach(([key, id]) => {
+    const picker = document.getElementById(id);
+    const hex = document.getElementById(id + '-hex');
+    if (picker) picker.value = c[key];
+    if (hex) hex.value = c[key];
+  });
+}
+
+function hopBindCustomColorSync() {
+  ['sidebar', 'bg', 'text', 'accent', 'border', 'card', 'muted'].forEach((k) => {
+    const picker = document.getElementById('hop-c-' + k);
+    const hex = document.getElementById('hop-c-' + k + '-hex');
+    if (!picker || !hex) return;
+    picker.addEventListener('input', () => { hex.value = picker.value.toUpperCase(); });
+  });
+}
+
+function hopCustomStudioMarkup(c) {
+  const presetBtns = Object.entries(HOP_CUSTOM_PRESETS).map(([key, p]) => {
+    const col = p.colors;
+    return `<button type="button" class="nx-btn hop-custom-preset-btn" onclick="hopLoadCustomPreset('${key}')">
+      <span class="hop-custom-preset-swatches" aria-hidden="true">
+        <i style="background:${col.sidebar}"></i>
+        <i style="background:${col.bg}"></i>
+        <i style="background:${col.accent}"></i>
+      </span>
+      ${p.label}
+    </button>`;
+  }).join('');
+  const colorField = (id, label, value) => `
+    <label class="hop-custom-color-field">
+      <span>${label}</span>
+      <span class="hop-custom-color-row">
+        <input type="color" id="${id}" value="${value}" oninput="hopPreviewCustomTheme()" />
+        <input type="text" id="${id}-hex" value="${value}" maxlength="7" spellcheck="false"
+          onchange="document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();"
+          oninput="if(/^#[0-9A-Fa-f]{6}$/.test(this.value)){document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();}" />
+      </span>
+    </label>`;
+  return `
+    <div class="hop-custom-theme-panel hop-custom-theme-panel--modal">
+      <div class="hop-custom-panel-head">
+        <div>
+          <p class="hop-theme-studio-kicker" style="margin:0 0 4px">Custom</p>
+          <h3 class="nx-display">Theme studio</h3>
+          <p>Adjust colours — preview updates live. Apply when it feels right.</p>
+        </div>
+        <button type="button" class="nx-btn hop-custom-studio-close" onclick="hopCloseCustomThemeStudio()" aria-label="Close">Close</button>
+      </div>
+      <div class="hop-custom-panel-layout">
+        <aside class="hop-custom-live" aria-hidden="true">
+          <p class="hop-custom-live-label">Live preview</p>
+          <div class="hop-custom-live-frame" id="hop-custom-live-frame"
+            style="--hop-preview-sidebar:${c.sidebar};--hop-preview-bg:${c.bg};--hop-preview-text:${c.text};--hop-preview-accent:${c.accent};--hop-preview-border:${c.border};--hop-preview-card:${c.card};--hop-preview-muted:${c.muted}">
+            <div class="hop-custom-live-nav">
+              <span></span><span class="is-active"></span><span></span>
+            </div>
+            <div class="hop-custom-live-main">
+              <div class="hop-custom-live-bar"></div>
+              <div class="hop-custom-live-card">
+                <i></i><i></i>
+                <div class="hop-custom-live-btn"></div>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <div class="hop-custom-panel-controls">
+          <p class="hop-custom-section-label">Start from a preset</p>
+          <div class="hop-custom-presets">${presetBtns}</div>
+          <p class="hop-custom-section-label">Fine-tune colours</p>
+          <div class="hop-custom-color-grid">
+            ${colorField('hop-c-sidebar', 'Sidebar / header', c.sidebar)}
+            ${colorField('hop-c-bg', 'Background', c.bg)}
+            ${colorField('hop-c-text', 'Text', c.text)}
+            ${colorField('hop-c-accent', 'Accent', c.accent)}
+            ${colorField('hop-c-border', 'Borders', c.border)}
+            ${colorField('hop-c-card', 'Cards', c.card)}
+            ${colorField('hop-c-muted', 'Secondary text', c.muted)}
+          </div>
+          <div class="hop-custom-actions">
+            <button type="button" class="nx-btn nx-btn-primary" onclick="hopApplyCustomThemeFromForm()">Apply custom theme</button>
+            <button type="button" class="nx-btn" onclick="hopResetCustomTheme()">Reset to Emerald Gold</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function hopOpenCustomThemeStudio() {
+  hopApplyTheme('custom', { silent: true, skipRerender: true });
+  const c = hopGetCustomColors();
+  hopApplyCustomVars(c);
+  let overlay = document.getElementById('hop-custom-studio-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'hop-custom-studio-overlay';
+    overlay.className = 'hop-custom-studio-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="hop-custom-studio-backdrop" onclick="hopCloseCustomThemeStudio()"></div>
+    <div class="hop-custom-studio-dialog" role="dialog" aria-modal="true" aria-label="Theme studio">
+      ${hopCustomStudioMarkup(c)}
+    </div>`;
+  overlay.classList.add('is-open');
+  document.body.classList.add('hop-custom-studio-open');
+  hopBindCustomColorSync();
+  if (!window._hopCustomStudioEsc) {
+    window._hopCustomStudioEsc = (e) => {
+      if (e.key === 'Escape') hopCloseCustomThemeStudio();
+    };
+    document.addEventListener('keydown', window._hopCustomStudioEsc);
+  }
+  if (hopState.view === 'theme') {
+    const mount = hopMount();
+    if (mount) renderHopThemeModule(mount);
+  }
+}
+
+function hopCloseCustomThemeStudio() {
+  const overlay = document.getElementById('hop-custom-studio-overlay');
+  if (overlay) {
+    overlay.classList.remove('is-open');
+    overlay.innerHTML = '';
+  }
+  document.body.classList.remove('hop-custom-studio-open');
+  if (window._hopCustomStudioEsc) {
+    document.removeEventListener('keydown', window._hopCustomStudioEsc);
+    window._hopCustomStudioEsc = null;
+  }
+  if (hopState.view === 'theme') {
+    const mount = hopMount();
+    if (mount) renderHopThemeModule(mount);
+  }
+}
+
 function hopApplyCustomThemeFromForm() {
   hopPreviewCustomTheme();
-  hopApplyTheme('custom', { silent: false, skipRerender: false });
+  hopApplyTheme('custom', { silent: true, skipRerender: true });
+  hopCloseCustomThemeStudio();
+  if (typeof nexoraToast === 'function') nexoraToast('Custom theme on', 'ok');
 }
 
 function hopLoadCustomPreset(key) {
   const preset = HOP_CUSTOM_PRESETS[key];
   if (!preset) return;
   hopSaveCustomColors(preset.colors);
-  hopApplyTheme('custom');
+  hopApplyTheme('custom', { silent: true, skipRerender: true });
+  hopFillCustomForm(preset.colors);
+  hopPreviewCustomTheme();
+  if (typeof nexoraToast === 'function') nexoraToast(preset.label + ' applied', 'ok');
 }
 
 function hopResetCustomTheme() {
   hopSaveCustomColors(HOP_CUSTOM_DEFAULTS);
-  hopApplyTheme('custom');
+  hopApplyTheme('custom', { silent: true, skipRerender: true });
+  hopFillCustomForm(HOP_CUSTOM_DEFAULTS);
+  hopPreviewCustomTheme();
 }
 
 function hopLoadRateCart() {
@@ -3397,32 +3551,11 @@ async function renderHopCustomersModule(mount) {
 async function renderHopThemeModule(mount) {
   const current = hopGetTheme();
   const c = hopGetCustomColors();
-  const presetBtns = Object.entries(HOP_CUSTOM_PRESETS).map(([key, p]) => {
-    const col = p.colors;
-    return `<button type="button" class="nx-btn hop-custom-preset-btn" onclick="hopLoadCustomPreset('${key}')">
-      <span class="hop-custom-preset-swatches" aria-hidden="true">
-        <i style="background:${col.sidebar}"></i>
-        <i style="background:${col.bg}"></i>
-        <i style="background:${col.accent}"></i>
-      </span>
-      ${p.label}
-    </button>`;
-  }).join('');
-  const colorField = (id, label, value) => `
-    <label class="hop-custom-color-field">
-      <span>${label}</span>
-      <span class="hop-custom-color-row">
-        <input type="color" id="${id}" value="${value}" oninput="hopPreviewCustomTheme()" />
-        <input type="text" id="${id}-hex" value="${value}" maxlength="7" spellcheck="false"
-          onchange="document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();"
-          oninput="if(/^#[0-9A-Fa-f]{6}$/.test(this.value)){document.getElementById('${id}').value=this.value; hopPreviewCustomTheme();}" />
-      </span>
-    </label>`;
-  const themeCard = ({ id, swatchClass, title, desc, chip, dots }) => {
+  const themeCard = ({ id, swatchClass, title, desc, chip, dots, onclick }) => {
     const active = current === id;
     const dotsHtml = (dots || []).map((d) => `<span class="hop-theme-dot" style="background:${d}"></span>`).join('');
     return `
-      <button type="button" class="hop-theme-card${active ? ' is-active' : ''}" onclick="hopApplyTheme('${id}')">
+      <button type="button" class="hop-theme-card${active ? ' is-active' : ''}" onclick="${onclick || `hopApplyTheme('${id}')`}">
         ${active ? '<span class="hop-theme-badge">Active</span>' : ''}
         <div class="hop-theme-swatch ${swatchClass || ''}" aria-hidden="true">
           <div class="hop-theme-swatch-side"${id === 'custom' ? ` style="background:${c.sidebar}"` : ''}></div>
@@ -3443,8 +3576,8 @@ async function renderHopThemeModule(mount) {
       <div class="hop-theme-studio-intro">
         <p class="hop-theme-studio-kicker">Appearance</p>
         <p class="hop-theme-studio-lead">
-          Pick a curated look for House of Prizm, or craft your own palette.
-          Saved on this device — applies instantly across the workspace.
+          Pick a curated look for House of Prizm, or open Custom to craft your own palette.
+          Preference saves on this device.
         </p>
       </div>
 
@@ -3475,64 +3608,14 @@ async function renderHopThemeModule(mount) {
           id: 'custom',
           swatchClass: 'hop-theme-swatch--custom',
           title: 'Custom',
-          desc: 'Your colours. Start from a preset below, then fine-tune every surface.',
+          desc: 'Open the studio to pick your colours — presets and fine-tune inside.',
           chip: '<span class="hop-theme-chip">Studio</span>',
           dots: [c.sidebar, c.bg, c.accent],
+          onclick: 'hopOpenCustomThemeStudio()',
         })}
-      </div>
-
-      <div class="nx-card hop-custom-theme-panel">
-        <div class="hop-custom-panel-head">
-          <div>
-            <h3 class="nx-display">Theme studio</h3>
-            <p>Adjust colours — the preview updates live. Apply when it feels right.</p>
-          </div>
-        </div>
-        <div class="hop-custom-panel-layout">
-          <aside class="hop-custom-live" aria-hidden="true">
-            <p class="hop-custom-live-label">Live preview</p>
-            <div class="hop-custom-live-frame" id="hop-custom-live-frame"
-              style="--hop-preview-sidebar:${c.sidebar};--hop-preview-bg:${c.bg};--hop-preview-text:${c.text};--hop-preview-accent:${c.accent};--hop-preview-border:${c.border};--hop-preview-card:${c.card};--hop-preview-muted:${c.muted}">
-              <div class="hop-custom-live-nav">
-                <span></span><span class="is-active"></span><span></span>
-              </div>
-              <div class="hop-custom-live-main">
-                <div class="hop-custom-live-bar"></div>
-                <div class="hop-custom-live-card">
-                  <i></i><i></i>
-                  <div class="hop-custom-live-btn"></div>
-                </div>
-              </div>
-            </div>
-          </aside>
-          <div class="hop-custom-panel-controls">
-            <p class="hop-custom-section-label">Start from a preset</p>
-            <div class="hop-custom-presets">${presetBtns}</div>
-            <p class="hop-custom-section-label">Fine-tune colours</p>
-            <div class="hop-custom-color-grid">
-              ${colorField('hop-c-sidebar', 'Sidebar / header', c.sidebar)}
-              ${colorField('hop-c-bg', 'Background', c.bg)}
-              ${colorField('hop-c-text', 'Text', c.text)}
-              ${colorField('hop-c-accent', 'Accent', c.accent)}
-              ${colorField('hop-c-border', 'Borders', c.border)}
-              ${colorField('hop-c-card', 'Cards', c.card)}
-              ${colorField('hop-c-muted', 'Secondary text', c.muted)}
-            </div>
-            <div class="hop-custom-actions">
-              <button type="button" class="nx-btn nx-btn-primary" onclick="hopApplyCustomThemeFromForm()">Apply custom theme</button>
-              <button type="button" class="nx-btn" onclick="hopResetCustomTheme()">Reset to Emerald Gold</button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>`;
   mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);
-  ['sidebar', 'bg', 'text', 'accent', 'border', 'card', 'muted'].forEach((k) => {
-    const picker = document.getElementById('hop-c-' + k);
-    const hex = document.getElementById('hop-c-' + k + '-hex');
-    if (!picker || !hex) return;
-    picker.addEventListener('input', () => { hex.value = picker.value.toUpperCase(); });
-  });
 }
 
 async function renderHopWipeDataModule(mount) {
