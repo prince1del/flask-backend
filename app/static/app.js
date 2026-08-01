@@ -30,6 +30,50 @@ const NX_NOTIFY = {
 const _nativeAlert = typeof window.alert === 'function' ? window.alert.bind(window) : null;
 const _nativeConfirm = typeof window.confirm === 'function' ? window.confirm.bind(window) : null;
 
+/** Theme accent — follows Settings → Theme (--hop-c-accent / --nx-gold), never hardcode Nexora gold. */
+function nxThemeAccentCss() {
+  return 'var(--hop-c-accent, var(--nx-gold, #25e0ff))';
+}
+
+/** Surface + text tokens for JS-built modals so light themes don't keep the dark gold Nexora look. */
+function nxThemeUi() {
+  const theme = document.documentElement.getAttribute('data-hop-theme') || 'nexora';
+  const isLight = theme === 'bright' || theme === 'emerald' || theme === 'custom';
+  const accent = nxThemeAccentCss();
+  if (isLight) {
+    return {
+      isLight: true,
+      accent,
+      accentFg: '#ffffff',
+      overlay: 'rgba(15, 23, 42, 0.48)',
+      boxBg: 'var(--hop-c-card, #ffffff)',
+      boxBorder: 'var(--hop-c-border, #DED3BE)',
+      boxFg: 'var(--hop-c-text, #1F1F1F)',
+      muted: 'var(--hop-c-muted, #6B6254)',
+      soft: 'var(--hop-c-bg-soft, #F5EFE0)',
+      rowBorder: 'var(--hop-c-border, #DED3BE)',
+      secondaryBorder: 'var(--hop-c-border, #DED3BE)',
+      secondaryFg: 'var(--hop-c-muted, #6B6254)',
+      secondaryBg: 'var(--hop-c-bg, #F8F4EA)',
+    };
+  }
+  return {
+    isLight: false,
+    accent,
+    accentFg: '#0b1220',
+    overlay: 'rgba(0, 0, 0, 0.65)',
+    boxBg: '#14141a',
+    boxBorder: '#2a2a33',
+    boxFg: '#e6e6e6',
+    muted: '#999999',
+    soft: '#1a1a22',
+    rowBorder: '#23232b',
+    secondaryBorder: '#333333',
+    secondaryFg: '#cccccc',
+    secondaryBg: 'transparent',
+  };
+}
+
 function nxEnsureNotifyDom() {
   if (!document.getElementById('nx-toast-stack')) {
     const stack = document.createElement('div');
@@ -177,6 +221,11 @@ window.confirm = function nxConfirmOverride(message) {
 const partyMasterState = {
   distributors: [],
   retailers: [],
+  allDistributorRecords: [],
+  allRetailerRecords: [],
+  rawDistributorRecords: [],
+  rawRetailerRecords: [],
+  purgedContactKeys: null,
 };
 
 const PARTY_MASTER_PAGE_SIZE = 100;
@@ -190,6 +239,8 @@ const partyMasterTableState = {
   retailersLoaded: false,
   distributorsLoading: false,
   retailersLoading: false,
+  distributorsLoadSeq: 0,
+  retailersLoadSeq: 0,
 };
 
 let pendingUpdateMetadata = null;
@@ -257,17 +308,98 @@ function saveUserId(userId) {
   }
 }
 
+function profileAvatarInitial(username) {
+  const raw = String(username || '').trim();
+  const match = raw.match(/[A-Za-z0-9]/);
+  return (match ? match[0] : 'U').toUpperCase();
+}
+
+/** Gmail-style initial; circle color follows Ask / theme via CSS (--nx-gold). */
+function setUserProfileButton(username) {
+  const menu = document.getElementById('nx-profile-menu');
+  const el = document.getElementById('user-info') || document.getElementById('user-name');
+  if (!el) return;
+  const label = String(username || authState.username || '').trim() || 'User';
+  const initial = profileAvatarInitial(label);
+  el.textContent = initial;
+  el.title = label;
+  el.setAttribute('aria-label', `${label} — account menu`);
+  el.classList.add('profile-btn', 'profile-btn--avatar');
+  el.classList.remove('hidden');
+  el.style.removeProperty('background');
+  el.style.removeProperty('color');
+  el.style.removeProperty('display');
+  if (menu) {
+    menu.classList.remove('hidden');
+    menu.style.removeProperty('display');
+  }
+  const nameEl = document.getElementById('nx-profile-username');
+  if (nameEl) nameEl.textContent = label;
+  const dropAvatar = document.getElementById('nx-profile-dropdown-avatar');
+  if (dropAvatar) dropAvatar.textContent = initial;
+  const roleEl = document.getElementById('nx-profile-role');
+  if (roleEl) {
+    const roleRaw = String(authState.role || '').trim();
+    const workspace = String(authState.workspaceId || '').trim();
+    const roleLabel = roleRaw
+      ? roleRaw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+      : '';
+    roleEl.textContent = [roleLabel, workspace].filter(Boolean).join(' · ');
+  }
+  // Hide any leftover standalone logout buttons across shells
+  document.querySelectorAll('.btn-logout, .hop-nav-logout').forEach((btn) => {
+    if (btn.closest?.('#nx-profile-dropdown')) return;
+    btn.classList.add('hidden');
+    btn.style.display = 'none';
+  });
+}
+
+function closeUserProfileMenu() {
+  const menu = document.getElementById('nx-profile-menu');
+  const drop = document.getElementById('nx-profile-dropdown');
+  const btn = document.getElementById('user-info');
+  if (drop) drop.classList.add('hidden');
+  if (menu) menu.classList.remove('is-open');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleUserProfileMenu(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const drop = document.getElementById('nx-profile-dropdown');
+  const btn = document.getElementById('user-info');
+  const menu = document.getElementById('nx-profile-menu');
+  if (!drop || !btn) return;
+  const willOpen = drop.classList.contains('hidden');
+  if (willOpen) {
+    drop.classList.remove('hidden');
+    menu?.classList.add('is-open');
+    btn.setAttribute('aria-expanded', 'true');
+  } else {
+    closeUserProfileMenu();
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('nx-profile-menu');
+  if (!menu || menu.contains(e.target)) return;
+  closeUserProfileMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeUserProfileMenu();
+});
+
 // Sales Executives only see what's actually been built and tested so
 // far in NEXORA — everything else (Purchase, Inventory, Finance,
-// Reports, Analytics, Orders, Approvals, Cloud Hub, Banking, Settings,
-// and the still-decorative Sales sub-tabs) is hidden from the UI
-// only. Nothing on the backend is touched, so re-enabling any of
-// these later is just uncommenting/removing an id from this list —
-// no rebuilding required.
+// Reports, Analytics, Orders, Approvals, Banking, and the still-
+// decorative Sales sub-tabs) is hidden from the UI only. Settings stays
+// visible (theme is app-wide). Nothing on the backend is touched.
 const SALES_EXECUTIVE_HIDDEN_NAV_IDS = [
   'nav-purchase', 'nav-inventory', 'nav-finance', 'nav-reports',
   'nav-analytics', 'nav-orders', 'nav-approvals',
-  'nav-banking', 'nav-settings',
+  'nav-banking',
 ];
 const SALES_EXECUTIVE_HIDDEN_SALES_SUBTAB_IDS = [
   'sales-tab-overview', 'sales-tab-invoices', 'sales-tab-orders', 'sales-tab-reports',
@@ -309,6 +441,7 @@ function applyHopRoleUI() {
   document.getElementById('executive-home-workspace')?.classList.add('hidden');
   document.getElementById('global-search-shell')?.classList.add('hidden');
   document.getElementById('global-search-trigger')?.classList.add('hidden');
+  setUserProfileButton(authState.username || 'User');
   if (authState.accessToken) {
     goToHomePage();
   }
@@ -317,10 +450,12 @@ function applyHopRoleUI() {
 function applyRoleBasedUI() {
   if (authState.role === 'hop_admin') {
     applyHopRoleUI();
+    setUserProfileButton(authState.username || 'User');
     return;
   }
   if (authState.role !== 'sales_executive') {
     document.body.classList.remove('bd-hop-ui');
+    setUserProfileButton(authState.username || 'User');
     return;
   }
   document.body.classList.add('bd-hop-ui');
@@ -351,8 +486,11 @@ function applyRoleBasedUI() {
   document.getElementById('dashboard-ta-playing-card')?.classList.remove('hidden');
   document.getElementById('dashboard-fo-widgets-layer')?.classList.remove('hidden');
   if (authState.accessToken) {
+    syncBdBrandFromCompanyProfile();
     goToHomePage();
   }
+  setUserProfileButton(authState.username || 'User');
+  requestAnimationFrame(() => bdSyncSidebarScroll());
 }
 
 function loadAuthState() {
@@ -363,7 +501,6 @@ function loadAuthState() {
   authState.workspaceId = localStorage.getItem('authWorkspaceId');
   const storedUid = localStorage.getItem('authUserId');
   authState.userId = storedUid ? Number(storedUid) : null;
-  const userInfoEl = document.getElementById('user-info') || document.getElementById('user-name');
   const askNexoraButton = document.getElementById('ask-nexora-btn');
 
   if (authState.accessToken) {
@@ -371,12 +508,16 @@ function loadAuthState() {
     document.getElementById('dashboard')?.classList.remove('hidden');
     askNexoraButton?.classList.remove('hidden');
     resetGlobalSearchUi();
-    applyRoleBasedUI();
-    if (userInfoEl) {
-      userInfoEl.textContent = authState.username || 'Admin User';
+    if (typeof hopSyncThemeForCurrentUser === 'function') {
+      hopSyncThemeForCurrentUser();
     }
+    applyRoleBasedUI();
+    setUserProfileButton(authState.username || 'Admin User');
   } else {
     askNexoraButton?.classList.add('hidden');
+    if (typeof hopResetThemeChromeToDefault === 'function') {
+      hopResetThemeChromeToDefault();
+    }
   }
 }
 
@@ -405,6 +546,13 @@ function initApp() {
   bindNexoraChatOverlayDismiss();
   bindMobileNavDismissGestures();
   loadAuthState();
+  const syncNav = () => {
+    if (typeof bdSyncSidebarScroll === 'function') bdSyncSidebarScroll();
+  };
+  requestAnimationFrame(syncNav);
+  window.setTimeout(syncNav, 50);
+  window.setTimeout(syncNav, 300);
+  window.addEventListener('resize', syncNav);
   if (authState.accessToken && authState.role === 'hop_admin') {
     goToHomePage();
     return;
@@ -421,10 +569,49 @@ function initApp() {
   initDashboardTaWidgetDrag();
   initDashboardFoWidgetsDrag();
   window.addEventListener('resize', scheduleCustomersLayout);
+  window.addEventListener('resize', scheduleArticleMasterLayout);
 }
 
 const TA_WIDGET_POS_KEY = 'dashboardTaWidgetPosition';
 let dashboardTaWidgetDragBound = false;
+
+function dashboardWidgetPosScope() {
+  const uid = authState?.userId || authState?.username || 'anon';
+  return String(uid);
+}
+
+function taWidgetStorageKey() {
+  return `${TA_WIDGET_POS_KEY}:${dashboardWidgetPosScope()}`;
+}
+
+function readWidgetPos(storageKey) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+      return { x: saved.x, y: saved.y };
+    }
+  } catch (e) {
+    /* ignore bad JSON */
+  }
+  return null;
+}
+
+function writeWidgetPos(storageKey, x, y) {
+  localStorage.setItem(storageKey, JSON.stringify({ x, y }));
+}
+
+function whenDashboardBoardReady(callback, tries = 0) {
+  const board = getDashboardWidgetBoard();
+  if (board && board.clientWidth > 40 && board.clientHeight > 40) {
+    callback();
+    return;
+  }
+  if (tries >= 40) {
+    callback();
+    return;
+  }
+  requestAnimationFrame(() => whenDashboardBoardReady(callback, tries + 1));
+}
 
 function getDashboardWidgetBoard() {
   // Prefer the full main panel — that is the true empty area for widgets
@@ -478,20 +665,16 @@ function applyDashboardTaWidgetPosition() {
   const widget = document.getElementById('dashboard-ta-widget');
   if (!layer || !widget || layer.classList.contains('hidden')) return;
 
-  let saved = null;
-  try {
-    saved = JSON.parse(localStorage.getItem(TA_WIDGET_POS_KEY) || 'null');
-  } catch (e) {
-    saved = null;
-  }
-
-  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
-    widget.style.left = `${saved.x}px`;
-    widget.style.top = `${saved.y}px`;
-    clampDashboardTaWidgetPosition(layer, widget);
-  } else {
-    centerDashboardTaWidget(layer, widget);
-  }
+  whenDashboardBoardReady(() => {
+    const saved = readWidgetPos(taWidgetStorageKey()) || readWidgetPos(TA_WIDGET_POS_KEY);
+    if (saved) {
+      widget.style.left = `${saved.x}px`;
+      widget.style.top = `${saved.y}px`;
+      clampDashboardTaWidgetPosition(layer, widget);
+    } else {
+      centerDashboardTaWidget(layer, widget);
+    }
+  });
 }
 
 function initDashboardTaWidgetDrag() {
@@ -515,11 +698,13 @@ function initDashboardTaWidgetDrag() {
   let startY = 0;
   let originLeft = 0;
   let originTop = 0;
+  let didMove = false;
 
   const onPointerDown = (event) => {
     if (event.button !== undefined && event.button !== 0) return;
     if (event.target.closest?.('.ta-widget-minimize-btn')) return;
     dragging = true;
+    didMove = false;
     pointerId = event.pointerId;
     widget.classList.add('is-dragging');
     const board = getDashboardWidgetBoard() || layer;
@@ -542,6 +727,9 @@ function initDashboardTaWidgetDrag() {
     let y = originTop + (event.clientY - startY);
     x = Math.max(0, Math.min(x, maxX));
     y = Math.max(0, Math.min(y, maxY));
+    if (Math.abs(event.clientX - startX) > 2 || Math.abs(event.clientY - startY) > 2) {
+      didMove = true;
+    }
     widget.style.left = `${x}px`;
     widget.style.top = `${y}px`;
   };
@@ -551,9 +739,12 @@ function initDashboardTaWidgetDrag() {
     dragging = false;
     pointerId = null;
     widget.classList.remove('is-dragging');
+    if (!didMove) return;
     const x = parseFloat(widget.style.left) || 0;
     const y = parseFloat(widget.style.top) || 0;
-    localStorage.setItem(TA_WIDGET_POS_KEY, JSON.stringify({ x, y }));
+    writeWidgetPos(taWidgetStorageKey(), x, y);
+    // keep legacy key in sync for older sessions
+    writeWidgetPos(TA_WIDGET_POS_KEY, x, y);
   };
 
   handle?.addEventListener('pointerdown', onPointerDown);
@@ -571,6 +762,10 @@ const foWidgetDragState = { active: null };
 let foSeasonWidgetsLoadSeq = 0;
 
 function foWidgetStorageKey(season) {
+  return `${FO_WIDGET_POS_PREFIX}${dashboardWidgetPosScope()}:${season}`;
+}
+
+function foWidgetStorageKeyLegacy(season) {
   return `${FO_WIDGET_POS_PREFIX}${season}`;
 }
 
@@ -586,23 +781,22 @@ function defaultFoWidgetPosition(index) {
   return { x: 16, y: 16 + index * 420 };
 }
 
-function applyFoSeasonWidgetPosition(layer, widget, storageKey, index) {
+function applyFoSeasonWidgetPosition(layer, widget, season, index) {
   if (!layer || !widget) return;
-  let saved = null;
-  try {
-    saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-  } catch (e) {
-    saved = null;
-  }
-  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
-    widget.style.left = `${saved.x}px`;
-    widget.style.top = `${saved.y}px`;
-    clampDashboardTaWidgetPosition(layer, widget);
-  } else {
-    const def = defaultFoWidgetPosition(Number.isFinite(index) ? index : 0);
-    widget.style.left = `${def.x}px`;
-    widget.style.top = `${def.y}px`;
-  }
+  whenDashboardBoardReady(() => {
+    const saved =
+      readWidgetPos(foWidgetStorageKey(season)) ||
+      readWidgetPos(foWidgetStorageKeyLegacy(season));
+    if (saved) {
+      widget.style.left = `${saved.x}px`;
+      widget.style.top = `${saved.y}px`;
+      clampDashboardTaWidgetPosition(layer, widget);
+    } else {
+      const def = defaultFoWidgetPosition(Number.isFinite(index) ? index : 0);
+      widget.style.left = `${def.x}px`;
+      widget.style.top = `${def.y}px`;
+    }
+  });
 }
 
 function initDashboardFoWidgetsDrag() {
@@ -627,12 +821,14 @@ function initDashboardFoWidgetsDrag() {
     foWidgetDragState.active = {
       layer,
       widget,
+      season,
       storageKey: foWidgetStorageKey(season),
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       originLeft: widgetRect.left - boardRect.left,
       originTop: widgetRect.top - boardRect.top,
+      didMove: false,
     };
     widget.classList.add('is-dragging');
     widget.style.left = `${foWidgetDragState.active.originLeft}px`;
@@ -650,6 +846,9 @@ function initDashboardFoWidgetsDrag() {
     let y = drag.originTop + (event.clientY - drag.startY);
     x = Math.max(0, Math.min(x, maxX));
     y = Math.max(0, Math.min(y, maxY));
+    if (Math.abs(event.clientX - drag.startX) > 2 || Math.abs(event.clientY - drag.startY) > 2) {
+      drag.didMove = true;
+    }
     widget.style.left = `${x}px`;
     widget.style.top = `${y}px`;
   };
@@ -658,9 +857,12 @@ function initDashboardFoWidgetsDrag() {
     const drag = foWidgetDragState.active;
     if (!drag || event.pointerId !== drag.pointerId) return;
     drag.widget.classList.remove('is-dragging');
-    const x = parseFloat(drag.widget.style.left) || 0;
-    const y = parseFloat(drag.widget.style.top) || 0;
-    localStorage.setItem(drag.storageKey, JSON.stringify({ x, y }));
+    if (drag.didMove) {
+      const x = parseFloat(drag.widget.style.left) || 0;
+      const y = parseFloat(drag.widget.style.top) || 0;
+      writeWidgetPos(drag.storageKey, x, y);
+      writeWidgetPos(foWidgetStorageKeyLegacy(drag.season), x, y);
+    }
     foWidgetDragState.active = null;
   };
 
@@ -733,7 +935,7 @@ function buildFoSeasonWidgetCard(seasonData, index) {
             <span>Total: ${formatFilledOrderQty(seasonData.total_piece_qty)} pcs</span>
             <span>${formatFilledOrderAmount(seasonData.total_ex_mill_value)}</span>
           </div>
-          <button type="button" class="ta-widget-details-btn" onclick="openModule('FilledOrders')">Open details →</button>
+          <button type="button" class="ta-widget-details-btn" onclick="openModule('OrderFulfillment')">Open details →</button>
         </div>
       </div>
     </article>
@@ -787,7 +989,7 @@ function renderFoSeasonWidgets(layer, seasons) {
     const safeId = (seasonData.season || '').replace(/[^a-zA-Z0-9_-]/g, '_');
     const widget = document.getElementById(`dashboard-fo-widget-${safeId}`);
     if (!widget) return;
-    applyFoSeasonWidgetPosition(layer, widget, foWidgetStorageKey(seasonData.season), index);
+    applyFoSeasonWidgetPosition(layer, widget, seasonData.season, index);
   });
 }
 
@@ -885,6 +1087,10 @@ async function login() {
     if (typeof resetNexoraChatForCurrentUser === 'function') {
       resetNexoraChatForCurrentUser(true);
     }
+    // Theme is per-login — load this account's palette from server (not previous user's)
+    if (typeof hopSyncThemeForCurrentUser === 'function') {
+      await hopSyncThemeForCurrentUser(data.data.user.ui_theme || null);
+    }
     applyRoleBasedUI();
 
     try {
@@ -903,10 +1109,7 @@ async function login() {
     document.getElementById('loginModal')?.classList.add('hidden');
     document.getElementById('dashboard')?.classList.remove('hidden');
     document.getElementById('ask-nexora-btn')?.classList.remove('hidden');
-    const userInfoEl = document.getElementById('user-info') || document.getElementById('user-name');
-    if (userInfoEl) {
-      userInfoEl.textContent = authState.username;
-    }
+    setUserProfileButton(authState.username);
     if (errorEl) {
       errorEl.textContent = '';
       errorEl.classList.remove('login-timeout-msg');
@@ -914,6 +1117,7 @@ async function login() {
     }
     resetGlobalSearchUi();
     applyRoleBasedUI();
+    setUserProfileButton(authState.username);
     if (authState.role === 'hop_admin') {
       goToHomePage();
       return;
@@ -981,6 +1185,20 @@ function clearAuthLocalState() {
 }
 
 async function logout(reason) {
+  // Manual logout (any UI / any id) — confirm first. Session timeout skips confirm.
+  const skipConfirm = reason === 'timeout' || reason === 'session-expired' || reason === 'forced';
+  if (!skipConfirm) {
+    const ok = typeof nexoraConfirm === 'function'
+      ? await nexoraConfirm('Log out of NEXORA? You will need to sign in again.', {
+          title: 'Log out',
+          okText: 'Log out',
+          cancelText: 'Stay signed in',
+          danger: true,
+        })
+      : window.confirm('Log out of NEXORA? You will need to sign in again.');
+    if (!ok) return;
+  }
+
   try {
     await fetch('/logout', {
       method: 'GET',
@@ -991,6 +1209,9 @@ async function logout(reason) {
   }
 
   clearAuthLocalState();
+  if (typeof hopResetThemeChromeToDefault === 'function') {
+    hopResetThemeChromeToDefault();
+  }
   document.body.classList.remove('bd-hop-ui', 'customers-page-active', 'nexora-ask-open', 'hop-active', 'hop-module-fullscreen');
   document.documentElement.classList.remove('hop-active', 'hop-module-fullscreen');
   document.getElementById('hop-executive-workspace')?.classList.remove('hop-ws--fullscreen');
@@ -1337,14 +1558,65 @@ function formatCloudHubDate(value) {
 
 function openCloudHubFile(fileId, fileName) {
   if (!fileId) return;
-  const url = `https://drive.google.com/open?id=${encodeURIComponent(fileId)}`;
-  const win = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!win) {
-    const statusEl = document.getElementById('cloud-hub-status');
-    if (statusEl) {
-      statusEl.textContent = `Popup blocked — open Drive for: ${fileName || fileId}`;
+  // Prefer mime from cache when available
+  const cached = cloudHubFilesCache.find(
+    (f) => String(f.file_id || f.id || '') === String(fileId),
+  );
+  const mime = String(cached?.mime_type || cached?.file_type || '').toLowerCase();
+  if (mime.includes('folder')) {
+    if (typeof nexoraToast === 'function') {
+      nexoraToast('Folders open in Drive only — pick a file to download in NEXORA.', 'warn');
     }
+    return;
   }
+
+  // Download through NEXORA using the connected Drive token (not Chrome's Google account).
+  (async () => {
+    const statusEl = document.getElementById('cloud-hub-status');
+    const label = fileName || fileId;
+    if (statusEl) statusEl.textContent = `Downloading ${label}…`;
+    try {
+      const response = await fetchWithAuth(
+        `/api/v1/storage/files/${encodeURIComponent(fileId)}/download`,
+      );
+      if (!response.ok) {
+        let message = 'Download failed';
+        try {
+          const data = await response.json();
+          message = data.error || data.message || message;
+        } catch (_) { /* ignore */ }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      let downloadName = label;
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      const plainMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+      if (utfMatch) {
+        try { downloadName = decodeURIComponent(utfMatch[1]); } catch (_) { /* keep */ }
+      } else if (plainMatch) {
+        downloadName = plainMatch[1];
+      }
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      if (statusEl) statusEl.textContent = 'Google Drive connected';
+      if (typeof nexoraToast === 'function') {
+        nexoraToast(`Downloaded: ${downloadName}`, 'success');
+      }
+    } catch (error) {
+      if (statusEl) statusEl.textContent = 'Google Drive connected';
+      if (typeof nexoraToast === 'function') {
+        nexoraToast(error.message || 'Unable to download file from Drive', 'error');
+      } else {
+        alert(error.message || 'Unable to download file from Drive');
+      }
+    }
+  })();
 }
 
 let cloudHubFilesCache = [];
@@ -1374,7 +1646,7 @@ function renderCloudHubFiles(files) {
     return;
   }
   if (countEl) {
-    countEl.textContent = `${files.length} file${files.length === 1 ? '' : 's'} · click to open in Drive`;
+    countEl.textContent = `${files.length} file${files.length === 1 ? '' : 's'} · click to download in NEXORA`;
   }
   tbody.innerHTML = files
     .map((file) => {
@@ -1383,7 +1655,7 @@ function renderCloudHubFiles(files) {
       const size = formatBytes(file.file_size_bytes ?? file.file_size ?? 0);
       const updated = foEscapeText(formatCloudHubDate(file.modified_at || file.updated_at || file.last_synced || file.created_at));
       const kind = cloudHubFileKind(file);
-      return `<tr class="cloud-hub-file-row" tabindex="0" role="link" data-file-id="${fileId}" data-file-name="${name}" title="Open in Google Drive">
+      return `<tr class="cloud-hub-file-row" tabindex="0" role="button" data-file-id="${fileId}" data-file-name="${name}" title="Download in NEXORA">
         <td><span class="cloud-hub-file-name"><span class="cloud-hub-file-icon ${kind.cls}" aria-hidden="true">${kind.icon}</span><span>${name}</span></span></td>
         <td><span class="cloud-hub-type-pill ${kind.cls}">${kind.label}</span></td>
         <td>${size}</td>
@@ -1732,15 +2004,26 @@ function openPartyMasterSection() {
 function scheduleCustomersLayout() {
   const section = document.getElementById('party-master-section');
   if (!section || section.classList.contains('hidden')) return;
-  const wraps = section.querySelectorAll('.tab-panel:not(.hidden) .party-master-scroll-wrapper');
-  const available = Math.max(480, window.innerHeight - 200);
-  wraps.forEach((wrap) => {
-    wrap.style.height = `${available}px`;
-    wrap.style.maxHeight = `${available}px`;
-    wrap.style.minHeight = '480px';
-    wrap.style.overflowX = 'auto';
-    wrap.style.overflowY = 'auto';
-  });
+  const panel = section.querySelector('.tab-panel:not(.hidden)');
+  if (!panel) return;
+  const wrap = panel.querySelector('.party-master-scroll-wrapper');
+  if (!wrap) return;
+  const pagination = panel.querySelector('[id$="-pagination"]');
+  const apply = () => {
+    const panelH = panel.getBoundingClientRect().height;
+    const pagH = pagination ? pagination.getBoundingClientRect().height : 0;
+    const fallback = Math.max(220, Math.floor(window.innerHeight - 220));
+    const available = Math.max(180, Math.floor((panelH > 40 ? panelH : fallback) - pagH - 4));
+    wrap.style.setProperty('height', `${available}px`, 'important');
+    wrap.style.setProperty('max-height', `${available}px`, 'important');
+    wrap.style.setProperty('min-height', '0', 'important');
+    wrap.style.setProperty('flex', '1 1 0', 'important');
+    wrap.style.setProperty('overflow', 'scroll', 'important');
+    wrap.style.setProperty('overflow-x', 'scroll', 'important');
+    wrap.style.setProperty('overflow-y', 'scroll', 'important');
+  };
+  apply();
+  requestAnimationFrame(apply);
 }
 
 function resizeCustomersTableArea() {
@@ -1763,12 +2046,16 @@ function openPartyMasterTab(tab) {
   const retailerTab = document.getElementById('retailer-tab-button');
   const distributorPanel = document.getElementById('distributor-panel');
   const retailerPanel = document.getElementById('retailer-panel');
+  const distributorFilter = document.getElementById('distributor-filter-wrap');
+  const retailerFilter = document.getElementById('retailer-filter-wrap');
 
   if (tab === 'retailer') {
     distributorTab?.classList.remove('active');
     retailerTab?.classList.add('active');
     distributorPanel?.classList.add('hidden');
     retailerPanel?.classList.remove('hidden');
+    distributorFilter?.classList.add('hidden');
+    retailerFilter?.classList.remove('hidden');
     if (!partyMasterTableState.retailersLoaded && !partyMasterTableState.retailersLoading) {
       loadRetailers();
     }
@@ -1777,6 +2064,8 @@ function openPartyMasterTab(tab) {
     retailerTab?.classList.remove('active');
     distributorPanel?.classList.remove('hidden');
     retailerPanel?.classList.add('hidden');
+    distributorFilter?.classList.remove('hidden');
+    retailerFilter?.classList.add('hidden');
   }
   scheduleCustomersLayout();
 }
@@ -2361,10 +2650,45 @@ function formatExecutivePhoneLinks(phone, label) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return '';
   const wa = digits.length === 10 ? `91${digits}` : digits;
+  const safeLabel = String(label || '').trim() || 'customer';
   return `
-    <a class="btn btn-secondary" href="tel:${digits}">📞 Call ${label || ''}</a>
-    <a class="btn btn-secondary" href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 WhatsApp</a>
+    <a class="bd-party-action-btn bd-party-action-call" href="tel:${digits}">
+      <span class="bd-party-action-ico" aria-hidden="true">☎</span>
+      <span>Call ${safeLabel}</span>
+    </a>
+    <a class="bd-party-action-btn bd-party-action-wa" href="https://wa.me/${wa}" target="_blank" rel="noopener">
+      <span class="bd-party-action-ico" aria-hidden="true">💬</span>
+      <span>WhatsApp</span>
+    </a>
   `;
+}
+
+function escapePartyDetailHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Excel/pandas often stores pincode as float (221002.0) — show as plain digits. */
+function formatPartyFieldValue(key, value) {
+  if (value === null || value === undefined || value === '') return value;
+  const k = String(key || '').toLowerCase();
+  const isPinLike = k === 'pincode' || k === 'pin_code' || k === 'pin' || k.endsWith('_pincode');
+  const isCodeLike = isPinLike
+    || k === 'buyercode'
+    || k === 'buyer_code'
+    || k === 'distributor_code'
+    || k === 'distributorcode';
+  if (!isCodeLike) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Number.isInteger(value) ? String(value) : String(Math.trunc(value));
+  }
+  const s = String(value).trim();
+  if (/^\d+\.0+$/.test(s)) return s.replace(/\.0+$/, '');
+  if (/^\d+\.0+$/i.test(s)) return s.split('.')[0];
+  return s;
 }
 
 function showPartyDetail(record, editFn) {
@@ -2375,16 +2699,34 @@ function showPartyDetail(record, editFn) {
   const extraEl = document.getElementById('party-detail-360');
 
   title.textContent = record.name || record.firm_name || 'Details';
-  body.innerHTML = Object.entries(record)
-    .filter(([key, value]) => {
-      if (['actions', 'distributorKey', 'partyId', 'partyType'].includes(key)) return false;
-      return value !== null && value !== undefined && value !== '' && value !== '-';
-    })
-    .map(([key, value]) => {
-      const label = PARTY_DETAIL_LABELS[key] || key;
-      return `<div><strong>${label}:</strong><br>${value}</div>`;
-    })
-    .join('');
+  const preferredOrder = [
+    'name', 'firm_name', 'contactPerson', 'contact_person', 'distributor', 'distributor_name',
+    'gst', 'gst_no', 'phone', 'phone_number', 'email', 'city', 'state', 'pincode',
+    'territory', 'address', 'storeType', 'store_type', 'creditLimit', 'credit_limit',
+  ];
+  const entries = Object.entries(record).filter(([key, value]) => {
+    if (['actions', 'distributorKey', 'partyId', 'partyType'].includes(key)) return false;
+    return value !== null && value !== undefined && value !== '' && value !== '-';
+  });
+  entries.sort((a, b) => {
+    const ai = preferredOrder.indexOf(a[0]);
+    const bi = preferredOrder.indexOf(b[0]);
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+  body.innerHTML = entries.map(([key, value]) => {
+    const label = PARTY_DETAIL_LABELS[key] || key;
+    const display = formatPartyFieldValue(key, value);
+    const spanClass = /address/i.test(key) ? ' bd-party-field--wide' : '';
+    return `
+      <div class="bd-party-field${spanClass}">
+        <span class="bd-party-field-label">${escapePartyDetailHtml(label)}</span>
+        <strong class="bd-party-field-value">${escapePartyDetailHtml(display)}</strong>
+      </div>
+    `;
+  }).join('');
 
   const phone = record.phone || record.phone_number;
   if (actionsEl) {
@@ -2397,7 +2739,7 @@ function showPartyDetail(record, editFn) {
     }
   }
   if (extraEl) {
-    extraEl.innerHTML = '<p class="subtitle">Loading Party 360…</p>';
+    extraEl.innerHTML = '<p class="bd-party-muted">Loading Party 360…</p>';
     extraEl.classList.remove('hidden');
   }
 
@@ -2416,7 +2758,7 @@ function showPartyDetail(record, editFn) {
   if (record.partyId && record.partyType) {
     loadParty360Extension(record.partyType, record.partyId, extraEl);
   } else if (extraEl) {
-    extraEl.innerHTML = '<p class="subtitle">Party 360 needs a master record ID — upload or open from Customers master list.</p>';
+    extraEl.innerHTML = '<p class="bd-party-muted">Party 360 needs a master record ID — upload or open from Customers master list.</p>';
   }
 }
 
@@ -2444,38 +2786,46 @@ async function loadParty360Extension(partyType, partyId, container) {
     const filled = payload.filled_orders || [];
 
     container.innerHTML = `
-      <h3>Party 360</h3>
-      ${outstanding ? `
-        <div class="party-detail-360-section">
-          <strong>Outstanding:</strong> ₹${Number(outstanding.outstanding || 0).toLocaleString()}
-          ${outstanding.overdue ? ` · Overdue ₹${Number(outstanding.overdue).toLocaleString()}` : ''}
-        </div>` : '<div class="party-detail-360-section"><span class="subtitle">Outstanding — needs invoice data in Finance module.</span></div>'}
-      <div class="party-detail-360-section">
-        <strong>Order tracking (${tracking.length})</strong>
-        ${tracking.length ? `<ul>${tracking.slice(0, 8).map((t) => `<li>${t.distributor_name || '—'} — Ref ${t.order_ref_no || '—'} · SO ${t.has_sales_order ? '✓' : '✗'} · CI ${t.has_commercial_invoice ? '✓' : '✗'}</li>`).join('')}</ul>` : '<p class="subtitle">No lifecycle records for this party yet.</p>'}
+      <div class="bd-party-360-head">
+        <p class="bd-party-detail-eyebrow">Insights</p>
+        <h3>Party 360</h3>
       </div>
-      <div class="party-detail-360-section">
-        <strong>Your filled orders (${filled.length})</strong>
-        ${filled.length ? `<ul>${filled.slice(0, 5).map((f) => `<li>#${f.id} ${f.category || 'Order'} — ${f.matched_lines || 0}/${f.total_lines || 0} lines</li>`).join('')}</ul>` : '<p class="subtitle">No filled orders linked to this distributor under your login.</p>'}
-      </div>
-      <div class="party-detail-360-section">
-        <strong>Visits (${visits.length})</strong>
-        ${visits.length ? `<ul>${visits.slice(0, 5).map((v) => `<li>${v.visit_date}: ${v.notes || '—'}</li>`).join('')}</ul>` : '<p class="subtitle">No visits logged yet.</p>'}
+      <div class="bd-party-360-grid">
+        <article class="bd-party-360-card">
+          <span class="bd-party-field-label">Outstanding</span>
+          ${outstanding
+            ? `<strong class="bd-party-360-metric">₹${Number(outstanding.outstanding || 0).toLocaleString()}</strong>
+               ${outstanding.overdue ? `<span class="bd-party-muted">Overdue ₹${Number(outstanding.overdue).toLocaleString()}</span>` : ''}`
+            : '<span class="bd-party-muted">Needs invoice data in Finance.</span>'}
+        </article>
+        <article class="bd-party-360-card">
+          <span class="bd-party-field-label">Order tracking (${tracking.length})</span>
+          ${tracking.length
+            ? `<ul class="bd-party-360-list">${tracking.slice(0, 8).map((t) => `<li>${escapePartyDetailHtml(t.distributor_name || '—')} — Ref ${escapePartyDetailHtml(t.order_ref_no || '—')} · SO ${t.has_sales_order ? '✓' : '✗'} · CI ${t.has_commercial_invoice ? '✓' : '✗'}</li>`).join('')}</ul>`
+            : '<span class="bd-party-muted">No lifecycle records yet.</span>'}
+        </article>
+        <article class="bd-party-360-card">
+          <span class="bd-party-field-label">Filled orders (${filled.length})</span>
+          ${filled.length
+            ? `<ul class="bd-party-360-list">${filled.slice(0, 5).map((f) => `<li>#${f.id} ${escapePartyDetailHtml(f.category || 'Order')} — ${f.matched_lines || 0}/${f.total_lines || 0} lines</li>`).join('')}</ul>`
+            : '<span class="bd-party-muted">No filled orders linked under your login.</span>'}
+        </article>
+        <article class="bd-party-360-card">
+          <span class="bd-party-field-label">Visits (${visits.length})</span>
+          ${visits.length
+            ? `<ul class="bd-party-360-list">${visits.slice(0, 5).map((v) => `<li>${escapePartyDetailHtml(v.visit_date)}: ${escapePartyDetailHtml(v.notes || '—')}</li>`).join('')}</ul>`
+            : '<span class="bd-party-muted">No visits logged yet.</span>'}
+        </article>
       </div>
     `;
   } catch (error) {
-    container.innerHTML = `<p class="subtitle">${error.message || 'Party 360 unavailable.'}</p>`;
+    container.innerHTML = `<p class="bd-party-muted">${escapePartyDetailHtml(error.message || 'Party 360 unavailable.')}</p>`;
   }
 }
 
 function getVisiblePartyColumns(records, columnDefs) {
-  return columnDefs.filter((col) => {
-    if (col.alwaysShow) return true;
-    return records.some((r) => {
-      const v = r[col.key];
-      return v !== null && v !== undefined && v !== '' && v !== '-';
-    });
-  });
+  // Always show every defined column so no party fields are hidden.
+  return columnDefs;
 }
 
 function showPartyMasterTableLoading(tbodyId) {
@@ -2496,8 +2846,8 @@ function renderPartyMasterPagination(paginationId, page, totalRecords) {
     <div class="party-master-pagination">
       <span class="party-master-pagination-meta">${totalRecords ? `Showing ${start}–${end} of ${totalRecords}` : 'No records'}</span>
       <div class="party-master-pagination-actions">
-        <button type="button" class="btn btn-secondary" ${safePage <= 1 ? 'disabled' : ''} onclick="changePartyMasterPage('${paginationId}', -1)">Previous</button>
-        <span class="party-master-pagination-page">Page ${safePage} / ${totalPages}</span>
+        <button type="button" class="btn btn-secondary" ${safePage <= 1 ? 'disabled' : ''} onclick="changePartyMasterPage('${paginationId}', -1)">Prev</button>
+        <span class="party-master-pagination-page">${safePage} / ${totalPages}</span>
         <button type="button" class="btn btn-secondary" ${safePage >= totalPages ? 'disabled' : ''} onclick="changePartyMasterPage('${paginationId}', 1)">Next</button>
       </div>
     </div>
@@ -2535,9 +2885,15 @@ function renderPartyMasterTable(kind, theadId, tbodyId, paginationId, records, c
     .map((r, index) => {
       const cells = visibleColumns
         .map((c) => {
-          if (c.isAction) return `<td>${r[c.key] || ''}</td>`;
-          const v = r[c.key];
-          return `<td>${v !== null && v !== undefined && v !== '' ? v : '-'}</td>`;
+          if (c.isAction) return `<td class="pm-actions">${r[c.key] || ''}</td>`;
+          const v = formatPartyFieldValue(c.key, r[c.key]);
+          const text = v !== null && v !== undefined && v !== '' ? String(v) : '—';
+          const safe = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+          return `<td title="${safe}">${safe}</td>`;
         })
         .join('');
       return `<tr onclick="if(!event.target.closest('button')){showPartyDetail(partyDetailRecordsCache[${index}])}">${cells}</tr>`;
@@ -2571,6 +2927,72 @@ function changePartyMasterPage(paginationId, delta) {
   scheduleCustomersLayout();
 }
 
+const PARTY_MASTER_ICON_EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm2.92 2.33H5v-.92l9.1-9.1.92.92-9.1 9.1ZM20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.3a1 1 0 0 0-1.41 0l-1.7 1.7L19 8.74l1.71-1.7Z" fill="currentColor"/></svg>';
+const PARTY_MASTER_ICON_DELETE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 14H7L6 7Zm3-3h6l1 2H8l1-2Z" fill="currentColor"/></svg>';
+const ARTICLE_MASTER_ICON_HISTORY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 0 8 8h-2a6 6 0 1 1-6-6V4Zm1 4v4.6l3.2 1.9-.9 1.5L11 13V8h2Z" fill="currentColor"/></svg>';
+
+function partyMasterActionButtons(editHandler, deleteHandler) {
+  return `
+    <div class="pm-action-btns">
+      <button type="button" class="pm-icon-btn pm-icon-edit" title="Edit" aria-label="Edit" onclick="event.stopPropagation();${editHandler}">${PARTY_MASTER_ICON_EDIT}</button>
+      <button type="button" class="pm-icon-btn pm-icon-delete" title="Delete forever" aria-label="Delete" onclick="event.stopPropagation();${deleteHandler}">${PARTY_MASTER_ICON_DELETE}</button>
+    </div>
+  `;
+}
+
+/** Unified Customers delete — always purges party + master twins for one contact. */
+async function deleteCustomerContact(kind, id, source) {
+  const label = kind === 'distributor' ? 'distributor' : 'retailer';
+  if (!(await nexoraConfirm(
+    `Permanently delete this ${label}? Matching copies in party and master data are removed together.`,
+    { title: `Delete ${label}`, danger: true, okText: 'Delete forever' },
+  ))) {
+    return;
+  }
+  try {
+    const prefer = source === 'master' ? 'master' : 'party';
+    const ok = await purgeCustomerAndTwins(kind, id, prefer);
+    if (!ok) throw new Error(`Unable to delete ${label}`);
+    rerenderCustomersTable(kind);
+    if (kind === 'distributor') {
+      await refreshCustomersAfterMasterChange('distributors');
+      await refreshCustomersAfterMasterChange('retailers');
+      loadDistributorSelect();
+    } else {
+      await refreshCustomersAfterMasterChange('retailers');
+    }
+    nexoraToast(`${label.charAt(0).toUpperCase()}${label.slice(1)} deleted.`, 'success');
+  } catch (error) {
+    alert(error.message || `Error deleting ${label}.`);
+  }
+}
+
+async function deleteDistributor(id) {
+  return deleteCustomerContact('distributor', id, 'party');
+}
+async function deleteMasterDistributor(id) {
+  return deleteCustomerContact('distributor', id, 'master');
+}
+async function deleteRetailer(id) {
+  return deleteCustomerContact('retailer', id, 'party');
+}
+async function deleteMasterRetailer(id) {
+  return deleteCustomerContact('retailer', id, 'master');
+}
+
+function articleMasterActionButtons(articleId, hasHistory) {
+  const historyBtn = hasHistory
+    ? `<button type="button" class="pm-icon-btn pm-icon-history" title="Price history" aria-label="Price history" onclick="event.stopPropagation();openArticleMasterPriceHistory(${articleId})">${ARTICLE_MASTER_ICON_HISTORY}</button>`
+    : '';
+  return `
+    <div class="pm-action-btns am-action-btns">
+      <button type="button" class="pm-icon-btn pm-icon-edit" title="Edit" aria-label="Edit" onclick="event.stopPropagation();openArticleMasterFullEdit(${articleId})">${PARTY_MASTER_ICON_EDIT}</button>
+      ${historyBtn}
+      <button type="button" class="pm-icon-btn pm-icon-delete" title="Delete" aria-label="Delete" onclick="event.stopPropagation();deleteOneArticleMaster(${articleId})">${PARTY_MASTER_ICON_DELETE}</button>
+    </div>
+  `;
+}
+
 const DISTRIBUTOR_TABLE_COLUMNS = [
   { key: 'name', label: 'Firm / Name', alwaysShow: true },
   { key: 'buyerCode', label: 'Distributor Code', alwaysShow: true },
@@ -2601,20 +3023,270 @@ const RETAILER_TABLE_COLUMNS = [
   { key: 'actions', label: 'Actions', isAction: true, alwaysShow: true },
 ];
 
-async function loadDistributors() {
-  if (partyMasterTableState.distributorsLoading) {
-    return partyMasterTableState.distributorsLoadPromise;
+function partyContactNameCore(name) {
+  let text = String(name == null ? '' : name).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!text) return '';
+  // "INDU HANDLOOMS, VISAKHAPATNAM" → "indu handlooms"
+  text = text.replace(/\s*,\s*[^,]+$/, '').trim();
+  text = text.replace(/[^\w\s&./-]/g, ' ').replace(/\s+/g, ' ').trim();
+  return text;
+}
+
+function partyContactDedupeKey(record) {
+  const gst = String(record?.gst || '').replace(/\s+/g, '').toUpperCase();
+  if (gst && gst !== '—' && gst.toLowerCase() !== 'n/a') return `gst:${gst}`;
+  const phone = String(record?.phone || '').replace(/\D+/g, '');
+  if (phone.length >= 10) return `phone:${phone.slice(-10)}`;
+  const core = partyContactNameCore(record?.name);
+  if (core) return `firm:${core}`;
+  const name = String(record?.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (name) return `name:${name}`;
+  return '';
+}
+
+function partyContactMatchKeys(record) {
+  const keys = new Set();
+  const gst = String(record?.gst || '').replace(/\s+/g, '').toUpperCase();
+  if (gst && gst !== '—' && gst.toLowerCase() !== 'n/a') keys.add(`gst:${gst}`);
+  const phone = String(record?.phone || '').replace(/\D+/g, '');
+  if (phone.length >= 10) keys.add(`phone:${phone.slice(-10)}`);
+  const core = partyContactNameCore(record?.name);
+  if (core) keys.add(`firm:${core}`);
+  const full = String(record?.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (full) keys.add(`name:${full}`);
+  const primary = partyContactDedupeKey(record);
+  if (primary) keys.add(primary);
+  return [...keys];
+}
+
+function rememberPurgedCustomerKeys(records) {
+  if (!partyMasterState.purgedContactKeys) {
+    partyMasterState.purgedContactKeys = new Set();
   }
+  (records || []).forEach((rec) => {
+    partyContactMatchKeys(rec).forEach((k) => partyMasterState.purgedContactKeys.add(k));
+  });
+  try {
+    sessionStorage.setItem(
+      'nexora_purged_customer_keys',
+      JSON.stringify([...partyMasterState.purgedContactKeys].slice(-500)),
+    );
+  } catch (_) { /* ignore quota */ }
+}
+
+function loadPurgedCustomerKeys() {
+  if (partyMasterState.purgedContactKeys instanceof Set) return partyMasterState.purgedContactKeys;
+  let keys = [];
+  try {
+    keys = JSON.parse(sessionStorage.getItem('nexora_purged_customer_keys') || '[]');
+  } catch (_) {
+    keys = [];
+  }
+  partyMasterState.purgedContactKeys = new Set(Array.isArray(keys) ? keys : []);
+  return partyMasterState.purgedContactKeys;
+}
+
+function isPurgedCustomerRecord(record) {
+  const purged = loadPurgedCustomerKeys();
+  if (!purged.size) return false;
+  return partyContactMatchKeys(record).some((k) => purged.has(k));
+}
+
+function dedupePartyMasterPreferringMasters(records) {
+  const out = [];
+  const seen = new Map();
+  const push = (rec, preferMaster) => {
+    if (isPurgedCustomerRecord(rec)) return;
+    const key = partyContactDedupeKey(rec);
+    if (!key) {
+      out.push(rec);
+      return;
+    }
+    const existingIdx = seen.get(key);
+    if (existingIdx == null) {
+      seen.set(key, out.length);
+      out.push(rec);
+      return;
+    }
+    if (preferMaster) {
+      out[existingIdx] = rec;
+    }
+  };
+  (records || []).forEach((rec) => {
+    const isMaster = rec?.source === 'master'
+      || (typeof rec?.actions === 'string'
+        && (rec.actions.includes('editMasterDistributor') || rec.actions.includes('editMasterRetailer')));
+    push(rec, isMaster);
+  });
+  return out;
+}
+
+function removeCustomerRecordFromLocalState(kind, partyId) {
+  const id = Number(partyId);
+  if (!Number.isFinite(id)) return;
+  const filterOut = (list) => (list || []).filter((r) => Number(r?.partyId) !== id);
+  if (kind === 'distributor') {
+    partyMasterState.allDistributorRecords = filterOut(partyMasterState.allDistributorRecords);
+    partyMasterTableState.distributorRecords = filterOut(partyMasterTableState.distributorRecords);
+    partyMasterState.distributors = (partyMasterState.distributors || []).filter((d) => Number(d.id) !== id);
+  } else if (kind === 'retailer') {
+    partyMasterState.allRetailerRecords = filterOut(partyMasterState.allRetailerRecords);
+    partyMasterTableState.retailerRecords = filterOut(partyMasterTableState.retailerRecords);
+    partyMasterState.retailers = (partyMasterState.retailers || []).filter((r) => Number(r.id) !== id);
+  }
+}
+
+function isMasterCustomerRecord(record) {
+  if (record?.source === 'master') return true;
+  if (record?.source === 'party') return false;
+  const actions = String(record?.actions || '');
+  return actions.includes('editMasterDistributor') || actions.includes('editMasterRetailer');
+}
+
+function findCustomerRecordById(kind, partyId, preferSource) {
+  const id = Number(partyId);
+  const raw = kind === 'distributor'
+    ? (partyMasterState.rawDistributorRecords || partyMasterState.allDistributorRecords)
+    : (partyMasterState.rawRetailerRecords || partyMasterState.allRetailerRecords);
+  const matches = (raw || []).filter((r) => Number(r?.partyId) === id);
+  if (preferSource) {
+    const preferred = matches.find((r) => r.source === preferSource || (preferSource === 'master' ? isMasterCustomerRecord(r) : !isMasterCustomerRecord(r)));
+    if (preferred) return preferred;
+  }
+  return matches[0] || (kind === 'distributor'
+    ? (partyMasterState.allDistributorRecords || []).find((r) => Number(r?.partyId) === id)
+    : (partyMasterState.allRetailerRecords || []).find((r) => Number(r?.partyId) === id)) || null;
+}
+
+function findMatchingCustomerTwins(kind, seedRecord) {
+  if (!seedRecord) return [];
+  const raw = kind === 'distributor'
+    ? (partyMasterState.rawDistributorRecords || partyMasterState.allDistributorRecords)
+    : (partyMasterState.rawRetailerRecords || partyMasterState.allRetailerRecords);
+  const seedKeys = new Set(partyContactMatchKeys(seedRecord));
+  if (!seedKeys.size) return [seedRecord];
+  const matches = (raw || []).filter((r) => partyContactMatchKeys(r).some((k) => seedKeys.has(k)));
+  // Always include the clicked seed (correct source/id) even if raw list was stale
+  const seedId = Number(seedRecord.partyId);
+  const seedSource = seedRecord.source || (isMasterCustomerRecord(seedRecord) ? 'master' : 'party');
+  if (!matches.some((r) => Number(r.partyId) === seedId && (r.source || '') === seedSource)) {
+    matches.unshift(seedRecord);
+  }
+  return matches.length ? matches : [seedRecord];
+}
+
+function removeCustomerRecordsByMatchKeys(kind, keys) {
+  const keySet = new Set(keys || []);
+  if (!keySet.size) return;
+  const filterOut = (list) => (list || []).filter((r) => !partyContactMatchKeys(r).some((k) => keySet.has(k)));
+  if (kind === 'distributor') {
+    partyMasterState.rawDistributorRecords = filterOut(partyMasterState.rawDistributorRecords);
+    partyMasterState.allDistributorRecords = filterOut(partyMasterState.allDistributorRecords);
+    partyMasterTableState.distributorRecords = filterOut(partyMasterTableState.distributorRecords);
+  } else if (kind === 'retailer') {
+    partyMasterState.rawRetailerRecords = filterOut(partyMasterState.rawRetailerRecords);
+    partyMasterState.allRetailerRecords = filterOut(partyMasterState.allRetailerRecords);
+    partyMasterTableState.retailerRecords = filterOut(partyMasterTableState.retailerRecords);
+  }
+}
+
+function customerDeleteApiUrl(kind, record) {
+  const id = Number(record?.partyId);
+  const master = isMasterCustomerRecord(record);
+  if (kind === 'distributor') {
+    return master ? `/api/v1/masters/distributors/${id}` : `/api/v1/parties/distributors/${id}`;
+  }
+  return master ? `/api/v1/masters/retailers/${id}` : `/api/v1/parties/retailers/${id}`;
+}
+
+async function purgeCustomerAndTwins(kind, partyId, preferSource) {
+  const seed = findCustomerRecordById(kind, partyId, preferSource) || {
+    partyId,
+    source: preferSource || 'party',
+    name: '',
+    actions: preferSource === 'master'
+      ? (kind === 'distributor' ? 'editMasterDistributor' : 'editMasterRetailer')
+      : (kind === 'distributor' ? 'editDistributor' : 'editRetailer'),
+  };
+  if (preferSource && !seed.source) seed.source = preferSource;
+
+  const twins = findMatchingCustomerTwins(kind, seed);
+  const matchKeys = new Set();
+  twins.forEach((rec) => partyContactMatchKeys(rec).forEach((k) => matchKeys.add(k)));
+
+  let primaryOk = false;
+  const deletedRecs = [];
+  await Promise.all(twins.map(async (rec) => {
+    try {
+      const response = await fetchWithAuth(customerDeleteApiUrl(kind, rec), { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      const ok = response.status === 404 || Boolean(response.ok && data.success);
+      const sameId = Number(rec.partyId) === Number(partyId);
+      const sameSource = !preferSource
+        || rec.source === preferSource
+        || (preferSource === 'master' ? isMasterCustomerRecord(rec) : !isMasterCustomerRecord(rec));
+      if (ok && sameId && sameSource) primaryOk = true;
+      if (ok) deletedRecs.push(rec);
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }));
+
+  if (!primaryOk) return false;
+
+  rememberPurgedCustomerKeys(deletedRecs.length ? deletedRecs : twins);
+  removeCustomerRecordsByMatchKeys(kind, [...matchKeys]);
+  twins.forEach((rec) => removeCustomerRecordFromLocalState(kind, rec.partyId));
+  return true;
+}
+
+function rerenderCustomersTable(kind) {
+  if (kind === 'distributor') {
+    const filtered = filterDistributorRecords(partyMasterState.allDistributorRecords || []);
+    partyMasterTableState.distributorRecords = filtered;
+    populateDistributorCityFilterOptions(partyMasterState.allDistributorRecords || []);
+    renderPartyMasterTable(
+      'distributor',
+      'distributor-thead',
+      'distributor-tbody',
+      'distributor-pagination',
+      filtered,
+      DISTRIBUTOR_TABLE_COLUMNS,
+      partyMasterTableState.distributorPage || 1,
+    );
+  } else {
+    const all = partyMasterState.allRetailerRecords || [];
+    populateRetailerDistributorFilterOptions(all);
+    populateRetailerCityFilterOptions(all);
+    const filtered = filterRetailerRecords(all);
+    partyMasterTableState.retailerRecords = filtered;
+    renderPartyMasterTable(
+      'retailer',
+      'retailer-thead',
+      'retailer-tbody',
+      'retailer-pagination',
+      filtered,
+      RETAILER_TABLE_COLUMNS,
+      partyMasterTableState.retailerPage || 1,
+    );
+  }
+  scheduleCustomersLayout();
+}
+
+async function loadDistributors() {
+  const loadSeq = ++partyMasterTableState.distributorsLoadSeq;
   partyMasterTableState.distributorsLoading = true;
   showPartyMasterTableLoading('distributor-tbody');
 
   partyMasterTableState.distributorsLoadPromise = (async () => {
     try {
-      const response = await fetchWithAuth('/api/v1/parties/distributors?limit=200');
+      const response = await fetchWithAuth('/api/v1/parties/distributors?limit=5000');
       const data = await response.json();
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Unable to load distributors');
       }
+      if (loadSeq !== partyMasterTableState.distributorsLoadSeq) return;
       partyMasterState.distributors = data.data.results || [];
 
       let masterDistributors = [];
@@ -2627,42 +3299,49 @@ async function loadDistributors() {
       } catch (e) {
         console.warn('Failed to load master distributors for combined view:', e);
       }
+      if (loadSeq !== partyMasterTableState.distributorsLoadSeq) return;
 
-      const records = [
-        ...partyMasterState.distributors.map((d) => ({
-          partyId: d.id,
-          partyType: 'distributor',
-          name: d.name,
-          contactPerson: d.contact_person,
-          gst: d.gst_number,
-          territory: d.territory,
-          city: d.city,
-          state: d.state,
-          pincode: d.pin_code,
-          address: d.address,
-          phone: d.phone,
-          creditLimit: d.credit_limit,
-          actions: `<button onclick="editDistributor(${d.id})" class="btn btn-secondary">Edit</button> <button onclick="deleteDistributor(${d.id})" class="btn btn-danger">Delete</button>`,
-        })),
-        ...masterDistributors.map((d) => ({
-          partyId: d.id,
-          partyType: 'distributor',
-          name: d.firm_name || d.name,
-          buyerCode: d.distributor_code || d.distributor_id || d.buyer_code || '',
-          contactPerson: d.name,
-          gst: d.gst_no,
-          territory: d.zone,
-          city: d.location,
-          state: d.region,
-          pincode: d.pincode,
-          address: d.address,
-          phone: d.phone_number,
-          creditLimit: d.credit_limit,
-          actions: `<button onclick="event.stopPropagation(); editMasterDistributor(${d.id})" class="btn btn-secondary">Edit</button> <button onclick="event.stopPropagation(); deleteMasterDistributor(${d.id})" class="btn btn-danger">Delete</button>`,
-        })),
-      ];
+      const partyRecords = partyMasterState.distributors.map((d) => ({
+        partyId: d.id,
+        partyType: 'distributor',
+        source: 'party',
+        name: d.name,
+        contactPerson: d.contact_person,
+        gst: d.gst_number,
+        territory: d.territory,
+        city: resolvePartyCity(d.city, d.address, d.name),
+        state: d.state,
+        pincode: formatPartyFieldValue('pincode', d.pin_code),
+        address: d.address,
+        phone: d.phone,
+        creditLimit: d.credit_limit,
+        actions: partyMasterActionButtons(`editDistributor(${d.id})`, `deleteDistributor(${d.id})`),
+      }));
+      const masterRecords = masterDistributors.map((d) => ({
+        partyId: d.id,
+        partyType: 'distributor',
+        source: 'master',
+        name: d.firm_name || d.name,
+        buyerCode: formatPartyFieldValue('buyerCode', d.distributor_code || d.distributor_id || d.buyer_code || ''),
+        contactPerson: d.name,
+        gst: d.gst_no,
+        territory: d.zone,
+        city: resolvePartyCity(d.location, d.address, d.firm_name || d.name),
+        state: d.region,
+        pincode: formatPartyFieldValue('pincode', d.pincode),
+        address: d.address,
+        phone: d.phone_number,
+        creditLimit: d.credit_limit,
+        actions: partyMasterActionButtons(`editMasterDistributor(${d.id})`, `deleteMasterDistributor(${d.id})`),
+      }));
+      partyMasterState.rawDistributorRecords = [...partyRecords, ...masterRecords];
+      const records = dedupePartyMasterPreferringMasters(partyMasterState.rawDistributorRecords);
 
-      partyMasterTableState.distributorRecords = records;
+      partyMasterState.allDistributorRecords = records;
+      populateDistributorCityFilterOptions(records);
+      const filteredRecords = filterDistributorRecords(records);
+
+      partyMasterTableState.distributorRecords = filteredRecords;
       partyMasterTableState.distributorPage = 1;
       partyMasterTableState.distributorsLoaded = true;
       renderPartyMasterTable(
@@ -2670,43 +3349,438 @@ async function loadDistributors() {
         'distributor-thead',
         'distributor-tbody',
         'distributor-pagination',
-        records,
+        filteredRecords,
         DISTRIBUTOR_TABLE_COLUMNS,
         1,
       );
       scheduleCustomersLayout();
     } catch (error) {
+      if (loadSeq !== partyMasterTableState.distributorsLoadSeq) return;
       console.warn('Failed to load distributors:', error);
       const tbody = document.getElementById('distributor-tbody');
       if (tbody) {
         tbody.innerHTML = '<tr><td colspan="20">Unable to load distributors.</td></tr>';
       }
     } finally {
-      partyMasterTableState.distributorsLoading = false;
+      if (loadSeq === partyMasterTableState.distributorsLoadSeq) {
+        partyMasterTableState.distributorsLoading = false;
+      }
     }
   })();
 
   return partyMasterTableState.distributorsLoadPromise;
 }
 
+function isBlankPartyValue(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return true;
+  const lower = text.toLowerCase();
+  return text === '—' || text === '-' || text === '–' || lower === 'n/a' || lower === 'na' || lower === 'null';
+}
+
+const PARTY_CITY_STATE_PATTERN = /\b(andhra\s*pradesh|arunachal\s*pradesh|himachal\s*pradesh|madhya\s*pradesh|uttar\s*pradesh|west\s*bengal|tamil\s*nadu|telangana|karnataka|maharashtra|gujarat|rajasthan|kerala|punjab|haryana|odisha|orissa|bihar|jharkhand|chhattisgarh|chattisgarh|assam|goa|nct\s+of\s+delhi|uttarakhand|uttaranchal|meghalaya|manipur|mizoram|nagaland|sikkim|tripura|pondicherry|puducherry|chandigarh|ladakh|lakshadweep|andaman|nicobar)\b/gi;
+
+const PARTY_CITY_STREET_WORDS = /\b(road|rd|street|st|lane|nagar|colony|area|market|mkt|bazaar|station|stastion|near|opp|opposite|main|cross|circle|chowk|plot|door|floor|block|sector|phase|apartment|complex|building|shop|chowk|vihar|enclave|extension|extn|marg|gali|bazar)\b/i;
+
+const PARTY_CITY_ADDRESS_MARKERS = /\b(shop\s*no|mkt\.?|market|road|rd\.?|street|lane|colony|nagar|apartment|complex|building|floor|plot|near|opp\.?|vile\s*parle|sector|phase|mall|shyamkamal|flat|house\s*no|h\.?\s*no)\b/i;
+
+/** Multi-word cities first so "Navi Mumbai" / "New Delhi" win over shorter names. */
+const PARTY_KNOWN_CITIES = [
+  ['navi mumbai', 'Navi Mumbai'],
+  ['new delhi', 'New Delhi'],
+  ['greater noida', 'Greater Noida'],
+  ['gautam buddha nagar', 'Noida'],
+  ['gautambuddha nagar', 'Noida'],
+  ['gautam budh nagar', 'Noida'],
+  ['thane west', 'Thane'],
+  ['thane east', 'Thane'],
+  ['mumbai', 'Mumbai'],
+  ['bombay', 'Mumbai'],
+  ['thane', 'Thane'],
+  ['pune', 'Pune'],
+  ['nagpur', 'Nagpur'],
+  ['nashik', 'Nashik'],
+  ['nasik', 'Nashik'],
+  ['aurangabad', 'Aurangabad'],
+  ['bengaluru', 'Bengaluru'],
+  ['bangalore', 'Bengaluru'],
+  ['mysore', 'Mysuru'],
+  ['mysuru', 'Mysuru'],
+  ['chennai', 'Chennai'],
+  ['madras', 'Chennai'],
+  ['coimbatore', 'Coimbatore'],
+  ['madurai', 'Madurai'],
+  ['hyderabad', 'Hyderabad'],
+  ['secunderabad', 'Secunderabad'],
+  ['vijayawada', 'Vijayawada'],
+  ['visakhapatnam', 'Visakhapatnam'],
+  ['vizag', 'Visakhapatnam'],
+  ['kolkata', 'Kolkata'],
+  ['calcutta', 'Kolkata'],
+  ['delhi', 'Delhi'],
+  ['noida', 'Noida'],
+  ['gurugram', 'Gurugram'],
+  ['gurgaon', 'Gurugram'],
+  ['faridabad', 'Faridabad'],
+  ['ghaziabad', 'Ghaziabad'],
+  ['ahmedabad', 'Ahmedabad'],
+  ['surat', 'Surat'],
+  ['vadodara', 'Vadodara'],
+  ['baroda', 'Vadodara'],
+  ['rajkot', 'Rajkot'],
+  ['jaipur', 'Jaipur'],
+  ['jodhpur', 'Jodhpur'],
+  ['udaipur', 'Udaipur'],
+  ['indore', 'Indore'],
+  ['bhopal', 'Bhopal'],
+  ['lucknow', 'Lucknow'],
+  ['kanpur', 'Kanpur'],
+  ['varanasi', 'Varanasi'],
+  ['patna', 'Patna'],
+  ['ranchi', 'Ranchi'],
+  ['bhubaneswar', 'Bhubaneswar'],
+  ['cuttack', 'Cuttack'],
+  ['kochi', 'Kochi'],
+  ['cochin', 'Kochi'],
+  ['thiruvananthapuram', 'Thiruvananthapuram'],
+  ['trivandrum', 'Thiruvananthapuram'],
+  ['chandigarh', 'Chandigarh'],
+  ['ludhiana', 'Ludhiana'],
+  ['amritsar', 'Amritsar'],
+  ['jammu', 'Jammu'],
+  ['srinagar', 'Srinagar'],
+  ['guwahati', 'Guwahati'],
+  ['raipur', 'Raipur'],
+  ['jabalpur', 'Jabalpur'],
+  ['solapur', 'Solapur'],
+  ['kolhapur', 'Kolhapur'],
+  ['panvel', 'Panvel'],
+  ['kalyan', 'Kalyan'],
+  ['vasai', 'Vasai'],
+  ['virar', 'Virar'],
+  ['dombivli', 'Dombivli'],
+  ['dombivali', 'Dombivli'],
+  ['meerut', 'Meerut'],
+  ['agra', 'Agra'],
+  ['bhatinda', 'Bathinda'],
+  ['bathinda', 'Bathinda'],
+  ['dehradun', 'Dehradun'],
+  ['haridwar', 'Haridwar'],
+  ['rohtak', 'Rohtak'],
+  ['panipat', 'Panipat'],
+  ['karnal', 'Karnal'],
+  ['ambala', 'Ambala'],
+  ['hisar', 'Hisar'],
+  ['sonipat', 'Sonipat'],
+  ['sonepat', 'Sonipat'],
+];
+
+function matchKnownPartyCity(text) {
+  const raw = String(text || '').toLowerCase();
+  const lower = raw
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!lower && !raw) return '';
+  for (const [needle, canonical] of PARTY_KNOWN_CITIES) {
+    const spaced = needle.replace(/\s+/g, '\\s+');
+    const pattern = new RegExp(`(?:^|[^a-z])${spaced}(?:[^a-z]|$)`, 'i');
+    if (lower && pattern.test(lower)) return canonical;
+    // Glued street+city: "Commercial Streetbangalore", "MGroadmumbai"
+    const compactNeedle = needle.replace(/\s+/g, '');
+    if (compactNeedle.length >= 4) {
+      const glued = new RegExp(`${compactNeedle}(?:[^a-z]|$)`, 'i');
+      if (glued.test(raw.replace(/\s+/g, ''))) return canonical;
+    }
+  }
+  return '';
+}
+
+function titleCaseCityName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (ch) => ch.toUpperCase());
+}
+
+function isGarbagePartyCityCandidate(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!text) return true;
+  const lower = text.toLowerCase();
+  if (matchKnownPartyCity(text)) return false;
+  if (text.length < 3 || text.length > 32) return true;
+  if (/^\d+$/.test(text)) return true;
+  if (/^[a-z]\s*-\s*\d/i.test(text)) return true; // F-3, A-12
+  if (/\b(and|or|the|near|opp|plot|shop|floor|flat|door|no|nos?|vs|to)\b/i.test(lower) && text.split(/\s+/).length <= 3) return true;
+  if (/^(and|or|the|near|opp|india|state|city|town|village|dist|district|east|west|north|south)$/i.test(lower)) return true;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  if (words.every((w) => w.length <= 2)) return true; // "And F", "F F"
+  if (PARTY_CITY_STREET_WORDS.test(text) || PARTY_CITY_ADDRESS_MARKERS.test(text)) return true;
+  if (/(road|street|lane|nagar|colony|market|sector|phase|complex|building)[a-z]{3,}/i.test(text)) return true;
+  return false;
+}
+
+/** Clean messy location strings into one city name, e.g. "… Delhi-110092" → "Delhi" (never "And F"). */
+function normalizePartyCityName(raw) {
+  let text = String(raw == null ? '' : raw).trim();
+  if (isBlankPartyValue(text)) return '';
+
+  // ALWAYS prefer a known city from the original string first (incl. glued Streetbangalore).
+  const knownRaw = matchKnownPartyCity(text);
+  if (knownRaw) return knownRaw;
+
+  text = text
+    .replace(/[|/_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Strip glued street/address prefix before a known city: "CommercialStreetbangalore"
+  const compact = text.replace(/\s+/g, '');
+  for (const [needle] of PARTY_KNOWN_CITIES) {
+    const compactNeedle = needle.replace(/\s+/g, '');
+    if (compactNeedle.length < 4) continue;
+    const idx = compact.toLowerCase().lastIndexOf(compactNeedle);
+    if (idx > 0) {
+      const knownGlued = matchKnownPartyCity(compact.slice(idx));
+      if (knownGlued) return knownGlued;
+    }
+  }
+
+  // Strip glued state suffix: "Bangalorekarnataka" (not city names like Delhi)
+  text = text.replace(/(andhrapradesh|telangana|tamilnadu|karnataka|maharashtra|gujarat|rajasthan|uttarpradesh|westbengal|madhyapradesh|himachalpradesh|kerala|punjab|haryana|odisha|orissa|bihar|jharkhand|chhattisgarh|uttarakhand)$/i, '');
+
+  // City-PIN glued: "Delhi-110092" / "Delhi 110092"
+  const cityPin = text.match(/^([A-Za-z][A-Za-z. ]{1,30}?)[\s\-–—]*\d{6}\b/);
+  if (cityPin) {
+    const knownPin = matchKnownPartyCity(cityPin[1]);
+    if (knownPin) return knownPin;
+    const pinCity = cityPin[1].replace(/\s+/g, ' ').trim();
+    if (!isGarbagePartyCityCandidate(pinCity)) return titleCaseCityName(pinCity);
+  }
+
+  // Remove pincodes / digit runs
+  text = text.replace(/\d+/g, ' ');
+  // Remove state names — never strip Delhi/Mumbai/etc. (those are cities)
+  text = text.replace(PARTY_CITY_STATE_PATTERN, ' ');
+  text = text.replace(/[()[\]{}]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const known = matchKnownPartyCity(text);
+  if (known) return known;
+
+  const segments = text
+    .split(/[,–—\-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  let candidate = '';
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const seg = segments[i].replace(/\s+/g, ' ').trim();
+    if (!seg || isGarbagePartyCityCandidate(seg)) continue;
+    const knownSeg = matchKnownPartyCity(seg);
+    if (knownSeg) return knownSeg;
+    const words = seg.split(/\s+/).filter(Boolean);
+    if (!words.length || words.length > 3) continue;
+    candidate = seg;
+    break;
+  }
+  if (!candidate) return '';
+
+  const knownCandidate = matchKnownPartyCity(candidate);
+  if (knownCandidate) return knownCandidate;
+
+  candidate = candidate
+    .replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (isGarbagePartyCityCandidate(candidate)) return '';
+  if (/^(Andheri|Bandra|Juhu|Powai|Borivali|Malad|Goregaon|Dadar|Worli|Kurla|Ghatkopar|Vile\s*Parle|Laxmi\s*Nagar|Vijay\s*Chowk)$/i.test(candidate)) return '';
+
+  return titleCaseCityName(candidate);
+}
+
+function extractCityFromAddress(address) {
+  const text = String(address || '').trim();
+  if (!text) return '';
+
+  // Full-address known-city win: "… Laxmi Nagar, Delhi-110092" → Delhi
+  const knownFull = matchKnownPartyCity(text);
+  if (knownFull) return knownFull;
+
+  const parts = text.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length) {
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      const knownPart = matchKnownPartyCity(parts[i]);
+      if (knownPart) return knownPart;
+      const cleaned = normalizePartyCityName(parts[i]);
+      if (cleaned && !isGarbagePartyCityCandidate(cleaned)) return cleaned;
+    }
+  }
+
+  const endPinMatch = text.match(/([A-Za-z][A-Za-z.\s]{1,40}?)[\s\-–—]*\d{6}\b/);
+  if (endPinMatch) {
+    const knownPin = matchKnownPartyCity(endPinMatch[1]);
+    if (knownPin) return knownPin;
+    const cleaned = normalizePartyCityName(endPinMatch[1]);
+    if (cleaned && !isGarbagePartyCityCandidate(cleaned)) return cleaned;
+  }
+
+  const fallback = normalizePartyCityName(text);
+  return isGarbagePartyCityCandidate(fallback) ? '' : fallback;
+}
+
+function extractCityFromPartyName(name) {
+  const text = String(name || '').trim();
+  if (!text) return '';
+  const known = matchKnownPartyCity(text);
+  if (known) return known;
+  const parts = text.split(/[,|]/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return '';
+  return normalizePartyCityName(parts[parts.length - 1]);
+}
+
+function resolvePartyCity(city, address, name) {
+  // Address known city always wins over junk stored in location ("And F", "Andheri West").
+  const knownFromAddr = matchKnownPartyCity(address || '');
+  if (knownFromAddr) return knownFromAddr;
+
+  const rawCity = String(city == null ? '' : city).trim();
+  const cityLooksLikeAddress = PARTY_CITY_ADDRESS_MARKERS.test(rawCity)
+    || rawCity.length > 28
+    || rawCity.split(/[,\-]/).length > 2
+    || isGarbagePartyCityCandidate(rawCity);
+  const fromAddr = extractCityFromAddress(address);
+  const fromCity = cityLooksLikeAddress ? '' : normalizePartyCityName(city);
+  const fromName = extractCityFromPartyName(name);
+
+  if (fromAddr && matchKnownPartyCity(fromAddr)) return fromAddr;
+  if (fromCity && matchKnownPartyCity(fromCity)) return fromCity;
+  if (fromName && matchKnownPartyCity(fromName)) return fromName;
+  if (fromAddr && !isGarbagePartyCityCandidate(fromAddr)) return fromAddr;
+  if (fromCity && !isGarbagePartyCityCandidate(fromCity)) return fromCity;
+  if (fromName && !isGarbagePartyCityCandidate(fromName)) return fromName;
+  return '';
+}
+
+function uniqueSortedCities(records) {
+  const byKey = new Map();
+  (records || []).forEach((r) => {
+    let city = normalizePartyCityName(r.city);
+    if (!city || isGarbagePartyCityCandidate(city)) {
+      city = String(r.city || '').trim();
+      city = normalizePartyCityName(city);
+    }
+    if (!city || isGarbagePartyCityCandidate(city) || isBlankPartyValue(city)) return;
+    const key = city.toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, city);
+  });
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function populateDistributorCityFilterOptions(records) {
+  const select = document.getElementById('distributor-city-filter');
+  if (!select) return;
+  const currentValue = select.value;
+  const uniqueCities = uniqueSortedCities(records);
+  select.innerHTML = ['<option value="">All</option>']
+    .concat(uniqueCities.map((city) => `<option value="${city}">${city}</option>`))
+    .join('');
+  const stillValid = uniqueCities.some((city) => city.toLowerCase() === String(currentValue || '').toLowerCase());
+  select.value = stillValid ? uniqueCities.find((city) => city.toLowerCase() === currentValue.toLowerCase()) : '';
+}
+
+function getDistributorFilterValues() {
+  const city = document.getElementById('distributor-city-filter')?.value || '';
+  const search = String(document.getElementById('distributor-search-input')?.value || '').trim().toLowerCase();
+  return { city, search };
+}
+
+function filterDistributorRecords(records) {
+  const { city, search } = getDistributorFilterValues();
+  const cityKey = city.toLowerCase();
+  return (records || []).filter((r) => {
+    if (cityKey) {
+      const recordCity = String(r.city || '').trim().toLowerCase();
+      if (recordCity !== cityKey) return false;
+    }
+    if (search) {
+      const haystack = [r.name, r.contactPerson, r.phone, r.gst, r.buyerCode, r.city, r.address]
+        .map((v) => String(v || '').toLowerCase())
+        .join(' ');
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function applyDistributorFilters() {
+  const records = partyMasterState.allDistributorRecords || [];
+  const filteredRecords = filterDistributorRecords(records);
+  partyMasterTableState.distributorRecords = filteredRecords;
+  partyMasterTableState.distributorPage = 1;
+  renderPartyMasterTable(
+    'distributor',
+    'distributor-thead',
+    'distributor-tbody',
+    'distributor-pagination',
+    filteredRecords,
+    DISTRIBUTOR_TABLE_COLUMNS,
+    1,
+  );
+  scheduleCustomersLayout();
+}
+
 function populateRetailerDistributorFilterOptions(records) {
   const select = document.getElementById('retailer-distributor-filter');
   if (!select) return;
   const currentValue = select.value;
-  const uniqueDistributors = [...new Set(records.map((r) => r.distributorKey).filter(Boolean))].sort();
-  select.innerHTML = ['<option value="">-- All Distributors --</option>']
+  const uniqueDistributors = [...new Set(records.map((r) => r.distributorKey).filter(Boolean))].sort((a, b) =>
+    String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }),
+  );
+  select.innerHTML = ['<option value="">All</option>']
     .concat(uniqueDistributors.map((name) => `<option value="${name}">${name}</option>`))
     .join('');
-  select.value = currentValue;
+  select.value = uniqueDistributors.includes(currentValue) ? currentValue : '';
 }
 
-function filterRetailersByDistributor() {
-  const filterValue = document.getElementById('retailer-distributor-filter').value;
-  const records = partyMasterState.allRetailerRecords || [];
-  const filteredRecords = filterValue
-    ? records.filter((r) => r.distributorKey === filterValue)
-    : records;
+function populateRetailerCityFilterOptions(records) {
+  const select = document.getElementById('retailer-city-filter');
+  if (!select) return;
+  const currentValue = select.value;
+  const uniqueCities = uniqueSortedCities(records);
+  select.innerHTML = ['<option value="">All</option>']
+    .concat(uniqueCities.map((city) => `<option value="${city}">${city}</option>`))
+    .join('');
+  const stillValid = uniqueCities.some((city) => city.toLowerCase() === String(currentValue || '').toLowerCase());
+  select.value = stillValid ? uniqueCities.find((city) => city.toLowerCase() === currentValue.toLowerCase()) : '';
+}
 
+function getRetailerFilterValues() {
+  const distributor = document.getElementById('retailer-distributor-filter')?.value || '';
+  const city = document.getElementById('retailer-city-filter')?.value || '';
+  const search = String(document.getElementById('retailer-search-input')?.value || '').trim().toLowerCase();
+  return { distributor, city, search };
+}
+
+function filterRetailerRecords(records) {
+  const { distributor, city, search } = getRetailerFilterValues();
+  const cityKey = city.toLowerCase();
+  return (records || []).filter((r) => {
+    if (distributor && r.distributorKey !== distributor) return false;
+    if (cityKey && String(r.city || '').trim().toLowerCase() !== cityKey) return false;
+    if (search) {
+      const haystack = [r.name, r.contactPerson, r.phone, r.gst, r.city, r.address]
+        .map((v) => String(v || '').toLowerCase())
+        .join(' ');
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function applyRetailerFilters() {
+  const records = partyMasterState.allRetailerRecords || [];
+  const filteredRecords = filterRetailerRecords(records);
   partyMasterTableState.retailerRecords = filteredRecords;
   partyMasterTableState.retailerPage = 1;
   renderPartyMasterTable(
@@ -2721,10 +3795,12 @@ function filterRetailersByDistributor() {
   scheduleCustomersLayout();
 }
 
+function filterRetailersByDistributor() {
+  applyRetailerFilters();
+}
+
 async function loadRetailers() {
-  if (partyMasterTableState.retailersLoading) {
-    return partyMasterTableState.retailersLoadPromise;
-  }
+  const loadSeq = ++partyMasterTableState.retailersLoadSeq;
   partyMasterTableState.retailersLoading = true;
   showPartyMasterTableLoading('retailer-tbody');
 
@@ -2735,12 +3811,14 @@ async function loadRetailers() {
       } else if (partyMasterTableState.distributorsLoading) {
         await partyMasterTableState.distributorsLoadPromise;
       }
+      if (loadSeq !== partyMasterTableState.retailersLoadSeq) return;
 
-      const response = await fetchWithAuth('/api/v1/parties/retailers?limit=200');
+      const response = await fetchWithAuth('/api/v1/parties/retailers?limit=5000');
       const data = await response.json();
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Unable to load retailers');
       }
+      if (loadSeq !== partyMasterTableState.retailersLoadSeq) return;
       partyMasterState.retailers = data.data.results || [];
 
       const distributorById = new Map(
@@ -2757,57 +3835,56 @@ async function loadRetailers() {
       } catch (e) {
         console.warn('Failed to load master retailers for combined view:', e);
       }
+      if (loadSeq !== partyMasterTableState.retailersLoadSeq) return;
 
-      const records = [
-        ...partyMasterState.retailers.map((r) => {
-          const distributorLabel = distributorById.get(r.distributor_id)
-            || (r.distributor_id == null ? 'Unassigned' : r.distributor_id);
-          return {
-            partyId: r.id,
-            partyType: 'retailer',
-            name: r.name,
-            contactPerson: r.contact_person,
-            distributor: distributorLabel,
-            distributorKey: distributorLabel,
-            gst: r.gst_number,
-            territory: r.territory,
-            city: r.city,
-            state: r.state,
-            pincode: r.pin_code,
-            address: r.address,
-            storeType: r.store_type,
-            phone: r.phone,
-            actions: `<button onclick="editRetailer(${r.id})" class="btn btn-secondary">Edit</button> <button onclick="deleteRetailer(${r.id})" class="btn btn-danger">Delete</button>`,
-          };
-        }),
-        ...masterRetailers.map((r) => ({
+      const partyRecords = partyMasterState.retailers.map((r) => {
+        const distributorLabel = distributorById.get(r.distributor_id)
+          || (r.distributor_id == null ? 'Unassigned' : r.distributor_id);
+        return {
           partyId: r.id,
           partyType: 'retailer',
+          source: 'party',
           name: r.name,
           contactPerson: r.contact_person,
-          distributor: r.distributor_name || 'Unassigned',
-          distributorKey: r.distributor_name || 'Unassigned',
-          gst: r.gst_no,
-          territory: r.location,
-          city: r.location,
+          distributor: distributorLabel,
+          distributorKey: distributorLabel,
+          gst: r.gst_number,
+          territory: r.territory,
+          city: resolvePartyCity(r.city, r.address, r.name),
           state: r.state,
-          pincode: r.pincode,
+          pincode: formatPartyFieldValue('pincode', r.pin_code),
           address: r.address,
-          storeType: r.category,
-          phone: r.phone_number,
-          actions: `<button onclick="event.stopPropagation(); editMasterRetailer(${r.id})" class="btn btn-secondary">Edit</button> <button onclick="event.stopPropagation(); deleteMasterRetailer(${r.id})" class="btn btn-danger">Delete</button>`,
-        })),
-      ];
+          storeType: r.store_type,
+          phone: r.phone,
+          actions: partyMasterActionButtons(`editRetailer(${r.id})`, `deleteRetailer(${r.id})`),
+        };
+      });
+      const masterRecords = masterRetailers.map((r) => ({
+        partyId: r.id,
+        partyType: 'retailer',
+        source: 'master',
+        name: r.name,
+        contactPerson: r.contact_person,
+        distributor: r.distributor_name || 'Unassigned',
+        distributorKey: r.distributor_name || 'Unassigned',
+        gst: r.gst_no,
+        territory: r.location,
+        city: resolvePartyCity(r.location, r.address, r.name),
+        state: r.state,
+        pincode: formatPartyFieldValue('pincode', r.pincode),
+        address: r.address,
+        storeType: r.category,
+        phone: r.phone_number,
+        actions: partyMasterActionButtons(`editMasterRetailer(${r.id})`, `deleteMasterRetailer(${r.id})`),
+      }));
+      partyMasterState.rawRetailerRecords = [...partyRecords, ...masterRecords];
+      const records = dedupePartyMasterPreferringMasters(partyMasterState.rawRetailerRecords);
 
       partyMasterState.allRetailerRecords = records;
       populateRetailerDistributorFilterOptions(records);
+      populateRetailerCityFilterOptions(records);
 
-      const filterValue = document.getElementById('retailer-distributor-filter')
-        ? document.getElementById('retailer-distributor-filter').value
-        : '';
-      const filteredRecords = filterValue
-        ? records.filter((r) => r.distributorKey === filterValue)
-        : records;
+      const filteredRecords = filterRetailerRecords(records);
 
       partyMasterTableState.retailerRecords = filteredRecords;
       partyMasterTableState.retailerPage = 1;
@@ -2823,13 +3900,16 @@ async function loadRetailers() {
       );
       scheduleCustomersLayout();
     } catch (error) {
+      if (loadSeq !== partyMasterTableState.retailersLoadSeq) return;
       console.warn('Failed to load retailers:', error);
       const tbody = document.getElementById('retailer-tbody');
       if (tbody) {
         tbody.innerHTML = '<tr><td colspan="20">Unable to load retailers.</td></tr>';
       }
     } finally {
-      partyMasterTableState.retailersLoading = false;
+      if (loadSeq === partyMasterTableState.retailersLoadSeq) {
+        partyMasterTableState.retailersLoading = false;
+      }
     }
   })();
 
@@ -2852,38 +3932,12 @@ async function loadDistributorSelect() {
 }
 
 function openDistributorForm() {
-  document.getElementById('distributor-id').value = '';
-  document.getElementById('distributor-form-title').textContent = 'Add Distributor';
-  document.getElementById('dist-name').value = '';
-  document.getElementById('dist-contact-person').value = '';
-  document.getElementById('dist-gst').value = '';
-  document.getElementById('dist-territory').value = '';
-  document.getElementById('dist-city').value = '';
-  document.getElementById('dist-state').value = '';
-  document.getElementById('dist-pincode').value = '';
-  document.getElementById('dist-phone').value = '';
-  document.getElementById('dist-email').value = '';
-  document.getElementById('dist-address').value = '';
-  document.getElementById('dist-credit-limit').value = '';
-  toggleModal('distributor-form-modal', true);
+  // Customers uses master as the canonical write path (one contact model).
+  openMasterDistributorForm();
 }
 
 function openRetailerForm() {
-  document.getElementById('retailer-id').value = '';
-  document.getElementById('retailer-form-title').textContent = 'Add Retailer';
-  document.getElementById('retailer-name').value = '';
-  document.getElementById('retailer-contact-person').value = '';
-  document.getElementById('retailer-gst').value = '';
-  document.getElementById('retailer-store-type').value = '';
-  document.getElementById('retailer-territory').value = '';
-  document.getElementById('retailer-city').value = '';
-  document.getElementById('retailer-state').value = '';
-  document.getElementById('retailer-pincode').value = '';
-  document.getElementById('retailer-phone').value = '';
-  document.getElementById('retailer-email').value = '';
-  document.getElementById('retailer-address').value = '';
-  loadDistributorSelect();
-  toggleModal('retailer-form-modal', true);
+  openMasterRetailerForm();
 }
 
 async function saveDistributor(event) {
@@ -2940,9 +3994,9 @@ async function saveDistributor(event) {
       throw new Error(data.message || 'Unable to save distributor');
     }
     closeModal('distributor-form-modal');
-    loadDistributors();
+    await refreshCustomersAfterMasterChange('distributors');
     loadDistributorSelect();
-    alert('Distributor saved successfully.');
+    nexoraToast('Distributor saved.', 'success');
   } catch (error) {
     alert(error.message || 'Error saving distributor.');
   }
@@ -2972,24 +4026,6 @@ async function editDistributor(id) {
     toggleModal('distributor-form-modal', true);
   } catch (error) {
     alert(error.message || 'Error loading distributor.');
-  }
-}
-
-async function deleteDistributor(id) {
-  if (!(await nexoraConfirm('Delete this distributor? This will mark it inactive.', { title: 'Delete distributor', danger: true, okText: 'Delete' }))) {
-    return;
-  }
-  try {
-    const response = await fetchWithAuth(`/api/v1/parties/distributors/${id}`, { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || 'Unable to delete distributor');
-    }
-    loadDistributors();
-    loadRetailers();
-    loadDistributorSelect();
-  } catch (error) {
-    alert(error.message || 'Error deleting distributor.');
   }
 }
 
@@ -3047,8 +4083,8 @@ async function saveRetailer(event) {
       throw new Error(data.message || 'Unable to save retailer');
     }
     closeModal('retailer-form-modal');
-    loadRetailers();
-    alert('Retailer saved successfully.');
+    await refreshCustomersAfterMasterChange('retailers');
+    nexoraToast('Retailer saved.', 'success');
   } catch (error) {
     alert(error.message || 'Error saving retailer.');
   }
@@ -3080,22 +4116,6 @@ async function editRetailer(id) {
     toggleModal('retailer-form-modal', true);
   } catch (error) {
     alert(error.message || 'Error loading retailer.');
-  }
-}
-
-async function deleteRetailer(id) {
-  if (!(await nexoraConfirm('Delete this retailer? This will mark it inactive.', { title: 'Delete retailer', danger: true, okText: 'Delete' }))) {
-    return;
-  }
-  try {
-    const response = await fetchWithAuth(`/api/v1/parties/retailers/${id}`, { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || 'Unable to delete retailer');
-    }
-    loadRetailers();
-  } catch (error) {
-    alert(error.message || 'Error deleting retailer.');
   }
 }
 
@@ -3649,8 +4669,192 @@ function openProfileSettings() {
   window.location.href = '/settings/schema?entity=distributor';
 }
 
-function openWorkspaceSettings() {
-  window.location.href = '/admin/database';
+function bdSyncSidebarScroll(opts = {}) {
+  const preserveScroll = opts.preserveScroll !== false;
+  const lists = document.querySelectorAll(
+    '#bd-left-nav .hop-nav-list, #dashboard .bd-shell .hop-nav-list, #hop-executive-workspace .hop-nav-list'
+  );
+  const seen = new Set();
+  lists.forEach((list) => {
+    if (seen.has(list)) return;
+    seen.add(list);
+
+    const prevScroll = list.scrollTop;
+
+    list.classList.remove('is-scrollable');
+    list.style.setProperty('overflow-y', 'hidden', 'important');
+    list.style.setProperty('scrollbar-width', 'none', 'important');
+
+    // Measure real visible content — scrollHeight on flex:1 rails is unreliable
+    const listCs = window.getComputedStyle(list);
+    const gap = parseFloat(listCs.rowGap || listCs.gap) || 0;
+    let contentH = (parseFloat(listCs.paddingTop) || 0) + (parseFloat(listCs.paddingBottom) || 0);
+    let visible = 0;
+    Array.from(list.children).forEach((child) => {
+      const cs = window.getComputedStyle(child);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      contentH += child.getBoundingClientRect().height;
+      visible += 1;
+      // Expanded fold items are nested — include their visible height
+      if (child.classList?.contains('hop-nav-fold') && !child.classList.contains('is-collapsed')) {
+        const items = child.querySelector('.hop-nav-fold-items');
+        if (items) {
+          const ics = window.getComputedStyle(items);
+          if (ics.display !== 'none') {
+            // fold height already includes items via getBoundingClientRect on the fold
+          }
+        }
+      }
+    });
+    if (visible > 1) contentH += gap * (visible - 1);
+
+    const avail = list.clientHeight || list.getBoundingClientRect().height;
+    const needsScroll = contentH > avail + 2;
+
+    if (needsScroll) {
+      list.classList.add('is-scrollable');
+      list.style.setProperty('overflow-y', 'auto', 'important');
+      list.style.setProperty('scrollbar-width', 'thin', 'important');
+      if (preserveScroll) {
+        const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
+        list.scrollTop = Math.min(prevScroll, maxScroll);
+      }
+    } else {
+      list.scrollTop = 0;
+      list.style.setProperty('overflow-y', 'hidden', 'important');
+      list.style.setProperty('scrollbar-width', 'none', 'important');
+    }
+  });
+
+  // Aside itself must never scroll (BD + HoP)
+  document.querySelectorAll('#bd-left-nav, #hop-executive-workspace .hop-nav').forEach((aside) => {
+    aside.style.setProperty('overflow', 'hidden', 'important');
+    aside.style.setProperty('scrollbar-width', 'none', 'important');
+  });
+}
+
+/** After Settings (or any fold) expands, bring its last sub-item into view. */
+function bdScrollNavFoldIntoView(fold) {
+  if (!fold || !fold.getBoundingClientRect) return;
+  const list = fold.closest('.hop-nav-list, .nav-list');
+  if (!list) return;
+
+  bdSyncSidebarScroll({ preserveScroll: true });
+
+  const run = () => {
+    if (!list.classList.contains('is-scrollable')) return;
+    const pad = 10;
+    const items = fold.querySelector('.hop-nav-fold-items');
+    const lastSub = items
+      ? Array.from(items.querySelectorAll('.nav-item, .hop-nav-btn')).filter((el) => {
+          const cs = window.getComputedStyle(el);
+          return cs.display !== 'none' && cs.visibility !== 'hidden';
+        }).pop()
+      : null;
+    const anchor = lastSub || fold;
+    const listRect = list.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    if (anchorRect.bottom > listRect.bottom - pad) {
+      list.scrollBy({ top: anchorRect.bottom - listRect.bottom + pad, behavior: 'smooth' });
+    } else if (fold.getBoundingClientRect().top < listRect.top + pad) {
+      list.scrollBy({ top: fold.getBoundingClientRect().top - listRect.top - pad, behavior: 'smooth' });
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(run));
+}
+
+function bdToggleSettingsFold() {
+  const fold = document.querySelector('#bd-left-nav .hop-nav-fold[data-hop-fold="bd-settings"]');
+  if (!fold) return;
+  const willOpen = fold.classList.contains('is-collapsed');
+  fold.classList.toggle('is-collapsed', !willOpen);
+  fold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  requestAnimationFrame(() => {
+    bdSyncSidebarScroll({ preserveScroll: true });
+    if (willOpen) bdScrollNavFoldIntoView(fold);
+  });
+}
+
+function bdExpandSettingsFold() {
+  const fold = document.querySelector('#bd-left-nav .hop-nav-fold[data-hop-fold="bd-settings"]');
+  if (!fold) return;
+  fold.classList.remove('is-collapsed');
+  fold.querySelector('.hop-nav-fold-toggle')?.setAttribute('aria-expanded', 'true');
+  requestAnimationFrame(() => {
+    bdSyncSidebarScroll({ preserveScroll: true });
+    bdScrollNavFoldIntoView(fold);
+  });
+}
+
+function openWorkspaceSettings(tab) {
+  const el = document.getElementById('settings-workspace');
+  if (!el) {
+    window.location.href = '/admin/database';
+    return;
+  }
+  pinBdShellForModule(el);
+  document.getElementById('sales-workspace')?.classList.add('hidden');
+  bdExpandSettingsFold();
+  const mode = tab === 'company' ? 'company' : 'theme';
+  if (mode === 'theme' && typeof hopCaptureThemeBaseline === 'function') {
+    hopCaptureThemeBaseline();
+  }
+  showBdSettingsTab(mode);
+}
+
+function showBdSettingsTab(tab) {
+  const mode = tab === 'company' ? 'company' : 'theme';
+  document.getElementById('bd-settings-theme-panel')?.classList.toggle('hidden', mode !== 'theme');
+  document.getElementById('bd-settings-company-panel')?.classList.toggle('hidden', mode !== 'company');
+
+  const eyebrow = document.getElementById('bd-settings-eyebrow');
+  const title = document.getElementById('bd-settings-title');
+  if (eyebrow) eyebrow.textContent = 'Settings';
+  if (title) title.textContent = mode === 'company' ? 'Company' : 'Theme';
+
+  setActiveSidebarItem(mode === 'company' ? 'Company' : 'Theme');
+  document.getElementById('nav-settings')?.classList.remove('active');
+  document.getElementById('nav-settings-company')?.classList.toggle('active', mode === 'company');
+  document.getElementById('nav-settings-theme')?.classList.toggle('active', mode === 'theme');
+
+  if (mode === 'theme') {
+    const mount = document.getElementById('bd-settings-theme-mount');
+    if (!mount) return;
+    if (typeof renderHopThemeModule === 'function') {
+      renderHopThemeModule(mount);
+    } else {
+      mount.innerHTML = '<p class="nx-text-dim">Theme module is unavailable.</p>';
+    }
+    return;
+  }
+
+  if (mode === 'company') {
+    loadCompanyProfileV2();
+  }
+}
+
+function refreshBdSettingsThemeMount() {
+  const ws = document.getElementById('settings-workspace');
+  if (!ws || ws.classList.contains('hidden')) return;
+  const mount = document.getElementById('bd-settings-theme-mount');
+  if (mount && typeof renderHopThemeModule === 'function') {
+    renderHopThemeModule(mount);
+  }
+}
+
+/** If leaving Settings with a previewed theme, ask keep/discard like HoP. */
+function guardBdThemeLeave(continueFn) {
+  const ws = document.getElementById('settings-workspace');
+  if (!ws || ws.classList.contains('hidden')) return false;
+  if (typeof hopThemePageDirty !== 'function' || !hopThemePageDirty()) {
+    if (typeof hopThemePageBaseline !== 'undefined') hopThemePageBaseline = null;
+    return false;
+  }
+  if (typeof hopPromptBdThemeLeave === 'function') {
+    hopPromptBdThemeLeave(continueFn);
+    return true;
+  }
+  return false;
 }
 
 function openOrderManagement() {
@@ -4846,6 +6050,9 @@ function showHopShell(viewName) {
   if (typeof bindHopNavClicks === 'function') bindHopNavClicks();
   if (typeof openHopView === 'function') openHopView(viewName || 'dashboard');
   else if (typeof loadHopExecutiveSnapshot === 'function') loadHopExecutiveSnapshot();
+  requestAnimationFrame(() => {
+    if (typeof bdSyncSidebarScroll === 'function') bdSyncSidebarScroll({ preserveScroll: true });
+  });
 }
 
 function clearHopActiveScrollLock() {
@@ -4880,6 +6087,10 @@ function pinBdNavRail() {
     dash.style.removeProperty('right');
     dash.style.removeProperty('width');
     dash.style.removeProperty('max-width');
+    dash.style.removeProperty('min-height');
+    dash.style.removeProperty('top');
+    dash.style.removeProperty('bottom');
+    dash.style.removeProperty('height');
     dash.style.removeProperty('pointer-events');
     return;
   }
@@ -4889,9 +6100,22 @@ function pinBdNavRail() {
   dash.style.setProperty('right', 'auto', 'important');
   dash.style.setProperty('width', '232px', 'important');
   dash.style.setProperty('max-width', '232px', 'important');
+  dash.style.setProperty('top', 'var(--nx-header-h, 64px)', 'important');
+  dash.style.setProperty('bottom', '0', 'important');
+  dash.style.setProperty('height', 'auto', 'important');
+  dash.style.setProperty('min-height', 'calc(100dvh - var(--nx-header-h, 64px))', 'important');
   dash.style.setProperty('pointer-events', 'none', 'important');
   const nav = dash.querySelector('.hop-nav');
-  if (nav) nav.style.setProperty('pointer-events', 'auto', 'important');
+  if (nav) {
+    nav.style.setProperty('pointer-events', 'auto', 'important');
+    nav.style.setProperty('height', '100%', 'important');
+    nav.style.setProperty('min-height', '100%', 'important');
+  }
+  const shell = dash.querySelector('.bd-shell');
+  if (shell) {
+    shell.style.setProperty('height', '100%', 'important');
+    shell.style.setProperty('min-height', '100%', 'important');
+  }
 }
 
 function pinBdShellForModule(moduleEl) {
@@ -4910,11 +6134,17 @@ function pinBdShellForModule(moduleEl) {
     unmountBdModule();
     pinBdNavRail();
     document.getElementById('bd-module-mount')?.classList.add('hidden');
-    moduleEl.classList.remove('bd-mounted-module', 'hidden');
+    document.getElementById('dashboard-widget-dock')?.classList.add('hidden');
+    moduleEl.classList.remove('bd-mounted-module', 'bd-module-fullscreen', 'hidden');
+    document.body.classList.remove('bd-module-open');
     document.body.appendChild(moduleEl);
     if (moduleEl.id === 'party-master-section') {
       requestAnimationFrame(() => scheduleCustomersLayout());
       setTimeout(() => scheduleCustomersLayout(), 80);
+    }
+    if (moduleEl.id === 'article-master-workspace') {
+      requestAnimationFrame(() => scheduleArticleMasterLayout());
+      setTimeout(() => scheduleArticleMasterLayout(), 80);
     }
     return;
   }
@@ -4962,7 +6192,10 @@ function mountBdModule(el) {
 }
 
 function showDashboardWorkspace() {
-  document.body.classList.remove('customers-page-active');
+  document.body.classList.remove('customers-page-active', 'bd-module-open');
+  document.querySelectorAll('.bd-module-fullscreen').forEach((el) => {
+    el.classList.remove('bd-module-fullscreen');
+  });
   unmountBdModule();
   const dash = document.getElementById('dashboard');
   dash?.classList.remove('hidden');
@@ -4971,12 +6204,27 @@ function showDashboardWorkspace() {
     dash.style.removeProperty('right');
     dash.style.removeProperty('width');
     dash.style.removeProperty('max-width');
+    dash.style.removeProperty('min-height');
+    dash.style.removeProperty('top');
+    dash.style.removeProperty('bottom');
+    dash.style.removeProperty('height');
     dash.style.removeProperty('pointer-events');
+    const nav = dash.querySelector('.hop-nav');
+    if (nav) {
+      nav.style.removeProperty('pointer-events');
+      nav.style.removeProperty('height');
+      nav.style.removeProperty('min-height');
+    }
+    const shell = dash.querySelector('.bd-shell');
+    if (shell) {
+      shell.style.removeProperty('height');
+      shell.style.removeProperty('min-height');
+    }
   }
   document.getElementById('bd-home-view')?.classList.remove('hidden');
   document.getElementById('bd-module-mount')?.classList.add('hidden');
   document.getElementById('party-master-section')?.classList.add('hidden');
-  ['sales-workspace', 'purchase-workspace', 'inventory-workspace', 'article-master-workspace', 'order-desk-workspace', 'order-fulfillment-workspace', 'order-cycle-workspace', 'executive-home-workspace', 'hop-executive-workspace', 'target-vs-achievement-workspace', 'cloud-hub-workspace', 'filled-orders-workspace'].forEach((id) => {
+  ['sales-workspace', 'purchase-workspace', 'inventory-workspace', 'article-master-workspace', 'order-desk-workspace', 'order-fulfillment-workspace', 'order-cycle-workspace', 'executive-home-workspace', 'hop-executive-workspace', 'target-vs-achievement-workspace', 'cloud-hub-workspace', 'filled-orders-workspace', 'settings-workspace'].forEach((id) => {
     document.getElementById(id)?.classList.add('hidden');
   });
 }
@@ -5185,6 +6433,7 @@ let suppressModuleHistoryPush = false;
 /* House of Prizm UI lives in hop_app.js (loaded after this file). */
 
 function goBack() {
+  if (guardBdThemeLeave(() => goBack())) return;
   const previousModule = moduleHistoryStack.pop();
   if (previousModule) {
     suppressModuleHistoryPush = true;
@@ -5197,6 +6446,10 @@ function goBack() {
 function openModule(moduleName) {
   if (typeof closeMobileNav === 'function') closeMobileNav();
   const normalized = (moduleName || '').toLowerCase();
+
+  if (normalized !== 'settings' && guardBdThemeLeave(() => openModule(moduleName))) {
+    return;
+  }
 
   // HoP users must never land on BD shells (Customers → Distributors & Retailers, etc.).
   if (isHopUserSession()) {
@@ -5244,6 +6497,9 @@ function openModule(moduleName) {
   if (typeof clearHopActiveScrollLock === 'function') clearHopActiveScrollLock();
   document.getElementById('target-vs-achievement-workspace')?.classList.add('hidden');
   document.getElementById('cloud-hub-workspace')?.classList.add('hidden');
+  if (normalized !== 'settings') {
+    document.getElementById('settings-workspace')?.classList.add('hidden');
+  }
 
   if (normalized === 'hopexecutive' || normalized === 'houseofprizm') {
     showHopShell('dashboard');
@@ -5288,10 +6544,8 @@ function openModule(moduleName) {
   }
 
   if (normalized === 'ordercycle') {
-    pinBdShellForModule(document.getElementById('order-cycle-workspace'));
-    document.getElementById('sales-workspace')?.classList.add('hidden');
-    setActiveSidebarItem('Order Desk');
-    loadOrderCycleHierarchy();
+    // Order Cycle UI removed for now — engine kept; reopen Order Desk.
+    openModule('OrderDesk');
     return;
   }
 
@@ -5299,7 +6553,6 @@ function openModule(moduleName) {
     pinBdShellForModule(document.getElementById('order-fulfillment-workspace'));
     document.getElementById('sales-workspace')?.classList.add('hidden');
     setActiveSidebarItem('Order Desk');
-    loadCompanyProfileV2();
     initOrderFulfillmentEmbeddedPanels();
     loadOrderFulfillmentUploads();
     return;
@@ -5334,16 +6587,14 @@ function openModule(moduleName) {
     document.getElementById('sales-workspace')?.classList.add('hidden');
     document.getElementById('inventory-workspace')?.classList.add('hidden');
     setActiveSidebarItem('Article Master');
-    loadArticleMasterList();
+    loadArticleMasterList().then(() => scheduleArticleMasterLayout());
+    requestAnimationFrame(() => scheduleArticleMasterLayout());
     return;
   }
 
   if (normalized === 'filledorders') {
-    pinBdShellForModule(document.getElementById('filled-orders-workspace'));
-    document.getElementById('sales-workspace')?.classList.add('hidden');
-    document.getElementById('inventory-workspace')?.classList.add('hidden');
-    setActiveSidebarItem('Filled Orders');
-    initFilledOrdersWorkspace();
+    // Filled Orders list UI removed for now — engine kept; reopen Order Fulfillment.
+    openModule('OrderFulfillment');
     return;
   }
 
@@ -5357,7 +6608,7 @@ function openModule(moduleName) {
     document.getElementById('banking-workspace')?.classList.add('hidden');
     pinBdShellForModule(document.getElementById('party-master-section'));
     document.body.classList.add('customers-page-active');
-    setActiveSidebarItem('Customers');
+    setActiveSidebarItem('Know your Customer');
     loadCustomersWorkspace();
     return;
   }
@@ -5478,7 +6729,7 @@ function populateMasterRetailerDistributorOptions(records) {
 
 function resetMasterDistributorForm() {
   document.getElementById('master-distributor-id').value = '';
-  document.getElementById('master-distributor-form-title').textContent = 'Add Master Distributor';
+  document.getElementById('master-distributor-form-title').textContent = 'Add Distributor';
   ['master-distributor-firm-name','master-distributor-firm-nick-name','master-distributor-name','master-distributor-code','master-distributor-buyer-code','master-distributor-phone','master-distributor-phone-2','master-distributor-email','master-distributor-address','master-distributor-location','master-distributor-region','master-distributor-pincode','master-distributor-gst','master-distributor-zone','master-distributor-payment-terms','master-distributor-credit-limit','master-distributor-birthday','master-distributor-anniversary','master-distributor-secondary-name','master-distributor-secondary-phone','master-distributor-secondary-birthday','master-distributor-secondary-anniversary','master-distributor-sales-name','master-distributor-sales-phone','master-distributor-sales-email','master-distributor-sales-birthday','master-distributor-sales-anniversary'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -5487,7 +6738,7 @@ function resetMasterDistributorForm() {
 
 function resetMasterRetailerForm() {
   document.getElementById('master-retailer-id').value = '';
-  document.getElementById('master-retailer-form-title').textContent = 'Add Master Retailer';
+  document.getElementById('master-retailer-form-title').textContent = 'Add Retailer';
   ['master-retailer-name','master-retailer-contact-person','master-retailer-phone','master-retailer-phone-2','master-retailer-email','master-retailer-address','master-retailer-location','master-retailer-state','master-retailer-pincode','master-retailer-gst','master-retailer-category','master-retailer-birthday','master-retailer-anniversary','master-retailer-secondary-name','master-retailer-secondary-phone','master-retailer-secondary-birthday','master-retailer-secondary-anniversary','master-retailer-sales-name','master-retailer-sales-phone','master-retailer-sales-email','master-retailer-sales-birthday','master-retailer-sales-anniversary'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -5555,8 +6806,8 @@ async function saveMasterDistributor(event) {
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.error?.message || 'Unable to save distributor');
     closeModal('master-distributor-form-modal');
-    openMastersGrid('distributors');
-    alert('Master distributor saved successfully.');
+    await refreshCustomersAfterMasterChange('distributors');
+    nexoraToast('Distributor saved.', 'success');
   } catch (error) {
     alert(error.message || 'Error saving distributor.');
   }
@@ -5569,7 +6820,7 @@ async function editMasterDistributor(id) {
     if (!response.ok || !data.success) throw new Error(data.error?.message || 'Unable to load distributor');
     const record = data.data;
     document.getElementById('master-distributor-id').value = record.id;
-    document.getElementById('master-distributor-form-title').textContent = 'Edit Master Distributor';
+    document.getElementById('master-distributor-form-title').textContent = 'Edit Distributor';
     document.getElementById('master-distributor-firm-name').value = record.firm_name || '';
     document.getElementById('master-distributor-firm-nick-name').value = record.firm_nick_name || '';
     document.getElementById('master-distributor-name').value = record.name || '';
@@ -5603,16 +6854,31 @@ async function editMasterDistributor(id) {
   }
 }
 
-async function deleteMasterDistributor(id) {
-  if (!(await nexoraConfirm('Delete this master distributor? This will mark it inactive.', { title: 'Delete distributor', danger: true, okText: 'Delete' }))) return;
-  try {
-    const response = await fetchWithAuth(`/api/v1/masters/distributors/${id}`, { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.error?.message || 'Unable to delete distributor');
-    openMastersGrid('distributors');
-  } catch (error) {
-    alert(error.message || 'Error deleting distributor.');
+function isMastersGridOpen() {
+  const modal = document.getElementById('masters-grid-modal');
+  return Boolean(modal && !modal.classList.contains('hidden'));
+}
+
+async function refreshCustomersAfterMasterChange(kind) {
+  if (kind === 'distributors') {
+    partyMasterTableState.distributorsLoaded = false;
+    partyMasterTableState.distributorsLoading = false;
+    partyMasterState.allDistributorRecords = [];
+    partyMasterState.rawDistributorRecords = [];
+    if (!document.getElementById('party-master-section')?.classList.contains('hidden')) {
+      await loadDistributors();
+    }
+    if (isMastersGridOpen()) await openMastersGrid('distributors');
+    return;
   }
+  partyMasterTableState.retailersLoaded = false;
+  partyMasterTableState.retailersLoading = false;
+  partyMasterState.allRetailerRecords = [];
+  partyMasterState.rawRetailerRecords = [];
+  if (!document.getElementById('party-master-section')?.classList.contains('hidden')) {
+    await loadRetailers();
+  }
+  if (isMastersGridOpen()) await openMastersGrid('retailers');
 }
 
 async function saveMasterRetailer(event) {
@@ -5651,8 +6917,8 @@ async function saveMasterRetailer(event) {
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.error?.message || 'Unable to save retailer');
     closeModal('master-retailer-form-modal');
-    openMastersGrid('retailers');
-    alert('Master retailer saved successfully.');
+    await refreshCustomersAfterMasterChange('retailers');
+    nexoraToast('Retailer saved.', 'success');
   } catch (error) {
     alert(error.message || 'Error saving retailer.');
   }
@@ -5671,7 +6937,7 @@ async function editMasterRetailer(id) {
     if (!response.ok || !data.success) throw new Error(data.error?.message || 'Unable to load retailer');
     const record = data.data;
     document.getElementById('master-retailer-id').value = record.id;
-    document.getElementById('master-retailer-form-title').textContent = 'Edit Master Retailer';
+    document.getElementById('master-retailer-form-title').textContent = 'Edit Retailer';
     document.getElementById('master-retailer-name').value = record.name || '';
     document.getElementById('master-retailer-contact-person').value = record.contact_person || '';
     document.getElementById('master-retailer-phone').value = record.phone_number || '';
@@ -5698,18 +6964,6 @@ async function editMasterRetailer(id) {
     toggleModal('master-retailer-form-modal', true);
   } catch (error) {
     alert(error.message || 'Error loading retailer.');
-  }
-}
-
-async function deleteMasterRetailer(id) {
-  if (!(await nexoraConfirm('Delete this master retailer? This will mark it inactive.', { title: 'Delete retailer', danger: true, okText: 'Delete' }))) return;
-  try {
-    const response = await fetchWithAuth(`/api/v1/masters/retailers/${id}`, { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.error?.message || 'Unable to delete retailer');
-    openMastersGrid('retailers');
-  } catch (error) {
-    alert(error.message || 'Error deleting retailer.');
   }
 }
 
@@ -5835,7 +7089,7 @@ async function openMastersGrid(masterType) {
       if (alwaysShowKeys.has(key)) return true;
       return rows.some((row) => isFilledMasterValue(row[key]));
     });
-    const columns = [...visibleColumns, ['actions', 'Actions']];
+    const columns = [['actions', 'Actions'], ...visibleColumns];
 
     thead.innerHTML = `<tr>${columns.map(([, label]) => `<th>${label}</th>`).join('')}</tr>`;
 
@@ -5845,11 +7099,11 @@ async function openMastersGrid(masterType) {
       tbody.innerHTML = rows
         .map((row) => {
           const actions = masterType === 'distributors'
-            ? `<button class="btn btn-secondary" onclick="event.stopPropagation(); editMasterDistributor(${row.id})">Edit</button> <button class="btn btn-danger" onclick="event.stopPropagation(); deleteMasterDistributor(${row.id})">Delete</button>`
-            : `<button class="btn btn-secondary" onclick="event.stopPropagation(); editMasterRetailer(${row.id})">Edit</button> <button class="btn btn-danger" onclick="event.stopPropagation(); deleteMasterRetailer(${row.id})">Delete</button>`;
+            ? partyMasterActionButtons(`editMasterDistributor(${row.id})`, `deleteMasterDistributor(${row.id})`)
+            : partyMasterActionButtons(`editMasterRetailer(${row.id})`, `deleteMasterRetailer(${row.id})`);
           const cells = columns
             .map(([key]) => {
-              if (key === 'actions') return `<td>${actions}</td>`;
+              if (key === 'actions') return `<td class="pm-actions">${actions}</td>`;
               return `<td>${isFilledMasterValue(row[key]) ? foEscapeText(row[key]) : '—'}</td>`;
             })
             .join('');
@@ -6212,7 +7466,7 @@ function renderGlobalSearchTab(category) {
     thead.innerHTML = `<tr>${columns.map(([, label]) => `<th>${label}</th>`).join('')}</tr>`;
     partyDetailRecordsCache = rows;
     const clickHandler = category === 'article_master'
-      ? (index) => `openModule('ArticleMaster')`
+      ? (index) => `openArticleMasterFromSearch(${index})`
       : (index) => `showPartyDetail(partyDetailRecordsCache[${index}])`;
     tbody.innerHTML = rows.length
       ? rows
@@ -6242,10 +7496,39 @@ function renderGlobalSearchTab(category) {
 
 // ===================== Order Fulfillment =====================
 
+const BD_BRAND_COMPANY_FALLBACK = 'NORTH HEAD OFFICE';
+
+function setBdNavBrandCompanyName(name) {
+  const el = document.getElementById('bd-nav-brand-company');
+  if (!el) return;
+  const label = String(name || '').trim() || BD_BRAND_COMPANY_FALLBACK;
+  el.textContent = label;
+  el.title = label === BD_BRAND_COMPANY_FALLBACK ? 'Set company name in Settings → Company' : label;
+  const brand = el.closest('.hop-nav-brand');
+  if (brand) {
+    brand.setAttribute('aria-label', `Go to home — ${label}`);
+  }
+}
+
+async function syncBdBrandFromCompanyProfile() {
+  if (authState.role !== 'sales_executive' || !authState.accessToken) return;
+  try {
+    const response = await fetchWithAuth('/api/v1/company-profile');
+    const data = await response.json();
+    if (response.ok && data.success && data.data?.company_name) {
+      setBdNavBrandCompanyName(data.data.company_name);
+      return;
+    }
+  } catch (e) {
+    /* keep current / fallback */
+  }
+  setBdNavBrandCompanyName('');
+}
+
 async function loadCompanyProfileV2() {
-  const nameInput = document.getElementById('of-company-name');
-  const gstInput = document.getElementById('of-company-gst');
-  const resultBox = document.getElementById('of-company-profile-result');
+  const nameInput = document.getElementById('bd-company-name');
+  const gstInput = document.getElementById('bd-company-gst');
+  if (!nameInput || !gstInput) return;
   try {
     const response = await fetchWithAuth('/api/v1/company-profile');
     const data = await response.json();
@@ -6255,26 +7538,38 @@ async function loadCompanyProfileV2() {
     if (data.data) {
       nameInput.value = data.data.company_name || '';
       gstInput.value = data.data.gst_number || '';
-      resultBox.textContent = 'Loaded saved company profile.';
+      setBdNavBrandCompanyName(data.data.company_name || '');
     } else {
-      resultBox.textContent = 'No company profile set yet — please fill this in and Save before uploading Sales Orders/Invoices.';
+      nameInput.value = '';
+      gstInput.value = '';
+      setBdNavBrandCompanyName('');
     }
   } catch (error) {
-    resultBox.textContent = `Error loading company profile: ${error.message}`;
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(error.message || 'Could not load company profile', 'error');
+    }
   }
 }
 
 async function saveCompanyProfileV2() {
-  const name = document.getElementById('of-company-name').value.trim();
-  const gst = document.getElementById('of-company-gst').value.trim();
-  const resultBox = document.getElementById('of-company-profile-result');
+  const nameInput = document.getElementById('bd-company-name');
+  const gstInput = document.getElementById('bd-company-gst');
+  const saveBtn = document.getElementById('bd-company-save-btn');
+  if (!nameInput || !gstInput) return;
+  const name = nameInput.value.trim();
+  const gst = gstInput.value.trim().toUpperCase();
+  gstInput.value = gst;
 
   if (!name) {
-    resultBox.textContent = 'Company Name is required.';
+    if (typeof nexoraToast === 'function') nexoraToast('Company name is required.', 'warn');
+    nameInput.focus();
     return;
   }
 
-  resultBox.textContent = 'Saving...';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+  }
   try {
     const response = await fetchWithAuth('/api/v1/company-profile', {
       method: 'POST',
@@ -6285,9 +7580,19 @@ async function saveCompanyProfileV2() {
     if (!response.ok || !data.success) {
       throw new Error((data.error && data.error.message) || 'Save failed');
     }
-    resultBox.textContent = `Saved: ${data.data.company_name} (GST: ${data.data.gst_number || 'not set'})`;
+    setBdNavBrandCompanyName(data.data.company_name || name);
+    if (typeof nexoraToast === 'function') {
+      nexoraToast('Company profile saved', 'success');
+    }
   } catch (error) {
-    resultBox.textContent = `Error: ${error.message}`;
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(error.message || 'Could not save company profile', 'error');
+    }
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save profile';
+    }
   }
 }
 
@@ -6317,21 +7622,24 @@ function ocJsString(value) {
 
 async function loadOrderCycleHierarchy() {
   try {
+    const container = document.getElementById('oc-accordion');
+    const emptyState = document.getElementById('oc-empty-state');
+    // UI shell removed — keep engine callable for later rebuild.
+    if (!container) return;
+
     const response = await fetchWithAuth('/api/v1/order-fulfillment/order-cycle');
     const data = await response.json();
     if (!response.ok || !data.success) {
       throw new Error((data.error && data.error.message) || 'Failed to load Order Cycle data');
     }
     orderCycleData = data.data;
-    const container = document.getElementById('oc-accordion');
-    const emptyState = document.getElementById('oc-empty-state');
 
     if (!orderCycleData.financial_years.length) {
       container.innerHTML = '';
-      emptyState.classList.remove('hidden');
+      emptyState?.classList.remove('hidden');
       return;
     }
-    emptyState.classList.add('hidden');
+    emptyState?.classList.add('hidden');
 
     // First Financial Year open by default, so there's something to see immediately.
     if (!ocExpandedFy.size) {
@@ -6339,8 +7647,11 @@ async function loadOrderCycleHierarchy() {
     }
     renderOcAccordion();
   } catch (error) {
-    document.getElementById('oc-accordion').innerHTML =
-      `<div class="nx-oc-error">Error: ${foEscapeText(error.message)}</div>`;
+    const container = document.getElementById('oc-accordion');
+    if (container) {
+      container.innerHTML =
+        `<div class="nx-oc-error">Error: ${foEscapeText(error.message)}</div>`;
+    }
   }
 }
 
@@ -6355,6 +7666,7 @@ function ocToggle(setObj, key) {
 
 function renderOcAccordion() {
   const container = document.getElementById('oc-accordion');
+  if (!container) return;
   container.innerHTML = orderCycleData.financial_years.map(renderOcFyFolder).join('');
 }
 
@@ -6579,6 +7891,308 @@ async function uploadFilledOrderV2(confirmedDistributorId) {
     }
   } catch (error) {
     resultBox.textContent = `Error: ${error.message}`;
+  }
+}
+
+let ofSoPackLastPayload = null;
+let ofSoPackActiveTab = 'consolidated';
+
+function _soPackMoney(n) {
+  const v = Number(n || 0);
+  if (!Number.isFinite(v)) return '—';
+  return v.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+function showSoPackTab(tab) {
+  ofSoPackActiveTab = tab || 'consolidated';
+  document.querySelectorAll('[data-so-pack-tab]').forEach((btn) => {
+    const on = btn.getAttribute('data-so-pack-tab') === ofSoPackActiveTab;
+    btn.classList.toggle('nx-btn-primary', on);
+    btn.classList.toggle('btn-primary', on);
+    btn.classList.toggle('btn-secondary', !on);
+  });
+  if (!ofSoPackLastPayload) return;
+  const thead = document.getElementById('of-so-pack-thead');
+  const tbody = document.getElementById('of-so-pack-tbody');
+  if (!thead || !tbody) return;
+
+  let headers = [];
+  let rows = [];
+  if (ofSoPackActiveTab === 'so_summary') {
+    headers = ['SO Number', 'Order Date', 'Buyer', 'PO', 'Products', 'SKU Lines', 'Qty', 'Net', 'GST', 'Total', 'PDF'];
+    rows = (ofSoPackLastPayload.so_summary || []).map((r) => [
+      r.so_number, r.order_date, r.buyer_name, r.po_number, r.product_types, r.sku_lines,
+      r.total_qty, _soPackMoney(r.net_amount), _soPackMoney(r.gst_amount), _soPackMoney(r.total_amount), r.source_pdf,
+    ]);
+  } else if (ofSoPackActiveTab === 'line_detail') {
+    headers = ['SO', 'Material', 'Product', 'Detail', 'Qty', 'Rate', 'Net', 'GST', 'Total', 'PDF'];
+    rows = (ofSoPackLastPayload.line_detail || []).slice(0, 500).map((r) => [
+      r.so_number, r.material_code, r.product_name, r.product_detail, r.qty, r.rate,
+      _soPackMoney(r.net_amount), _soPackMoney(r.gst_amount), _soPackMoney(r.total_amount), r.source_pdf,
+    ]);
+  } else {
+    headers = ['SO Number', 'Order Date', 'Buyer Name', 'PO Number', 'Product Name', 'SKU Lines', 'Total Qty', 'Net', 'GST', 'Total'];
+    rows = (ofSoPackLastPayload.consolidated || []).map((r) => [
+      r.so_number, r.order_date, r.buyer_name, r.po_number, r.product_name, r.sku_lines, r.total_qty,
+      _soPackMoney(r.net_amount), _soPackMoney(r.gst_amount), _soPackMoney(r.total_amount),
+    ]);
+  }
+
+  thead.innerHTML = `<tr>${headers.map((h) => `<th>${foEscapeText(String(h))}</th>`).join('')}</tr>`;
+  tbody.innerHTML = rows.length
+    ? rows.map((cols) => `<tr>${cols.map((c) => `<td>${foEscapeText(c == null ? '—' : String(c))}</td>`).join('')}</tr>`).join('')
+    : `<tr><td colspan="${headers.length}">No rows</td></tr>`;
+}
+
+const SO_PACK_ANALYZE_TIPS = [
+  'Unpacking ZIP / RAR archive…',
+  'Reading Bombay Dyeing SO PDFs…',
+  'Matching product names & sizes…',
+  'Rolling up qty, net & GST…',
+  'Building Consolidated view…',
+];
+
+const SO_PACK_EXCEL_TIPS = [
+  'Preparing workbook sheets…',
+  'Writing Consolidated rows…',
+  'Adding SO Summary…',
+  'Filling Line Item Detail…',
+  'Almost ready to download…',
+];
+
+let _soPackBusyTimer = null;
+let _soPackBusyTipIdx = 0;
+let _soPackBusyInFlight = false;
+
+function _soPackEnsureBusyModal() {
+  let modal = document.getElementById('of-so-pack-busy-modal');
+  if (modal) return modal;
+  const host = document.getElementById('order-fulfillment-workspace') || document.body;
+  modal = document.createElement('div');
+  modal.id = 'of-so-pack-busy-modal';
+  modal.className = 'so-pack-modal hidden';
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <div class="so-pack-modal__backdrop"></div>
+    <div class="so-pack-modal__card" role="dialog" aria-modal="true" aria-labelledby="of-so-pack-busy-title">
+      <div class="so-pack-modal__glow" aria-hidden="true"></div>
+      <div class="so-pack-modal__orbit" aria-hidden="true">
+        <span class="so-pack-modal__ring"></span>
+        <span class="so-pack-modal__ring so-pack-modal__ring--2"></span>
+        <span class="so-pack-modal__core"></span>
+      </div>
+      <p class="so-pack-modal__eyebrow" id="of-so-pack-busy-eyebrow">SO Pack</p>
+      <h3 class="so-pack-modal__title" id="of-so-pack-busy-title">Analyzing SO pack</h3>
+      <p class="so-pack-modal__tip" id="of-so-pack-busy-tip">Unpacking ZIP / RAR archive…</p>
+      <div class="so-pack-modal__bar" aria-hidden="true"><i></i></div>
+      <p class="so-pack-modal__hint">Please wait — this may take a moment for large packs</p>
+    </div>`;
+  host.appendChild(modal);
+  return modal;
+}
+
+function _soPackSetBusyButtons(disabled) {
+  const root = document.getElementById('order-fulfillment-workspace');
+  if (!root) return;
+  root.querySelectorAll('#of-so-pack-file, button[onclick="analyzeSoPack()"], button[onclick="downloadSoPackExcel()"]')
+    .forEach((el) => {
+      el.disabled = !!disabled;
+    });
+}
+
+function _soPackClearBusy() {
+  if (_soPackBusyTimer) {
+    clearInterval(_soPackBusyTimer);
+    _soPackBusyTimer = null;
+  }
+  _soPackBusyInFlight = false;
+  _soPackSetBusyButtons(false);
+  const modal = document.getElementById('of-so-pack-busy-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('so-pack-modal--excel', 'is-open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function _soPackShowBusy(mode) {
+  const modal = _soPackEnsureBusyModal();
+  const resultBox = document.getElementById('of-so-pack-result');
+  _soPackClearBusy();
+  _soPackBusyInFlight = true;
+  _soPackSetBusyButtons(true);
+  _soPackBusyTipIdx = 0;
+  const isExcel = mode === 'excel';
+  const tips = isExcel ? SO_PACK_EXCEL_TIPS : SO_PACK_ANALYZE_TIPS;
+  const titleEl = document.getElementById('of-so-pack-busy-title');
+  const tipEl = document.getElementById('of-so-pack-busy-tip');
+  const eyeEl = document.getElementById('of-so-pack-busy-eyebrow');
+  if (titleEl) titleEl.textContent = isExcel ? 'Building Excel workbook' : 'Analyzing SO pack';
+  if (eyeEl) eyeEl.textContent = isExcel ? 'Download Excel' : 'SO Pack Consolidate';
+  if (tipEl) {
+    tipEl.textContent = tips[0];
+    tipEl.classList.remove('is-fading');
+  }
+  if (resultBox) {
+    resultBox.classList.remove('so-pack-busy', 'so-pack-ok');
+    resultBox.textContent = '';
+  }
+  // Mount on body so fixed overlay centers on full viewport
+  if (modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+  modal.classList.toggle('so-pack-modal--excel', isExcel);
+  modal.classList.remove('hidden');
+  modal.classList.add('is-open');
+  modal.setAttribute('aria-hidden', 'false');
+
+  _soPackBusyTimer = setInterval(() => {
+    const tip = document.getElementById('of-so-pack-busy-tip');
+    if (!tip || !_soPackBusyInFlight) return;
+    tip.classList.add('is-fading');
+    setTimeout(() => {
+      if (!_soPackBusyInFlight) return;
+      _soPackBusyTipIdx = (_soPackBusyTipIdx + 1) % tips.length;
+      tip.textContent = tips[_soPackBusyTipIdx];
+      tip.classList.remove('is-fading');
+    }, 220);
+  }, 2200);
+}
+
+function _soPackShowMessage(text, ok) {
+  const resultBox = document.getElementById('of-so-pack-result');
+  _soPackClearBusy();
+  if (!resultBox) return;
+  resultBox.classList.toggle('so-pack-ok', !!ok);
+  resultBox.classList.remove('so-pack-busy');
+  resultBox.textContent = text || '';
+}
+
+function showOfBottomPanel(panel) {
+  const bottom = document.querySelector('#order-fulfillment-workspace .nx-of-bottom');
+  if (!bottom) return;
+  const mode = panel === 'pack' ? 'pack' : 'tracking';
+  const preview = document.getElementById('of-so-pack-preview');
+  if (mode === 'pack') {
+    if (!ofSoPackLastPayload) {
+      if (typeof nexoraToast === 'function') nexoraToast('Analyze a SO pack first', 'error');
+      return;
+    }
+    if (preview) preview.classList.remove('hidden');
+  }
+  bottom.classList.toggle('is-pack', mode === 'pack');
+  bottom.classList.toggle('is-tracking', mode === 'tracking');
+  document.querySelectorAll('[data-of-bottom]').forEach((btn) => {
+    const on = btn.getAttribute('data-of-bottom') === mode;
+    btn.classList.toggle('nx-btn-primary', on);
+  });
+}
+
+function _renderSoPackPreview(data) {
+  ofSoPackLastPayload = data;
+  const preview = document.getElementById('of-so-pack-preview');
+  const kpis = document.getElementById('of-so-pack-kpis');
+  const statusEl = document.getElementById('of-so-pack-status');
+  const meta = data.meta || {};
+  if (preview) preview.classList.remove('hidden');
+  if (kpis) {
+    kpis.innerHTML = [
+      ['PDFs', meta.pdf_count],
+      ['SOs', meta.so_count],
+      ['Products', meta.consolidated_rows],
+      ['Qty', meta.total_qty],
+      ['Net', _soPackMoney(meta.net_amount)],
+      ['GST', _soPackMoney(meta.gst_amount)],
+      ['Total', _soPackMoney(meta.total_amount)],
+    ].map(([label, val]) => {
+      const text = String(val ?? '—');
+      return `<div class="of-kpi-cell" title="${foEscapeText(text)}">
+        <span>${foEscapeText(String(label))}</span>
+        <strong>${foEscapeText(text)}</strong>
+      </div>`;
+    }).join('');
+  }
+  const errs = meta.errors || [];
+  const fullMsg = errs.length
+    ? `Parsed ${meta.so_count || 0} SO(s). ${errs.length} PDF(s) had issues.`
+    : `Parsed ${meta.pdf_count || 0} PDF(s) → ${meta.so_count || 0} SO(s) → ${meta.consolidated_rows || 0} product rows · Qty ${meta.total_qty ?? '—'} · Total ₹ ${_soPackMoney(meta.total_amount)}`;
+  if (statusEl) statusEl.textContent = fullMsg;
+  _soPackShowMessage(
+    `Ready · ${meta.so_count || 0} SO · ${meta.consolidated_rows || 0} products`,
+    !errs.length,
+  );
+  const resultBox = document.getElementById('of-so-pack-result');
+  if (resultBox) resultBox.title = fullMsg;
+  showOfBottomPanel('pack');
+  showSoPackTab('consolidated');
+}
+
+async function analyzeSoPack() {
+  if (_soPackBusyInFlight) return;
+  const fileInput = document.getElementById('of-so-pack-file');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  if (!file) {
+    _soPackShowMessage('Please choose a ZIP or RAR file first.', false);
+    return;
+  }
+  _soPackShowBusy('analyze');
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/analyze', {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'Analyze failed');
+    }
+    _renderSoPackPreview(data.data || {});
+    if (typeof nexoraToast === 'function') nexoraToast('SO pack analyzed', 'ok');
+  } catch (e) {
+    _soPackShowMessage(e.message || 'Analyze failed', false);
+    if (typeof nexoraToast === 'function') nexoraToast(e.message || 'Analyze failed', 'error');
+  }
+}
+
+async function downloadSoPackExcel() {
+  if (_soPackBusyInFlight) return;
+  const fileInput = document.getElementById('of-so-pack-file');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  if (!file) {
+    _soPackShowMessage('Please choose a ZIP or RAR file first.', false);
+    return;
+  }
+  _soPackShowBusy('excel');
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/excel', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      let msg = 'Excel download failed';
+      try {
+        const data = await parseApiJson(response);
+        msg = (data.error && data.error.message) || msg;
+      } catch (_) {}
+      throw new Error(msg);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Consolidated_SO_Product_Qty_Amount.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    _soPackShowMessage('Excel downloaded.', true);
+    if (typeof nexoraToast === 'function') nexoraToast('Excel downloaded', 'ok');
+  } catch (e) {
+    _soPackShowMessage(e.message || 'Excel download failed', false);
+    if (typeof nexoraToast === 'function') nexoraToast(e.message || 'Excel download failed', 'error');
   }
 }
 
@@ -6895,6 +8509,11 @@ async function initOrderFulfillmentEmbeddedPanels() {
   setFilledOrderUploadFieldsEnabled(false, 'of-fo');
   await loadFilledOrdersDistributors(['fo', 'of-fo']);
   await loadOrderFulfillmentCatalogSummary();
+  const bottom = document.querySelector('#order-fulfillment-workspace .nx-of-bottom');
+  if (bottom && !ofSoPackLastPayload) {
+    bottom.classList.add('is-tracking');
+    bottom.classList.remove('is-pack');
+  }
 }
 
 async function loadOrderFulfillmentUploads() {
@@ -7018,7 +8637,123 @@ const articleMasterState = {
   pendingUploadFile: null,
   editArticleId: null,
   editField: null,
+  detailRowsCache: [],
 };
+
+const ARTICLE_DETAIL_FIELDS = [
+  ['brand', 'Brand'],
+  ['size', 'Size'],
+  ['category', 'Category'],
+  ['product_type', 'Product'],
+  ['mrp', 'MRP (₹)'],
+  ['ptr', 'PTR (₹)'],
+  ['retailer_margin', 'Retailer Margin'],
+  ['awd_markup_on_exmill', 'AWD Mark up on Exmill'],
+  ['ex_mill_price', 'Ex-Mill (₹)'],
+  ['bale_pack_size', 'Bale pack size'],
+  ['item_key', 'Item key'],
+];
+
+/** Extra Excel columns stored under original header names (varies by category). */
+const ARTICLE_EXTRA_FIELD_ALIASES = {
+  retailer_margin: ['Retailer Margin', 'Retail Mark down', 'Retailer MD', 'Retailer Markdown'],
+  awd_markup_on_exmill: ['AWD Mark up on Exmill', 'AWD MD', 'AWD MU', 'AWD Markup on Exmill'],
+  perceived: ['Perceived', 'Perceive', 'Perceived Margin'],
+};
+
+function getArticleExtraValue(article, aliases) {
+  const extra = (article && article.extra_attributes) || {};
+  if (!extra || typeof extra !== 'object') return null;
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(extra, alias) && extra[alias] !== null && extra[alias] !== undefined && extra[alias] !== '') {
+      return extra[alias];
+    }
+  }
+  const lowerMap = Object.fromEntries(
+    Object.entries(extra).map(([k, v]) => [String(k).trim().toLowerCase(), v])
+  );
+  for (const alias of aliases) {
+    const hit = lowerMap[String(alias).trim().toLowerCase()];
+    if (hit !== null && hit !== undefined && hit !== '') return hit;
+  }
+  return null;
+}
+
+function formatArticleMarginPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  // Booking sheets store fractions (0.28 → 28%); whole percents stay as-is.
+  const pct = Math.abs(num) <= 1 ? num * 100 : num;
+  return `${Number.isInteger(pct) ? pct : pct.toFixed(1)}%`;
+}
+
+/** Retailer Margin + Perceived (when present), e.g. "35% + 40%". */
+function formatArticleRetailerMarginDisplay(article, retailerMarginRaw) {
+  const base = formatArticleMarginPercent(retailerMarginRaw);
+  const perceived = getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES.perceived);
+  if (perceived === null || perceived === undefined || perceived === '') return base;
+  return `${base} + ${formatArticleMarginPercent(perceived)}`;
+}
+
+/** Contact-style profile card for an Article Master row. */
+function showArticleDetail(article) {
+  if (!article || typeof article !== 'object') return;
+  const title = document.getElementById('article-detail-title');
+  const body = document.getElementById('article-detail-body');
+  const editBtn = document.getElementById('article-detail-edit-btn');
+  const historyBtn = document.getElementById('article-detail-history-btn');
+  if (!title || !body) return;
+
+  const heading = [article.brand, article.size, article.product_type].filter(Boolean).join(' · ')
+    || article.item_key
+    || 'Article';
+  title.textContent = heading;
+
+  body.innerHTML = ARTICLE_DETAIL_FIELDS.map(([key, label]) => {
+    let raw = article[key];
+    if (ARTICLE_EXTRA_FIELD_ALIASES[key]) {
+      raw = getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES[key]);
+    }
+    if (raw === null || raw === undefined || raw === '') return '';
+    let display = raw;
+    if (['mrp', 'ptr', 'ex_mill_price'].includes(key)) {
+      display = formatArticleMasterValue(raw, key);
+    } else if (key === 'retailer_margin') {
+      display = formatArticleRetailerMarginDisplay(article, raw);
+    } else if (ARTICLE_EXTRA_FIELD_ALIASES[key]) {
+      display = formatArticleMarginPercent(raw);
+    }
+    const wide = key === 'item_key' ? ' bd-party-field--wide' : '';
+    return `
+      <div class="bd-party-field${wide}">
+        <span class="bd-party-field-label">${escapePartyDetailHtml(label)}</span>
+        <strong class="bd-party-field-value">${escapePartyDetailHtml(display)}</strong>
+      </div>
+    `;
+  }).filter(Boolean).join('') || '<p class="bd-party-muted">No details available.</p>';
+
+  const articleId = Number(article.id);
+  if (editBtn) {
+    editBtn.onclick = () => {
+      closeModal('article-detail-modal');
+      openArticleMasterFullEdit(articleId, article);
+    };
+  }
+  if (historyBtn) {
+    if (article.has_price_history) {
+      historyBtn.classList.remove('hidden');
+      historyBtn.onclick = () => {
+        closeModal('article-detail-modal');
+        openArticleMasterPriceHistory(articleId);
+      };
+    } else {
+      historyBtn.classList.add('hidden');
+      historyBtn.onclick = null;
+    }
+  }
+
+  toggleModal('article-detail-modal', true);
+}
 
 function formatArticleMasterValue(value, field = null) {
   if (value === null || value === undefined || value === '') {
@@ -7092,27 +8827,52 @@ function getFilteredArticleMasterRows() {
   });
 }
 
+function scheduleArticleMasterLayout() {
+  const section = document.getElementById('article-master-workspace');
+  if (!section || section.classList.contains('hidden')) return;
+  const wrap = document.getElementById('am-scroll-wrapper');
+  const shell = section.querySelector('.bd-am-shell') || section;
+  if (!wrap || !shell) return;
+  const apply = () => {
+    const shellH = shell.getBoundingClientRect().height;
+    const topbar = section.querySelector('.bd-am-topbar');
+    const result = document.getElementById('am-upload-result');
+    const chromeH = (topbar?.getBoundingClientRect().height || 0)
+      + ((result && result.offsetParent !== null && result.textContent.trim()) ? result.getBoundingClientRect().height : 0)
+      + 4;
+    const fallback = Math.max(220, Math.floor(window.innerHeight - 120));
+    const available = Math.max(180, Math.floor((shellH > 40 ? shellH : fallback) - chromeH));
+    wrap.style.setProperty('height', `${available}px`, 'important');
+    wrap.style.setProperty('max-height', `${available}px`, 'important');
+    wrap.style.setProperty('min-height', '0', 'important');
+    wrap.style.setProperty('flex', '1 1 0', 'important');
+    wrap.style.setProperty('overflow', 'scroll', 'important');
+    wrap.style.setProperty('overflow-x', 'scroll', 'important');
+    wrap.style.setProperty('overflow-y', 'scroll', 'important');
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+
 function renderArticleMasterTable() {
   const tbody = document.getElementById('am-articles-tbody');
   const countEl = document.getElementById('am-list-count');
   if (!tbody) return;
 
   const rows = getFilteredArticleMasterRows();
+  articleMasterState.detailRowsCache = rows;
   if (countEl) {
     countEl.textContent = `${rows.length} article${rows.length === 1 ? '' : 's'}`;
   }
 
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="10">No articles found. Upload a booking form Excel to get started.</td></tr>';
+    scheduleArticleMasterLayout();
     return;
   }
 
-  tbody.innerHTML = rows.map((a) => {
-    const historyBtn = a.has_price_history
-      ? `<button class="btn btn-secondary" style="padding:4px 8px;font-size:0.75rem;" onclick="openArticleMasterPriceHistory(${a.id})">History</button>`
-      : '';
-    return `
-    <tr>
+  tbody.innerHTML = rows.map((a, index) => `
+    <tr onclick="if(!event.target.closest('button')){showArticleDetail(articleMasterState.detailRowsCache[${index}])}" style="cursor:pointer;">
       <td>${a.category || '—'}</td>
       <td>${formatArticleMasterValue(a.brand)}</td>
       <td>${formatArticleMasterValue(a.size)}</td>
@@ -7121,15 +8881,11 @@ function renderArticleMasterTable() {
       <td>${formatArticleMasterValue(a.ptr, 'ptr')}</td>
       <td>${formatArticleMasterValue(a.ex_mill_price, 'ex_mill_price')}</td>
       <td>${formatArticleMasterValue(a.bale_pack_size)}</td>
-      <td style="font-size:0.75rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${(a.item_key || '').replace(/"/g, '&quot;')}">${a.item_key || '—'}</td>
-      <td>
-          <button class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem;" onclick="openArticleMasterFullEdit(${a.id})">Edit</button>
-          ${historyBtn}
-          <button class="btn btn-danger" style="padding:4px 8px;font-size:0.75rem;margin-left:4px;" onclick="deleteOneArticleMaster(${a.id})">Delete</button>
-      </td>
+      <td style="font-size:0.72rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;" title="${(a.item_key || '').replace(/"/g, '&quot;')}">${a.item_key || '—'}</td>
+      <td class="am-actions">${articleMasterActionButtons(a.id, !!a.has_price_history)}</td>
     </tr>
-  `;
-  }).join('');
+  `).join('');
+  scheduleArticleMasterLayout();
 }
 
 async function loadArticleMasterList() {
@@ -7175,36 +8931,37 @@ function showArticleMasterCategoryModal(data) {
     const breakdown = data.category_breakdown || {};
     const totalRows = data.article_count || 0;
     const knownCategories = ['Bed', 'Bath', 'TOB', 'TOB Pillow'];
+    const ui = nxThemeUi();
 
     const overlay = document.createElement('div');
     overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.65); ' +
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
       'display: flex; align-items: center; justify-content: center; z-index: 99999;';
 
     const box = document.createElement('div');
     box.style.cssText =
-      'background: #14141a; border: 1px solid #2a2a33; border-radius: 12px; ' +
-      'padding: 24px; max-width: 440px; width: 90%; ' +
-      'box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-family: inherit; color: #e6e6e6;';
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 440px; width: 90%; ` +
+      `box-shadow: 0 12px 40px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
 
     const breakdownRows = Object.entries(breakdown)
       .map(([cat, count]) => (
-        '<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #23232b;">' +
-        `<span style="color:#aaa;">${cat}</span>` +
-        `<span style="color:#e6e6e6; font-weight:600;">${count}</span>` +
+        `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid ${ui.rowBorder};">` +
+        `<span style="color:${ui.muted};">${cat}</span>` +
+        `<span style="color:${ui.accent}; font-weight:600;">${count}</span>` +
         '</div>'
       )).join('');
 
     box.innerHTML =
-      '<div style="font-size:16px; font-weight:600; margin-bottom:6px; color:#e0b84a;">Confirm category</div>' +
-      `<div style="font-size:13px; color:#999; margin-bottom:14px; line-height:1.5;">${data.message || 'Each row will be saved under its own category.'}</div>` +
-      `<div style="font-size:12px; color:#999; margin-bottom:4px;">Suggested (majority): <strong style="color:#e6e6e6;">${detectedCategory}</strong></div>` +
-      `<div style="font-size:12px; color:#999; margin:8px 0 4px;">Per-row mix (${totalRows} rows total):</div>` +
-      `<div style="margin-bottom:16px;">${breakdownRows || '<div style="color:#666;font-size:12px;">-</div>'}</div>` +
-      '<div id="am-modal-auto-btn" style="background:#2563eb; color:#fff; text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-weight:600; margin-bottom:10px;">AUTO — save each row under its own category (recommended)</div>' +
-      '<div style="font-size:11px; color:#777; margin-bottom:6px;">Or force one category (all rows will use it):</div>' +
+      `<div style="font-size:16px; font-weight:600; margin-bottom:6px; color:${ui.accent};">Confirm category</div>` +
+      `<div style="font-size:13px; color:${ui.muted}; margin-bottom:14px; line-height:1.5;">${data.message || 'Each row will be saved under its own category.'}</div>` +
+      `<div style="font-size:12px; color:${ui.muted}; margin-bottom:4px;">Suggested (majority): <strong style="color:${ui.boxFg};">${detectedCategory}</strong></div>` +
+      `<div style="font-size:12px; color:${ui.muted}; margin:8px 0 4px;">Per-row mix (${totalRows} rows total):</div>` +
+      `<div style="margin-bottom:16px;">${breakdownRows || `<div style="color:${ui.muted};font-size:12px;">-</div>`}</div>` +
+      `<div id="am-modal-auto-btn" class="am-modal-accent-btn" style="background:${ui.accent}; color:${ui.accentFg}; text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-weight:600; margin-bottom:10px; border:1px solid transparent;">AUTO — save each row under its own category (recommended)</div>` +
+      `<div style="font-size:11px; color:${ui.muted}; margin-bottom:6px;">Or force one category (all rows will use it):</div>` +
       '<div id="am-modal-force-btns" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;"></div>' +
-      '<div id="am-modal-cancel-btn" style="text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:#999; border:1px solid #333;">Cancel</div>';
+      `<div id="am-modal-cancel-btn" style="text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:${ui.secondaryFg}; border:1px solid ${ui.secondaryBorder}; background:${ui.secondaryBg};">Cancel</div>`;
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
@@ -7215,9 +8972,9 @@ function showArticleMasterCategoryModal(data) {
       btn.textContent = cat;
       btn.style.cssText =
         'flex: 1 1 auto; text-align:center; padding:8px 10px; border-radius:8px; ' +
-        'cursor:pointer; font-size:13px; border:1px solid #333; color:#ccc; min-width: 70px;';
-      btn.addEventListener('mouseenter', () => { btn.style.borderColor = '#e0b84a'; btn.style.color = '#e0b84a'; });
-      btn.addEventListener('mouseleave', () => { btn.style.borderColor = '#333'; btn.style.color = '#ccc'; });
+        `cursor:pointer; font-size:13px; border:1px solid ${ui.secondaryBorder}; color:${ui.secondaryFg}; background:${ui.secondaryBg}; min-width: 70px;`;
+      btn.addEventListener('mouseenter', () => { btn.style.borderColor = ui.accent; btn.style.color = ui.accent; });
+      btn.addEventListener('mouseleave', () => { btn.style.borderColor = ui.secondaryBorder; btn.style.color = ui.secondaryFg; });
       btn.addEventListener('click', () => { cleanup(); resolve(cat); });
       forceContainer.appendChild(btn);
     });
@@ -7481,17 +9238,18 @@ function showArticleMasterPriceMismatchModal(data, onApply) {
   return new Promise((resolve) => {
     articleMasterUploadState.pendingConflicts = data.conflicts || [];
     articleMasterUploadState.resolutions = {};
+    const ui = nxThemeUi();
 
     const overlay = document.createElement('div');
     overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.78); ' +
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
       'display: flex; align-items: center; justify-content: center; z-index: 100001;';
 
     const box = document.createElement('div');
     box.style.cssText =
-      'background: #14141a; border: 1px solid #2a2a33; border-radius: 12px; ' +
-      'padding: 24px; max-width: 1100px; width: 96%; max-height: 94vh; display:flex; flex-direction:column; ' +
-      'box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-family: inherit; color: #e6e6e6;';
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 1100px; width: 96%; max-height: 94vh; display:flex; flex-direction:column; ` +
+      `box-shadow: 0 12px 40px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
 
     const headerEl = document.createElement('div');
     const listEl = document.createElement('div');
@@ -7505,9 +9263,9 @@ function showArticleMasterPriceMismatchModal(data, onApply) {
       const total = articleMasterUploadState.pendingConflicts.length;
       const resolved = total - remaining;
       headerEl.innerHTML =
-        '<h2 style="margin:0 0 8px; color:#e0b84a;">Seasonal price revision — review</h2>' +
-        `<p style="margin:0; color:#aaa; font-size:13px;">${data.message || 'Uploaded prices differ from Article Master (increase or decrease). Replace applies the new season prices.'}</p>` +
-        `<p style="margin:8px 0 0; color:#bbb; font-size:12px;">${resolved} resolved · ${remaining} remaining` +
+        `<h2 style="margin:0 0 8px; color:${ui.accent};">Seasonal price revision — review</h2>` +
+        `<p style="margin:0; color:${ui.muted}; font-size:13px;">${data.message || 'Uploaded prices differ from Article Master (increase or decrease). Replace applies the new season prices.'}</p>` +
+        `<p style="margin:8px 0 0; color:${ui.muted}; font-size:12px;">${resolved} resolved · ${remaining} remaining` +
         (data.created ? ` · ${data.created} already added` : '') +
         '</p>';
 
@@ -7740,7 +9498,7 @@ async function uploadArticleMasterSheet(confirmedCategory = null, conflictResolu
 async function deleteOneArticleMaster(articleId) {
   const ok = await showSimpleConfirmModal(
     'Delete article?',
-    'This article will be permanently removed from Article Master.',
+    'This will permanently hard-delete this article from Article Master. This cannot be undone.',
     'Delete',
     'Cancel'
   );
@@ -7763,12 +9521,27 @@ async function deleteOneArticleMaster(articleId) {
 
 async function deleteAllArticleMaster() {
   const category = document.getElementById('am-category-filter')?.value || 'All';
+  const matching = (articleMasterState.articles || []).filter((a) =>
+    category === 'All' ? true : a.category === category,
+  );
+  const resultEl = document.getElementById('am-upload-result');
+
+  if (!matching.length) {
+    const emptyMsg =
+      category === 'All'
+        ? 'Nothing to delete. There are no articles in Article Master.'
+        : `Nothing to delete. There are no articles in the "${category}" category.`;
+    if (resultEl) resultEl.textContent = emptyMsg;
+    await showSimpleConfirmModal('Nothing to delete', emptyMsg, 'OK', 'Close');
+    return;
+  }
+
   const scope = category === 'All'
-    ? 'all articles (every category)'
-    : `all articles in the "${category}" category`;
+    ? `all ${matching.length} articles (every category)`
+    : `all ${matching.length} articles in the "${category}" category`;
   const ok = await showSimpleConfirmModal(
     'Delete all articles?',
-    `<strong style="color:#f87171;">Warning:</strong> This permanently deletes ${scope}. This cannot be undone.`,
+    `<strong style="color:#f87171;">Warning:</strong> This permanently hard-deletes ${scope}. This cannot be undone.`,
     'Delete all',
     'Cancel'
   );
@@ -7785,9 +9558,8 @@ async function deleteAllArticleMaster() {
     if (!response.ok) {
       throw new Error(getApiErrorMessage(data, 'Delete all failed'));
     }
-    const resultEl = document.getElementById('am-upload-result');
     if (resultEl) {
-      resultEl.textContent = `Deleted ${data.deleted || 0} articles (${data.category}).`;
+      resultEl.textContent = `Permanently deleted ${data.deleted || 0} articles (${data.category}).`;
     }
     await loadArticleMasterList();
   } catch (error) {
@@ -7884,10 +9656,17 @@ async function confirmArticleMasterNewCategory() {
   }
 }
 
-function openArticleMasterFullEdit(articleId) {
-  const article = articleMasterState.articles.find((a) => a.id === articleId);
+function openArticleMasterFullEdit(articleId, fallbackArticle) {
+  const idNum = Number(articleId);
+  let article = articleMasterState.articles.find((a) => Number(a.id) === idNum);
+  if (!article && fallbackArticle && typeof fallbackArticle === 'object') {
+    article = { ...fallbackArticle, id: fallbackArticle.id ?? idNum };
+    if (!articleMasterState.articles.some((a) => Number(a.id) === Number(article.id))) {
+      articleMasterState.articles.push(article);
+    }
+  }
   if (!article) return;
-  articleMasterState.editArticleId = articleId;
+  articleMasterState.editArticleId = Number(article.id);
 
   const setVal = (id, val) => {
     const el = document.getElementById(id);
@@ -7895,7 +9674,7 @@ function openArticleMasterFullEdit(articleId) {
   };
   const labelEl = document.getElementById('am-full-edit-label');
   if (labelEl) {
-    labelEl.textContent = article.item_key ? `Item: ${article.item_key}` : `Article ID ${articleId}`;
+    labelEl.textContent = article.item_key ? `Item: ${article.item_key}` : `Article ID ${article.id}`;
   }
   setVal('am-full-edit-brand', article.brand);
   setVal('am-full-edit-size', article.size);
@@ -7905,6 +9684,27 @@ function openArticleMasterFullEdit(articleId) {
   setVal('am-full-edit-exmill', article.ex_mill_price);
   setVal('am-full-edit-bale', article.bale_pack_size);
   toggleModal('am-full-edit-modal', true);
+}
+
+/** Global search → Article Master item card (same as contact card). */
+async function openArticleMasterFromSearch(index) {
+  const row = partyDetailRecordsCache?.[index];
+  if (!row || row.id == null) return;
+  try {
+    closeModal('global-search-modal');
+  } catch (e) { /* ignore */ }
+  openModule('ArticleMaster');
+  const idNum = Number(row.id);
+  try {
+    const found = articleMasterState.articles.some((a) => Number(a.id) === idNum);
+    if (!found) {
+      await loadArticleMasterList();
+    }
+  } catch (e) {
+    /* still try opening with search row */
+  }
+  const article = articleMasterState.articles.find((a) => Number(a.id) === idNum) || row;
+  showArticleDetail(article);
 }
 
 function collectArticleMasterFullEditUpdates(article) {
@@ -8068,23 +9868,24 @@ async function openArticleMasterPriceHistory(articleId) {
 function showArticleMasterDownloadModal() {
   return new Promise((resolve) => {
     const categories = ['All', 'Bed', 'Bath', 'TOB', 'TOB Pillow'];
+    const ui = nxThemeUi();
 
     const overlay = document.createElement('div');
     overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.65); ' +
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
       'display: flex; align-items: center; justify-content: center; z-index: 99999;';
 
     const box = document.createElement('div');
     box.style.cssText =
-      'background: #14141a; border: 1px solid #2a2a33; border-radius: 12px; ' +
-      'padding: 24px; max-width: 380px; width: 90%; ' +
-      'box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-family: inherit; color: #e6e6e6;';
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 380px; width: 90%; ` +
+      `box-shadow: 0 12px 40px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
 
     box.innerHTML =
-      '<div style="font-size:16px; font-weight:600; margin-bottom:6px; color:#e0b84a;">What would you like to download?</div>' +
-      '<div style="font-size:13px; color:#999; margin-bottom:16px; line-height:1.5;">Category chuno, ya "All" se poora Article Master.</div>' +
+      `<div style="font-size:16px; font-weight:600; margin-bottom:6px; color:${ui.accent};">What would you like to download?</div>` +
+      `<div style="font-size:13px; color:${ui.muted}; margin-bottom:16px; line-height:1.5;">Choose a category, or All for the full Article Master.</div>` +
       '<div id="am-download-cat-btns" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;"></div>' +
-      '<div id="am-download-cancel-btn" style="text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:#999; border:1px solid #333;">Cancel</div>';
+      `<div id="am-download-cancel-btn" style="text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:${ui.secondaryFg}; border:1px solid ${ui.secondaryBorder}; background:${ui.secondaryBg};">Cancel</div>`;
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
@@ -8097,12 +9898,12 @@ function showArticleMasterDownloadModal() {
       btn.style.cssText =
         `text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-size:14px; ` +
         `font-weight:${isAll ? '600' : '400'}; ` +
-        `background:${isAll ? '#2563eb' : 'transparent'}; ` +
-        `color:${isAll ? '#fff' : '#ccc'}; ` +
-        `border:1px solid ${isAll ? '#2563eb' : '#333'};`;
+        `background:${isAll ? ui.accent : ui.secondaryBg}; ` +
+        `color:${isAll ? ui.accentFg : ui.secondaryFg}; ` +
+        `border:1px solid ${isAll ? 'transparent' : ui.secondaryBorder};`;
       if (!isAll) {
-        btn.addEventListener('mouseenter', () => { btn.style.borderColor = '#e0b84a'; btn.style.color = '#e0b84a'; });
-        btn.addEventListener('mouseleave', () => { btn.style.borderColor = '#333'; btn.style.color = '#ccc'; });
+        btn.addEventListener('mouseenter', () => { btn.style.borderColor = ui.accent; btn.style.color = ui.accent; });
+        btn.addEventListener('mouseleave', () => { btn.style.borderColor = ui.secondaryBorder; btn.style.color = ui.secondaryFg; });
       }
       btn.addEventListener('click', () => { cleanup(); resolve(cat); });
       catContainer.appendChild(btn);
@@ -8251,6 +10052,10 @@ function resetFilledOrderUploadForm(prefix = 'fo') {
 }
 
 async function initFilledOrdersWorkspace() {
+  // UI shell removed — keep engine callable for later rebuild.
+  if (!document.getElementById('fo-orders-tbody') && !document.getElementById('fo-upload-file')) {
+    return;
+  }
   resetFilledOrderUploadForm();
   await loadFilledOrdersDistributors();
   setFilledOrderUploadFieldsEnabled(false);
@@ -8546,20 +10351,21 @@ function collectFilledOrderPreviewIssues(data) {
 
 function showSimpleConfirmModal(title, message, yesText = 'Yes', noText = 'No') {
   return new Promise((resolve) => {
+    const ui = nxThemeUi();
     const overlay = document.createElement('div');
     overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.72); ' +
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
       'display: flex; align-items: center; justify-content: center; z-index: 100002;';
     const box = document.createElement('div');
     box.style.cssText =
-      'background: #14141a; border: 1px solid #2a2a33; border-radius: 12px; ' +
-      'padding: 24px; max-width: 440px; width: 90%; color: #e6e6e6;';
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 440px; width: 90%; color: ${ui.boxFg};`;
     box.innerHTML =
-      `<div style="font-size:16px; font-weight:600; margin-bottom:10px; color:#e0b84a;">${title}</div>` +
-      `<div style="font-size:13px; color:#bbb; margin-bottom:18px; line-height:1.5;">${message}</div>` +
+      `<div style="font-size:16px; font-weight:600; margin-bottom:10px; color:${ui.accent};">${title}</div>` +
+      `<div style="font-size:13px; color:${ui.muted}; margin-bottom:18px; line-height:1.5;">${message}</div>` +
       `<div style="display:flex; gap:10px;">` +
-      `<button id="scm-yes" class="btn btn-primary" style="flex:1;">${yesText}</button>` +
-      `<button id="scm-no" class="btn btn-secondary" style="flex:1;">${noText}</button>` +
+      `<button id="scm-yes" class="btn btn-primary" style="flex:1; background:${ui.accent}; border-color:${ui.accent}; color:${ui.accentFg};">${yesText}</button>` +
+      `<button id="scm-no" class="btn btn-secondary" style="flex:1; background:${ui.secondaryBg}; border-color:${ui.secondaryBorder}; color:${ui.boxFg};">${noText}</button>` +
       `</div>`;
     overlay.appendChild(box);
     document.body.appendChild(overlay);
@@ -8700,16 +10506,17 @@ function bindFilledOrderMismatchCardActions(container, rerender) {
 
 function showFilledOrderMismatchReviewModal(onUpdate) {
   return new Promise((resolve) => {
+    const ui = nxThemeUi();
     const overlay = document.createElement('div');
     overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.78); ' +
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
       'display: flex; align-items: center; justify-content: center; z-index: 100001;';
 
     const box = document.createElement('div');
     box.style.cssText =
-      'background: #14141a; border: 1px solid #2a2a33; border-radius: 12px; ' +
-      'padding: 24px; max-width: 1100px; width: 96%; max-height: 94vh; display:flex; flex-direction:column; ' +
-      'box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-family: inherit; color: #e6e6e6;';
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 1100px; width: 96%; max-height: 94vh; display:flex; flex-direction:column; ` +
+      `box-shadow: 0 12px 40px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
 
     const listEl = document.createElement('div');
     listEl.style.cssText = 'flex:1 1 auto; min-height:0; overflow:auto; margin:14px 0; padding-right:4px;';
@@ -8719,8 +10526,8 @@ function showFilledOrderMismatchReviewModal(onUpdate) {
       const preview = filledOrdersState.pendingPreview;
       const keyFields = (preview?.keyFields || []).join(', ');
       box.querySelector('.fo-mismatch-header').innerHTML =
-        '<h2 style="margin:0 0 8px; color:#e0b84a;">Unmatched lines — review</h2>' +
-        `<p style="margin:0; color:#aaa; font-size:13px;">${items.length} line(s) remaining. ` +
+        `<h2 style="margin:0 0 8px; color:${ui.accent};">Unmatched lines — review</h2>` +
+        `<p style="margin:0; color:${ui.muted}; font-size:13px;">${items.length} line(s) remaining. ` +
         `Match keys: ${keyFields || 'brand, size'}. Scroll to review each line.</p>` +
         (preview?.addedKeys.size
           ? `<p style="margin:8px 0 0; color:#7fdc7f; font-size:12px;">${preview.addedKeys.size} added to Article Master.</p>`
@@ -8767,17 +10574,18 @@ function showFilledOrderSaveConfirmModal(data) {
   return new Promise((resolve) => {
     initFilledOrderPendingPreview(data);
     const existing = data.existing_order || null;
+    const ui = nxThemeUi();
 
     const overlay = document.createElement('div');
     overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.65); ' +
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
       'display: flex; align-items: center; justify-content: center; z-index: 99999;';
 
     const box = document.createElement('div');
     box.style.cssText =
-      'background: #14141a; border: 1px solid #2a2a33; border-radius: 12px; ' +
-      'padding: 24px; max-width: 480px; width: 92%; ' +
-      'box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-family: inherit; color: #e6e6e6;';
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 480px; width: 92%; ` +
+      `box-shadow: 0 12px 40px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
 
     const statsHost = document.createElement('div');
     statsHost.id = 'fo-save-stats-host';
@@ -8785,7 +10593,7 @@ function showFilledOrderSaveConfirmModal(data) {
     function renderStats() {
       const s = getFilledOrderPendingSaveStats();
       const checkBtn = s.unmatched > 0
-        ? `<button type="button" id="fo-check-unmatched-btn" class="btn btn-primary" style="padding:4px 10px; font-size:12px; margin-left:10px;">Check</button>`
+        ? `<button type="button" id="fo-check-unmatched-btn" class="btn btn-primary" style="padding:4px 10px; font-size:12px; margin-left:10px; background:${ui.accent}; border-color:${ui.accent}; color:${ui.accentFg};">Check</button>`
         : '';
       const rows = [
         ['Total lines', s.total],
@@ -8800,9 +10608,9 @@ function showFilledOrderSaveConfirmModal(data) {
         ['Season', data.season || '—'],
       ];
       statsHost.innerHTML = rows.map(([label, value]) => (
-        '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #23232b;">' +
-        `<span style="color:#aaa;">${label}</span>` +
-        `<span style="color:#e6e6e6; font-weight:600;">${value}</span>` +
+        `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid ${ui.rowBorder};">` +
+        `<span style="color:${ui.muted};">${label}</span>` +
+        `<span style="color:${ui.boxFg}; font-weight:600;">${value}</span>` +
         '</div>'
       )).join('');
 
@@ -8816,18 +10624,18 @@ function showFilledOrderSaveConfirmModal(data) {
     }
 
     box.innerHTML =
-      '<div style="font-size:16px; font-weight:600; margin-bottom:6px; color:#e0b84a;">' +
+      `<div style="font-size:16px; font-weight:600; margin-bottom:6px; color:${ui.accent};">` +
       (existing ? 'Replace existing filled order?' : 'Save filled order?') +
       '</div>' +
       (existing
-        ? `<div style="font-size:13px; color:#ffb648; margin-bottom:10px; line-height:1.5; padding:10px; border:1px solid rgba(255,182,72,0.45); border-radius:8px; background:rgba(255,182,72,0.08);">
+        ? `<div style="font-size:13px; color:#b45309; margin-bottom:10px; line-height:1.5; padding:10px; border:1px solid color-mix(in srgb, ${ui.accent} 45%, transparent); border-radius:8px; background:color-mix(in srgb, ${ui.accent} 10%, transparent);">
             <strong>Duplicate detected.</strong> ${data.distributor_name || 'This distributor'} already has a
             <strong>${existing.category}</strong> order for season <strong>${existing.season}</strong>
             (${existing.total_lines ?? 0} lines, uploaded ${(existing.created_at || '').slice(0, 10)}).
             Saving will replace that order.
           </div>`
         : '') +
-      '<div style="font-size:13px; color:#999; margin-bottom:14px; line-height:1.5;">Review summary below. ' +
+      `<div style="font-size:13px; color:${ui.muted}; margin-bottom:14px; line-height:1.5;">Review summary below. ` +
       'If unmatched &gt; 0, click <strong>Check</strong> to review details before saving.</div>';
 
     const placeholder = document.createElement('div');
@@ -8838,11 +10646,11 @@ function showFilledOrderSaveConfirmModal(data) {
 
     const confirmBtn = document.createElement('div');
     confirmBtn.id = 'fo-save-confirm-btn';
-    confirmBtn.style.cssText = 'background:#2563eb; color:#fff; text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-weight:600; margin:16px 0 10px;';
+    confirmBtn.style.cssText = `background:${ui.accent}; color:${ui.accentFg}; text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-weight:600; margin:16px 0 10px;`;
     confirmBtn.textContent = existing ? 'Replace existing order' : 'Save filled order';
     const cancelBtn = document.createElement('div');
     cancelBtn.id = 'fo-save-cancel-btn';
-    cancelBtn.style.cssText = 'text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:#f87171; border:1px solid #5c2b2b;';
+    cancelBtn.style.cssText = `text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:#f87171; border:1px solid #5c2b2b; background:${ui.secondaryBg};`;
     cancelBtn.textContent = 'Cancel — reject upload';
     box.appendChild(confirmBtn);
     box.appendChild(cancelBtn);

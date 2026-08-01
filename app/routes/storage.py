@@ -245,6 +245,82 @@ def get_files():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@storage_bp.route('/files/<file_id>/download', methods=['GET'])
+@require_jwt_auth
+def download_file(file_id):
+    """Download a Drive file via the connected NEXORA OAuth token (not browser Google session)."""
+    from flask import Response
+    from urllib.parse import quote
+    from app.storage.manager import StorageManager
+    from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+    try:
+        user = _get_request_user()
+        user_id = user['user_id']
+        workspace_id = get_workspace_id()
+        safe_id = str(file_id or '').strip()
+        if not safe_id:
+            return jsonify({'success': False, 'error': 'file_id required'}), 400
+
+        # Ensure the file belongs to this user's indexed Drive (or allow direct Drive id if connected)
+        db = CentralizedDB()
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            '''
+            SELECT fi.file_id, fi.file_name, fi.mime_type, fi.file_type
+            FROM file_index fi
+            JOIN storage_accounts sa ON fi.storage_account_id = sa.id
+            WHERE sa.user_id = ? AND sa.workspace_id = ? AND fi.file_id = ?
+            LIMIT 1
+            ''',
+            (user_id, workspace_id, safe_id),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({
+                'success': False,
+                'error': 'File not found in your Cloud Hub index. Click Sync, then try again.',
+            }), 404
+
+        mime_hint = str(row['mime_type'] or row['file_type'] or '')
+        if 'folder' in mime_hint.lower():
+            return jsonify({'success': False, 'error': 'Folders cannot be downloaded.'}), 400
+
+        manager = StorageManager()
+        manager.register_provider('google_drive', GoogleDriveProvider)
+        payload = manager.download_file_bytes(
+            user_id=user_id,
+            file_id=safe_id,
+            workspace_id=workspace_id,
+        )
+        content = payload.get('content') or b''
+        filename = payload.get('file_name') or row['file_name'] or safe_id
+        mime_type = payload.get('mime_type') or 'application/octet-stream'
+        # RFC 5987 filename for non-ASCII names
+        disposition = (
+            f"attachment; filename=\"{filename.replace('\"', '')}\"; "
+            f"filename*=UTF-8''{quote(filename)}"
+        )
+        return Response(
+            content,
+            mimetype=mime_type,
+            headers={
+                'Content-Disposition': disposition,
+                'Content-Length': str(len(content)),
+                'Cache-Control': 'no-store',
+            },
+        )
+    except KeyError as e:
+        return jsonify({'success': False, 'error': str(e) or 'Google Drive is not connected.'}), 400
+    except Exception as e:
+        message = str(e)
+        if 'File not found' in message or '404' in message:
+            message = 'File not found on Google Drive (it may have been deleted or moved).'
+        return jsonify({'success': False, 'error': message}), 500
+
+
 @storage_bp.route('/sync', methods=['POST'])
 @require_jwt_auth
 def sync_files():

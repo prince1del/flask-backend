@@ -106,10 +106,16 @@ class StorageManager:
         self.user_connections[user_id] = connection
         return connection
 
-    def _get_user_provider(self, user_id: int) -> StorageProvider:
-        connection = self.user_connections.get(
-            user_id
-        ) or self._get_persisted_connection(user_id)
+    def _get_user_provider(
+        self, user_id: int, workspace_id: str | None = None
+    ) -> StorageProvider:
+        connection = self.user_connections.get(user_id)
+        if connection is None or (
+            workspace_id and connection.get("workspace_id") != workspace_id
+        ):
+            connection = self._get_persisted_connection(user_id, workspace_id)
+            if connection:
+                self.user_connections[user_id] = connection
         if not connection:
             raise KeyError("No storage provider connected for user")
         provider = connection.get("provider")
@@ -125,11 +131,40 @@ class StorageManager:
         return provider.upload(file_path=file_path, target_folder=folder)
 
     def download_file(
-        self, user_id: int, file_id: str, target_path: str
+        self, user_id: int, file_id: str, target_path: str, workspace_id: str | None = None
     ) -> dict[str, Any]:
         """Download file through storage manager."""
-        provider = self._get_user_provider(user_id)
+        provider = self._get_user_provider(user_id, workspace_id=workspace_id)
         return provider.download(file_id=file_id, target_path=target_path)
+
+    def download_file_bytes(
+        self, user_id: int, file_id: str, workspace_id: str | None = None
+    ) -> dict[str, Any]:
+        """Download file bytes through the connected Drive account (not browser Google session)."""
+        provider = self._get_user_provider(user_id, workspace_id=workspace_id)
+        if hasattr(provider, "download_bytes"):
+            return provider.download_bytes(file_id)
+        # Fallback for providers without in-memory download
+        import tempfile
+        import os
+
+        fd, path = tempfile.mkstemp(prefix="nexora_drive_")
+        os.close(fd)
+        try:
+            provider.download(file_id=file_id, target_path=path)
+            with open(path, "rb") as fh:
+                content = fh.read()
+            return {
+                "file_id": file_id,
+                "file_name": file_id,
+                "mime_type": "application/octet-stream",
+                "content": content,
+            }
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
     def list_files(self, user_id: int, folder_path: str = "") -> list[dict[str, Any]]:
         """List files for a connected storage provider."""

@@ -40,6 +40,47 @@ const hopState = {
 const HOP_RATE_CART_KEY = 'hop_rate_cart_v1';
 const HOP_THEME_KEY = 'hop_theme_v1';
 const HOP_CUSTOM_COLORS_KEY = 'hop_theme_custom_v1';
+
+/** Per-login theme silo — never share North Head / HoP / other users on same browser. */
+function hopThemeStorageScope() {
+  try {
+    if (typeof authState !== 'undefined' && authState) {
+      if (authState.userId != null && Number.isFinite(Number(authState.userId))) {
+        return `id_${Number(authState.userId)}`;
+      }
+      const uname = String(authState.username || '').trim().toLowerCase();
+      if (uname) return `name_${uname.replace(/[^a-z0-9_-]/g, '_').slice(0, 48)}`;
+    }
+  } catch (e) { /* ignore */ }
+  return 'anon';
+}
+
+function hopThemeStorageKey() {
+  return `${HOP_THEME_KEY}__${hopThemeStorageScope()}`;
+}
+
+function hopCustomColorsStorageKey() {
+  return `${HOP_CUSTOM_COLORS_KEY}__${hopThemeStorageScope()}`;
+}
+
+function hopMigrateLegacyThemeOnce() {
+  const scope = hopThemeStorageScope();
+  if (scope === 'anon') return;
+  try {
+    if (localStorage.getItem(hopThemeStorageKey())) return;
+    const legacyTheme = localStorage.getItem(HOP_THEME_KEY);
+    if (!legacyTheme) return;
+    localStorage.setItem(hopThemeStorageKey(), legacyTheme);
+    const legacyColors = localStorage.getItem(HOP_CUSTOM_COLORS_KEY);
+    if (legacyColors && !localStorage.getItem(hopCustomColorsStorageKey())) {
+      localStorage.setItem(hopCustomColorsStorageKey(), legacyColors);
+    }
+    // Drop shared keys so the next login cannot inherit this theme.
+    localStorage.removeItem(HOP_THEME_KEY);
+    localStorage.removeItem(HOP_CUSTOM_COLORS_KEY);
+  } catch (e) { /* ignore */ }
+}
+
 const HOP_THEMES = {
   nexora: { id: 'nexora', label: 'NEXORA theme on', color: '#05070d' },
   bright: { id: 'bright', label: 'Bright theme on', color: '#f4f7fb' },
@@ -212,8 +253,9 @@ function hopNormalizeHex(hex, fallback) {
 }
 
 function hopGetCustomColors() {
+  hopMigrateLegacyThemeOnce();
   try {
-    const raw = JSON.parse(localStorage.getItem(HOP_CUSTOM_COLORS_KEY) || '{}');
+    const raw = JSON.parse(localStorage.getItem(hopCustomColorsStorageKey()) || '{}');
     return {
       sidebar: hopNormalizeHex(raw.sidebar, HOP_CUSTOM_DEFAULTS.sidebar),
       bg: hopNormalizeHex(raw.bg, HOP_CUSTOM_DEFAULTS.bg),
@@ -238,7 +280,11 @@ function hopSaveCustomColors(colors) {
     card: hopNormalizeHex(colors.card, HOP_CUSTOM_DEFAULTS.card),
     muted: hopNormalizeHex(colors.muted, HOP_CUSTOM_DEFAULTS.muted),
   };
-  try { localStorage.setItem(HOP_CUSTOM_COLORS_KEY, JSON.stringify(c)); } catch (e) { /* ignore */ }
+  try {
+    if (hopThemeStorageScope() !== 'anon') {
+      localStorage.setItem(hopCustomColorsStorageKey(), JSON.stringify(c));
+    }
+  } catch (e) { /* ignore */ }
   return c;
 }
 
@@ -247,10 +293,14 @@ function hopApplyCustomVars(colors) {
   const root = document.documentElement;
   const accentDark = hopMixHex(c.accent, '#000000', 0.22);
   const accentLight = hopMixHex(c.accent, '#FFFFFF', 0.45);
-  const bgSoft = hopMixHex(c.bg, c.border, 0.35);
+  // Near-white backgrounds must stay exact (no border mix → cream cast).
+  const bgLum = hopLuminance(c.bg);
+  const bgSoft = bgLum >= 0.88
+    ? c.bg
+    : hopMixHex(c.bg, c.border, 0.22);
   const { r, g, b } = hopHexToRgb(c.accent);
   const sideLum = hopLuminance(c.sidebar);
-  const navText = sideLum < 0.45 ? hopMixHex(c.bg, '#FFFFFF', 0.15) : hopMixHex(c.text, '#000000', 0.15);
+  const navText = sideLum < 0.45 ? hopMixHex('#FFFFFF', c.bg, 0.08) : hopMixHex(c.text, '#000000', 0.15);
   const navMuted = hopMixHex(navText, c.sidebar, 0.45);
 
   const vars = {
@@ -270,6 +320,11 @@ function hopApplyCustomVars(colors) {
     '--hop-c-nav-muted': navMuted,
   };
   Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
+  // Keep legacy NEXORA accent tokens in sync so buttons/logos follow custom/luxury colors
+  root.style.setProperty('--nx-gold', c.accent);
+  root.style.setProperty('--nx-gold-2', accentDark);
+  root.style.setProperty('--nxt-cyan', c.accent);
+  root.style.setProperty('--nxt-cyan-dim', `rgba(${r}, ${g}, ${b}, 0.16)`);
   HOP_THEMES.custom.color = c.bg;
   return c;
 }
@@ -279,12 +334,14 @@ function hopClearCustomVars() {
     '--hop-c-sidebar', '--hop-c-bg', '--hop-c-bg-soft', '--hop-c-text', '--hop-c-muted',
     '--hop-c-border', '--hop-c-accent', '--hop-c-accent-dark', '--hop-c-accent-light',
     '--hop-c-accent-soft', '--hop-c-accent-glow', '--hop-c-card', '--hop-c-nav-text', '--hop-c-nav-muted',
+    '--nx-gold', '--nx-gold-2', '--nxt-cyan', '--nxt-cyan-dim',
   ].forEach((k) => document.documentElement.style.removeProperty(k));
 }
 
 function hopGetTheme() {
+  hopMigrateLegacyThemeOnce();
   try {
-    const t = localStorage.getItem(HOP_THEME_KEY) || 'nexora';
+    const t = localStorage.getItem(hopThemeStorageKey()) || 'nexora';
     return hopIsKnownTheme(t) ? t : 'nexora';
   } catch (e) {
     return 'nexora';
@@ -293,26 +350,53 @@ function hopGetTheme() {
 
 function hopApplyTheme(theme, opts) {
   const t = hopIsKnownTheme(theme) ? theme : 'nexora';
-  try { localStorage.setItem(HOP_THEME_KEY, t); } catch (e) { /* ignore */ }
+  const previewOnly = Boolean(opts && opts.previewOnly);
 
-  if (HOP_LUXURY_THEMES[t]) {
-    hopSaveCustomColors(HOP_LUXURY_THEMES[t].colors);
+  if (previewOnly) {
+    hopThemeLivePreview = {
+      theme: t,
+      colors: HOP_LUXURY_THEMES[t]
+        ? { ...HOP_LUXURY_THEMES[t].colors }
+        : (t === 'custom' ? { ...hopGetCustomColors() } : null),
+    };
+  } else {
+    hopThemeLivePreview = null;
+    // Never persist theme against anon — wait until a real login is in authState.
+    if (hopThemeStorageScope() !== 'anon') {
+      try { localStorage.setItem(hopThemeStorageKey(), t); } catch (e) { /* ignore */ }
+    }
+    if (HOP_LUXURY_THEMES[t]) {
+      hopSaveCustomColors(HOP_LUXURY_THEMES[t].colors);
+    }
+  }
+
+  if (previewOnly && HOP_LUXURY_THEMES[t]) {
+    hopApplyCustomVars(HOP_LUXURY_THEMES[t].colors);
   }
 
   const cssTheme = hopThemeUsesCustomCss(t) ? 'custom' : t;
   document.documentElement.setAttribute('data-hop-theme', cssTheme);
+  document.body.setAttribute('data-hop-theme', cssTheme);
+  const dash = document.getElementById('dashboard');
+  if (dash) dash.setAttribute('data-hop-theme', cssTheme);
   const ws = document.getElementById('hop-executive-workspace');
   if (ws) ws.setAttribute('data-hop-theme', cssTheme);
-  document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', cssTheme));
+  document.querySelectorAll('.nx-theme').forEach((el) => el.setAttribute('data-hop-theme', cssTheme));
 
-  if (hopThemeUsesCustomCss(t)) hopApplyCustomVars();
-  else hopClearCustomVars();
+  if (!previewOnly) {
+    if (hopThemeUsesCustomCss(t)) hopApplyCustomVars();
+    else hopClearCustomVars();
+  } else if (!HOP_LUXURY_THEMES[t] && !hopThemeUsesCustomCss(t)) {
+    hopClearCustomVars();
+  } else if (t === 'custom') {
+    hopApplyCustomVars(hopThemeLivePreview?.colors || hopGetCustomColors());
+  }
 
   const meta = document.getElementById('hop-theme-color-meta')
     || document.querySelector('meta[name="theme-color"]');
   const metaInfo = hopThemeMeta(t);
   const themeColor = hopThemeUsesCustomCss(t)
-    ? hopGetCustomColors().bg
+    ? (hopThemeLivePreview?.colors?.bg || hopGetCustomColors().bg)
     : (metaInfo.color || '#05070d');
   if (meta) meta.setAttribute('content', themeColor);
   if (!(opts && opts.silent) && typeof nexoraToast === 'function') {
@@ -322,6 +406,54 @@ function hopApplyTheme(theme, opts) {
     const mount = hopMount();
     if (mount) renderHopThemeModule(mount);
   }
+  if (!(opts && opts.skipRerender) && typeof refreshBdSettingsThemeMount === 'function') {
+    refreshBdSettingsThemeMount();
+  }
+  // Cloud-backed per-user theme — only when committing (Apply), never on live preview
+  if (!previewOnly && !(opts && opts.skipPersistRemote) && hopThemeStorageScope() !== 'anon') {
+    hopPersistThemeToServer(t);
+  }
+  hopUpdateThemeApplyBar();
+}
+
+let hopThemeRemoteTimer = null;
+
+function hopPersistThemeToServer(themeId) {
+  if (typeof fetchWithAuth !== 'function') return;
+  const payload = {
+    theme: themeId,
+    custom_colors: hopThemeUsesCustomCss(themeId) ? hopGetCustomColors() : null,
+  };
+  clearTimeout(hopThemeRemoteTimer);
+  hopThemeRemoteTimer = setTimeout(() => {
+    fetchWithAuth('/api/v1/me/ui-theme', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => { /* offline / auth — local cache still holds this login's theme */ });
+  }, 400);
+}
+
+async function hopPullThemeFromServer() {
+  if (typeof fetchWithAuth !== 'function') return null;
+  if (hopThemeStorageScope() === 'anon') return null;
+  try {
+    const res = await fetchWithAuth('/api/v1/me/ui-theme');
+    const data = await res.json();
+    if (!res.ok || !data.success || !data.data) return null;
+    return data.data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function hopApplyServerThemePayload(prefs, opts) {
+  if (!prefs || !prefs.theme) return false;
+  if (prefs.custom_colors && typeof prefs.custom_colors === 'object') {
+    hopSaveCustomColors(prefs.custom_colors);
+  }
+  hopApplyTheme(prefs.theme, Object.assign({ silent: true, skipRerender: true, skipPersistRemote: true }, opts || {}));
+  return true;
 }
 
 function hopThemeDisplayName(themeId) {
@@ -336,23 +468,74 @@ function hopThemeDisplayName(themeId) {
 /** Baseline when user opened Theme page — used to confirm on leave. */
 let hopThemePageBaseline = null;
 let hopThemeLeavePending = null;
+/** Live browse preview — not saved until Apply. */
+let hopThemeLivePreview = null;
+
+function hopGetDisplayedTheme() {
+  if (hopThemeLivePreview && hopIsKnownTheme(hopThemeLivePreview.theme)) {
+    return hopThemeLivePreview.theme;
+  }
+  return hopGetTheme();
+}
 
 function hopCaptureThemeBaseline() {
+  hopThemeLivePreview = null;
   hopThemePageBaseline = {
     theme: hopGetTheme(),
     colors: { ...hopGetCustomColors() },
   };
+  hopUpdateThemeApplyBar();
 }
 
 function hopThemePageDirty() {
-  if (!hopThemePageBaseline) return false;
-  const cur = hopGetTheme();
+  if (!hopThemePageBaseline) {
+    return Boolean(hopThemeLivePreview);
+  }
+  const cur = hopGetDisplayedTheme();
   if (cur !== hopThemePageBaseline.theme) return true;
   if (!hopThemeUsesCustomCss(cur)) return false;
-  const c = hopGetCustomColors();
+  const c = hopThemeLivePreview?.colors || hopGetCustomColors();
   const b = hopThemePageBaseline.colors || {};
   return ['sidebar', 'bg', 'text', 'accent', 'border', 'card', 'muted']
     .some((k) => String(c[k] || '').toUpperCase() !== String(b[k] || '').toUpperCase());
+}
+
+function hopUpdateThemeApplyBar() {
+  const btn = document.getElementById('hop-theme-apply-btn');
+  const hint = document.getElementById('hop-theme-apply-hint');
+  const dirty = hopThemePageDirty();
+  if (btn) {
+    btn.disabled = !dirty;
+    btn.classList.toggle('is-ready', dirty);
+  }
+  if (hint) {
+    if (!dirty) {
+      hint.textContent = 'Pick a theme to preview — Apply saves it for this login only.';
+    } else {
+      hint.textContent = `${hopThemeDisplayName(hopGetDisplayedTheme())} is previewing. Click Apply to save for this login.`;
+    }
+  }
+}
+
+/** Commit the live preview (or current theme) to this login — local + server. */
+function hopCommitThemeApply() {
+  const themeId = hopGetDisplayedTheme();
+  const previewColors = hopThemeLivePreview?.colors;
+  if (previewColors && hopThemeUsesCustomCss(themeId)) {
+    hopSaveCustomColors(previewColors);
+  }
+  hopThemeLivePreview = null;
+  hopApplyTheme(themeId, { silent: true, skipRerender: false });
+  hopThemePageBaseline = {
+    theme: themeId,
+    colors: { ...hopGetCustomColors() },
+  };
+  hopPlayThemeSetAnimation(themeId, () => {
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(`${hopThemeDisplayName(themeId)} applied`, 'ok');
+    }
+  });
+  hopUpdateThemeApplyBar();
 }
 
 function hopCloseThemeConfirm() {
@@ -361,17 +544,17 @@ function hopCloseThemeConfirm() {
   hopThemeLeavePending = null;
 }
 
-/** Live-preview a theme while browsing — no confirm until leaving the page. */
+/** Live-preview a theme while browsing — save only via Apply. */
 function hopRequestTheme(themeId) {
   if (!hopIsKnownTheme(themeId) || themeId === 'custom') return;
-  hopApplyTheme(themeId, { silent: true });
+  hopApplyTheme(themeId, { silent: true, previewOnly: true });
 }
 
-function hopPromptThemeLeave(nextView, opts) {
-  const themeId = hopGetTheme();
+function hopShowThemeLeaveOverlay(pending) {
+  const themeId = hopGetDisplayedTheme();
   const name = hopThemeDisplayName(themeId);
-  const prevName = hopThemeDisplayName(hopThemePageBaseline?.theme || 'nexora');
-  hopThemeLeavePending = { nextView, opts };
+  const prevName = hopThemeDisplayName(hopThemePageBaseline?.theme || hopGetTheme() || 'nexora');
+  hopThemeLeavePending = pending || null;
   const existing = document.getElementById('hop-theme-confirm-overlay');
   if (existing) existing.remove();
   const overlay = document.createElement('div');
@@ -379,20 +562,40 @@ function hopPromptThemeLeave(nextView, opts) {
   overlay.className = 'hop-theme-confirm-overlay is-open';
   overlay.innerHTML = `
     <div class="hop-theme-confirm-backdrop" onclick="hopStayOnThemePage()"></div>
-    <div class="hop-theme-confirm-dialog" role="dialog" aria-modal="true" aria-label="Keep theme">
+    <div class="hop-theme-confirm-dialog" role="dialog" aria-modal="true" aria-label="Unapplied theme">
       <p class="hop-theme-confirm-kicker">Leaving Theme</p>
-      <h3>Keep <em>${foEscapeText(name)}</em>?</h3>
+      <h3>Apply <em>${foEscapeText(name)}</em>?</h3>
       <p class="hop-theme-confirm-copy">
-        You previewed a new look. Keep it on this device, or discard and return to
+        You previewed a new look but have not applied it yet. Apply to save, or discard and return to
         <strong>${foEscapeText(prevName)}</strong>.
       </p>
       <div class="hop-theme-confirm-actions">
         <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopDiscardThemeAndLeave()">Discard</button>
         <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopStayOnThemePage()">Stay</button>
-        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary" onclick="hopKeepThemeAndLeave()">Keep theme</button>
+        <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--primary" onclick="hopKeepThemeAndLeave()">Apply &amp; leave</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+}
+
+function hopPromptThemeLeave(nextView, opts) {
+  hopShowThemeLeaveOverlay({ nextView, opts });
+}
+
+/** North Head Settings — same keep/discard flow as HoP Theme page. */
+function hopPromptBdThemeLeave(continueFn) {
+  hopShowThemeLeaveOverlay({ bdContinue: continueFn });
+}
+
+function hopRunThemeLeaveContinue(pending) {
+  if (!pending) return;
+  if (typeof pending.bdContinue === 'function') {
+    pending.bdContinue();
+    return;
+  }
+  if (pending.nextView != null) {
+    openHopView(pending.nextView, { ...(pending.opts || {}), skipThemeConfirm: true });
+  }
 }
 
 function hopStayOnThemePage() {
@@ -403,16 +606,22 @@ function hopStayOnThemePage() {
 
 function hopKeepThemeAndLeave() {
   const pending = hopThemeLeavePending;
-  const themeId = hopGetTheme();
+  const themeId = hopGetDisplayedTheme();
   const el = document.getElementById('hop-theme-confirm-overlay');
   if (el) el.remove();
   hopThemeLeavePending = null;
+  const previewColors = hopThemeLivePreview?.colors;
+  if (previewColors && hopThemeUsesCustomCss(themeId)) {
+    hopSaveCustomColors(previewColors);
+  }
+  hopThemeLivePreview = null;
+  hopApplyTheme(themeId, { silent: true, skipRerender: true });
   hopThemePageBaseline = null;
   hopPlayThemeSetAnimation(themeId, () => {
     if (typeof nexoraToast === 'function') {
-      nexoraToast(`${hopThemeDisplayName(themeId)} is now active`, 'ok');
+      nexoraToast(`${hopThemeDisplayName(themeId)} applied`, 'ok');
     }
-    if (pending) openHopView(pending.nextView, { ...(pending.opts || {}), skipThemeConfirm: true });
+    hopRunThemeLeaveContinue(pending);
   });
 }
 
@@ -421,12 +630,13 @@ function hopDiscardThemeAndLeave() {
   const el = document.getElementById('hop-theme-confirm-overlay');
   if (el) el.remove();
   hopThemeLeavePending = null;
+  hopThemeLivePreview = null;
   if (hopThemePageBaseline) {
     hopSaveCustomColors(hopThemePageBaseline.colors);
-    hopApplyTheme(hopThemePageBaseline.theme, { silent: true, skipRerender: true });
+    hopApplyTheme(hopThemePageBaseline.theme, { silent: true, skipRerender: true, skipPersistRemote: true });
   }
   hopThemePageBaseline = null;
-  if (pending) openHopView(pending.nextView, { ...(pending.opts || {}), skipThemeConfirm: true });
+  hopRunThemeLeaveContinue(pending);
 }
 
 function hopPlayThemeSetAnimation(themeId, done) {
@@ -457,7 +667,31 @@ function hopPlayThemeSetAnimation(themeId, done) {
 }
 
 function hopInitTheme() {
-  hopApplyTheme(hopGetTheme(), { silent: true });
+  hopApplyTheme(hopGetTheme(), { silent: true, skipPersistRemote: true });
+}
+
+/** Call after login / auth restore so this account's theme loads (not the previous user's). */
+async function hopSyncThemeForCurrentUser(loginThemePrefs) {
+  if (loginThemePrefs && hopApplyServerThemePayload(loginThemePrefs)) {
+    return;
+  }
+  const remote = await hopPullThemeFromServer();
+  if (remote && remote.saved && hopApplyServerThemePayload(remote)) {
+    return;
+  }
+  // No server theme yet — use this login's local cache, then push to server.
+  hopApplyTheme(hopGetTheme(), { silent: true, skipRerender: true });
+}
+
+function hopResetThemeChromeToDefault() {
+  hopClearCustomVars();
+  document.documentElement.setAttribute('data-hop-theme', 'nexora');
+  document.body.setAttribute('data-hop-theme', 'nexora');
+  const dash = document.getElementById('dashboard');
+  if (dash) dash.setAttribute('data-hop-theme', 'nexora');
+  const ws = document.getElementById('hop-executive-workspace');
+  if (ws) ws.setAttribute('data-hop-theme', 'nexora');
+  document.querySelectorAll('.nx-theme').forEach((el) => el.setAttribute('data-hop-theme', 'nexora'));
 }
 
 function hopReadCustomFormColors() {
@@ -483,9 +717,12 @@ function hopPreviewCustomTheme() {
   const colors = hopReadCustomFormColors();
   hopApplyCustomVars(colors);
   document.documentElement.setAttribute('data-hop-theme', 'custom');
+  document.body.setAttribute('data-hop-theme', 'custom');
+  const dash = document.getElementById('dashboard');
+  if (dash) dash.setAttribute('data-hop-theme', 'custom');
   const ws = document.getElementById('hop-executive-workspace');
   if (ws) ws.setAttribute('data-hop-theme', 'custom');
-  document.querySelectorAll('.nx-theme.hop-shell').forEach((el) => el.setAttribute('data-hop-theme', 'custom'));
+  document.querySelectorAll('.nx-theme').forEach((el) => el.setAttribute('data-hop-theme', 'custom'));
   const meta = document.getElementById('hop-theme-color-meta');
   if (meta) meta.setAttribute('content', colors.bg);
   const swSide = document.querySelector('.hop-theme-swatch--custom .hop-theme-swatch-side');
@@ -568,7 +805,7 @@ function hopCustomStudioMarkup(c) {
         <div>
           <p class="hop-theme-studio-kicker" style="margin:0 0 4px">Custom</p>
           <h3 class="nx-display">Theme studio</h3>
-          <p>Try colours freely — Apply to save, or Cancel to keep your current theme.</p>
+          <p>Try colours freely — Apply saves for <strong>this login only</strong>. Cancel keeps your current theme. Other users are not affected.</p>
         </div>
         <button type="button" class="hop-custom-studio-btn hop-custom-studio-btn--ghost" onclick="hopCancelCustomThemeStudio()" aria-label="Cancel">Cancel</button>
       </div>
@@ -661,6 +898,9 @@ function hopCloseCustomThemeStudio() {
     const mount = hopMount();
     if (mount) renderHopThemeModule(mount);
   }
+  if (typeof refreshBdSettingsThemeMount === 'function') {
+    refreshBdSettingsThemeMount();
+  }
 }
 
 function hopCancelCustomThemeStudio() {
@@ -669,12 +909,27 @@ function hopCancelCustomThemeStudio() {
 }
 
 function hopApplyCustomThemeFromForm() {
-  const colors = hopSaveCustomColors(hopReadCustomFormColors());
+  const colors = hopReadCustomFormColors();
   hopThemeStudioSnapshot = null;
-  hopApplyCustomVars(colors);
-  hopApplyTheme('custom', { silent: true, skipRerender: true });
+  // Studio "Apply" means save (modal copy: Apply to save) — not another preview step.
+  hopSaveCustomColors(colors);
+  hopThemeLivePreview = null;
+  hopApplyTheme('custom', { silent: true, skipRerender: false });
+  hopThemePageBaseline = {
+    theme: 'custom',
+    colors: { ...hopGetCustomColors() },
+  };
   hopCloseCustomThemeStudio();
-  if (typeof nexoraToast === 'function') nexoraToast('Custom theme saved', 'ok');
+  hopUpdateThemeApplyBar();
+  if (typeof refreshBdSettingsThemeMount === 'function') refreshBdSettingsThemeMount();
+  const finish = () => {
+    if (typeof nexoraToast === 'function') nexoraToast('Custom look applied for this login', 'ok');
+  };
+  if (typeof hopPlayThemeSetAnimation === 'function') {
+    hopPlayThemeSetAnimation('custom', finish);
+  } else {
+    finish();
+  }
 }
 
 function hopLoadCustomPreset(key) {
@@ -1143,6 +1398,47 @@ function hopMoney(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
   return n.toLocaleString('en-IN');
+}
+
+/** Always show % as 00.00 (never 00.000 / trailing junk). */
+function hopPct(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(2);
+}
+
+/** Expand short serials like 120 → HOP/2025-26/120 (matches backend hop_doc_numbers). */
+const HOP_DOC_PREFIX_BY_TYPE = {
+  1: 'HOP',
+  27: 'HOPPI',
+  83: 'HOPPR',
+  3: 'RCPT',
+  65: 'HOPSO',
+  30: 'HOPDC',
+  82: 'HOPDC',
+  21: 'HOPCN',
+};
+
+function hopIndianFyLabel(ymd) {
+  const s = String(ymd || '').slice(0, 10);
+  if (s.length < 7) return '';
+  const y = Number(s.slice(0, 4));
+  const m = Number(s.slice(5, 7));
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return '';
+  const start = m >= 4 ? y : y - 1;
+  return `${start}-${String(start + 1).slice(-2)}`;
+}
+
+function hopFormatDocNo(raw, txnDate, txnType) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/[A-Za-z].*\/|\/.*\d{2,4}/.test(s) || s.includes('/')) return s;
+  if (!/^\d{1,6}$/.test(s)) return s;
+  const pfx = HOP_DOC_PREFIX_BY_TYPE[Number(txnType) || 0];
+  const fy = hopIndianFyLabel(txnDate);
+  if (!pfx || !fy) return s;
+  const serial = s.replace(/^0+/, '') || s;
+  return `${pfx}/${fy}/${serial}`;
 }
 
 function hopIsMobileView() {
@@ -1773,6 +2069,11 @@ function hopGoBack() {
     hopCloseContactActionMenu();
     return;
   }
+  // CRM lead detail → always Leads list (board/list), never random history
+  if (hopState.view === 'deals' && hopState.dealDetailId) {
+    hopCloseDealDetail();
+    return;
+  }
   const stack = hopState.viewHistory || [];
   const prev = stack.pop();
   hopState.viewHistory = stack;
@@ -1790,14 +2091,16 @@ function hopBackButtonHtml(label) {
 function openHopView(viewName, opts) {
   // Legacy alias
   if (viewName === 'quotations') viewName = 'sale_estimates';
-  // Temporary: old CRM modules hidden — new Deals CRM is enabled
-  const hopCrmDisabled = new Set([
-    'leads', 'pipeline', 'meetings', 'projects', 'project-hub', 'project_hub', 'funnel',
-  ]);
   if (viewName === 'deal') viewName = 'deals';
-  if (hopCrmDisabled.has(String(viewName || ''))) {
-    if (typeof nexoraToast === 'function') nexoraToast('Old CRM is hidden — use Deals', 'ok');
-    viewName = 'deals';
+  // CRM UI removed — engines (/api/v1/hop/deals*) kept for rebuild
+  const hopCrmUiHidden = new Set([
+    'deals', 'leads', 'pipeline', 'meetings', 'projects', 'project-hub', 'project_hub', 'funnel',
+  ]);
+  if (hopCrmUiHidden.has(String(viewName || ''))) {
+    if (typeof nexoraToast === 'function') {
+      nexoraToast('CRM interface removed — new UI coming soon. APIs still available.', 'ok');
+    }
+    viewName = 'dashboard';
   }
   const next = viewName || 'dashboard';
   const prev = hopState.view;
@@ -1816,6 +2119,11 @@ function openHopView(viewName, opts) {
   }
   if (next === 'theme' && prev !== 'theme') {
     hopCaptureThemeBaseline();
+  }
+  // Commission: hide edit ribbon until user clicks a transaction
+  if (next === 'commission' && prev !== 'commission' && hopState.commissionUi) {
+    hopState.commissionUi.selectedId = null;
+    hopState.commissionUi.sheet = null;
   }
 
   if (!opts?.skipHistory && prev && prev !== next) {
@@ -1921,7 +2229,20 @@ function openHopView(viewName, opts) {
       };
       const fn = loaders[hopState.view];
       if (fn) {
-        Promise.resolve(fn(mount)).finally(() => {
+        Promise.resolve(fn(mount)).catch((err) => {
+          console.error('HoP view load failed', hopState.view, err);
+          try {
+            mount.innerHTML = hopModuleShell(
+              'Error',
+              String(hopState.view || ''),
+              '',
+              '',
+              `<p class="nx-oc-error">${foEscapeText(err?.message || String(err) || 'Failed to load')}</p>`,
+            );
+          } catch (_) {
+            mount.innerHTML = `<p class="nx-oc-error">Failed to load</p>`;
+          }
+        }).finally(() => {
           hopSetMainFullpage(true);
           hopScrollMainToTop();
         });
@@ -1952,6 +2273,9 @@ function hopOpenNavFoldExclusive(id) {
     hopSetNavFoldOpen(fid, Boolean(id) && fid === id);
   });
   if (id) hopScrollNavFoldIntoView(id);
+  else if (typeof bdSyncSidebarScroll === 'function') {
+    requestAnimationFrame(() => bdSyncSidebarScroll({ preserveScroll: true }));
+  }
 }
 
 function hopToggleNavFold(id) {
@@ -1959,37 +2283,67 @@ function hopToggleNavFold(id) {
   if (!fold) return;
   const willOpen = fold.classList.contains('is-collapsed');
   if (willOpen) hopOpenNavFoldExclusive(id);
-  else hopSetNavFoldOpen(id, false);
+  else {
+    hopSetNavFoldOpen(id, false);
+    if (typeof bdSyncSidebarScroll === 'function') {
+      requestAnimationFrame(() => bdSyncSidebarScroll({ preserveScroll: true }));
+    }
+  }
 }
 
-/** After expand, bring the group (+ items) into the visible sidebar scroll area. */
-function hopScrollNavFoldIntoView(id) {
-  const fold = document.querySelector(`#hop-executive-workspace .hop-nav-fold[data-hop-fold="${CSS.escape(String(id || ''))}"]`);
-  if (!fold) return;
-  const list = fold.closest('.hop-nav-list') || document.querySelector('#hop-executive-workspace .hop-nav-list');
-  if (!list) {
-    fold.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    return;
-  }
-  const run = () => {
-    const listRect = list.getBoundingClientRect();
-    const foldRect = fold.getBoundingClientRect();
-    const pad = 10;
-    // If fold top is above visible area, or bottom (with items) below — scroll
-    if (foldRect.top < listRect.top + pad) {
-      list.scrollTop += foldRect.top - listRect.top - pad;
-    } else if (foldRect.bottom > listRect.bottom - pad) {
-      list.scrollTop += foldRect.bottom - listRect.bottom + pad;
+/** After expand, scroll the rail only if the fold (or its open items) is clipped. */
+function hopScrollNavFoldIntoView(idOrEl) {
+  const fold = typeof idOrEl === 'string' || typeof idOrEl === 'number'
+    ? document.querySelector(`.hop-nav-fold[data-hop-fold="${CSS.escape(String(idOrEl || ''))}"]`)
+    : idOrEl;
+  if (!fold || !fold.getBoundingClientRect) return;
+
+  if (typeof bdSyncSidebarScroll === 'function') bdSyncSidebarScroll({ preserveScroll: true });
+
+  const scrollParent = (() => {
+    let el = fold.parentElement;
+    while (el && el !== document.body) {
+      if (el.classList.contains('hop-nav-list') || el.classList.contains('nav-list') || el.scrollHeight > el.clientHeight + 2) {
+        const style = window.getComputedStyle(el);
+        const oy = style.overflowY;
+        if (oy === 'auto' || oy === 'scroll' || oy === 'overlay' || el.classList.contains('is-scrollable') || el.classList.contains('hop-nav-list') || el.classList.contains('nav-list')) {
+          return el;
+        }
+      }
+      el = el.parentElement;
     }
-    // Prefer keeping the whole open group visible when possible
-    const stillBelow = fold.getBoundingClientRect().bottom > list.getBoundingClientRect().bottom - pad;
-    if (stillBelow) {
-      const maxScroll = list.scrollHeight - list.clientHeight;
-      const target = Math.min(maxScroll, list.scrollTop + (fold.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom) + pad);
-      list.scrollTo({ top: target, behavior: 'smooth' });
+    return fold.closest('.hop-nav-list, .nav-list');
+  })();
+
+  const run = () => {
+    const pad = 10;
+    const target = scrollParent;
+    if (!target) return;
+
+    if (typeof bdSyncSidebarScroll === 'function') bdSyncSidebarScroll({ preserveScroll: true });
+
+    if (target.scrollHeight <= target.clientHeight + 2) {
+      return;
+    }
+
+    const items = fold.querySelector('.hop-nav-fold-items');
+    const lastSub = items
+      ? Array.from(items.querySelectorAll('.nav-item, .hop-nav-btn, .hop-nav-sub')).filter((el) => {
+          const cs = window.getComputedStyle(el);
+          return cs.display !== 'none' && cs.visibility !== 'hidden';
+        }).pop()
+      : null;
+    const anchor = lastSub || fold;
+    const parentRect = target.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    const foldRect = fold.getBoundingClientRect();
+
+    if (anchorRect.bottom > parentRect.bottom - pad) {
+      target.scrollBy({ top: anchorRect.bottom - parentRect.bottom + pad, behavior: 'smooth' });
+    } else if (foldRect.top < parentRect.top + pad) {
+      target.scrollBy({ top: foldRect.top - parentRect.top - pad, behavior: 'smooth' });
     }
   };
-  // Wait a frame so expanded items have laid out
   requestAnimationFrame(() => requestAnimationFrame(run));
 }
 
@@ -3243,14 +3597,32 @@ function hopPartyLiveDupCheck(opts = {}) {
         hopPartyLiveDupClear(slotId);
         return;
       }
-      const names = hopPartyUniqueNames(matches).slice(0, 4);
+      const unique = [];
+      const seen = new Set();
+      for (const m of matches) {
+        const n = String(m?.company || '').trim();
+        const key = n.toLowerCase();
+        if (!n || seen.has(key)) continue;
+        seen.add(key);
+        unique.push(m);
+        if (unique.length >= 4) break;
+      }
+      const canPick = typeof window.hopCrmUseMatchedParty === 'function' && slotId === 'crm-newparty-dup';
       slot.classList.remove('hidden');
       slot.innerHTML = `
         <div class="hop-party-live-dup-title">Similar party already in system</div>
         <ul class="hop-party-live-dup-list">
-          ${names.map((n) => `<li>${foEscapeText(n)}</li>`).join('')}
+          ${unique.map((m) => {
+            const n = String(m.company || '').trim();
+            if (canPick && m.id && (m.party_type || 'customer') === 'customer') {
+              return `<li><button type="button" class="hop-party-live-dup-pick" onclick="hopCrmUseMatchedParty(${Number(m.id)})">Use “${foEscapeText(n)}”</button></li>`;
+            }
+            return `<li>${foEscapeText(n)}</li>`;
+          }).join('')}
         </ul>
-        <p class="hop-party-live-dup-hint">Saving will ask confirmation — use the existing party if it’s the same person.</p>`;
+        <p class="hop-party-live-dup-hint">${canPick
+          ? 'Click a match to use the existing party, or keep typing to save as new.'
+          : 'Saving will ask confirmation — use the existing party if it’s the same person.'}</p>`;
     } catch (_) {
       /* ignore preview errors */
     }
@@ -3491,6 +3863,24 @@ const HOP_TXN_JOURNAL = new Set([81]);               // Journal Entry (menu hidd
 const HOP_TXN_CHALLAN = new Set([30, 82]);           // 30 = this firm’s Delivery Challan; 82 = other Vyapar builds
 const HOP_TXN_PROFORMA = new Set([83]);
 
+/** Docs that are not collectible — no Paid / Unpaid / Record payment. */
+function hopTxnIsNonReceivableType(ty) {
+  const t = Number(ty || 0);
+  return HOP_TXN_ESTIMATE.has(t)
+    || HOP_TXN_PROFORMA.has(t)
+    || HOP_TXN_SALE_ORDER.has(t)
+    || HOP_TXN_CHALLAN.has(t);
+}
+
+function hopSaleDocIsNonReceivable(kind) {
+  const k = String(kind || hopState.saleDocKind || hopState.view || '');
+  return k === 'sale_estimates'
+    || k === 'sale_proforma'
+    || k === 'sale_orders'
+    || k === 'sale_challan'
+    || k === 'quotations';
+}
+
 /** Every imported type must appear in exactly one bucket (journal stays hidden in nav). */
 const HOP_TXN_MENU_COVERAGE = new Set([
   ...HOP_TXN_SALE_INVOICE, ...HOP_TXN_ESTIMATE, ...HOP_TXN_PROFORMA,
@@ -3507,6 +3897,17 @@ function hopTxnStatusOf(row) {
   return String(row?.status_text || row?.status || '').trim().toLowerCase();
 }
 
+/** Never show Vyapar's "Approved" wording in the UI — map to Final. */
+function hopScrubVyaparStatusLabel(label) {
+  let raw = String(label || '').trim();
+  if (!raw) return raw;
+  if (/^approv(ed|e|al)?$/i.test(raw)) return 'Final';
+  return raw
+    .replace(/\bapproved\b/gi, 'Final')
+    .replace(/\bapprove\b/gi, 'Final')
+    .replace(/\bapproval\b/gi, 'Final');
+}
+
 /** Cancelled / draft / void — never count in Total Sale or Balance. */
 function hopTxnIsCancelledOrDraft(row) {
   const s = hopTxnStatusOf(row);
@@ -3515,7 +3916,7 @@ function hopTxnIsCancelledOrDraft(row) {
 
 /**
  * Final money docs for Total Sale / Balance.
- * Estimates (incl. Approved) are shown in the list but do not count as sale.
+ * Estimates (incl. Vyapar Final/Approved) are shown in the list but do not count as sale.
  * Journals count for Balance (write-off) but not Total Sale.
  */
 function hopTxnIsFinalForSaleMath(row) {
@@ -3525,7 +3926,7 @@ function hopTxnIsFinalForSaleMath(row) {
   if (HOP_TXN_JOURNAL.has(ty)) return true;
   const s = hopTxnStatusOf(row);
   if (!s) return true;
-  if (s === 'approved' || s === 'approve') return false;
+  if (s === 'approved' || s === 'approve' || s === 'final') return false;
   return true;
 }
 
@@ -3576,7 +3977,7 @@ function hopTxnIsPrimaryPartyDoc(row) {
   const ty = hopTxnTypeOf(row);
   if (HOP_TXN_OTHER_DOCS.has(ty)) return false;
   if (hopTxnIsCancelledOrDraft(row)) return false;
-  if (HOP_TXN_ESTIMATE.has(ty)) return true; // show Approved estimates like Vyapar
+  if (HOP_TXN_ESTIMATE.has(ty)) return true; // show Final estimates like Vyapar
   if (!hopTxnIsFinalForSaleMath(row)) return false;
   return HOP_TXN_SALE_INVOICE.has(ty) || HOP_TXN_SALE_RETURN.has(ty) || HOP_TXN_PAYMENT_IN.has(ty);
 }
@@ -3597,13 +3998,9 @@ function hopPartyTxnDisplayLabel(row) {
 
 function hopPartyTxnDisplayStatus(row) {
   const ty = hopTxnTypeOf(row);
-  const raw = String(row.status_text || '').trim();
-  // Estimates: Approved / Cancelled / Draft only — never Partial / Unpaid / Paid.
-  if (HOP_TXN_ESTIMATE.has(ty)) {
-    if (/cancel/i.test(raw)) return 'Cancelled';
-    if (/draft/i.test(raw)) return 'Draft';
-    return 'Approved';
-  }
+  const raw = String(row.status_text || row.status || '').trim();
+  // Estimates / Proforma / SO / Challan: not payment docs — no Unpaid / Paid badge.
+  if (hopTxnIsNonReceivableType(ty)) return '';
   // Journals are posted adjustments (NPA wipe-off etc.), not open bills.
   if (HOP_TXN_JOURNAL.has(ty)) {
     if (/cancel/i.test(raw)) return 'Cancelled';
@@ -3621,43 +4018,51 @@ function hopPartyTxnDisplayStatus(row) {
     return 'Partial';
   }
   if (/^paid$/i.test(raw) && bal > 0.05) return 'Open';
-  return raw && !/^partial$/i.test(raw) ? raw : 'Open';
+  const shown = raw && !/^partial$/i.test(raw) ? hopScrubVyaparStatusLabel(raw) : 'Open';
+  return shown || 'Open';
 }
 
 function hopPartyTxnRowHtml(row) {
   const amt = parseFloat(row.total_amount || 0);
   const ty = hopTxnTypeOf(row);
-  const isEstimate = HOP_TXN_ESTIMATE.has(ty);
+  const isNonReceivable = hopTxnIsNonReceivableType(ty);
   const isJournal = HOP_TXN_JOURNAL.has(ty);
   // For display total on unpaid sale docs, don't show inflated amount above due balance.
   const balRaw = parseFloat(row.balance_amount || 0) || 0;
-  const displayAmt = (!isEstimate && !isJournal && balRaw > 0.05 && amt > balRaw + 0.05 && hopPartyTxnDisplayStatus(row) === 'Open')
+  const displayAmt = (!isNonReceivable && !isJournal && balRaw > 0.05 && amt > balRaw + 0.05 && hopPartyTxnDisplayStatus(row) === 'Open')
     ? balRaw
     : amt;
-  const bal = (isEstimate || isJournal) ? 0 : balRaw;
+  const bal = (isNonReceivable || isJournal) ? 0 : balRaw;
   const status = hopPartyTxnDisplayStatus(row);
   const s = String(status).toLowerCase();
-  const statusClass = s.includes('paid') || s.includes('used') || s.includes('approved') || s.includes('posted')
-    ? 'is-paid'
-    : (s.includes('cancel') ? 'is-unpaid' : (s.includes('partial') ? 'is-partial' : 'is-partial'));
+  const statusClass = !status
+    ? 'is-na'
+    : (s.includes('paid') || s.includes('used') || s.includes('final') || s.includes('posted')
+      ? 'is-paid'
+      : (s.includes('cancel') ? 'is-unpaid' : (s.includes('partial') ? 'is-partial' : 'is-partial')));
   const label = hopPartyTxnDisplayLabel(row);
-  const tip = isEstimate
-    ? 'Estimate — not counted in party Balance / Total Sale'
+  const docNo = hopFormatDocNo(row.txn_number, row.txn_date, row.txn_type);
+  const tip = isNonReceivable
+    ? 'Not a receivable — payment is against Sale Invoice'
     : (isJournal ? 'Imported Journal (shown for history). Settlement is on the Sale (Paid) — not counted again in Balance' : '');
-  const balCell = (isEstimate || isJournal)
-    ? `<td class="pty-txn-amt pty-txn-bal-na" title="${foEscapeAttr(isJournal ? 'Journal history only — Balance comes from Sale Paid/Open' : 'Estimates have no receivable balance')}">—</td>`
+  const statusTip = isNonReceivable ? 'No payment status on this document' : '';
+  const balCell = (isNonReceivable || isJournal)
+    ? `<td class="pty-txn-amt pty-txn-bal-na" title="${foEscapeAttr(isJournal ? 'Journal history only — Balance comes from Sale Paid/Open' : 'No receivable balance on this document')}">—</td>`
     : `<td class="pty-txn-amt${bal > 0 ? ' is-due' : ''}">₹ ${bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>`;
   const id = Number(row.id || 0);
+  const statusCell = status
+    ? `<span class="pty-status ${statusClass}" title="${foEscapeAttr(statusTip)}">${foEscapeText(status)}</span>`
+    : `<span class="pty-status is-na" title="${foEscapeAttr(statusTip)}">—</span>`;
   return `<tr class="pty-txn-row" role="button" tabindex="0"
     onclick="hopOpenPartyTxnDetail(${id})"
     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();hopOpenPartyTxnDetail(${id});}"
     title="Click to view transaction">
     <td title="${foEscapeAttr(tip || label)}">${foEscapeText(label)}</td>
-    <td class="pty-txn-no" title="${foEscapeAttr(row.txn_number || '')}">${foEscapeText(row.txn_number || '—')}</td>
+    <td class="pty-txn-no" title="${foEscapeAttr(docNo || '')}">${foEscapeText(docNo || '—')}</td>
     <td>${foEscapeText((row.txn_date || '').slice(0, 10))}</td>
     <td class="pty-txn-amt">₹ ${displayAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
     ${balCell}
-    <td><span class="pty-status ${statusClass}">${foEscapeText(status)}</span></td>
+    <td>${statusCell}</td>
     <td class="pty-txn-view"><span class="pty-txn-view-ico" aria-hidden="true">›</span></td>
   </tr>`;
 }
@@ -4109,8 +4514,6 @@ function _hopRenderPartyDetail(party, partyTxns) {
   const partyRows = (partyTxns || [])
     .filter((t) => t.party_type === party._type && Number(t.party_id) === Number(party.id))
     .sort((a, b) => String(b.txn_date || '').localeCompare(String(a.txn_date || '')));
-  const primaryRows = partyRows.filter((r) => hopTxnIsPrimaryPartyDoc(r));
-  const otherRows = partyRows.filter((r) => !hopTxnIsPrimaryPartyDoc(r));
 
   const callHref = hopCallHref(mobile);
   const waHref = hopWhatsAppHref(mobile);
@@ -4150,21 +4553,14 @@ function _hopRenderPartyDetail(party, partyTxns) {
     <div class="pty-txn-section">
       <div class="pty-txn-header">
         <strong>Transactions</strong>
-        <span class="nx-text-dim">${primaryRows.length} sale docs${otherRows.length ? ` · ${otherRows.length} other` : ''}</span>
-        <span class="pty-total-sale" title="Sale Invoice / Sale Bill − Credit Note / Sale Return. Excludes Quotation, Proforma, Orders, Cancelled &amp; Approved drafts.">
+        <span class="nx-text-dim">${partyRows.length} document${partyRows.length === 1 ? '' : 's'}</span>
+        <span class="pty-total-sale" title="Sale Invoice / Sale Bill − Credit Note / Sale Return. Excludes Quotation, Proforma, Orders, Cancelled &amp; drafts.">
           Total Sale <em>${hopMoney(hopComputePartyTotalSale(partyRows))}</em>
         </span>
       </div>
-      ${primaryRows.length
-        ? hopPartyTxnTableHtml(primaryRows)
-        : '<p class="pty-no-txn">No sale invoices / payments for this party yet.</p>'}
-      ${otherRows.length ? `
-        <details class="pty-txn-other">
-          <summary>Other documents <span>${otherRows.length}</span></summary>
-          <p class="pty-txn-other-hint">Journal is history only (Vyapar already marks Sale as Paid). Not re-counted in Balance. Proforma / Orders / Cancelled — not in Total Sale.</p>
-          ${hopPartyTxnTableHtml(otherRows)}
-        </details>
-      ` : ''}
+      ${partyRows.length
+        ? hopPartyTxnTableHtml(partyRows)
+        : '<p class="pty-no-txn">No documents for this party yet.</p>'}
     </div>`;
 }
 
@@ -4228,17 +4624,29 @@ async function renderHopCustomersModule(mount) {
 /* ---------- Visiting Card Reader ---------- */
 
 async function renderHopThemeModule(mount) {
-  const current = hopGetTheme();
-  const c = hopGetCustomColors();
-  const themeCard = ({ id, swatchClass, title, chip, dots, onclick, side, main }) => {
-    const active = current === id;
+  const saved = hopGetTheme();
+  const current = hopGetDisplayedTheme();
+  const c = hopThemeLivePreview?.colors || hopGetCustomColors();
+  const themeCard = ({ id, swatchClass, title, chip, dots, onclick, side, main, variant }) => {
+    const showing = current === id;
+    const isSaved = saved === id && !hopThemeLivePreview;
+    const isPreview = hopThemeLivePreview && hopThemeLivePreview.theme === id;
     const dotsHtml = (dots || []).map((d) => `<span class="hop-theme-dot" style="background:${d}"></span>`).join('');
     const sideStyle = side ? ` style="background:${side}"` : (id === 'custom' ? ` style="background:${c.sidebar}"` : '');
     const mainStyle = main ? ` style="background:${main}"` : (id === 'custom' ? ` style="background:${c.bg}"` : '');
+    const cardClass = variant === 'gallery'
+      ? `hop-theme-card hop-theme-card--gallery${showing ? ' is-active' : ''}`
+      : `hop-theme-card hop-theme-card--compact${showing ? ' is-active' : ''}`;
+    const swatchClassFull = variant === 'gallery'
+      ? `hop-theme-swatch hop-theme-swatch--gallery ${swatchClass || ''}`
+      : `hop-theme-swatch hop-theme-swatch--compact ${swatchClass || ''}`;
+    const badge = isPreview
+      ? '<span class="hop-theme-badge hop-theme-badge--preview">Preview</span>'
+      : (isSaved ? '<span class="hop-theme-badge">Active</span>' : (showing ? '<span class="hop-theme-badge hop-theme-badge--preview">Preview</span>' : ''));
     return `
-      <button type="button" class="hop-theme-card hop-theme-card--compact${active ? ' is-active' : ''}" onclick="${onclick || `hopRequestTheme('${id}')`}">
-        ${active ? '<span class="hop-theme-badge">Active</span>' : ''}
-        <div class="hop-theme-swatch hop-theme-swatch--compact ${swatchClass || ''}" aria-hidden="true">
+      <button type="button" class="${cardClass}" onclick="${onclick || `hopRequestTheme('${id}')`}">
+        ${badge}
+        <div class="${swatchClassFull}" aria-hidden="true">
           <div class="hop-theme-swatch-side"${sideStyle}></div>
           <div class="hop-theme-swatch-main"${mainStyle}></div>
         </div>
@@ -4251,28 +4659,28 @@ async function renderHopThemeModule(mount) {
         </div>
       </button>`;
   };
-  const coreCards = [
-    themeCard({
+  const coreDefs = [
+    {
       id: 'nexora',
       title: 'NEXORA',
       dots: ['#05070c', '#25E0FF', '#8B5CF6'],
-    }),
-    themeCard({
+    },
+    {
       id: 'bright',
       swatchClass: 'hop-theme-swatch--bright',
       title: 'Bright',
       chip: '<span class="hop-theme-chip">Workday</span>',
       dots: ['#0f2744', '#f4f7fb', '#0d9488'],
-    }),
-    themeCard({
+    },
+    {
       id: 'emerald',
       swatchClass: 'hop-theme-swatch--emerald',
       title: 'Emerald Gold',
       chip: '<span class="hop-theme-chip hop-theme-chip--rec">Signature</span>',
       dots: ['#123C32', '#F8F4EA', '#C9A227'],
-    }),
-  ].join('');
-  const luxuryCards = Object.values(HOP_LUXURY_THEMES).map((t) => themeCard({
+    },
+  ];
+  const luxuryDefs = Object.values(HOP_LUXURY_THEMES).map((t) => ({
     id: t.id,
     swatchClass: 'hop-theme-swatch--luxury',
     title: t.title,
@@ -4280,30 +4688,68 @@ async function renderHopThemeModule(mount) {
     dots: [t.colors.sidebar, t.colors.bg, t.colors.accent],
     side: t.colors.sidebar,
     main: t.colors.bg,
-  })).join('');
-  const customCard = themeCard({
+  }));
+  const customDef = {
     id: 'custom',
     swatchClass: 'hop-theme-swatch--custom',
     title: 'Custom studio',
     chip: '<span class="hop-theme-chip">Studio</span>',
     dots: [c.sidebar, c.bg, c.accent],
     onclick: 'hopOpenCustomThemeStudio()',
-  });
-  const body = `
-    <div class="hop-theme-studio hop-theme-studio--compact">
-      <div class="hop-theme-studio-intro hop-theme-studio-intro--compact">
-        <p class="hop-theme-studio-kicker">Appearance</p>
-        <p class="hop-theme-studio-lead">
-          Browse and try any theme live. When you leave this page, we ask whether to keep it.
-        </p>
-      </div>
+  };
+
+  const applyBar = `
+      <div class="hop-theme-apply-bar" id="hop-theme-apply-bar">
+        <p class="hop-theme-apply-hint" id="hop-theme-apply-hint">Pick a theme to preview — nothing is saved until you Apply.</p>
+        <button type="button" class="hop-theme-apply-btn" id="hop-theme-apply-btn" onclick="hopCommitThemeApply()" disabled>Apply theme</button>
+      </div>`;
+
+  // North Head Settings — same compact shade-card grid as HoP
+  if (mount && mount.id === 'bd-settings-theme-mount') {
+    const coreCards = coreDefs.map((d) => themeCard(d)).join('');
+    const luxuryCards = luxuryDefs.map((d) => themeCard(d)).join('');
+    const customCard = themeCard(customDef);
+    mount.innerHTML = `
+      <div class="hop-theme-studio hop-theme-studio--compact hop-theme-studio--bd">
+        <div class="hop-theme-studio-intro hop-theme-studio-intro--compact">
+          <p class="hop-theme-studio-kicker">Appearance</p>
+          <p class="hop-theme-studio-lead">
+            Try any theme live. Saved only for this login when you press Apply — other users keep their own look.
+          </p>
+        </div>
+        <div class="hop-theme-grid hop-theme-grid--compact">
+          ${coreCards}
+          ${luxuryCards}
+          ${customCard}
+        </div>
+        ${applyBar}
+      </div>`;
+    hopUpdateThemeApplyBar();
+    return;
+  }
+
+  const coreCards = coreDefs.map((d) => themeCard(d)).join('');
+  const luxuryCards = luxuryDefs.map((d) => themeCard(d)).join('');
+  const customCard = themeCard(customDef);
+  const studioInner = `
       <div class="hop-theme-grid hop-theme-grid--compact">
         ${coreCards}
         ${luxuryCards}
         ${customCard}
       </div>
+      ${applyBar}`;
+  const body = `
+    <div class="hop-theme-studio hop-theme-studio--compact">
+      <div class="hop-theme-studio-intro hop-theme-studio-intro--compact">
+        <p class="hop-theme-studio-kicker">Appearance</p>
+        <p class="hop-theme-studio-lead">
+          Try any theme live. Saved only for this login when you press Apply — other users keep their own look.
+        </p>
+      </div>
+      ${studioInner}
     </div>`;
   mount.innerHTML = hopModuleShell('Settings', 'Theme', '', '', body);
+  hopUpdateThemeApplyBar();
 }
 
 async function renderHopWipeDataModule(mount) {
@@ -4518,7 +4964,7 @@ async function hopRunVyaparImport() {
     return;
   }
   if (!(await nexoraConfirm(
-    'Import / refresh from this Vyapar backup?\n\nSafe re-import: existing parties, invoices & txns update in place — duplicates nahi banenge. Sirf nayi Vyapar rows add hongi.',
+    'Import / refresh from this Vyapar backup?\n\nSafe re-import: existing parties, invoices & transactions update in place — no duplicates. Only new Vyapar rows will be added.',
     {
     title: 'Confirm Import',
     danger: true,
@@ -5014,64 +5460,23 @@ function hopDealStepLabel(id) {
 }
 
 async function renderHopDealsModule(mount) {
-  const q = hopState.search.deals || '';
-  const detailId = hopState.dealDetailId;
-  if (detailId) {
-    await renderHopDealDetail(mount, detailId);
-    return;
-  }
-  let rows = [];
-  try {
-    rows = await hopApi(`/api/v1/hop/deals?q=${encodeURIComponent(q)}`) || [];
-    hopState.deals = rows;
-    if (!hopState.customers.length) {
-      hopState.customers = await hopApi('/api/v1/hop/customers') || [];
-    }
-  } catch (e) {
-    mount.innerHTML = hopModuleShell('CRM', 'Deals', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
-    return;
-  }
-  const openN = rows.filter((r) => r.status === 'open').length;
-  const lostN = rows.filter((r) => r.status === 'lost').length;
-  const body = `
-    <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
-    ${hopTxCards([
-      { label: 'All deals', value: rows.length, tone: 'unpaid' },
-      { label: 'Open', value: openN, tone: 'unpaid' },
-      { label: 'Lost', value: lostN, tone: 'overdue' },
-    ])}
-    ${hopTable(
-      ['Deal #', 'Title', 'Party', 'Step', 'Value', 'Status', 'Updated', ''],
-      rows.map((r) => `<tr class="hop-clickable-row" onclick="hopOpenDeal(${r.id})">
-        <td>${hopCell(r.deal_number)}</td>
-        <td><strong>${hopCell(r.title)}</strong></td>
-        <td>${hopCell(r.customer_company || r.party_name)}</td>
-        <td><span class="hop-stage-pill">${hopCell(hopDealStepLabel(r.current_step))}</span></td>
-        <td class="inv-num">${hopMoney(r.expected_value)}</td>
-        <td>${hopCell(r.status)}</td>
-        <td>${hopCell(String(r.updated_at || '').slice(0, 10))}</td>
-        <td onclick="event.stopPropagation()">
-          <button type="button" class="nx-btn" onclick="hopOpenDeal(${r.id})">Open</button>
-          <button type="button" class="nx-btn" onclick="hopEditDeal(${r.id})">Edit</button>
-          <button type="button" class="nx-btn hop-contact-icon-del" onclick="hopDeleteDeal(${r.id}, '${foEscapeAttr(r.title || '')}')">Delete</button>
-        </td>
-      </tr>`).join(''),
-      { label: 'Deals', count: rows.length, searchValue: q, searchId: 'hop-q-deals', className: 'hop-deals-table' },
-    )}`;
+  // CRM UI retired — backend hop_deals engines remain. New interface TBD.
+  hopState.dealDetailId = null;
+  hopState.dealDetail = null;
   mount.innerHTML = hopModuleShell(
     'CRM',
-    'Deals',
+    'Leads',
     '',
-    `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowDealForm()">+ New Deal</button>`,
-    body,
+    '',
+    `<div class="nx-card" style="padding:24px;max-width:520px">
+      <h3 style="margin:0 0 8px">CRM interface removed</h3>
+      <p class="nx-text-dim" style="margin:0 0 16px">
+        The previous Leads / Deals screens were cleared so we can rebuild the UI.
+        Deal engines and APIs are still in place.
+      </p>
+      <button type="button" class="nx-btn nx-btn-primary" onclick="openHopView('dashboard')">Go to Dashboard</button>
+    </div>`,
   );
-  const search = document.getElementById('hop-q-deals');
-  if (search) {
-    search.oninput = () => {
-      hopState.search.deals = search.value || '';
-      hopDebouncedReload('deals');
-    };
-  }
 }
 
 const HOP_DEAL_PHASES = [
@@ -5473,12 +5878,12 @@ async function hopSaveDeal(editId) {
 
 async function hopDeleteDeal(id, title) {
   const ok = typeof nexoraConfirm === 'function'
-    ? await nexoraConfirm(`Delete deal “${title || id}”? Ye undo nahi hoga.`, {
-      title: 'Delete deal',
+    ? await nexoraConfirm(`Delete lead “${title || id}”? Ye undo nahi hoga.`, {
+      title: 'Delete lead',
       danger: true,
       okText: 'Delete',
     })
-    : window.confirm(`Delete deal “${title || id}”?`);
+    : window.confirm(`Delete lead “${title || id}”?`);
   if (!ok) return;
   try {
     await hopApi(`/api/v1/hop/deals/${id}`, { method: 'DELETE' });
@@ -5720,28 +6125,27 @@ function hopNormalizeLedgerToInvoice(r, fallbackLabel) {
   let amount = Number(r.total_amount ?? r.amount ?? r.value ?? 0);
   let balance = Number(r.balance_amount ?? r.balance ?? 0);
   const txnType = r.txn_type != null && r.txn_type !== '' ? Number(r.txn_type) : null;
-  const isEstimate = Number.isFinite(txnType) && HOP_TXN_ESTIMATE.has(txnType);
-  if (isEstimate) balance = 0;
-  if (!isEstimate && balance > amount + 0.05) amount = balance;
+  const isNonReceivable = Number.isFinite(txnType) && hopTxnIsNonReceivableType(txnType);
+  if (isNonReceivable) balance = 0;
+  if (!isNonReceivable && balance > amount + 0.05) amount = balance;
   const paidExplicit = r.paid_amount;
-  let paid = isEstimate
+  let paid = isNonReceivable
     ? 0
     : (paidExplicit != null
       ? Number(paidExplicit || 0)
       : Math.max(0, amount - balance));
   const statusRaw = String(r.status_text || r.status || '').toLowerCase();
   let status = String(r.status || 'open');
-  if (isEstimate) {
-    status = statusRaw.includes('cancel') ? 'cancelled'
-      : (statusRaw.includes('partial') ? 'partial'
-        : (statusRaw || 'approved'));
+  if (isNonReceivable) {
+    // Quote-like docs: never map to unpaid/paid from balance.
+    status = '';
   } else if (statusRaw === 'paid' || statusRaw.includes('paid') || statusRaw.includes('used') || balance <= 0.009) status = 'paid';
   else if (statusRaw.includes('partial')) status = 'partial';
   else if (statusRaw.includes('overdue')) status = 'overdue';
   else if (paid > 0 && balance > 0) status = 'partial';
   else if (amount > 0 && paid <= 0) status = 'unpaid';
   // Legacy tax-inclusive inflate: amount>due with no receipt → snap amount to balance (fully unpaid).
-  if (!isEstimate && balance > 0.05 && amount > balance + 0.05 && paidExplicit == null) {
+  if (!isNonReceivable && balance > 0.05 && amount > balance + 0.05 && paidExplicit == null) {
     if (status === 'unpaid' || status === 'open' || status === 'overdue' || statusRaw.includes('open')) {
       amount = balance;
       paid = 0;
@@ -5750,13 +6154,17 @@ function hopNormalizeLedgerToInvoice(r, fallbackLabel) {
   }
   return {
     invoice_date: String(r.txn_date || r.invoice_date || r.quote_date || r.paid_at || '').slice(0, 10),
-    invoice_no: r.txn_number || r.invoice_no || r.quote_no || '',
+    invoice_no: hopFormatDocNo(
+      r.txn_number || r.invoice_no || r.quote_no || '',
+      r.txn_date || r.invoice_date || r.quote_date || r.paid_at,
+      r.txn_type,
+    ),
     customer_company: r.party_name || r.customer_company || '',
     project_name: r.project_name || '',
     amount,
     paid_amount: paid,
     balance,
-    due_date: String(r.due_date || r.txn_due_date || '').slice(0, 10),
+    due_date: isNonReceivable ? '' : String(r.due_date || r.txn_due_date || '').slice(0, 10),
     status,
     notes: r.txn_label || r.notes || fallbackLabel || '',
     txn_type: Number.isFinite(txnType) ? txnType : undefined,
@@ -5951,6 +6359,8 @@ async function renderHopSaleDocListModule(mount, kind) {
   const cfg = HOP_SALE_LEDGER[kind] || HOP_SALE_LEDGER.invoices;
   hopState.saleDocMeta = cfg;
   hopState.saleDocKind = kind;
+  if (!hopState.invoiceUi) hopState.invoiceUi = { period: 'this_month', status: 'all', q: '', party: '', from: '', to: '' };
+  if (hopSaleDocIsNonReceivable(kind)) hopState.invoiceUi.status = 'all';
   let rows = [];
   try {
     rows = await hopLoadSaleDocRows(kind);
@@ -5985,10 +6395,40 @@ async function renderHopSaleDocListModule(mount, kind) {
   const sum = hopInvoiceSummary(filtered);
   const numberLabel = cfg.numberLabel || 'Number';
   const isPayVoucher = hopIsPaymentVoucherKind(kind);
+  const isNonReceivable = hopSaleDocIsNonReceivable(kind);
   const paidLabel = isPayVoucher ? 'Used' : 'Paid';
   const unpaidLabel = isPayVoucher ? 'Unused' : 'Unpaid';
 
   document.querySelectorAll('body > #inv-party-panel').forEach((el) => el.remove());
+
+  const statusFilterHtml = isNonReceivable
+    ? ''
+    : `<select id="inv-status" class="inv-ctrl" onchange="hopInvoiceApplyFilters()">
+            <option value="all"${ui.status === 'all' ? ' selected' : ''}>All Status</option>
+            <option value="paid"${ui.status === 'paid' ? ' selected' : ''}>${paidLabel}</option>
+            <option value="unpaid"${ui.status === 'unpaid' ? ' selected' : ''}>${unpaidLabel}</option>
+            <option value="partial"${ui.status === 'partial' ? ' selected' : ''}>Partial</option>
+            ${isPayVoucher ? '' : `<option value="overdue"${ui.status === 'overdue' ? ' selected' : ''}>Overdue</option>
+            <option value="open"${ui.status === 'open' ? ' selected' : ''}>Open</option>`}
+          </select>`;
+
+  const summaryCards = isNonReceivable
+    ? hopTxCards([
+        { label: 'Documents', value: String(sum.count), tone: 'neutral', id: 'inv-sum-count-card' },
+        { label: 'Total value', valueHtml: hopMoney(sum.total), tone: 'total', id: 'inv-sum-total' },
+      ])
+    : hopTxCards(isPayVoucher
+          ? [
+              { label: 'Used', valueHtml: hopMoney(sum.received), tone: 'paid', id: 'inv-sum-paid' },
+              { label: 'Unused', valueHtml: hopMoney(sum.unpaid), tone: 'unpaid', op: '+', id: 'inv-sum-unpaid' },
+              { label: 'Total', valueHtml: hopMoney(sum.total), tone: 'total', op: '=', id: 'inv-sum-total' },
+            ]
+          : [
+              { label: 'Paid', valueHtml: hopMoney(sum.received), tone: 'paid', id: 'inv-sum-paid' },
+              { label: 'Unpaid', valueHtml: hopMoney(sum.unpaid), tone: 'unpaid', op: '+', id: 'inv-sum-unpaid' },
+              { label: 'Overdue', valueHtml: hopMoney(sum.overdue), tone: 'overdue', op: '+', id: 'inv-sum-overdue' },
+              { label: 'Total', valueHtml: hopMoney(sum.total), tone: 'total', op: '=', id: 'inv-sum-total' },
+            ]);
 
   const body = `
         <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
@@ -6006,14 +6446,7 @@ async function renderHopSaleDocListModule(mount, kind) {
           <input type="date" id="inv-from" class="inv-ctrl inv-date" value="${foEscapeAttr(ui.from || '')}" onchange="hopInvoiceApplyFilters()" />
           <span class="inv-sep">to</span>
           <input type="date" id="inv-to" class="inv-ctrl inv-date" value="${foEscapeAttr(ui.to || '')}" onchange="hopInvoiceApplyFilters()" />
-          <select id="inv-status" class="inv-ctrl" onchange="hopInvoiceApplyFilters()">
-            <option value="all"${ui.status === 'all' ? ' selected' : ''}>All Status</option>
-            <option value="paid"${ui.status === 'paid' ? ' selected' : ''}>${paidLabel}</option>
-            <option value="unpaid"${ui.status === 'unpaid' ? ' selected' : ''}>${unpaidLabel}</option>
-            <option value="partial"${ui.status === 'partial' ? ' selected' : ''}>Partial</option>
-            ${isPayVoucher ? '' : `<option value="overdue"${ui.status === 'overdue' ? ' selected' : ''}>Overdue</option>
-            <option value="open"${ui.status === 'open' ? ' selected' : ''}>Open</option>`}
-          </select>
+          ${statusFilterHtml}
           <div class="inv-party-dd">
             <button type="button" id="inv-party-toggle" class="inv-ctrl inv-party-toggle" onclick="hopInvoicePartyToggle(event)" aria-haspopup="listbox" aria-expanded="false">
               <span id="inv-party-label" class="inv-party-label${!ui.party ? ' is-placeholder' : ''}">${foEscapeText(ui.party || 'All Parties')}</span>
@@ -6034,18 +6467,7 @@ async function renderHopSaleDocListModule(mount, kind) {
           <button type="button" class="inv-text-btn" onclick="hopInvoiceExportCsv()">Excel</button>
           <button type="button" class="inv-text-btn" onclick="window.print()">Print</button>
         `)}
-        ${hopTxCards(isPayVoucher
-          ? [
-              { label: 'Used', valueHtml: hopMoney(sum.received), tone: 'paid', id: 'inv-sum-paid' },
-              { label: 'Unused', valueHtml: hopMoney(sum.unpaid), tone: 'unpaid', op: '+', id: 'inv-sum-unpaid' },
-              { label: 'Total', valueHtml: hopMoney(sum.total), tone: 'total', op: '=', id: 'inv-sum-total' },
-            ]
-          : [
-              { label: 'Paid', valueHtml: hopMoney(sum.received), tone: 'paid', id: 'inv-sum-paid' },
-              { label: 'Unpaid', valueHtml: hopMoney(sum.unpaid), tone: 'unpaid', op: '+', id: 'inv-sum-unpaid' },
-              { label: 'Overdue', valueHtml: hopMoney(sum.overdue), tone: 'overdue', op: '+', id: 'inv-sum-overdue' },
-              { label: 'Total', valueHtml: hopMoney(sum.total), tone: 'total', op: '=', id: 'inv-sum-total' },
-            ])}
+        ${summaryCards}
         <div class="inv-table-card">
           <div class="inv-table-head">
             <strong>Transactions</strong>
@@ -6061,8 +6483,8 @@ async function renderHopSaleDocListModule(mount, kind) {
                   <th>${foEscapeText(numberLabel)}</th>
                   <th>Party Name</th>
                   <th class="inv-num">Amount</th>
-                  <th class="inv-num">Balance</th>
-                  <th>Due date</th>
+                  <th class="inv-num">${isNonReceivable ? '—' : 'Balance'}</th>
+                  <th>${isNonReceivable ? '—' : 'Due date'}</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -6841,12 +7263,9 @@ function hopIsPaymentVoucherKind(kind) {
 }
 
 function hopInvoiceEffectiveStatus(r) {
-  if (HOP_TXN_ESTIMATE.has(Number(r.txn_type))) {
-    const s = String(r.status || r.notes || 'approved').toLowerCase();
-    if (s.includes('cancel')) return 'cancelled';
-    if (s.includes('partial')) return 'partial';
-    if (s.includes('unpaid') || s.includes('open')) return 'approved';
-    return s.includes('approved') || s.includes('sent') ? s.replace(/\s+/g, '') : (s || 'approved');
+  if (hopTxnIsNonReceivableType(r.txn_type) || hopSaleDocIsNonReceivable()) {
+    // Proforma / Estimate / SO / Challan — payment is against Sale Invoice, not these docs.
+    return '';
   }
   const bal = Number(r.balance || 0);
   const paid = Number(r.paid_amount || 0);
@@ -6867,17 +7286,27 @@ function hopInvoiceEffectiveStatus(r) {
 }
 
 function hopInvoiceStatusBadge(status) {
-  const s = String(status || 'open').toLowerCase();
+  const s = String(status || '').toLowerCase().trim();
+  if (!s) {
+    return `<span class="inv-badge inv-badge--na">—</span>`;
+  }
   let label;
   if (hopIsPaymentVoucherKind()) {
     if (s === 'paid') label = 'Used';
     else if (s === 'unpaid' || s === 'open') label = 'Unused';
     else if (s === 'partial') label = 'Partial';
-    else label = s.charAt(0).toUpperCase() + s.slice(1);
+    else label = hopScrubVyaparStatusLabel(s.charAt(0).toUpperCase() + s.slice(1));
   } else {
-    label = s === 'partial' ? 'Partial' : s === 'unpaid' ? 'Unpaid' : s.charAt(0).toUpperCase() + s.slice(1);
+    if (s === 'partial') label = 'Partial';
+    else if (s === 'unpaid') label = 'Unpaid';
+    else if (s === 'final' || s === 'approved' || s === 'approve') label = '—';
+    else label = hopScrubVyaparStatusLabel(s.charAt(0).toUpperCase() + s.slice(1));
   }
-  return `<span class="inv-badge inv-badge--${foEscapeAttr(s)}">${foEscapeText(label)}</span>`;
+  if (!label || label === '—' || /^final$/i.test(label)) {
+    return `<span class="inv-badge inv-badge--na">—</span>`;
+  }
+  const badgeClass = (s === 'approved' || s === 'approve' || s === 'final') ? 'na' : s;
+  return `<span class="inv-badge inv-badge--${foEscapeAttr(badgeClass)}">${foEscapeText(label)}</span>`;
 }
 
 function hopFilteredInvoices() {
@@ -6930,6 +7359,7 @@ function hopInvoiceSummary(rows) {
 function hopRenderInvoiceRows(rows) {
   const meta = hopSaleDocMeta();
   const empty = meta.empty || 'No invoices in this filter.';
+  const isNonReceivable = hopSaleDocIsNonReceivable();
   if (!rows.length) {
     const total = (hopState.invoices || []).length;
     const tip = total > 0
@@ -6948,17 +7378,22 @@ function hopRenderInvoiceRows(rows) {
          onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})"
          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId});}"`
       : ' class="inv-row"';
+    const balCell = isNonReceivable ? '—' : hopMoney(r.balance);
+    const dueCell = isNonReceivable ? '—' : hopCell(r.due_date);
+    const payBtn = isNonReceivable
+      ? ''
+      : `<button type="button" class="inv-ico-btn" title="Record payment" onclick="hopShowForm('payment')">₹</button>`;
     return `<tr${click}>
       <td class="inv-date">${hopCell(String(r.invoice_date || '').slice(0, 10))}</td>
-      <td class="inv-no" title="${foEscapeAttr(r.invoice_no || '')}">${hopCell(r.invoice_no)}</td>
+      <td class="inv-no" title="${foEscapeAttr(hopFormatDocNo(r.invoice_no, r.invoice_date, r.txn_type) || '')}">${hopCell(hopFormatDocNo(r.invoice_no, r.invoice_date, r.txn_type))}</td>
       <td>${hopCell(party)}</td>
       <td class="inv-num">${hopMoney(r.amount)}</td>
-      <td class="inv-num">${hopMoney(r.balance)}</td>
-      <td>${hopCell(r.due_date)}</td>
+      <td class="inv-num">${balCell}</td>
+      <td>${dueCell}</td>
       <td>${hopInvoiceStatusBadge(eff)}</td>
       <td class="inv-actions" onclick="event.stopPropagation()">
         ${canPreview ? `<button type="button" class="inv-ico-btn" title="Preview" onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})">👁</button>` : ''}
-        <button type="button" class="inv-ico-btn" title="Record payment" onclick="hopShowForm('payment')">₹</button>
+        ${payBtn}
       </td>
     </tr>`;
   }).join('');
@@ -7236,20 +7671,91 @@ async function renderHopFunnelModule(mount) {
   mount.innerHTML = hopModuleShell('Reports', 'Sales Funnel', 'Lead → … → Payment', '', body);
 }
 
+async function hopCommissionEnsureParties() {
+  try {
+    if (!Array.isArray(hopState.customers) || !hopState.customers.length) {
+      hopState.customers = await hopApi('/api/v1/hop/customers') || [];
+    }
+  } catch (_) { hopState.customers = hopState.customers || []; }
+  try {
+    if (!Array.isArray(hopState.vendors) || !hopState.vendors.length) {
+      hopState.vendors = await hopApi('/api/v1/hop/vendors') || [];
+    }
+  } catch (_) { hopState.vendors = hopState.vendors || []; }
+  return [
+    ...(hopState.customers || []).map((c) => ({ ...c, _type: 'customer' })),
+    ...(hopState.vendors || []).map((v) => ({ ...v, _type: 'vendor' })),
+  ].sort((a, b) => String(a.company || '').localeCompare(String(b.company || '')));
+}
+
+function hopCommissionPartyKey(type, id) {
+  if (!type || !id) return '';
+  return `${type}:${id}`;
+}
+
+function hopCommissionPartyOptionsHtml(parties, selectedKey) {
+  const opts = [`<option value="">— Select party —</option>`];
+  for (const p of parties) {
+    const key = hopCommissionPartyKey(p._type, p.id);
+    const label = `${p.company || p.contact_person || `ID ${p.id}`}${p._type === 'vendor' ? ' (Vendor)' : ''}`;
+    opts.push(`<option value="${foEscapeAttr(key)}"${key === selectedKey ? ' selected' : ''}>${foEscapeText(label)}</option>`);
+  }
+  return opts.join('');
+}
+
+function hopCommissionViewToggleHtml(ui) {
+  return `
+    <div class="hop-comm-view-toggle" role="tablist">
+      <button type="button" class="hop-comm-view-btn${ui.view === 'invoices' ? ' is-active' : ''}"
+        onclick="hopCommissionSetView('invoices')">Invoices</button>
+      <button type="button" class="hop-comm-view-btn${ui.view === 'records' ? ' is-active' : ''}"
+        onclick="hopCommissionSetView('records')">Records</button>
+      <button type="button" class="hop-comm-view-btn${ui.view === 'by_person' ? ' is-active' : ''}"
+        onclick="hopCommissionSetView('by_person')">By person</button>
+    </div>`;
+}
+
 async function renderHopCommissionModule(mount) {
   if (!hopState.commissionUi) {
-    hopState.commissionUi = { q: '', selectedId: null, sheet: null, filter: 'all' };
+    hopState.commissionUi = {
+      q: '', selectedId: null, sheet: null, filter: 'all', view: 'invoices',
+      dateFrom: '', dateTo: '', agentKey: '', period: 'all', paymentStatus: '',
+    };
   }
   const ui = hopState.commissionUi;
+  if (!ui.view) ui.view = 'invoices';
+  if (ui.dateFrom == null) ui.dateFrom = '';
+  if (ui.dateTo == null) ui.dateTo = '';
+  if (ui.agentKey == null) ui.agentKey = '';
+  if (ui.paymentStatus == null) ui.paymentStatus = '';
+
+  const viewToggle = hopCommissionViewToggleHtml(ui);
+
+  if (ui.view === 'records') {
+    await renderHopCommissionRecords(mount, ui, viewToggle);
+    return;
+  }
+  if (ui.view === 'by_person') {
+    await renderHopCommissionByPerson(mount, ui, viewToggle);
+    return;
+  }
+
   let invoices = [];
+  let parties = [];
   try {
-    invoices = await hopApi('/api/v1/hop/commission/invoices') || [];
+    const settled = await Promise.allSettled([
+      hopApi('/api/v1/hop/commission/invoices'),
+      hopCommissionEnsureParties(),
+    ]);
+    invoices = settled[0].status === 'fulfilled' ? (settled[0].value || []) : [];
+    parties = settled[1].status === 'fulfilled' ? (settled[1].value || []) : [];
+    if (settled[0].status === 'rejected') throw settled[0].reason;
   } catch (e) {
     mount.innerHTML = hopModuleShell('Sale', 'Commission', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
     return;
   }
 
-  let sheet = ui.sheet;
+  let sheet = null;
   if (ui.selectedId) {
     try {
       sheet = await hopApi(`/api/v1/hop/commission/worksheet?party_txn_id=${ui.selectedId}`) || null;
@@ -7258,6 +7764,8 @@ async function renderHopCommissionModule(mount) {
       sheet = null;
       ui.sheet = null;
     }
+  } else {
+    ui.sheet = null;
   }
 
   const q = String(ui.q || '').trim().toLowerCase();
@@ -7266,7 +7774,8 @@ async function renderHopCommissionModule(mount) {
     if (ui.filter === 'pending' && r.has_entry) return false;
     if (!q) return true;
     return String(r.party_name || '').toLowerCase().includes(q)
-      || String(r.invoice_no || '').toLowerCase().includes(q);
+      || String(r.invoice_no || '').toLowerCase().includes(q)
+      || String(r.agent_name || '').toLowerCase().includes(q);
   });
 
   const saved = invoices.filter((r) => r.has_entry);
@@ -7276,9 +7785,42 @@ async function renderHopCommissionModule(mount) {
 
   const bill = sheet?.bill || null;
   const entry = sheet?.entry || {};
-  const cPct = entry.commission_pct != null ? entry.commission_pct : '';
-  const tPct = entry.tds_pct != null ? entry.tds_pct : '';
+  const selectedInv = (invoices || []).find((r) => Number(r.party_txn_id) === Number(ui.selectedId)) || null;
+  const cPct = entry.commission_pct != null && entry.commission_pct !== ''
+    ? Number(entry.commission_pct).toFixed(2)
+    : '';
+  const tPct = entry.tds_pct != null && entry.tds_pct !== ''
+    ? Number(entry.tds_pct).toFixed(2)
+    : '';
   const notes = entry.notes || '';
+  // Prefer worksheet entry status; never let a stale list paid_on override explicit unpaid
+  const statusRow = {
+    payment_status: (entry.payment_status != null && String(entry.payment_status).trim() !== '')
+      ? entry.payment_status
+      : selectedInv?.payment_status,
+    paid_on: (String(entry.payment_status || '').toLowerCase() === 'unpaid')
+      ? ''
+      : (entry.paid_on || (String(selectedInv?.payment_status || '').toLowerCase() === 'unpaid' ? '' : (selectedInv?.paid_on || ''))),
+    expense_source_txn_id: entry.expense_source_txn_id ?? selectedInv?.expense_source_txn_id,
+    expense_txn_number: entry.expense_txn_number || selectedInv?.expense_txn_number,
+    origin: entry.origin || selectedInv?.origin,
+  };
+  const payStatus = hopCommissionIsPaid(statusRow) ? 'paid' : 'unpaid';
+  const paidOn = payStatus === 'paid' ? String(statusRow.paid_on || '').slice(0, 10) : '';
+  const vyaparPaid = String(entry.vyapar_payment_status || '') === 'paid'
+    || (!!entry.expense_source_txn_id || !!entry.expense_txn_number
+      || !!selectedInv?.expense_source_txn_id || !!selectedInv?.expense_txn_number);
+  const statusHint = (entry.expense_txn_number || entry.expense_source_txn_id
+    || selectedInv?.expense_txn_number || selectedInv?.expense_source_txn_id)
+    ? `<span class="hop-comm-status-lock nx-text-dim">Vyapar expense${(entry.expense_txn_number || selectedInv?.expense_txn_number) ? ` · ${foEscapeText(entry.expense_txn_number || selectedInv?.expense_txn_number)}` : ''}${entry.vyapar_payment_status ? ` · ${foEscapeText(String(entry.vyapar_payment_status))}` : ''}</span>`
+    : '';
+  const agentKey = hopCommissionPartyKey(entry.agent_party_type, entry.agent_party_id);
+  // Legacy text-only entries: show matching party by name if possible
+  let resolvedAgentKey = agentKey;
+  if (!resolvedAgentKey && entry.agent_name) {
+    const hit = parties.find((p) => String(p.company || '').trim().toLowerCase() === String(entry.agent_name).trim().toLowerCase());
+    if (hit) resolvedAgentKey = hopCommissionPartyKey(hit._type, hit.id);
+  }
 
   const worksheetHtml = bill ? `
     <div class="hop-comm-bar" id="hop-comm-bar">
@@ -7289,6 +7831,25 @@ async function renderHopCommissionModule(mount) {
           <span class="hop-comm-bar-meta">${foEscapeText(bill.invoice_date || '')} · Before tax <b>${hopMoney(bill.amount_before_tax)}</b></span>
         </div>
         <div class="hop-comm-bar-fields">
+          <label class="hop-comm-agent-field">Paid to (Party)
+            <select id="hop-comm-agent" class="hop-comm-agent-select">
+              ${hopCommissionPartyOptionsHtml(parties, resolvedAgentKey)}
+            </select>
+          </label>
+          <label>Status
+            <select id="hop-comm-pay-status" class="inv-ctrl"
+              data-vyapar-paid="${vyaparPaid ? '1' : '0'}"
+              data-expense-no="${foEscapeAttr(entry.expense_txn_number || '')}"
+              onchange="hopCommissionOnPayStatusChange(this.value)">
+              <option value="unpaid"${payStatus === 'unpaid' ? ' selected' : ''}>Unpaid</option>
+              <option value="paid"${payStatus === 'paid' ? ' selected' : ''}>Paid</option>
+            </select>
+            ${statusHint}
+          </label>
+          <label id="hop-comm-paid-on-wrap"${payStatus !== 'paid' ? ' style="opacity:.45"' : ''}>Paid on
+            <input id="hop-comm-paid-on" type="date" value="${foEscapeAttr(paidOn)}"
+              ${payStatus !== 'paid' ? 'disabled' : ''} />
+          </label>
           <label>Comm %<input id="hop-comm-pct" type="number" min="0" step="0.01" value="${foEscapeAttr(String(cPct))}" oninput="hopCommissionRecalc()" /></label>
           <label>TDS %<input id="hop-comm-tds" type="number" min="0" step="0.01" value="${foEscapeAttr(String(tPct))}" oninput="hopCommissionRecalc()" /></label>
           <label class="hop-comm-notes">Notes<input id="hop-comm-notes" type="text" value="${foEscapeAttr(notes)}" placeholder="Optional" /></label>
@@ -7310,27 +7871,33 @@ async function renderHopCommissionModule(mount) {
   const tbody = rows.length
     ? rows.map((r) => {
       const sel = Number(ui.selectedId) === Number(r.party_txn_id);
-      const status = r.has_entry
-        ? '<span class="inv-badge inv-badge--paid">Saved</span>'
-        : '<span class="inv-badge inv-badge--open">Set</span>';
+      let status;
+      if (!r.has_entry) {
+        status = '<span class="inv-badge inv-badge--open">Set</span>';
+      } else {
+        // Same Paid/Unpaid rules as Records (payment_status / paid_on / expense)
+        status = hopCommissionPayBadge(r.payment_status, r);
+      }
       return `<tr class="inv-row is-clickable${sel ? ' is-selected' : ''}"
         onclick="hopCommissionSelectBill(${Number(r.party_txn_id) || 0})">
         <td>${hopCell(r.invoice_date)}</td>
-        <td>${hopCell(r.invoice_no)}</td>
+        <td>${hopCell(hopFormatDocNo(r.invoice_no, r.invoice_date, 1))}</td>
         <td>${hopCell(r.party_name)}</td>
+        <td>${r.has_entry ? hopCell(r.agent_name || '—') : '—'}</td>
         <td class="inv-num">${hopMoney(r.invoice_total)}</td>
-        <td class="inv-num">${r.has_entry ? `${hopCell(r.commission_pct)}%` : '—'}</td>
-        <td class="inv-num">${r.has_entry ? `${hopCell(r.tds_pct)}%` : '—'}</td>
+        <td class="inv-num">${r.has_entry ? `${hopPct(r.commission_pct)}%` : '—'}</td>
+        <td class="inv-num">${r.has_entry ? `${hopPct(r.tds_pct)}%` : '—'}</td>
         <td class="inv-num">${r.has_entry ? hopMoney(r.commission_amount) : '—'}</td>
         <td class="inv-num">${r.has_entry ? hopMoney(r.tds_amount) : '—'}</td>
         <td class="inv-num"><strong>${r.has_entry ? hopMoney(r.net_commission) : '—'}</strong></td>
         <td>${status}</td>
       </tr>`;
     }).join('')
-    : `<tr><td colspan="10" class="inv-empty">No tax invoices match this filter.</td></tr>`;
+    : `<tr><td colspan="11" class="inv-empty">No tax invoices match this filter.</td></tr>`;
 
   const body = `
         ${hopTxToolbar(`
+          ${viewToggle}
           <select id="hop-comm-filter" class="inv-ctrl" onchange="hopCommissionSetFilter(this.value)">
             <option value="all"${ui.filter === 'all' ? ' selected' : ''}>All invoices</option>
             <option value="saved"${ui.filter === 'saved' ? ' selected' : ''}>Commission saved</option>
@@ -7350,7 +7917,7 @@ async function renderHopCommissionModule(mount) {
           <div class="inv-table-head">
             <strong>Transactions</strong>
             <span class="inv-count">${rows.length} txns</span>
-            <input id="hop-comm-q" class="inv-search" type="search" placeholder="Search…"
+            <input id="hop-comm-q" class="inv-search" type="search" placeholder="Search party, invoice, agent…"
               value="${foEscapeAttr(ui.q || '')}" oninput="hopCommissionOnSearch(this.value)" />
           </div>
           <div class="inv-table-wrap">
@@ -7360,6 +7927,7 @@ async function renderHopCommissionModule(mount) {
                   <th>Date</th>
                   <th>Invoice no</th>
                   <th>Party Name</th>
+                  <th>Paid to</th>
                   <th class="inv-num">Amount</th>
                   <th class="inv-num">Comm %</th>
                   <th class="inv-num">TDS %</th>
@@ -7376,6 +7944,326 @@ async function renderHopCommissionModule(mount) {
 
   mount.innerHTML = hopModuleShell('Sale', 'Commission', '', '', body);
   hopCommissionRecalc();
+  const paySel = document.getElementById('hop-comm-pay-status');
+  if (paySel && bill) {
+    paySel.value = payStatus;
+    paySel.setAttribute('data-prev-status', payStatus);
+    if (hopState.commissionUi) hopState.commissionUi._ribbonPayStatus = payStatus;
+    hopCommissionApplyPayStatusUi(payStatus === 'paid');
+    if (payStatus === 'paid' && paidOn) {
+      const paidInput = document.getElementById('hop-comm-paid-on');
+      if (paidInput && !paidInput.value) paidInput.value = paidOn;
+    }
+  }
+}
+
+function hopCommissionDateFilterBar(ui, payees) {
+  const period = ui.period || 'all';
+  const payeeOpts = [`<option value="">All people</option>`].concat(
+    (payees || []).map((p) => {
+      const key = p.key || hopCommissionPartyKey(p.agent_party_type, p.agent_party_id) || `name:${p.agent_name || p.label}`;
+      const label = p.label || p.agent_name || key;
+      return `<option value="${foEscapeAttr(key)}"${key === (ui.agentKey || '') ? ' selected' : ''}>${foEscapeText(label)}</option>`;
+    }),
+  ).join('');
+  return `
+    <div class="hop-comm-date-bar">
+      <label>Period
+        <select id="hop-comm-period" class="inv-ctrl" onchange="hopCommissionOnPeriodChange(this.value)">
+          <option value="today"${period === 'today' ? ' selected' : ''}>Today</option>
+          <option value="this_week"${period === 'this_week' ? ' selected' : ''}>This Week</option>
+          <option value="this_month"${period === 'this_month' ? ' selected' : ''}>This Month</option>
+          <option value="last_month"${period === 'last_month' ? ' selected' : ''}>Last Month</option>
+          <option value="this_quarter"${period === 'this_quarter' ? ' selected' : ''}>This Quarter</option>
+          <option value="this_year"${period === 'this_year' ? ' selected' : ''}>This Year</option>
+          <option value="all"${period === 'all' ? ' selected' : ''}>All Time</option>
+          <option value="custom"${period === 'custom' ? ' selected' : ''}>Custom</option>
+        </select>
+      </label>
+      <label>From<input id="hop-comm-date-from" type="date" value="${foEscapeAttr(ui.dateFrom || '')}"
+        onchange="hopCommissionSetDateFilter('dateFrom', this.value)" /></label>
+      <label>To<input id="hop-comm-date-to" type="date" value="${foEscapeAttr(ui.dateTo || '')}"
+        onchange="hopCommissionSetDateFilter('dateTo', this.value)" /></label>
+      <label class="hop-comm-agent-filter">Paid to
+        <select id="hop-comm-agent-filter" class="inv-ctrl" onchange="hopCommissionSetAgentFilter(this.value)">
+          ${payeeOpts}
+        </select>
+      </label>
+      <label>Status
+        <select id="hop-comm-status-filter" class="inv-ctrl" onchange="hopCommissionSetPaymentStatusFilter(this.value)">
+          <option value=""${!(ui.paymentStatus) ? ' selected' : ''}>All</option>
+          <option value="paid"${ui.paymentStatus === 'paid' ? ' selected' : ''}>Paid</option>
+          <option value="unpaid"${ui.paymentStatus === 'unpaid' ? ' selected' : ''}>Unpaid</option>
+        </select>
+      </label>
+      <button type="button" class="inv-text-btn" onclick="hopCommissionClearDateFilters()">Clear filters</button>
+      <input id="hop-comm-q" class="inv-search" type="search" placeholder="Search…"
+        value="${foEscapeAttr(ui.q || '')}" oninput="hopCommissionOnSearchRecords(this.value)" />
+    </div>`;
+}
+
+function hopCommissionRecordsQuery(opts) {
+  const ui = hopState.commissionUi || {};
+  const ignoreAgent = !!(opts && opts.ignoreAgent);
+  const params = new URLSearchParams();
+  if (ui.q) params.set('q', ui.q);
+  if (ui.dateFrom) params.set('date_from', ui.dateFrom);
+  if (ui.dateTo) params.set('date_to', ui.dateTo);
+  if (ui.paymentStatus === 'paid' || ui.paymentStatus === 'unpaid') {
+    params.set('payment_status', ui.paymentStatus);
+  }
+  if (!ignoreAgent && ui.agentKey) {
+    if (ui.agentKey.startsWith('name:')) {
+      params.set('agent_name', ui.agentKey.slice(5));
+    } else if (ui.agentKey.includes(':')) {
+      const [t, id] = ui.agentKey.split(':');
+      if ((t === 'customer' || t === 'vendor') && id) {
+        params.set('agent_party_type', t);
+        params.set('agent_party_id', id);
+      }
+    }
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+function hopCommissionIsExpenseDocNo(no) {
+  return /^comm\s*\//i.test(String(no || '').trim());
+}
+
+function hopCommissionIsPaid(r) {
+  if (!r) return false;
+  const st = String(r.payment_status || '').toLowerCase();
+  if (st === 'unpaid') return false;
+  if (st === 'paid') return true;
+  // No explicit status yet — Vyapar expense link / paid_on imply Paid
+  if (r.expense_source_txn_id || r.expense_txn_number || r.origin === 'expense') return true;
+  if (String(r.paid_on || '').trim()) return true;
+  return false;
+}
+
+function hopCommissionPayBadge(status, row) {
+  const paid = hopCommissionIsPaid({ ...(row || {}), payment_status: status != null ? status : row?.payment_status });
+  if (paid) return '<span class="inv-badge inv-badge--paid">Paid</span>';
+  return '<span class="inv-badge inv-badge--open">Unpaid</span>';
+}
+
+function hopCommissionDocLink(label, partyTxnId, sourceTxnId) {
+  const text = String(label || '').trim();
+  if (!text) return '—';
+  const pid = Number(partyTxnId || 0) || 0;
+  const sid = Number(sourceTxnId || 0) || 0;
+  if (!pid && !sid) return foEscapeText(text);
+  return `<a href="#" class="hop-comm-link" title="Open preview"
+    onclick="event.preventDefault();event.stopPropagation();hopOpenSaleDocPreview(${pid}, ${sid})">${foEscapeText(text)}</a>`;
+}
+
+/** Sale invoice number → sale invoice preview. */
+function hopCommissionInvoiceCellHtml(r) {
+  const label = hopFormatDocNo(r.invoice_no, r.invoice_date || r.when, 1);
+  if (!label) return '—';
+  // Standalone Comm/… rows are expense vouchers, not sale invoices
+  if (hopCommissionIsExpenseDocNo(r.invoice_no) || (!r.party_txn_id && r.expense_source_txn_id)) {
+    return hopCommissionDocLink(label, 0, r.expense_source_txn_id);
+  }
+  return hopCommissionDocLink(label, r.party_txn_id, r.source_txn_id);
+}
+
+/** Expense Comm/… number → commission expense preview. */
+function hopCommissionExpenseCellHtml(r) {
+  const exp = String(r.expense_txn_number || '').trim();
+  if (!exp) return '<span class="nx-text-dim">—</span>';
+  return hopCommissionDocLink(exp, 0, r.expense_source_txn_id);
+}
+
+function hopCommissionSummaryCards(summary) {
+  return hopTxCards([
+    { label: 'People', value: String(summary.people || 0), tone: 'neutral' },
+    { label: 'Bills', value: String(summary.bills || 0), tone: 'neutral' },
+    { label: 'Commission', valueHtml: hopMoney(summary.commission_amount || 0), tone: 'paid' },
+    { label: 'TDS', valueHtml: hopMoney(summary.tds_amount || 0), tone: 'overdue', op: '−' },
+    { label: 'Net paid', valueHtml: hopMoney(summary.net_commission || 0), tone: 'total', op: '=' },
+  ]);
+}
+
+async function renderHopCommissionRecords(mount, ui, viewToggle) {
+  hopCommissionEnsurePeriodDates(ui);
+  let data = { records: [], summary: {}, payees: [] };
+  try {
+    data = await hopApi(`/api/v1/hop/commission/records${hopCommissionRecordsQuery()}`) || data;
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('Sale', 'Commission', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const summary = data.summary || {};
+  const records = data.records || [];
+  const payees = data.payees || [];
+  // Keep selected payee visible even if filtered out of current result set
+  if (ui.agentKey && !payees.some((p) => p.key === ui.agentKey)) {
+    const label = ui.agentKey.startsWith('name:') ? ui.agentKey.slice(5) : ui.agentKey;
+    payees.unshift({ key: ui.agentKey, label, agent_name: label });
+  }
+  const tbody = records.length
+    ? records.map((r) => {
+      const paid = hopCommissionIsPaid(r);
+      return `
+      <tr class="inv-row">
+        <td>${hopCell(r.when || '—')}</td>
+        <td><strong>${hopCell(r.agent_name)}</strong></td>
+        <td>${hopCommissionInvoiceCellHtml(r)}</td>
+        <td>${hopCell(r.party_name)}</td>
+        <td class="inv-num">${r.commission_pct != null ? `${hopPct(r.commission_pct)}%` : '—'}</td>
+        <td class="inv-num">${hopMoney(r.commission_amount)}</td>
+        <td class="inv-num">${hopMoney(r.tds_amount)}</td>
+        <td class="inv-num"><strong>${hopMoney(r.net_commission)}</strong></td>
+        <td>${hopCommissionPayBadge(r.payment_status, r)}</td>
+        <td>${hopCell(paid ? (r.paid_on || r.when || '—') : '—')}</td>
+        <td>${hopCommissionExpenseCellHtml(r)}</td>
+        <td class="nx-text-dim">${hopCell(r.notes || '')}</td>
+      </tr>`;
+    }).join('')
+    : `<tr><td colspan="12" class="inv-empty">No commission records for this date range. Save commission on an invoice with Paid to + Status.</td></tr>`;
+
+  const body = `
+    ${hopTxToolbar(`${viewToggle}`)}
+    ${hopCommissionDateFilterBar(ui, payees)}
+    ${hopCommissionSummaryCards(summary)}
+    <div class="inv-table-card">
+      <div class="inv-table-head">
+        <strong>Commission records</strong>
+        <span class="inv-count">${records.length} entries</span>
+      </div>
+      <div class="inv-table-wrap">
+        <table class="inv-table hop-comm-table">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Paid to</th>
+              <th>Invoice</th>
+              <th>Sale party</th>
+              <th class="inv-num">Comm %</th>
+              <th class="inv-num">Commission</th>
+              <th class="inv-num">TDS</th>
+              <th class="inv-num">Net</th>
+              <th>Status</th>
+              <th>Paid on</th>
+              <th>Expense</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  mount.innerHTML = hopModuleShell('Sale', 'Commission', 'Who got how much, and when', '', body);
+}
+
+async function renderHopCommissionByPerson(mount, ui, viewToggle) {
+  hopCommissionEnsurePeriodDates(ui);
+  let data = { agents: [], summary: {}, payees: [] };
+  try {
+    // Payees from flat records (date-scoped); groups from by-agent
+    const settled = await Promise.allSettled([
+      hopApi(`/api/v1/hop/commission/by-agent${hopCommissionRecordsQuery()}`),
+      hopApi(`/api/v1/hop/commission/records${hopCommissionRecordsQuery({ ignoreAgent: true })}`),
+    ]);
+    data = settled[0].status === 'fulfilled' ? (settled[0].value || data) : data;
+    const flat = settled[1].status === 'fulfilled' ? (settled[1].value || {}) : {};
+    data.payees = flat.payees || [];
+    if (settled[0].status === 'rejected') throw settled[0].reason;
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('Sale', 'Commission', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const summary = data.summary || {};
+  const agents = data.agents || [];
+  const payees = data.payees || [];
+  if (ui.agentKey && !payees.some((p) => p.key === ui.agentKey)) {
+    const label = ui.agentKey.startsWith('name:') ? ui.agentKey.slice(5) : ui.agentKey;
+    payees.unshift({ key: ui.agentKey, label, agent_name: label });
+  }
+
+  // Client-side agent filter for by-person when party/name selected
+  let shown = agents;
+  if (ui.agentKey) {
+    shown = agents.filter((a) => {
+      const key = a.agent_party_id && a.agent_party_type
+        ? hopCommissionPartyKey(a.agent_party_type, a.agent_party_id)
+        : `name:${a.agent_name}`;
+      return key === ui.agentKey || String(a.agent_name || '') === (ui.agentKey.startsWith('name:') ? ui.agentKey.slice(5) : '');
+    });
+  }
+
+  const cards = hopCommissionSummaryCards({
+    people: shown.length,
+    bills: shown.reduce((s, a) => s + Number(a.bills || 0), 0),
+    commission_amount: shown.reduce((s, a) => s + Number(a.commission_amount || 0), 0),
+    tds_amount: shown.reduce((s, a) => s + Number(a.tds_amount || 0), 0),
+    net_commission: shown.reduce((s, a) => s + Number(a.net_commission || 0), 0),
+  });
+
+  const blocks = shown.length
+    ? shown.map((a) => {
+      const rows = (a.entries || []).map((e) => {
+        const paid = hopCommissionIsPaid(e);
+        return `
+        <tr class="inv-row">
+          <td>${hopCell(e.when || e.invoice_date || '—')}</td>
+          <td>${hopCommissionInvoiceCellHtml(e)}</td>
+          <td>${hopCell(e.party_name)}</td>
+          <td class="inv-num">${e.commission_pct != null ? `${hopPct(e.commission_pct)}%` : '—'}</td>
+          <td class="inv-num">${hopMoney(e.commission_amount)}</td>
+          <td class="inv-num">${hopMoney(e.tds_amount)}</td>
+          <td class="inv-num"><strong>${hopMoney(e.net_commission)}</strong></td>
+          <td>${hopCommissionPayBadge(e.payment_status, e)}</td>
+          <td>${hopCell(paid ? (e.paid_on || e.when || '—') : '—')}</td>
+          <td>${hopCommissionExpenseCellHtml(e)}</td>
+        </tr>`;
+      }).join('');
+      return `
+        <div class="hop-comm-agent-card">
+          <div class="hop-comm-agent-head">
+            <div>
+              <strong class="hop-comm-agent-name">${foEscapeText(a.agent_name)}</strong>
+              <span class="inv-count">${a.bills} bill${a.bills === 1 ? '' : 's'}</span>
+            </div>
+            <div class="hop-comm-agent-totals">
+              <span>Comm <b>${hopMoney(a.commission_amount)}</b></span>
+              <span>TDS <b>${hopMoney(a.tds_amount)}</b></span>
+              <span>Net <b>${hopMoney(a.net_commission)}</b></span>
+            </div>
+          </div>
+          <div class="inv-table-wrap">
+            <table class="inv-table hop-comm-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Invoice</th>
+                  <th>Party</th>
+                  <th class="inv-num">Comm %</th>
+                  <th class="inv-num">Commission</th>
+                  <th class="inv-num">TDS</th>
+                  <th class="inv-num">Net</th>
+                  <th>Status</th>
+                  <th>Paid on</th>
+                  <th>Expense</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join('')
+    : `<div class="inv-empty hop-comm-empty">No saved commission yet. Open an invoice, link <b>Paid to</b> party, and Save.</div>`;
+
+  const body = `
+    ${hopTxToolbar(`${viewToggle}`)}
+    ${hopCommissionDateFilterBar(ui, payees)}
+    ${cards}
+    <div class="hop-comm-by-person">${blocks}</div>`;
+
+  mount.innerHTML = hopModuleShell('Sale', 'Commission', 'Totals by person', '', body);
 }
 
 function hopCommissionOnSearch(value) {
@@ -7396,6 +8284,148 @@ function hopCommissionOnSearch(value) {
   if (count) count.textContent = `${visible} txns`;
 }
 
+let _hopCommRecordsSearchTimer = null;
+function hopCommissionOnSearchRecords(value) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  hopState.commissionUi.q = String(value || '');
+  clearTimeout(_hopCommRecordsSearchTimer);
+  _hopCommRecordsSearchTimer = setTimeout(() => {
+    openHopView('commission', { skipHistory: true });
+  }, 280);
+}
+
+function hopCommissionEnsurePeriodDates(ui) {
+  if (!ui) return;
+  if (!ui.period) ui.period = 'all';
+  if (ui.period === 'custom') return;
+  if (ui.period === 'all') {
+    // Keep empty unless user already typed custom dates while on All Time
+    return;
+  }
+  const range = hopInvoicePeriodRange(ui.period);
+  ui.dateFrom = range.from;
+  ui.dateTo = range.to;
+}
+
+function hopCommissionOnPeriodChange(value) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  const period = value || 'all';
+  hopState.commissionUi.period = period;
+  if (period === 'custom') {
+    openHopView('commission', { skipHistory: true });
+    return;
+  }
+  if (period === 'all') {
+    hopState.commissionUi.dateFrom = '';
+    hopState.commissionUi.dateTo = '';
+  } else {
+    const range = hopInvoicePeriodRange(period);
+    hopState.commissionUi.dateFrom = range.from;
+    hopState.commissionUi.dateTo = range.to;
+  }
+  openHopView('commission', { skipHistory: true });
+}
+
+function hopCommissionSetDateFilter(field, value) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  hopState.commissionUi[field] = String(value || '').slice(0, 10);
+  hopState.commissionUi.period = 'custom';
+  openHopView('commission', { skipHistory: true });
+}
+
+function hopCommissionSetAgentFilter(value) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  hopState.commissionUi.agentKey = String(value || '');
+  openHopView('commission', { skipHistory: true });
+}
+
+function hopCommissionClearDateFilters() {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  hopState.commissionUi.period = 'all';
+  hopState.commissionUi.dateFrom = '';
+  hopState.commissionUi.dateTo = '';
+  hopState.commissionUi.agentKey = '';
+  hopState.commissionUi.paymentStatus = '';
+  hopState.commissionUi.q = '';
+  openHopView('commission', { skipHistory: true });
+}
+
+function hopCommissionSetPaymentStatusFilter(value) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  const v = String(value || '').toLowerCase();
+  hopState.commissionUi.paymentStatus = (v === 'paid' || v === 'unpaid') ? v : '';
+  openHopView('commission', { skipHistory: true });
+}
+
+async function hopCommissionConfirmUnpaid(sel) {
+  const vyaparPaid = sel && String(sel.getAttribute('data-vyapar-paid') || '') === '1';
+  const expNo = sel ? String(sel.getAttribute('data-expense-no') || '').trim() : '';
+  const title = 'Change to Unpaid?';
+  let message;
+  if (vyaparPaid) {
+    message = `This entry is already Paid in your software`
+      + (expNo ? ` (Vyapar expense ${expNo})` : ' (Vyapar)')
+      + `.\n\nAre you still sure you want to change the status to Unpaid?`;
+  } else {
+    message = 'This commission is currently Paid.\n\nAre you sure you want to change it to Unpaid?';
+  }
+  if (typeof nexoraConfirm === 'function') {
+    return !!(await nexoraConfirm(message, {
+      title,
+      okText: 'Yes, set Unpaid',
+      cancelText: 'No, keep Paid',
+      danger: true,
+    }));
+  }
+  return !!(window.confirm && window.confirm(message));
+}
+
+async function hopCommissionOnPayStatusChange(value) {
+  const sel = document.getElementById('hop-comm-pay-status');
+  const paid = String(value || '') === 'paid';
+  const prev = String(sel?.getAttribute('data-prev-status') || hopState.commissionUi?._ribbonPayStatus || '');
+  if (!paid && prev === 'paid') {
+    const ok = await hopCommissionConfirmUnpaid(sel);
+    if (!ok) {
+      if (sel) sel.value = 'paid';
+      hopCommissionApplyPayStatusUi(true);
+      return;
+    }
+  }
+  if (sel) sel.setAttribute('data-prev-status', paid ? 'paid' : 'unpaid');
+  if (hopState.commissionUi) hopState.commissionUi._ribbonPayStatus = paid ? 'paid' : 'unpaid';
+  hopCommissionApplyPayStatusUi(paid);
+}
+
+function hopCommissionApplyPayStatusUi(paid) {
+  const input = document.getElementById('hop-comm-paid-on');
+  const wrap = document.getElementById('hop-comm-paid-on-wrap');
+  if (input) {
+    input.disabled = !paid;
+    if (!paid) {
+      input.value = '';
+    } else if (!input.value) {
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const d = String(today.getDate()).padStart(2, '0');
+      input.value = `${y}-${m}-${d}`;
+    }
+  }
+  if (wrap) wrap.style.opacity = paid ? '' : '.45';
+}
+
+function hopCommissionSetView(view) {
+  if (!hopState.commissionUi) hopState.commissionUi = {};
+  const allowed = { invoices: 1, records: 1, by_person: 1 };
+  hopState.commissionUi.view = allowed[view] ? view : 'invoices';
+  if (view !== 'invoices') {
+    hopState.commissionUi.selectedId = null;
+    hopState.commissionUi.sheet = null;
+  }
+  openHopView('commission', { skipHistory: true });
+}
+
 function hopCommissionSetFilter(value) {
   if (!hopState.commissionUi) hopState.commissionUi = {};
   hopState.commissionUi.filter = value || 'all';
@@ -7411,9 +8441,33 @@ function hopCommissionClearSelection() {
 
 function hopCommissionSelectBill(partyTxnId) {
   if (!hopState.commissionUi) hopState.commissionUi = {};
-  hopState.commissionUi.selectedId = Number(partyTxnId) || null;
-  hopState.commissionUi.sheet = null;
+  hopState.commissionUi.view = 'invoices';
+  const id = Number(partyTxnId) || null;
+  // Click same row again → hide ribbon
+  if (id && Number(hopState.commissionUi.selectedId) === id) {
+    hopState.commissionUi.selectedId = null;
+    hopState.commissionUi.sheet = null;
+  } else {
+    hopState.commissionUi.selectedId = id;
+    hopState.commissionUi.sheet = null;
+  }
   openHopView('commission', { skipHistory: true });
+}
+
+/** Open linked sale invoice (or expense voucher) preview — same modal as Sale Invoices. */
+function hopCommissionOpenDoc(partyTxnId, sourceTxnId, expenseSourceTxnId) {
+  const pid = Number(partyTxnId || 0) || 0;
+  const sid = Number(sourceTxnId || 0) || 0;
+  const esid = Number(expenseSourceTxnId || 0) || 0;
+  if (pid || sid) {
+    return hopOpenSaleDocPreview(pid, sid);
+  }
+  if (esid) {
+    return hopOpenSaleDocPreview(0, esid);
+  }
+  if (typeof nexoraToast === 'function') {
+    nexoraToast('No linked invoice/expense to preview for this row.', 'warn');
+  }
 }
 
 function hopCommissionRecalc() {
@@ -7432,12 +8486,54 @@ function hopCommissionRecalc() {
   if (netEl) netEl.textContent = hopMoney(net);
 }
 
+function hopCommissionReadAgentPayload() {
+  const raw = String(document.getElementById('hop-comm-agent')?.value || '').trim();
+  if (raw.includes(':')) {
+    const [type, id] = raw.split(':');
+    if ((type === 'customer' || type === 'vendor') && id) {
+      const opt = document.getElementById('hop-comm-agent')?.selectedOptions?.[0];
+      const label = String(opt?.textContent || '').replace(/\s*\(Vendor\)\s*$/, '').trim();
+      return {
+        agent_party_type: type,
+        agent_party_id: Number(id) || null,
+        agent_name: label || '',
+      };
+    }
+  }
+  return { agent_party_type: '', agent_party_id: null, agent_name: '' };
+}
+
 async function hopCommissionSave() {
   const id = hopState.commissionUi?.selectedId;
   if (!id) return;
   const status = document.getElementById('hop-comm-status');
   if (status) status.textContent = 'Saving…';
   try {
+    const agent = hopCommissionReadAgentPayload();
+    const sel = document.getElementById('hop-comm-pay-status');
+    const payStatus = String(sel?.value || 'unpaid').toLowerCase() === 'paid' ? 'paid' : 'unpaid';
+    const prevStatus = String(
+      sel?.getAttribute('data-prev-status')
+      || hopState.commissionUi?._ribbonPayStatus
+      || ''
+    ).toLowerCase();
+    const wasPaid = prevStatus === 'paid'
+      || hopCommissionIsPaid(hopState.commissionUi?.sheet?.entry || {});
+    if (payStatus === 'unpaid' && wasPaid) {
+      const ok = await hopCommissionConfirmUnpaid(sel);
+      if (!ok) {
+        if (sel) sel.value = 'paid';
+        hopCommissionApplyPayStatusUi(true);
+        if (status) status.textContent = '';
+        return;
+      }
+    }
+    const paidOn = payStatus === 'paid'
+      ? (document.getElementById('hop-comm-paid-on')?.value || '')
+      : '';
+    if (payStatus === 'paid' && !paidOn) {
+      throw new Error('Select Paid on date when status is Paid');
+    }
     const data = await hopApi('/api/v1/hop/commission/worksheet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -7446,12 +8542,31 @@ async function hopCommissionSave() {
         commission_pct: Number(document.getElementById('hop-comm-pct')?.value || 0),
         tds_pct: Number(document.getElementById('hop-comm-tds')?.value || 0),
         notes: document.getElementById('hop-comm-notes')?.value || '',
+        payment_status: payStatus,
+        paid_on: paidOn || null,
+        ...agent,
       }),
     });
-    hopState.commissionUi.sheet = data;
+    if (hopState.commissionUi) {
+      hopState.commissionUi.sheet = data;
+      hopState.commissionUi._ribbonPayStatus = payStatus;
+      // Keep ribbon open on the same bill after save
+      hopState.commissionUi.selectedId = id;
+    }
     if (status) status.textContent = 'Saved';
-    if (typeof nexoraToast === 'function') nexoraToast('Commission saved', 'ok');
-    openHopView('commission', { skipHistory: true });
+    // Soft reload — keep selection; avoid blank "Loading…" hang
+    const mount = hopMount() || document.getElementById('hop-module-mount');
+    if (mount) {
+      try {
+        await renderHopCommissionModule(mount);
+      } catch (renderErr) {
+        console.error('Commission re-render failed', renderErr);
+        openHopView('commission', { skipHistory: true });
+      }
+    }
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(payStatus === 'unpaid' ? 'Saved as Unpaid' : 'Commission saved', 'ok');
+    }
   } catch (e) {
     if (status) status.textContent = e.message || 'Save failed';
     if (typeof nexoraToast === 'function') nexoraToast(e.message || 'Save failed', 'error');
@@ -7487,16 +8602,36 @@ async function renderHopCustomerDashModule(mount) {
     mount.innerHTML = hopModuleShell('Reports', 'Customer Dashboard', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
     return;
   }
-  const body = hopTable(
-    ['Company', 'City', 'Rating', 'Total Business', 'Projects', 'AOV', 'Outstanding', 'Last Meeting', 'Last Purchase'],
-    rows.map((r) => `<tr>
-      <td>${hopCell(r.company)}</td><td>${hopCell(r.city)}</td><td>${hopCell(r.potential_rating)}</td>
-      <td>${hopMoney(r.total_business)}</td><td>${hopCell(r.projects)}</td><td>${hopMoney(r.average_order_value)}</td>
-      <td>${hopMoney(r.outstanding)}</td><td>${hopCell((r.last_meeting || '').slice(0, 10))}</td>
-      <td>${hopCell((r.last_purchase || '').slice(0, 10))}</td>
-    </tr>`).join(''),
+  const withBiz = rows.filter((r) => Number(r.total_business || 0) > 0 || Number(r.outstanding || 0) > 0).length;
+  const body = `
+    ${hopTxCards([
+      { label: 'Customers', value: String(rows.length), tone: 'neutral' },
+      { label: 'With sales', value: String(withBiz), tone: 'paid' },
+      { label: 'Total business', valueHtml: hopMoney(rows.reduce((s, r) => s + Number(r.total_business || 0), 0)), tone: 'total' },
+      { label: 'Outstanding', valueHtml: hopMoney(rows.reduce((s, r) => s + Number(r.outstanding || 0), 0)), tone: 'overdue' },
+    ])}
+    ${hopTable(
+      ['Company', 'City', 'Rating', 'Total Business', 'Invoices', 'AOV', 'Outstanding', 'Last Meeting', 'Last Purchase'],
+      rows.map((r) => `<tr>
+        <td><strong>${hopCell(r.company)}</strong></td>
+        <td>${hopCell(r.city)}</td>
+        <td>${hopCell(r.potential_rating)}</td>
+        <td class="inv-num">${hopMoney(r.total_business)}</td>
+        <td class="inv-num">${hopCell(r.invoice_count != null ? r.invoice_count : r.projects)}</td>
+        <td class="inv-num">${hopMoney(r.average_order_value)}</td>
+        <td class="inv-num">${hopMoney(r.outstanding)}</td>
+        <td>${hopCell((r.last_meeting || '').toString().slice(0, 10))}</td>
+        <td>${hopCell((r.last_purchase || '').toString().slice(0, 10))}</td>
+      </tr>`).join('') || '<tr><td colspan="9" class="inv-empty">No customers yet. Import from Vyapar to fill this dashboard.</td></tr>',
+      { label: 'Customer Dashboard', count: rows.length, className: 'hop-customer-dash-table' },
+    )}`;
+  mount.innerHTML = hopModuleShell(
+    'Reports',
+    'Customer Dashboard',
+    'From Vyapar sale invoices · outstanding · last purchase',
+    '',
+    body,
   );
-  mount.innerHTML = hopModuleShell('Reports', 'Customer Dashboard', 'Business · projects · outstanding · last touch', '', body);
 }
 
 async function renderHopDailyModule(mount) {

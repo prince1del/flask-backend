@@ -59,6 +59,18 @@ class GoogleDriveProvider(StorageProvider):
 
     def download(self, file_id: str, target_path: str) -> dict[str, Any]:
         """Download file from Google Drive."""
+        payload = self.download_bytes(file_id)
+        with open(target_path, "wb") as fh:
+            fh.write(payload["content"])
+        return {
+            "file_id": file_id,
+            "target_path": target_path,
+            "file_name": payload.get("file_name"),
+            "mime_type": payload.get("mime_type"),
+        }
+
+    def download_bytes(self, file_id: str) -> dict[str, Any]:
+        """Download file bytes (exports Google Docs/Sheets/Slides to Office formats)."""
         try:
             from googleapiclient.http import MediaIoBaseDownload
         except ImportError as exc:
@@ -66,16 +78,66 @@ class GoogleDriveProvider(StorageProvider):
                 "google-api-python-client is required for Google Drive downloads"
             ) from exc
 
-        request = self.service.files().get_media(fileId=file_id)
-        with io.FileIO(target_path, "wb") as fh:
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
-        return {"file_id": file_id, "target_path": target_path}
+        meta = (
+            self.service.files()
+            .get(fileId=file_id, fields="id,name,mimeType,size")
+            .execute()
+        )
+        mime = str(meta.get("mimeType") or "")
+        name = str(meta.get("name") or file_id)
+
+        if mime == "application/vnd.google-apps.folder":
+            raise RuntimeError("Folders cannot be downloaded. Open a file instead.")
+
+        export_map = {
+            "application/vnd.google-apps.document": (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ".docx",
+            ),
+            "application/vnd.google-apps.spreadsheet": (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ".xlsx",
+            ),
+            "application/vnd.google-apps.presentation": (
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ".pptx",
+            ),
+            "application/vnd.google-apps.drawing": ("application/pdf", ".pdf"),
+        }
+
+        buffer = io.BytesIO()
+        if mime in export_map:
+            export_mime, ext = export_map[mime]
+            request = self.service.files().export_media(fileId=file_id, mimeType=export_mime)
+            if not name.lower().endswith(ext):
+                name = f"{name}{ext}"
+            out_mime = export_mime
+        elif mime.startswith("application/vnd.google-apps."):
+            raise RuntimeError(
+                f"This Google Drive item type cannot be downloaded in NEXORA ({mime})."
+            )
+        else:
+            request = self.service.files().get_media(fileId=file_id)
+            out_mime = mime or "application/octet-stream"
+
+        downloader = MediaIoBaseDownload(buffer, request)
+        done = False
+        while not done:
+            _status, done = downloader.next_chunk()
+
+        return {
+            "file_id": file_id,
+            "file_name": name,
+            "mime_type": out_mime,
+            "content": buffer.getvalue(),
+        }
 
     def delete(self, file_id: str) -> dict[str, Any]:
         """Delete file from Google Drive."""
+        try:
+            from googleapiclient.errors import HttpError
+        except ImportError:
+            HttpError = Exception  # type: ignore
         try:
             self.service.files().delete(fileId=file_id).execute()
             return {"file_id": file_id, "deleted": True}
