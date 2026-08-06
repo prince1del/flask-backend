@@ -125,128 +125,247 @@ html[data-hop-theme="bright"] #order-fulfillment-workspace .of-step-num {
   color: #ffffff !important;
   background: #0d9488 !important;
 }
+html[data-hop-theme="bright"] #order-fulfillment-workspace .nx-of-vyapar {
+  background: #f1f5f9 !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail {
+  background: #ffffff !important;
+  border-right-color: #e2e8f0 !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-title,
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-label,
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-stage-titles .nx-display,
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-pane-card-title {
+  color: #0f172a !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-kicker,
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-hint,
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-stage-sub,
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-pane-help {
+  color: #64748b !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-item {
+  color: #0f172a !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-item:hover {
+  background: #f1f5f9 !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-item.is-active {
+  background: #e0f2fe !important;
+  box-shadow: inset 3px 0 0 #0d9488 !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace #of-rail-saved-nav .of-rail-item,
+html[data-hop-theme="bright"] #order-fulfillment-workspace #of-rail-saved-nav .of-saved-distributor-btn,
+html[data-hop-theme="bright"] #order-fulfillment-workspace #of-rail-saved-nav .of-rail-item:hover,
+html[data-hop-theme="bright"] #order-fulfillment-workspace #of-rail-saved-nav .of-saved-distributor-btn:hover,
+html[data-hop-theme="bright"] #order-fulfillment-workspace #of-rail-saved-nav .of-rail-item.is-active,
+html[data-hop-theme="bright"] #order-fulfillment-workspace #of-rail-saved-nav .of-saved-distributor-btn.is-active {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace #of-rail-saved-nav .of-rail-num {
+  display: none !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-rail-num {
+  background: #0d9488 !important;
+  color: #ffffff !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-stage {
+  background: #f8fafc !important;
+}
+html[data-hop-theme="bright"] #order-fulfillment-workspace .of-pane-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
 
 /* ---------- Emerald ---------- */
-html[data-hop-theme="emerald"] #dashboard .bd-shell .left-nav.hop-nav,
-html[data-hop-theme="emerald"] body.bd-hop-ui #dashboard.bd-module-mode,
-html[data-hop-theme="emerald"] body.bd-hop-ui #dashboard.bd-module-mode .bd-shell,
-html[data-hop-theme="emerald"] body.bd-hop-ui #dashboard.bd-module-mode .hop-nav {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .bd-shell .left-nav.hop-nav,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #dashboard.bd-module-mode,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #dashboard.bd-module-mode .bd-shell,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #dashboard.bd-module-mode .hop-nav {
   background: #123C32 !important;
   border-color: rgba(255, 255, 255, 0.08) !important;
   color: #D6CFC0 !important;
 }
-html[data-hop-theme="emerald"] #dashboard .bd-shell .nav-item.nx-nav-item {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .bd-shell .nav-item.nx-nav-item {
   color: #D6CFC0 !important;
   background: transparent !important;
   border-color: transparent !important;
 }
-html[data-hop-theme="emerald"] #dashboard .bd-shell .nav-item.nx-nav-item:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .bd-shell .nav-item.nx-nav-item:hover {
   background: rgba(255, 255, 255, 0.06) !important;
   color: #ffffff !important;
 }
-html[data-hop-theme="emerald"] #dashboard .bd-shell .nav-item.nx-nav-item.active {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .bd-shell .nav-item.nx-nav-item.active {
   background: rgba(201, 162, 39, 0.22) !important;
   color: #E8D48B !important;
   border-color: rgba(201, 162, 39, 0.35) !important;
   width: 100% !important;
 }
-html[data-hop-theme="emerald"] #dashboard .bd-shell .hop-nav-group {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .bd-shell .hop-nav-group {
   color: #9A9080 !important;
 }
-html[data-hop-theme="emerald"] #dashboard .bd-shell .hop-nav-brand:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .bd-shell .hop-nav-brand:hover {
   background: rgba(201, 162, 39, 0.12) !important;
 }
-html[data-hop-theme="emerald"] #dashboard .nx-theme.hop-shell.bd-shell,
-html[data-hop-theme="emerald"] #dashboard .bd-shell .main-content.hop-main {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .nx-theme.hop-shell.bd-shell,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .bd-shell .main-content.hop-main {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
   border-color: #DED3BE !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell:not(.hidden),
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell:not(.hidden),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .nx-theme,
-html[data-hop-theme="emerald"] #settings-workspace .nx-theme,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .nx-theme,
-html[data-hop-theme="emerald"] #order-cycle-workspace .nx-theme {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .nx-theme,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .nx-theme,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .nx-theme,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-cycle-workspace .nx-theme {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .nx-display,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell h2,
-html[data-hop-theme="emerald"] #dashboard .nx-display,
-html[data-hop-theme="emerald"] #dashboard h1,
-html[data-hop-theme="emerald"] #dashboard h2 {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .nx-display,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .nx-display,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard h1,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard h2 {
   color: #1F1F1F !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .nx-text-dim,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .nx-text-faint,
-html[data-hop-theme="emerald"] #dashboard .nx-text-dim,
-html[data-hop-theme="emerald"] #dashboard .nx-text-faint,
-html[data-hop-theme="emerald"] #dashboard .hop-eyebrow {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .nx-text-dim,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .nx-text-faint,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .nx-text-dim,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .nx-text-faint,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .hop-eyebrow {
   color: #6B6254 !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .nx-card,
-html[data-hop-theme="emerald"] #dashboard .nx-card {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .nx-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .nx-card {
   background: #ffffff !important;
   border-color: #DED3BE !important;
   color: #1F1F1F !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .nx-btn,
-html[data-hop-theme="emerald"] #dashboard .nx-btn {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .nx-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .nx-btn {
   border: 1px solid #DED3BE !important;
   background: #ffffff !important;
   color: #1F1F1F !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .nx-btn-primary,
-html[data-hop-theme="emerald"] #dashboard .nx-btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .nx-btn-primary,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .nx-btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .back-btn {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .back-btn {
   color: #1F1F1F !important;
   border-color: #DED3BE !important;
   background: #ffffff !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell select,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell textarea {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell select,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell textarea {
   background: #ffffff !important;
   color: #1F1F1F !important;
   border-color: #DED3BE !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell table td {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell table td {
   color: #1F1F1F !important;
   border-color: #DED3BE !important;
 }
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .of-tracking-wrap,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .nx-of-preview {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-tracking-wrap,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .nx-of-preview {
   background: #ffffff !important;
   border-color: #DED3BE !important;
 }
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .data-table th,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace table.data-table thead th {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace table.data-table thead th {
   background: #123C32 !important;
   color: #F8F4EA !important;
   border-bottom-color: rgba(232, 212, 139, 0.35) !important;
 }
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .data-table td,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace table.data-table tbody td {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .data-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace table.data-table tbody td {
   color: #1F1F1F !important;
   border-bottom-color: #DED3BE !important;
   background: #ffffff !important;
 }
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .of-step-card,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .of-step-card h3 {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-step-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-step-card h3 {
   color: #1F1F1F !important;
 }
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .of-step-num {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-step-num {
   color: #123C32 !important;
   background: linear-gradient(135deg, #E8D48B, #C9A227) !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .nx-of-vyapar {
+  background: #F8F4EA !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail {
+  background: #ffffff !important;
+  border-right-color: #DED3BE !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-title,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-stage-titles .nx-display,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-pane-card-title {
+  color: #1F1F1F !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-kicker,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-hint,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-stage-sub,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-pane-help {
+  color: #6B6254 !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-item {
+  color: #1F1F1F !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-item:hover {
+  background: rgba(201, 162, 39, 0.12) !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-item.is-active {
+  background: rgba(201, 162, 39, 0.18) !important;
+  box-shadow: inset 3px 0 0 #C9A227 !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace #of-rail-saved-nav .of-rail-item,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace #of-rail-saved-nav .of-saved-distributor-btn {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 7px 6px !important;
+  color: #6B6254 !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace #of-rail-saved-nav .of-rail-item:hover,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace #of-rail-saved-nav .of-saved-distributor-btn:hover,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace #of-rail-saved-nav .of-rail-item.is-active,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace #of-rail-saved-nav .of-saved-distributor-btn.is-active {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #1F1F1F !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace #of-rail-saved-nav .of-rail-num {
+  display: none !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace.nx-of-vyapar.is-saved-orders .of-rail-back,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .nx-of-vyapar.is-saved-orders .of-rail-back,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .nx-of-vyapar.is-saved-orders #of-rail-back-btn,
+html[data-hop-theme="bright"] #order-fulfillment-workspace .nx-of-vyapar.is-saved-orders #of-rail-back-btn,
+html[data-hop-theme="custom"] #order-fulfillment-workspace .nx-of-vyapar.is-saved-orders #of-rail-back-btn {
+  display: none !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-rail-num {
+  background: #C9A227 !important;
+  color: #123C32 !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-stage {
+  background: #F8F4EA !important;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .of-pane-card {
+  background: #ffffff !important;
+  border-color: #DED3BE !important;
 }
 
 /* ---------- Custom / luxury (CSS vars) ---------- */
@@ -369,6 +488,46 @@ html[data-hop-theme="custom"] #order-fulfillment-workspace .of-step-num {
   color: #ffffff !important;
   background: var(--hop-c-accent) !important;
 }
+html[data-hop-theme="custom"] #order-fulfillment-workspace .nx-of-vyapar {
+  background: var(--hop-c-bg, #F8F4EA) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail {
+  background: var(--hop-c-card, #ffffff) !important;
+  border-right-color: var(--hop-c-border, #DED3BE) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-title,
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-label,
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-stage-titles .nx-display,
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-pane-card-title {
+  color: var(--hop-c-text, #1F1F1F) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-kicker,
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-hint,
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-stage-sub,
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-pane-help {
+  color: var(--hop-c-muted, #6B6254) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-item {
+  color: var(--hop-c-text, #1F1F1F) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-item:hover {
+  background: var(--hop-c-accent-soft, rgba(201, 162, 39, 0.12)) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-item.is-active {
+  background: var(--hop-c-accent-soft, rgba(201, 162, 39, 0.18)) !important;
+  box-shadow: inset 3px 0 0 var(--hop-c-accent, #C9A227) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-rail-num {
+  background: var(--hop-c-accent, #C9A227) !important;
+  color: #ffffff !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-stage {
+  background: var(--hop-c-bg, #F8F4EA) !important;
+}
+html[data-hop-theme="custom"] #order-fulfillment-workspace .of-pane-card {
+  background: var(--hop-c-card, #ffffff) !important;
+  border-color: var(--hop-c-border, #DED3BE) !important;
+}
 
 /* Light themes: top app header (was black ribbon, low contrast) */
 html[data-hop-theme="bright"] body.bd-hop-ui .nexora-header {
@@ -376,7 +535,7 @@ html[data-hop-theme="bright"] body.bd-hop-ui .nexora-header {
   border-bottom-color: rgba(94, 234, 212, 0.28) !important;
   box-shadow: 0 10px 28px rgba(15, 39, 68, 0.18) !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui .nexora-header {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .nexora-header {
   background: #123C32 !important;
   border-bottom-color: rgba(201, 162, 39, 0.35) !important;
   box-shadow: 0 10px 28px rgba(18, 60, 50, 0.2) !important;
@@ -387,14 +546,14 @@ html[data-hop-theme="custom"] body.bd-hop-ui .nexora-header {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui .nexora-header .workspace-selector,
-html[data-hop-theme="emerald"] body.bd-hop-ui .nexora-header .workspace-selector,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .nexora-header .workspace-selector,
 html[data-hop-theme="custom"] body.bd-hop-ui .nexora-header .workspace-selector {
   color: #ffffff !important;
   border-color: rgba(255, 255, 255, 0.28) !important;
   background: rgba(255, 255, 255, 0.08) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui .nexora-header .profile-btn:not(.profile-btn--avatar),
-html[data-hop-theme="emerald"] body.bd-hop-ui .nexora-header .profile-btn:not(.profile-btn--avatar),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .nexora-header .profile-btn:not(.profile-btn--avatar),
 html[data-hop-theme="custom"] body.bd-hop-ui .nexora-header .profile-btn:not(.profile-btn--avatar) {
   color: #ffffff !important;
   border-color: rgba(255, 255, 255, 0.28) !important;
@@ -402,7 +561,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui .nexora-header .profile-btn:not(.pr
 }
 /* Profile avatar + menu — all logins / themes (not only BD sales_executive) */
 html[data-hop-theme="bright"] .nexora-header .profile-btn.profile-btn--avatar,
-html[data-hop-theme="emerald"] .nexora-header .profile-btn.profile-btn--avatar,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nexora-header .profile-btn.profile-btn--avatar,
 html[data-hop-theme="custom"] .nexora-header .profile-btn.profile-btn--avatar {
   color: #111827 !important;
   border: none !important;
@@ -410,12 +569,12 @@ html[data-hop-theme="custom"] .nexora-header .profile-btn.profile-btn--avatar {
 html[data-hop-theme="bright"] .nexora-header .profile-btn.profile-btn--avatar {
   background: #0d9488 !important;
 }
-html[data-hop-theme="emerald"] .nexora-header .profile-btn.profile-btn--avatar,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nexora-header .profile-btn.profile-btn--avatar,
 html[data-hop-theme="custom"] .nexora-header .profile-btn.profile-btn--avatar {
   background: var(--hop-c-accent, #C9A227) !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown,
-html[data-hop-theme="emerald"] .nx-profile-dropdown,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown,
 html[data-hop-theme="custom"] .nx-profile-dropdown {
   background:
     linear-gradient(165deg, #ffffff 0%, #f8f6f1 100%) !important;
@@ -425,54 +584,54 @@ html[data-hop-theme="custom"] .nx-profile-dropdown {
     0 0 0 1px rgba(255, 255, 255, 0.8) inset !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown-avatar,
-html[data-hop-theme="emerald"] .nx-profile-dropdown-avatar,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown-avatar,
 html[data-hop-theme="custom"] .nx-profile-dropdown-avatar {
   background: var(--hop-c-accent, var(--nx-gold, #C9A227)) !important;
   color: #111827 !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown-eyebrow,
-html[data-hop-theme="emerald"] .nx-profile-dropdown-eyebrow,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown-eyebrow,
 html[data-hop-theme="custom"] .nx-profile-dropdown-eyebrow {
   color: rgba(31, 31, 31, 0.45) !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown-name,
-html[data-hop-theme="emerald"] .nx-profile-dropdown-name,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown-name,
 html[data-hop-theme="custom"] .nx-profile-dropdown-name {
   color: var(--hop-c-text, #1F1F1F) !important;
   border-bottom-color: transparent !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown-role,
-html[data-hop-theme="emerald"] .nx-profile-dropdown-role,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown-role,
 html[data-hop-theme="custom"] .nx-profile-dropdown-role {
   color: rgba(31, 31, 31, 0.52) !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown-divider,
-html[data-hop-theme="emerald"] .nx-profile-dropdown-divider,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown-divider,
 html[data-hop-theme="custom"] .nx-profile-dropdown-divider {
   background: var(--hop-c-border, #DED3BE) !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown-item,
-html[data-hop-theme="emerald"] .nx-profile-dropdown-item,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown-item,
 html[data-hop-theme="custom"] .nx-profile-dropdown-item {
   color: #b91c1c !important;
   background: rgba(185, 28, 28, 0.06) !important;
 }
 html[data-hop-theme="bright"] .nx-profile-dropdown-item:hover,
-html[data-hop-theme="emerald"] .nx-profile-dropdown-item:hover,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-profile-dropdown-item:hover,
 html[data-hop-theme="custom"] .nx-profile-dropdown-item:hover {
   background: rgba(185, 28, 28, 0.12) !important;
   border-color: rgba(185, 28, 28, 0.22) !important;
   color: #991b1b !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui .nexora-header .icon-btn,
-html[data-hop-theme="emerald"] body.bd-hop-ui .nexora-header .icon-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .nexora-header .icon-btn,
 html[data-hop-theme="custom"] body.bd-hop-ui .nexora-header .icon-btn {
   color: #ffffff !important;
   filter: none !important;
   opacity: 1 !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #ask-nexora-btn,
-html[data-hop-theme="emerald"] body.bd-hop-ui #ask-nexora-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #ask-nexora-btn,
 html[data-hop-theme="custom"] body.bd-hop-ui #ask-nexora-btn {
   color: #ffffff !important;
 }
@@ -480,7 +639,7 @@ html[data-hop-theme="bright"] body.bd-hop-ui #ask-nexora-btn {
   background: #0d9488 !important;
   border-color: #0d9488 !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui #ask-nexora-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #ask-nexora-btn,
 html[data-hop-theme="custom"] body.bd-hop-ui #ask-nexora-btn {
   background: var(--hop-c-accent, #C9A227) !important;
   border-color: var(--hop-c-accent, #C9A227) !important;
@@ -489,10 +648,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui #ask-nexora-btn {
 
 /* Order Desk hub under light themes */
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-card,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-card,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-card,
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-feature,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-feature,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-feature,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-feature {
   background: #ffffff !important;
   border-color: #DED3BE !important;
@@ -507,7 +666,7 @@ html[data-hop-theme="bright"] #order-desk-workspace .nx-od-card {
     radial-gradient(120% 90% at 0% 0%, rgba(13, 148, 136, 0.10), transparent 55%),
     #ffffff !important;
 }
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-feature {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-feature {
   background:
     radial-gradient(120% 90% at 0% 0%, rgba(201, 162, 39, 0.14), transparent 55%),
     #ffffff !important;
@@ -520,7 +679,7 @@ html[data-hop-theme="custom"] #order-desk-workspace .nx-od-card {
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-feature-badge,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-feature-badge,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-feature-badge,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-feature-badge {
   background: rgba(201, 162, 39, 0.12) !important;
   border-color: rgba(201, 162, 39, 0.28) !important;
@@ -538,7 +697,7 @@ html[data-hop-theme="custom"] #order-desk-workspace .nx-od-feature-badge {
   color: var(--hop-c-accent-dark, #8a6d12) !important;
 }
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-pipeline,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-pipeline,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-pipeline,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-pipeline {
   background: #FBF8F1 !important;
   border-color: #DED3BE !important;
@@ -552,10 +711,10 @@ html[data-hop-theme="custom"] #order-desk-workspace .nx-od-pipeline {
   border-color: var(--hop-c-border) !important;
 }
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-pipeline li,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-pipeline li,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-pipeline li,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-pipeline li,
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-highlight,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-highlight,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-highlight,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-highlight {
   background: #ffffff !important;
   border-color: #DED3BE !important;
@@ -573,13 +732,13 @@ html[data-hop-theme="custom"] #order-desk-workspace .nx-od-highlight {
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-pipeline span,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-pipeline span,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-pipeline span,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-pipeline span,
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-pipeline em,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-pipeline em,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-pipeline em,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-pipeline em,
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-highlight span,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-highlight span,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-highlight span,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-highlight span {
   color: #6B6254 !important;
   opacity: 1 !important;
@@ -594,7 +753,7 @@ html[data-hop-theme="custom"] #order-desk-workspace .nx-od-pipeline em,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-highlight span {
   color: var(--hop-c-muted) !important;
 }
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-feature-cta {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-feature-cta {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
@@ -610,7 +769,7 @@ html[data-hop-theme="custom"] #order-desk-workspace .nx-od-feature-cta {
 }
 
 html[data-hop-theme="bright"] #settings-workspace .nx-settings-field input,
-html[data-hop-theme="emerald"] #settings-workspace .nx-settings-field input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .nx-settings-field input,
 html[data-hop-theme="custom"] #settings-workspace .nx-settings-field input {
   background: #ffffff !important;
 }
@@ -618,7 +777,7 @@ html[data-hop-theme="bright"] #settings-workspace .nx-settings-field input {
   border-color: #e2e8f0 !important;
   color: #0f172a !important;
 }
-html[data-hop-theme="emerald"] #settings-workspace .nx-settings-field input {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .nx-settings-field input {
   border-color: #DED3BE !important;
   color: #1F1F1F !important;
 }
@@ -630,12 +789,12 @@ html[data-hop-theme="custom"] #settings-workspace .nx-settings-field input {
 html[data-hop-theme="bright"] #settings-workspace .bd-company-heading {
   color: #0f172a !important;
 }
-html[data-hop-theme="emerald"] #settings-workspace .bd-company-heading,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .bd-company-heading,
 html[data-hop-theme="custom"] #settings-workspace .bd-company-heading {
   color: #1F1F1F !important;
 }
 html[data-hop-theme="bright"] #settings-workspace .bd-company-card,
-html[data-hop-theme="emerald"] #settings-workspace .bd-company-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .bd-company-card,
 html[data-hop-theme="custom"] #settings-workspace .bd-company-card {
   background: #ffffff !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.04), 0 12px 28px rgba(15, 39, 68, 0.06);
@@ -643,7 +802,7 @@ html[data-hop-theme="custom"] #settings-workspace .bd-company-card {
 html[data-hop-theme="bright"] #settings-workspace .bd-company-card {
   border: 1px solid #e2e8f0 !important;
 }
-html[data-hop-theme="emerald"] #settings-workspace .bd-company-card {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .bd-company-card {
   border: 1px solid #DED3BE !important;
 }
 html[data-hop-theme="custom"] #settings-workspace .bd-company-card {
@@ -663,8 +822,8 @@ html[data-hop-theme="nexora"] #order-fulfillment-workspace table.data-table thea
 /* Light themes: force readable OF header (beats premium black ribbon + dark text) */
 html[data-hop-theme="bright"] #order-fulfillment-workspace .data-table th,
 html[data-hop-theme="bright"] #order-fulfillment-workspace table.data-table thead th,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .data-table th,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace table.data-table thead th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace table.data-table thead th,
 html[data-hop-theme="custom"] #order-fulfillment-workspace .data-table th,
 html[data-hop-theme="custom"] #order-fulfillment-workspace table.data-table thead th {
   color: #ffffff !important;
@@ -676,8 +835,8 @@ html[data-hop-theme="bright"] #order-fulfillment-workspace .data-table th,
 html[data-hop-theme="bright"] #order-fulfillment-workspace table.data-table thead th {
   background: #0f2744 !important;
 }
-html[data-hop-theme="emerald"] #order-fulfillment-workspace .data-table th,
-html[data-hop-theme="emerald"] #order-fulfillment-workspace table.data-table thead th {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-fulfillment-workspace table.data-table thead th {
   background: #123C32 !important;
   color: #F8F4EA !important;
   -webkit-text-fill-color: #F8F4EA !important;
@@ -688,23 +847,23 @@ html[data-hop-theme="custom"] #order-fulfillment-workspace table.data-table thea
 }
 
 html[data-hop-theme="bright"] #settings-workspace .hop-theme-studio,
-html[data-hop-theme="emerald"] #settings-workspace .hop-theme-studio,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .hop-theme-studio,
 html[data-hop-theme="custom"] #settings-workspace .hop-theme-studio {
   color: inherit;
 }
 html[data-hop-theme="bright"] #settings-workspace .hop-theme-card,
-html[data-hop-theme="emerald"] #settings-workspace .hop-theme-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .hop-theme-card,
 html[data-hop-theme="custom"] #settings-workspace .hop-theme-card,
 html[data-hop-theme="bright"] #settings-workspace .hop-theme-card--gallery,
-html[data-hop-theme="emerald"] #settings-workspace .hop-theme-card--gallery,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .hop-theme-card--gallery,
 html[data-hop-theme="custom"] #settings-workspace .hop-theme-card--gallery {
   background: #ffffff !important;
   border-color: #e2e8f0 !important;
   color: #0f172a !important;
 }
-html[data-hop-theme="emerald"] #settings-workspace .hop-theme-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .hop-theme-card,
 html[data-hop-theme="custom"] #settings-workspace .hop-theme-card,
-html[data-hop-theme="emerald"] #settings-workspace .hop-theme-card--gallery,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #settings-workspace .hop-theme-card--gallery,
 html[data-hop-theme="custom"] #settings-workspace .hop-theme-card--gallery {
   border-color: var(--hop-c-border, #DED3BE) !important;
   color: var(--hop-c-text, #1F1F1F) !important;
@@ -712,7 +871,7 @@ html[data-hop-theme="custom"] #settings-workspace .hop-theme-card--gallery {
 
 /* ========== Customers (invoice-style) — readable on light themes ========== */
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) {
   background: #F8F4EA !important;
   border-left-color: rgba(18, 60, 50, 0.12) !important;
@@ -727,7 +886,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section.customers-wor
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .inv-topbar,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .inv-topbar,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .inv-topbar,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .inv-topbar {
   background: #ffffff !important;
   border-bottom: 1px solid #DED3BE !important;
@@ -740,7 +899,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .inv-topbar {
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .inv-title,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .inv-title,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .inv-title,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .inv-title {
   color: #1F1F1F !important;
 }
@@ -752,10 +911,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .inv-title {
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .bd-customers-eyebrow,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .bd-customers-eyebrow,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .bd-customers-eyebrow,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .bd-customers-eyebrow,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .eyebrow,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .eyebrow,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .eyebrow,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .eyebrow {
   color: #6B6254 !important;
 }
@@ -769,10 +928,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .eyebrow {
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .bd-customers-back,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .bd-customers-back,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .bd-customers-back,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .bd-customers-back,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .nx-btn:not(.nx-btn-primary),
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .nx-btn:not(.nx-btn-primary),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .nx-btn:not(.nx-btn-primary),
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .nx-btn:not(.nx-btn-primary) {
   background: #ffffff !important;
   color: #1F1F1F !important;
@@ -790,7 +949,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .nx-btn:not(.
   background: var(--hop-c-card) !important;
 }
 
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .nx-btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .nx-btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
@@ -807,7 +966,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .nx-btn-prima
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-tabs .tab-button,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-tabs .tab-button,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-tabs .tab-button,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-tabs .tab-button {
   background: #ffffff !important;
   color: #6B6254 !important;
@@ -817,7 +976,7 @@ html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master
   color: #64748b !important;
   border-color: #e2e8f0 !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-tabs .tab-button.active {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-tabs .tab-button.active {
   background: rgba(201, 162, 39, 0.16) !important;
   color: #A8861F !important;
   border-color: rgba(201, 162, 39, 0.45) !important;
@@ -839,7 +998,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .bd-customers-card,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .bd-customers-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .bd-customers-card,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .bd-customers-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -854,10 +1013,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .bd-customers
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-table thead th,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-table thead th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-table thead th,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-table thead th,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .data-table th,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .data-table th,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .data-table th {
   background: #FBF7EE !important;
   color: #A8861F !important;
@@ -881,10 +1040,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .data-table t
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-table td,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-table td,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-table td,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .data-table td,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .data-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .data-table td,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .data-table td {
   color: #1F1F1F !important;
   -webkit-text-fill-color: #1F1F1F !important;
@@ -907,7 +1066,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .data-table t
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-table tbody tr:hover td,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-table tbody tr:hover td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-table tbody tr:hover td,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-table tbody tr:hover td {
   background: #F5EFE0 !important;
 }
@@ -919,13 +1078,13 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-pagination-meta,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-pagination-meta,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-pagination-meta,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-pagination-meta,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-pagination-page,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-pagination-page,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-pagination-page,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-pagination-page,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section label,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section label,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section label {
   color: #6B6254 !important;
 }
@@ -941,7 +1100,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section label {
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section select,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section select,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section select,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section select {
   background: #ffffff !important;
   color: #1F1F1F !important;
@@ -957,25 +1116,25 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section select {
   background: var(--hop-c-card) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .bd-customers-filter-inline select,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .bd-customers-filter-inline select,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .bd-customers-filter-inline select,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .bd-customers-filter-inline select,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .bd-customers-filter-inline input,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .bd-customers-filter-inline input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .bd-customers-filter-inline input,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .bd-customers-filter-inline input,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section #retailer-distributor-filter,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section #retailer-distributor-filter,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section #retailer-distributor-filter,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section #retailer-distributor-filter,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section #retailer-city-filter,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section #retailer-city-filter,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section #retailer-city-filter,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section #retailer-city-filter,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section #retailer-search-input,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section #retailer-search-input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section #retailer-search-input,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section #retailer-search-input,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section #distributor-city-filter,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section #distributor-city-filter,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section #distributor-city-filter,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section #distributor-city-filter,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section #distributor-search-input,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section #distributor-search-input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section #distributor-search-input,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section #distributor-search-input {
   height: 28px !important;
   min-height: 28px !important;
@@ -1002,7 +1161,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section #distributor-
   background: var(--hop-c-card) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-thumb,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-thumb,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-thumb,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-thumb {
   background: rgba(168, 134, 31, 0.55) !important;
   border-color: rgba(255, 255, 255, 0.65) !important;
@@ -1011,15 +1170,15 @@ html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master
   background: rgba(13, 148, 136, 0.5) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-track,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-track,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-track,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .party-master-scroll-wrapper::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.06) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .btn,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .btn,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .btn,
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .btn-secondary,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .btn-secondary,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .btn-secondary,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .btn-secondary {
   background: #ffffff !important;
   color: #1F1F1F !important;
@@ -1030,7 +1189,7 @@ html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .btn-secondar
   border-color: #e2e8f0 !important;
   color: #0f172a !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
@@ -1046,7 +1205,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .btn-primary 
   color: #ffffff !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .pm-icon-btn,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .pm-icon-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .pm-icon-btn,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .pm-icon-btn {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1061,7 +1220,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .pm-icon-btn 
   color: var(--hop-c-text) !important;
   background: var(--hop-c-card) !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .pm-icon-edit:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .pm-icon-edit:hover {
   border-color: #C9A227 !important;
   background: rgba(201, 162, 39, 0.12) !important;
   color: #8a6d12 !important;
@@ -1077,7 +1236,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .pm-icon-edit
   color: var(--hop-c-accent-dark) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section .pm-icon-delete,
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section .pm-icon-delete,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section .pm-icon-delete,
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .pm-icon-delete {
   color: #b91c1c !important;
   border-color: #fecaca !important;
@@ -1086,12 +1245,12 @@ html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section .pm-icon-dele
 
 /* Master retailer/distributor forms follow active theme (not dark Nexora chrome) */
 html[data-hop-theme="bright"] .bd-master-form-modal,
-html[data-hop-theme="emerald"] .bd-master-form-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-modal,
 html[data-hop-theme="custom"] .bd-master-form-modal {
   background: rgba(15, 23, 42, 0.42) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-modal .bd-master-form-card,
-html[data-hop-theme="emerald"] .bd-master-form-modal .bd-master-form-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-modal .bd-master-form-card,
 html[data-hop-theme="custom"] .bd-master-form-modal .bd-master-form-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1108,10 +1267,10 @@ html[data-hop-theme="custom"] .bd-master-form-modal .bd-master-form-card {
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-head,
-html[data-hop-theme="emerald"] .bd-master-form-head,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-head,
 html[data-hop-theme="custom"] .bd-master-form-head,
 html[data-hop-theme="bright"] .bd-master-form-foot,
-html[data-hop-theme="emerald"] .bd-master-form-foot,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-foot,
 html[data-hop-theme="custom"] .bd-master-form-foot {
   background: #FBF8F1 !important;
   border-color: #DED3BE !important;
@@ -1127,10 +1286,10 @@ html[data-hop-theme="custom"] .bd-master-form-foot {
   border-color: var(--hop-c-border, #DED3BE) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-eyebrow,
-html[data-hop-theme="emerald"] .bd-master-form-eyebrow,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-eyebrow,
 html[data-hop-theme="custom"] .bd-master-form-eyebrow,
 html[data-hop-theme="bright"] .bd-master-form-section h3,
-html[data-hop-theme="emerald"] .bd-master-form-section h3,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-section h3,
 html[data-hop-theme="custom"] .bd-master-form-section h3 {
   color: #6B6254 !important;
   opacity: 1 !important;
@@ -1144,10 +1303,10 @@ html[data-hop-theme="custom"] .bd-master-form-section h3 {
   color: var(--hop-c-muted, #6B6254) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-head h2,
-html[data-hop-theme="emerald"] .bd-master-form-head h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-head h2,
 html[data-hop-theme="custom"] .bd-master-form-head h2,
 html[data-hop-theme="bright"] .bd-master-form-modal .form-group label,
-html[data-hop-theme="emerald"] .bd-master-form-modal .form-group label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-modal .form-group label,
 html[data-hop-theme="custom"] .bd-master-form-modal .form-group label {
   color: #1F1F1F !important;
   opacity: 1 !important;
@@ -1161,7 +1320,7 @@ html[data-hop-theme="custom"] .bd-master-form-modal .form-group label {
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-section,
-html[data-hop-theme="emerald"] .bd-master-form-section,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-section,
 html[data-hop-theme="custom"] .bd-master-form-section {
   background: #ffffff !important;
   border-color: #DED3BE !important;
@@ -1174,10 +1333,10 @@ html[data-hop-theme="custom"] .bd-master-form-section {
   border-color: var(--hop-c-border, #DED3BE) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-modal .form-group input,
-html[data-hop-theme="emerald"] .bd-master-form-modal .form-group input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-modal .form-group input,
 html[data-hop-theme="custom"] .bd-master-form-modal .form-group input,
 html[data-hop-theme="bright"] .bd-master-form-modal .form-group select,
-html[data-hop-theme="emerald"] .bd-master-form-modal .form-group select,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-modal .form-group select,
 html[data-hop-theme="custom"] .bd-master-form-modal .form-group select {
   background: #ffffff !important;
   color: #1F1F1F !important;
@@ -1195,10 +1354,10 @@ html[data-hop-theme="custom"] .bd-master-form-modal .form-group select {
   border-color: var(--hop-c-border, #DED3BE) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-modal .form-group input:focus,
-html[data-hop-theme="emerald"] .bd-master-form-modal .form-group input:focus,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-modal .form-group input:focus,
 html[data-hop-theme="custom"] .bd-master-form-modal .form-group input:focus,
 html[data-hop-theme="bright"] .bd-master-form-modal .form-group select:focus,
-html[data-hop-theme="emerald"] .bd-master-form-modal .form-group select:focus,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-modal .form-group select:focus,
 html[data-hop-theme="custom"] .bd-master-form-modal .form-group select:focus {
   border-color: #C9A227 !important;
   box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18) !important;
@@ -1215,7 +1374,7 @@ html[data-hop-theme="custom"] .bd-master-form-modal .form-group select:focus {
   box-shadow: 0 0 0 3px var(--hop-c-accent-soft, rgba(201, 162, 39, 0.18)) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-close,
-html[data-hop-theme="emerald"] .bd-master-form-close,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-close,
 html[data-hop-theme="custom"] .bd-master-form-close {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1231,7 +1390,7 @@ html[data-hop-theme="custom"] .bd-master-form-close {
   background: var(--hop-c-card) !important;
 }
 html[data-hop-theme="bright"] .bd-master-form-foot .btn-secondary,
-html[data-hop-theme="emerald"] .bd-master-form-foot .btn-secondary,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-foot .btn-secondary,
 html[data-hop-theme="custom"] .bd-master-form-foot .btn-secondary {
   background: #ffffff !important;
   color: #1F1F1F !important;
@@ -1241,7 +1400,7 @@ html[data-hop-theme="bright"] .bd-master-form-foot .btn-secondary {
   border-color: #e2e8f0 !important;
   color: #0f172a !important;
 }
-html[data-hop-theme="emerald"] .bd-master-form-foot .btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-master-form-foot .btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
@@ -1259,7 +1418,7 @@ html[data-hop-theme="custom"] .bd-master-form-foot .btn-primary {
 
 /* ========== Article Master — Customers-style readable on light themes ========== */
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace.am-workspace:not(.hidden),
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace.am-workspace:not(.hidden),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace.am-workspace:not(.hidden),
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace.am-workspace:not(.hidden) {
   background: #F8F4EA !important;
   border-left-color: rgba(18, 60, 50, 0.12) !important;
@@ -1273,7 +1432,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace.am-worksp
   border-left-color: var(--hop-c-border) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .inv-topbar,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .inv-topbar,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .inv-topbar,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .inv-topbar {
   background: #ffffff !important;
   border-bottom: 1px solid #DED3BE !important;
@@ -1285,7 +1444,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .inv-topb
   border-bottom-color: var(--hop-c-border) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .inv-title,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .inv-title,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .inv-title,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .inv-title {
   color: #1F1F1F !important;
 }
@@ -1296,15 +1455,15 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .inv-titl
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .bd-am-eyebrow,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .bd-am-eyebrow,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .bd-am-eyebrow,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .bd-am-eyebrow {
   color: #6b7280 !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .bd-am-back,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .bd-am-back,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .bd-am-back,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .bd-am-back,
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .nx-btn:not(.nx-btn-primary),
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .nx-btn:not(.nx-btn-primary),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .nx-btn:not(.nx-btn-primary),
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .nx-btn:not(.nx-btn-primary) {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1320,7 +1479,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .nx-btn:n
   border-color: var(--hop-c-border) !important;
   color: var(--hop-c-text) !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .nx-btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .nx-btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
@@ -1336,7 +1495,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .nx-btn-p
   color: #ffffff !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .bd-am-stat-chip,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .bd-am-stat-chip,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .bd-am-stat-chip,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .bd-am-stat-chip {
   border-color: rgba(18, 60, 50, 0.16) !important;
   background: rgba(255,255,255,0.7) !important;
@@ -1351,10 +1510,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .bd-am-st
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace #am-category-filter,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace #am-category-filter,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace #am-category-filter,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace #am-category-filter,
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace #am-search-filter,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace #am-search-filter,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace #am-search-filter,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace #am-search-filter {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1371,7 +1530,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace #am-searc
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .am-articles-table thead th,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .am-articles-table thead th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .am-articles-table thead th,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .am-articles-table thead th {
   background: #f3efe4 !important;
   color: #1F1F1F !important;
@@ -1388,7 +1547,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .am-artic
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .am-articles-table td,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .am-articles-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .am-articles-table td,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .am-articles-table td {
   color: #1F1F1F !important;
   border-bottom: 1px solid rgba(18, 60, 50, 0.08) !important;
@@ -1404,7 +1563,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .am-artic
   background: var(--hop-c-bg) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .am-articles-table tbody tr:hover td,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .am-articles-table tbody tr:hover td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .am-articles-table tbody tr:hover td,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .am-articles-table tbody tr:hover td {
   background: #f7f3e8 !important;
 }
@@ -1415,7 +1574,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .am-artic
   background: color-mix(in srgb, var(--hop-c-bg) 92%, var(--hop-c-accent)) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .pm-icon-btn,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .pm-icon-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .pm-icon-btn,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .pm-icon-btn {
   border-color: #DED3BE !important;
   background: #ffffff !important;
@@ -1430,10 +1589,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .pm-icon-
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace #am-list-count,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace #am-list-count,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace #am-list-count,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace #am-list-count,
 html[data-hop-theme="bright"] body.bd-hop-ui #article-master-workspace .bd-am-filter-inline > span,
-html[data-hop-theme="emerald"] body.bd-hop-ui #article-master-workspace .bd-am-filter-inline > span,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #article-master-workspace .bd-am-filter-inline > span,
 html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .bd-am-filter-inline > span {
   color: #6b7280 !important;
   opacity: 1 !important;
@@ -1441,12 +1600,12 @@ html[data-hop-theme="custom"] body.bd-hop-ui #article-master-workspace .bd-am-fi
 
 /* ========== Party detail card — follow active theme (not dark Nexora chrome) ========== */
 html[data-hop-theme="bright"] .bd-party-detail-modal,
-html[data-hop-theme="emerald"] .bd-party-detail-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-modal,
 html[data-hop-theme="custom"] .bd-party-detail-modal {
   background: rgba(15, 23, 42, 0.42) !important;
 }
 html[data-hop-theme="bright"] .bd-party-detail-modal .bd-party-detail-card,
-html[data-hop-theme="emerald"] .bd-party-detail-modal .bd-party-detail-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-modal .bd-party-detail-card,
 html[data-hop-theme="custom"] .bd-party-detail-modal .bd-party-detail-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1463,10 +1622,10 @@ html[data-hop-theme="custom"] .bd-party-detail-modal .bd-party-detail-card {
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] .bd-party-detail-head,
-html[data-hop-theme="emerald"] .bd-party-detail-head,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-head,
 html[data-hop-theme="custom"] .bd-party-detail-head,
 html[data-hop-theme="bright"] .bd-party-detail-foot,
-html[data-hop-theme="emerald"] .bd-party-detail-foot,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-foot,
 html[data-hop-theme="custom"] .bd-party-detail-foot {
   background: #FBF8F1 !important;
   border-color: #DED3BE !important;
@@ -1481,17 +1640,261 @@ html[data-hop-theme="custom"] .bd-party-detail-foot {
   background: var(--hop-c-bg-soft, #FBF8F1) !important;
   border-color: var(--hop-c-border, #DED3BE) !important;
 }
+
+/* ========== Article Master dialogs — light BD theme (not dark Nexora .modal) ========== */
+html[data-hop-theme="bright"] #am-price-history-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal,
+html[data-hop-theme="custom"] #am-price-history-modal,
+html[data-hop-theme="bright"] #am-full-edit-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-full-edit-modal,
+html[data-hop-theme="custom"] #am-full-edit-modal,
+html[data-hop-theme="bright"] #am-edit-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-edit-modal,
+html[data-hop-theme="custom"] #am-edit-modal,
+html[data-hop-theme="bright"] #am-new-category-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-new-category-modal,
+html[data-hop-theme="custom"] #am-new-category-modal {
+  background: rgba(15, 23, 42, 0.42) !important;
+  backdrop-filter: blur(8px) !important;
+}
+html[data-hop-theme="bright"] #am-price-history-modal .modal-content,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .modal-content,
+html[data-hop-theme="custom"] #am-price-history-modal .modal-content,
+html[data-hop-theme="bright"] #am-full-edit-modal .modal-content,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-full-edit-modal .modal-content,
+html[data-hop-theme="custom"] #am-full-edit-modal .modal-content,
+html[data-hop-theme="bright"] #am-edit-modal .modal-content,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-edit-modal .modal-content,
+html[data-hop-theme="custom"] #am-edit-modal .modal-content,
+html[data-hop-theme="bright"] #am-new-category-modal .modal-content,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-new-category-modal .modal-content,
+html[data-hop-theme="custom"] #am-new-category-modal .modal-content {
+  background: #ffffff !important;
+  border: 1px solid var(--hop-c-border, #DED3BE) !important;
+  color: var(--hop-c-text, #1F1F1F) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18) !important;
+  border-radius: 16px !important;
+}
+html[data-hop-theme="bright"] #am-price-history-modal .modal-content h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .modal-content h2,
+html[data-hop-theme="custom"] #am-price-history-modal .modal-content h2,
+html[data-hop-theme="bright"] #am-full-edit-modal .modal-content h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-full-edit-modal .modal-content h2,
+html[data-hop-theme="custom"] #am-full-edit-modal .modal-content h2,
+html[data-hop-theme="bright"] #am-edit-modal .modal-content h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-edit-modal .modal-content h2,
+html[data-hop-theme="custom"] #am-edit-modal .modal-content h2,
+html[data-hop-theme="bright"] #am-new-category-modal .modal-content h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-new-category-modal .modal-content h2,
+html[data-hop-theme="custom"] #am-new-category-modal .modal-content h2 {
+  color: var(--hop-c-accent-dark, #8A6D12) !important;
+  font-family: inherit !important;
+}
+html[data-hop-theme="bright"] #am-price-history-modal .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .subtitle,
+html[data-hop-theme="custom"] #am-price-history-modal .subtitle,
+html[data-hop-theme="bright"] #am-full-edit-modal .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-full-edit-modal .subtitle,
+html[data-hop-theme="custom"] #am-full-edit-modal .subtitle,
+html[data-hop-theme="bright"] #am-edit-modal .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-edit-modal .subtitle,
+html[data-hop-theme="custom"] #am-edit-modal .subtitle,
+html[data-hop-theme="bright"] #am-new-category-modal .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-new-category-modal .subtitle,
+html[data-hop-theme="custom"] #am-new-category-modal .subtitle {
+  color: var(--hop-c-muted, #4A4338) !important;
+}
+html[data-hop-theme="bright"] #am-price-history-modal .form-group label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .form-group label,
+html[data-hop-theme="custom"] #am-price-history-modal .form-group label,
+html[data-hop-theme="bright"] #am-full-edit-modal .form-group label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-full-edit-modal .form-group label,
+html[data-hop-theme="custom"] #am-full-edit-modal .form-group label,
+html[data-hop-theme="bright"] #am-edit-modal .form-group label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-edit-modal .form-group label,
+html[data-hop-theme="custom"] #am-edit-modal .form-group label,
+html[data-hop-theme="bright"] #am-new-category-modal .form-group label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-new-category-modal .form-group label,
+html[data-hop-theme="custom"] #am-new-category-modal .form-group label {
+  color: var(--hop-c-muted, #4A4338) !important;
+}
+html[data-hop-theme="bright"] #am-price-history-modal input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal input,
+html[data-hop-theme="custom"] #am-price-history-modal input,
+html[data-hop-theme="bright"] #am-full-edit-modal input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-full-edit-modal input,
+html[data-hop-theme="custom"] #am-full-edit-modal input,
+html[data-hop-theme="bright"] #am-edit-modal input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-edit-modal input,
+html[data-hop-theme="custom"] #am-edit-modal input,
+html[data-hop-theme="bright"] #am-new-category-modal input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-new-category-modal input,
+html[data-hop-theme="custom"] #am-new-category-modal input {
+  background: #ffffff !important;
+  color: var(--hop-c-text, #1F1F1F) !important;
+  border: 1px solid var(--hop-c-border, #DED3BE) !important;
+}
+html[data-hop-theme="bright"] #am-price-history-modal .data-table,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .data-table,
+html[data-hop-theme="custom"] #am-price-history-modal .data-table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+}
+html[data-hop-theme="bright"] #am-price-history-modal .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .data-table th,
+html[data-hop-theme="custom"] #am-price-history-modal .data-table th,
+html[data-hop-theme="bright"] #am-price-history-modal .data-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .data-table td,
+html[data-hop-theme="custom"] #am-price-history-modal .data-table td {
+  color: var(--hop-c-text, #1F1F1F) !important;
+  border-color: var(--hop-c-border, #DED3BE) !important;
+  text-align: left !important;
+  padding: 8px 10px !important;
+  vertical-align: middle;
+}
+html[data-hop-theme="bright"] #am-price-history-modal .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #am-price-history-modal .data-table th,
+html[data-hop-theme="custom"] #am-price-history-modal .data-table th {
+  color: var(--hop-c-muted, #4A4338) !important;
+  font-weight: 600 !important;
+  background: var(--hop-c-bg-soft, #FBF8F1) !important;
+}
+
+/* ========== Filled Order dialogs — Article Master-like light view ========== */
+html[data-hop-theme="bright"] #fo-detail-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal,
+html[data-hop-theme="custom"] #fo-detail-modal,
+html[data-hop-theme="bright"] #of-fo-list-modal,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal,
+html[data-hop-theme="custom"] #of-fo-list-modal {
+  background: rgba(15, 23, 42, 0.42) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .modal-content,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .modal-content,
+html[data-hop-theme="custom"] #fo-detail-modal .modal-content {
+  width: min(96vw, 1320px) !important;
+  max-height: 92vh !important;
+  border-radius: 16px !important;
+  border: 1px solid var(--hop-c-border, #DED3BE) !important;
+  background: #ffffff !important;
+  color: var(--hop-c-text, #1F1F1F) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18) !important;
+}
+
+html[data-hop-theme="bright"] #of-fo-list-modal .modal-content,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal .modal-content,
+html[data-hop-theme="custom"] #of-fo-list-modal .modal-content {
+  border-radius: 16px !important;
+  border: 1px solid var(--hop-c-border, #DED3BE) !important;
+  background: #ffffff !important;
+  color: var(--hop-c-text, #1F1F1F) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18) !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal h2,
+html[data-hop-theme="custom"] #fo-detail-modal h2,
+html[data-hop-theme="bright"] #of-fo-list-modal h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal h2,
+html[data-hop-theme="custom"] #of-fo-list-modal h2 {
+  color: var(--hop-c-text, #1F1F1F) !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .subtitle,
+html[data-hop-theme="custom"] #fo-detail-modal .subtitle,
+html[data-hop-theme="bright"] #of-fo-list-modal .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal .subtitle,
+html[data-hop-theme="custom"] #of-fo-list-modal .subtitle {
+  color: var(--hop-c-muted, #6B6254) !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .fo-detail-table-scroll,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .fo-detail-table-scroll,
+html[data-hop-theme="custom"] #fo-detail-modal .fo-detail-table-scroll {
+  max-height: 66vh !important;
+  overflow: auto !important;
+  border: 1px solid var(--hop-c-border, #DED3BE) !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .data-table,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .data-table,
+html[data-hop-theme="custom"] #fo-detail-modal .data-table,
+html[data-hop-theme="bright"] #of-fo-list-modal .data-table,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal .data-table,
+html[data-hop-theme="custom"] #of-fo-list-modal .data-table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .data-table th,
+html[data-hop-theme="custom"] #fo-detail-modal .data-table th,
+html[data-hop-theme="bright"] #of-fo-list-modal .data-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal .data-table th,
+html[data-hop-theme="custom"] #of-fo-list-modal .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--hop-c-bg-soft, #FBF8F1) !important;
+  color: var(--hop-c-muted, #4A4338) !important;
+  border-bottom: 1px solid var(--hop-c-border, #DED3BE) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .data-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .data-table td,
+html[data-hop-theme="custom"] #fo-detail-modal .data-table td,
+html[data-hop-theme="bright"] #of-fo-list-modal .data-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal .data-table td,
+html[data-hop-theme="custom"] #of-fo-list-modal .data-table td {
+  color: var(--hop-c-text, #1F1F1F) !important;
+  border-bottom: 1px solid var(--hop-c-border, #DED3BE) !important;
+  background: #ffffff !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .data-table tbody tr:hover td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .data-table tbody tr:hover td,
+html[data-hop-theme="custom"] #fo-detail-modal .data-table tbody tr:hover td,
+html[data-hop-theme="bright"] #of-fo-list-modal .data-table tbody tr:hover td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #of-fo-list-modal .data-table tbody tr:hover td,
+html[data-hop-theme="custom"] #of-fo-list-modal .data-table tbody tr:hover td {
+  background: #f8f5ee !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .fo-row-editing td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .fo-row-editing td,
+html[data-hop-theme="custom"] #fo-detail-modal .fo-row-editing td {
+  background: #fff8e6 !important;
+}
+
+html[data-hop-theme="bright"] #fo-detail-modal .fo-row-input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #fo-detail-modal .fo-row-input,
+html[data-hop-theme="custom"] #fo-detail-modal .fo-row-input {
+  width: 100%;
+  border: 1px solid var(--hop-c-border, #DED3BE);
+  background: #ffffff;
+  color: var(--hop-c-text, #1F1F1F);
+  border-radius: 8px;
+  padding: 4px 6px;
+}
 html[data-hop-theme="bright"] .bd-party-detail-head h2,
-html[data-hop-theme="emerald"] .bd-party-detail-head h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-head h2,
 html[data-hop-theme="custom"] .bd-party-detail-head h2,
 html[data-hop-theme="bright"] .bd-party-field-value,
-html[data-hop-theme="emerald"] .bd-party-field-value,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-field-value,
 html[data-hop-theme="custom"] .bd-party-field-value,
 html[data-hop-theme="bright"] .bd-party-360-head h3,
-html[data-hop-theme="emerald"] .bd-party-360-head h3,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-360-head h3,
 html[data-hop-theme="custom"] .bd-party-360-head h3,
 html[data-hop-theme="bright"] .bd-party-360-metric,
-html[data-hop-theme="emerald"] .bd-party-360-metric,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-360-metric,
 html[data-hop-theme="custom"] .bd-party-360-metric {
   color: #1F1F1F !important;
 }
@@ -1508,13 +1911,13 @@ html[data-hop-theme="custom"] .bd-party-360-metric {
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] .bd-party-detail-eyebrow,
-html[data-hop-theme="emerald"] .bd-party-detail-eyebrow,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-eyebrow,
 html[data-hop-theme="custom"] .bd-party-detail-eyebrow,
 html[data-hop-theme="bright"] .bd-party-field-label,
-html[data-hop-theme="emerald"] .bd-party-field-label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-field-label,
 html[data-hop-theme="custom"] .bd-party-field-label,
 html[data-hop-theme="bright"] .bd-party-muted,
-html[data-hop-theme="emerald"] .bd-party-muted,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-muted,
 html[data-hop-theme="custom"] .bd-party-muted {
   color: #6B6254 !important;
   opacity: 1 !important;
@@ -1530,7 +1933,7 @@ html[data-hop-theme="custom"] .bd-party-muted {
   color: var(--hop-c-muted, #6B6254) !important;
 }
 html[data-hop-theme="bright"] .bd-party-detail-close,
-html[data-hop-theme="emerald"] .bd-party-detail-close,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-close,
 html[data-hop-theme="custom"] .bd-party-detail-close {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1545,13 +1948,13 @@ html[data-hop-theme="custom"] .bd-party-detail-close {
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] .bd-party-field,
-html[data-hop-theme="emerald"] .bd-party-field,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-field,
 html[data-hop-theme="custom"] .bd-party-field,
 html[data-hop-theme="bright"] .bd-party-360-card,
-html[data-hop-theme="emerald"] .bd-party-360-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-360-card,
 html[data-hop-theme="custom"] .bd-party-360-card,
 html[data-hop-theme="bright"] .bd-party-detail-360,
-html[data-hop-theme="emerald"] .bd-party-detail-360,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-360,
 html[data-hop-theme="custom"] .bd-party-detail-360 {
   background: #ffffff !important;
   border-color: #DED3BE !important;
@@ -1568,14 +1971,27 @@ html[data-hop-theme="custom"] .bd-party-detail-360 {
   background: color-mix(in srgb, var(--hop-c-bg) 92%, #fff) !important;
   border-color: var(--hop-c-border) !important;
 }
+html[data-hop-theme="bright"] .am-rates-table th,
+html[data-hop-theme="bright"] .am-rates-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .am-rates-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .am-rates-table td,
+html[data-hop-theme="custom"] .am-rates-table th,
+html[data-hop-theme="custom"] .am-rates-table td {
+  border-bottom-color: rgba(15, 23, 42, 0.08);
+}
+html[data-hop-theme="bright"] .am-rates-table .am-rate-old,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .am-rates-table .am-rate-old,
+html[data-hop-theme="custom"] .am-rates-table .am-rate-old {
+  color: #64748b;
+}
 html[data-hop-theme="bright"] .bd-party-action-wa,
-html[data-hop-theme="emerald"] .bd-party-action-wa,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-action-wa,
 html[data-hop-theme="custom"] .bd-party-action-wa {
   background: rgba(37, 211, 102, 0.12) !important;
   border-color: rgba(22, 163, 74, 0.35) !important;
   color: #15803d !important;
 }
-html[data-hop-theme="emerald"] .bd-party-detail-foot .btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-foot .btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
@@ -1591,7 +2007,7 @@ html[data-hop-theme="custom"] .bd-party-detail-foot .btn-primary {
   color: #ffffff !important;
 }
 html[data-hop-theme="bright"] .bd-party-detail-foot .btn-secondary,
-html[data-hop-theme="emerald"] .bd-party-detail-foot .btn-secondary,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-detail-foot .btn-secondary,
 html[data-hop-theme="custom"] .bd-party-detail-foot .btn-secondary {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1606,7 +2022,7 @@ html[data-hop-theme="custom"] .bd-party-detail-foot .btn-secondary {
   color: var(--hop-c-text) !important;
 }
 html[data-hop-theme="bright"] .bd-party-360-list,
-html[data-hop-theme="emerald"] .bd-party-360-list,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .bd-party-360-list,
 html[data-hop-theme="custom"] .bd-party-360-list {
   color: #1F1F1F !important;
   opacity: 0.88 !important;
@@ -1625,12 +2041,12 @@ html[data-hop-theme="custom"] .bd-party-360-list {
 
 /* Page shell: kill hardcoded dark gradients */
 html[data-hop-theme="bright"] #cloud-hub-workspace.cloud-hub-shell,
-html[data-hop-theme="emerald"] #cloud-hub-workspace.cloud-hub-shell,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace.cloud-hub-shell,
 html[data-hop-theme="custom"] #cloud-hub-workspace.cloud-hub-shell {
   background: transparent !important;
   color: inherit !important;
 }
-html[data-hop-theme="emerald"] #cloud-hub-workspace.cloud-hub-shell {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace.cloud-hub-shell {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
 }
@@ -1645,14 +2061,14 @@ html[data-hop-theme="custom"] #cloud-hub-workspace.cloud-hub-shell {
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-header h2,
 html[data-hop-theme="bright"] #cloud-hub-workspace .workspace-header h2,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-header h2,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .workspace-header h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-header h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .workspace-header h2,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-header h2,
 html[data-hop-theme="custom"] #cloud-hub-workspace .workspace-header h2 {
   color: inherit !important;
 }
-html[data-hop-theme="emerald"] #cloud-hub-workspace .workspace-breadcrumb,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .workspace-breadcrumb,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .subtitle,
 html[data-hop-theme="bright"] #cloud-hub-workspace .workspace-breadcrumb,
 html[data-hop-theme="bright"] #cloud-hub-workspace .subtitle,
 html[data-hop-theme="custom"] #cloud-hub-workspace .workspace-breadcrumb,
@@ -1671,8 +2087,8 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .subtitle {
 /* Cards: light surfaces */
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-drive-card,
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-main,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-drive-card,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-main,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-drive-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-main,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-drive-card,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-main {
   background: #ffffff !important;
@@ -1695,14 +2111,14 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-main {
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-drive-brand h3,
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-toolbar h3,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-drive-brand h3,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-toolbar h3,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-drive-brand h3,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-toolbar h3,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-drive-brand h3,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-toolbar h3 {
   color: inherit !important;
 }
 
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-status {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-status {
   color: #1F6B54 !important;
 }
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-status {
@@ -1715,9 +2131,9 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-status {
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-info,
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-hint,
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-toolbar p,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-info,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-hint,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-toolbar p,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-info,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-hint,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-toolbar p,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-info,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-hint,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-toolbar p {
@@ -1735,7 +2151,7 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-toolbar p {
 }
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-meter,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-meter,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-meter,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-meter {
   background: rgba(18, 60, 50, 0.08) !important;
   border-color: #DED3BE !important;
@@ -1744,7 +2160,7 @@ html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-meter {
   background: rgba(15, 39, 68, 0.08) !important;
   border-color: #e2e8f0 !important;
 }
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-meter-fill {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-meter-fill {
   background: linear-gradient(90deg, #123C32, #C9A227) !important;
 }
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-meter-fill {
@@ -1755,7 +2171,7 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-meter-fill {
 }
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-toolbar,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-toolbar,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-toolbar,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-toolbar {
   border-bottom-color: #DED3BE !important;
 }
@@ -1767,7 +2183,7 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-toolbar {
 }
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-search input,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-search input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-search input,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-search input {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
@@ -1786,7 +2202,7 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-search input {
 
 /* File table — readable on light cards */
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-files-table thead th,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-files-table thead th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-files-table thead th,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-files-table thead th {
   background: #123C32 !important;
   color: #F8F4EA !important;
@@ -1801,13 +2217,13 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-files-table thead 
 }
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-file-row td,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-file-row td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-file-row td,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-file-row td,
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-file-name,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-file-name,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-file-name,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-file-name,
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-file-name > span,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-file-name > span,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-file-name > span,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-file-name > span {
   color: #1F1F1F !important;
   background: #ffffff !important;
@@ -1825,7 +2241,7 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-file-name > span {
 }
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-file-row:hover td,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-file-row:hover td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-file-row:hover td,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-file-row:hover td {
   background: rgba(201, 162, 39, 0.12) !important;
 }
@@ -1837,7 +2253,7 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-file-row:hover td 
 }
 
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-empty-row td,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-empty-row td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-empty-row td,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-empty-row td {
   color: #6B6254 !important;
   background: #F8F4EA !important;
@@ -1849,25 +2265,25 @@ html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-empty-row td {
 
 /* Type pills stay colorful but readable on light rows */
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-type-pill.is-sheet,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-type-pill.is-sheet,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-type-pill.is-sheet,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-type-pill.is-sheet {
   background: rgba(22, 163, 74, 0.14) !important;
   color: #15803d !important;
 }
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-type-pill.is-pdf,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-type-pill.is-pdf,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-type-pill.is-pdf,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-type-pill.is-pdf {
   background: rgba(220, 38, 38, 0.12) !important;
   color: #b91c1c !important;
 }
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-type-pill.is-audio,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-type-pill.is-audio,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-type-pill.is-audio,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-type-pill.is-audio {
   background: rgba(147, 51, 234, 0.12) !important;
   color: #7e22ce !important;
 }
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-type-pill.is-folder,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-type-pill.is-folder,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-type-pill.is-folder,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-type-pill.is-folder {
   background: rgba(201, 162, 39, 0.18) !important;
   color: #92650a !important;
@@ -1877,13 +2293,13 @@ html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-type-pill.is-folde
   color: #0f766e !important;
 }
 html[data-hop-theme="bright"] #cloud-hub-workspace .cloud-hub-file-icon,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .cloud-hub-file-icon,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .cloud-hub-file-icon,
 html[data-hop-theme="custom"] #cloud-hub-workspace .cloud-hub-file-icon {
   background: rgba(18, 60, 50, 0.08) !important;
 }
 
 /* Buttons */
-html[data-hop-theme="emerald"] #cloud-hub-workspace .btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
@@ -1899,7 +2315,7 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .btn-primary {
   color: #ffffff !important;
 }
 html[data-hop-theme="bright"] #cloud-hub-workspace .btn-secondary,
-html[data-hop-theme="emerald"] #cloud-hub-workspace .btn-secondary,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #cloud-hub-workspace .btn-secondary,
 html[data-hop-theme="custom"] #cloud-hub-workspace .btn-secondary {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
@@ -1916,13 +2332,13 @@ html[data-hop-theme="custom"] #cloud-hub-workspace .btn-secondary {
 
 /* Shared workspace chrome (Order Desk shells, Target, Settings cards, etc.) */
 html[data-hop-theme="bright"] body.bd-hop-ui .workspace-shell .card-highlight,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .card-highlight,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .card-highlight,
 html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell .card-highlight,
 html[data-hop-theme="bright"] body.bd-hop-ui .workspace-shell .metric-card,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .metric-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .metric-card,
 html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell .metric-card,
 html[data-hop-theme="bright"] body.bd-hop-ui .workspace-shell .executive-panel,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .executive-panel,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .executive-panel,
 html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell .executive-panel {
   background: #ffffff !important;
   border-color: #DED3BE !important;
@@ -1943,10 +2359,10 @@ html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell .executive-panel {
 }
 
 html[data-hop-theme="bright"] body.bd-hop-ui .workspace-shell .subtitle,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .subtitle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .subtitle,
 html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell .subtitle,
 html[data-hop-theme="bright"] body.bd-hop-ui .workspace-shell .workspace-breadcrumb,
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell .workspace-breadcrumb,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell .workspace-breadcrumb,
 html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell .workspace-breadcrumb {
   color: #6B6254 !important;
 }
@@ -1961,7 +2377,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell .workspace-breadcr
 
 /* Override dark shell gradient from nexora-theme for themed BD modules */
 html[data-hop-theme="bright"] body.bd-hop-ui .workspace-shell:not(.hidden),
-html[data-hop-theme="emerald"] body.bd-hop-ui .workspace-shell:not(.hidden),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui .workspace-shell:not(.hidden),
 html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell:not(.hidden) {
   background-image: none !important;
   box-shadow: none !important;
@@ -1970,7 +2386,7 @@ html[data-hop-theme="custom"] body.bd-hop-ui .workspace-shell:not(.hidden) {
 
 /* Article Master — was forced near-black; paint with active theme */
 html[data-hop-theme="bright"] #article-master-workspace.am-workspace:not(.hidden),
-html[data-hop-theme="emerald"] #article-master-workspace.am-workspace:not(.hidden),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace.am-workspace:not(.hidden),
 html[data-hop-theme="custom"] #article-master-workspace.am-workspace:not(.hidden) {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
@@ -1984,7 +2400,7 @@ html[data-hop-theme="custom"] #article-master-workspace.am-workspace:not(.hidden
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] #article-master-workspace .bd-am-topbar,
-html[data-hop-theme="emerald"] #article-master-workspace .bd-am-topbar,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .bd-am-topbar,
 html[data-hop-theme="custom"] #article-master-workspace .bd-am-topbar {
   background: #ffffff !important;
   border-bottom: 1px solid #DED3BE !important;
@@ -2000,18 +2416,18 @@ html[data-hop-theme="custom"] #article-master-workspace .bd-am-topbar {
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] #article-master-workspace .inv-title,
-html[data-hop-theme="emerald"] #article-master-workspace .inv-title,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .inv-title,
 html[data-hop-theme="custom"] #article-master-workspace .inv-title,
 html[data-hop-theme="bright"] #article-master-workspace .bd-am-stat-chip,
-html[data-hop-theme="emerald"] #article-master-workspace .bd-am-stat-chip,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .bd-am-stat-chip,
 html[data-hop-theme="custom"] #article-master-workspace .bd-am-stat-chip,
 html[data-hop-theme="bright"] #article-master-workspace #am-list-count,
-html[data-hop-theme="emerald"] #article-master-workspace #am-list-count,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace #am-list-count,
 html[data-hop-theme="custom"] #article-master-workspace #am-list-count {
   color: inherit !important;
 }
 html[data-hop-theme="bright"] #article-master-workspace .bd-am-stat-chip,
-html[data-hop-theme="emerald"] #article-master-workspace .bd-am-stat-chip,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .bd-am-stat-chip,
 html[data-hop-theme="custom"] #article-master-workspace .bd-am-stat-chip {
   background: #F8F4EA !important;
   border-color: #DED3BE !important;
@@ -2023,7 +2439,7 @@ html[data-hop-theme="bright"] #article-master-workspace .bd-am-stat-chip {
   color: #0f172a !important;
 }
 html[data-hop-theme="bright"] #article-master-workspace .am-articles-table thead th,
-html[data-hop-theme="emerald"] #article-master-workspace .am-articles-table thead th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .am-articles-table thead th,
 html[data-hop-theme="custom"] #article-master-workspace .am-articles-table thead th {
   background: #123C32 !important;
   color: #F8F4EA !important;
@@ -2037,7 +2453,7 @@ html[data-hop-theme="custom"] #article-master-workspace .am-articles-table thead
   color: var(--hop-c-nav-text, #F8F4EA) !important;
 }
 html[data-hop-theme="bright"] #article-master-workspace .am-articles-table td,
-html[data-hop-theme="emerald"] #article-master-workspace .am-articles-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .am-articles-table td,
 html[data-hop-theme="custom"] #article-master-workspace .am-articles-table td {
   color: #1F1F1F !important;
   background: #ffffff !important;
@@ -2053,7 +2469,7 @@ html[data-hop-theme="custom"] #article-master-workspace .am-articles-table td {
   border-color: var(--hop-c-border, #DED3BE) !important;
 }
 html[data-hop-theme="bright"] #article-master-workspace .am-articles-table th:last-child,
-html[data-hop-theme="emerald"] #article-master-workspace .am-articles-table th:last-child,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .am-articles-table th:last-child,
 html[data-hop-theme="custom"] #article-master-workspace .am-articles-table th:last-child {
   background: #123C32 !important;
 }
@@ -2061,14 +2477,14 @@ html[data-hop-theme="bright"] #article-master-workspace .am-articles-table th:la
   background: #0f2744 !important;
 }
 html[data-hop-theme="bright"] #article-master-workspace .am-articles-table td.am-actions,
-html[data-hop-theme="emerald"] #article-master-workspace .am-articles-table td.am-actions,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #article-master-workspace .am-articles-table td.am-actions,
 html[data-hop-theme="custom"] #article-master-workspace .am-articles-table td.am-actions {
   background: #ffffff !important;
 }
 
 /* Customers — keep readable under light themes */
 html[data-hop-theme="bright"] body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
-html[data-hop-theme="emerald"] body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
 html[data-hop-theme="custom"] body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
@@ -2182,13 +2598,16 @@ body.bd-hop-ui #bd-left-nav .nav-item.nx-nav-item.active,
 body.bd-hop-ui #dashboard .bd-shell .nav-item.nx-nav-item.active {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
 }
-html[data-hop-theme="emerald"] body.bd-hop-ui #dashboard:not(.bd-module-mode) .left-nav.hop-nav {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #dashboard:not(.bd-module-mode) .left-nav.hop-nav,
+body.bd-hop-ui #bd-left-nav.left-nav.hop-nav {
   background: #123C32 !important;
 }
-html[data-hop-theme="bright"] body.bd-hop-ui #dashboard:not(.bd-module-mode) .left-nav.hop-nav {
+html[data-hop-theme="bright"] body.bd-hop-ui #dashboard:not(.bd-module-mode) .left-nav.hop-nav,
+html[data-hop-theme="bright"] body.bd-hop-ui #bd-left-nav.left-nav.hop-nav {
   background: #0f2744 !important;
 }
-html[data-hop-theme="custom"] body.bd-hop-ui #dashboard:not(.bd-module-mode) .left-nav.hop-nav {
+html[data-hop-theme="custom"] body.bd-hop-ui #dashboard:not(.bd-module-mode) .left-nav.hop-nav,
+html[data-hop-theme="custom"] body.bd-hop-ui #bd-left-nav.left-nav.hop-nav {
   background: var(--hop-c-sidebar) !important;
 }
 
@@ -2264,7 +2683,7 @@ body.bd-hop-ui #dashboard .content-inner.dashboard-ta-focus > #dashboard-fake-ov
 
 /* Target vs Achievement + TA widgets — light theme readable cards */
 html[data-hop-theme="bright"] #target-vs-achievement-workspace:not(.hidden),
-html[data-hop-theme="emerald"] #target-vs-achievement-workspace:not(.hidden),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #target-vs-achievement-workspace:not(.hidden),
 html[data-hop-theme="custom"] #target-vs-achievement-workspace:not(.hidden) {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
@@ -2277,15 +2696,15 @@ html[data-hop-theme="custom"] #target-vs-achievement-workspace:not(.hidden) {
   background: var(--hop-c-bg, #F8F4EA) !important;
   color: var(--hop-c-text, #1F1F1F) !important;
 }
-/* Workspace TA panels stay light; dashboard draggable widgets keep dark card chrome */
+/* Workspace TA panels stay light; dashboard draggable widgets use slim light cards (below) */
 html[data-hop-theme="bright"] #target-vs-achievement-workspace .card-highlight,
-html[data-hop-theme="emerald"] #target-vs-achievement-workspace .card-highlight,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #target-vs-achievement-workspace .card-highlight,
 html[data-hop-theme="custom"] #target-vs-achievement-workspace .card-highlight,
 html[data-hop-theme="bright"] #target-vs-achievement-workspace .executive-panel,
-html[data-hop-theme="emerald"] #target-vs-achievement-workspace .executive-panel,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #target-vs-achievement-workspace .executive-panel,
 html[data-hop-theme="custom"] #target-vs-achievement-workspace .executive-panel,
 html[data-hop-theme="bright"] .ta-playing-card-compact:not(.ta-draggable-widget),
-html[data-hop-theme="emerald"] .ta-playing-card-compact:not(.ta-draggable-widget),
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .ta-playing-card-compact:not(.ta-draggable-widget),
 html[data-hop-theme="custom"] .ta-playing-card-compact:not(.ta-draggable-widget) {
   background: #ffffff !important;
   border-color: #DED3BE !important;
@@ -2306,18 +2725,18 @@ html[data-hop-theme="custom"] .ta-playing-card-compact:not(.ta-draggable-widget)
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] #target-vs-achievement-workspace h2,
-html[data-hop-theme="emerald"] #target-vs-achievement-workspace h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #target-vs-achievement-workspace h2,
 html[data-hop-theme="custom"] #target-vs-achievement-workspace h2,
 html[data-hop-theme="bright"] .ta-playing-card-compact:not(.ta-draggable-widget) h3,
-html[data-hop-theme="emerald"] .ta-playing-card-compact:not(.ta-draggable-widget) h3,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .ta-playing-card-compact:not(.ta-draggable-widget) h3,
 html[data-hop-theme="custom"] .ta-playing-card-compact:not(.ta-draggable-widget) h3 {
   color: inherit !important;
 }
 html[data-hop-theme="bright"] #target-vs-achievement-workspace table th,
-html[data-hop-theme="emerald"] #target-vs-achievement-workspace table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #target-vs-achievement-workspace table th,
 html[data-hop-theme="custom"] #target-vs-achievement-workspace table th,
 html[data-hop-theme="bright"] .ta-playing-card-compact:not(.ta-draggable-widget) table th,
-html[data-hop-theme="emerald"] .ta-playing-card-compact:not(.ta-draggable-widget) table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .ta-playing-card-compact:not(.ta-draggable-widget) table th,
 html[data-hop-theme="custom"] .ta-playing-card-compact:not(.ta-draggable-widget) table th {
   background: #123C32 !important;
   color: #F8F4EA !important;
@@ -2328,10 +2747,10 @@ html[data-hop-theme="bright"] .ta-playing-card-compact:not(.ta-draggable-widget)
   color: #ffffff !important;
 }
 html[data-hop-theme="bright"] #target-vs-achievement-workspace table td,
-html[data-hop-theme="emerald"] #target-vs-achievement-workspace table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #target-vs-achievement-workspace table td,
 html[data-hop-theme="custom"] #target-vs-achievement-workspace table td,
 html[data-hop-theme="bright"] .ta-playing-card-compact:not(.ta-draggable-widget) table td,
-html[data-hop-theme="emerald"] .ta-playing-card-compact:not(.ta-draggable-widget) table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .ta-playing-card-compact:not(.ta-draggable-widget) table td,
 html[data-hop-theme="custom"] .ta-playing-card-compact:not(.ta-draggable-widget) table td {
   color: #1F1F1F !important;
   background: #ffffff !important;
@@ -2343,21 +2762,139 @@ html[data-hop-theme="bright"] .ta-playing-card-compact:not(.ta-draggable-widget)
   border-color: #e2e8f0 !important;
 }
 
-/* Keep dashboard TA/FO widgets dark even when page h2 rules force dark text */
+/* Dashboard FO/TA widgets — follow --dash-widget-* theme tokens */
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget.ta-playing-card-compact,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget.ta-playing-card-compact,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget.ta-playing-card-compact {
+  width: 340px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: unset !important;
+  border-radius: 10px !important;
+  border: 1px solid var(--dash-widget-border) !important;
+  background: var(--dash-widget-bg) !important;
+  box-shadow: 0 8px 22px var(--dash-widget-shadow) !important;
+  color: var(--dash-widget-text) !important;
+}
+html[data-hop-theme="bright"] #dashboard .dashboard-fo-widget-layer .fo-season-widget.ta-playing-card-compact,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .dashboard-fo-widget-layer .fo-season-widget.ta-playing-card-compact,
+html[data-hop-theme="custom"] #dashboard .dashboard-fo-widget-layer .fo-season-widget.ta-playing-card-compact {
+  width: 360px !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-playing-card-inner,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-playing-card-inner,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-playing-card-inner {
+  padding: 10px 10px 8px !important;
+}
 html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-playing-card-header h2,
-html[data-hop-theme="emerald"] #dashboard .ta-draggable-widget .ta-playing-card-header h2,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-playing-card-header h2,
 html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-playing-card-header h2 {
-  color: #f8fafc !important;
+  color: var(--dash-widget-text) !important;
+  font-size: 0.78rem !important;
 }
 html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-playing-card-header p,
-html[data-hop-theme="emerald"] #dashboard .ta-draggable-widget .ta-playing-card-header p,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-playing-card-header p,
 html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-playing-card-header p {
-  color: #94a3b8 !important;
+  color: var(--dash-widget-muted) !important;
+  font-size: 0.58rem !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-playing-card-footer,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-playing-card-footer,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-playing-card-footer {
+  background: transparent !important;
+  border-top: none !important;
+  padding: 4px 0 0 !important;
+  box-shadow: none !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-playing-card-table-wrap,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-playing-card-table-wrap,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-playing-card-table-wrap {
+  max-height: none !important;
+  overflow: visible !important;
+  border: 1px solid var(--dash-widget-surface-border) !important;
+  border-radius: 6px !important;
+  background: var(--dash-widget-bg-deep) !important;
+  box-shadow: none !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-excel-table-widget thead th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-excel-table-widget thead th,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-excel-table-widget thead th {
+  background: var(--dash-widget-bg-header) !important;
+  color: var(--dash-widget-accent) !important;
+  padding: 5px 8px !important;
+  font-size: 0.58rem !important;
+  white-space: nowrap !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-excel-table-widget tbody td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-excel-table-widget tbody td,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-excel-table-widget tbody td {
+  background: var(--dash-widget-bg-deep) !important;
+  color: var(--dash-widget-text) !important;
+  padding: 5px 8px !important;
+  font-size: 0.68rem !important;
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-excel-table-widget tbody tr:nth-child(even) td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-excel-table-widget tbody tr:nth-child(even) td,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-excel-table-widget tbody tr:nth-child(even) td {
+  background: var(--dash-widget-row-alt) !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-widget-details-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-widget-details-btn,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-widget-details-btn {
+  width: 100% !important;
+  border-radius: 6px !important;
+  padding: 6px 8px !important;
+  font-size: 0.62rem !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+  box-shadow: none !important;
+  background-image: none !important;
+}
+html[data-hop-theme="bright"] #dashboard #dashboard-ta-widget .ta-widget-details-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard #dashboard-ta-widget .ta-widget-details-btn,
+html[data-hop-theme="custom"] #dashboard #dashboard-ta-widget .ta-widget-details-btn {
+  background: var(--dash-widget-accent) !important;
+  border: 1px solid var(--dash-widget-accent) !important;
+  color: var(--dash-widget-accent-fg) !important;
+}
+html[data-hop-theme="bright"] #dashboard .fo-season-widget .ta-widget-details-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .fo-season-widget .ta-widget-details-btn,
+html[data-hop-theme="custom"] #dashboard .fo-season-widget .ta-widget-details-btn {
+  background: var(--dash-widget-accent) !important;
+  border: 1px solid var(--dash-widget-accent) !important;
+  color: var(--dash-widget-accent-fg) !important;
+}
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-widget-drag-handle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-widget-drag-handle,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-widget-drag-handle,
+html[data-hop-theme="bright"] #dashboard .ta-draggable-widget .ta-widget-minimize-btn,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .ta-draggable-widget .ta-widget-minimize-btn,
+html[data-hop-theme="custom"] #dashboard .ta-draggable-widget .ta-widget-minimize-btn {
+  width: 22px !important;
+  height: 22px !important;
+  border-color: var(--dash-widget-ctrl-border) !important;
+  background: var(--dash-widget-bg-deep) !important;
+  color: var(--dash-widget-accent) !important;
+}
+html[data-hop-theme="bright"] #dashboard .fo-season-widget-totals,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .fo-season-widget-totals,
+html[data-hop-theme="custom"] #dashboard .fo-season-widget-totals {
+  color: var(--dash-widget-text) !important;
+}
+html[data-hop-theme="bright"] #dashboard .fo-season-widget-totals span:last-child,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #dashboard .fo-season-widget-totals span:last-child,
+html[data-hop-theme="custom"] #dashboard .fo-season-widget-totals span:last-child {
+  color: var(--dash-widget-accent) !important;
 }
 
 /* Order Desk feature chrome on light themes */
 html[data-hop-theme="bright"] #order-desk-workspace .nx-od-feature,
-html[data-hop-theme="emerald"] #order-desk-workspace .nx-od-feature,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #order-desk-workspace .nx-od-feature,
 html[data-hop-theme="custom"] #order-desk-workspace .nx-od-feature {
   background: #ffffff !important;
   border-color: #DED3BE !important;
@@ -2412,6 +2949,16 @@ body.bd-hop-ui .hop-view-header .nx-display {
   letter-spacing: -0.02em;
   line-height: var(--bd-lh-tight);
   margin: 0;
+}
+
+/* Order Desk OF titles — same size as Article Master .inv-title (0.95rem) */
+body.bd-hop-ui #order-fulfillment-workspace .of-rail-title,
+body.bd-hop-ui #order-fulfillment-workspace .of-stage-titles .nx-display {
+  font-family: 'Sora', 'Segoe UI', system-ui, sans-serif !important;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.25 !important;
 }
 
 body.bd-hop-ui .workspace-shell .nx-text-dim,
@@ -2476,6 +3023,33 @@ body.bd-hop-ui #bd-left-nav .sidebar-brand.hop-nav-brand {
   align-items: center !important;
   min-height: 56px !important;
 }
+body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo,
+html[data-hop-theme="bright"] body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo,
+html[data-hop-theme="custom"] body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+  border-radius: 9px !important;
+}
+html[data-hop-theme="bright"] body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo {
+  --nx-spark-a: #5eead4;
+  --nx-spark-b: #0d9488;
+}
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo,
+html[data-hop-theme="custom"] body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo {
+  --nx-spark-a: var(--hop-c-accent-light, #E8D48B);
+  --nx-spark-b: var(--hop-c-accent, #C9A227);
+}
 /* Equal 6px rhythm: labels + items share same row height, no extra section margins */
 body.bd-hop-ui #bd-left-nav .hop-nav-list.nav-list,
 body.bd-hop-ui #dashboard .bd-shell .hop-nav-list.nav-list {
@@ -2507,14 +3081,14 @@ body.bd-hop-ui #dashboard .bd-shell #nav-settings-fold {
 }
 
 /* Global search dropdown — use theme accent, not default NEXORA cyan */
-html[data-hop-theme="emerald"] #global-search-modal .tab-button,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #global-search-modal .tab-button,
 html[data-hop-theme="bright"] #global-search-modal .tab-button,
 html[data-hop-theme="custom"] #global-search-modal .tab-button {
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   background: rgba(255, 255, 255, 0.04) !important;
   color: rgba(255, 255, 255, 0.78) !important;
 }
-html[data-hop-theme="emerald"] #global-search-modal .tab-button.active {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #global-search-modal .tab-button.active {
   background: rgba(201, 162, 39, 0.18) !important;
   color: #E8D48B !important;
   border-color: rgba(201, 162, 39, 0.5) !important;
@@ -2529,12 +3103,12 @@ html[data-hop-theme="custom"] #global-search-modal .tab-button.active {
   color: var(--hop-c-accent-light, #E8D48B) !important;
   border-color: var(--hop-c-accent) !important;
 }
-html[data-hop-theme="emerald"] #global-search-modal .modal-content,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #global-search-modal .modal-content,
 html[data-hop-theme="bright"] #global-search-modal .modal-content,
 html[data-hop-theme="custom"] #global-search-modal .modal-content {
   border-color: color-mix(in srgb, var(--nx-gold) 40%, transparent) !important;
 }
-html[data-hop-theme="emerald"] #global-search-modal .bd-party-detail-close,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) #global-search-modal .bd-party-detail-close,
 html[data-hop-theme="bright"] #global-search-modal .bd-party-detail-close,
 html[data-hop-theme="custom"] #global-search-modal .bd-party-detail-close {
   border-color: color-mix(in srgb, var(--nx-gold) 35%, transparent) !important;
@@ -2543,7 +3117,7 @@ html[data-hop-theme="custom"] #global-search-modal .bd-party-detail-close {
 
 /* Confirm / toast chrome — light themes use surface + accent tokens (not dark Nexora gold) */
 html[data-hop-theme="bright"] .nx-confirm-card,
-html[data-hop-theme="emerald"] .nx-confirm-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-confirm-card,
 html[data-hop-theme="custom"] .nx-confirm-card {
   border-color: var(--hop-c-border, #DED3BE) !important;
   background:
@@ -2551,24 +3125,24 @@ html[data-hop-theme="custom"] .nx-confirm-card {
   box-shadow: 0 18px 40px rgba(15, 39, 68, 0.16) !important;
 }
 html[data-hop-theme="bright"] .nx-confirm-card h3,
-html[data-hop-theme="emerald"] .nx-confirm-card h3,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-confirm-card h3,
 html[data-hop-theme="custom"] .nx-confirm-card h3 {
   color: var(--hop-c-text, #1F1F1F) !important;
 }
 html[data-hop-theme="bright"] .nx-confirm-card p,
-html[data-hop-theme="emerald"] .nx-confirm-card p,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-confirm-card p,
 html[data-hop-theme="custom"] .nx-confirm-card p {
   color: var(--hop-c-muted, #6B6254) !important;
 }
 html[data-hop-theme="bright"] .nx-confirm-actions .btn-primary,
-html[data-hop-theme="emerald"] .nx-confirm-actions .btn-primary,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-confirm-actions .btn-primary,
 html[data-hop-theme="custom"] .nx-confirm-actions .btn-primary {
   background: var(--hop-c-accent, var(--nx-gold)) !important;
   border-color: var(--hop-c-accent, var(--nx-gold)) !important;
   color: #ffffff !important;
 }
 html[data-hop-theme="bright"] .nx-confirm-backdrop,
-html[data-hop-theme="emerald"] .nx-confirm-backdrop,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-confirm-backdrop,
 html[data-hop-theme="custom"] .nx-confirm-backdrop {
   background: rgba(15, 23, 42, 0.48) !important;
 }

@@ -4,9 +4,9 @@ called but which did not exist in db.py (confirmed via a real test
 failure: `AttributeError: 'CentralizedDB' object has no attribute
 'update_master_distributor'`):
   - update_master_distributor()
-  - delete_master_distributor()
+  - delete_master_distributor()  (hard delete)
   - update_master_retailer()
-  - delete_master_retailer()
+  - delete_master_retailer()  (hard delete)
 
 Also verifies get_master_retailer() now returns the newer fields
 (contact_person, state, pincode, category, birthday, anniversary,
@@ -41,7 +41,7 @@ def test_update_master_distributor_partial_update_and_workspace_safety(tmp_path)
     assert unchanged["firm_name"] == "Updated Firm", "ws-2's blocked update should not have applied"
 
 
-def test_delete_master_distributor_is_soft_delete_and_workspace_safe(tmp_path):
+def test_delete_master_distributor_is_hard_delete_and_workspace_safe(tmp_path):
     db_path = str(tmp_path / "delete_dist.sqlite3")
     db = CentralizedDB(db_path)
 
@@ -55,7 +55,7 @@ def test_delete_master_distributor_is_soft_delete_and_workspace_safe(tmp_path):
     assert deleted is True
 
     record = db.get_master_distributor(dist_id, workspace_id="ws-1")
-    assert record["status"] == "inactive", "Delete should be a soft-delete (status=inactive), not a hard delete"
+    assert record is None, "Delete should hard-remove the distributor row"
 
 
 def test_update_master_retailer_including_distributor_reassignment(tmp_path):
@@ -84,7 +84,7 @@ def test_update_master_retailer_including_distributor_reassignment(tmp_path):
         pass
 
 
-def test_delete_master_retailer_is_soft_delete(tmp_path):
+def test_delete_master_retailer_is_hard_delete(tmp_path):
     db_path = str(tmp_path / "delete_retail.sqlite3")
     db = CentralizedDB(db_path)
 
@@ -93,7 +93,7 @@ def test_delete_master_retailer_is_soft_delete(tmp_path):
     assert deleted is True
 
     record = db.get_master_retailer(retailer_id, workspace_id="ws-1")
-    assert record["status"] == "inactive"
+    assert record is None, "Delete should hard-remove the retailer row"
 
 
 def test_get_master_retailer_includes_previously_missing_fields(tmp_path):

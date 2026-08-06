@@ -21,57 +21,103 @@ article_master_bp = Blueprint("article_master", __name__, url_prefix="/api/v1/ar
 
 DEFAULT_KEY_FIELDS = ["brand", "size"]
 
-# Exact original booking-form column layout per category (order + names as
-# they appear in the source Excel). Used by /download so a category-specific
-# export looks like the file it was uploaded from, not a generic flat table.
-# Verified against the real files: Order_sheet_AW26.xlsx (Bed),
-# AW-26_TOB_Revised_Booking_Sheet (TOB), Pillow_Booking_Sheet (TOB Pillow),
-# AW-26_Towel_Phase-2_Booking_Sheet (Bath).
+# Canonical Article Master layout — locked to user's preferred export
+# (Desktop Article_Master_All.xlsx, Aug 2026). All downloads use this order.
+# Blank/spacer columns from hand-edited Excels are ignored.
+CANONICAL_ARTICLE_MASTER_COLUMNS = [
+    "Category",
+    "Product",
+    "Brand",
+    "Size",
+    "TC",
+    "Units",
+    "BS Size",
+    "Pillow Size",
+    "Color",
+    "Pillow Stitching Style",
+    "Print Style",
+    "Blend",
+    "Packing",
+    "Bale Pack Size",
+    "MRP",
+    "AWD Mark up on Exmill",
+    "Ex-Mill",
+    "Proposed Customer Discount",
+    "Retailer Margin",
+    "PTR",
+]
+
+# Legacy name kept for older call sites; every category maps to the same layout.
 ORIGINAL_TEMPLATES = {
-    "Bed": [
-        "Brand", "TC", "Size", "Units", "BS Size", "Pillow Size", "Pillow Stitching Style",
-        "Product", "Print Style", "Bale Size", "Color", "Aug - Sep Delivery",
-        "Sep - Oct Delivery", "No of Design", "Qnty Per Color", "Qnty pre Design", "MRP",
-        "Perceived", "Selling Price", "PTR", "Retailer Margin", "AWD Mark up on Exmill",
-        "ExMill Price", "Qnty",
+    "All": list(CANONICAL_ARTICLE_MASTER_COLUMNS),
+    "Bed": list(CANONICAL_ARTICLE_MASTER_COLUMNS),
+    "TOB": list(CANONICAL_ARTICLE_MASTER_COLUMNS),
+    "Bath": list(CANONICAL_ARTICLE_MASTER_COLUMNS),
+    "Pillow": list(CANONICAL_ARTICLE_MASTER_COLUMNS),
+}
+
+# Extra header aliases when resolving a canonical export column from stored data.
+EXPORT_COLUMN_ALIASES = {
+    "bs size": ["bs size", "bedset size (cms)", "bedset size", "bed set size"],
+    "pillow size": ["pillow size", "pillow size (cms)"],
+    "bale pack size": ["bale pack size", "bale size", "bale pack sizes", "pack sizes", "pack size"],
+    "ex-mill": ["ex-mill", "exmill price", "ex mill", "ex-mill per pcs", "ex mill per pcs"],
+    "awd mark up on exmill": [
+        "awd mark up on exmill", "awd markup on exmill", "awd md", "awd mu",
+        "distributor mark up", "mark up on exmill",
     ],
-    "TOB": [
-        "Product", "Brand", "Size", "Quality", "Ply", "Print/Dyed/Weave",
-        "Dyed / Printed Option", "Print Colorways", "Weight in gram", "Bale Pack Size",
-        "MOQ Per Design / Color", "MRP", "PTR", "Ex-Mill", "Retail Mark down", "AWD MD",
-        "Booking Qnty", "Delivery Months (No. of Bales)",
+    "retailer margin": ["retailer margin", "retail mark down", "retailer md", "retailer markdown"],
+    "print style": ["print style", "print/dyed/weave", "print dyed weave"],
+    "color": ["color", "colour", "shade"],
+    "proposed customer discount": [
+        "proposed customer discount", "perceived", "perceive", "perceived margin",
     ],
-    "Bath": [
-        "SL NO", "Product", "Brand", "Shade", "Description", "Size", "Bale Pack Sizes",
-        "AWD MU", "Retailer MD", "MRP", "PTR", "Ex-Mill Per Pcs", "Qty in Bales",
-        "Delivery Date",
-    ],
-    "TOB Pillow": [
-        "Product", "Brand", "Size", "Quality", "Unit", "Print/Dyed/Weave", "Option",
-        "Weight in gram", "Bale Pack Size (No. of Bales)", "MOQ Per Design/Color", "EX-Mill",
-        "MRP", "PTR", "Retail Mark down", "AWD MD", "AWDs order in no of Bales",
+    "perceived": [
+        "proposed customer discount", "perceived", "perceive", "perceived margin",
     ],
 }
 
 
 def _resolve_export_value(article, column_name):
     """
-    For a given original-template column name, find its value on an article:
-    core fields (brand/size/mrp/...) resolve via the same alias/keyword rules
-    the parser uses, everything else is looked up in extra_attributes (which
-    stores every non-core source column under its original stripped header).
+    Resolve a canonical export column from core fields + extra_attributes.
     """
+    if amparser.is_excluded_extra_column(column_name):
+        return None
+
+    # Direct core fields for Category / Product
+    lower = str(column_name or "").strip().lower()
+    if lower == "category":
+        return article.get("category")
+    if lower == "product":
+        return article.get("product_type")
+    if lower == "size":
+        return amparser.size_display_name(article.get("size"))
+
     core_field = amparser.resolve_core_field_for_name(column_name)
     if core_field:
         return article.get(core_field)
-    stripped = column_name.strip()
-    extra = article.get("extra_attributes") or {}
-    if stripped in extra:
-        return extra[stripped]
-    for k, v in extra.items():
-        if k.strip().lower() == stripped.lower():
-            return v
-    return None
+
+    extra = amparser.strip_excluded_extra_attributes(article.get("extra_attributes") or {})
+    aliases = EXPORT_COLUMN_ALIASES.get(lower, [lower])
+    # Always try the exact column name first
+    alias_list = [column_name.strip()] + [a for a in aliases if a != lower]
+    # Also include the normalized lower forms against extra keys
+    extra_lower = {str(k).strip().lower(): v for k, v in extra.items()}
+    for alias in alias_list:
+        if alias in extra:
+            val = extra[alias]
+            break
+        hit = extra_lower.get(str(alias).strip().lower())
+        if hit is not None and hit != "":
+            val = hit
+            break
+    else:
+        return None
+
+    if lower in {"awd mark up on exmill", "retailer margin", "perceived", "proposed customer discount"}:
+        return amparser.format_percent_display(val)
+    return val
 
 
 def _sanitize_for_json(value):
@@ -273,6 +319,8 @@ def upload_article_sheet():
     #   "AUTO"        → save with per-row category detection (mixed sheets OK)
     #   "Bed"/etc     → force EVERY row into that one category
     confirmed_category = (request.form.get("confirmed_category") or "").strip()
+    season_tag = amparser.normalize_season_tag(request.form.get("season_tag"))
+    suggested_season = amparser.suggest_season_tag_from_filename(file.filename)
     conn = _get_db_connection()
 
     suffix = Path(file.filename or "upload.xlsx").suffix or ".xlsx"
@@ -285,12 +333,15 @@ def upload_article_sheet():
         with pd.ExcelFile(tmp_path) as xl:
             sheet_name = xl.sheet_names[0]
 
+        amdb.ensure_default_categories(conn, user_id, workspace_id=workspace_id)
         categories = amdb.get_all_categories(conn, user_id)
         key_fields_lookup = {c["category_name"]: c["key_fields"] for c in categories}
 
         force = None
         if confirmed_category and confirmed_category.upper() != "AUTO":
             force = confirmed_category
+            if force == "TOB Pillow":
+                force = "Pillow"
 
         articles, suggested_category, is_new_category, needs_review, category_breakdown = (
             amparser.parse_article_sheet(
@@ -299,6 +350,7 @@ def upload_article_sheet():
                 key_fields_lookup,
                 DEFAULT_KEY_FIELDS,
                 forced_category=force,
+                source_filename=file.filename,
             )
         )
         articles = amdb.apply_brand_aliases_to_articles(
@@ -313,7 +365,7 @@ def upload_article_sheet():
                 "status": "confirmation_required",
                 "message": (
                     "Each row will be saved under its own category (mixed sheets OK). "
-                    "Confirm: AUTO (recommended) or force one category (Bed/Bath/TOB/TOB Pillow)."
+                    "Confirm: AUTO (recommended) or force one category (Bed/Bath/TOB/Pillow)."
                 ),
                 "detected_category": suggested_category,
                 "category_breakdown": category_breakdown,
@@ -321,7 +373,14 @@ def upload_article_sheet():
                 "suggested_key_fields": DEFAULT_KEY_FIELDS,
                 "sample_articles": _sanitize_for_json(articles[:5]),
                 "article_count": len(articles),
+                "suggested_season_tag": suggested_season,
+                "season_tag": season_tag or suggested_season,
             }), 200
+
+        effective_season = season_tag or suggested_season
+        if effective_season:
+            for article in articles:
+                article["season_tag"] = effective_season
 
         if is_new_category:
             unknown = [
@@ -582,6 +641,20 @@ def delete_one_article(article_id):
     return jsonify({"status": "success", "deleted_id": article_id}), 200
 
 
+@article_master_bp.route("/delete-selected", methods=["POST"])
+@require_jwt_auth
+def delete_selected_articles():
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or data.get("article_ids") or []
+    if not isinstance(raw_ids, list):
+        return jsonify({"error": "ids must be a list"}), 400
+    user_id = _get_current_user_id()
+    conn = _get_db_connection()
+    deleted = amdb.delete_articles_by_ids(conn, user_id, raw_ids)
+    conn.close()
+    return jsonify({"status": "success", "deleted": deleted}), 200
+
+
 @article_master_bp.route("/delete-all", methods=["POST"])
 @require_jwt_auth
 def delete_all_user_articles():
@@ -627,6 +700,8 @@ def list_articles():
     user_id = _get_current_user_id()
     conn = _get_db_connection()
     amdb.ensure_default_brand_aliases(conn, user_id)
+    amdb.ensure_default_categories(conn, user_id, workspace_id=get_workspace_id())
+    amdb.repair_product_types_from_size(conn, user_id)
     category = request.args.get("category")
 
     if category and category != "All":
@@ -745,21 +820,34 @@ def price_history(article_id):
     return jsonify({"history": history}), 200
 
 
+@article_master_bp.route("/<int:article_id>/price-seasons", methods=["GET"])
+@require_jwt_auth
+def price_seasons(article_id):
+    """Last 3 season price snapshots (missing seasons omitted)."""
+    user_id = _get_current_user_id()
+    conn = _get_db_connection()
+    try:
+        payload = amdb.get_season_prices_last_n(conn, article_id, user_id, limit=3)
+    except ValueError as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 404
+    conn.close()
+    return jsonify(_sanitize_for_json(payload)), 200
+
+
 @article_master_bp.route("/download", methods=["GET"])
 @require_jwt_auth
 def download_articles():
     """
-    Category-wise (or 'All') export.
-
-    For a specific category (Bed/Bath/TOB/TOB Pillow), the export exactly
-    matches that category's ORIGINAL booking-form layout (same column names,
-    same order) via ORIGINAL_TEMPLATES - only columns relevant to that
-    category appear, nothing from other categories leaks in.
-
-    For 'All' (mixed categories, no single original layout applies), falls
-    back to the generic flat export: core fields + every extra_attributes
-    key that appears anywhere in the selection.
+    Category-wise (or 'All') export in canonical Article Master column order.
+    Size uses taught full names. Bed drops Color; Bath keeps Color (from Shade).
+    When season price history exists, MRP/Ex-Mill/PTR expand into season columns
+    with older seasons Excel-grouped (latest season stays visible).
     """
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
     user_id = _get_current_user_id()
     conn = _get_db_connection()
     category = request.args.get("category", "All")
@@ -769,32 +857,133 @@ def download_articles():
     else:
         articles = amdb.get_all_articles(conn, user_id)
 
-    conn.close()
-
     if not articles:
+        conn.close()
         return jsonify({"error": "No articles found for this selection"}), 404
 
-    if category in ORIGINAL_TEMPLATES:
-        columns = ORIGINAL_TEMPLATES[category]
-        rows = [
-            {col: _resolve_export_value(a, col) for col in columns}
-            for a in articles
-        ]
-        df = pd.DataFrame(rows, columns=columns)
+    # Collect last-3 seasons across the selection (union, sorted).
+    season_payloads = {}
+    all_seasons = set()
+    for a in articles:
+        payload = amdb.get_season_prices_last_n(conn, a["id"], user_id, limit=3)
+        season_payloads[a["id"]] = payload
+        for s in payload.get("seasons") or []:
+            all_seasons.add(s)
+    conn.close()
+
+    seasons_sorted = sorted(all_seasons, key=amparser.season_rank)
+    use_season_cols = len(seasons_sorted) >= 1
+
+    attr_cols = [
+        c for c in CANONICAL_ARTICLE_MASTER_COLUMNS
+        if c not in {"MRP", "Ex-Mill", "PTR"}
+    ]
+    # Split attr: before prices vs after (margins sit with latest or after seasons)
+    before_price = []
+    after_price = []
+    hit_bale = False
+    for c in attr_cols:
+        if c == "Bale Pack Size":
+            before_price.append(c)
+            hit_bale = True
+            continue
+        if not hit_bale:
+            before_price.append(c)
+        else:
+            after_price.append(c)
+
+    money_fields = [("MRP", "mrp"), ("Ex-Mill", "ex_mill_price"), ("PTR", "ptr")]
+    columns = list(before_price)
+    if use_season_cols:
+        for label, _key in money_fields:
+            for s in seasons_sorted:
+                columns.append(f"{label} ({s})")
     else:
-        rows = []
-        for a in articles:
-            row = {
-                "Category": a["category"], "Product": a["product_type"], "Brand": a["brand"],
-                "Size": a["size"], "MRP": a["mrp"], "PTR": a["ptr"], "Ex-Mill": a["ex_mill_price"],
-                "Bale Pack Size": a["bale_pack_size"], "Season": a["season_tag"],
-            }
-            row.update(a["extra_attributes"] or {})
-            rows.append(row)
-        df = pd.DataFrame(rows).dropna(axis=1, how="all")
+        columns.extend(["MRP", "Ex-Mill", "PTR"])
+    columns.extend(after_price)
+
+    rows = []
+    for a in articles:
+        row = {col: _resolve_export_value(a, col) for col in before_price + after_price}
+        if use_season_cols:
+            payload = season_payloads.get(a["id"]) or {}
+            by_field = payload.get("rows") or {}
+            for label, key in money_fields:
+                by_season = by_field.get(key) or {}
+                for s in seasons_sorted:
+                    val = by_season.get(s)
+                    if val is None and amparser.normalize_season_tag(a.get("season_tag")) == s:
+                        # fallback to article core if snapshot missing
+                        val = a.get(key)
+                    if label == "MRP" and val is not None:
+                        try:
+                            row[f"{label} ({s})"] = int(round(float(val)))
+                        except (TypeError, ValueError):
+                            row[f"{label} ({s})"] = val
+                    elif val is not None:
+                        try:
+                            row[f"{label} ({s})"] = round(float(val), 2)
+                        except (TypeError, ValueError):
+                            row[f"{label} ({s})"] = val
+                    else:
+                        row[f"{label} ({s})"] = None
+        else:
+            for label, key in money_fields:
+                val = a.get(key)
+                if label == "MRP" and val is not None:
+                    try:
+                        row[label] = int(round(float(val)))
+                    except (TypeError, ValueError):
+                        row[label] = val
+                else:
+                    row[label] = val
+        rows.append(row)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Article Master"
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+    header_font = Font(color="FFFFFF", bold=True)
+    for c_idx, h in enumerate(columns, 1):
+        cell = ws.cell(1, c_idx, h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
+
+    for r_idx, row in enumerate(rows, 2):
+        for c_idx, h in enumerate(columns, 1):
+            val = row.get(h)
+            cell = ws.cell(r_idx, c_idx, val)
+            if h.startswith("MRP") and isinstance(val, int):
+                cell.number_format = "0"
+            elif (h.startswith("Ex-Mill") or h.startswith("PTR") or h in {"Ex-Mill", "PTR"}) and isinstance(val, (int, float)):
+                cell.number_format = "0.00"
+
+    for col in ws.columns:
+        letter = col[0].column_letter
+        width = max(len(str(cell.value or "")) for cell in col[: min(80, len(col))])
+        ws.column_dimensions[letter].width = min(max(width + 2, 10), 36)
+
+    # Group older season columns; leave latest season visible (summary on right).
+    if use_season_cols and len(seasons_sorted) >= 2:
+        latest = seasons_sorted[-1]
+        ws.sheet_properties.outlinePr.summaryRight = True
+        ws.sheet_properties.outlinePr.applyStyles = True
+        for label, _key in money_fields:
+            old_idxs = [
+                i for i, h in enumerate(columns, 1)
+                if h.startswith(f"{label} (") and not h.endswith(f"({latest})")
+            ]
+            if old_idxs:
+                start = get_column_letter(min(old_idxs))
+                end = get_column_letter(max(old_idxs))
+                ws.column_dimensions.group(start, end, outline_level=1, hidden=False)
+
+    ws.auto_filter.ref = ws.dimensions
+    ws.freeze_panes = "A2"
 
     output = io.BytesIO()
-    df.to_excel(output, index=False, engine="openpyxl")
+    wb.save(output)
     output.seek(0)
 
     filename = f"Article_Master_{category.replace(' ', '_')}.xlsx"

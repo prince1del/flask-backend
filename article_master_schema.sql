@@ -53,6 +53,22 @@ CREATE INDEX IF NOT EXISTS idx_category_master_user ON category_master(user_id);
 CREATE INDEX IF NOT EXISTS idx_article_master_user_category ON article_master(user_id, category);
 CREATE INDEX IF NOT EXISTS idx_article_price_history_article ON article_price_history(article_id);
 
+-- Per-season price snapshots (last 3 seasons shown on Article Profile).
+-- Article row mrp/ptr/ex_mill_price always mirrors the latest season_tag.
+CREATE TABLE IF NOT EXISTS article_season_prices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id INTEGER NOT NULL REFERENCES article_master(id) ON DELETE CASCADE,
+    season_tag TEXT NOT NULL,
+    mrp REAL,
+    ptr REAL,
+    ex_mill_price REAL,
+    source_filename TEXT,
+    changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(article_id, season_tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_article_season_prices_article ON article_season_prices(article_id);
+
 -- Maps distributor spelling variants to one canonical brand per user.
 -- e.g. Blumen -> Bluemen so uploads never create duplicate rows.
 CREATE TABLE IF NOT EXISTS brand_aliases (

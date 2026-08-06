@@ -288,12 +288,20 @@ def build_txn_preview(
     notes = _clean(h.get("notes"))
     terms = _clean(firm.get("terms_default")) or "Thanks for doing business with us!"
 
+    from app.hop_doc_numbers import format_full_doc_number
+
+    doc_number = format_full_doc_number(
+        h.get("txn_number"),
+        txn_date=h.get("txn_date"),
+        txn_type=h.get("txn_type"),
+    )
+
     return {
         "header": {
             "id": h.get("id"),
             "source_txn_id": src_id,
             "doc_title": doc_title,
-            "doc_number": _clean(h.get("txn_number")),
+            "doc_number": doc_number,
             "doc_date": _clean(h.get("txn_date"))[:10],
             "txn_type": h.get("txn_type"),
             "status": _clean(h.get("status_text")),

@@ -1447,6 +1447,20 @@ class CentralizedDB:
         if not username or not password:
             raise ValueError("username and password are required")
 
+        from app.workspace_tenancy import resolve_workspace_id_for_new_user
+
+        # Explicit non-default workspace (seed scripts) is kept.
+        # default / empty + executive-style role → private silo per login.
+        explicit = (workspace_id or "").strip()
+        if explicit and explicit != "default":
+            resolved_workspace = explicit
+        else:
+            resolved_workspace = resolve_workspace_id_for_new_user(
+                username,
+                role,
+                None,
+            )
+
         with sqlite3.connect(self.db_path) as conn:
             existing = conn.execute(
                 "SELECT id FROM users WHERE username = ?", (username,)
@@ -1458,13 +1472,100 @@ class CentralizedDB:
             created_at = datetime.now(timezone.utc).isoformat()
             cursor = conn.execute(
                 "INSERT INTO users (username, password_hash, created_at, role, workspace_id, status) VALUES (?, ?, ?, ?, ?, ?)",
-                (username, password_hash, created_at, role, workspace_id, "active"),
+                (username, password_hash, created_at, role, resolved_workspace, "active"),
             )
             return {
                 "id": cursor.lastrowid,
                 "username": username,
                 "created_at": created_at,
+                "workspace_id": resolved_workspace,
+                "role": role,
             }
+
+    _DEFAULT_UI_THEME = "emerald"
+    _KNOWN_UI_THEMES = frozenset({
+        "bright", "emerald", "custom",
+        "royal_navy", "burgundy_antique", "black_soft_gold", "deep_teal_brass",
+        "chocolate_gold", "plum_rose", "olive_brass", "midnight_copper",
+    })
+
+    @classmethod
+    def _normalize_ui_theme(cls, theme_id: str | None) -> str:
+        """Normalize unknown UI themes to default."""
+        t = (theme_id or cls._DEFAULT_UI_THEME).strip() or cls._DEFAULT_UI_THEME
+        if t not in cls._KNOWN_UI_THEMES:
+            return cls._DEFAULT_UI_THEME
+        return t
+
+    def get_user_ui_theme(self, user_id: int | None) -> dict[str, Any]:
+        """Return per-login UI theme. Empty theme means caller should use default."""
+        if user_id is None:
+            return {"theme": self._DEFAULT_UI_THEME, "custom_colors": None}
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_ui_preferences (
+                    user_id INTEGER PRIMARY KEY,
+                    theme_id TEXT NOT NULL DEFAULT 'emerald',
+                    custom_colors_json TEXT,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                )
+                """
+            )
+            row = conn.execute(
+                "SELECT theme_id, custom_colors_json FROM user_ui_preferences WHERE user_id = ?",
+                (int(user_id),),
+            ).fetchone()
+        if not row:
+            return {"theme": self._DEFAULT_UI_THEME, "custom_colors": None, "saved": False}
+        colors = None
+        if row[1]:
+            try:
+                colors = json.loads(row[1])
+            except Exception:
+                colors = None
+        theme = self._normalize_ui_theme(row[0])
+        return {"theme": theme, "custom_colors": colors, "saved": True}
+
+    def set_user_ui_theme(
+        self,
+        user_id: int,
+        theme_id: str,
+        custom_colors: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        raw = (theme_id or self._DEFAULT_UI_THEME).strip() or self._DEFAULT_UI_THEME
+        if raw not in self._KNOWN_UI_THEMES:
+            raise ValueError("Unknown theme")
+        theme = raw
+        colors_json = None
+        if isinstance(custom_colors, dict):
+            colors_json = json.dumps(custom_colors)
+        updated_at = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_ui_preferences (
+                    user_id INTEGER PRIMARY KEY,
+                    theme_id TEXT NOT NULL DEFAULT 'emerald',
+                    custom_colors_json TEXT,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO user_ui_preferences (user_id, theme_id, custom_colors_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    theme_id = excluded.theme_id,
+                    custom_colors_json = excluded.custom_colors_json,
+                    updated_at = excluded.updated_at
+                """,
+                (int(user_id), theme, colors_json, updated_at),
+            )
+        return self.get_user_ui_theme(user_id)
 
     def authenticate_user(self, username: str, password: str) -> bool:
         username = (username or "").strip()
@@ -1505,6 +1606,17 @@ class CentralizedDB:
                     role TEXT NOT NULL DEFAULT 'unassigned',
                     workspace_id TEXT NOT NULL DEFAULT 'default',
                     status TEXT NOT NULL DEFAULT 'active'
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_ui_preferences (
+                    user_id INTEGER PRIMARY KEY,
+                    theme_id TEXT NOT NULL DEFAULT 'emerald',
+                    custom_colors_json TEXT,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id)
                 )
                 """
             )
@@ -6057,6 +6169,12 @@ class CentralizedDB:
                     if any(t in str(row.get("content", "")).lower() for t in lowered_terms)
                 ]
                 continue
+            # Article Master SQL already matches brand aliases + extra_attributes.
+            # Post-filter fields omit those, so re-filtering would drop valid hits
+            # (e.g. search "bluman" → brand "Bluemen", or "digital" → Print Style).
+            if category == "article_master":
+                filtered[category] = list(rows)
+                continue
             filtered[category] = [
                 row
                 for row in rows
@@ -8725,19 +8843,18 @@ class CentralizedDB:
 
     def delete_master_distributor(self, distributor_id: int, workspace_id: str) -> bool:
         """
-        Soft delete (status='inactive') - the record and its history stay
-        in the database (referenced by past orders/invoices/etc.), it's just
-        excluded from active-distributor listings going forward. Matches
-        the same soft-delete convention used elsewhere in this codebase
-        (e.g. party status handling).
-
-        Workspace-scoped, same cross-tenant rule as update_master_distributor.
-        Returns True if a row was found and updated, False otherwise.
+        Hard-delete a master distributor from this workspace.
+        Linked master retailers keep their rows; distributor_id is cleared.
+        Returns True if a row was deleted, False otherwise.
         """
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE master_retailers SET distributor_id = NULL "
+                "WHERE distributor_id = ? AND workspace_id = ?",
+                (distributor_id, workspace_id),
+            )
             cursor = conn.execute(
-                "UPDATE master_distributors SET status = 'inactive' "
-                "WHERE id = ? AND workspace_id = ?",
+                "DELETE FROM master_distributors WHERE id = ? AND workspace_id = ?",
                 (distributor_id, workspace_id),
             )
             return cursor.rowcount > 0
@@ -8782,8 +8899,10 @@ class CentralizedDB:
                 FROM master_distributors
                 """
         if workspace_id:
-            query += " WHERE workspace_id = ?"
+            query += " WHERE workspace_id = ? AND IFNULL(status, 'active') != 'inactive'"
             params.append(workspace_id)
+        else:
+            query += " WHERE IFNULL(status, 'active') != 'inactive'"
         query += " ORDER BY id DESC LIMIT ?"
         params.append(safe_limit)
         with sqlite3.connect(self.db_path) as conn:
@@ -8875,8 +8994,10 @@ class CentralizedDB:
                 FROM master_retailers
                 """
         if workspace_id:
-            query += " WHERE workspace_id = ?"
+            query += " WHERE workspace_id = ? AND IFNULL(status, 'active') != 'inactive'"
             params.append(workspace_id)
+        else:
+            query += " WHERE IFNULL(status, 'active') != 'inactive'"
         query += " ORDER BY id DESC LIMIT ?"
         params.append(safe_limit)
         with sqlite3.connect(self.db_path) as conn:
@@ -9109,11 +9230,10 @@ class CentralizedDB:
         return self.get_master_retailer(retailer_id, workspace_id=workspace_id)
 
     def delete_master_retailer(self, retailer_id: int, workspace_id: str) -> bool:
-        """Soft delete, same convention as delete_master_distributor()."""
+        """Hard-delete a master retailer from this workspace."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
-                "UPDATE master_retailers SET status = 'inactive' "
-                "WHERE id = ? AND workspace_id = ?",
+                "DELETE FROM master_retailers WHERE id = ? AND workspace_id = ?",
                 (retailer_id, workspace_id),
             )
             return cursor.rowcount > 0

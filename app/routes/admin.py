@@ -102,13 +102,23 @@ def create_user():
         
         if existing:
             return jsonify({'success': False, 'data': None, 'message': 'Username or email already exists'}), 409
-        
+
+        from app.workspace_tenancy import resolve_workspace_id_for_new_user
+
+        # Each executive login gets a private data silo unless admin shares one.
+        workspace_id = resolve_workspace_id_for_new_user(
+            username,
+            role,
+            data.get('workspace_id'),
+        )
+
         # Create new user
         user = User(
             username=username,
             email=email,
             role=role,
-            status='active'
+            status='active',
+            workspace_id=workspace_id,
         )
         user.set_password(password)
         
@@ -121,7 +131,7 @@ def create_user():
             action='user_created',
             resource_type='user',
             resource_id=user.id,
-            details=f'User {username} created'
+            details=f'User {username} created (workspace={workspace_id})'
         )
         db.session.add(audit)
         db.session.commit()
@@ -129,7 +139,7 @@ def create_user():
         return jsonify({
             'success': True,
             'data': user.to_dict(),
-            'message': f'User {username} created successfully'
+            'message': f'User {username} created successfully with private data space {workspace_id}'
         }), 201
     
     except Exception as e:
@@ -179,6 +189,11 @@ def update_user(user_id):
             user.status = data['status']
         if 'password' in data and data['password']:
             user.set_password(data['password'])
+        if 'workspace_id' in data and data['workspace_id'] is not None:
+            ws = str(data['workspace_id']).strip()
+            if not ws:
+                return jsonify({'success': False, 'data': None, 'message': 'workspace_id cannot be empty'}), 400
+            user.workspace_id = ws
         
         user.updated_at = datetime.now(timezone.utc)
         db.session.commit()

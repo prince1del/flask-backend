@@ -20,14 +20,14 @@ def _seed_article_master(db_path, user_id=2):
         user_id,
         {
             "category": "Bed",
-            "brand": "Bluman",
+            "brand": "Blumen",
             "size": "DB BS",
             "product_type": "Sheet Sets",
             "mrp": 1299,
             "ptr": 866,
             "ex_mill_price": 733.9,
             "bale_pack_size": 18,
-            "item_key": "BLUMAN|104|DB BS",
+            "item_key": "BLUMEN|104|DB BS",
             "extra_attributes": {"TC": "104", "Print Style": "Digital"},
         },
     )
@@ -42,7 +42,7 @@ def test_global_search_finds_article_master_by_brand(tmp_path):
     results = db.global_search("bluman", user_id=2)
     rows = results["results"]["article_master"]
     assert len(rows) == 1
-    assert rows[0]["brand"] == "Bluman"
+    assert rows[0]["brand"] == "Blumen"
 
 
 def test_global_search_finds_article_master_via_brand_alias(tmp_path):
@@ -53,7 +53,7 @@ def test_global_search_finds_article_master_via_brand_alias(tmp_path):
     results = db.global_search("bluemen", user_id=2)
     rows = results["results"]["article_master"]
     assert len(rows) == 1
-    assert rows[0]["brand"] == "Bluman"
+    assert rows[0]["brand"] == "Blumen"
 
 
 def test_global_search_finds_article_master_by_print_style(tmp_path):
@@ -64,4 +64,4 @@ def test_global_search_finds_article_master_by_print_style(tmp_path):
     results = db.global_search("digital", user_id=2)
     rows = results["results"]["article_master"]
     assert len(rows) == 1
-    assert rows[0]["item_key"] == "BLUMAN|104|DB BS"
+    assert rows[0]["item_key"] == "BLUMEN|104|DB BS"

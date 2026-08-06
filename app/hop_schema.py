@@ -44,7 +44,7 @@ LEAD_STAGES = [
     "lost",
 ]
 
-# New CRM Deal pipeline — stepwise unlock (Phase 1+)
+# New CRM Deal pipeline — stepwise unlock (Phase 1 legacy fine-grain steps)
 DEAL_STEPS = [
     {"id": "lead", "label": "Lead received", "optional": False},
     {"id": "contacting", "label": "Call / Mail / Message / Visit", "optional": False},
@@ -67,6 +67,89 @@ DEAL_STEPS = [
 ]
 
 DEAL_STEP_IDS = [s["id"] for s in DEAL_STEPS]
+
+# Phase 1 Deal CRM — 8 visible pipeline stages (user-facing)
+DEAL_STAGES = [
+    {"id": "new", "label": "New", "order": 1},
+    {"id": "connect", "label": "Connect", "order": 2},
+    {"id": "discover", "label": "Discover", "order": 3},
+    {"id": "quote", "label": "Quote", "order": 4},
+    {"id": "confirm", "label": "Confirm", "order": 5},
+    {"id": "fulfil", "label": "Fulfil", "order": 6},
+    {"id": "collect", "label": "Collect", "order": 7},
+    {"id": "closed", "label": "Closed", "order": 8},
+]
+DEAL_STAGE_IDS = [s["id"] for s in DEAL_STAGES]
+
+# Side-exit / non-pipeline statuses (status column)
+DEAL_PIPELINE_STATUSES = {"open", "won"}  # open = in pipeline; won when closed stage complete
+DEAL_SIDE_STATUSES = {
+    "lost",
+    "on_hold",
+    "cancelled",
+    "disputed",
+    "written_off",
+}
+
+# Map legacy 18-step index → 8-stage id
+LEGACY_STEP_TO_STAGE = {
+    "lead": "new",
+    "contacting": "connect",
+    "appointment": "connect",
+    "discovery": "discover",
+    "cataloging": "discover",
+    "quotation": "quote",
+    "negotiation": "quote",
+    "po_received": "confirm",
+    "advance": "confirm",
+    "vendor_order": "fulfil",
+    "inbound": "fulfil",
+    "godown": "fulfil",
+    "repack": "fulfil",
+    "outbound": "fulfil",
+    "delivered": "fulfil",
+    "installation": "fulfil",
+    "collection": "collect",
+    "closed": "closed",
+}
+
+# Pre-PO loss reasons / post-PO cancellation taxonomy
+DEAL_LOSS_REASONS_PRE_PO = [
+    "not_interested",
+    "price_issue",
+    "competitor_selected",
+    "no_response",
+    "project_postponed",
+    "duplicate_enquiry",
+    "invalid_enquiry",
+]
+DEAL_CANCEL_REASONS_POST_PO = [
+    "cancelled_by_customer",
+    "cancelled_internally",
+    "partially_cancelled",
+    "on_hold",
+    "disputed",
+    "bad_debt",
+    "written_off",
+]
+
+DEAL_ACTIVITY_TYPES = [
+    "call",
+    "whatsapp",
+    "email",
+    "visit",
+    "appointment",
+    "requirement_meeting",
+    "measurement_visit",
+    "sample_approval_visit",
+    "installation_visit",
+    "payment_follow_up",
+    "internal_note",
+    "document_sent",
+    "quotation_sent",
+]
+
+DEAL_HEALTH_VALUES = ("healthy", "needs_attention", "at_risk", "critical")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
@@ -701,6 +784,49 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ON hop_commission_entries(workspace_id, invoice_date DESC)
             """
         )
+        for col, ddl in (
+            ("agent_name", "TEXT"),
+            ("paid_on", "TEXT"),
+            ("agent_party_id", "INTEGER"),
+            ("agent_party_type", "TEXT"),
+            ("expense_source_txn_id", "INTEGER"),
+            ("expense_txn_number", "TEXT"),
+            ("expense_line_no", "INTEGER"),
+            ("origin", "TEXT"),
+            ("payment_status", "TEXT"),
+        ):
+            _ensure_column(conn, "hop_commission_entries", col, ddl)
+        try:
+            # Heal legacy rows: expense-linked or dated → paid; else unpaid
+            conn.execute(
+                """
+                UPDATE hop_commission_entries
+                SET payment_status = CASE
+                  WHEN payment_status IS NOT NULL AND TRIM(payment_status) != '' THEN lower(payment_status)
+                  WHEN expense_source_txn_id IS NOT NULL THEN 'paid'
+                  WHEN paid_on IS NOT NULL AND TRIM(paid_on) != '' THEN 'paid'
+                  ELSE 'unpaid'
+                END
+                WHERE payment_status IS NULL OR TRIM(payment_status) = ''
+                """
+            )
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_hop_commission_ws_agent
+                ON hop_commission_entries(workspace_id, agent_name, invoice_date DESC)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_hop_commission_ws_expense
+                ON hop_commission_entries(workspace_id, expense_source_txn_id, expense_line_no)
+                """
+            )
+        except Exception:
+            pass
 
         conn.executescript(
             """
@@ -749,6 +875,193 @@ def ensure_hop_schema(db_path: str | Path) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_hop_deal_events_deal
             ON hop_deal_events(workspace_id, deal_id, id DESC);
+
+            CREATE TABLE IF NOT EXISTS hop_deal_stage_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                deal_id INTEGER NOT NULL,
+                from_stage TEXT,
+                to_stage TEXT NOT NULL,
+                from_status TEXT,
+                to_status TEXT,
+                reason TEXT,
+                changed_by TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(deal_id) REFERENCES hop_deals(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hop_deal_stage_hist
+            ON hop_deal_stage_history(workspace_id, deal_id, id DESC);
+
+            CREATE TABLE IF NOT EXISTS hop_deal_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                deal_id INTEGER NOT NULL,
+                product_category TEXT,
+                product_description TEXT,
+                catalogue TEXT,
+                design_code TEXT,
+                colour TEXT,
+                qty REAL DEFAULT 0,
+                unit TEXT,
+                room_area TEXT,
+                notes TEXT,
+                line_status TEXT DEFAULT 'pending',
+                sort_order INTEGER DEFAULT 0,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(deal_id) REFERENCES hop_deals(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hop_deal_lines_deal
+            ON hop_deal_lines(workspace_id, deal_id, sort_order);
+
+            CREATE TABLE IF NOT EXISTS hop_deal_activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                deal_id INTEGER NOT NULL,
+                activity_type TEXT NOT NULL,
+                activity_at TEXT NOT NULL,
+                performed_by TEXT,
+                contact_person TEXT,
+                outcome TEXT,
+                related_stage TEXT,
+                note TEXT,
+                next_action_type TEXT,
+                next_action_due TEXT,
+                no_follow_up INTEGER DEFAULT 0,
+                attachment_name TEXT,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(deal_id) REFERENCES hop_deals(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hop_deal_activities_deal
+            ON hop_deal_activities(workspace_id, deal_id, activity_at DESC);
+
+            CREATE TABLE IF NOT EXISTS hop_deal_appointments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                deal_id INTEGER NOT NULL,
+                title TEXT,
+                scheduled_at TEXT NOT NULL,
+                location TEXT,
+                appt_status TEXT NOT NULL DEFAULT 'scheduled',
+                outcome TEXT,
+                notes TEXT,
+                created_by TEXT,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(deal_id) REFERENCES hop_deals(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hop_deal_appts_deal
+            ON hop_deal_appointments(workspace_id, deal_id, scheduled_at);
+
+            CREATE TABLE IF NOT EXISTS hop_deal_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                deal_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                field_name TEXT,
+                old_value TEXT,
+                new_value TEXT,
+                reason TEXT,
+                actor TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(deal_id) REFERENCES hop_deals(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hop_deal_audit
+            ON hop_deal_audit_log(workspace_id, deal_id, id DESC);
+            """
+        )
+
+        # Deal CRM v2 additive columns + migrate legacy 18-step → 8-stage
+        for col, ddl in (
+            ("current_stage", "TEXT DEFAULT 'new'"),
+            ("current_sub_status", "TEXT"),
+            ("deal_health", "TEXT DEFAULT 'healthy'"),
+            ("priority", "TEXT DEFAULT 'normal'"),
+            ("expected_close_date", "TEXT"),
+            ("product_category", "TEXT"),
+            ("next_action_type", "TEXT"),
+            ("next_action_owner", "TEXT"),
+            ("next_action_due", "TEXT"),
+            ("next_action_note", "TEXT"),
+            ("no_action_until", "TEXT"),
+            ("created_by", "TEXT"),
+            ("deleted_at", "TEXT"),
+            ("legacy_step", "TEXT"),
+            ("requirement_summary", "TEXT"),
+            ("loss_reason_code", "TEXT"),
+            ("cancel_reason_code", "TEXT"),
+            ("side_exit_remarks", "TEXT"),
+            ("side_exit_at", "TEXT"),
+            ("competitor", "TEXT"),
+            ("revival_date", "TEXT"),
+        ):
+            _ensure_column(conn, "hop_deals", col, ddl)
+
+        try:
+            all_deals = conn.execute(
+                "SELECT id, current_step, current_stage, status, legacy_step FROM hop_deals"
+            ).fetchall()
+            valid_stages = {
+                "new", "connect", "discover", "quote", "confirm", "fulfil", "collect", "closed"
+            }
+            for r in all_deals:
+                rid = r[0]
+                step = (r[1] or "lead").strip()
+                stage = (r[2] or "").strip()
+                legacy = r[4]
+                mapped = LEGACY_STEP_TO_STAGE.get(step, "new")
+                if not stage or stage not in valid_stages:
+                    conn.execute(
+                        """
+                        UPDATE hop_deals
+                        SET current_stage=?, legacy_step=COALESCE(NULLIF(legacy_step,''), ?)
+                        WHERE id=?
+                        """,
+                        (mapped, step, rid),
+                    )
+                elif not legacy:
+                    conn.execute(
+                        "UPDATE hop_deals SET legacy_step=? WHERE id=? AND (legacy_step IS NULL OR legacy_step='')",
+                        (step, rid),
+                    )
+        except Exception:
+            pass
+
+        # Deal requirement lines — extended fields for full-screen editor
+        for col, ddl in (
+            ("item_name", "TEXT"),
+            ("sample_status", "TEXT"),
+            ("required_by", "TEXT"),
+            ("priority", "TEXT"),
+            ("collection", "TEXT"),
+            ("composition", "TEXT"),
+            ("width", "TEXT"),
+            ("finish", "TEXT"),
+            ("measurement_notes", "TEXT"),
+            ("sample_required", "INTEGER DEFAULT 0"),
+            ("customer_remarks", "TEXT"),
+        ):
+            _ensure_column(conn, "hop_deal_lines", col, ddl)
+
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS hop_deal_bulk_submissions (
+                submission_id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                deal_id INTEGER NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_deal_bulk_sub
+                ON hop_deal_bulk_submissions(workspace_id, deal_id, created_at DESC);
             """
         )
 
@@ -760,6 +1073,14 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             _hop_ops.prune_empty_rate_sheets(conn, HOP_WORKSPACE_ID)
         except Exception:
             # Schema ensure must not fail if rate tables are mid-migration
+            pass
+
+        # Expand short invoice/doc numbers → HOP/FY/serial (once per ensure)
+        try:
+            from app.hop_doc_numbers import backfill_full_doc_numbers
+
+            backfill_full_doc_numbers(conn, HOP_WORKSPACE_ID)
+        except Exception:
             pass
 
         conn.commit()

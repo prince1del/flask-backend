@@ -24,6 +24,7 @@ from flask import (
     request,
     send_file,
     session,
+    stream_with_context,
     url_for,
 )
 
@@ -2380,6 +2381,554 @@ def upload_filled_order_v2() -> Response:
             "parsed_items_count": parsed_items_count,
         },
     })
+
+
+def _so_pack_upload_kind(filename: str) -> str | None:
+    lower = (filename or "").lower()
+    if lower.endswith(".zip"):
+        return "zip"
+    if lower.endswith(".rar"):
+        return "rar"
+    if lower.endswith(".pdf"):
+        return "pdf"
+    return None
+
+
+def _so_pack_collect_uploads():
+    """Return ('single', filename, bytes) | ('pdfs', label, list[(name,bytes)]) | raise ValueError."""
+    uploads = [f for f in request.files.getlist("file") if f and f.filename]
+    if not uploads:
+        one = request.files.get("file")
+        if one and one.filename:
+            uploads = [one]
+    if not uploads:
+        raise ValueError("file is required")
+
+    kinds = []
+    for f in uploads:
+        kind = _so_pack_upload_kind(f.filename or "")
+        if not kind:
+            raise ValueError("Upload ZIP, RAR, or PDF files only")
+        kinds.append(kind)
+
+    if len(uploads) == 1:
+        f = uploads[0]
+        raw = f.read()
+        if not raw:
+            raise ValueError("Empty file")
+        return "single", f.filename, raw
+
+    if not all(k == "pdf" for k in kinds):
+        raise ValueError(
+            "Multiple files must all be PDFs (use one ZIP/RAR per distributor pack)"
+        )
+    pdfs: list[tuple[str, bytes]] = []
+    for f in uploads:
+        raw = f.read()
+        if not raw:
+            raise ValueError(f"Empty file: {f.filename}")
+        pdfs.append((Path(f.filename or "SO.pdf").name, raw))
+    label = pdfs[0][0] if len(pdfs) == 1 else f"{len(pdfs)}_PDFs"
+    return "pdfs", label, pdfs
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-pack/analyze", methods=["POST"])
+@require_jwt_auth
+def so_pack_analyze() -> Response:
+    """Unpack ZIP/RAR or accept PDF(s) → consolidated product qty/amount JSON."""
+    from app.services.so_pack_consolidate import analyze_so_pack, analyze_so_pack_pdfs
+
+    try:
+        mode, label, payload = _so_pack_collect_uploads()
+        if mode == "pdfs":
+            data = analyze_so_pack_pdfs(payload, label)
+        else:
+            data = analyze_so_pack(payload, label)
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"SO pack analyze failed: {exc}"}},
+            500,
+        )
+    return _json_response({"success": True, "data": data})
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-pack/analyze-stream", methods=["POST"])
+@require_jwt_auth
+def so_pack_analyze_stream() -> Response:
+    """Same as analyze, but streams NDJSON progress lines then a final done event."""
+    from app.services.so_pack_consolidate import (
+        iter_analyze_so_pack,
+        iter_analyze_so_pack_pdfs,
+    )
+
+    try:
+        mode, label, payload = _so_pack_collect_uploads()
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+
+    @stream_with_context
+    def generate():
+        try:
+            events = (
+                iter_analyze_so_pack_pdfs(payload, label)
+                if mode == "pdfs"
+                else iter_analyze_so_pack(payload, label)
+            )
+            for kind, item in events:
+                if kind == "progress":
+                    yield json.dumps({"type": "progress", "message": str(item)}) + "\n"
+                elif kind == "done":
+                    yield json.dumps({"type": "done", "data": item}, default=str) + "\n"
+        except ValueError as exc:
+            yield json.dumps({"type": "error", "message": str(exc)}) + "\n"
+        except Exception as exc:
+            yield json.dumps(
+                {"type": "error", "message": f"SO pack analyze failed: {exc}"}
+            ) + "\n"
+
+    resp = Response(generate(), mimetype="application/x-ndjson")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-pack/excel", methods=["POST"])
+@require_jwt_auth
+def so_pack_excel() -> Response:
+    """Build Consolidated_SO_Product_Qty_Amount.xlsx from analyzed JSON or ZIP/RAR upload.
+
+    Prefer JSON body with the analyze payload — skips re-unpacking the archive.
+    """
+    from app.services.so_pack_consolidate import (
+        analyze_so_pack,
+        build_consolidated_xlsx,
+        so_pack_excel_download_name,
+    )
+
+    payload: dict[str, Any] | None = None
+    # Accept JSON even when Flask request.is_json is false (charset / proxies).
+    json_payload = request.get_json(silent=True, force=False)
+    if json_payload is None and request.data:
+        ctype = (request.content_type or "").lower()
+        if "json" in ctype or (not request.files and not request.form):
+            try:
+                raw_body = request.get_data(cache=True, as_text=True)
+                json_payload = json.loads(raw_body) if raw_body else None
+            except Exception:
+                json_payload = None
+
+    try:
+        if isinstance(json_payload, dict) and (
+            json_payload.get("meta")
+            or json_payload.get("consolidated")
+            or json_payload.get("so_summary")
+            or json_payload.get("line_detail")
+        ):
+            payload = json_payload
+            xlsx_bytes = build_consolidated_xlsx(payload)
+        else:
+            uploaded = request.files.get("file")
+            if not uploaded or not uploaded.filename:
+                return _json_response(
+                    {
+                        "success": False,
+                        "error": {
+                            "message": "file is required (or send analyzed SO pack JSON)",
+                        },
+                    },
+                    400,
+                )
+            fname = uploaded.filename
+            lower = fname.lower()
+            if not (lower.endswith(".zip") or lower.endswith(".rar") or lower.endswith(".pdf")):
+                return _json_response(
+                    {"success": False, "error": {"message": "Upload a .zip, .rar, or .pdf"}},
+                    400,
+                )
+            raw = uploaded.read()
+            if not raw:
+                return _json_response({"success": False, "error": {"message": "Empty file"}}, 400)
+            payload = analyze_so_pack(raw, fname)
+            xlsx_bytes = build_consolidated_xlsx(payload)
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"SO pack excel failed: {exc}"}},
+            500,
+        )
+    resp = send_file(
+        io.BytesIO(xlsx_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=so_pack_excel_download_name(payload),
+    )
+    resp.headers["X-Nexora-SoPack-Excel"] = "assort-1design-Ncolour-v4"
+    return resp
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-pack/excel-batch", methods=["POST"])
+@require_jwt_auth
+def so_pack_excel_batch() -> Response:
+    """Build a ZIP of separate Excels — one workbook per distributor pack payload."""
+    from app.services.so_pack_consolidate import build_batch_excel_zip
+
+    json_payload = request.get_json(silent=True, force=False)
+    if json_payload is None and request.data:
+        ctype = (request.content_type or "").lower()
+        if "json" in ctype or (not request.files and not request.form):
+            try:
+                raw_body = request.get_data(cache=True, as_text=True)
+                json_payload = json.loads(raw_body) if raw_body else None
+            except Exception:
+                json_payload = None
+
+    packs: list[Any] = []
+    if isinstance(json_payload, dict):
+        raw_packs = json_payload.get("packs")
+        if isinstance(raw_packs, list):
+            packs = raw_packs
+        elif (
+            json_payload.get("meta")
+            or json_payload.get("consolidated")
+            or json_payload.get("so_summary")
+            or json_payload.get("line_detail")
+        ):
+            packs = [json_payload]
+    elif isinstance(json_payload, list):
+        packs = json_payload
+
+    if not packs:
+        return _json_response(
+            {"success": False, "error": {"message": "packs[] (analyzed SO pack JSON) is required"}},
+            400,
+        )
+
+    try:
+        zip_bytes, download_name = build_batch_excel_zip(packs)
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"SO pack batch excel failed: {exc}"}},
+            500,
+        )
+
+    resp = send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=download_name,
+    )
+    resp.headers["X-Nexora-SoPack-Excel"] = "multi-pack-zip-v1"
+    return resp
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/match-lab", methods=["POST"])
+@require_jwt_auth
+def fo_so_match_lab() -> Response:
+    """DUMMY: compare Filled Order Excel vs SO Pack (ZIP/RAR/PDF or Pack xlsx).
+
+    Temporary teaching endpoint — does not save or lock into Order Desk flow.
+    Form fields:
+      - filled_order: distributor FO .xlsx/.xls
+      - so_pack: ZIP/RAR/PDF(s) and/or SO Pack .xlsx (Brand Wise Size Wise)
+      - category (optional), qty_column (optional)
+    """
+    import os
+    from app.services.fo_so_match_lab import (
+        run_match_lab_files,
+        write_upload_to_temp,
+    )
+
+    fo_file = request.files.get("filled_order")
+    if not fo_file or not fo_file.filename:
+        return _json_response(
+            {"success": False, "error": {"message": "filled_order Excel is required"}},
+            400,
+        )
+
+    so_uploads = [f for f in request.files.getlist("so_pack") if f and f.filename]
+    if not so_uploads:
+        one = request.files.get("so_pack")
+        if one and one.filename:
+            so_uploads = [one]
+    if not so_uploads:
+        return _json_response(
+            {"success": False, "error": {"message": "so_pack ZIP/RAR/PDF or Pack xlsx is required"}},
+            400,
+        )
+
+    category = (request.form.get("category") or "").strip() or None
+    qty_column = (request.form.get("qty_column") or "").strip() or None
+    tmp_paths: list[str] = []
+
+    try:
+        fo_tmp = write_upload_to_temp(fo_file)
+        tmp_paths.append(str(fo_tmp))
+
+        # Prefer SO Pack Excel if present (fast path); else ZIP/RAR/PDF analyze.
+        xlsx = next(
+            (f for f in so_uploads if (f.filename or "").lower().endswith((".xlsx", ".xlsm"))),
+            None,
+        )
+        if xlsx:
+            so_tmp = write_upload_to_temp(xlsx)
+            tmp_paths.append(str(so_tmp))
+            result = run_match_lab_files(
+                fo_path=fo_tmp,
+                so_path=so_tmp,
+                category=category,
+                pref_column_name=qty_column,
+            )
+        else:
+            # Reuse SO Pack collector rules for archives / PDFs
+            kinds = []
+            for f in so_uploads:
+                kind = _so_pack_upload_kind(f.filename or "")
+                if not kind:
+                    return _json_response(
+                        {
+                            "success": False,
+                            "error": {
+                                "message": "so_pack must be ZIP, RAR, PDF, or SO Pack .xlsx",
+                            },
+                        },
+                        400,
+                    )
+                kinds.append(kind)
+
+            if len(so_uploads) == 1 and kinds[0] in ("zip", "rar"):
+                raw = so_uploads[0].read()
+                if not raw:
+                    return _json_response(
+                        {"success": False, "error": {"message": "Empty SO pack file"}},
+                        400,
+                    )
+                result = run_match_lab_files(
+                    fo_path=fo_tmp,
+                    so_mode="single",
+                    so_label=so_uploads[0].filename,
+                    so_payload=raw,
+                    category=category,
+                    pref_column_name=qty_column,
+                )
+            else:
+                if not all(k == "pdf" for k in kinds):
+                    return _json_response(
+                        {
+                            "success": False,
+                            "error": {
+                                "message": "Multiple so_pack files must all be PDFs, or one ZIP/RAR, or one Pack xlsx",
+                            },
+                        },
+                        400,
+                    )
+                pdfs = []
+                for f in so_uploads:
+                    raw = f.read()
+                    if not raw:
+                        return _json_response(
+                            {"success": False, "error": {"message": f"Empty file: {f.filename}"}},
+                            400,
+                        )
+                    pdfs.append((Path(f.filename or "SO.pdf").name, raw))
+                label = pdfs[0][0] if len(pdfs) == 1 else f"{len(pdfs)}_PDFs"
+                result = run_match_lab_files(
+                    fo_path=fo_tmp,
+                    so_mode="pdfs",
+                    so_label=label,
+                    so_payload=pdfs,
+                    category=category,
+                    pref_column_name=qty_column,
+                )
+
+        if not result.get("success"):
+            return _json_response({"success": False, "data": result}, 400)
+        return _json_response({"success": True, "data": result})
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"Match Lab failed: {exc}"}},
+            500,
+        )
+    finally:
+        for p in tmp_paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-pack/match-filled-order", methods=["POST"])
+@require_jwt_auth
+def so_pack_match_filled_order() -> Response:
+    """Match analyzed SO Pack JSON against a *saved* Filled Order (Order Desk flow).
+
+    Body JSON:
+      filled_order_id: int
+      so_pack: analyze payload (needs line_detail)
+      so_buyer_label / so_source_filename optional (for saved Order Match page)
+    Persists a match run and returns it under data.run for the Order Match workspace.
+    """
+    import filled_orders_db as fodb
+    from app.services import fo_so_match_db as matchdb
+    from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
+
+    body = request.get_json(silent=True, force=True) or {}
+    filled_order_id = body.get("filled_order_id")
+    so_pack = body.get("so_pack")
+    try:
+        filled_order_id = int(filled_order_id)
+    except (TypeError, ValueError):
+        return _json_response(
+            {"success": False, "error": {"message": "filled_order_id is required"}},
+            400,
+        )
+    if not isinstance(so_pack, dict) or not (
+        so_pack.get("line_detail") or so_pack.get("consolidated")
+    ):
+        return _json_response(
+            {
+                "success": False,
+                "error": {"message": "so_pack analyze payload with line_detail is required"},
+            },
+            400,
+        )
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+
+    so_buyer_label = (body.get("so_buyer_label") or "").strip() or None
+    so_source_filename = (body.get("so_source_filename") or "").strip() or None
+    if not so_source_filename:
+        meta = so_pack.get("meta") or {}
+        so_source_filename = meta.get("source_filename")
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        fodb.ensure_schema(conn)
+        fo = fodb.get_filled_order(conn, user_id, filled_order_id)
+        if not fo:
+            return _json_response(
+                {"success": False, "error": {"message": "Filled order not found"}},
+                404,
+            )
+        items = fodb.get_filled_order_items(conn, filled_order_id)
+        result = run_match_saved_fo_vs_so_pack(
+            fo_meta=fo, fo_items=items, so_pack_payload=so_pack,
+        )
+        run = matchdb.save_match_run(
+            conn,
+            user_id=user_id,
+            match_payload=result,
+            so_buyer_label=so_buyer_label,
+            so_source_filename=so_source_filename,
+        )
+        result["run"] = {k: v for k, v in run.items() if k != "rows"}
+        result["run_id"] = run.get("id")
+        return _json_response({"success": True, "data": result})
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"SO Pack FO match failed: {exc}"}},
+            500,
+        )
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/order-match/list", methods=["GET"])
+@require_jwt_auth
+def order_match_list() -> Response:
+    from app.services import fo_so_match_db as matchdb
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        runs = matchdb.list_match_runs(conn, user_id)
+        return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["GET"])
+@require_jwt_auth
+def order_match_get(run_id: int) -> Response:
+    from app.services import fo_so_match_db as matchdb
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        run = matchdb.get_match_run(conn, user_id, run_id)
+        if not run:
+            return _json_response(
+                {"success": False, "error": {"message": "Match run not found"}},
+                404,
+            )
+        return _json_response({"success": True, "data": {"run": run}})
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["DELETE"])
+@require_jwt_auth
+def order_match_delete(run_id: int) -> Response:
+    from app.services import fo_so_match_db as matchdb
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        ok = matchdb.delete_match_run(conn, user_id, run_id)
+        if not ok:
+            return _json_response(
+                {"success": False, "error": {"message": "Match run not found"}},
+                404,
+            )
+        return _json_response({"success": True, "data": {"deleted": True}})
+    finally:
+        conn.close()
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/upload/sales-order", methods=["POST"])

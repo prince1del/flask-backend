@@ -82,11 +82,16 @@ function hopMigrateLegacyThemeOnce() {
 }
 
 const HOP_THEMES = {
-  nexora: { id: 'nexora', label: 'NEXORA theme on', color: '#05070d' },
   bright: { id: 'bright', label: 'Bright theme on', color: '#f4f7fb' },
   emerald: { id: 'emerald', label: 'Emerald Gold theme on', color: '#F8F4EA' },
   custom: { id: 'custom', label: 'Custom theme on', color: '#F8F4EA' },
 };
+
+const HOP_DEFAULT_THEME = 'emerald';
+
+function hopNormalizeThemeId(t) {
+  return t;
+}
 
 const HOP_CUSTOM_DEFAULTS = {
   sidebar: '#123C32',
@@ -195,7 +200,9 @@ const HOP_CUSTOM_PRESETS = {
 };
 
 function hopIsKnownTheme(t) {
-  return Boolean(HOP_THEMES[t] || HOP_LUXURY_THEMES[t]);
+  const core = HOP_THEMES[t];
+  if (core && core.retired) return false;
+  return Boolean(core || HOP_LUXURY_THEMES[t]);
 }
 
 function hopThemeUsesCustomCss(t) {
@@ -204,7 +211,7 @@ function hopThemeUsesCustomCss(t) {
 
 function hopThemeMeta(t) {
   if (HOP_LUXURY_THEMES[t]) return HOP_LUXURY_THEMES[t];
-  return HOP_THEMES[t] || HOP_THEMES.nexora;
+  return HOP_THEMES[t] || HOP_THEMES.emerald;
 }
 
 function hopHexToRgb(hex) {
@@ -341,15 +348,21 @@ function hopClearCustomVars() {
 function hopGetTheme() {
   hopMigrateLegacyThemeOnce();
   try {
-    const t = localStorage.getItem(hopThemeStorageKey()) || 'nexora';
-    return hopIsKnownTheme(t) ? t : 'nexora';
+    const raw = localStorage.getItem(hopThemeStorageKey()) || HOP_DEFAULT_THEME;
+    const t = hopNormalizeThemeId(raw);
+    if (!hopIsKnownTheme(t)) {
+      try { localStorage.setItem(hopThemeStorageKey(), HOP_DEFAULT_THEME); } catch (e2) { /* ignore */ }
+      return HOP_DEFAULT_THEME;
+    }
+    return t;
   } catch (e) {
-    return 'nexora';
+    return HOP_DEFAULT_THEME;
   }
 }
 
 function hopApplyTheme(theme, opts) {
-  const t = hopIsKnownTheme(theme) ? theme : 'nexora';
+  const normalized = hopNormalizeThemeId(theme);
+  const t = hopIsKnownTheme(normalized) ? normalized : HOP_DEFAULT_THEME;
   const previewOnly = Boolean(opts && opts.previewOnly);
 
   if (previewOnly) {
@@ -397,7 +410,7 @@ function hopApplyTheme(theme, opts) {
   const metaInfo = hopThemeMeta(t);
   const themeColor = hopThemeUsesCustomCss(t)
     ? (hopThemeLivePreview?.colors?.bg || hopGetCustomColors().bg)
-    : (metaInfo.color || '#05070d');
+    : (metaInfo.color || '#F8F4EA');
   if (meta) meta.setAttribute('content', themeColor);
   if (!(opts && opts.silent) && typeof nexoraToast === 'function') {
     nexoraToast(metaInfo.label || 'Theme on', 'ok');
@@ -452,17 +465,19 @@ function hopApplyServerThemePayload(prefs, opts) {
   if (prefs.custom_colors && typeof prefs.custom_colors === 'object') {
     hopSaveCustomColors(prefs.custom_colors);
   }
-  hopApplyTheme(prefs.theme, Object.assign({ silent: true, skipRerender: true, skipPersistRemote: true }, opts || {}));
+  const themeId = hopNormalizeThemeId(prefs.theme);
+  hopApplyTheme(themeId, Object.assign({ silent: true, skipRerender: true, skipPersistRemote: true }, opts || {}));
   return true;
 }
 
 function hopThemeDisplayName(themeId) {
-  const m = hopThemeMeta(themeId);
-  if (themeId === 'nexora') return 'NEXORA';
-  if (themeId === 'bright') return 'Bright';
-  if (themeId === 'emerald') return 'Emerald Gold';
-  if (themeId === 'custom') return 'Custom';
-  return m.title || m.label || themeId;
+  const id = hopNormalizeThemeId(themeId);
+  const m = hopThemeMeta(id);
+  if (id === 'bright') return 'Bright';
+  if (id === 'emerald') return 'Emerald Gold';
+  if (id === 'custom') return 'Custom';
+  if (HOP_LUXURY_THEMES[id]) return m.title || id;
+  return m.label || id;
 }
 
 /** Baseline when user opened Theme page — used to confirm on leave. */
@@ -553,7 +568,7 @@ function hopRequestTheme(themeId) {
 function hopShowThemeLeaveOverlay(pending) {
   const themeId = hopGetDisplayedTheme();
   const name = hopThemeDisplayName(themeId);
-  const prevName = hopThemeDisplayName(hopThemePageBaseline?.theme || hopGetTheme() || 'nexora');
+  const prevName = hopThemeDisplayName(hopThemePageBaseline?.theme || hopGetTheme() || HOP_DEFAULT_THEME);
   hopThemeLeavePending = pending || null;
   const existing = document.getElementById('hop-theme-confirm-overlay');
   if (existing) existing.remove();
@@ -670,28 +685,30 @@ function hopInitTheme() {
   hopApplyTheme(hopGetTheme(), { silent: true, skipPersistRemote: true });
 }
 
-/** Call after login / auth restore so this account's theme loads (not the previous user's). */
+/** Call after login / auth restore so this account's theme loads (not previous user's). */
 async function hopSyncThemeForCurrentUser(loginThemePrefs) {
-  if (loginThemePrefs && hopApplyServerThemePayload(loginThemePrefs)) {
+  // Only trust server when the user actually saved a theme (saved:true).
+  // Unsaved default must NOT force retired blue chrome every login.
+  if (loginThemePrefs && loginThemePrefs.saved && hopApplyServerThemePayload(loginThemePrefs)) {
     return;
   }
   const remote = await hopPullThemeFromServer();
   if (remote && remote.saved && hopApplyServerThemePayload(remote)) {
     return;
   }
-  // No server theme yet — use this login's local cache, then push to server.
-  hopApplyTheme(hopGetTheme(), { silent: true, skipRerender: true });
+  // No server theme yet — Emerald Gold default, then push so login stays green.
+  hopApplyTheme(HOP_DEFAULT_THEME, { silent: true, skipRerender: true });
 }
 
 function hopResetThemeChromeToDefault() {
   hopClearCustomVars();
-  document.documentElement.setAttribute('data-hop-theme', 'nexora');
-  document.body.setAttribute('data-hop-theme', 'nexora');
+  document.documentElement.setAttribute('data-hop-theme', HOP_DEFAULT_THEME);
+  document.body.setAttribute('data-hop-theme', HOP_DEFAULT_THEME);
   const dash = document.getElementById('dashboard');
-  if (dash) dash.setAttribute('data-hop-theme', 'nexora');
+  if (dash) dash.setAttribute('data-hop-theme', HOP_DEFAULT_THEME);
   const ws = document.getElementById('hop-executive-workspace');
-  if (ws) ws.setAttribute('data-hop-theme', 'nexora');
-  document.querySelectorAll('.nx-theme').forEach((el) => el.setAttribute('data-hop-theme', 'nexora'));
+  if (ws) ws.setAttribute('data-hop-theme', HOP_DEFAULT_THEME);
+  document.querySelectorAll('.nx-theme').forEach((el) => el.setAttribute('data-hop-theme', HOP_DEFAULT_THEME));
 }
 
 function hopReadCustomFormColors() {
@@ -774,7 +791,7 @@ function hopRestoreThemeStudioSnapshot() {
   const snap = hopThemeStudioSnapshot;
   hopThemeStudioSnapshot = null;
   hopSaveCustomColors(snap.colors);
-  hopApplyTheme(snap.theme || 'nexora', { silent: true, skipRerender: true });
+  hopApplyTheme(snap.theme || HOP_DEFAULT_THEME, { silent: true, skipRerender: true });
 }
 
 function hopCustomStudioMarkup(c) {
@@ -3170,10 +3187,11 @@ function hopCloseAddPartyChooser() {
 /** Party modals live on document.body (outside workspace) — stamp active theme so CSS can match. */
 function hopDecoratePartyModalTheme(modal) {
   if (!modal) return;
-  const theme = document.documentElement.getAttribute('data-hop-theme') || 'nexora';
+  const theme = document.documentElement.getAttribute('data-hop-theme') || HOP_DEFAULT_THEME;
   modal.setAttribute('data-party-theme', theme);
   modal.classList.remove('hop-party-theme-dark', 'hop-party-theme-light');
-  modal.classList.add(theme === 'nexora' ? 'hop-party-theme-dark' : 'hop-party-theme-light');
+  const isLight = theme === 'bright' || theme === 'emerald' || theme === 'custom';
+  modal.classList.add(isLight ? 'hop-party-theme-light' : 'hop-party-theme-dark');
 }
 
 function hopOpenAddPartyChooser() {
@@ -4661,9 +4679,11 @@ async function renderHopThemeModule(mount) {
   };
   const coreDefs = [
     {
-      id: 'nexora',
-      title: 'NEXORA',
-      dots: ['#05070c', '#25E0FF', '#8B5CF6'],
+      id: 'emerald',
+      swatchClass: 'hop-theme-swatch--emerald',
+      title: 'Emerald Gold',
+      chip: '<span class="hop-theme-chip hop-theme-chip--rec">Signature</span>',
+      dots: ['#123C32', '#F8F4EA', '#C9A227'],
     },
     {
       id: 'bright',
@@ -4671,13 +4691,6 @@ async function renderHopThemeModule(mount) {
       title: 'Bright',
       chip: '<span class="hop-theme-chip">Workday</span>',
       dots: ['#0f2744', '#f4f7fb', '#0d9488'],
-    },
-    {
-      id: 'emerald',
-      swatchClass: 'hop-theme-swatch--emerald',
-      title: 'Emerald Gold',
-      chip: '<span class="hop-theme-chip hop-theme-chip--rec">Signature</span>',
-      dots: ['#123C32', '#F8F4EA', '#C9A227'],
     },
   ];
   const luxuryDefs = Object.values(HOP_LUXURY_THEMES).map((t) => ({

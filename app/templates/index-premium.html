@@ -15,11 +15,26 @@
                 <h1>Bombay Dyeing · NEXORA Premium</h1>
             </div>
             <div class="header-meta">
-                <div class="user-pill">
-                    <span>👤</span>
-                    <strong id="user-name">Admin User</strong>
+                <div class="nx-profile-menu" id="nx-profile-menu">
+                    <button class="profile-btn profile-btn--avatar" id="user-info" type="button" title="Account" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false" aria-controls="nx-profile-dropdown" onclick="toggleUserProfileMenu(event)">U</button>
+                    <div class="nx-profile-dropdown hidden" id="nx-profile-dropdown" role="menu" aria-label="Account">
+                        <div class="nx-profile-dropdown-head">
+                            <div class="nx-profile-dropdown-avatar" id="nx-profile-dropdown-avatar" aria-hidden="true">U</div>
+                            <div class="nx-profile-dropdown-meta">
+                                <span class="nx-profile-dropdown-eyebrow">Signed in</span>
+                                <div class="nx-profile-dropdown-name" id="nx-profile-username">User</div>
+                                <div class="nx-profile-dropdown-role" id="nx-profile-role"></div>
+                            </div>
+                        </div>
+                        <div class="nx-profile-dropdown-divider" role="separator"></div>
+                        <button type="button" role="menuitem" class="nx-profile-dropdown-item nx-profile-dropdown-logout" onclick="closeUserProfileMenu(); logout();">
+                            <span class="nx-profile-dropdown-item-icon" aria-hidden="true">
+                                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/><path d="M13 14l4-4-4-4"/><path d="M7 10h10"/></svg>
+                            </span>
+                            <span class="nx-profile-dropdown-item-label">Logout</span>
+                        </button>
+                    </div>
                 </div>
-                <button onclick="logout()" class="btn-tertiary">Logout</button>
             </div>
         </header>
 

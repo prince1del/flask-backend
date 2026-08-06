@@ -653,6 +653,365 @@ body.hop-custom-studio-open {
 .hop-theme-swatch--compact.hop-theme-swatch--custom .hop-theme-swatch-main::after {
   box-shadow: 28px 0 0 var(--hop-c-border, #DED3BE);
 }
+
+/* ========== North Head Theme gallery (professional) ========== */
+#settings-workspace .nx-settings-main--solo {
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  overflow: auto !important;
+}
+#settings-workspace #bd-settings-theme-panel {
+  height: 100%;
+}
+#settings-workspace .nx-settings-panel {
+  margin: 0;
+  height: 100%;
+}
+#settings-workspace .hop-theme-studio--bd {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px 20px;
+  box-sizing: border-box;
+}
+#settings-workspace .hop-theme-studio--bd.hop-theme-studio--compact {
+  max-width: 68rem !important;
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-studio-intro--compact {
+  width: 100%;
+  text-align: center;
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-studio-lead {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 36rem;
+}
+
+.hop-theme-apply-bar {
+  width: 100%;
+  max-width: 64rem;
+  margin: 8px auto 0;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  border-radius: 14px;
+  border: 1px solid rgba(18, 60, 50, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(18, 60, 50, 0.06);
+  position: sticky;
+  bottom: 8px;
+  z-index: 5;
+}
+.hop-theme-apply-hint {
+  margin: 0;
+  flex: 1 1 220px;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: #6B6254;
+}
+.hop-theme-apply-btn {
+  flex: 0 0 auto;
+  min-width: 148px;
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid #C9A227;
+  background: #C9A227;
+  color: #1F1F1F;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
+}
+.hop-theme-apply-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.hop-theme-apply-btn.is-ready:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(201, 162, 39, 0.28);
+}
+.hop-theme-badge--preview {
+  background: rgba(37, 99, 235, 0.92) !important;
+  color: #fff !important;
+}
+html[data-hop-theme="nexora"] .hop-theme-apply-bar,
+html:not([data-hop-theme]) .hop-theme-apply-bar {
+  background: rgba(13, 19, 33, 0.96);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+html[data-hop-theme="nexora"] .hop-theme-apply-hint,
+html:not([data-hop-theme]) .hop-theme-apply-hint {
+  color: #94a3b8;
+}
+html[data-hop-theme="bright"] .hop-theme-apply-bar {
+  border-color: #e2e8f0;
+  background: #ffffff;
+}
+html[data-hop-theme="bright"] .hop-theme-apply-hint {
+  color: #64748b;
+}
+html[data-hop-theme="bright"] .hop-theme-apply-btn {
+  background: #0d9488;
+  border-color: #0d9488;
+  color: #ffffff;
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-grid--compact {
+  width: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-card--compact {
+  border: 1px solid rgba(18, 60, 50, 0.12);
+  background: #ffffff;
+  color: #1f1f1f;
+  box-shadow: 0 4px 14px rgba(18, 60, 50, 0.04);
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-card--compact:hover {
+  border-color: rgba(201, 162, 39, 0.45);
+  box-shadow: 0 10px 22px rgba(18, 60, 50, 0.08);
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-card--compact.is-active {
+  border-color: #C9A227;
+  box-shadow: 0 0 0 1px #C9A227, 0 10px 22px rgba(201, 162, 39, 0.16);
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-card--compact h3 {
+  color: #1f1f1f;
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-studio-kicker {
+  color: #8a7f6e;
+}
+#settings-workspace .hop-theme-studio--bd .hop-theme-studio-lead {
+  color: #6b6254;
+}
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-studio--bd .hop-theme-card--compact {
+  border-color: #e2e8f0;
+}
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-studio--bd .hop-theme-card--compact.is-active {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 1px #0d9488, 0 10px 22px rgba(13, 148, 136, 0.14);
+}
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-studio--bd .hop-theme-studio-kicker,
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-studio--bd .hop-theme-studio-lead {
+  color: #64748b;
+}
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-studio--bd .hop-theme-card--compact h3 {
+  color: #0f172a;
+}
+html[data-hop-theme="nexora"] #settings-workspace .hop-theme-studio--bd .hop-theme-card--compact,
+html:not([data-hop-theme]) #settings-workspace .hop-theme-studio--bd .hop-theme-card--compact {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #eaf0fb;
+}
+html[data-hop-theme="nexora"] #settings-workspace .hop-theme-studio--bd .hop-theme-card--compact h3,
+html:not([data-hop-theme]) #settings-workspace .hop-theme-studio--bd .hop-theme-card--compact h3 {
+  color: #eaf0fb;
+}
+html[data-hop-theme="nexora"] #settings-workspace .hop-theme-studio--bd .hop-theme-studio-kicker,
+html:not([data-hop-theme]) #settings-workspace .hop-theme-studio--bd .hop-theme-studio-kicker,
+html[data-hop-theme="nexora"] #settings-workspace .hop-theme-studio--bd .hop-theme-studio-lead,
+html:not([data-hop-theme]) #settings-workspace .hop-theme-studio--bd .hop-theme-studio-lead {
+  color: #8b96b8;
+}
+
+#settings-workspace .bd-theme-featured {
+  display: grid;
+  grid-template-columns: minmax(220px, 340px) minmax(0, 1fr);
+  gap: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(18, 60, 50, 0.14);
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(18, 60, 50, 0.06);
+  min-height: 148px;
+}
+#settings-workspace .bd-theme-featured-swatch {
+  min-height: 148px;
+  height: 100% !important;
+  display: grid;
+  grid-template-columns: 30% 1fr;
+  position: relative;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+}
+#settings-workspace .bd-theme-featured-swatch .hop-theme-swatch-main {
+  padding: 18px 20px;
+}
+#settings-workspace .bd-theme-featured-swatch .hop-theme-swatch-main::before {
+  left: 18px; right: 18px; top: 20px; height: 10px;
+}
+#settings-workspace .bd-theme-featured-swatch .hop-theme-swatch-main::after {
+  left: 18px; width: 40%; top: 42px; height: 42px;
+  box-shadow: 56px 0 0 rgba(255, 255, 255, 0.1);
+}
+#settings-workspace .bd-theme-featured-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 24px;
+}
+#settings-workspace .bd-theme-featured-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a7f6e;
+}
+#settings-workspace .bd-theme-featured-title {
+  margin: 0;
+  font-family: var(--nxt-font-display, Orbitron, sans-serif);
+  font-size: 1.35rem;
+  letter-spacing: 0.04em;
+  color: #1f1f1f;
+}
+#settings-workspace .bd-theme-featured-desc {
+  margin: 0;
+  max-width: 36rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #6b6254;
+}
+#settings-workspace .bd-theme-featured .hop-theme-dots {
+  margin-top: 4px;
+}
+
+#settings-workspace .bd-theme-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#settings-workspace .bd-theme-section-head h4 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a7f6e;
+}
+#settings-workspace .bd-theme-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+  gap: 14px !important;
+  width: 100% !important;
+}
+#settings-workspace .bd-theme-grid--custom {
+  grid-template-columns: minmax(220px, 360px) !important;
+}
+
+#settings-workspace .hop-theme-card--gallery {
+  border-radius: 14px !important;
+  border: 1px solid rgba(18, 60, 50, 0.12) !important;
+  background: #ffffff !important;
+  color: #1f1f1f !important;
+  box-shadow: 0 6px 18px rgba(18, 60, 50, 0.04);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+#settings-workspace .hop-theme-card--gallery:hover {
+  transform: translateY(-2px);
+  border-color: rgba(201, 162, 39, 0.45) !important;
+  box-shadow: 0 14px 28px rgba(18, 60, 50, 0.1);
+}
+#settings-workspace .hop-theme-card--gallery.is-active {
+  border-color: #C9A227 !important;
+  box-shadow: 0 0 0 1px #C9A227, 0 14px 28px rgba(201, 162, 39, 0.18);
+}
+#settings-workspace .hop-theme-card--gallery .hop-theme-card-body {
+  padding: 12px 14px 14px;
+  gap: 8px;
+}
+#settings-workspace .hop-theme-card--gallery h3 {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: #1f1f1f;
+  line-height: 1.3;
+}
+#settings-workspace .hop-theme-swatch--gallery {
+  height: 92px !important;
+  border-bottom: 1px solid rgba(18, 60, 50, 0.08);
+}
+#settings-workspace .hop-theme-swatch--gallery .hop-theme-swatch-main {
+  padding: 12px 14px;
+}
+#settings-workspace .hop-theme-swatch--gallery .hop-theme-swatch-main::before {
+  left: 14px; right: 14px; top: 14px; height: 8px;
+}
+#settings-workspace .hop-theme-swatch--gallery .hop-theme-swatch-main::after {
+  left: 14px; width: 40%; top: 32px; height: 28px;
+  box-shadow: 48px 0 0 rgba(255, 255, 255, 0.1);
+}
+
+html[data-hop-theme="bright"] #settings-workspace .bd-theme-featured,
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-card--gallery {
+  border-color: #e2e8f0 !important;
+}
+html[data-hop-theme="bright"] #settings-workspace .bd-theme-featured-kicker,
+html[data-hop-theme="bright"] #settings-workspace .bd-theme-section-head h4 {
+  color: #64748b;
+}
+html[data-hop-theme="bright"] #settings-workspace .bd-theme-featured-title,
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-card--gallery h3 {
+  color: #0f172a;
+}
+html[data-hop-theme="bright"] #settings-workspace .bd-theme-featured-desc {
+  color: #64748b;
+}
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-card--gallery.is-active {
+  border-color: #0d9488 !important;
+  box-shadow: 0 0 0 1px #0d9488, 0 14px 28px rgba(13, 148, 136, 0.15);
+}
+html[data-hop-theme="bright"] #settings-workspace .hop-theme-card--gallery:hover {
+  border-color: rgba(13, 148, 136, 0.45) !important;
+}
+
+html[data-hop-theme="nexora"] #settings-workspace .bd-theme-featured,
+html:not([data-hop-theme]) #settings-workspace .bd-theme-featured,
+html[data-hop-theme="nexora"] #settings-workspace .hop-theme-card--gallery,
+html:not([data-hop-theme]) #settings-workspace .hop-theme-card--gallery {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--nxt-text, #e8eef8) !important;
+  box-shadow: none;
+}
+html[data-hop-theme="nexora"] #settings-workspace .bd-theme-featured-title,
+html:not([data-hop-theme]) #settings-workspace .bd-theme-featured-title,
+html[data-hop-theme="nexora"] #settings-workspace .hop-theme-card--gallery h3,
+html:not([data-hop-theme]) #settings-workspace .hop-theme-card--gallery h3 {
+  color: var(--nxt-text, #e8eef8);
+}
+html[data-hop-theme="nexora"] #settings-workspace .bd-theme-featured-desc,
+html:not([data-hop-theme]) #settings-workspace .bd-theme-featured-desc,
+html[data-hop-theme="nexora"] #settings-workspace .bd-theme-featured-kicker,
+html:not([data-hop-theme]) #settings-workspace .bd-theme-featured-kicker,
+html[data-hop-theme="nexora"] #settings-workspace .bd-theme-section-head h4,
+html:not([data-hop-theme]) #settings-workspace .bd-theme-section-head h4 {
+  color: var(--nxt-text-dim, #94a3b8);
+}
+
+@media (max-width: 900px) {
+  #settings-workspace .bd-theme-featured {
+    grid-template-columns: 1fr;
+  }
+  #settings-workspace .bd-theme-featured-swatch {
+    min-height: 110px;
+  }
+  #settings-workspace .bd-theme-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
+  }
+}
 .hop-theme-swatch--compact.hop-theme-swatch--luxury .hop-theme-swatch-main::after {
   box-shadow: 28px 0 0 rgba(184, 177, 167, 0.65);
 }

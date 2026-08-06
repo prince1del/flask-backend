@@ -193,9 +193,9 @@ def delete_distributor(id):
     distributor = Distributor.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not distributor:
         return jsonify({'success': False, 'data': None, 'message': 'Distributor not found'}), 404
-    distributor.status = 'inactive'
-    distributor.updated_at = datetime.now(timezone.utc)
     try:
+        # Hard delete — permanently remove the contact (and ORM-cascaded children).
+        db.session.delete(distributor)
         db.session.commit()
         return jsonify({'success': True, 'data': None, 'message': 'Distributor deleted successfully'}), 200
     except Exception as exc:
@@ -348,9 +348,9 @@ def delete_retailer(id):
     retailer = Retailer.query.filter_by(id=id, workspace_id=workspace_id).first()
     if not retailer:
         return jsonify({'success': False, 'data': None, 'message': 'Retailer not found'}), 404
-    retailer.status = 'inactive'
-    retailer.updated_at = datetime.now(timezone.utc)
     try:
+        # Hard delete — permanently remove the contact.
+        db.session.delete(retailer)
         db.session.commit()
         return jsonify({'success': True, 'data': None, 'message': 'Retailer deleted successfully'}), 200
     except Exception as exc:

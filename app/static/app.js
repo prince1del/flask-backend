@@ -37,8 +37,8 @@ function nxThemeAccentCss() {
 
 /** Surface + text tokens for JS-built modals so light themes don't keep the dark gold Nexora look. */
 function nxThemeUi() {
-  const theme = document.documentElement.getAttribute('data-hop-theme') || 'nexora';
-  const isLight = theme === 'bright' || theme === 'emerald' || theme === 'custom';
+  const theme = document.documentElement.getAttribute('data-hop-theme') || 'emerald';
+  const isLight = theme === 'bright' || theme === 'emerald' || theme === 'custom' || !theme;
   const accent = nxThemeAccentCss();
   if (isLight) {
     return {
@@ -49,12 +49,18 @@ function nxThemeUi() {
       boxBg: 'var(--hop-c-card, #ffffff)',
       boxBorder: 'var(--hop-c-border, #DED3BE)',
       boxFg: 'var(--hop-c-text, #1F1F1F)',
-      muted: 'var(--hop-c-muted, #6B6254)',
+      // Stronger than soft muted so modal copy stays readable on white
+      muted: 'var(--hop-c-muted, #4A4338)',
       soft: 'var(--hop-c-bg-soft, #F5EFE0)',
       rowBorder: 'var(--hop-c-border, #DED3BE)',
-      secondaryBorder: 'var(--hop-c-border, #DED3BE)',
-      secondaryFg: 'var(--hop-c-muted, #6B6254)',
+      secondaryBorder: 'var(--hop-c-border, #C4B89A)',
+      secondaryFg: 'var(--hop-c-text, #1F1F1F)',
       secondaryBg: 'var(--hop-c-bg, #F8F4EA)',
+      // Fixed status inks — avoid neon/theme greens in review tables
+      ok: '#166534',
+      up: '#8A6D12',
+      down: '#9F1239',
+      warn: '#9A3412',
     };
   }
   return {
@@ -65,12 +71,16 @@ function nxThemeUi() {
     boxBg: '#14141a',
     boxBorder: '#2a2a33',
     boxFg: '#e6e6e6',
-    muted: '#999999',
+    muted: '#a3a3a3',
     soft: '#1a1a22',
     rowBorder: '#23232b',
-    secondaryBorder: '#333333',
-    secondaryFg: '#cccccc',
+    secondaryBorder: '#444444',
+    secondaryFg: '#e6e6e6',
     secondaryBg: 'transparent',
+    ok: 'var(--hop-c-accent, #C9A227)',
+    up: 'var(--hop-c-accent, #C9A227)',
+    down: '#fb7185',
+    warn: '#fbbf24',
   };
 }
 
@@ -540,6 +550,7 @@ function shouldShowUpdate(version, manual) {
 function initApp() {
   resetGlobalSearchUi();
   initGlobalSearchUi();
+  initStandardModalDismiss();
   setGlobalSearchBarVisible(true);
   // Keep minimized dock on <body> so Customers / other pages never hide it with #dashboard.
   ensureWidgetDock();
@@ -899,7 +910,7 @@ function renderFoSeasonOverviewRows(rows) {
 function buildFoSeasonWidgetCard(seasonData, index) {
   const season = seasonData.season || '—';
   const safeId = season.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const seasonBadge = (season.split(/\s+/)[0] || season).slice(0, 4);
+  const rowCount = (seasonData.rows || []).length;
   return `
     <article
       id="dashboard-fo-widget-${safeId}"
@@ -907,23 +918,19 @@ function buildFoSeasonWidgetCard(seasonData, index) {
       data-fo-season="${foEscapeText(season)}"
       data-fo-widget-index="${index}"
     >
-      <button type="button" class="ta-widget-minimize-btn" data-fo-season="${foEscapeText(season)}" onclick="minimizeFoWidget(this.dataset.foSeason)" aria-label="Minimize widget" title="Minimize to dock bar (bottom-right)">─</button>
-      <button type="button" class="ta-widget-drag-handle" aria-label="Hold and drag to move widget" title="Hold and drag to move">⠿</button>
+      <button type="button" class="ta-widget-minimize-btn" data-fo-season="${foEscapeText(season)}" onclick="minimizeFoWidget(this.dataset.foSeason)" aria-label="Minimize widget" title="Minimize">─</button>
+      <button type="button" class="ta-widget-drag-handle" aria-label="Drag to move" title="Drag">⠿</button>
       <div class="ta-playing-card-inner">
-        <div class="ta-playing-card-corner" aria-hidden="true">
-          <span class="ta-playing-card-suit">📋</span>
-          <span class="ta-playing-card-rank">${foEscapeText(seasonBadge)}</span>
-        </div>
         <div class="ta-playing-card-header ta-widget-drag-surface">
-          <h2>Orders · ${foEscapeText(season)}</h2>
-          <p>Qty in pieces · Ex-mill ₹</p>
+          <h2>${foEscapeText(season)}</h2>
+          <p>${rowCount} distributor${rowCount === 1 ? '' : 's'} · pcs · ex-mill</p>
         </div>
-        <div class="ta-playing-card-table-wrap ta-excel-sheet ta-widget-sheet">
+        <div class="ta-playing-card-table-wrap ta-excel-sheet ta-widget-sheet fo-season-table-wrap">
           <table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
             <thead>
               <tr>
                 <th>Distributor</th>
-                <th>Total Qty</th>
+                <th>Qty</th>
                 <th>Amount</th>
               </tr>
             </thead>
@@ -932,10 +939,10 @@ function buildFoSeasonWidgetCard(seasonData, index) {
         </div>
         <div class="ta-playing-card-footer fo-season-widget-footer">
           <div class="fo-season-widget-totals">
-            <span>Total: ${formatFilledOrderQty(seasonData.total_piece_qty)} pcs</span>
+            <span>${formatFilledOrderQty(seasonData.total_piece_qty)} pcs</span>
             <span>${formatFilledOrderAmount(seasonData.total_ex_mill_value)}</span>
           </div>
-          <button type="button" class="ta-widget-details-btn" onclick="openModule('OrderFulfillment')">Open details →</button>
+          <button type="button" class="ta-widget-details-btn fo-season-open-btn" onclick="openModule('OrderFulfillment')">Open details →</button>
         </div>
       </div>
     </article>
@@ -980,6 +987,17 @@ function buildFoSeasonOverviewFromOrders(orders) {
 }
 
 function renderFoSeasonWidgets(layer, seasons) {
+  if (!layer) return;
+  // Remount clears DOM — drop stale minimize chips so AW26 doesn't stay "gone"
+  let dockDirty = false;
+  for (const id of [...minimizedWidgets.keys()]) {
+    if (String(id).startsWith('dashboard-fo-widget-')) {
+      minimizedWidgets.delete(id);
+      dockDirty = true;
+    }
+  }
+  if (dockDirty) renderWidgetDock();
+
   if (!seasons.length) {
     layer.innerHTML = '';
     return;
@@ -1004,12 +1022,9 @@ async function loadFilledOrdersSeasonWidgets() {
     return;
   }
 
-  if (!document.querySelector('#dashboard .content-inner.dashboard-ta-focus')) {
-    layer.classList.add('hidden');
-    return;
-  }
-
-  layer.classList.remove('hidden');
+  const onDashboard =
+    currentModuleKey === 'dashboard' &&
+    !!document.querySelector('#dashboard .content-inner.dashboard-ta-focus');
 
   try {
     let seasons = [];
@@ -1032,11 +1047,22 @@ async function loadFilledOrdersSeasonWidgets() {
     if (loadSeq !== foSeasonWidgetsLoadSeq) return;
     renderFoSeasonWidgets(layer, seasons);
     initDashboardFoWidgetsDrag();
+    // Never force-hide while off Dashboard — that made AW26 "vanish" after Order Desk
+    // uploads. Visibility is restored in showDashboardWorkspace().
+    if (!seasons.length) {
+      layer.classList.add('hidden');
+    } else if (onDashboard) {
+      layer.classList.remove('hidden');
+    }
   } catch (error) {
+    if (!onDashboard) {
+      return;
+    }
+    layer.classList.remove('hidden');
     layer.innerHTML = `
       <article class="fo-season-widget ta-playing-card-compact fo-playing-card-compact ta-draggable-widget" style="left:16px;top:16px;pointer-events:auto">
         <div class="ta-playing-card-inner">
-          <p style="padding:1rem;color:#f87171;font-size:0.75rem;">${foEscapeText(error.message || 'Unable to load order widgets.')}</p>
+          <p style="padding:1rem;color:#b91c1c;font-size:0.75rem;">${foEscapeText(error.message || 'Unable to load order widgets.')}</p>
         </div>
       </article>
     `;
@@ -1778,6 +1804,62 @@ function closeModal(id) {
 function closeAllModals() {
   document.querySelectorAll('.modal').forEach((modal) => {
     modal.classList.add('hidden');
+  });
+}
+
+/** Close a standard `.modal` without saving (Cancel / Esc / backdrop). */
+function dismissStandardModal(modal) {
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (modal.id === 'global-search-modal') {
+    closeGlobalSearchModal();
+    return;
+  }
+  if (modal.id) closeModal(modal.id);
+  else modal.classList.add('hidden');
+}
+
+function getTopVisibleStandardModal() {
+  const open = [...document.querySelectorAll('.modal:not(.hidden)')];
+  return open.length ? open[open.length - 1] : null;
+}
+
+function isBlockingOverlayOpen() {
+  const confirm = document.getElementById('nx-confirm-modal');
+  if (confirm && !confirm.classList.contains('hidden')) return true;
+  // Dynamic prompts (confirm / download / conflict) sit above forms
+  return !!document.querySelector('body > div[style*="position: fixed"][style*="z-index: 9"]');
+}
+
+/** Esc + backdrop click closes open `.modal` dialogs without saving. */
+function initStandardModalDismiss() {
+  if (document.documentElement.dataset.modalDismissBound === '1') return;
+  document.documentElement.dataset.modalDismissBound = '1';
+
+  document.addEventListener('click', (event) => {
+    const modal = event.target?.closest?.('.modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    // Only the dimmed backdrop (the .modal itself), not .modal-content
+    if (event.target !== modal) return;
+    dismissStandardModal(modal);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (event.defaultPrevented) return;
+    if (isBlockingOverlayOpen()) return;
+    const modal = getTopVisibleStandardModal();
+    if (modal) {
+      event.preventDefault();
+      dismissStandardModal(modal);
+      return;
+    }
+    if (articleMasterState.selectionMode) {
+      const amWs = document.getElementById('article-master-workspace');
+      if (amWs && !amWs.classList.contains('hidden')) {
+        event.preventDefault();
+        exitArticleMasterSelectionMode();
+      }
+    }
   });
 }
 
@@ -6227,6 +6309,17 @@ function showDashboardWorkspace() {
   ['sales-workspace', 'purchase-workspace', 'inventory-workspace', 'article-master-workspace', 'order-desk-workspace', 'order-fulfillment-workspace', 'order-cycle-workspace', 'executive-home-workspace', 'hop-executive-workspace', 'target-vs-achievement-workspace', 'cloud-hub-workspace', 'filled-orders-workspace', 'settings-workspace'].forEach((id) => {
     document.getElementById(id)?.classList.add('hidden');
   });
+  if (authState.role === 'sales_executive') {
+    document.getElementById('dashboard-fo-widgets-layer')?.classList.remove('hidden');
+    document.getElementById('dashboard-ta-playing-card')?.classList.remove('hidden');
+    // Overlay modules hide the dock; bring it back when returning home.
+    if (minimizedWidgets.size) {
+      ensureWidgetDock().classList.remove('hidden');
+      renderWidgetDock();
+    }
+    loadTaFyOverviewCard();
+    loadFilledOrdersSeasonWidgets();
+  }
 }
 
 function renderExecutivePendingActions(actions) {
@@ -6447,6 +6540,17 @@ function openModule(moduleName) {
   if (typeof closeMobileNav === 'function') closeMobileNav();
   const normalized = (moduleName || '').toLowerCase();
 
+  // Order Desk sidebar → Fulfillment directly (no intermediate landing page).
+  if (normalized === 'orderdesk') {
+    return openModule('OrderFulfillment');
+  }
+
+  // Leaving Order Fulfillment hard-deletes analyze + Excel workbook from memory.
+  if (currentModuleKey === 'orderfulfillment' && normalized !== 'orderfulfillment'
+      && typeof _soPackOnLeaveModule === 'function') {
+    _soPackOnLeaveModule();
+  }
+
   if (normalized !== 'settings' && guardBdThemeLeave(() => openModule(moduleName))) {
     return;
   }
@@ -6517,13 +6621,6 @@ function openModule(moduleName) {
     document.getElementById('sales-workspace')?.classList.add('hidden');
     setActiveSidebarItem('My Day');
     loadExecutiveHome();
-    return;
-  }
-
-  if (normalized === 'orderdesk') {
-    pinBdShellForModule(document.getElementById('order-desk-workspace'));
-    document.getElementById('sales-workspace')?.classList.add('hidden');
-    setActiveSidebarItem('Order Desk');
     return;
   }
 
@@ -7447,7 +7544,6 @@ const GLOBAL_SEARCH_COLUMNS = {
     ['mrp', 'MRP'],
     ['ptr', 'PTR'],
     ['ex_mill_price', 'Ex-Mill'],
-    ['item_key', 'Item Key'],
   ],
 };
 
@@ -7895,7 +7991,271 @@ async function uploadFilledOrderV2(confirmedDistributorId) {
 }
 
 let ofSoPackLastPayload = null;
+let ofSoPackFoMatchResult = null;
+let ofSoPackFilledOrdersCache = null;
 let ofSoPackActiveTab = 'consolidated';
+/** Fingerprint of the ZIP/RAR that currently backs ofSoPackLastPayload / on-screen table. */
+let ofSoPackAnalyzedKey = null;
+/** Cached Excel workbook for the current analyzed pack (cleared on new ZIP / re-analyze / leave module / refresh). */
+let ofSoPackExcelBlob = null;
+let ofSoPackExcelKey = null;
+/** Multi-pack session: [{ key, filename, payload?, error? }, ...] matching current file selection. */
+let ofSoPackBatch = [];
+/** Fingerprint of the full multi-file selection that ofSoPackBatch was analyzed against. */
+let ofSoPackBatchSelectionKey = null;
+/** Cached ZIP of Excels for multi-pack download. */
+let ofSoPackBatchExcelBlob = null;
+let ofSoPackBatchExcelKey = null;
+/** Bump when workbook layout changes so stale in-memory Excel is never re-served. */
+const OF_SO_PACK_EXCEL_FORMAT = 'multi-pack-zip-v1';
+
+function _soPackFileKey(file) {
+  if (!file) return null;
+  return `${file.name}|${file.size}|${file.lastModified}`;
+}
+
+function _soPackSelectedFiles() {
+  const fileInput = document.getElementById('of-so-pack-file');
+  if (!fileInput || !fileInput.files || !fileInput.files.length) return [];
+  return Array.from(fileInput.files);
+}
+
+function _soPackSelectionKey(files) {
+  const list = files || _soPackSelectedFiles();
+  if (!list.length) return null;
+  return list.map((f) => _soPackFileKey(f)).join('||');
+}
+
+function _soPackExcelCacheKey(packKey) {
+  return packKey ? `${packKey}|${OF_SO_PACK_EXCEL_FORMAT}` : null;
+}
+
+function _soPackClearExcelCache() {
+  ofSoPackExcelBlob = null;
+  ofSoPackExcelKey = null;
+  ofSoPackBatchExcelBlob = null;
+  ofSoPackBatchExcelKey = null;
+}
+
+/** Drop analyze preview + Excel blob (new ZIP, leave module, hard reset). */
+function _soPackHardClearMemory() {
+  ofSoPackLastPayload = null;
+  ofSoPackFoMatchResult = null;
+  ofSoPackFilledOrdersCache = null;
+  ofSoPackAnalyzedKey = null;
+  ofSoPackBatch = [];
+  ofSoPackBatchSelectionKey = null;
+  _soPackClearExcelCache();
+  const pick = document.getElementById('of-so-pack-pick');
+  const bar = document.getElementById('of-so-pack-batch-bar');
+  if (pick) pick.innerHTML = '';
+  if (bar) {
+    bar.classList.add('hidden');
+    bar.style.display = 'none';
+  }
+  const foPick = document.getElementById('of-so-pack-fo-pick');
+  if (foPick) foPick.innerHTML = '<option value="">— Analyze pack first —</option>';
+  const matchBtn = document.getElementById('of-so-pack-fo-match-btn');
+  if (matchBtn) matchBtn.disabled = true;
+  _clearSoPackFoMatchUi();
+}
+
+function _soPackBuyerLabel(payload) {
+  const buyers = [];
+  const seen = new Set();
+  const rows = [...(payload && payload.so_summary ? payload.so_summary : []),
+    ...(payload && payload.consolidated ? payload.consolidated : [])];
+  for (const row of rows) {
+    const name = String((row && row.buyer_name) || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    buyers.push(name);
+  }
+  if (buyers.length === 1) return buyers[0];
+  if (buyers.length > 1) {
+    return buyers.length <= 3
+      ? buyers.join('_')
+      : `${buyers[0]}_and_${buyers.length - 1}_more`;
+  }
+  const src = String((payload && payload.meta && payload.meta.source_filename) || '');
+  return src.replace(/\.(zip|rar|pdf)$/i, '').replace(/_\d+_PDFs$/i, '').trim() || 'SO_Pack';
+}
+
+function _soPackExcelDownloadName(payload) {
+  const label = _soPackBuyerLabel(payload);
+  const safe = label
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.]+|[\s.]+$/g, '')
+    .slice(0, 100) || 'SO_Pack';
+  return `${safe}_SO_Pack.xlsx`;
+}
+
+function _soPackTriggerExcelDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || _soPackExcelDownloadName(ofSoPackLastPayload);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function _soPackOkPacks() {
+  return (ofSoPackBatch || []).filter((p) => p && p.payload && !p.error);
+}
+
+function _soPackBatchReadyForSelection() {
+  const files = _soPackSelectedFiles();
+  const selKey = _soPackSelectionKey(files);
+  if (!files.length || !selKey || !ofSoPackBatchSelectionKey) return false;
+  if (selKey !== ofSoPackBatchSelectionKey) return false;
+  const built = _soPackBuildJobs(files);
+  const jobs = (built && built.jobs) || [];
+  if (!jobs.length || ofSoPackBatch.length !== jobs.length) return false;
+  return _soPackOkPacks().length > 0;
+}
+
+function _soPackBuildJobs(files) {
+  const list = files || [];
+  const archives = [];
+  const pdfs = [];
+  const other = [];
+  for (const f of list) {
+    const n = String(f.name || '').toLowerCase();
+    if (n.endsWith('.zip') || n.endsWith('.rar')) archives.push(f);
+    else if (n.endsWith('.pdf')) pdfs.push(f);
+    else other.push(f);
+  }
+  const jobs = archives.map((f) => ({
+    key: _soPackFileKey(f),
+    filename: f.name,
+    files: [f],
+  }));
+  if (pdfs.length) {
+    jobs.push({
+      key: pdfs.map((f) => _soPackFileKey(f)).join('++'),
+      filename: pdfs.length === 1 ? pdfs[0].name : `${pdfs.length} PDFs`,
+      files: pdfs,
+    });
+  }
+  return { jobs, other };
+}
+
+/** White/disabled until Analyze succeeds for the selected pack(s); then match Analyze (primary) colour. */
+function updateSoPackExcelButtonState() {
+  const btn = document.getElementById('of-so-pack-excel-btn');
+  if (!btn) return;
+  const ready = _soPackBatchReadyForSelection();
+  const okN = _soPackOkPacks().length;
+  btn.disabled = !ready || _soPackBusyInFlight;
+  btn.classList.toggle('nx-btn-primary', ready);
+  if (!ready) {
+    btn.title = 'First click Analyze, then Excel Download';
+    btn.textContent = 'Excel Download';
+  } else if (okN > 1) {
+    btn.textContent = `Excel Download (${okN})`;
+    const cacheHit = ofSoPackBatchExcelBlob && ofSoPackBatchExcelKey === _soPackExcelCacheKey(ofSoPackBatchSelectionKey);
+    btn.title = cacheHit
+      ? `Download ZIP of ${okN} Excels (cached — instant)`
+      : `Download ZIP with ${okN} separate Excel files`;
+  } else {
+    btn.textContent = 'Excel Download';
+    const only = _soPackOkPacks()[0];
+    const cacheHit = ofSoPackExcelBlob && only && ofSoPackExcelKey === _soPackExcelCacheKey(only.key);
+    btn.title = cacheHit ? 'Download Excel (cached — instant)' : 'Download Excel for this analyzed pack';
+  }
+}
+
+function _soPackClearPreviewForNewFile() {
+  _soPackHardClearMemory();
+  const preview = document.getElementById('of-so-pack-preview');
+  if (preview) preview.classList.add('hidden');
+  const kpis = document.getElementById('of-so-pack-kpis');
+  if (kpis) kpis.innerHTML = '';
+  const statusEl = document.getElementById('of-so-pack-status');
+  if (statusEl) statusEl.textContent = '';
+  const thead = document.getElementById('of-so-pack-thead');
+  const tbody = document.getElementById('of-so-pack-tbody');
+  if (thead) thead.innerHTML = '';
+  if (tbody) tbody.innerHTML = '';
+  if (typeof showOfSection === 'function') {
+    /* keep current section; just hide stale pack preview */
+  }
+  updateSoPackExcelButtonState();
+}
+
+/** Leave Order Fulfillment / hard reset: wipe memory + on-screen SO Pack state + file input. */
+function _soPackOnLeaveModule() {
+  _soPackClearPreviewForNewFile();
+  const ofResult = document.getElementById('of-so-pack-result');
+  if (ofResult) {
+    ofResult.textContent = '';
+    ofResult.classList.remove('so-pack-ok', 'so-pack-busy');
+    ofResult.removeAttribute('title');
+  }
+  const ofFile = document.getElementById('of-so-pack-file');
+  if (ofFile) ofFile.value = '';
+}
+
+function bindSoPackFileInput() {
+  const fileInput = document.getElementById('of-so-pack-file');
+  if (!fileInput || fileInput.dataset.soPackBound === '1') return;
+  fileInput.dataset.soPackBound = '1';
+  fileInput.addEventListener('change', () => {
+    const files = _soPackSelectedFiles();
+    const key = _soPackSelectionKey(files);
+    if (!files.length) {
+      _soPackClearPreviewForNewFile();
+      _soPackShowMessage('', false);
+      return;
+    }
+    // New selection must not keep showing a previous pack on screen.
+    if (key !== ofSoPackBatchSelectionKey) {
+      _soPackClearPreviewForNewFile();
+      const n = files.length;
+      _soPackShowMessage(
+        n > 1
+          ? `${n} files selected — click Analyze.`
+          : 'New file selected — click Analyze first.',
+        true,
+      );
+    }
+  });
+}
+
+function _renderSoPackBatchPicker() {
+  const bar = document.getElementById('of-so-pack-batch-bar');
+  const pick = document.getElementById('of-so-pack-pick');
+  if (!bar || !pick) return;
+  const items = ofSoPackBatch || [];
+  if (items.length <= 1) {
+    bar.classList.add('hidden');
+    bar.style.display = 'none';
+    pick.innerHTML = '';
+    return;
+  }
+  bar.classList.remove('hidden');
+  bar.style.display = 'flex';
+  pick.innerHTML = items.map((p, idx) => {
+    const label = p.payload
+      ? `${_soPackBuyerLabel(p.payload)} (${p.filename})`
+      : `${p.filename} — failed`;
+    const selected = p.key === ofSoPackAnalyzedKey ? ' selected' : '';
+    const disabled = p.error || !p.payload ? ' disabled' : '';
+    return `<option value="${foEscapeText(String(idx))}"${selected}${disabled}>${foEscapeText(label)}</option>`;
+  }).join('');
+}
+
+function selectSoPackBatchItem(idxStr) {
+  const idx = Number(idxStr);
+  const item = ofSoPackBatch[idx];
+  if (!item || !item.payload) return;
+  _renderSoPackPreview(item.payload, item.key, { skipBatchPicker: true });
+}
 
 function _soPackMoney(n) {
   const v = Number(n || 0);
@@ -7905,6 +8265,7 @@ function _soPackMoney(n) {
 
 function showSoPackTab(tab) {
   ofSoPackActiveTab = tab || 'consolidated';
+  if (ofSoPackActiveTab === 'fo_match') ofSoPackActiveTab = 'consolidated';
   document.querySelectorAll('[data-so-pack-tab]').forEach((btn) => {
     const on = btn.getAttribute('data-so-pack-tab') === ofSoPackActiveTab;
     btn.classList.toggle('nx-btn-primary', on);
@@ -7944,6 +8305,422 @@ function showSoPackTab(tab) {
     : `<tr><td colspan="${headers.length}">No rows</td></tr>`;
 }
 
+function _clearSoPackFoMatchUi() {
+  // Match results now live on the Order Match page (Saved Orders layout).
+}
+
+function _soPackSoftKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function _scoreFoForBuyer(order, buyerLabel) {
+  const buyer = _soPackSoftKey(buyerLabel);
+  if (!buyer) return 0;
+  const names = [
+    order.distributor_name_raw,
+    order.distributor_name,
+    order.firm_name,
+    order.firm_nick_name,
+  ];
+  let best = 0;
+  for (const name of names) {
+    const key = _soPackSoftKey(name);
+    if (!key) continue;
+    if (key.includes(buyer) || buyer.includes(key)) best = Math.max(best, 0.95);
+    // crude token overlap
+    const a = new Set(key.split(' '));
+    const b = new Set(buyer.split(' '));
+    let hit = 0;
+    a.forEach((t) => { if (b.has(t)) hit += 1; });
+    const ratio = hit / Math.max(a.size, b.size, 1);
+    best = Math.max(best, ratio);
+  }
+  return best;
+}
+
+async function _loadSoPackFilledOrderOptions() {
+  const sel = document.getElementById('of-so-pack-fo-pick');
+  const btn = document.getElementById('of-so-pack-fo-match-btn');
+  if (!sel) return;
+  if (!ofSoPackLastPayload) {
+    sel.innerHTML = '<option value="">— Analyze pack first —</option>';
+    if (btn) btn.disabled = true;
+    return;
+  }
+  const buyer = _soPackBuyerLabel(ofSoPackLastPayload);
+  try {
+    if (!ofSoPackFilledOrdersCache) {
+      const response = await fetchWithAuth('/api/v1/filled-orders/list');
+      const data = await parseApiJson(response);
+      if (!response.ok) throw new Error((data.error && data.error.message) || data.error || 'Unable to load filled orders');
+      ofSoPackFilledOrdersCache = data.filled_orders || [];
+    }
+    const orders = [...(ofSoPackFilledOrdersCache || [])].map((o) => ({
+      ...o,
+      _score: _scoreFoForBuyer(o, buyer),
+    }));
+    orders.sort((a, b) => (b._score - a._score)
+      || String(b.created_at || '').localeCompare(String(a.created_at || ''))
+      || (Number(b.id) - Number(a.id)));
+
+    if (!orders.length) {
+      sel.innerHTML = '<option value="">— No saved Filled Orders — upload in step 2 —</option>';
+      if (btn) btn.disabled = true;
+      return;
+    }
+
+    const suggested = orders.find((o) => o._score >= 0.45) || (orders.length === 1 ? orders[0] : null);
+    sel.innerHTML = [
+      '<option value="">— Choose saved Filled Order —</option>',
+      ...orders.map((o) => {
+        const label = [
+          o.distributor_name_raw || o.distributor_name || `Dist #${o.distributor_id || '?'}`,
+          o.category,
+          o.season,
+          o.source_filename,
+          o.total_piece_qty != null ? `${o.total_piece_qty} pcs` : null,
+          o._score >= 0.45 ? '★ suggested' : null,
+        ].filter(Boolean).join(' · ');
+        const selected = suggested && Number(suggested.id) === Number(o.id) ? ' selected' : '';
+        return `<option value="${Number(o.id)}"${selected}>${foEscapeText(label)}</option>`;
+      }),
+    ].join('');
+    if (btn) btn.disabled = !sel.value;
+    sel.onchange = () => {
+      if (btn) btn.disabled = !sel.value;
+      ofSoPackFoMatchResult = null;
+      _clearSoPackFoMatchUi();
+    };
+  } catch (err) {
+    sel.innerHTML = `<option value="">— ${foEscapeText(err.message || 'Load failed')} —</option>`;
+    if (btn) btn.disabled = true;
+  }
+}
+
+function _matchLabStatusClass(status) {
+  if (status === 'MATCH' || status === 'MATCH_FUZZY_BRAND') return 'color:#3dd68c;font-weight:600;';
+  if (status === 'QTY_MISMATCH' || status === 'VALUE_MISMATCH') return 'color:#ffb020;font-weight:600;';
+  return 'color:#ff6b6b;font-weight:600;';
+}
+
+async function runSoPackFoMatch() {
+  const sel = document.getElementById('of-so-pack-fo-pick');
+  const btn = document.getElementById('of-so-pack-fo-match-btn');
+  const resultBox = document.getElementById('of-so-pack-result');
+  const filledOrderId = sel && sel.value ? Number(sel.value) : null;
+  if (!ofSoPackLastPayload) {
+    if (resultBox) {
+      resultBox.textContent = 'Analyze a SO Pack first.';
+      resultBox.classList.remove('so-pack-ok');
+    }
+    return;
+  }
+  if (!filledOrderId) {
+    if (resultBox) {
+      resultBox.textContent = 'Choose a saved Filled Order.';
+      resultBox.classList.remove('so-pack-ok');
+    }
+    return;
+  }
+  if (resultBox) resultBox.textContent = 'Matching Filled Order vs SO Pack…';
+  if (btn) btn.disabled = true;
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/match-filled-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filled_order_id: filledOrderId,
+        so_pack: ofSoPackLastPayload,
+        so_buyer_label: _soPackBuyerLabel(ofSoPackLastPayload),
+        so_source_filename: (ofSoPackLastPayload.meta || {}).source_filename || null,
+      }),
+    });
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'Match failed');
+    }
+    ofSoPackFoMatchResult = data.data || {};
+    const runId = ofSoPackFoMatchResult.run_id || (ofSoPackFoMatchResult.run && ofSoPackFoMatchResult.run.id);
+    if (resultBox) {
+      resultBox.textContent = 'Match saved — opening Order Match…';
+      resultBox.classList.add('so-pack-ok');
+    }
+    if (typeof nexoraToast === 'function') nexoraToast('FO vs SO match saved', 'success');
+    await openOrderMatchWorkspace(runId);
+  } catch (err) {
+    ofSoPackFoMatchResult = null;
+    if (resultBox) {
+      resultBox.textContent = err.message || 'Match failed';
+      resultBox.classList.remove('so-pack-ok');
+    }
+  } finally {
+    if (btn) btn.disabled = !(sel && sel.value);
+  }
+}
+
+const orderMatchState = {
+  runs: [],
+  grouped: [],
+  selectedDistributorKey: '',
+  selectedRunId: null,
+  detail: null,
+};
+
+function _orderMatchGroupKey(run) {
+  if (run.distributor_id) return `id:${run.distributor_id}`;
+  return `name:${String(run.distributor_name || run.so_buyer_label || 'Unknown').trim().toLowerCase()}`;
+}
+
+function _buildOrderMatchGroups() {
+  const map = new Map();
+  for (const run of orderMatchState.runs || []) {
+    const key = _orderMatchGroupKey(run);
+    const name = run.distributor_name || run.so_buyer_label || `Distributor #${run.distributor_id || '?'}`;
+    if (!map.has(key)) {
+      map.set(key, { key, distributorName: name, runs: [] });
+    }
+    map.get(key).runs.push(run);
+  }
+  return [...map.values()].sort((a, b) => a.distributorName.localeCompare(b.distributorName));
+}
+
+function renderOrderMatchDistributorRail() {
+  const host = document.getElementById('of-match-distributor-list');
+  if (!host) return;
+  const groups = orderMatchState.grouped || [];
+  if (!groups.length) {
+    host.innerHTML = '<p class="nx-text-dim" style="padding:0.75rem;font-size:0.85rem;">No matches yet. Run Match FO on SO Pack.</p>';
+    return;
+  }
+  host.innerHTML = groups.map((group) => {
+    const active = group.key === orderMatchState.selectedDistributorKey;
+    const latest = (group.runs[0] && String(group.runs[0].created_at || '').slice(0, 10)) || '';
+    return `
+      <button type="button" class="of-rail-item of-match-distributor-btn ${active ? 'is-active' : ''}" data-match-distributor-key="${encodeURIComponent(group.key)}">
+        <span class="of-rail-text">
+          <span class="of-rail-label">${foEscapeText(group.distributorName)}</span>
+          <span class="of-rail-hint">${group.runs.length} match${group.runs.length === 1 ? '' : 'es'}${latest ? ` · ${foEscapeText(latest)}` : ''}</span>
+        </span>
+      </button>`;
+  }).join('');
+  host.querySelectorAll('.of-match-distributor-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectOrderMatchDistributor(decodeURIComponent(btn.getAttribute('data-match-distributor-key') || ''));
+    });
+  });
+}
+
+function renderOrderMatchRunPicker() {
+  const picker = document.getElementById('of-match-run-pick');
+  const title = document.getElementById('of-match-distributor-title');
+  const group = (orderMatchState.grouped || []).find((g) => g.key === orderMatchState.selectedDistributorKey);
+  if (title) {
+    title.textContent = group ? group.distributorName : 'Select a distributor';
+    title.title = title.textContent;
+  }
+  if (!picker) return;
+  if (!group || !group.runs.length) {
+    picker.innerHTML = '<option value="">No matches</option>';
+    return;
+  }
+  picker.innerHTML = group.runs.map((r) => {
+    const label = [
+      r.category,
+      r.season,
+      r.fo_source_filename,
+      `${Number(r.match_count || 0) + Number(r.fuzzy_count || 0)} ok`,
+      (r.mismatch_count || r.missing_count || r.extra_count)
+        ? `${Number(r.mismatch_count || 0) + Number(r.missing_count || 0) + Number(r.extra_count || 0)} issues`
+        : null,
+      String(r.created_at || '').slice(0, 16),
+    ].filter(Boolean).join(' · ');
+    const selected = Number(orderMatchState.selectedRunId) === Number(r.id) ? ' selected' : '';
+    return `<option value="${Number(r.id)}"${selected}>${foEscapeText(label)}</option>`;
+  }).join('');
+}
+
+function renderOrderMatchStats(run) {
+  const meta = document.getElementById('of-match-detail-meta');
+  if (!meta) return;
+  if (!run) {
+    meta.textContent = 'Select a distributor from the left.';
+    return;
+  }
+  const chips = [
+    ['of-saved-chip', run.category || '—'],
+    ['of-saved-chip', run.season || '—'],
+    ['of-saved-chip', `${Number(run.match_count || 0) + Number(run.fuzzy_count || 0)} match`],
+    ['of-saved-chip', `${run.mismatch_count || 0} mismatch`],
+    ['of-saved-chip', `${run.missing_count || 0} missing`],
+    ['of-saved-chip', `${run.extra_count || 0} extra`],
+    ['of-saved-chip', `FO ${formatFilledOrderQty(run.fo_qty)} pcs`],
+    ['of-saved-chip', `SO ${formatFilledOrderQty(run.so_qty)} pcs`],
+    ['of-saved-chip of-saved-chip--accent', `Δ qty ${run.delta_qty ?? 0}`],
+    ['of-saved-chip of-saved-chip--accent', `FO ExMill ${formatFilledOrderAmount(run.fo_exmill_value)}`],
+    ['of-saved-chip of-saved-chip--accent', `SO Net ${formatFilledOrderAmount(run.so_net_amount)}`],
+  ];
+  meta.innerHTML = chips.map(([cls, text]) => `<span class="${cls}">${foEscapeText(String(text))}</span>`).join('');
+}
+
+function renderOrderMatchDetailRows(rows) {
+  const tbody = document.getElementById('of-match-detail-tbody');
+  if (!tbody) return;
+  const list = rows || [];
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="9">No Brand×Size lines in this match.</td></tr>';
+    return;
+  }
+  const ordered = [...list].sort((a, b) => {
+    const rank = {
+      MISSING_ON_SO: 0, EXTRA_ON_SO: 1, QTY_MISMATCH: 2, VALUE_MISMATCH: 3,
+      MATCH_FUZZY_BRAND: 4, MATCH: 5,
+    };
+    return (rank[a.status] ?? 9) - (rank[b.status] ?? 9)
+      || String(a.brand || '').localeCompare(String(b.brand || ''))
+      || String(a.size || '').localeCompare(String(b.size || ''));
+  });
+  tbody.innerHTML = ordered.map((r) => {
+    const status = r.status || '';
+    const ok = status === 'MATCH' || status === 'MATCH_FUZZY_BRAND';
+    const statusHtml = ok
+      ? `<span class="of-saved-ok" title="${foEscapeText(status)}">✓ ${foEscapeText(status === 'MATCH_FUZZY_BRAND' ? 'Fuzzy' : 'Match')}</span>`
+      : `<span class="of-saved-flag" title="${foEscapeText(status)}">${foEscapeText(status)}</span>`;
+    return `<tr>
+      <td>${foEscapeText(r.brand || '')}</td>
+      <td>${foEscapeText(r.size || '')}</td>
+      <td>${r.fo_qty ?? ''}</td>
+      <td>${r.so_qty ?? ''}</td>
+      <td>${r.delta_qty ?? ''}</td>
+      <td>${formatFilledOrderAmount(r.fo_exmill_value)}</td>
+      <td>${formatFilledOrderAmount(r.so_net_amount)}</td>
+      <td>${formatFilledOrderAmount(r.delta_value)}</td>
+      <td>${statusHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function selectOrderMatchDistributor(key) {
+  orderMatchState.selectedDistributorKey = key;
+  renderOrderMatchDistributorRail();
+  const group = (orderMatchState.grouped || []).find((g) => g.key === key);
+  const firstId = group && group.runs[0] ? group.runs[0].id : null;
+  renderOrderMatchRunPicker();
+  if (firstId) await loadOrderMatchRunDetail(firstId);
+  else {
+    orderMatchState.selectedRunId = null;
+    orderMatchState.detail = null;
+    renderOrderMatchStats(null);
+    renderOrderMatchDetailRows([]);
+  }
+}
+
+async function onOrderMatchRunPickChanged(value) {
+  const id = Number(value);
+  if (!id) return;
+  await loadOrderMatchRunDetail(id);
+}
+
+async function loadOrderMatchRunDetail(runId) {
+  const tbody = document.getElementById('of-match-detail-tbody');
+  const meta = document.getElementById('of-match-detail-meta');
+  if (meta) meta.textContent = 'Loading match…';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9">Loading…</td></tr>';
+  try {
+    const response = await fetchWithAuth(`/api/v1/order-fulfillment/order-match/${runId}`);
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'Unable to load match');
+    }
+    const run = (data.data && data.data.run) || null;
+    orderMatchState.selectedRunId = runId;
+    orderMatchState.detail = run;
+    renderOrderMatchRunPicker();
+    renderOrderMatchStats(run);
+    renderOrderMatchDetailRows((run && run.rows) || []);
+  } catch (err) {
+    if (meta) meta.textContent = err.message || 'Load failed';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="9">${foEscapeText(err.message || 'Load failed')}</td></tr>`;
+  }
+}
+
+async function openOrderMatchWorkspace(focusRunId) {
+  const tbody = document.getElementById('of-match-detail-tbody');
+  const meta = document.getElementById('of-match-detail-meta');
+  if (meta) meta.textContent = 'Loading matches…';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9">Loading matches…</td></tr>';
+
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/order-match/list');
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'Unable to load matches');
+    }
+    orderMatchState.runs = (data.data && data.data.runs) || [];
+  } catch (err) {
+    orderMatchState.runs = [];
+    if (meta) meta.textContent = err.message || 'Unable to load matches';
+  }
+
+  orderMatchState.grouped = _buildOrderMatchGroups();
+  setOfRailMode('match');
+  showOfSection('order-match');
+  renderOrderMatchDistributorRail();
+
+  let focusGroupKey = '';
+  if (focusRunId) {
+    const run = orderMatchState.runs.find((r) => Number(r.id) === Number(focusRunId));
+    if (run) focusGroupKey = _orderMatchGroupKey(run);
+  }
+  const firstKey = focusGroupKey || (orderMatchState.grouped[0] && orderMatchState.grouped[0].key) || '';
+  if (firstKey) {
+    orderMatchState.selectedDistributorKey = firstKey;
+    renderOrderMatchDistributorRail();
+    renderOrderMatchRunPicker();
+    const group = orderMatchState.grouped.find((g) => g.key === firstKey);
+    const runId = focusRunId
+      || (group && group.runs[0] && group.runs[0].id)
+      || null;
+    if (runId) await loadOrderMatchRunDetail(runId);
+  } else {
+    orderMatchState.selectedDistributorKey = '';
+    orderMatchState.selectedRunId = null;
+    renderOrderMatchRunPicker();
+    if (meta) meta.textContent = 'No matches yet. On SO Pack, pick a Filled Order and click Match FO.';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9">No matches yet.</td></tr>';
+  }
+}
+
+function exitOrderMatchWorkspace() {
+  setOfRailMode('default');
+  showOfSection('so-pack');
+}
+
+async function deleteOrderMatchSelectedRun() {
+  const runId = orderMatchState.selectedRunId;
+  if (!runId) {
+    await showSimpleConfirmModal('No match selected', 'Select a match first.', 'OK', 'Close');
+    return;
+  }
+  const ok = await showSimpleConfirmModal(
+    'Delete match result?',
+    'This removes the saved FO vs SO match snapshot. You can run Match FO again anytime.',
+    'Delete',
+    'Cancel',
+  );
+  if (!ok) return;
+  try {
+    const response = await fetchWithAuth(`/api/v1/order-fulfillment/order-match/${runId}`, { method: 'DELETE' });
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'Delete failed');
+    }
+    if (typeof nexoraToast === 'function') nexoraToast('Match deleted', 'success');
+    await openOrderMatchWorkspace();
+  } catch (err) {
+    await showSimpleConfirmModal('Delete failed', err.message || 'Could not delete.', 'OK', 'Close');
+  }
+}
+
 const SO_PACK_ANALYZE_TIPS = [
   'Unpacking ZIP / RAR archive…',
   'Reading Bombay Dyeing SO PDFs…',
@@ -7963,6 +8740,8 @@ const SO_PACK_EXCEL_TIPS = [
 let _soPackBusyTimer = null;
 let _soPackBusyTipIdx = 0;
 let _soPackBusyInFlight = false;
+/** When true, tip line is driven by live server progress (no fake rotation). */
+let _soPackBusyLiveTips = false;
 
 function _soPackEnsureBusyModal() {
   let modal = document.getElementById('of-so-pack-busy-modal');
@@ -7994,10 +8773,15 @@ function _soPackEnsureBusyModal() {
 function _soPackSetBusyButtons(disabled) {
   const root = document.getElementById('order-fulfillment-workspace');
   if (!root) return;
-  root.querySelectorAll('#of-so-pack-file, button[onclick="analyzeSoPack()"], button[onclick="downloadSoPackExcel()"]')
+  root.querySelectorAll('#of-so-pack-file, button[onclick="analyzeSoPack()"]')
     .forEach((el) => {
       el.disabled = !!disabled;
     });
+  updateSoPackExcelButtonState();
+  if (disabled) {
+    const excelBtn = document.getElementById('of-so-pack-excel-btn');
+    if (excelBtn) excelBtn.disabled = true;
+  }
 }
 
 function _soPackClearBusy() {
@@ -8006,6 +8790,7 @@ function _soPackClearBusy() {
     _soPackBusyTimer = null;
   }
   _soPackBusyInFlight = false;
+  _soPackBusyLiveTips = false;
   _soPackSetBusyButtons(false);
   const modal = document.getElementById('of-so-pack-busy-modal');
   if (modal) {
@@ -8015,7 +8800,14 @@ function _soPackClearBusy() {
   }
 }
 
-function _soPackShowBusy(mode) {
+function _soPackSetBusyTip(text) {
+  const tip = document.getElementById('of-so-pack-busy-tip');
+  if (!tip || text == null || text === '') return;
+  tip.classList.remove('is-fading');
+  tip.textContent = String(text);
+}
+
+function _soPackShowBusy(mode, progressText) {
   const modal = _soPackEnsureBusyModal();
   const resultBox = document.getElementById('of-so-pack-result');
   _soPackClearBusy();
@@ -8023,14 +8815,20 @@ function _soPackShowBusy(mode) {
   _soPackSetBusyButtons(true);
   _soPackBusyTipIdx = 0;
   const isExcel = mode === 'excel';
+  // Analyze tip = live server messages; Excel still uses rotating tips.
+  _soPackBusyLiveTips = !isExcel;
   const tips = isExcel ? SO_PACK_EXCEL_TIPS : SO_PACK_ANALYZE_TIPS;
   const titleEl = document.getElementById('of-so-pack-busy-title');
   const tipEl = document.getElementById('of-so-pack-busy-tip');
   const eyeEl = document.getElementById('of-so-pack-busy-eyebrow');
-  if (titleEl) titleEl.textContent = isExcel ? 'Building Excel workbook' : 'Analyzing SO pack';
+  if (titleEl) {
+    titleEl.textContent = isExcel
+      ? (progressText || 'Building Excel workbook')
+      : (progressText || 'Analyzing SO pack');
+  }
   if (eyeEl) eyeEl.textContent = isExcel ? 'Download Excel' : 'SO Pack Consolidate';
   if (tipEl) {
-    tipEl.textContent = tips[0];
+    tipEl.textContent = isExcel ? tips[0] : 'Starting analysis…';
     tipEl.classList.remove('is-fading');
   }
   if (resultBox) {
@@ -8046,17 +8844,24 @@ function _soPackShowBusy(mode) {
   modal.classList.add('is-open');
   modal.setAttribute('aria-hidden', 'false');
 
-  _soPackBusyTimer = setInterval(() => {
-    const tip = document.getElementById('of-so-pack-busy-tip');
-    if (!tip || !_soPackBusyInFlight) return;
-    tip.classList.add('is-fading');
-    setTimeout(() => {
-      if (!_soPackBusyInFlight) return;
-      _soPackBusyTipIdx = (_soPackBusyTipIdx + 1) % tips.length;
-      tip.textContent = tips[_soPackBusyTipIdx];
-      tip.classList.remove('is-fading');
-    }, 220);
-  }, 2200);
+  if (isExcel) {
+    _soPackBusyTimer = setInterval(() => {
+      const tip = document.getElementById('of-so-pack-busy-tip');
+      if (!tip || !_soPackBusyInFlight || _soPackBusyLiveTips) return;
+      tip.classList.add('is-fading');
+      setTimeout(() => {
+        if (!_soPackBusyInFlight || _soPackBusyLiveTips) return;
+        _soPackBusyTipIdx = (_soPackBusyTipIdx + 1) % tips.length;
+        tip.textContent = tips[_soPackBusyTipIdx];
+        tip.classList.remove('is-fading');
+      }, 220);
+    }, 2200);
+  }
+}
+
+function _soPackSetBusyProgress(titleText) {
+  const titleEl = document.getElementById('of-so-pack-busy-title');
+  if (titleEl && titleText) titleEl.textContent = titleText;
 }
 
 function _soPackShowMessage(text, ok) {
@@ -8068,28 +8873,161 @@ function _soPackShowMessage(text, ok) {
   resultBox.textContent = text || '';
 }
 
+function showOfSection(section) {
+  const meta = {
+    'article-master': {
+      title: 'Article Master',
+      sub: 'Catalog of brands, sizes, rates and bale packs — source of truth for matching filled orders.',
+    },
+    'filled-order': {
+      title: 'Filled Order',
+      sub: 'Upload distributor Excel. Qty is the source of truth; bale mismatches are highlighted for correction.',
+    },
+    'so-pack': {
+      title: 'SO Pack',
+      sub: 'Analyze ZIP/RAR/PDF packs, pick a saved Filled Order, Match FO — results open on Order Match.',
+    },
+    'order-match': {
+      title: 'Order Match',
+      sub: 'FO vs SO Pack Brand × Size results — same layout as Saved Orders.',
+    },
+    'invoice-ci': {
+      title: 'Invoice (CI)',
+      sub: 'Upload commercial invoices and link them in the SO & CI tracking board.',
+    },
+    'saved-orders': {
+      title: 'Saved Orders',
+      sub: '',
+    },
+  };
+  // Legacy single-SO PDF step removed — SO Pack is the SO engine.
+  let key = section === 'sales-order' || section === 'match-lab' ? 'so-pack' : section;
+  key = meta[key] ? key : 'filled-order';
+  const info = meta[key];
+  const isSaved = key === 'saved-orders';
+  const isMatch = key === 'order-match';
+
+  if (!isSaved && !isMatch) {
+    setOfRailMode('default');
+  }
+
+  document.querySelectorAll('#order-fulfillment-workspace .of-rail-item').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-of-section') === key);
+  });
+
+  // Hide regular panes while Saved Orders / Order Match workspace is open.
+  document.querySelectorAll('#order-fulfillment-workspace .of-pane').forEach((pane) => {
+    const on = !isSaved && !isMatch && pane.getAttribute('data-of-pane') === key;
+    pane.classList.toggle('is-active', on);
+    if (on) {
+      pane.removeAttribute('hidden');
+      pane.style.display = 'flex';
+    } else {
+      pane.setAttribute('hidden', '');
+      pane.style.display = 'none';
+    }
+  });
+
+  const savedWs = document.getElementById('of-saved-workspace');
+  const matchWs = document.getElementById('of-match-workspace');
+  const ofScreen = document.querySelector('#order-fulfillment-workspace .nx-of-vyapar');
+  if (ofScreen) ofScreen.classList.toggle('is-saved-orders', isSaved || isMatch);
+  if (savedWs) {
+    if (isSaved) {
+      savedWs.removeAttribute('hidden');
+      savedWs.classList.add('is-open');
+      savedWs.style.display = 'flex';
+    } else {
+      savedWs.setAttribute('hidden', '');
+      savedWs.classList.remove('is-open');
+      savedWs.style.display = 'none';
+    }
+  }
+  if (matchWs) {
+    if (isMatch) {
+      matchWs.removeAttribute('hidden');
+      matchWs.classList.add('is-open');
+      matchWs.style.display = 'flex';
+    } else {
+      matchWs.setAttribute('hidden', '');
+      matchWs.classList.remove('is-open');
+      matchWs.style.display = 'none';
+    }
+  }
+
+  const titleEl = document.getElementById('of-stage-title');
+  const subEl = document.getElementById('of-stage-sub');
+  if (titleEl) titleEl.textContent = info.title;
+  if (subEl) {
+    subEl.textContent = info.sub || '';
+    subEl.style.display = info.sub ? '' : 'none';
+  }
+
+  if (key === 'invoice-ci') {
+    loadOrderFulfillmentUploads();
+  }
+  if (key === 'so-pack' && ofSoPackLastPayload) {
+    const preview = document.getElementById('of-so-pack-preview');
+    if (preview) preview.classList.remove('hidden');
+  }
+}
+
+function setOfRailMode(mode) {
+  const defaultNav = document.getElementById('of-rail-default-nav');
+  const savedNav = document.getElementById('of-rail-saved-nav');
+  const matchNav = document.getElementById('of-rail-match-nav');
+  const titleEl = document.getElementById('of-rail-title');
+  const kickerEl = document.getElementById('of-rail-kicker');
+  const isSaved = mode === 'saved';
+  const isMatch = mode === 'match';
+  if (defaultNav) defaultNav.classList.toggle('hidden', isSaved || isMatch);
+  if (savedNav) savedNav.classList.toggle('hidden', !isSaved);
+  if (matchNav) matchNav.classList.toggle('hidden', !isMatch);
+  if (titleEl) {
+    titleEl.textContent = isSaved ? 'Saved Orders' : (isMatch ? 'Order Match' : 'Fulfillment');
+  }
+  if (kickerEl) kickerEl.textContent = 'Order Desk';
+}
+
+function onOfRailBack() {
+  const savedWs = document.getElementById('of-saved-workspace');
+  if (savedWs && savedWs.classList.contains('is-open')) {
+    exitOfSavedOrdersWorkspace();
+    return;
+  }
+  const matchWs = document.getElementById('of-match-workspace');
+  if (matchWs && matchWs.classList.contains('is-open')) {
+    exitOrderMatchWorkspace();
+    return;
+  }
+  goBack();
+}
+
 function showOfBottomPanel(panel) {
-  const bottom = document.querySelector('#order-fulfillment-workspace .nx-of-bottom');
-  if (!bottom) return;
-  const mode = panel === 'pack' ? 'pack' : 'tracking';
-  const preview = document.getElementById('of-so-pack-preview');
-  if (mode === 'pack') {
+  // Legacy bottom tabs removed — map to Vyapar-style sections.
+  if (panel === 'pack') {
     if (!ofSoPackLastPayload) {
       if (typeof nexoraToast === 'function') nexoraToast('Analyze a SO pack first', 'error');
       return;
     }
+    showOfSection('so-pack');
+    const preview = document.getElementById('of-so-pack-preview');
     if (preview) preview.classList.remove('hidden');
+    return;
   }
-  bottom.classList.toggle('is-pack', mode === 'pack');
-  bottom.classList.toggle('is-tracking', mode === 'tracking');
-  document.querySelectorAll('[data-of-bottom]').forEach((btn) => {
-    const on = btn.getAttribute('data-of-bottom') === mode;
-    btn.classList.toggle('nx-btn-primary', on);
-  });
+  // Old single-SO panel → SO Pack (current SO engine).
+  showOfSection('so-pack');
 }
 
-function _renderSoPackPreview(data) {
+function _renderSoPackPreview(data, fileKey, opts) {
+  // Re-analyze invalidates any previous workbook cache for this session.
+  if (!(opts && opts.skipBatchPicker)) {
+    _soPackClearExcelCache();
+  }
   ofSoPackLastPayload = data;
+  ofSoPackFoMatchResult = null;
+  _clearSoPackFoMatchUi();
+  if (fileKey) ofSoPackAnalyzedKey = fileKey;
   const preview = document.getElementById('of-so-pack-preview');
   const kpis = document.getElementById('of-so-pack-kpis');
   const statusEl = document.getElementById('of-so-pack-status');
@@ -8113,42 +9051,178 @@ function _renderSoPackPreview(data) {
     }).join('');
   }
   const errs = meta.errors || [];
+  const buyer = _soPackBuyerLabel(data);
   const fullMsg = errs.length
-    ? `Parsed ${meta.so_count || 0} SO(s). ${errs.length} PDF(s) had issues.`
-    : `Parsed ${meta.pdf_count || 0} PDF(s) → ${meta.so_count || 0} SO(s) → ${meta.consolidated_rows || 0} product rows · Qty ${meta.total_qty ?? '—'} · Total ₹ ${_soPackMoney(meta.total_amount)}`;
+    ? `${buyer}: Parsed ${meta.so_count || 0} SO(s). ${errs.length} PDF(s) had issues.`
+    : `${buyer}: ${meta.pdf_count || 0} PDF(s) → ${meta.so_count || 0} SO(s) → ${meta.consolidated_rows || 0} product rows · Qty ${meta.total_qty ?? '—'} · Total ₹ ${_soPackMoney(meta.total_amount)}`;
   if (statusEl) statusEl.textContent = fullMsg;
-  _soPackShowMessage(
-    `Ready · ${meta.so_count || 0} SO · ${meta.consolidated_rows || 0} products`,
-    !errs.length,
-  );
+  if (!(opts && opts.skipMessage)) {
+    const okN = _soPackOkPacks().length;
+    const failN = (ofSoPackBatch || []).filter((p) => p && p.error).length;
+    if (okN > 1 || failN) {
+      _soPackShowMessage(
+        `Ready · ${okN} pack(s)${failN ? ` · ${failN} failed` : ''} · viewing ${buyer}`,
+        failN === 0,
+      );
+    } else {
+      _soPackShowMessage(
+        `Ready · ${meta.so_count || 0} SO · ${meta.consolidated_rows || 0} products`,
+        !errs.length,
+      );
+    }
+  }
   const resultBox = document.getElementById('of-so-pack-result');
   if (resultBox) resultBox.title = fullMsg;
+  if (!(opts && opts.skipBatchPicker)) {
+    _renderSoPackBatchPicker();
+  }
   showOfBottomPanel('pack');
-  showSoPackTab('consolidated');
+  showSoPackTab(ofSoPackActiveTab || 'consolidated');
+  updateSoPackExcelButtonState();
+  _loadSoPackFilledOrderOptions();
+}
+
+async function _soPackRunAnalyze(fileOrFiles) {
+  const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+  const formData = new FormData();
+  for (const f of files) formData.append('file', f);
+
+  // Prefer live progress stream (real PDF/SO status on the tip line).
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/analyze-stream', {
+      method: 'POST',
+      body: formData,
+      headers: { Accept: 'application/x-ndjson, application/json' },
+    });
+    if (response.ok && response.body && (response.headers.get('Content-Type') || '').includes('ndjson')) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let payload = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n');
+        buffer = parts.pop() || '';
+        for (const line of parts) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let evt;
+          try {
+            evt = JSON.parse(trimmed);
+          } catch (_) {
+            continue;
+          }
+          if (evt.type === 'progress' && evt.message) {
+            _soPackSetBusyTip(evt.message);
+          } else if (evt.type === 'done') {
+            payload = evt.data || null;
+          } else if (evt.type === 'error') {
+            throw new Error(evt.message || 'Analyze failed');
+          }
+        }
+      }
+      if (buffer.trim()) {
+        try {
+          const evt = JSON.parse(buffer.trim());
+          if (evt.type === 'done') payload = evt.data || payload;
+          if (evt.type === 'error') throw new Error(evt.message || 'Analyze failed');
+          if (evt.type === 'progress' && evt.message) _soPackSetBusyTip(evt.message);
+        } catch (e) {
+          if (e && e.message && !String(e.message).includes('JSON')) throw e;
+        }
+      }
+      if (!payload) throw new Error('Analyze stream ended without result');
+      return payload;
+    }
+    // Non-stream JSON error from stream route
+    if (!response.ok) {
+      const data = await parseApiJson(response);
+      throw new Error((data.error && data.error.message) || 'Analyze failed');
+    }
+  } catch (streamErr) {
+    // Fall back to classic analyze if stream unsupported / network oddity
+    if (streamErr && streamErr.message && /stream ended|Analyze failed|No PDF|Empty file|Upload a|Upload ZIP|Multiple files/i.test(streamErr.message)) {
+      throw streamErr;
+    }
+  }
+
+  const formData2 = new FormData();
+  for (const f of files) formData2.append('file', f);
+  _soPackSetBusyTip('Analyzing pack (fallback)…');
+  const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/analyze', {
+    method: 'POST',
+    body: formData2,
+  });
+  const data = await parseApiJson(response);
+  if (!response.ok || !data.success) {
+    throw new Error((data.error && data.error.message) || 'Analyze failed');
+  }
+  return data.data || {};
 }
 
 async function analyzeSoPack() {
+  bindSoPackFileInput();
   if (_soPackBusyInFlight) return;
-  const fileInput = document.getElementById('of-so-pack-file');
-  const file = fileInput && fileInput.files && fileInput.files[0];
-  if (!file) {
-    _soPackShowMessage('Please choose a ZIP or RAR file first.', false);
+  const files = _soPackSelectedFiles();
+  if (!files.length) {
+    _soPackShowMessage('Please choose ZIP, RAR, or PDF file(s) first.', false);
     return;
   }
-  _soPackShowBusy('analyze');
-  const formData = new FormData();
-  formData.append('file', file);
+  const built = _soPackBuildJobs(files);
+  if (built.other.length) {
+    _soPackShowMessage('Only ZIP, RAR, or PDF files are allowed.', false);
+    return;
+  }
+  const jobs = built.jobs;
+  if (!jobs.length) {
+    _soPackShowMessage('Please choose ZIP, RAR, or PDF file(s) first.', false);
+    return;
+  }
+  const total = jobs.length;
+  _soPackShowBusy('analyze', total > 1 ? `Analyzing pack 1 of ${total}` : 'Analyzing SO pack');
+  ofSoPackBatch = [];
+  ofSoPackBatchSelectionKey = null;
+  _soPackClearExcelCache();
+  let firstOk = null;
   try {
-    const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/analyze', {
-      method: 'POST',
-      body: formData,
-    });
-    const data = await parseApiJson(response);
-    if (!response.ok || !data.success) {
-      throw new Error((data.error && data.error.message) || 'Analyze failed');
+    for (let i = 0; i < jobs.length; i++) {
+      const job = jobs[i];
+      _soPackSetBusyProgress(
+        total > 1
+          ? `Analyzing ${i + 1} of ${total}: ${job.filename}`
+          : 'Analyzing SO pack',
+      );
+      try {
+        const payload = await _soPackRunAnalyze(job.files);
+        const item = { key: job.key, filename: job.filename, payload };
+        ofSoPackBatch.push(item);
+        if (!firstOk) firstOk = item;
+      } catch (err) {
+        ofSoPackBatch.push({
+          key: job.key,
+          filename: job.filename,
+          error: err.message || 'Analyze failed',
+        });
+      }
     }
-    _renderSoPackPreview(data.data || {});
-    if (typeof nexoraToast === 'function') nexoraToast('SO pack analyzed', 'ok');
+    ofSoPackBatchSelectionKey = _soPackSelectionKey(files);
+    if (!firstOk) {
+      const msgs = ofSoPackBatch.map((p) => `${p.filename}: ${p.error || 'failed'}`).join(' · ');
+      throw new Error(msgs || 'Analyze failed');
+    }
+    _renderSoPackPreview(firstOk.payload, firstOk.key);
+    const okN = _soPackOkPacks().length;
+    const failN = ofSoPackBatch.filter((p) => p.error).length;
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(
+        failN
+          ? `Analyzed ${okN}/${total} packs (${failN} failed)`
+          : (total > 1 ? `Analyzed ${okN} packs` : 'SO pack analyzed'),
+        failN ? 'warn' : 'ok',
+      );
+    }
   } catch (e) {
     _soPackShowMessage(e.message || 'Analyze failed', false);
     if (typeof nexoraToast === 'function') nexoraToast(e.message || 'Analyze failed', 'error');
@@ -8156,39 +9230,139 @@ async function analyzeSoPack() {
 }
 
 async function downloadSoPackExcel() {
+  bindSoPackFileInput();
   if (_soPackBusyInFlight) return;
-  const fileInput = document.getElementById('of-so-pack-file');
-  const file = fileInput && fileInput.files && fileInput.files[0];
-  if (!file) {
-    _soPackShowMessage('Please choose a ZIP or RAR file first.', false);
+  if (!_soPackBatchReadyForSelection()) {
+    const msg = 'First click Analyze, then Excel Download.';
+    _soPackShowMessage(msg, false);
+    if (typeof nexoraToast === 'function') nexoraToast(msg, 'warn');
     return;
   }
+  const okPacks = _soPackOkPacks();
+  const selKey = ofSoPackBatchSelectionKey;
+
+  // Multi-pack → one ZIP of separate Excels
+  if (okPacks.length > 1) {
+    const excelCacheKey = _soPackExcelCacheKey(selKey);
+    if (ofSoPackBatchExcelBlob && ofSoPackBatchExcelKey === excelCacheKey) {
+      _soPackTriggerExcelDownload(ofSoPackBatchExcelBlob, `SO_Pack_Batch_${okPacks.length}.zip`);
+      _soPackShowMessage(`ZIP of ${okPacks.length} Excels downloaded (from memory).`, true);
+      if (typeof nexoraToast === 'function') nexoraToast('Batch Excel ZIP downloaded', 'ok');
+      return;
+    }
+    _soPackClearExcelCache();
+    _soPackShowBusy('excel', `Building ${okPacks.length} Excel files…`);
+    try {
+      const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/excel-batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/zip, application/json, */*',
+        },
+        body: JSON.stringify({ packs: okPacks.map((p) => p.payload) }),
+      });
+      if (!response.ok) {
+        let msg = 'Batch Excel download failed';
+        try {
+          const data = await parseApiJson(response);
+          msg = (data.error && data.error.message) || msg;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      const blob = await response.blob();
+      if (blob.type && blob.type.indexOf('json') !== -1 && blob.size < 4096) {
+        const text = await blob.text();
+        let msg = 'Batch Excel download failed';
+        try {
+          const data = JSON.parse(text);
+          msg = (data.error && data.error.message) || msg;
+        } catch (_) {
+          msg = text || msg;
+        }
+        throw new Error(msg);
+      }
+      let filename = `SO_Pack_Batch_${okPacks.length}.zip`;
+      const cd = response.headers.get('Content-Disposition') || '';
+      const m = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(cd);
+      if (m) {
+        try {
+          filename = decodeURIComponent(m[1].replace(/"/g, '').trim());
+        } catch (_) {
+          filename = m[1].replace(/"/g, '').trim() || filename;
+        }
+      }
+      ofSoPackBatchExcelBlob = blob;
+      ofSoPackBatchExcelKey = excelCacheKey;
+      _soPackTriggerExcelDownload(blob, filename);
+      _soPackShowMessage(`ZIP of ${okPacks.length} Excels downloaded.`, true);
+      updateSoPackExcelButtonState();
+      if (typeof nexoraToast === 'function') nexoraToast(`Downloaded ${okPacks.length} Excels in ZIP`, 'ok');
+    } catch (e) {
+      _soPackShowMessage(e.message || 'Batch Excel download failed', false);
+      if (typeof nexoraToast === 'function') nexoraToast(e.message || 'Batch Excel download failed', 'error');
+    }
+    return;
+  }
+
+  // Single pack — existing path
+  const only = okPacks[0];
+  const packKey = only.key;
+  const excelCacheKey = _soPackExcelCacheKey(packKey);
+  if (ofSoPackExcelBlob && ofSoPackExcelKey === excelCacheKey) {
+    _soPackTriggerExcelDownload(ofSoPackExcelBlob, _soPackExcelDownloadName(only.payload));
+    _soPackShowMessage('Excel downloaded (from memory).', true);
+    if (typeof nexoraToast === 'function') nexoraToast('Excel downloaded', 'ok');
+    return;
+  }
+  _soPackClearExcelCache();
   _soPackShowBusy('excel');
-  const formData = new FormData();
-  formData.append('file', file);
   try {
-    const response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/excel', {
+    let response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/excel', {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json, */*',
+      },
+      body: JSON.stringify(only.payload),
     });
-    if (!response.ok) {
+    if (!response || !response.ok) {
+      const file = _soPackSelectedFiles().find((f) => _soPackFileKey(f) === packKey);
+      if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        response = await fetchWithAuth('/api/v1/order-fulfillment/so-pack/excel', {
+          method: 'POST',
+          body: formData,
+        });
+      }
+    }
+    if (!response || !response.ok) {
       let msg = 'Excel download failed';
-      try {
-        const data = await parseApiJson(response);
-        msg = (data.error && data.error.message) || msg;
-      } catch (_) {}
+      if (response) {
+        try {
+          const data = await parseApiJson(response);
+          msg = (data.error && data.error.message) || msg;
+        } catch (_) {}
+      }
       throw new Error(msg);
     }
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Consolidated_SO_Product_Qty_Amount.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    if (blob.type && blob.type.indexOf('json') !== -1 && blob.size < 2048) {
+      const text = await blob.text();
+      let msg = 'Excel download failed';
+      try {
+        const data = JSON.parse(text);
+        msg = (data.error && data.error.message) || msg;
+      } catch (_) {
+        msg = text || msg;
+      }
+      throw new Error(msg);
+    }
+    ofSoPackExcelBlob = blob;
+    ofSoPackExcelKey = excelCacheKey;
+    _soPackTriggerExcelDownload(blob, _soPackExcelDownloadName(only.payload));
     _soPackShowMessage('Excel downloaded.', true);
+    updateSoPackExcelButtonState();
     if (typeof nexoraToast === 'function') nexoraToast('Excel downloaded', 'ok');
   } catch (e) {
     _soPackShowMessage(e.message || 'Excel download failed', false);
@@ -8492,7 +9666,7 @@ async function loadOrderFulfillmentCatalogSummary() {
     if (foSummaryEl) {
       const latest = orders[0];
       foSummaryEl.textContent = orders.length
-        ? `${orders.length} filled order(s) saved` +
+        ? `${orders.length} earlier filled order(s) on file` +
           (latest
             ? ` · Latest: ${latest.category || '—'} · ${(latest.created_at || '').slice(0, 10)}`
             : '')
@@ -8509,15 +9683,14 @@ async function initOrderFulfillmentEmbeddedPanels() {
   setFilledOrderUploadFieldsEnabled(false, 'of-fo');
   await loadFilledOrdersDistributors(['fo', 'of-fo']);
   await loadOrderFulfillmentCatalogSummary();
-  const bottom = document.querySelector('#order-fulfillment-workspace .nx-of-bottom');
-  if (bottom && !ofSoPackLastPayload) {
-    bottom.classList.add('is-tracking');
-    bottom.classList.remove('is-pack');
-  }
+  bindSoPackFileInput();
+  updateSoPackExcelButtonState();
+  showOfSection(ofSoPackLastPayload ? 'so-pack' : 'filled-order');
 }
 
 async function loadOrderFulfillmentUploads() {
   const trackingBody = document.getElementById('of-tracking-tbody');
+  const trackingBodyCi = document.getElementById('of-tracking-tbody-ci');
   try {
     const response = await fetchWithAuth('/api/v1/order-fulfillment/uploads');
     const data = await response.json();
@@ -8526,11 +9699,10 @@ async function loadOrderFulfillmentUploads() {
     }
 
     const tracking = data.data.tracking_records || [];
-    if (trackingBody) {
-      trackingBody.innerHTML = tracking.length
-        ? tracking
-            .map(
-              (t) => `<tr>
+    const rowsHtml = tracking.length
+      ? tracking
+          .map(
+            (t) => `<tr>
               <td>${t.order_ref_no || '-'}</td>
               <td>${t.distributor_name || '-'}</td>
               <td>${t.has_sales_order ? 'Yes' : 'No'}</td>
@@ -8539,14 +9711,15 @@ async function loadOrderFulfillmentUploads() {
               <td>${t.transit_status || '-'}</td>
               <td><button onclick="deleteOrderFulfillmentTracking(${t.tracking_id}, '${(t.order_ref_no || '').replace(/'/g, "\\'")}')" class="btn btn-danger" style="padding: 2px 10px; font-size: 0.85rem;">Delete</button></td>
             </tr>`
-            )
-            .join('')
-        : '<tr><td colspan="7">No Sales Orders/Invoices tracked yet.</td></tr>';
-    }
+          )
+          .join('')
+      : '<tr><td colspan="7">No Sales Orders/Invoices tracked yet.</td></tr>';
+    if (trackingBody) trackingBody.innerHTML = rowsHtml;
+    if (trackingBodyCi) trackingBodyCi.innerHTML = rowsHtml;
   } catch (error) {
-    if (trackingBody) {
-      trackingBody.innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
-    }
+    const errHtml = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
+    if (trackingBody) trackingBody.innerHTML = errHtml;
+    if (trackingBodyCi) trackingBodyCi.innerHTML = errHtml;
   }
 }
 
@@ -8638,28 +9811,136 @@ const articleMasterState = {
   editArticleId: null,
   editField: null,
   detailRowsCache: [],
+  selectionMode: false,
+  selectedIds: new Set(),
 };
 
 const ARTICLE_DETAIL_FIELDS = [
-  ['brand', 'Brand'],
-  ['size', 'Size'],
   ['category', 'Category'],
   ['product_type', 'Product'],
+  ['brand', 'Brand'],
+  ['size', 'Size'],
+  ['tc', 'TC'],
+  ['units', 'Units'],
+  ['bs_size', 'Size'],
+  ['pillow_size', 'Pillow Size'],
+  ['color', 'Color'],
+  ['pillow_stitching_style', 'Pillow Stitching Style'],
+  ['print_style', 'Print Style'],
+  ['blend', 'Blend'],
+  ['packing', 'Packing'],
+  ['bale_pack_size', 'Bale Pack Size'],
   ['mrp', 'MRP (₹)'],
-  ['ptr', 'PTR (₹)'],
-  ['retailer_margin', 'Retailer Margin'],
-  ['awd_markup_on_exmill', 'AWD Mark up on Exmill'],
   ['ex_mill_price', 'Ex-Mill (₹)'],
-  ['bale_pack_size', 'Bale pack size'],
-  ['item_key', 'Item key'],
+  ['awd_markup_on_exmill', 'Distributor Margin'],
+  ['retailer_margin', 'Retailer Margin'],
+  ['perceived', 'Proposed Customer Discount'],
+  ['ptr', 'PTR (₹)'],
 ];
 
 /** Extra Excel columns stored under original header names (varies by category). */
 const ARTICLE_EXTRA_FIELD_ALIASES = {
-  retailer_margin: ['Retailer Margin', 'Retail Mark down', 'Retailer MD', 'Retailer Markdown'],
-  awd_markup_on_exmill: ['AWD Mark up on Exmill', 'AWD MD', 'AWD MU', 'AWD Markup on Exmill'],
-  perceived: ['Perceived', 'Perceive', 'Perceived Margin'],
+  tc: ['TC'],
+  units: ['Units'],
+  bs_size: ['BS Size', 'Size', 'Bedset Size (Cms)', 'Bedset Size'],
+  pillow_size: ['Pillow Size', 'Pillow Size (Cms)'],
+  color: ['Color', 'Colour', 'Shade'],
+  pillow_stitching_style: ['Pillow Stitching Style'],
+  print_style: ['Print Style', 'Print/Dyed/Weave'],
+  blend: ['Blend', 'BLEND'],
+  packing: ['Packing'],
+  retailer_margin: [
+    'Retailer Margin', 'Retail Mark down', 'Retailer MD', 'Retailer Markdown',
+  ],
+  awd_markup_on_exmill: [
+    'AWD Mark up on Exmill', 'AWD MD', 'AWD MU', 'AWD Markup on Exmill',
+    'Distributor Mark up', 'Distributor Margin', 'Mark up on Exmill', 'Markup on Exmill',
+  ],
+  // Perceived ≡ Proposed Customer Discount (same field)
+  perceived: [
+    'Proposed Customer Discount', 'Perceived', 'Perceive', 'Perceived Margin',
+  ],
 };
+
+const ARTICLE_SIZE_DISPLAY_NAMES = {
+  'SB BS': 'Single Bedsheet',
+  'DB BS': 'Double Bedsheet',
+  'KS BS': 'King Bedsheet',
+  'DB FS': 'Double Fitted Sheet',
+  'KB FS': 'King Fitted Sheet',
+  'DB COMF': 'Double Comforter',
+  'DB REVERSIBLE COMF': 'Double Reversible Comforter',
+  'DB DUVET COVER': 'Double Duvet Cover',
+};
+
+function formatArticleSizeDisplay(size) {
+  if (size === null || size === undefined || size === '') return '';
+  const key = String(size).trim().replace(/\s+/g, ' ').toUpperCase();
+  return ARTICLE_SIZE_DISPLAY_NAMES[key] || String(size).trim();
+}
+
+/** Product label — Size wins over generic Bedsheet (DB Reversible Comf → Comforter). */
+function getArticleProductDisplay(article) {
+  const product = String(article?.product_type || '').trim();
+  const sizeKey = String(article?.size || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  let inferred = null;
+  if (/DUVET/.test(sizeKey)) inferred = 'Duvet Cover';
+  else if (/COMF|COMFORTER/.test(sizeKey)) inferred = 'Comforter';
+  else if (/(?:^|\s)FS(?:\s|$)|FITTED/.test(sizeKey)) inferred = 'Fitted Sheet';
+  else if (/(?:^|\s)BS(?:\s|$)|BEDSHEET/.test(sizeKey)) inferred = 'Bedsheet';
+  const generic = !product || ['bedsheet', 'sheet set', 'sheet sets'].includes(product.toLowerCase());
+  if (inferred && generic && inferred !== 'Bedsheet') return inferred;
+  return product || '—';
+}
+
+/** Physical size from booking (e.g. 75x150 / 274x274) — BS Size column (UI label: Size). */
+function getArticlePhysicalSizeDisplay(article) {
+  const bs = getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES.bs_size);
+  if (bs != null && String(bs).trim() !== '') return String(bs).trim();
+  const pillow = getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES.pillow_size);
+  if (pillow != null && String(pillow).trim() !== '') return String(pillow).trim();
+  // Bath gap-fill: Hand Towel → 40x60, Bath Towel → 75x150, …
+  if (String(article?.category || '').trim() === 'Bath') {
+    const key = String(article?.size || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    const map = {
+      'HAND TOWEL': '40x60',
+      'HAND TOWEL SET OF 2': '40x60(2pc)',
+      'FACE TOWEL': '30x30',
+      'FACE TOWEL SET OF 3': '30x30(3pc)',
+      'LADIES TOWEL': '60x120',
+      'BATH TOWEL': '75x150',
+      'BATH MAT': '50x70',
+      'POOL TOWEL': '90x180',
+      'TOWEL SET': 'R4',
+      'GYM TOWEL': '50x100',
+      '91X100': '91x100',
+      LARGE: 'L',
+      'EXTRA LARGE': 'XL',
+      'DOUBLE EXTRA LARGE': 'XXL',
+    };
+    if (map[key]) return map[key];
+  }
+  return '';
+}
+
+/** Brand · Size full name — skip Product when Size already says Bedsheet/Fitted/etc. */
+function formatArticleMasterHeading(article) {
+  const brand = String(article?.brand || '').trim();
+  const sizeDisp = String(formatArticleSizeDisplay(article?.size) || article?.size || '').trim();
+  const product = String(article?.product_type || '').trim();
+  const parts = [brand, sizeDisp].filter(Boolean);
+  if (product) {
+    const sizeL = sizeDisp.toLowerCase();
+    const prodL = product.toLowerCase();
+    const redundant =
+      !sizeDisp ||
+      sizeL.includes(prodL) ||
+      (prodL === 'bedsheet' && /(bedsheet|fitted\s*sheet|comforter|duvet)/i.test(sizeDisp)) ||
+      (prodL === 'sheet sets' && /bedsheet/i.test(sizeDisp));
+    if (!redundant) parts.push(product);
+  }
+  return parts.join(' · ') || 'Article';
+}
 
 function getArticleExtraValue(article, aliases) {
   const extra = (article && article.extra_attributes) || {};
@@ -8680,11 +9961,17 @@ function getArticleExtraValue(article, aliases) {
 }
 
 function formatArticleMarginPercent(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string' && value.trim().endsWith('%')) {
+    const inner = Number(value.trim().replace(/%/g, '').replace(/,/g, ''));
+    if (Number.isFinite(inner)) return `${Math.round(inner)}%`;
+    return value.trim();
+  }
   const num = Number(value);
   if (!Number.isFinite(num)) return String(value);
-  // Booking sheets store fractions (0.28 → 28%); whole percents stay as-is.
+  // Booking sheets store fractions (0.28 → 28%). Float noise like 28.000000004 → 28%.
   const pct = Math.abs(num) <= 1 ? num * 100 : num;
-  return `${Number.isInteger(pct) ? pct : pct.toFixed(1)}%`;
+  return `${Math.round(pct)}%`;
 }
 
 /** Retailer Margin + Perceived (when present), e.g. "35% + 40%". */
@@ -8696,7 +9983,7 @@ function formatArticleRetailerMarginDisplay(article, retailerMarginRaw) {
 }
 
 /** Contact-style profile card for an Article Master row. */
-function showArticleDetail(article) {
+async function showArticleDetail(article) {
   if (!article || typeof article !== 'object') return;
   const title = document.getElementById('article-detail-title');
   const body = document.getElementById('article-detail-body');
@@ -8704,23 +9991,68 @@ function showArticleDetail(article) {
   const historyBtn = document.getElementById('article-detail-history-btn');
   if (!title || !body) return;
 
-  const heading = [article.brand, article.size, article.product_type].filter(Boolean).join(' · ')
+  const heading = formatArticleMasterHeading(article)
     || article.item_key
     || 'Article';
   title.textContent = heading;
 
-  body.innerHTML = ARTICLE_DETAIL_FIELDS.map(([key, label]) => {
+  const PRICE_KEYS = new Set(['mrp', 'ptr', 'ex_mill_price']);
+  const PRICE_COMPARE_FIELDS = [
+    ['mrp', 'MRP (₹)'],
+    ['ptr', 'PTR (₹)'],
+    ['ex_mill_price', 'Ex-Mill (₹)'],
+  ];
+
+  let seasonPayload = null;
+  if (article.id) {
+    try {
+      const response = await fetchWithAuth(`/api/v1/article-master/${article.id}/price-seasons`);
+      const data = await response.json();
+      if (response.ok && Array.isArray(data.seasons) && data.seasons.length) {
+        seasonPayload = data;
+      }
+    } catch (_) {
+      seasonPayload = null;
+    }
+  }
+
+  // Fallback: previous vs current from audit history when no season snapshots yet
+  let latestByField = {};
+  let lastChangeMeta = null;
+  if (!seasonPayload && article.has_price_history && article.id) {
+    try {
+      const response = await fetchWithAuth(`/api/v1/article-master/${article.id}/price-history`);
+      const data = await response.json();
+      if (response.ok) {
+        const history = data.history || [];
+        for (const h of history) {
+          const f = h.field_changed;
+          if (!f || latestByField[f]) continue;
+          latestByField[f] = h;
+        }
+        if (history.length) {
+          lastChangeMeta = history[0];
+        }
+      }
+    } catch (_) {
+      latestByField = {};
+    }
+  }
+
+  const fieldsHtml = ARTICLE_DETAIL_FIELDS.map(([key, label]) => {
+    if (PRICE_KEYS.has(key) && (seasonPayload || latestByField[key])) return '';
+
     let raw = article[key];
     if (ARTICLE_EXTRA_FIELD_ALIASES[key]) {
       raw = getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES[key]);
     }
     if (raw === null || raw === undefined || raw === '') return '';
     let display = raw;
-    if (['mrp', 'ptr', 'ex_mill_price'].includes(key)) {
+    if (key === 'size') {
+      display = formatArticleSizeDisplay(raw);
+    } else if (PRICE_KEYS.has(key)) {
       display = formatArticleMasterValue(raw, key);
-    } else if (key === 'retailer_margin') {
-      display = formatArticleRetailerMarginDisplay(article, raw);
-    } else if (ARTICLE_EXTRA_FIELD_ALIASES[key]) {
+    } else if (key === 'retailer_margin' || key === 'perceived' || key === 'awd_markup_on_exmill') {
       display = formatArticleMarginPercent(raw);
     }
     const wide = key === 'item_key' ? ' bd-party-field--wide' : '';
@@ -8730,7 +10062,106 @@ function showArticleDetail(article) {
         <strong class="bd-party-field-value">${escapePartyDetailHtml(display)}</strong>
       </div>
     `;
-  }).filter(Boolean).join('') || '<p class="bd-party-muted">No details available.</p>';
+  }).filter(Boolean).join('');
+
+  let ratesHtml = '';
+  if (seasonPayload) {
+    const seasons = seasonPayload.seasons || [];
+    const rowMap = seasonPayload.rows || {};
+    const headCells = seasons.map((s) => `<th>${escapePartyDetailHtml(s)}</th>`).join('');
+    const bodyRows = PRICE_COMPARE_FIELDS.map(([key, label]) => {
+      const bySeason = rowMap[key] || {};
+      const cells = seasons.map((s, idx) => {
+        const val = bySeason[s];
+        const disp = (val === null || val === undefined || val === '')
+          ? '—'
+          : formatArticleMasterValue(val, key);
+        let deltaHtml = '';
+        if (idx > 0) {
+          const prev = bySeason[seasons[idx - 1]];
+          const oldN = Number(prev);
+          const newN = Number(val);
+          if (Number.isFinite(oldN) && Number.isFinite(newN) && oldN !== 0) {
+            const pct = ((newN - oldN) / Math.abs(oldN)) * 100;
+            const up = pct > 0.05;
+            const down = pct < -0.05;
+            const cls = up ? 'am-rate-up' : (down ? 'am-rate-down' : 'am-rate-flat');
+            const sign = pct > 0 ? '+' : '';
+            deltaHtml = ` <span class="am-rate-delta ${cls}">${sign}${pct.toFixed(1)}%</span>`;
+          }
+        }
+        const cls = idx === seasons.length - 1 ? 'am-rate-new' : 'am-rate-old';
+        return `<td class="${cls}">${escapePartyDetailHtml(disp)}${deltaHtml}</td>`;
+      }).join('');
+      return `<tr><td>${escapePartyDetailHtml(label)}</td>${cells}</tr>`;
+    }).join('');
+    ratesHtml = `
+      <div class="bd-party-field bd-party-field--wide am-rates-block">
+        <span class="bd-party-field-label">Rates — by season (last ${seasons.length})</span>
+        <div class="am-rates-table-wrap">
+          <table class="am-rates-table">
+            <thead>
+              <tr><th>Field</th>${headCells}</tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } else {
+    const compareRows = PRICE_COMPARE_FIELDS.map(([key, label]) => {
+      const hist = latestByField[key];
+      if (!hist) return '';
+      const oldDisp = formatPriceHistoryValue(hist.old_value, key);
+      const newDisp = formatArticleMasterValue(article[key], key);
+      const oldN = Number(hist.old_value);
+      const newN = Number(article[key]);
+      let deltaHtml = '';
+      if (Number.isFinite(oldN) && Number.isFinite(newN) && oldN !== 0) {
+        const pct = ((newN - oldN) / Math.abs(oldN)) * 100;
+        const up = pct > 0.05;
+        const down = pct < -0.05;
+        const cls = up ? 'am-rate-up' : (down ? 'am-rate-down' : 'am-rate-flat');
+        const sign = pct > 0 ? '+' : '';
+        deltaHtml = `<span class="am-rate-delta ${cls}">${sign}${pct.toFixed(1)}%</span>`;
+      }
+      return `
+        <tr>
+          <td>${escapePartyDetailHtml(label)}</td>
+          <td class="am-rate-old">${escapePartyDetailHtml(oldDisp)}</td>
+          <td class="am-rate-new">${escapePartyDetailHtml(newDisp)} ${deltaHtml}</td>
+        </tr>
+      `;
+    }).filter(Boolean).join('');
+
+    if (compareRows) {
+      let metaLine = '';
+      if (lastChangeMeta) {
+        const when = lastChangeMeta.changed_at
+          ? new Date(lastChangeMeta.changed_at).toLocaleString()
+          : '';
+        const who = lastChangeMeta.changed_by || '';
+        metaLine = `<p class="am-rates-meta">${escapePartyDetailHtml([who, when].filter(Boolean).join(' · '))}</p>`;
+      }
+      ratesHtml = `
+        <div class="bd-party-field bd-party-field--wide am-rates-block">
+          <span class="bd-party-field-label">Rates — previous vs current</span>
+          <div class="am-rates-table-wrap">
+            <table class="am-rates-table">
+              <thead>
+                <tr><th>Field</th><th>Previous</th><th>Current</th></tr>
+              </thead>
+              <tbody>${compareRows}</tbody>
+            </table>
+          </div>
+          ${metaLine}
+        </div>
+      `;
+    }
+  }
+
+  body.innerHTML = (fieldsHtml + ratesHtml)
+    || '<p class="bd-party-muted">No details available.</p>';
 
   const articleId = Number(article.id);
   if (editBtn) {
@@ -8761,14 +10192,28 @@ function formatArticleMasterValue(value, field = null) {
   }
   if (['mrp', 'ptr', 'ex_mill_price'].includes(field)) {
     const num = Number(value);
-    return Number.isFinite(num) ? num.toFixed(2) : value;
+    if (!Number.isFinite(num)) return String(value);
+    // MRP: whole rupees; PTR / Ex-Mill: always 2 decimals (00.00)
+    if (field === 'mrp') return String(Math.round(num));
+    return num.toFixed(2);
+  }
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
   }
   return value;
 }
 
+function formatArticleMasterMoneyInput(value, field) {
+  if (value === null || value === undefined || value === '') return '';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  if (field === 'mrp') return String(Math.round(num));
+  return num.toFixed(2);
+}
+
 function updateArticleMasterStats() {
   const articles = articleMasterState.articles;
-  const counts = { Bed: 0, Bath: 0, TOB: 0, 'TOB Pillow': 0 };
+  const counts = { Bed: 0, Bath: 0, TOB: 0, Pillow: 0 };
   articles.forEach((a) => {
     if (counts[a.category] !== undefined) {
       counts[a.category] += 1;
@@ -8783,14 +10228,14 @@ function updateArticleMasterStats() {
   const tobEl = document.getElementById('am-stat-tob');
   if (tobEl) tobEl.textContent = String(counts.TOB);
   const pillowEl = document.getElementById('am-stat-pillow');
-  if (pillowEl) pillowEl.textContent = String(counts['TOB Pillow']);
+  if (pillowEl) pillowEl.textContent = String(counts.Pillow);
 }
 
 function populateArticleMasterCategoryFilter() {
   const select = document.getElementById('am-category-filter');
   if (!select) return;
   const current = select.value || 'All';
-  const categories = [...new Set(articleMasterState.articles.map((a) => a.category))].sort();
+  const categories = [...new Set(articleMasterState.articles.map((a) => a.category).filter(Boolean))].sort();
   select.innerHTML = '<option value="All">All</option>';
   categories.forEach((cat) => {
     const opt = document.createElement('option');
@@ -8801,6 +10246,19 @@ function populateArticleMasterCategoryFilter() {
   if ([...select.options].some((o) => o.value === current)) {
     select.value = current;
   }
+}
+
+function articleMasterSizeSearchTokens(size) {
+  const s = String(size || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const tokens = [s, formatArticleSizeDisplay(size) || ''];
+  if (s.startsWith('KS') || s.startsWith('KB') || s.startsWith('KDB') || s.includes('KING')) {
+    tokens.push('king', 'king size', 'ks', 'kb');
+  } else if (s.startsWith('DB') || s.startsWith('DBL') || s.includes('DOUBLE')) {
+    tokens.push('double', 'db', 'dbl');
+  } else if (s.startsWith('SB') || s.includes('SINGLE')) {
+    tokens.push('single', 'sb');
+  }
+  return tokens.join(' ');
 }
 
 function getFilteredArticleMasterRows() {
@@ -8814,13 +10272,29 @@ function getFilteredArticleMasterRows() {
       return true;
     }
     const haystack = [
-      a.category, a.brand, a.size, a.product_type, a.item_key,
+      a.category,
+      a.brand,
+      a.size,
+      getArticleProductDisplay(a),
+      a.item_key,
+      articleMasterSizeSearchTokens(a.size),
+      getArticlePhysicalSizeDisplay(a),
     ].join(' ').toLowerCase();
     return haystack.includes(query);
   });
   return filtered.sort((a, b) => {
     const brandCmp = String(a.brand || '').localeCompare(String(b.brand || ''), undefined, { sensitivity: 'base' });
     if (brandCmp !== 0) return brandCmp;
+    const sizeRank = (size) => {
+      const s = String(size || '').trim().toUpperCase().replace(/\s+/g, ' ');
+      if (!s) return 4;
+      if (s.startsWith('SB') || s.includes('SINGLE')) return 1;
+      if (s.startsWith('KDB') || s.startsWith('KS') || s.startsWith('KB') || s.includes('KING')) return 3;
+      if (s.startsWith('DBL') || s.startsWith('DB') || s.includes('DOUBLE')) return 2;
+      return 4;
+    };
+    const rankCmp = sizeRank(a.size) - sizeRank(b.size);
+    if (rankCmp !== 0) return rankCmp;
     const sizeCmp = String(a.size || '').localeCompare(String(b.size || ''), undefined, { sensitivity: 'base' });
     if (sizeCmp !== 0) return sizeCmp;
     return String(a.item_key || '').localeCompare(String(b.item_key || ''), undefined, { sensitivity: 'base' });
@@ -8854,44 +10328,115 @@ function scheduleArticleMasterLayout() {
   requestAnimationFrame(apply);
 }
 
+function getArticleMarginFields(article) {
+  return {
+    distributor: getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES.awd_markup_on_exmill),
+    retailer: getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES.retailer_margin),
+    perceived: getArticleExtraValue(article, ARTICLE_EXTRA_FIELD_ALIASES.perceived),
+  };
+}
+
+function articleMasterMarginColumnFlags(_rows) {
+  // Always show all three margin columns for a uniform table layout.
+  return { showDist: true, showRetailer: true, showPerceived: true };
+}
+
 function renderArticleMasterTable() {
   const tbody = document.getElementById('am-articles-tbody');
   const countEl = document.getElementById('am-list-count');
+  const table = tbody?.closest('table');
   if (!tbody) return;
 
   const rows = getFilteredArticleMasterRows();
   articleMasterState.detailRowsCache = rows;
-  if (countEl) {
-    countEl.textContent = `${rows.length} article${rows.length === 1 ? '' : 's'}`;
+  updateArticleMasterSelectionChrome(rows);
+
+  const selecting = !!articleMasterState.selectionMode;
+  const { showDist, showRetailer, showPerceived } = articleMasterMarginColumnFlags(rows);
+  const colCount =
+    (selecting ? 1 : 0) +
+    9 +
+    (showDist ? 1 : 0) +
+    (showRetailer ? 1 : 0) +
+    (showPerceived ? 1 : 0) +
+    1; // Category…Bale + BS Size + actions
+
+  if (table) {
+    table.classList.toggle('am-selecting', selecting);
+    table.querySelectorAll('.am-col-select').forEach((el) => {
+      el.style.display = selecting ? '' : 'none';
+    });
+    table.querySelectorAll('.am-col-dist-margin').forEach((el) => {
+      el.style.display = showDist ? '' : 'none';
+    });
+    table.querySelectorAll('.am-col-retailer-margin').forEach((el) => {
+      el.style.display = showRetailer ? '' : 'none';
+    });
+    table.querySelectorAll('.am-col-perceived-margin').forEach((el) => {
+      el.style.display = showPerceived ? '' : 'none';
+    });
+    const selectAll = document.getElementById('am-select-all');
+    if (selectAll) {
+      const visibleIds = rows.map((a) => Number(a.id)).filter((id) => Number.isFinite(id));
+      const selectedVisible = visibleIds.filter((id) => articleMasterState.selectedIds.has(id));
+      selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+      selectAll.indeterminate =
+        selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    }
   }
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="10">No articles found. Upload a booking form Excel to get started.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${colCount}">No articles found. Upload a booking form Excel to get started.</td></tr>`;
     scheduleArticleMasterLayout();
     return;
   }
 
-  tbody.innerHTML = rows.map((a, index) => `
-    <tr onclick="if(!event.target.closest('button')){showArticleDetail(articleMasterState.detailRowsCache[${index}])}" style="cursor:pointer;">
+  tbody.innerHTML = rows.map((a, index) => {
+    const margins = getArticleMarginFields(a);
+    const distTd = showDist
+      ? `<td class="am-col-dist-margin">${margins.distributor != null && margins.distributor !== '' ? escapePartyDetailHtml(formatArticleMarginPercent(margins.distributor)) : '—'}</td>`
+      : '';
+    const retTd = showRetailer
+      ? `<td class="am-col-retailer-margin">${margins.retailer != null && margins.retailer !== '' ? escapePartyDetailHtml(formatArticleMarginPercent(margins.retailer)) : '—'}</td>`
+      : '';
+    const percTd = showPerceived
+      ? `<td class="am-col-perceived-margin">${margins.perceived != null && margins.perceived !== '' ? escapePartyDetailHtml(formatArticleMarginPercent(margins.perceived)) : '—'}</td>`
+      : '';
+    const idNum = Number(a.id);
+    const checked = articleMasterState.selectedIds.has(idNum) ? ' checked' : '';
+    const selectTd = selecting
+      ? `<td class="am-col-select" onclick="event.stopPropagation()">
+          <input type="checkbox" class="am-row-select" data-am-id="${idNum}"${checked}
+            aria-label="Select article"
+            onchange="toggleArticleMasterSelection(${idNum}, this.checked)" />
+        </td>`
+      : '';
+    const rowClick = selecting
+      ? `toggleArticleMasterSelection(${idNum}, !articleMasterState.selectedIds.has(${idNum}))`
+      : `if(!event.target.closest('button,input,label')){showArticleDetail(articleMasterState.detailRowsCache[${index}])}`;
+    return `
+    <tr onclick="${rowClick}" style="cursor:pointer;">
+      ${selectTd}
       <td>${a.category || '—'}</td>
       <td>${formatArticleMasterValue(a.brand)}</td>
-      <td>${formatArticleMasterValue(a.size)}</td>
-      <td>${formatArticleMasterValue(a.product_type)}</td>
+      <td>${escapePartyDetailHtml(formatArticleSizeDisplay(a.size) || '—')}</td>
+      <td>${escapePartyDetailHtml(getArticlePhysicalSizeDisplay(a) || '—')}</td>
+      <td>${escapePartyDetailHtml(getArticleProductDisplay(a))}</td>
       <td>${formatArticleMasterValue(a.mrp, 'mrp')}</td>
       <td>${formatArticleMasterValue(a.ptr, 'ptr')}</td>
       <td>${formatArticleMasterValue(a.ex_mill_price, 'ex_mill_price')}</td>
+      ${distTd}${retTd}${percTd}
       <td>${formatArticleMasterValue(a.bale_pack_size)}</td>
-      <td style="font-size:0.72rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;" title="${(a.item_key || '').replace(/"/g, '&quot;')}">${a.item_key || '—'}</td>
       <td class="am-actions">${articleMasterActionButtons(a.id, !!a.has_price_history)}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
   scheduleArticleMasterLayout();
 }
 
 async function loadArticleMasterList() {
   const tbody = document.getElementById('am-articles-tbody');
   if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="10">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12">Loading...</td></tr>';
   }
 
   try {
@@ -8901,6 +10446,14 @@ async function loadArticleMasterList() {
       throw new Error(getApiErrorMessage(data, 'Failed to load articles'));
     }
     articleMasterState.articles = data.articles || [];
+    if (articleMasterState.selectionMode) {
+      const valid = new Set(
+        (articleMasterState.articles || []).map((a) => Number(a.id)).filter((id) => Number.isFinite(id)),
+      );
+      articleMasterState.selectedIds = new Set(
+        [...articleMasterState.selectedIds].filter((id) => valid.has(id)),
+      );
+    }
     updateArticleMasterStats();
     populateArticleMasterCategoryFilter();
     renderArticleMasterTable();
@@ -8930,52 +10483,102 @@ function showArticleMasterCategoryModal(data) {
     const detectedCategory = data.detected_category || 'Bed';
     const breakdown = data.category_breakdown || {};
     const totalRows = data.article_count || 0;
-    const knownCategories = ['Bed', 'Bath', 'TOB', 'TOB Pillow'];
+    const knownCategories = ['Bed', 'Bath', 'TOB', 'Pillow'];
+    const seasonOptions = ['SS-25', 'AW-25', 'SS-26', 'AW-26', 'SS-27', 'AW-27'];
+    const suggestedSeason = (data.suggested_season_tag || data.season_tag || '').trim();
     const ui = nxThemeUi();
 
     const overlay = document.createElement('div');
     overlay.style.cssText =
       `position: fixed; inset: 0; background: ${ui.overlay}; ` +
-      'display: flex; align-items: center; justify-content: center; z-index: 99999;';
+      'display: flex; align-items: center; justify-content: center; z-index: 99999; padding: 12px;';
 
     const box = document.createElement('div');
     box.style.cssText =
-      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
-      `padding: 24px; max-width: 440px; width: 90%; ` +
-      `box-shadow: 0 12px 40px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 10px; ` +
+      `padding: 14px 16px; max-width: 340px; width: 100%; ` +
+      `box-shadow: 0 10px 28px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
 
-    const breakdownRows = Object.entries(breakdown)
-      .map(([cat, count]) => (
-        `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid ${ui.rowBorder};">` +
-        `<span style="color:${ui.muted};">${cat}</span>` +
-        `<span style="color:${ui.accent}; font-weight:600;">${count}</span>` +
-        '</div>'
-      )).join('');
+    const mixText = Object.entries(breakdown)
+      .map(([cat, count]) => `${cat} ${count}`)
+      .join(' · ') || '—';
+
+    const seasonInList = seasonOptions.includes(suggestedSeason);
+    const seasonOptsHtml = ['']
+      .concat(seasonOptions)
+      .map((s) => {
+        const selected = s && s === suggestedSeason ? ' selected' : (!s && !suggestedSeason ? ' selected' : '');
+        const label = s || '— none —';
+        return `<option value="${s}"${selected}>${label}</option>`;
+      })
+      .join('');
+
+    const fieldCss =
+      `width:100%; box-sizing:border-box; padding:7px 8px; border-radius:7px; ` +
+      `border:1px solid ${ui.secondaryBorder}; background:${ui.boxBg}; color:${ui.boxFg}; font-size:13px;`;
 
     box.innerHTML =
-      `<div style="font-size:16px; font-weight:600; margin-bottom:6px; color:${ui.accent};">Confirm category</div>` +
-      `<div style="font-size:13px; color:${ui.muted}; margin-bottom:14px; line-height:1.5;">${data.message || 'Each row will be saved under its own category.'}</div>` +
-      `<div style="font-size:12px; color:${ui.muted}; margin-bottom:4px;">Suggested (majority): <strong style="color:${ui.boxFg};">${detectedCategory}</strong></div>` +
-      `<div style="font-size:12px; color:${ui.muted}; margin:8px 0 4px;">Per-row mix (${totalRows} rows total):</div>` +
-      `<div style="margin-bottom:16px;">${breakdownRows || `<div style="color:${ui.muted};font-size:12px;">-</div>`}</div>` +
-      `<div id="am-modal-auto-btn" class="am-modal-accent-btn" style="background:${ui.accent}; color:${ui.accentFg}; text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-weight:600; margin-bottom:10px; border:1px solid transparent;">AUTO — save each row under its own category (recommended)</div>` +
-      `<div style="font-size:11px; color:${ui.muted}; margin-bottom:6px;">Or force one category (all rows will use it):</div>` +
-      '<div id="am-modal-force-btns" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;"></div>' +
-      `<div id="am-modal-cancel-btn" style="text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:${ui.secondaryFg}; border:1px solid ${ui.secondaryBorder}; background:${ui.secondaryBg};">Cancel</div>`;
+      `<div style="font-size:14px; font-weight:600; margin-bottom:4px; color:${ui.accent};">Confirm category & season</div>` +
+      `<div style="font-size:11px; color:${ui.muted}; margin-bottom:8px; line-height:1.35;">` +
+        `Suggested: <strong style="color:${ui.boxFg};">${detectedCategory}</strong>` +
+        ` · ${totalRows} rows · ${mixText}` +
+      `</div>` +
+      `<div style="font-size:11px; color:${ui.muted}; margin-bottom:3px;">Season</div>` +
+      `<select id="am-modal-season" style="${fieldCss} margin-bottom:6px;">${seasonOptsHtml}</select>` +
+      `<input id="am-modal-season-manual" type="text" placeholder="Or type season (e.g. AW-26, SS-28)" ` +
+        `value="${seasonInList ? '' : suggestedSeason.replace(/"/g, '&quot;')}" ` +
+        `style="${fieldCss} margin-bottom:10px;" autocomplete="off" />` +
+      `<div id="am-modal-auto-btn" style="background:${ui.accent}; color:${ui.accentFg}; text-align:center; ` +
+        `padding:8px; border-radius:7px; cursor:pointer; font-weight:600; font-size:13px; margin-bottom:8px;">` +
+        `AUTO — keep per-row categories</div>` +
+      `<div style="font-size:10px; color:${ui.muted}; margin-bottom:4px;">Or force all rows:</div>` +
+      '<div id="am-modal-force-btns" style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px;"></div>' +
+      `<div id="am-modal-cancel-btn" style="text-align:center; padding:6px; border-radius:7px; cursor:pointer; ` +
+        `font-size:12px; color:${ui.secondaryFg}; border:1px solid ${ui.secondaryBorder}; background:${ui.secondaryBg};">Cancel</div>`;
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+
+    const seasonSelect = box.querySelector('#am-modal-season');
+    const seasonManual = box.querySelector('#am-modal-season-manual');
+
+    // If suggested season isn't in the preset list, select none and show it in manual.
+    if (suggestedSeason && !seasonInList && seasonManual) {
+      seasonManual.value = suggestedSeason;
+      if (seasonSelect) seasonSelect.value = '';
+    }
+
+    seasonSelect?.addEventListener('change', () => {
+      if (seasonSelect.value && seasonManual) seasonManual.value = '';
+    });
+    seasonManual?.addEventListener('input', () => {
+      if (seasonManual.value.trim() && seasonSelect) seasonSelect.value = '';
+    });
+
+    function pickedSeason() {
+      const typed = (seasonManual?.value || '').trim();
+      if (typed) return typed.toUpperCase().replace(/\s+/g, '-').replace(/--+/g, '-');
+      return (seasonSelect?.value || '').trim() || null;
+    }
+    function finish(category) {
+      cleanup();
+      if (!category) {
+        resolve(null);
+        return;
+      }
+      resolve({ category, season_tag: pickedSeason() });
+    }
 
     const forceContainer = box.querySelector('#am-modal-force-btns');
     knownCategories.forEach((cat) => {
       const btn = document.createElement('div');
       btn.textContent = cat;
       btn.style.cssText =
-        'flex: 1 1 auto; text-align:center; padding:8px 10px; border-radius:8px; ' +
-        `cursor:pointer; font-size:13px; border:1px solid ${ui.secondaryBorder}; color:${ui.secondaryFg}; background:${ui.secondaryBg}; min-width: 70px;`;
+        'flex: 1 1 auto; text-align:center; padding:6px 8px; border-radius:7px; ' +
+        `cursor:pointer; font-size:12px; border:1px solid ${ui.secondaryBorder}; color:${ui.secondaryFg}; background:${ui.secondaryBg}; min-width: 58px;`;
       btn.addEventListener('mouseenter', () => { btn.style.borderColor = ui.accent; btn.style.color = ui.accent; });
       btn.addEventListener('mouseleave', () => { btn.style.borderColor = ui.secondaryBorder; btn.style.color = ui.secondaryFg; });
-      btn.addEventListener('click', () => { cleanup(); resolve(cat); });
+      btn.addEventListener('click', () => { finish(cat); });
       forceContainer.appendChild(btn);
     });
 
@@ -8984,18 +10587,18 @@ function showArticleMasterCategoryModal(data) {
       document.removeEventListener('keydown', onKeydown);
     }
     function onKeydown(e) {
-      if (e.key === 'Escape') { cleanup(); resolve(null); }
+      if (e.key === 'Escape') { finish(null); }
     }
     document.addEventListener('keydown', onKeydown);
 
     box.querySelector('#am-modal-auto-btn').addEventListener('click', () => {
-      cleanup(); resolve('AUTO');
+      finish('AUTO');
     });
     box.querySelector('#am-modal-cancel-btn').addEventListener('click', () => {
-      cleanup(); resolve(null);
+      finish(null);
     });
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) { cleanup(); resolve(null); }
+      if (e.target === overlay) { finish(null); }
     });
   });
 }
@@ -9003,6 +10606,7 @@ function showArticleMasterCategoryModal(data) {
 const articleMasterUploadState = {
   pendingFile: null,
   pendingCategory: null,
+  pendingSeasonTag: null,
   pendingConflicts: [],
   resolutions: {},
   uiPrefix: null,
@@ -9061,110 +10665,121 @@ function applyArticleMasterConflictActionToAllRemaining(action) {
   });
 }
 
-function formatArticleMasterValue(val) {
-  if (val === null || val === undefined || val === '') return '—';
-  if (typeof val === 'number') return Number.isInteger(val) ? String(val) : val.toFixed(2);
-  return String(val);
-}
-
 function formatArticleMasterComparisonStatus(status) {
+  const ui = nxThemeUi();
   const map = {
-    match: '<span style="color:#7fdc7f;">Match</span>',
-    mismatch: '<span style="color:#f87171;">Mismatch</span>',
-    missing_in_file: '<span style="color:#ffb648;">Missing in file</span>',
-    missing_in_master: '<span style="color:#ffb648;">Missing in Article Master</span>',
-    both_empty: '<span style="color:#888;">Empty</span>',
+    match: `<span style="color:${ui.ok}; font-weight:600;">Match</span>`,
+    mismatch: `<span style="color:${ui.down}; font-weight:600;">Mismatch</span>`,
+    missing_in_file: `<span style="color:${ui.warn}; font-weight:600;">Missing in file</span>`,
+    missing_in_master: `<span style="color:${ui.warn}; font-weight:600;">Missing in Article Master</span>`,
+    both_empty: `<span style="color:${ui.muted};">Empty</span>`,
   };
   return map[status] || status;
 }
 
 function formatArticleMasterPriceChange(change) {
+  const ui = nxThemeUi();
   if (!change || change.direction === 'same') {
-    return '<span style="color:#888;">—</span>';
+    return `<span style="color:${ui.muted};">—</span>`;
   }
   const pct = change.pct != null ? ` (${change.pct > 0 ? '+' : ''}${change.pct}%)` : '';
   if (change.direction === 'increase') {
-    return `<span style="color:#7fdc7f;">↑ ${formatArticleMasterValue(change.delta)}${pct}</span>`;
+    return `<span style="color:${ui.up}; font-weight:600;">↑ ${formatArticleMasterValue(change.delta)}${pct}</span>`;
   }
   if (change.direction === 'decrease') {
-    return `<span style="color:#f87171;">↓ ${formatArticleMasterValue(Math.abs(change.delta))}${pct}</span>`;
+    return `<span style="color:${ui.down}; font-weight:600;">↓ ${formatArticleMasterValue(Math.abs(change.delta))}${pct}</span>`;
   }
-  return '<span style="color:#ffb648;">Changed</span>';
+  return `<span style="color:${ui.warn}; font-weight:600;">Changed</span>`;
 }
 
 function renderArticleMasterConflictCard(conflict, arrayIdx = 0) {
+  const ui = nxThemeUi();
   const key = getArticleMasterConflictKey(conflict, arrayIdx);
   const resolved = articleMasterUploadState.resolutions[key];
-  const label = [
-    formatArticleMasterValue(conflict.brand),
-    formatArticleMasterValue(conflict.size),
-    formatArticleMasterValue(conflict.product_type),
-  ].filter((v) => v && v !== '—').join(' · ') || 'Unknown item';
+  const label = formatArticleMasterHeading(conflict);
+
+  const colgroup =
+    '<colgroup>' +
+    '<col style="width:18%">' +
+    '<col style="width:26%">' +
+    '<col style="width:26%">' +
+    '<col style="width:30%">' +
+    '</colgroup>';
+
+  const thPad = 'padding:8px 10px; font-weight:600; text-align:left; white-space:nowrap;';
+  const tdPad = 'padding:7px 10px; vertical-align:middle;';
+
+  const sectionRow = (title) => (
+    `<tr>` +
+    `<td colspan="4" style="${tdPad} padding-top:12px; padding-bottom:6px; color:${ui.boxFg}; font-weight:600; font-size:12px; border-bottom:1px solid ${ui.rowBorder}; background:${ui.soft};">` +
+    `${title}</td></tr>`
+  );
 
   const keyRows = (conflict.field_comparisons || []).map((c) => (
-    '<tr>' +
-    `<td style="padding:6px 8px; color:#ccc;">${c.field}</td>` +
-    `<td style="padding:6px 8px;">${formatArticleMasterValue(c.upload_value)}</td>` +
-    `<td style="padding:6px 8px;">${formatArticleMasterValue(c.existing_value)}</td>` +
-    `<td style="padding:6px 8px;">${formatArticleMasterComparisonStatus(c.status)}</td>` +
+    '<tr style="border-bottom:1px solid ' + ui.rowBorder + ';">' +
+    `<td style="${tdPad} color:${ui.muted}; font-weight:500;">${c.field}</td>` +
+    // Article Master = existing, New file = upload (same order as price rows)
+    `<td style="${tdPad} color:${ui.boxFg};">${formatArticleMasterValue(c.existing_value)}</td>` +
+    `<td style="${tdPad} color:${ui.boxFg};">${formatArticleMasterValue(c.upload_value)}</td>` +
+    `<td style="${tdPad}">${formatArticleMasterComparisonStatus(c.status)}</td>` +
     '</tr>'
   )).join('');
 
   const priceRows = (conflict.price_comparisons || []).map((c) => (
-    '<tr>' +
-    `<td style="padding:6px 8px; color:#ccc;">${c.field}</td>` +
-    `<td style="padding:6px 8px;">${formatArticleMasterValue(c.existing_value)}</td>` +
-    `<td style="padding:6px 8px;">${formatArticleMasterValue(c.upload_value)}</td>` +
-    `<td style="padding:6px 8px;">${formatArticleMasterPriceChange(c.change)}</td>` +
+    '<tr style="border-bottom:1px solid ' + ui.rowBorder + ';">' +
+    `<td style="${tdPad} color:${ui.muted}; font-weight:500;">${c.field}</td>` +
+    `<td style="${tdPad} color:${ui.boxFg};">${formatArticleMasterValue(c.existing_value, c.field)}</td>` +
+    `<td style="${tdPad} color:${ui.boxFg};">${formatArticleMasterValue(c.upload_value, c.field)}</td>` +
+    `<td style="${tdPad}">${formatArticleMasterPriceChange(c.change)}</td>` +
     '</tr>'
   )).join('');
 
-  const tableHead =
-    '<thead><tr style="color:#888; border-bottom:1px solid #333;">' +
-    '<th style="text-align:left; padding:6px 8px;">Field</th>' +
-    '<th style="text-align:left; padding:6px 8px;">Article Master</th>' +
-    '<th style="text-align:left; padding:6px 8px;">New file</th>' +
-    '<th style="text-align:left; padding:6px 8px;">Change</th>' +
-    '</tr></thead>';
-
-  const keyTable = keyRows
-    ? `<div style="font-size:11px; color:#888; margin-top:10px;">Identity fields</div>` +
-      `<table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:4px;">${tableHead}<tbody>${keyRows}</tbody></table>`
-    : '';
-
-  const priceTable = priceRows
-    ? `<div style="font-size:11px; color:#888; margin-top:10px;">Price revision (season update)</div>` +
-      `<table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:4px;">${tableHead}<tbody>${priceRows}</tbody></table>`
+  const compareTable = (keyRows || priceRows)
+    ? (
+      `<table class="am-conflict-compare-table" style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:12.5px; margin-top:10px;">` +
+      colgroup +
+      `<thead><tr style="background:${ui.soft}; border-bottom:1px solid ${ui.rowBorder}; color:${ui.boxFg};">` +
+      `<th style="${thPad}">Field</th>` +
+      `<th style="${thPad}">Article Master</th>` +
+      `<th style="${thPad}">New file</th>` +
+      `<th style="${thPad}">Change</th>` +
+      '</tr></thead><tbody>' +
+      (keyRows ? sectionRow('Identity fields') + keyRows : '') +
+      (priceRows ? sectionRow('Price revision (season update)') + priceRows : '') +
+      '</tbody></table>'
+    )
     : '';
 
   const dupNote = (conflict.duplicate_ids && conflict.duplicate_ids.length)
-    ? `<div style="color:#ffb648; font-size:11px; margin-top:6px;">${conflict.duplicate_ids.length} extra duplicate row(s) in Article Master — Replace will merge into one.</div>`
+    ? `<div style="color:${ui.accent}; font-size:11px; margin-top:6px;">${conflict.duplicate_ids.length} extra duplicate row(s) in Article Master — Replace will merge into one.</div>`
     : '';
   const recommend = conflict.recommended_action === 'replace'
-    ? '<div style="color:#93c5fd; font-size:11px; margin-top:8px;">Recommended: <strong>Replace with new prices</strong> — applies season update and removes duplicate rows.</div>'
+    ? `<div style="color:${ui.muted}; font-size:11px; margin-top:8px;">Recommended: <strong style="color:${ui.boxFg};">Replace with new prices</strong> — applies season update and removes duplicate rows.</div>`
     : '';
 
   const resolvedBadge = resolved
-    ? `<div style="margin-top:10px; font-size:12px; color:#7fdc7f;">Resolved: ${resolved === 'replace' ? 'Replace existing' : resolved === 'create_new' ? 'Create new entry' : 'Skip'}</div>`
+    ? `<div style="margin-top:10px; font-size:12px; color:${ui.accent};">Resolved: ${resolved === 'replace' ? 'Replace existing' : resolved === 'create_new' ? 'Create new entry' : 'Skip'}</div>`
     : '';
 
   const createBtn = conflict.can_create_new
-    ? `<button type="button" class="btn btn-secondary am-conflict-create" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="font-size:12px;">Create new entry</button>`
+    ? `<button type="button" class="nx-btn am-conflict-create" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="font-size:12px; color:${ui.secondaryFg}; border-color:${ui.secondaryBorder}; background:${ui.secondaryBg};">Create new entry</button>`
     : '';
 
+  const cardBorder = resolved ? ui.accent : ui.boxBorder;
+  const cardBg = resolved ? ui.soft : ui.boxBg;
+
   return (
-    `<div class="am-conflict-card" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="padding:14px; margin-bottom:12px; border:1px solid ${resolved ? '#1f3d2a' : '#2a2a33'}; border-radius:8px; background:${resolved ? '#0d1510' : '#101015'}; ${resolved ? 'opacity:0.82;' : ''}">` +
-    `<div style="font-size:13px; font-weight:600; color:#e6e6e6;">${label}</div>` +
-    `<div style="font-size:11px; color:#888; margin-top:4px;">Category: ${conflict.category || '—'} · File row: ${conflict.upload_index != null ? Number(conflict.upload_index) + 1 : arrayIdx + 1} · File key: ${conflict.upload_item_key || '—'}</div>` +
-    `<div style="font-size:11px; color:#888;">Existing key: ${conflict.existing_item_key || '—'}</div>` +
-    `<div style="color:#fca5a5; font-size:12px; margin-top:8px;">${conflict.issue_summary || 'Seasonal price revision'}</div>` +
+    `<div class="am-conflict-card" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="padding:14px; margin-bottom:12px; border:1px solid ${cardBorder}; border-radius:8px; background:${cardBg}; color:${ui.boxFg}; ${resolved ? 'opacity:0.92;' : ''}">` +
+    `<div style="font-size:13px; font-weight:600; color:${ui.boxFg};">${label}</div>` +
+    `<div style="font-size:11px; color:${ui.muted}; margin-top:4px;">Category: ${conflict.category || '—'} · File row: ${conflict.upload_index != null ? Number(conflict.upload_index) + 1 : arrayIdx + 1}</div>` +
+    `<div style="color:${ui.muted}; font-size:12px; margin-top:8px;">${conflict.issue_summary || 'Seasonal price revision'}</div>` +
     dupNote + recommend +
-    keyTable + priceTable + resolvedBadge +
+    compareTable + resolvedBadge +
     `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">` +
     (resolved ? '' :
-      `<button type="button" class="btn btn-primary am-conflict-replace" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="font-size:12px;">Replace with new prices</button>` +
+      `<button type="button" class="nx-btn nx-btn-primary am-conflict-replace" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="font-size:12px;">Replace with new prices</button>` +
       createBtn +
-      `<button type="button" class="btn btn-secondary am-conflict-skip" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="font-size:12px; color:#999;">Skip this row</button>`
+      `<button type="button" class="nx-btn am-conflict-skip" data-conflict-key="${key}" data-array-idx="${arrayIdx}" style="font-size:12px; color:${ui.secondaryFg}; border-color:${ui.secondaryBorder}; background:${ui.secondaryBg};">Skip this row</button>`
     ) +
     `</div></div>`
   );
@@ -9302,11 +10917,11 @@ function showArticleMasterPriceMismatchModal(data, onApply) {
 
     footerEl.innerHTML =
       '<div style="display:flex; gap:8px; flex-wrap:wrap;">' +
-      '<button type="button" id="am-conflict-replace-all-btn" class="btn btn-primary">Replace all with new prices</button>' +
-      '<button type="button" id="am-conflict-skip-all-btn" class="btn btn-secondary">Skip all remaining</button>' +
-      '<button type="button" id="am-conflict-cancel-btn" class="btn btn-secondary">Cancel upload</button>' +
+      `<button type="button" id="am-conflict-replace-all-btn" class="nx-btn nx-btn-primary">Replace all with new prices</button>` +
+      `<button type="button" id="am-conflict-skip-all-btn" class="nx-btn" style="color:${ui.secondaryFg}; border-color:${ui.secondaryBorder}; background:${ui.secondaryBg};">Skip all remaining</button>` +
+      `<button type="button" id="am-conflict-cancel-btn" class="nx-btn" style="color:${ui.secondaryFg}; border-color:${ui.secondaryBorder}; background:${ui.secondaryBg};">Cancel upload</button>` +
       '</div>' +
-      '<button type="button" id="am-conflict-apply-btn" class="btn btn-primary" disabled style="opacity:0.5;">Resolve all items to continue</button>';
+      `<button type="button" id="am-conflict-apply-btn" class="nx-btn nx-btn-primary" disabled style="opacity:0.55;">Resolve all items to continue</button>`;
 
     box.appendChild(headerEl);
     box.appendChild(listEl);
@@ -9377,7 +10992,7 @@ function formatArticleMasterUploadResult(data) {
   return 'Upload complete.';
 }
 
-async function uploadArticleMasterSheet(confirmedCategory = null, conflictResolutions = null, uiPrefix = null) {
+async function uploadArticleMasterSheet(confirmedCategory = null, conflictResolutions = null, uiPrefix = null, seasonTag = null) {
   const prefix = uiPrefix || articleMasterUploadState.uiPrefix || 'am';
   articleMasterUploadState.uiPrefix = prefix;
   const fileInput = document.getElementById(`${prefix}-upload-file`);
@@ -9393,6 +11008,10 @@ async function uploadArticleMasterSheet(confirmedCategory = null, conflictResolu
   formData.append('file', file);
   if (confirmedCategory) {
     formData.append('confirmed_category', confirmedCategory);
+  }
+  const effectiveSeason = seasonTag || articleMasterUploadState.pendingSeasonTag;
+  if (effectiveSeason) {
+    formData.append('season_tag', effectiveSeason);
   }
   if (conflictResolutions && Object.keys(conflictResolutions).length) {
     formData.append('conflict_resolutions', JSON.stringify(conflictResolutions));
@@ -9416,10 +11035,13 @@ async function uploadArticleMasterSheet(confirmedCategory = null, conflictResolu
         }
         return;
       }
+      const category = typeof selected === 'string' ? selected : selected.category;
+      const season = typeof selected === 'string' ? null : (selected.season_tag || null);
       articleMasterUploadState.pendingFile = file;
-      articleMasterUploadState.pendingCategory = selected;
+      articleMasterUploadState.pendingCategory = category;
+      articleMasterUploadState.pendingSeasonTag = season;
       articleMasterUploadState.resolutions = {};
-      await uploadArticleMasterSheet(selected, null, prefix);
+      await uploadArticleMasterSheet(category, null, prefix, season);
       return;
     }
 
@@ -9432,15 +11054,18 @@ async function uploadArticleMasterSheet(confirmedCategory = null, conflictResolu
         if (data.created) partial.push(`${data.created} item(s) already added`);
         if (resultEl) {
           resultEl.textContent = partial.length
-            ? `${partial.join(' · ')} · mismatch review cancelled.`
+            ? `${partial.join(' · ')} · mismatch review cancelled — Refresh to see new rows (e.g. new sizes).`
             : 'Upload cancelled — price mismatches not resolved.';
         }
+        // Creates may already be committed before the mismatch modal — refresh list.
+        await loadArticleMasterList();
         return;
       }
       await uploadArticleMasterSheet(
         articleMasterUploadState.pendingCategory || confirmedCategory,
         resolutions,
-        prefix
+        prefix,
+        articleMasterUploadState.pendingSeasonTag || seasonTag
       );
       return;
     }
@@ -9454,6 +11079,7 @@ async function uploadArticleMasterSheet(confirmedCategory = null, conflictResolu
     if (fileInput) fileInput.value = '';
     articleMasterUploadState.pendingFile = null;
     articleMasterUploadState.pendingCategory = null;
+    articleMasterUploadState.pendingSeasonTag = null;
     articleMasterUploadState.resolutions = {};
     articleMasterUploadState.uiPrefix = null;
 
@@ -9513,9 +11139,181 @@ async function deleteOneArticleMaster(articleId) {
     if (!response.ok) {
       throw new Error(getApiErrorMessage(data, 'Delete failed'));
     }
+    articleMasterState.selectedIds.delete(Number(articleId));
     await loadArticleMasterList();
   } catch (error) {
     alert(error.message || 'Delete failed');
+  }
+}
+
+function updateArticleMasterSelectionChrome(rows) {
+  const countEl = document.getElementById('am-list-count');
+  const deleteBtn = document.getElementById('am-delete-btn');
+  const cancelBtn = document.getElementById('am-cancel-selection-btn');
+  const rowCount = Array.isArray(rows) ? rows.length : (getFilteredArticleMasterRows()?.length || 0);
+  const selected = articleMasterState.selectedIds.size;
+  const selecting = !!articleMasterState.selectionMode;
+
+  if (countEl) {
+    if (selecting) {
+      countEl.textContent =
+        `${selected} selected · ${rowCount} article${rowCount === 1 ? '' : 's'}`;
+      countEl.classList.toggle('am-count-has-selection', selected > 0);
+    } else {
+      countEl.textContent = `${rowCount} article${rowCount === 1 ? '' : 's'}`;
+      countEl.classList.remove('am-count-has-selection');
+    }
+  }
+
+  if (cancelBtn) {
+    cancelBtn.classList.toggle('hidden', !selecting);
+  }
+
+  if (deleteBtn) {
+    if (selecting) {
+      deleteBtn.textContent = selected > 0 ? `Delete (${selected})` : 'Delete selected';
+      deleteBtn.title = selected > 0
+        ? `Delete ${selected} selected article${selected === 1 ? '' : 's'}`
+        : 'Select articles, then delete — or Cancel';
+      deleteBtn.classList.toggle('nx-btn-primary', selected > 0);
+    } else {
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.title = 'Delete selected articles or delete all';
+      deleteBtn.classList.remove('nx-btn-primary');
+    }
+  }
+}
+
+function enterArticleMasterSelectionMode() {
+  articleMasterState.selectionMode = true;
+  articleMasterState.selectedIds = new Set();
+  renderArticleMasterTable();
+  nexoraToast('Select articles to delete. Cancel or Esc clears selection.', 'info');
+}
+
+function exitArticleMasterSelectionMode({ silent = false } = {}) {
+  if (!articleMasterState.selectionMode) return;
+  articleMasterState.selectionMode = false;
+  articleMasterState.selectedIds = new Set();
+  renderArticleMasterTable();
+  if (!silent) nexoraToast('Selection cancelled', 'info');
+}
+
+function toggleArticleMasterSelection(articleId, checked) {
+  const id = Number(articleId);
+  if (!Number.isFinite(id)) return;
+  if (checked) articleMasterState.selectedIds.add(id);
+  else articleMasterState.selectedIds.delete(id);
+  updateArticleMasterSelectionChrome(articleMasterState.detailRowsCache);
+  const selectAll = document.getElementById('am-select-all');
+  if (selectAll) {
+    const rows = articleMasterState.detailRowsCache || [];
+    const visibleIds = rows.map((a) => Number(a.id)).filter((n) => Number.isFinite(n));
+    const selectedVisible = visibleIds.filter((vid) => articleMasterState.selectedIds.has(vid));
+    selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+    selectAll.indeterminate =
+      selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+  }
+  const cb = document.querySelector(`.am-row-select[data-am-id="${id}"]`);
+  if (cb) cb.checked = articleMasterState.selectedIds.has(id);
+}
+
+function toggleArticleMasterSelectAll(checked) {
+  const rows = articleMasterState.detailRowsCache || getFilteredArticleMasterRows();
+  rows.forEach((a) => {
+    const id = Number(a.id);
+    if (!Number.isFinite(id)) return;
+    if (checked) articleMasterState.selectedIds.add(id);
+    else articleMasterState.selectedIds.delete(id);
+  });
+  renderArticleMasterTable();
+}
+
+/** Choice modal: returns 'selected' | 'all' | null */
+function showArticleMasterDeleteChoiceModal() {
+  return new Promise((resolve) => {
+    const ui = nxThemeUi();
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
+      'display: flex; align-items: center; justify-content: center; z-index: 100002;';
+    const box = document.createElement('div');
+    box.style.cssText =
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 420px; width: 90%; color: ${ui.boxFg};`;
+    box.innerHTML =
+      `<div style="font-size:16px; font-weight:600; margin-bottom:10px; color:${ui.accent};">Delete articles</div>` +
+      `<div style="font-size:13px; color:${ui.muted}; margin-bottom:18px; line-height:1.5;">` +
+      `Choose whether to pick specific articles or remove everything in the current filter.</div>` +
+      `<div style="display:flex; flex-direction:column; gap:10px;">` +
+      `<button type="button" id="am-del-choice-selected" class="btn btn-primary" style="width:100%; background:${ui.accent}; border-color:${ui.accent}; color:${ui.accentFg};">Delete selected</button>` +
+      `<button type="button" id="am-del-choice-all" class="btn btn-secondary" style="width:100%; background:${ui.secondaryBg}; border-color:${ui.secondaryBorder}; color:${ui.boxFg};">Delete all</button>` +
+      `<button type="button" id="am-del-choice-cancel" class="btn btn-secondary" style="width:100%; background:transparent; border-color:${ui.secondaryBorder}; color:${ui.muted};">Cancel</button>` +
+      `</div>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const cleanup = (val) => {
+      document.removeEventListener('keydown', onKey);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resolve(val);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') cleanup(null);
+    };
+    box.querySelector('#am-del-choice-selected').addEventListener('click', () => cleanup('selected'));
+    box.querySelector('#am-del-choice-all').addEventListener('click', () => cleanup('all'));
+    box.querySelector('#am-del-choice-cancel').addEventListener('click', () => cleanup(null));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+async function onArticleMasterDeleteClick() {
+  if (articleMasterState.selectionMode) {
+    await deleteSelectedArticleMaster();
+    return;
+  }
+  const choice = await showArticleMasterDeleteChoiceModal();
+  if (choice === 'selected') {
+    enterArticleMasterSelectionMode();
+  } else if (choice === 'all') {
+    await deleteAllArticleMaster();
+  }
+}
+
+async function deleteSelectedArticleMaster() {
+  const ids = [...articleMasterState.selectedIds];
+  const resultEl = document.getElementById('am-upload-result');
+  if (!ids.length) {
+    nexoraToast('Select at least one article to delete.', 'warn');
+    return;
+  }
+  const ok = await showSimpleConfirmModal(
+    'Delete selected articles?',
+    `<strong style="color:#f87171;">Warning:</strong> This permanently hard-deletes ` +
+      `${ids.length} selected article${ids.length === 1 ? '' : 's'}. This cannot be undone.`,
+    'Delete selected',
+    'Cancel'
+  );
+  if (!ok) return;
+
+  try {
+    const response = await fetchWithAuth('/api/v1/article-master/delete-selected', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await parseApiResponse(response);
+    if (!response.ok) {
+      throw new Error(getApiErrorMessage(data, 'Delete selected failed'));
+    }
+    if (resultEl) {
+      resultEl.textContent = `Permanently deleted ${data.deleted || 0} selected article${(data.deleted || 0) === 1 ? '' : 's'}.`;
+    }
+    exitArticleMasterSelectionMode({ silent: true });
+    await loadArticleMasterList();
+  } catch (error) {
+    alert(error.message || 'Delete selected failed');
   }
 }
 
@@ -9561,6 +11359,7 @@ async function deleteAllArticleMaster() {
     if (resultEl) {
       resultEl.textContent = `Permanently deleted ${data.deleted || 0} articles (${data.category}).`;
     }
+    exitArticleMasterSelectionMode({ silent: true });
     await loadArticleMasterList();
   } catch (error) {
     alert(error.message || 'Delete all failed');
@@ -9592,7 +11391,7 @@ async function scanArticleMasterDuplicates() {
       `<div style="text-align:left; font-size:12px; max-height:240px; overflow:auto;">` +
       `<p>Same product found under different brand spellings or item keys (e.g. Blumen / Bluman).</p>` +
       `<pre style="white-space:pre-wrap; color:#ccc; font-family:inherit;">${summary}</pre>` +
-      `<p style="margin-top:10px;">Keeps the oldest row and applies the <strong>latest prices</strong>. Brand aliases (Blumen/Bluemen→Bluman) are applied.</p></div>`,
+      `<p style="margin-top:10px;">Keeps the oldest row and applies the <strong>latest prices</strong>. Brand aliases (Bluemen/Bluman→Blumen) are applied.</p></div>`,
       'Merge all',
       'Cancel'
     );
@@ -9677,11 +11476,11 @@ function openArticleMasterFullEdit(articleId, fallbackArticle) {
     labelEl.textContent = article.item_key ? `Item: ${article.item_key}` : `Article ID ${article.id}`;
   }
   setVal('am-full-edit-brand', article.brand);
-  setVal('am-full-edit-size', article.size);
+  setVal('am-full-edit-size', formatArticleSizeDisplay(article.size) || article.size);
   setVal('am-full-edit-product', article.product_type);
-  setVal('am-full-edit-mrp', article.mrp);
-  setVal('am-full-edit-ptr', article.ptr);
-  setVal('am-full-edit-exmill', article.ex_mill_price);
+  setVal('am-full-edit-mrp', formatArticleMasterMoneyInput(article.mrp, 'mrp'));
+  setVal('am-full-edit-ptr', formatArticleMasterMoneyInput(article.ptr, 'ptr'));
+  setVal('am-full-edit-exmill', formatArticleMasterMoneyInput(article.ex_mill_price, 'ex_mill_price'));
   setVal('am-full-edit-bale', article.bale_pack_size);
   toggleModal('am-full-edit-modal', true);
 }
@@ -9714,20 +11513,43 @@ function collectArticleMasterFullEditUpdates(article) {
     const n = Number(s);
     return Number.isFinite(n) ? n : s;
   };
+  const money2 = (raw) => {
+    const n = numOrNull(raw);
+    if (typeof n !== 'number') return n;
+    return Math.round(n * 100) / 100;
+  };
+  const moneyMrp = (raw) => {
+    const n = numOrNull(raw);
+    if (typeof n !== 'number') return n;
+    return Math.round(n);
+  };
   const updates = {
     brand: document.getElementById('am-full-edit-brand')?.value?.trim() || null,
     size: document.getElementById('am-full-edit-size')?.value?.trim() || null,
     product_type: document.getElementById('am-full-edit-product')?.value?.trim() || null,
-    mrp: numOrNull(document.getElementById('am-full-edit-mrp')?.value),
-    ptr: numOrNull(document.getElementById('am-full-edit-ptr')?.value),
-    ex_mill_price: numOrNull(document.getElementById('am-full-edit-exmill')?.value),
+    mrp: moneyMrp(document.getElementById('am-full-edit-mrp')?.value),
+    ptr: money2(document.getElementById('am-full-edit-ptr')?.value),
+    ex_mill_price: money2(document.getElementById('am-full-edit-exmill')?.value),
     bale_pack_size: numOrNull(document.getElementById('am-full-edit-bale')?.value),
   };
   const changed = {};
   Object.entries(updates).forEach(([key, val]) => {
     const oldVal = article[key];
-    const oldStr = oldVal == null ? '' : String(oldVal);
-    const newStr = val == null ? '' : String(val);
+    let oldCmp = oldVal;
+    let newCmp = val;
+    if (['ptr', 'ex_mill_price'].includes(key)) {
+      const o = Number(oldVal);
+      const n = Number(val);
+      if (Number.isFinite(o) && Number.isFinite(n) && Math.abs(o - n) < 0.005) return;
+      oldCmp = Number.isFinite(o) ? o.toFixed(2) : oldVal;
+      newCmp = Number.isFinite(n) ? n.toFixed(2) : val;
+    } else if (key === 'mrp') {
+      const o = Number(oldVal);
+      const n = Number(val);
+      if (Number.isFinite(o) && Number.isFinite(n) && Math.round(o) === Math.round(n)) return;
+    }
+    const oldStr = oldCmp == null ? '' : String(oldCmp);
+    const newStr = newCmp == null ? '' : String(newCmp);
     if (oldStr !== newStr) {
       changed[key] = val;
     }
@@ -9823,12 +11645,14 @@ async function saveArticleMasterEdit() {
   }
 }
 
-function formatPriceHistoryValue(value) {
+function formatPriceHistoryValue(value, field) {
   if (value === null || value === undefined || value === '') return '—';
   const text = String(value).trim();
   if (!text) return '—';
   const num = Number(text);
   if (!Number.isFinite(num)) return text;
+  const key = String(field || '').toLowerCase();
+  if (key === 'mrp') return String(Math.round(num));
   return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -9836,7 +11660,11 @@ async function openArticleMasterPriceHistory(articleId) {
   const article = articleMasterState.articles.find((a) => a.id === articleId);
   const labelEl = document.getElementById('am-price-history-label');
   const tbody = document.getElementById('am-price-history-tbody');
-  if (labelEl) labelEl.textContent = article?.item_key || `Article #${articleId}`;
+  if (labelEl) {
+    labelEl.textContent = article
+      ? formatArticleMasterHeading(article)
+      : `Article #${articleId}`;
+  }
   if (tbody) tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
   toggleModal('am-price-history-modal', true);
 
@@ -9854,20 +11682,20 @@ async function openArticleMasterPriceHistory(articleId) {
     tbody.innerHTML = history.map((h) => `
       <tr>
         <td>${h.field_changed}</td>
-        <td>${formatPriceHistoryValue(h.old_value)}</td>
-        <td>${formatPriceHistoryValue(h.new_value)}</td>
+        <td>${formatPriceHistoryValue(h.old_value, h.field_changed)}</td>
+        <td>${formatPriceHistoryValue(h.new_value, h.field_changed)}</td>
         <td>${h.changed_by ?? '—'}</td>
         <td>${h.changed_at ? new Date(h.changed_at).toLocaleString() : '—'}</td>
       </tr>
     `).join('');
   } catch (error) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5">${error.message || 'Failed to load history'}</td></tr>`;
   }
 }
 
 function showArticleMasterDownloadModal() {
   return new Promise((resolve) => {
-    const categories = ['All', 'Bed', 'Bath', 'TOB', 'TOB Pillow'];
+    const categories = ['All', 'Bed', 'Bath', 'TOB', 'Pillow'];
     const ui = nxThemeUi();
 
     const overlay = document.createElement('div');
@@ -9961,6 +11789,12 @@ const filledOrdersState = {
   uploadUiPrefix: 'fo',
 };
 
+const ofSavedOrdersState = {
+  grouped: [],
+  selectedDistributorKey: '',
+  selectedOrderId: null,
+};
+
 function getFilledOrderUploadPrefix(prefix) {
   return prefix || filledOrdersState.uploadUiPrefix || 'fo';
 }
@@ -9997,7 +11831,7 @@ function getFilledOrderPendingUnmatchedItems() {
 function getFilledOrderPendingSaveStats() {
   const preview = filledOrdersState.pendingPreview;
   if (!preview) {
-    return { total: 0, matched: 0, unmatched: 0, rejected: 0, added: 0, flagged: 0 };
+    return { total: 0, matched: 0, unmatched: 0, rejected: 0, added: 0, flagged: 0, baleMismatch: 0 };
   }
   const rejected = preview.rejectedKeys.size;
   const added = preview.addedKeys.size;
@@ -10008,7 +11842,8 @@ function getFilledOrderPendingSaveStats() {
   const unmatched = pendingUnmatched;
   const matched = Math.max(0, total - unmatched - rejected);
   const flagged = preview.allItems.filter((it) => !it.is_clean_bale_multiple).length;
-  return { total, matched, unmatched, rejected, flagged, added };
+  const baleMismatch = preview.allItems.filter((it) => it.bale_qty_mismatch).length;
+  return { total, matched, unmatched, rejected, flagged, added, baleMismatch };
 }
 
 function setFilledOrderUploadFieldsEnabled(enabled, prefix = 'fo') {
@@ -10120,6 +11955,13 @@ async function onFilledOrderFileSelected(prefix = 'fo') {
     }
 
     const parts = applyFilledOrderUploadPreview(data, uiPrefix);
+    if (data.warning && !parts.length) {
+      if (resultEl) {
+        resultEl.textContent =
+          `"${file.name}" ready — could not auto-detect distributor/category (${data.warning}). Please select manually.`;
+      }
+      return;
+    }
     if (!parts.length) {
       if (resultEl) {
         resultEl.textContent = `"${file.name}" ready — could not detect distributor/category. Please select manually.`;
@@ -10127,7 +11969,8 @@ async function onFilledOrderFileSelected(prefix = 'fo') {
       return;
     }
     if (resultEl) {
-      resultEl.textContent = `${parts.join(' | ')} — click Upload to continue.`;
+      const warn = data.warning ? ` (note: ${data.warning})` : '';
+      resultEl.textContent = `${parts.join(' | ')} — click Upload to continue.${warn}`;
     }
   } catch (error) {
     if (resultEl) {
@@ -10233,6 +12076,289 @@ function renderFilledOrdersTable() {
   `).join('');
 }
 
+async function openOfFilledOrdersListModal() {
+  const modal = document.getElementById('of-fo-list-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  await loadFilledOrdersList();
+}
+
+function _getFilledOrderDistributorName(order) {
+  const byId = filledOrdersState.distributors.find((d) => String(d.id) === String(order.distributor_id));
+  return byId ? getFilledOrderDistributorLabel(byId) : (order.distributor_name_raw || 'Unknown distributor');
+}
+
+function _buildOfSavedDistributorGroups() {
+  const map = new Map();
+  (filledOrdersState.orders || []).forEach((order) => {
+    const idPart = order.distributor_id != null ? `id:${order.distributor_id}` : 'id:none';
+    const rawName = (order.distributor_name_raw || '').trim().toLowerCase();
+    const key = `${idPart}|name:${rawName}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        distributorName: _getFilledOrderDistributorName(order),
+        orders: [],
+      });
+    }
+    map.get(key).orders.push(order);
+  });
+  return Array.from(map.values()).map((group) => ({
+    ...group,
+    orders: group.orders.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+  })).sort((a, b) => a.distributorName.localeCompare(b.distributorName));
+}
+
+function renderOfSavedDistributorRail() {
+  const host = document.getElementById('of-saved-distributor-list');
+  if (!host) return;
+  const groups = ofSavedOrdersState.grouped;
+  if (!groups.length) {
+    host.innerHTML = '<p class="nx-text-faint" style="margin:8px 4px;">No saved orders yet.</p>';
+    return;
+  }
+  host.innerHTML = groups.map((group) => {
+    const active = group.key === ofSavedOrdersState.selectedDistributorKey;
+    const latestDate = (group.orders[0]?.created_at || '').slice(0, 10);
+    return `
+      <button type="button" class="of-rail-item of-saved-distributor-btn ${active ? 'is-active' : ''}" data-saved-distributor-key="${encodeURIComponent(group.key)}">
+        <span class="of-rail-text">
+          <span class="of-rail-label">${group.distributorName}</span>
+          <span class="of-rail-hint">${group.orders.length} order${group.orders.length === 1 ? '' : 's'}${latestDate ? ` · ${latestDate}` : ''}</span>
+        </span>
+      </button>
+    `;
+  }).join('');
+  host.querySelectorAll('.of-saved-distributor-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = decodeURIComponent(btn.getAttribute('data-saved-distributor-key') || '');
+      if (key) selectOfSavedDistributor(key);
+    });
+  });
+}
+
+function markOfSavedDistributorActive(distributorKey) {
+  document.querySelectorAll('#of-saved-distributor-list .of-saved-distributor-btn').forEach((btn) => {
+    const key = decodeURIComponent(btn.getAttribute('data-saved-distributor-key') || '');
+    btn.classList.toggle('is-active', key === distributorKey);
+  });
+}
+
+function renderOfSavedOrderPicker() {
+  const picker = document.getElementById('of-saved-order-pick');
+  const title = document.getElementById('of-saved-distributor-title');
+  if (!picker || !title) return;
+  const group = ofSavedOrdersState.grouped.find((g) => g.key === ofSavedOrdersState.selectedDistributorKey);
+  if (!group) {
+    title.textContent = 'Select a distributor';
+    title.title = '';
+    picker.innerHTML = '<option value="">Select saved order</option>';
+    return;
+  }
+  title.textContent = group.distributorName;
+  title.title = `${group.distributorName} · ${group.orders.length} saved order${group.orders.length === 1 ? '' : 's'}`;
+  picker.innerHTML = group.orders.map((o) => (
+    `<option value="${o.id}" ${String(o.id) === String(ofSavedOrdersState.selectedOrderId) ? 'selected' : ''}>` +
+    `${o.category || '—'} · ${o.season || '—'} · ${(o.created_at || '').slice(0, 10)}` +
+    '</option>'
+  )).join('');
+}
+
+function renderOfSavedStats(fo, itemCount) {
+  const meta = document.getElementById('of-saved-detail-meta');
+  if (!meta) return;
+  if (!fo) {
+    meta.textContent = 'Select a distributor from the left.';
+    return;
+  }
+  const chips = [
+    ['of-saved-chip', fo.category || '—'],
+    ['of-saved-chip', fo.season || '—'],
+    ['of-saved-chip', `${itemCount ?? fo.total_lines ?? 0} lines`],
+    ['of-saved-chip', `${formatFilledOrderQty(fo.total_bales)} bales`],
+    ['of-saved-chip', `${formatFilledOrderQty(fo.total_piece_qty)} pcs`],
+    ['of-saved-chip of-saved-chip--accent', `Ex-mill ${formatFilledOrderAmount(fo.total_ex_mill_value)}`],
+  ];
+  meta.innerHTML = chips.map(([cls, text]) => `<span class="${cls}">${text}</span>`).join('');
+}
+
+function renderOfSavedOrderDetailRows(items) {
+  const tbody = document.getElementById('of-saved-detail-tbody');
+  if (!tbody) return;
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="12">No line items for this order.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map((it) => {
+    const flag = it.bale_qty_mismatch
+      ? '<span class="of-saved-flag">⚠ bales</span>'
+      : (it.is_clean_bale_multiple ? '' : '<span class="of-saved-flag">🚩</span>');
+    const matched = it.matched
+      ? '<span class="of-saved-ok" title="Matched">✓</span>'
+      : '<span class="of-saved-no" title="Unmatched">✗</span>';
+    return `<tr>
+      <td>${formatFilledOrderValue(it.brand)}</td>
+      <td>${formatFilledOrderValue(it.size)}</td>
+      <td>${formatFilledOrderValue(it.product_type)}</td>
+      <td>${formatFilledOrderAmount(it.mrp)}</td>
+      <td>${formatFilledOrderAmount(it.ptr)}</td>
+      <td>${formatFilledOrderAmount(it.ex_mill_price)}</td>
+      <td>${formatFilledOrderQty(it.bale_size_used)}</td>
+      <td>${formatFilledOrderQty(it.raw_qty_value)}</td>
+      <td>${formatFilledOrderValue(it.detected_unit)}</td>
+      <td>${formatFilledOrderQty(it.final_piece_qty)}</td>
+      <td>${matched}</td>
+      <td>${flag}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadOfSavedOrderDetail(orderId) {
+  const tbody = document.getElementById('of-saved-detail-tbody');
+  const meta = document.getElementById('of-saved-detail-meta');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="12">Loading order details...</td></tr>';
+  if (meta) meta.textContent = 'Loading…';
+  try {
+    const response = await fetchWithAuth(`/api/v1/filled-orders/${orderId}`);
+    const data = await parseApiResponse(response);
+    if (!response.ok) {
+      throw new Error(getApiErrorMessage(data, 'Failed to load order detail'));
+    }
+    const fo = data.filled_order || {};
+    const items = data.items || [];
+    renderOfSavedStats(fo, items.length);
+    renderOfSavedOrderDetailRows(items);
+  } catch (error) {
+    if (meta) meta.textContent = error.message || 'Could not load order detail.';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="12">${error.message || 'Failed to load detail.'}</td></tr>`;
+  }
+}
+
+function onOfSavedOrderPickChanged(orderId) {
+  if (!orderId) {
+    const tbody = document.getElementById('of-saved-detail-tbody');
+    renderOfSavedStats(null);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="12">Select saved order.</td></tr>';
+    return;
+  }
+  ofSavedOrdersState.selectedOrderId = Number(orderId);
+  loadOfSavedOrderDetail(ofSavedOrdersState.selectedOrderId);
+}
+
+function _isOfSavedOrdersOpen() {
+  const ofScreen = document.querySelector('#order-fulfillment-workspace .nx-of-vyapar');
+  return !!(ofScreen && ofScreen.classList.contains('is-saved-orders'));
+}
+
+async function selectOfSavedDistributor(distributorKey) {
+  // Do not re-enter workspace on every click — that was causing layout jumps.
+  if (!_isOfSavedOrdersOpen()) {
+    setOfRailMode('saved');
+    showOfSection('saved-orders');
+  }
+  ofSavedOrdersState.selectedDistributorKey = distributorKey;
+  const group = ofSavedOrdersState.grouped.find((g) => g.key === distributorKey);
+  ofSavedOrdersState.selectedOrderId = group?.orders?.[0]?.id || null;
+
+  const listHost = document.getElementById('of-saved-distributor-list');
+  const hasButtons = listHost && listHost.querySelector('.of-saved-distributor-btn');
+  if (hasButtons) markOfSavedDistributorActive(distributorKey);
+  else renderOfSavedDistributorRail();
+
+  renderOfSavedOrderPicker();
+  if (ofSavedOrdersState.selectedOrderId) {
+    await loadOfSavedOrderDetail(ofSavedOrdersState.selectedOrderId);
+  } else {
+    const tbody = document.getElementById('of-saved-detail-tbody');
+    renderOfSavedStats(null);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="12">No saved order under this distributor.</td></tr>';
+  }
+}
+
+async function openOfSavedOrdersWorkspace() {
+  const tbody = document.getElementById('of-saved-detail-tbody');
+  const meta = document.getElementById('of-saved-detail-meta');
+  if (meta) meta.textContent = 'Loading saved orders...';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="12">Loading saved orders...</td></tr>';
+
+  await loadFilledOrdersList();
+  ofSavedOrdersState.grouped = _buildOfSavedDistributorGroups();
+  const firstKey = ofSavedOrdersState.grouped[0]?.key || '';
+  setOfRailMode('saved');
+  showOfSection('saved-orders');
+  renderOfSavedDistributorRail();
+
+  if (firstKey) {
+    await selectOfSavedDistributor(firstKey);
+  } else {
+    ofSavedOrdersState.selectedDistributorKey = '';
+    ofSavedOrdersState.selectedOrderId = null;
+    renderOfSavedOrderPicker();
+    if (meta) meta.textContent = 'No saved filled orders yet.';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="12">No saved filled orders yet.</td></tr>';
+  }
+}
+
+function exitOfSavedOrdersWorkspace() {
+  setOfRailMode('default');
+  showOfSection('filled-order');
+}
+
+async function deleteOfSavedSelectedOrder() {
+  const orderId = ofSavedOrdersState.selectedOrderId;
+  if (!orderId) {
+    await showSimpleConfirmModal('No order selected', 'Select a saved order first.', 'OK', 'Close');
+    return;
+  }
+  const ok = await showSimpleConfirmModal(
+    'Delete filled order?',
+    '<strong style="color:#f87171;">Warning:</strong> This permanently deletes the entire filled order and all line items. This cannot be undone.',
+    'Delete order',
+    'Cancel'
+  );
+  if (!ok) return;
+  try {
+    const response = await fetchWithAuth(`/api/v1/filled-orders/${orderId}`, { method: 'DELETE' });
+    const data = await parseApiResponse(response);
+    if (!response.ok) {
+      throw new Error(getApiErrorMessage(data, 'Delete failed'));
+    }
+    const prevKey = ofSavedOrdersState.selectedDistributorKey;
+    await loadFilledOrdersList();
+    if (document.getElementById('of-fo-summary')) {
+      await loadOrderFulfillmentCatalogSummary();
+    }
+    ofSavedOrdersState.grouped = _buildOfSavedDistributorGroups();
+    // Always rebuild the left rail — otherwise deleted distributors stay visible.
+    renderOfSavedDistributorRail();
+
+    if (!ofSavedOrdersState.grouped.length) {
+      ofSavedOrdersState.selectedDistributorKey = '';
+      ofSavedOrdersState.selectedOrderId = null;
+      renderOfSavedOrderPicker();
+      const title = document.getElementById('of-saved-distributor-title');
+      const tbody = document.getElementById('of-saved-detail-tbody');
+      if (title) {
+        title.textContent = 'No saved orders';
+        title.title = '';
+      }
+      renderOfSavedStats(null);
+      if (tbody) tbody.innerHTML = '<tr><td colspan="12">No saved filled orders yet.</td></tr>';
+      if (typeof nexoraToast === 'function') nexoraToast('Saved order deleted', 'success');
+      return;
+    }
+
+    const sameGroup = ofSavedOrdersState.grouped.find((g) => g.key === prevKey);
+    const nextKey = sameGroup ? prevKey : ofSavedOrdersState.grouped[0].key;
+    ofSavedOrdersState.selectedDistributorKey = '';
+    // Force a full select (rail already rendered) so detail + picker refresh.
+    await selectOfSavedDistributor(nextKey);
+    if (typeof nexoraToast === 'function') nexoraToast('Saved order deleted', 'success');
+  } catch (error) {
+    await showSimpleConfirmModal('Delete failed', error.message || 'Could not delete this order.', 'OK', 'Close');
+  }
+}
+
 async function loadFilledOrdersList() {
   const tbody = document.getElementById('fo-orders-tbody');
   if (tbody) tbody.innerHTML = '<tr><td colspan="14">Loading...</td></tr>';
@@ -10244,7 +12370,7 @@ async function loadFilledOrdersList() {
     }
     filledOrdersState.orders = data.filled_orders || [];
     renderFilledOrdersTable();
-    if (currentModuleKey === 'dashboard' && authState.role === 'sales_executive') {
+    if (authState.role === 'sales_executive') {
       loadFilledOrdersSeasonWidgets();
     }
   } catch (error) {
@@ -10253,14 +12379,67 @@ async function loadFilledOrdersList() {
 }
 
 function formatFilledOrderComparisonStatus(status) {
+  const ui = nxThemeUi();
   const map = {
-    match: '<span style="color:#7fdc7f;">Match</span>',
-    mismatch: '<span style="color:#f87171;">Mismatch</span>',
-    missing_in_file: '<span style="color:#ffb648;">Missing in file</span>',
-    missing_in_master: '<span style="color:#ffb648;">Missing in Article Master</span>',
-    both_empty: '<span style="color:#888;">Empty</span>',
+    match: `<span style="color:${ui.ok}; font-weight:600;">Match</span>`,
+    mismatch: `<span style="color:${ui.down}; font-weight:600;">Mismatch</span>`,
+    missing_in_file: `<span style="color:${ui.warn}; font-weight:600;">Missing in file</span>`,
+    missing_in_master: `<span style="color:${ui.warn}; font-weight:600;">Missing in Article Master</span>`,
+    both_empty: `<span style="color:${ui.muted};">Empty</span>`,
   };
   return map[status] || status;
+}
+
+function renderFilledOrderMismatchIssueCard(it) {
+  const ui = nxThemeUi();
+  const previewKey = getFilledOrderPreviewItemKey(it);
+  const label = [
+    formatFilledOrderValue(it.brand),
+    formatFilledOrderValue(it.size),
+    formatFilledOrderValue(it.product_type),
+  ].filter((v) => v && v !== '—').join(' · ') || 'Unknown line';
+  const lineNo = it.line_number != null ? `Line ${it.line_number}` : 'Line ?';
+
+  const comparisons = (it.field_comparisons || []).map((c) => (
+    '<tr>' +
+    `<td style="padding:6px 8px; color:${ui.muted};">${c.field}</td>` +
+    `<td style="padding:6px 8px; color:${ui.boxFg};">${formatFilledOrderValue(c.file_value)}</td>` +
+    `<td style="padding:6px 8px; color:${ui.boxFg};">${formatFilledOrderValue(c.master_value)}</td>` +
+    `<td style="padding:6px 8px;">${formatFilledOrderComparisonStatus(c.status)}</td>` +
+    '</tr>'
+  )).join('');
+
+  const comparisonTable = comparisons
+    ? (
+      `<table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; color:${ui.boxFg};">` +
+      `<thead><tr style="color:${ui.muted}; border-bottom:1px solid ${ui.rowBorder};">` +
+      '<th style="text-align:left; padding:6px 8px;">Field</th>' +
+      '<th style="text-align:left; padding:6px 8px;">In file</th>' +
+      '<th style="text-align:left; padding:6px 8px;">Article Master</th>' +
+      '<th style="text-align:left; padding:6px 8px;">Status</th>' +
+      '</tr></thead><tbody>' + comparisons + '</tbody></table>'
+    )
+    : `<div style="color:${ui.down}; font-size:12px; margin-top:8px;">${it.issue_summary || 'Not found in Article Master'}</div>`;
+
+  const hint = it.suggestion
+    ? `<div style="color:${ui.muted}; font-size:12px; margin-top:8px; line-height:1.45;">Tip: ${it.suggestion}</div>`
+    : '';
+  const qtyRow = it.final_piece_qty != null
+    ? `<div style="font-size:12px; color:${ui.muted}; margin-top:8px;">Qty: ${formatFilledOrderQty(it.raw_qty_value)} ${it.detected_unit || ''} → ${formatFilledOrderQty(it.final_piece_qty)} pcs</div>`
+    : '';
+
+  return (
+    `<div class="fo-mismatch-card" data-preview-key="${previewKey.replace(/"/g, '&quot;')}" ` +
+    `style="border:1px solid ${ui.boxBorder}; border-radius:10px; padding:14px; margin-bottom:12px; background:${ui.secondaryBg}; color:${ui.boxFg};">` +
+    `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;">` +
+    `<div><span style="color:${ui.muted}; font-size:12px;">${lineNo}</span> <strong style="font-size:14px; color:${ui.boxFg};">${label}</strong></div>` +
+    `<div style="display:flex; gap:8px; flex-wrap:wrap;">` +
+    `<button type="button" class="btn btn-primary fo-mismatch-add-btn" data-preview-key="${previewKey.replace(/"/g, '&quot;')}" style="padding:6px 12px; font-size:12px; background:${ui.accent}; border-color:${ui.accent}; color:${ui.accentFg};">Add to Article Master</button>` +
+    `<button type="button" class="btn btn-danger fo-mismatch-reject-btn" data-preview-key="${previewKey.replace(/"/g, '&quot;')}" style="padding:6px 12px; font-size:12px; background:#b42318; border:1px solid #7f1d1d; color:#fff; opacity:1; pointer-events:auto;">Exclude line</button>` +
+    `</div></div>` +
+    comparisonTable + qtyRow + hint +
+    `</div>`
+  );
 }
 
 function formatFilledOrderIssueLine(it) {
@@ -10370,64 +12549,18 @@ function showSimpleConfirmModal(title, message, yesText = 'Yes', noText = 'No') 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     const cleanup = (val) => {
-      document.body.removeChild(overlay);
+      document.removeEventListener('keydown', onKey);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       resolve(val);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') cleanup(false);
     };
     box.querySelector('#scm-yes').addEventListener('click', () => cleanup(true));
     box.querySelector('#scm-no').addEventListener('click', () => cleanup(false));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
+    document.addEventListener('keydown', onKey);
   });
-}
-
-function renderFilledOrderMismatchIssueCard(it) {
-  const previewKey = getFilledOrderPreviewItemKey(it);
-  const label = [
-    formatFilledOrderValue(it.brand),
-    formatFilledOrderValue(it.size),
-    formatFilledOrderValue(it.product_type),
-  ].filter((v) => v && v !== '—').join(' · ') || 'Unknown line';
-  const lineNo = it.line_number != null ? `Line ${it.line_number}` : 'Line ?';
-
-  const comparisons = (it.field_comparisons || []).map((c) => (
-    '<tr>' +
-    `<td style="padding:6px 8px; color:#ccc;">${c.field}</td>` +
-    `<td style="padding:6px 8px;">${formatFilledOrderValue(c.file_value)}</td>` +
-    `<td style="padding:6px 8px;">${formatFilledOrderValue(c.master_value)}</td>` +
-    `<td style="padding:6px 8px;">${formatFilledOrderComparisonStatus(c.status)}</td>` +
-    '</tr>'
-  )).join('');
-
-  const comparisonTable = comparisons
-    ? (
-      '<table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;">' +
-      '<thead><tr style="color:#888; border-bottom:1px solid #333;">' +
-      '<th style="text-align:left; padding:6px 8px;">Field</th>' +
-      '<th style="text-align:left; padding:6px 8px;">In file</th>' +
-      '<th style="text-align:left; padding:6px 8px;">Article Master</th>' +
-      '<th style="text-align:left; padding:6px 8px;">Status</th>' +
-      '</tr></thead><tbody>' + comparisons + '</tbody></table>'
-    )
-    : `<div style="color:#fca5a5; font-size:12px; margin-top:8px;">${it.issue_summary || 'Not found in Article Master'}</div>`;
-
-  const hint = it.suggestion
-    ? `<div style="color:#9ca3af; font-size:12px; margin-top:8px;">Tip: ${it.suggestion}</div>`
-    : '';
-  const qtyRow = it.final_piece_qty != null
-    ? `<div style="font-size:12px; color:#bbb; margin-top:8px;">Qty: ${formatFilledOrderQty(it.raw_qty_value)} ${it.detected_unit || ''} → ${formatFilledOrderQty(it.final_piece_qty)} pcs</div>`
-    : '';
-
-  return (
-    `<div class="fo-mismatch-card" data-preview-key="${previewKey.replace(/"/g, '&quot;')}" ` +
-    `style="border:1px solid #2a2a33; border-radius:10px; padding:14px; margin-bottom:12px; background:#101015;">` +
-    `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;">` +
-    `<div><span style="color:#888; font-size:12px;">${lineNo}</span> <strong style="font-size:14px;">${label}</strong></div>` +
-    `<div style="display:flex; gap:8px; flex-wrap:wrap;">` +
-    `<button type="button" class="btn btn-primary fo-mismatch-add-btn" data-preview-key="${previewKey.replace(/"/g, '&quot;')}" style="padding:6px 12px; font-size:12px;">Add to Article Master</button>` +
-    `<button type="button" class="btn btn-danger fo-mismatch-reject-btn" data-preview-key="${previewKey.replace(/"/g, '&quot;')}" style="padding:6px 12px; font-size:12px;">Reject</button>` +
-    `</div></div>` +
-    comparisonTable + qtyRow + hint +
-    `</div>`
-  );
 }
 
 async function filledOrderPreviewAddToArticleMaster(previewKey, rerender) {
@@ -10478,9 +12611,11 @@ async function filledOrderPreviewRejectLine(previewKey, rerender) {
   ].filter((v) => v && v !== '—').join(' · ');
 
   const confirmed = await showSimpleConfirmModal(
-    'Reject this line?',
-    `Exclude <strong>${label}</strong> from this filled order when you save?`,
-    'Yes, reject',
+    'Exclude this line?',
+    `Is line ko is filled order se <strong>hata denge</strong> jab aap Save karoge.<br><br>` +
+      `<strong>${label}</strong><br><br>` +
+      `Abhi order save nahi hoga — sirf yeh line exclude list mein jayegi.`,
+    'Yes, exclude line',
     'No, go back',
   );
   if (!confirmed) return;
@@ -10533,7 +12668,7 @@ function showFilledOrderMismatchReviewModal(onUpdate) {
           ? `<p style="margin:8px 0 0; color:#7fdc7f; font-size:12px;">${preview.addedKeys.size} added to Article Master.</p>`
           : '') +
         (preview?.rejectedKeys.size
-          ? `<p style="margin:4px 0 0; color:#f87171; font-size:12px;">${preview.rejectedKeys.size} rejected (will be excluded on save).</p>`
+          ? `<p style="margin:4px 0 0; color:#f87171; font-size:12px;">${preview.rejectedKeys.size} line(s) excluded — order abhi save nahi hua; Save pe yeh lines skip hongi.</p>`
           : '');
 
       if (!items.length) {
@@ -10570,11 +12705,54 @@ function showFilledOrderMismatchReviewModal(onUpdate) {
   });
 }
 
+function downloadFilledOrderBaleMismatchCsv(data) {
+  const items = (data.bale_mismatch_items && data.bale_mismatch_items.length)
+    ? data.bale_mismatch_items
+    : (data.all_items || []).filter((it) => it.bale_qty_mismatch);
+  if (!items.length) {
+    nxNotify('No bale mismatches to download.', 'info');
+    return;
+  }
+  const headers = [
+    'Brand', 'Size', 'Qty (used)', 'Sheet bales', 'Expected bales (Qty/Bale Size)',
+    'Bale size', 'Difference', 'Issue',
+  ];
+  const lines = [headers.join(',')];
+  for (const it of items) {
+    const expected = it.expected_bales;
+    const sheet = it.sheet_bales;
+    const diff = (sheet != null && expected != null) ? (sheet - expected) : '';
+    const row = [
+      it.brand || '',
+      it.size || '',
+      it.final_piece_qty ?? '',
+      sheet ?? '',
+      expected ?? '',
+      it.bale_size_used ?? '',
+      diff,
+      (it.bale_mismatch_detail || '').replace(/"/g, '""'),
+    ].map((v) => `"${v}"`);
+    lines.push(row.join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `bale_mismatch_${(data.distributor_name || 'order').replace(/\s+/g, '_')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function showFilledOrderSaveConfirmModal(data) {
   return new Promise((resolve) => {
     initFilledOrderPendingPreview(data);
     const existing = data.existing_order || null;
     const ui = nxThemeUi();
+    const mismatchItems = data.bale_mismatch_items
+      || (data.all_items || []).filter((it) => it.bale_qty_mismatch)
+      || [];
 
     const overlay = document.createElement('div');
     overlay.style.cssText =
@@ -10584,7 +12762,7 @@ function showFilledOrderSaveConfirmModal(data) {
     const box = document.createElement('div');
     box.style.cssText =
       `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
-      `padding: 24px; max-width: 480px; width: 92%; ` +
+      `padding: 24px; max-width: 720px; width: 94%; max-height: 88vh; overflow: auto; ` +
       `box-shadow: 0 12px 40px rgba(0,0,0,0.28); font-family: inherit; color: ${ui.boxFg};`;
 
     const statsHost = document.createElement('div');
@@ -10599,10 +12777,12 @@ function showFilledOrderSaveConfirmModal(data) {
         ['Total lines', s.total],
         ['Matched', s.matched],
         ['Unmatched', `${s.unmatched}${checkBtn}`],
-        ['Rejected', s.rejected],
+        ['Excluded', s.rejected],
         ['Added to AM', s.added],
-        ['Flagged', s.flagged],
+        ['Flagged (pack)', s.flagged],
+        ['Bale mismatches', s.baleMismatch],
         ['Qty column', data.quantity_column_used || '—'],
+        ['Bales column', data.bales_column_used || '—'],
         ['Unit', data.quantity_unit_used || '—'],
         ['Category', data.category || '—'],
         ['Season', data.season || '—'],
@@ -10635,6 +12815,13 @@ function showFilledOrderSaveConfirmModal(data) {
             Saving will replace that order.
           </div>`
         : '') +
+      (mismatchItems.length
+        ? `<div style="font-size:13px; color:#991b1b; margin-bottom:12px; line-height:1.5; padding:10px 12px; border:1px solid #fecaca; border-radius:8px; background:#fef2f2;">
+            <strong>Bale mismatch: ${mismatchItems.length} line(s).</strong>
+            Order will use <strong>Qty</strong> (not silently fix bales).
+            Ask the distributor to correct sheet bales, or continue with Qty.
+          </div>`
+        : '') +
       `<div style="font-size:13px; color:${ui.muted}; margin-bottom:14px; line-height:1.5;">Review summary below. ` +
       'If unmatched &gt; 0, click <strong>Check</strong> to review details before saving.</div>';
 
@@ -10644,14 +12831,60 @@ function showFilledOrderSaveConfirmModal(data) {
     box.appendChild(statsHost);
     placeholder.replaceWith(statsHost);
 
+    if (mismatchItems.length) {
+      const tableWrap = document.createElement('div');
+      tableWrap.style.cssText = 'margin:12px 0 8px; overflow:auto; max-height:220px; border:1px solid #fecaca; border-radius:8px;';
+      const rowsHtml = mismatchItems.slice(0, 50).map((it) => {
+        const expected = it.expected_bales != null ? Number(it.expected_bales).toFixed(2) : '—';
+        const sheet = it.sheet_bales != null ? it.sheet_bales : '—';
+        const diff = (it.sheet_bales != null && it.expected_bales != null)
+          ? (it.sheet_bales - it.expected_bales)
+          : '';
+        return `<tr style="background:rgba(220,50,50,0.12);">
+          <td style="padding:6px 8px;">${it.brand || ''}</td>
+          <td style="padding:6px 8px;">${it.size || ''}</td>
+          <td style="padding:6px 8px; text-align:right;">${formatFilledOrderQty(it.final_piece_qty)}</td>
+          <td style="padding:6px 8px; text-align:right;">${sheet}</td>
+          <td style="padding:6px 8px; text-align:right;">${expected}</td>
+          <td style="padding:6px 8px; text-align:right;">${diff !== '' ? Number(diff).toFixed(2) : '—'}</td>
+        </tr>`;
+      }).join('');
+      tableWrap.innerHTML =
+        `<table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr style="background:#450a0a; color:#fecaca; text-align:left;">
+            <th style="padding:6px 8px;">Brand</th>
+            <th style="padding:6px 8px;">Size</th>
+            <th style="padding:6px 8px; text-align:right;">Qty</th>
+            <th style="padding:6px 8px; text-align:right;">Sheet bales</th>
+            <th style="padding:6px 8px; text-align:right;">Expected</th>
+            <th style="padding:6px 8px; text-align:right;">Diff</th>
+          </tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>`;
+      box.appendChild(tableWrap);
+
+      const dlBtn = document.createElement('div');
+      dlBtn.style.cssText =
+        `text-align:center; padding:8px; border-radius:8px; cursor:pointer; margin:8px 0 4px; ` +
+        `color:${ui.boxFg}; border:1px solid ${ui.boxBorder}; background:${ui.secondaryBg}; font-size:13px; font-weight:600;`;
+      dlBtn.textContent = 'Download mismatch list (CSV)';
+      dlBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadFilledOrderBaleMismatchCsv(data);
+      });
+      box.appendChild(dlBtn);
+    }
+
     const confirmBtn = document.createElement('div');
     confirmBtn.id = 'fo-save-confirm-btn';
     confirmBtn.style.cssText = `background:${ui.accent}; color:${ui.accentFg}; text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-weight:600; margin:16px 0 10px;`;
-    confirmBtn.textContent = existing ? 'Replace existing order' : 'Save filled order';
+    confirmBtn.textContent = mismatchItems.length
+      ? (existing ? 'Continue with Qty — replace order' : 'Continue with Qty — save order')
+      : (existing ? 'Replace existing order' : 'Save filled order');
     const cancelBtn = document.createElement('div');
     cancelBtn.id = 'fo-save-cancel-btn';
     cancelBtn.style.cssText = `text-align:center; padding:8px; border-radius:8px; cursor:pointer; color:#f87171; border:1px solid #5c2b2b; background:${ui.secondaryBg};`;
-    cancelBtn.textContent = 'Cancel — reject upload';
+    cancelBtn.textContent = 'Cancel — do not save';
     box.appendChild(confirmBtn);
     box.appendChild(cancelBtn);
 
@@ -10726,22 +12959,43 @@ function showFilledOrderQtyColumnModal(data) {
       'background: #1c1c22; color: #eee; padding: 20px; border-radius: 10px; ' +
       'max-width: 640px; width: 92%; max-height: 82vh; overflow-y: auto;';
 
-    const rows = (data.candidates || []).map((c) => {
+    const candidates = data.candidates || [];
+    const recommended = candidates.find((c) => c.kind === 'pieces')
+      || candidates.find((c) => /^(qty|qnty|quantity)$/i.test(String(c.column_label || '').trim()))
+      || candidates[0];
+
+    const rows = candidates.map((c) => {
       const rel = relationships.find((r) => r.sum_column_index === c.column_index);
       const note = rel ? `<div style="color:#7fdc7f;font-size:0.8rem;margin-top:4px;">✓ ${rel.note}</div>` : '';
+      const isBales = c.kind === 'bales' || /bale/i.test(String(c.column_label || ''));
+      const badge = isBales
+        ? '<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:#5b3a1a;color:#fbbf24;font-size:0.72rem;font-weight:600;">BALES — packing count</span>'
+        : '<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:#14532d;color:#86efac;font-size:0.72rem;font-weight:600;">PIECES — order Qty</span>';
+      const hint = c.hint
+        || (isBales
+          ? 'Yeh bale count hai (kitne packs). Order quantity ke liye yeh mat chunein.'
+          : 'Yeh piece / order quantity hai — normally yeh select karein.');
+      const sampleLabel = isBales ? 'Sample bales' : 'Sample pieces';
+      const checked = recommended && c.column_label === recommended.column_label ? ' checked' : '';
+      const border = isBales ? '#5b3a1a' : '#3a3a44';
       return `
-        <label style="display:block; border:1px solid #3a3a44; border-radius:8px; padding:10px; margin-bottom:8px; cursor:pointer;">
-          <input type="radio" name="fo-qty-col-choice" value="${c.column_label.replace(/"/g, '&quot;')}" style="margin-right:8px;" />
-          <strong>${c.column_label}</strong>
-          <div style="font-size:0.8rem; color:#aaa;">Samples: ${(c.sample_values || []).join(', ')} (${c.populated_count} rows populated)</div>
+        <label style="display:block; border:1px solid ${border}; border-radius:8px; padding:12px; margin-bottom:8px; cursor:pointer;">
+          <input type="radio" name="fo-qty-col-choice" value="${String(c.column_label).replace(/"/g, '&quot;')}" style="margin-right:8px;"${checked} />
+          <strong>${c.column_label}</strong>${badge}
+          <div style="font-size:0.82rem; color:#cbd5e1; margin-top:6px;">${hint}</div>
+          <div style="font-size:0.78rem; color:#94a3b8; margin-top:4px;">${sampleLabel}: ${(c.sample_values || []).join(', ')} · ${c.populated_count} rows</div>
           ${note}
         </label>
       `;
     }).join('');
 
+    const guidance = data.guidance
+      || 'Excel mein Quantity ke multiple columns mil sake. <strong>Pieces / Qty</strong> chunein — '
+        + '<strong>No of Bales</strong> nahi. Bales system alag se Qty ke against check karta hai.';
+
     box.innerHTML = `
-      <h2 style="margin-top:0;">Confirm Quantity Column</h2>
-      <p class="subtitle">${data.message || 'Multiple possible quantity columns found.'}</p>
+      <h2 style="margin-top:0;">Which column is Order Quantity?</h2>
+      <p style="color:#cbd5e1; line-height:1.45; margin:0 0 14px;">${guidance}</p>
       ${rows}
       <div style="display:flex; gap:10px; margin-top:14px;">
         <button id="fo-qty-confirm-btn" class="btn btn-primary">Confirm</button>
@@ -10762,7 +13016,11 @@ function showFilledOrderQtyColumnModal(data) {
 
     box.querySelector('#fo-qty-confirm-btn').addEventListener('click', () => {
       const checked = box.querySelector('input[name="fo-qty-col-choice"]:checked');
-      if (!checked) { alert('Please select a column.'); return; }
+      if (!checked) {
+        if (typeof nexoraToast === 'function') nexoraToast('Please select a column.', 'warn');
+        else alert('Please select a column.');
+        return;
+      }
       cleanup();
       resolve(checked.value);
     });
@@ -11026,7 +13284,10 @@ async function uploadFilledOrder(extraParams = {}, uiPrefix = null) {
       if (data.distributor_id) setFilledOrderDistributorSelect(data.distributor_id, prefix);
       const saveChoice = await showFilledOrderSaveConfirmModal(data);
       if (!saveChoice?.confirmed) {
-        if (resultEl) resultEl.textContent = 'Upload cancelled.';
+        if (resultEl) {
+          resultEl.textContent =
+            'Upload cancelled — nothing new was saved. Earlier filled orders (list below) are unchanged.';
+        }
         return;
       }
       await uploadFilledOrder(carryParams({
@@ -11068,6 +13329,10 @@ async function uploadFilledOrder(extraParams = {}, uiPrefix = null) {
       filledOrdersState.confirmedDistributorId = null;
       resetFilledOrderUploadForm(prefix);
       await loadFilledOrdersList();
+      // Always refresh dashboard season widgets (even if upload was from Order Desk).
+      if (authState.role === 'sales_executive') {
+        loadFilledOrdersSeasonWidgets();
+      }
       if (prefix === 'of-fo') {
         await loadOrderFulfillmentCatalogSummary();
       }
@@ -11193,7 +13458,12 @@ function renderFilledOrderDetailTable() {
     return;
   }
   tbody.innerHTML = items.map((it) => {
-    const rowStyle = it.is_clean_bale_multiple ? '' : 'background: rgba(220,50,50,0.18);';
+    const rowStyle = (it.is_clean_bale_multiple && !it.bale_qty_mismatch)
+      ? ''
+      : 'background: rgba(220,50,50,0.18);';
+    const flag = it.bale_qty_mismatch
+      ? '⚠️ bales'
+      : (it.is_clean_bale_multiple ? '' : '🚩');
     const editing = editingId === it.id;
     if (editing) {
       return `<tr data-item-id="${it.id}" class="fo-row-editing" style="${rowStyle}">
@@ -11208,7 +13478,7 @@ function renderFilledOrderDetailTable() {
         <td>${foRowFieldInput('detected_unit', it.detected_unit, 'unit')}</td>
         <td>${foRowFieldInput('final_piece_qty', it.final_piece_qty, 'number')}</td>
         <td>${foRowFieldInput('matched', it.matched, 'matched')}</td>
-        <td>${it.is_clean_bale_multiple ? '' : '🚩'}</td>
+        <td>${flag}</td>
         <td class="fo-row-actions">
           <button class="btn btn-primary" style="padding:2px 8px;font-size:0.7rem;" onclick="saveFilledOrderRowEdit(${it.id})">Save</button>
           <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.7rem;margin-left:4px;" onclick="cancelFilledOrderRowEdit()">Cancel</button>
@@ -11227,7 +13497,7 @@ function renderFilledOrderDetailTable() {
       <td>${formatFilledOrderValue(it.detected_unit)}</td>
       <td>${formatFilledOrderQty(it.final_piece_qty)}</td>
       <td>${it.matched ? '✅' : '❌'}</td>
-      <td>${it.is_clean_bale_multiple ? '' : '🚩'}</td>
+      <td>${flag}</td>
       <td class="fo-row-actions">
         <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.7rem;" onclick="startFilledOrderRowEdit(${it.id})">Edit</button>
         ${!it.matched ? `
@@ -11245,7 +13515,13 @@ async function openFilledOrderDetail(orderId) {
   filledOrdersState.editingItemId = null;
   const labelEl = document.getElementById('fo-detail-label');
   const tbody = document.getElementById('fo-detail-tbody');
+  const scroller = document.querySelector('#fo-detail-modal .fo-detail-table-scroll');
   if (tbody) tbody.innerHTML = '<tr><td colspan="13">Loading...</td></tr>';
+  if (scroller) {
+    scroller.scrollLeft = 0;
+    scroller.scrollTop = 0;
+  }
+  closeModal('of-fo-list-modal');
   toggleModal('fo-detail-modal', true);
   try {
     const response = await fetchWithAuth(`/api/v1/filled-orders/${orderId}`);
@@ -11373,6 +13649,29 @@ async function deleteFilledOrder(orderId) {
     await loadFilledOrdersList();
     if (document.getElementById('of-fo-summary')) {
       await loadOrderFulfillmentCatalogSummary();
+    }
+    const savedWs = document.getElementById('of-saved-workspace');
+    if (savedWs && savedWs.classList.contains('is-open')) {
+      ofSavedOrdersState.grouped = _buildOfSavedDistributorGroups();
+      renderOfSavedDistributorRail();
+      if (!ofSavedOrdersState.grouped.length) {
+        ofSavedOrdersState.selectedDistributorKey = '';
+        ofSavedOrdersState.selectedOrderId = null;
+        renderOfSavedOrderPicker();
+        const title = document.getElementById('of-saved-distributor-title');
+        const tbody = document.getElementById('of-saved-detail-tbody');
+        if (title) {
+          title.textContent = 'No saved orders';
+          title.title = '';
+        }
+        renderOfSavedStats(null);
+        if (tbody) tbody.innerHTML = '<tr><td colspan="12">No saved filled orders yet.</td></tr>';
+      } else {
+        const key = ofSavedOrdersState.selectedDistributorKey || ofSavedOrdersState.grouped[0].key;
+        const stillThere = ofSavedOrdersState.grouped.find((g) => g.key === key);
+        ofSavedOrdersState.selectedDistributorKey = '';
+        await selectOfSavedDistributor(stillThere ? key : ofSavedOrdersState.grouped[0].key);
+      }
     }
   } catch (error) {
     await showSimpleConfirmModal('Delete failed', error.message || 'Could not delete this order.', 'OK', 'Close');

@@ -144,6 +144,25 @@ def test_shifted_unlabeled_column(tmp_path):
     assert {i["raw_qty_value"] for i in items} == {50, 45}
 
 
+def test_qty_plus_bales_auto_selects_qty_no_prompt(tmp_path):
+    """Choice-style sheet: Qty + No of Bales → never ask; Qty is source of truth."""
+    header = [
+        "Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size",
+        "No of Bales", "Qty",
+    ]
+    rows = [
+        ["Florentine", "King", "Bedsheet SS-26", 1000, 500, 400, 12, 8, 96],
+        ["Florentine", "Queen", "Bedsheet SS-26", 900, 450, 360, 12, 2, 24],
+        ["Marigold", "King", "Bedsheet SS-26", 1100, 550, 440, 10, 4, 40],
+    ]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bed", valid_rows)
+    assert detection["status"] == "ok"
+    assert detection["column_label"].strip().lower() == "qty"
+
+
 def test_multiple_candidates_needs_confirmation_with_verified_sum(tmp_path):
     """BND.xlsx equivalent: several populated candidate columns, no single
     standard alias present. Additional Order Qty = Qty + Add for every row —
@@ -216,6 +235,33 @@ def test_match_and_normalize_matched_uses_article_master_values(tmp_path):
     assert result["is_clean_bale_multiple"] is True  # 30 % 10 == 0
 
 
+def test_dbl_bs_matches_db_bs_in_article_master(tmp_path):
+    """Locked teaching: distributor 'DBL BS' == Article Master 'DB BS' (Double)."""
+    header = ["Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size", "Qnty"]
+    rows = [["Cotton Comforts", "DBL BS", "Sheet Sets", 2499, 1547, 1311, 12, 24]]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bed", valid_rows)
+    parsed_rows = foparser.build_filled_order_rows(valid_rows, header_row, col_mapping, detection["column_index"])
+
+    conn = _make_am_conn(tmp_path)
+    amdb.create_category(conn, 1, "Bed", ["brand", "size"], is_confirmed=True)
+    amdb.upsert_article(conn, 1, {
+        "category": "Bed", "product_type": "Sheet Sets", "brand": "Cotton Comforts", "size": "DB BS",
+        "mrp": 2499, "ptr": 1547, "ex_mill_price": 1311, "bale_pack_size": 12,
+        "item_key": "COTTON COMFORTS|DB BS", "extra_attributes": {},
+    })
+
+    result = foparser.match_and_normalize(
+        conn, amdb, 1, parsed_rows[0], ["brand", "size"], category="Bed",
+    )
+    conn.close()
+
+    assert result["matched"] is True
+    assert result["size"] == "DBL BS"  # file spelling preserved on the line
+    assert result["item_key"].endswith("|DB BS")  # match key uses canonical size
+
+
 def test_match_and_normalize_unmatched_falls_back_to_file_values(tmp_path):
     header = ["Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size", "Qnty"]
     rows = [["NEWBRAND", "XL", "Bedsheet SS-26", 111, 55, 44, 6, 30]]
@@ -286,13 +332,13 @@ def test_annotate_item_issues_flagged_qty(tmp_path):
 
 
 def test_blumen_typo_matches_bluemen_in_article_master(tmp_path):
-    """Distributor file 'Blumen' must match Article Master 'Bluemen'."""
+    """Distributor file 'Bluemen' must match Article Master 'Blumen'."""
     conn = _make_am_conn(tmp_path)
     amdb.create_category(conn, 1, "Bed", ["brand", "TC", "size"], is_confirmed=True)
     amdb.upsert_article(conn, 1, {
-        "category": "Bed", "product_type": "Sheet Sets", "brand": "Bluemen", "size": "DB BS",
+        "category": "Bed", "product_type": "Sheet Sets", "brand": "Blumen", "size": "DB BS",
         "mrp": 799, "ptr": 450, "ex_mill_price": 400, "bale_pack_size": 5,
-        "item_key": "BLUEMEN|104 (ONE IN A DENT)|DB BS",
+        "item_key": "BLUMEN|104 (ONE IN A DENT)|DB BS",
         "extra_attributes": {"TC": "104 (ONE IN A DENT)"},
     })
 
@@ -302,7 +348,7 @@ def test_blumen_typo_matches_bluemen_in_article_master(tmp_path):
     conn.close()
 
     assert article is not None
-    assert article["brand"] == "Bluemen"
+    assert article["brand"] == "Blumen"
     assert article["size"] == "DB BS"
 
 
@@ -327,3 +373,229 @@ def test_tc_one_in_a_dent_matches_article_master(tmp_path):
     conn.close()
     assert result["matched"] is True
     assert result["mrp"] == 999
+
+
+def test_noise_qty_headers_ignored(tmp_path):
+    """Qnty Per Color / Qnty pre Design must never win as order qty."""
+    header = [
+        "Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size",
+        "Qnty Per Color", "Qnty pre Design", "Qnty",
+    ]
+    rows = [
+        ["ASTER", "DB BS", "Bedsheet", 999, 450, 400, 18, 750, 2250, 108],
+        ["ASTER", "SB BS", "Bedsheet", 799, 400, 350, 24, 250, 750, 96],
+    ]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bed", valid_rows)
+    assert detection["status"] == "ok"
+    assert detection["column_label"] == "Qnty"
+
+
+def test_revised_order_preferred_over_qnty(tmp_path):
+    """kag.xlsx style: Revised Order is final qty even when Qnty also has values."""
+    header = [
+        "Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size",
+        "Qnty", "Revised Order",
+    ]
+    rows = [
+        ["ASTER", "DB BS", "Bedsheet", 999, 450, 400, 18, 108, 216],
+        ["BLUMEN", "SB BS", "Bedsheet", 799, 400, 350, 24, 54, None],  # no revised = skip
+        ["CARDINAL", "DB BS", "Bedsheet", 900, 420, 380, 18, 54, 108],
+    ]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bed", valid_rows)
+    assert detection["status"] == "ok"
+    assert detection["column_label"] == "Revised Order"
+    items = foparser.build_filled_order_rows(
+        valid_rows, header_row, col_mapping, detection["column_index"],
+    )
+    assert [it["raw_qty_value"] for it in items] == [216, 108]
+
+
+def test_order_in_pcs_and_bales_mismatch_highlighted(tmp_path):
+    """Both Qty + Bales: focus Qty; mismatch sheet bales vs Qty/BaleSize — no silent fix."""
+    header = [
+        "Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size",
+        "Order In Bales", "Order In Pc's",
+    ]
+    rows = [
+        # qty 1728 / bs 18 = 96 expected bales, sheet says 8 -> mismatch
+        ["ASTER", "DB BS", "Bedsheet", 999, 450, 625, 18, 8, 1728],
+        # qty 288 / bs 24 = 12, sheet says 12 -> OK
+        ["BLUMEN", "SB BS", "Bedsheet", 799, 400, 451, 24, 12, 288],
+    ]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bed", valid_rows)
+    assert detection["column_label"] == "Order In Pc's"
+    bales = foparser.detect_bales_column(header_row, col_mapping, detection["column_index"])
+    assert bales is not None
+    assert "bales" in bales["column_label"].lower()
+
+    parsed = foparser.build_filled_order_rows(
+        valid_rows, header_row, col_mapping, detection["column_index"],
+        bales_col_idx=bales["column_index"],
+    )
+    assert len(parsed) == 2
+
+    r0 = foparser.apply_qty_bales_value_rules(
+        raw_qty=parsed[0]["raw_qty_value"],
+        sheet_bales=parsed[0]["sheet_bales"],
+        bale_size=18,
+        ex_mill=625,
+        qty_column_label=detection["column_label"],
+        category="Bed",
+    )
+    assert r0["final_piece_qty"] == 1728
+    assert r0["bale_qty_mismatch"] is True
+    assert r0["expected_bales"] == 96
+    assert r0["sheet_bales"] == 8
+    assert r0["line_value"] == 1728 * 625
+
+    r1 = foparser.apply_qty_bales_value_rules(
+        raw_qty=parsed[1]["raw_qty_value"],
+        sheet_bales=parsed[1]["sheet_bales"],
+        bale_size=24,
+        ex_mill=451,
+        qty_column_label=detection["column_label"],
+        category="Bed",
+    )
+    assert r1["final_piece_qty"] == 288
+    assert r1["bale_qty_mismatch"] is False
+    assert r1["line_value"] == 288 * 451
+
+
+def test_only_bales_computes_qty(tmp_path):
+    """Only bales column -> Qty = Bales × Bale Size; Value = Qty × ExMill."""
+    header = [
+        "Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size", "Order In Bales",
+    ]
+    rows = [["ASTER", "DB BS", "Bedsheet", 999, 450, 625, 18, 8]]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bed", valid_rows)
+    assert "bales" in detection["column_label"].lower()
+    parsed = foparser.build_filled_order_rows(
+        valid_rows, header_row, col_mapping, detection["column_index"],
+    )
+    resolved = foparser.apply_qty_bales_value_rules(
+        raw_qty=parsed[0]["raw_qty_value"],
+        sheet_bales=None,
+        bale_size=18,
+        ex_mill=625,
+        qty_column_label=detection["column_label"],
+        category="Bed",
+    )
+    assert resolved["detected_unit"] == "bales"
+    assert resolved["final_piece_qty"] == 144
+    assert resolved["line_value"] == 144 * 625
+    assert resolved["bale_qty_mismatch"] is False
+
+
+def test_shifted_qty_does_not_use_value_column(tmp_path):
+    """Empty Qnty must not pick Value column as shifted qty."""
+    header = [
+        "Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size", "Qnty", "Value",
+    ]
+    rows = [
+        ["ASTER", "DB BS", "Bedsheet", 999, 450, 400, 18, None, 90070],
+        ["BLUMEN", "SB BS", "Bedsheet", 799, 400, 350, 24, 144, 65003],
+    ]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bed", valid_rows)
+    assert detection["status"] == "ok"
+    assert detection["column_label"] == "Qnty"
+    items = foparser.build_filled_order_rows(
+        valid_rows, header_row, col_mapping, detection["column_index"],
+    )
+    assert [it["raw_qty_value"] for it in items] == [144]
+
+
+def test_detect_category_sheet_sets_any_distributor(tmp_path):
+    """Product 'Sheet Sets' → Bed for any distributor (not filename-specific)."""
+    header = ["Brand", "Size", "Product", "Ex-Mill", "Bale Size", "Qty"]
+    rows = [
+        ["Aster", "DB BS", "Sheet Sets", 625, 18, 216],
+        ["Cardinal", "SB BS", "Sheet Sets", 536, 24, 144],
+    ]
+    path = _write_workbook(tmp_path, header, rows, filename="ANY_DIST.xlsx")
+    assert foparser.detect_category_from_order_file(path, filename="ANY_DIST.xlsx") == "Bed"
+
+
+def test_detect_category_falls_back_to_size_codes(tmp_path):
+    """When Product is blank, size codes like DB BS still detect Bed."""
+    header = ["Brand", "Size", "Product", "Ex-Mill", "Bale Size", "Qty"]
+    rows = [
+        ["Aster", "DB BS", None, 625, 18, 108],
+        ["Blumen", "KS BS", "", 1100, 12, 72],
+    ]
+    path = _write_workbook(tmp_path, header, rows, filename="mystery.xlsx")
+    assert foparser.detect_category_from_order_file(path, filename="mystery.xlsx") == "Bed"
+
+
+SAIN_XLS = Path(r"G:\My Drive\2026-2027\Oder Management\AW26 order\Bedsheet\SAIN.xls")
+BALAJI_XLSX = Path(r"G:\My Drive\2026-2027\Oder Management\AW26 order\Bedsheet\BALAJI.xlsx")
+
+
+@pytest.mark.skipif(not SAIN_XLS.exists(), reason="SAIN.xls not on G: drive")
+def test_sain_xls_detects_bed_with_xlrd():
+    """Legacy .xls (any distributor) must detect Bed once xlrd is installed."""
+    import xlrd  # noqa: F401
+
+    assert foparser.detect_category_from_order_file(SAIN_XLS, filename="SAIN.xls") == "Bed"
+
+
+def test_monthly_split_total_auto_selected_as_qty(tmp_path):
+    """Any month columns + TOTAL → TOTAL is Qty (not July/Aug-specific)."""
+    header = [
+        "Brand", "Size", "Product", "Ex-Mill", "Bale Size",
+        "SEP", "OCT", "NOV", "TOTAL",
+    ]
+    rows = [
+        ["Aster", "DB BS", "Sheet Sets", 625, 18, 100, 200, 50, 350],
+        ["Epigram", "KS BS", "Sheet Sets", 1100, 12, 0, 120, 0, 120],
+        ["Thyme", "KS BS", "Sheet Sets", 900, 12, 40, 40, 40, 120],
+    ]
+    path = _write_workbook(tmp_path, header, rows, filename="ANY_MONTHS.xlsx")
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(
+        header_row, col_mapping, "Bed", valid_rows,
+    )
+    assert detection["status"] == "ok"
+    assert detection["column_label"] == "TOTAL"
+    assert "SEP" in detection.get("auto_selected_reason", "") or "Monthly" in detection.get("auto_selected_reason", "")
+    items = foparser.build_filled_order_rows(
+        valid_rows, header_row, col_mapping, detection["column_index"],
+    )
+    assert sum(it["raw_qty_value"] for it in items) == 350 + 120 + 120
+
+
+def test_delivery_window_columns_are_not_qty(tmp_path):
+    """'Aug - Sep Delivery' must never steal Qty from a real TOTAL column."""
+    header = [
+        "Brand", "Size", "Product", "Ex-Mill", "Bale Size",
+        "Aug - Sep Delivery", "Sep - Oct Delivery", "JULY", "AUG", "TOTAL",
+    ]
+    rows = [
+        ["Aster", "DB BS", "Sheet Sets", 625, 18, 6, 6, 216, 216, 432],
+        ["Cardinal", "KS BS", "Sheet Sets", 1100, 12, 6, None, 72, 72, 144],
+    ]
+    path = _write_workbook(tmp_path, header, rows, filename="delivery_noise.xlsx")
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(
+        header_row, col_mapping, "Bed", valid_rows,
+    )
+    assert detection["status"] == "ok"
+    assert detection["column_label"] == "TOTAL"
+
+
+@pytest.mark.skipif(not BALAJI_XLSX.exists(), reason="BALAJI.xlsx not on G: drive")
+def test_balaji_xlsx_auto_selects_total_qty():
+    wb = foparser.parse_filled_order_workbook(BALAJI_XLSX, "Bed")
+    assert wb["status"] == "ok"
+    assert wb["quantity_column_used"] == "TOTAL"
+    rows = wb["parsed_rows"]
+    assert sum(float(r["raw_qty_value"] or 0) for r in rows) == 5316

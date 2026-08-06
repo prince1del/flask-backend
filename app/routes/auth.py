@@ -200,9 +200,10 @@ def ensure_default_admin() -> None:
 
 
 def get_workspace_id() -> str:
+    """Data silo for this request — always from auth token/session, never from client body/query."""
     user = getattr(request, 'user', None)
-    if isinstance(user, dict) and 'workspace_id' in user:
-        return user['workspace_id']
+    if isinstance(user, dict) and user.get('workspace_id'):
+        return str(user['workspace_id'])
 
     if not auth_enabled():
         return "default"
@@ -210,6 +211,17 @@ def get_workspace_id() -> str:
     raise RuntimeError(
         "Workspace ID cannot be determined from request parameters; authentication is required."
     )
+
+
+def get_request_user_id() -> int | None:
+    user = getattr(request, "user", None)
+    if not isinstance(user, dict):
+        return None
+    raw = user.get("user_id", user.get("id"))
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def get_user_row(username: str) -> dict[str, object] | None:
@@ -280,6 +292,7 @@ def api_login() -> tuple[Response, int]:
         role=user_row.get("role", "unassigned"),
         workspace_id=user_row.get("workspace_id", "default"),
     )
+    ui_theme = db.get_user_ui_theme(user_row.get("id"))
     return (
         jsonify(
             {
@@ -294,12 +307,39 @@ def api_login() -> tuple[Response, int]:
                         "username": user_row.get("username", username),
                         "role": user_row.get("role", "unassigned"),
                         "workspace_id": user_row.get("workspace_id", "default"),
+                        "ui_theme": ui_theme,
                     },
                 },
             }
         ),
         200,
     )
+
+
+@auth_blueprint.route("/api/v1/me/ui-theme", methods=["GET"])
+@require_jwt_auth
+def get_my_ui_theme() -> tuple[Response, int]:
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    prefs = _get_auth_db().get_user_ui_theme(user_id)
+    return jsonify({"success": True, "data": prefs}), 200
+
+
+@auth_blueprint.route("/api/v1/me/ui-theme", methods=["PUT"])
+@require_jwt_auth
+def put_my_ui_theme() -> tuple[Response, int]:
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    data = request.get_json(silent=True) or {}
+    theme = data.get("theme") or data.get("theme_id") or "emerald"
+    colors = data.get("custom_colors")
+    try:
+        prefs = _get_auth_db().set_user_ui_theme(user_id, theme, colors if isinstance(colors, dict) else None)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"code": "INVALID_THEME", "message": str(exc)}}), 400
+    return jsonify({"success": True, "data": prefs}), 200
 
 
 @auth_blueprint.route("/api/v1/auth/refresh", methods=["POST"], endpoint="api_refresh")

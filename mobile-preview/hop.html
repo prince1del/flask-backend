@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en" data-hop-theme="emerald">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>House of Prizm — Mobile UI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="hop.css" />
+</head>
+<body>
+  <div class="stage">
+    <header class="stage-head">
+      <p class="stage-kicker">House of Prizm</p>
+      <h1>HoP Mobile</h1>
+      <p class="stage-sub">Same look as your web HoP shell — phone-first preview</p>
+    </header>
+
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="status">
+        <span>9:41</span>
+        <span class="mono">5G · 86%</span>
+      </div>
+
+      <!-- LOGIN -->
+      <section class="screen active" id="s-login">
+        <div class="login-top">
+          <div class="nx-core"></div>
+          <div class="brand-word">PRIZM</div>
+          <div class="brand-sub">HOUSE OF PRIZM</div>
+          <p class="login-line">Project-centric ERP · on mobile</p>
+        </div>
+        <form class="login-sheet" onsubmit="event.preventDefault(); hopGo('home')">
+          <label><span>Username</span><input value="hop_prizm" /></label>
+          <label><span>Password</span><input type="password" value="••••••••" /></label>
+          <button class="btn-solid" type="submit">Enter HoP</button>
+        </form>
+      </section>
+
+      <!-- HOME / DASHBOARD -->
+      <section class="screen" id="s-home">
+        <div class="appbar">
+          <div class="appbar-brand">
+            <div class="nx-core nx-core-sm"></div>
+            <div>
+              <div class="brand-word sm">PRIZM</div>
+              <div class="brand-sub sm">HOUSE OF PRIZM</div>
+            </div>
+          </div>
+          <button class="menu-btn" type="button" onclick="hopGo('menu')" aria-label="Menu">☰</button>
+        </div>
+        <div class="scroll">
+          <p class="eyebrow">Executive</p>
+          <h2 class="display">Dashboard</h2>
+          <p class="dim">Business health in 30 seconds — live data only.</p>
+
+          <div class="kpi-grid">
+            <button class="kpi" type="button" onclick="hopGo('parties')">
+              <span class="kpi-l">Open receivables</span>
+              <span class="kpi-v">₹ 18.4L</span>
+              <span class="kpi-m">12 parties</span>
+            </button>
+            <button class="kpi" type="button" onclick="hopGo('sale')">
+              <span class="kpi-l">Sales MTD</span>
+              <span class="kpi-v">₹ 42.1L</span>
+              <span class="kpi-m">28 invoices</span>
+            </button>
+            <button class="kpi" type="button" onclick="hopGo('projects')">
+              <span class="kpi-l">Active projects</span>
+              <span class="kpi-v">9</span>
+              <span class="kpi-m">3 in negotiation</span>
+            </button>
+            <button class="kpi" type="button">
+              <span class="kpi-l">Dispatch due</span>
+              <span class="kpi-v">4</span>
+              <span class="kpi-m">this week</span>
+            </button>
+          </div>
+
+          <div class="card dark">
+            <div class="card-h">
+              <h3>Pipeline snapshot</h3>
+              <span class="chip">Live</span>
+            </div>
+            <div class="funnel">
+              <div class="funnel-row"><span>Engage</span><b>6</b></div>
+              <div class="funnel-row"><span>Discover</span><b>4</b></div>
+              <div class="funnel-row"><span>Sell</span><b>5</b></div>
+              <div class="funnel-row"><span>Fulfill</span><b>3</b></div>
+              <div class="funnel-row"><span>Close</span><b>2</b></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <h3>Today</h3>
+              <span class="mono faint">5 Aug</span>
+            </div>
+            <div class="today-row"><span>Meetings</span><strong>2</strong></div>
+            <div class="today-row"><span>Follow-ups due</span><strong>3</strong></div>
+            <div class="today-row"><span>Payment-In</span><strong>₹ 2.4L</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PARTIES -->
+      <section class="screen" id="s-parties">
+        <div class="top">
+          <button class="back" type="button" onclick="hopGo('home')">←</button>
+          <div>
+            <p class="eyebrow">Master</p>
+            <h2 class="display">Parties</h2>
+          </div>
+          <button class="fab-mini" type="button">+</button>
+        </div>
+        <div class="search-wrap">
+          <input class="search" placeholder="Search party / GST / city" />
+        </div>
+        <div class="scroll">
+          <article class="party">
+            <div>
+              <h3>Parnami Textiles</h3>
+              <p>Buyer · Delhi · GSTIN ···4K2</p>
+            </div>
+            <span class="amt due">₹ 3.2L</span>
+          </article>
+          <article class="party">
+            <div>
+              <h3>Royal Living</h3>
+              <p>Buyer · Mumbai</p>
+            </div>
+            <span class="amt ok">₹ 0</span>
+          </article>
+          <article class="party">
+            <div>
+              <h3>Weave &amp; Co Mills</h3>
+              <p>Vendor · Surat</p>
+            </div>
+            <span class="tag">Vendor</span>
+          </article>
+          <article class="party">
+            <div>
+              <h3>Hotel Azure</h3>
+              <p>Project · Goa</p>
+            </div>
+            <span class="amt due">₹ 1.1L</span>
+          </article>
+        </div>
+      </section>
+
+      <!-- SALE -->
+      <section class="screen" id="s-sale">
+        <div class="top">
+          <button class="back" type="button" onclick="hopGo('home')">←</button>
+          <div>
+            <p class="eyebrow">Sale</p>
+            <h2 class="display">Invoices</h2>
+          </div>
+          <button class="fab-mini" type="button">+</button>
+        </div>
+        <div class="seg">
+          <button class="seg-i on" type="button">Invoices</button>
+          <button class="seg-i" type="button">Estimates</button>
+          <button class="seg-i" type="button">Payment-In</button>
+        </div>
+        <div class="scroll">
+          <div class="sum-row">
+            <div class="sum"><span>Docs</span><b>28</b></div>
+            <div class="sum"><span>Total</span><b>₹42.1L</b></div>
+            <div class="sum warn"><span>Unpaid</span><b>₹8.6L</b></div>
+          </div>
+          <article class="doc">
+            <div class="doc-top">
+              <h3>SI-2026-0142</h3>
+              <span class="pill unpaid">Unpaid</span>
+            </div>
+            <p>Parnami Textiles · 2 Aug</p>
+            <p class="doc-amt">₹ 1,24,500</p>
+          </article>
+          <article class="doc">
+            <div class="doc-top">
+              <h3>SI-2026-0141</h3>
+              <span class="pill paid">Paid</span>
+            </div>
+            <p>Royal Living · 1 Aug</p>
+            <p class="doc-amt">₹ 86,200</p>
+          </article>
+          <article class="doc">
+            <div class="doc-top">
+              <h3>SI-2026-0140</h3>
+              <span class="pill partial">Partial</span>
+            </div>
+            <p>Hotel Azure · 30 Jul</p>
+            <p class="doc-amt">₹ 4,10,000</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- PROJECTS -->
+      <section class="screen" id="s-projects">
+        <div class="top">
+          <button class="back" type="button" onclick="hopGo('home')">←</button>
+          <div>
+            <p class="eyebrow">Sales</p>
+            <h2 class="display">Projects</h2>
+          </div>
+          <button class="fab-mini" type="button">+</button>
+        </div>
+        <div class="scroll">
+          <article class="proj" onclick="hopGo('hub')">
+            <div class="proj-top">
+              <h3>Azure Goa — Suites linen</h3>
+              <span class="stage">Negotiation</span>
+            </div>
+            <p class="dim">Hotel Azure · Sell stage</p>
+            <div class="stage-bar"><i style="width:55%"></i></div>
+          </article>
+          <article class="proj">
+            <div class="proj-top">
+              <h3>Parnami AW26 refill</h3>
+              <span class="stage fulfill">Fulfill</span>
+            </div>
+            <p class="dim">Parnami · Vendor order in</p>
+            <div class="stage-bar"><i style="width:72%"></i></div>
+          </article>
+          <article class="proj">
+            <div class="proj-top">
+              <h3>Royal Living sample set</h3>
+              <span class="stage discover">Discover</span>
+            </div>
+            <p class="dim">Requirement meeting done</p>
+            <div class="stage-bar"><i style="width:28%"></i></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- PROJECT HUB -->
+      <section class="screen" id="s-hub">
+        <div class="top">
+          <button class="back" type="button" onclick="hopGo('projects')">←</button>
+          <div>
+            <p class="eyebrow">Project Hub</p>
+            <h2 class="display hub-title">Azure Goa</h2>
+          </div>
+        </div>
+        <div class="hub-stage">
+          <label>Funnel stage
+            <select>
+              <option>Negotiation</option>
+              <option>Quotation</option>
+              <option>Customer PO</option>
+            </select>
+          </label>
+        </div>
+        <div class="tabs">
+          <button class="tab on" type="button">Overview</button>
+          <button class="tab" type="button">Quotes</button>
+          <button class="tab" type="button">PO</button>
+          <button class="tab" type="button">Dispatch</button>
+        </div>
+        <div class="scroll">
+          <div class="card">
+            <h3>Overview</h3>
+            <p class="dim mt">Buyer Hotel Azure · suites + public areas soft furnishings.</p>
+            <div class="meta-grid">
+              <div><span>Owner</span><b>hop_prizm</b></div>
+              <div><span>Value</span><b>₹ 12.5L</b></div>
+              <div><span>Next</span><b>Revise quote</b></div>
+              <div><span>Due</span><b>8 Aug</b></div>
+            </div>
+          </div>
+          <div class="card dark">
+            <h3>Timeline</h3>
+            <ul class="tl">
+              <li><b>Lead</b> received · 12 Jun</li>
+              <li><b>Meeting</b> on-site · 20 Jun</li>
+              <li><b>Quotation</b> v2 sent · 28 Jul</li>
+              <li class="now"><b>Negotiation</b> · rate + lead time</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- MENU (HoP nav) -->
+      <section class="screen" id="s-menu">
+        <div class="menu-panel">
+          <div class="menu-brand">
+            <div class="nx-core"></div>
+            <div>
+              <div class="brand-word">PRIZM</div>
+              <div class="brand-sub">HOUSE OF PRIZM</div>
+            </div>
+          </div>
+          <nav class="menu-nav">
+            <button type="button" class="nav-i on" onclick="hopGo('home')">Dashboard</button>
+            <button type="button" class="nav-i" onclick="hopGo('parties')">Parties</button>
+            <p class="nav-g">Sale</p>
+            <button type="button" class="nav-i sub" onclick="hopGo('sale')">Sale Invoices</button>
+            <button type="button" class="nav-i sub">Commission</button>
+            <button type="button" class="nav-i sub">Estimate / Quotation</button>
+            <button type="button" class="nav-i sub">Payment-In</button>
+            <button type="button" class="nav-i sub">Sale Order</button>
+            <p class="nav-g">Purchase &amp; Expense</p>
+            <button type="button" class="nav-i sub">Purchase Bills</button>
+            <button type="button" class="nav-i sub">Payment-Out</button>
+            <p class="nav-g">Products</p>
+            <button type="button" class="nav-i">Catalogue</button>
+            <button type="button" class="nav-i">Samples</button>
+            <p class="nav-g">Ops</p>
+            <button type="button" class="nav-i">Dispatch</button>
+            <button type="button" class="nav-i">Complaints</button>
+            <p class="nav-g">Reports</p>
+            <button type="button" class="nav-i">Receivables</button>
+            <button type="button" class="nav-i">Daily Activity</button>
+            <p class="nav-g">Settings</p>
+            <button type="button" class="nav-i sub">Theme</button>
+          </nav>
+          <button class="btn-ghost" type="button" onclick="hopGo('home')">Close menu</button>
+        </div>
+      </section>
+
+      <nav class="tabbar" id="tabbar">
+        <button type="button" class="t on" data-go="home"><span>▣</span>Home</button>
+        <button type="button" class="t" data-go="parties"><span>◎</span>Parties</button>
+        <button type="button" class="t" data-go="sale"><span>₹</span>Sale</button>
+        <button type="button" class="t" data-go="projects"><span>◇</span>Projects</button>
+        <button type="button" class="t" data-go="menu"><span>☰</span>Menu</button>
+      </nav>
+    </div>
+  </div>
+  <script src="hop.js"></script>
+</body>
+</html>

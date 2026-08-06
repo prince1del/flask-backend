@@ -49,7 +49,7 @@ def _status_label(status_code: Any) -> str:
         return "Unknown"
     return {
         1: "Open",
-        2: "Approved",
+        2: "Final",
         3: "Draft",
         4: "Cancelled",
     }.get(code, f"Status {code}")
@@ -274,20 +274,25 @@ def _infer_prefixes_from_refs(txns: list[dict[str, Any]]) -> dict[int, str]:
     return out
 
 
-def _compose_doc_number(ref: str, txn_type: int, prefixes: dict[int, str]) -> str:
-    """Return full document number (prefix + sequence) when possible."""
+def _compose_doc_number(
+    ref: str,
+    txn_type: int,
+    prefixes: dict[int, str],
+    txn_date: str | None = None,
+) -> str:
+    """Return full document number (PREFIX/FY/serial when possible)."""
+    from app.hop_doc_numbers import format_full_doc_number
+
     ref = _clean(ref)
     if not ref:
         return ""
-    # Already a full-looking number (letters and/or slash path)
-    if re.search(r"[A-Za-z]", ref) or "/" in ref:
-        return ref
     pfx = _clean(prefixes.get(int(txn_type or 0), ""))
-    if not pfx:
-        return ref
-    if ref.startswith(pfx):
-        return ref
-    return f"{pfx}{ref}"
+    return format_full_doc_number(
+        ref,
+        txn_date=txn_date,
+        txn_type=int(txn_type or 0),
+        prefix=pfx or None,
+    )
 
 
 def _guess_customer_type(name: str) -> str:
@@ -503,7 +508,9 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         local_prefixes = dict(schema_prefixes)
         if row_pfx:
             local_prefixes[ty] = row_pfx
-        d["doc_number"] = _compose_doc_number(raw_ref, ty, local_prefixes)
+        d["doc_number"] = _compose_doc_number(
+            raw_ref, ty, local_prefixes, txn_date=_clean(d.get("txn_date"))
+        )
         d["txn_ref_number_char"] = d["doc_number"] or raw_ref
         out.append(d)
 
@@ -513,7 +520,9 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     for d in out:
         ty = int(d.get("txn_type") or 0)
         current = _clean(d.get("doc_number") or d.get("txn_ref_number_char"))
-        full = _compose_doc_number(current, ty, merged)
+        full = _compose_doc_number(
+            current, ty, merged, txn_date=_clean(d.get("txn_date"))
+        )
         d["doc_number"] = full
         d["txn_ref_number_char"] = full
     return out
@@ -1203,6 +1212,13 @@ def import_vyapar_backup(
             out["errors"].append(f"Document preview data import failed ({exc})")
 
         target_conn.commit()
+        try:
+            from app import hop_ops as _hop_ops_sync
+
+            sync_stats = _hop_ops_sync.sync_commission_from_expenses(target_conn, workspace_id)
+            out["commission_synced"] = sync_stats
+        except Exception as exc:
+            out["errors"].append(f"Commission expense sync failed ({exc})")
         out["imported_ok"] = (
             out["customers_created"]
             + out["vendors_created"]

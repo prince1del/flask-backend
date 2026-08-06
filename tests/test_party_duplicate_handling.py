@@ -2,11 +2,9 @@
 Verifies two fixes found via real-world testing (Bombay Dyeing GT
 North, 5 July 2026):
 
-1. GST reuse after "delete": deleting a distributor is a soft-delete
-   (status='inactive'). Before this fix, gst_number had a blanket
-   UNIQUE constraint with no regard for status, so re-creating a
-   distributor with the SAME GST after "deleting" the old one always
-   failed with a confusing "GST number already exists" error.
+1. GST reuse after delete: deleting a distributor is a HARD delete.
+   Re-creating a distributor with the SAME GST after deleting the old
+   one must succeed (the old row is gone).
 
 2. Duplicate name/phone confirmation: when GST was removed (the only
    thing blocking the earlier save), the system silently created a
@@ -58,7 +56,7 @@ def login(client, username: str, password: str) -> str:
     return response.get_json()["data"]["access_token"]
 
 
-def test_gst_can_be_reused_after_soft_delete(tmp_path, monkeypatch):
+def test_gst_can_be_reused_after_hard_delete(tmp_path, monkeypatch):
     client = setup_auth_app(tmp_path, monkeypatch)
     token = login(client, "party_test_user", "pass123")
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -72,19 +70,17 @@ def test_gst_can_be_reused_after_soft_delete(tmp_path, monkeypatch):
     assert create_resp.status_code == 201
     dist_id = create_resp.get_json()["data"]["id"]
 
-    # Soft-delete it
+    # Hard-delete it
     delete_resp = client.delete(f"/api/v1/parties/distributors/{dist_id}", headers=headers)
     assert delete_resp.status_code == 200
 
-    # BUG REPRODUCED (before fix): re-creating with the SAME GST used
-    # to fail here, even though the old record is no longer visible.
     recreate_resp = client.post(
         "/api/v1/parties/distributors",
         json={"name": "A Totally Different Name", "gst_number": "07AAACB4006G1Z9", "phone": "9999999999"},
         headers=headers,
     )
     assert recreate_resp.status_code == 201, (
-        f"GST reuse after soft-delete should be allowed. Got: "
+        f"GST reuse after hard-delete should be allowed. Got: "
         f"{recreate_resp.get_data(as_text=True)}"
     )
 

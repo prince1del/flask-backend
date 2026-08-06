@@ -113,26 +113,7 @@ def _duplicate_order_response(
 
 
 def _detect_category_from_upload_file(tmp_path: str, filename: str) -> str | None:
-    with pd.ExcelFile(tmp_path) as xl:
-        sheet_name = xl.sheet_names[0]
-    raw_df = pd.read_excel(tmp_path, sheet_name=sheet_name, header=None)
-    header_idx = amparser.detect_header_row(raw_df)
-    header_row = raw_df.iloc[header_idx].tolist()
-    col_mapping = amparser.map_columns_to_core(header_row)
-    data_rows_all = raw_df.iloc[header_idx + 1:]
-    valid_rows = [
-        row for _, row in data_rows_all.iterrows()
-        if amparser.is_data_row(row.tolist(), col_mapping)
-    ]
-    product_col_idx = next(
-        (idx for idx, field in col_mapping.items() if field == "product_type"),
-        None,
-    )
-    product_values = (
-        [row.iloc[product_col_idx] for row in valid_rows]
-        if product_col_idx is not None else []
-    )
-    return amparser.detect_category(product_values, filename=filename)
+    return foparser.detect_category_from_order_file(tmp_path, filename=filename)
 
 
 @filled_orders_bp.route("/preview", methods=["POST"])
@@ -150,6 +131,7 @@ def preview_filled_order():
     suggestion = fodist.suggest_distributor_from_filename(filename, workspace_id, db_path=db_path)
 
     detected_category = None
+    preview_warning = None
     suffix = Path(filename).suffix or ".xlsx"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp_path = tmp.name
@@ -158,16 +140,28 @@ def preview_filled_order():
     try:
         detected_category = _detect_category_from_upload_file(tmp_path, filename)
     except Exception as exc:
-        return jsonify({"error": f"Preview failed: {exc}"}), 400
+        # Keep filename→distributor suggestion even when sheet headers are odd.
+        msg = str(exc)
+        if "xlrd" in msg.lower() and ".xls" in (filename or "").lower():
+            preview_warning = (
+                "Old Excel (.xls) needs xlrd — install with: pip install 'xlrd>=2.0.1'. "
+                "Then re-select the file so Bed/Bath can auto-detect for any distributor."
+            )
+        else:
+            preview_warning = msg
+        detected_category = amparser.detect_category([], filename=filename)
     finally:
         _cleanup_temp_file(tmp_path)
 
-    return jsonify({
+    payload = {
         "status": "preview",
         "filename": filename,
         "suggested_distributor": _sanitize_for_json(suggestion),
         "detected_category": detected_category,
-    }), 200
+    }
+    if preview_warning:
+        payload["warning"] = preview_warning
+    return jsonify(payload), 200
 
 
 @filled_orders_bp.route("/upload", methods=["POST"])
@@ -216,32 +210,14 @@ def upload_filled_order():
     file.save(tmp_path)
 
     try:
-        with pd.ExcelFile(tmp_path) as xl:
-            sheet_name = xl.sheet_names[0]
-
-        raw_df = pd.read_excel(tmp_path, sheet_name=sheet_name, header=None)
-        header_idx = amparser.detect_header_row(raw_df)
-        header_row = raw_df.iloc[header_idx].tolist()
-        col_mapping = amparser.map_columns_to_core(header_row)
-
-        data_rows_all = raw_df.iloc[header_idx + 1:]
-        valid_rows = [
-            row for _, row in data_rows_all.iterrows()
-            if amparser.is_data_row(row.tolist(), col_mapping)
-        ]
-
+        # Detect category from first order tab if caller did not send one.
         if not category:
-            product_col_idx = next(
-                (idx for idx, f in col_mapping.items() if f == "product_type"), None,
+            category = foparser.detect_category_from_order_file(
+                tmp_path, filename=file.filename,
             )
-            product_values = (
-                [row.iloc[product_col_idx] for row in valid_rows]
-                if product_col_idx is not None else []
-            )
-            category = amparser.detect_category(product_values, filename=file.filename)
             if not category:
                 return jsonify({
-                    "error": "Could not detect category — send 'category' as Bed, Bath, TOB, or TOB Pillow.",
+                    "error": "Could not detect category — send 'category' as Bed, Bath, TOB, or Pillow.",
                 }), 400
 
         categories = amdb.get_all_categories(conn, user_id)
@@ -249,22 +225,30 @@ def upload_filled_order():
         key_fields = key_fields_lookup.get(category, DEFAULT_KEY_FIELDS)
 
         pref = fodb.get_qty_column_pref(conn, user_id, distributor_id, category)
-        qty_detection = foparser.detect_quantity_column(
-            header_row, col_mapping, category, valid_rows, pref_column_name=pref,
+        workbook = foparser.parse_filled_order_workbook(
+            tmp_path, category, pref_column_name=pref,
         )
 
-        if qty_detection["status"] == "needs_confirmation":
+        if workbook.get("status") == "qty_column_confirmation_required":
+            qty_detection = workbook["qty_detection"]
             return jsonify({
                 "status": "qty_column_confirmation_required",
-                "message": "Multiple possible quantity columns found — please confirm the correct one.",
+                "message": (
+                    "Excel mein multiple quantity-looking columns hain. "
+                    "Pieces / Qty chunein — No of Bales nahi."
+                ),
+                "guidance": qty_detection.get("guidance"),
                 "candidates": _sanitize_for_json(qty_detection["candidates"]),
-                "relationships": qty_detection["relationships"],
+                "relationships": qty_detection.get("relationships") or [],
                 "category": category,
                 "distributor_id": distributor_id,
+                "sheet_name": workbook.get("sheet_name"),
+                "sheets_detected": workbook.get("sheet_names"),
             }), 200
 
-        qty_col_idx = qty_detection["column_index"]
-        qty_col_label = qty_detection["column_label"]
+        parsed_rows = workbook["parsed_rows"]
+        qty_col_label = workbook["quantity_column_used"]
+        bales_col_label = workbook.get("bales_column_used")
 
         if not season and not use_last_season:
             last_season = fodb.get_last_season(conn, user_id)
@@ -283,7 +267,6 @@ def upload_filled_order():
         category = (category or "").strip()
         season = (season or "").strip()
 
-        parsed_rows = foparser.build_filled_order_rows(valid_rows, header_row, col_mapping, qty_col_idx)
         matched_items = [
             foparser.match_and_normalize(
                 conn, amdb, user_id, row, key_fields, category=category,
@@ -301,6 +284,8 @@ def upload_filled_order():
         matched_count = sum(1 for m in matched_items if m["matched"])
         unmatched_count = len(matched_items) - matched_count
         flagged_count = sum(1 for m in matched_items if not m["is_clean_bale_multiple"])
+        bale_mismatch_items = [m for m in matched_items if m.get("bale_qty_mismatch")]
+        bale_mismatch_count = len(bale_mismatch_items)
         unit_values = {m["detected_unit"] for m in matched_items}
         quantity_unit_used = (
             "mixed" if len(unit_values) > 1 else (next(iter(unit_values)) if unit_values else "pieces")
@@ -329,16 +314,20 @@ def upload_filled_order():
                 "distributor_id": distributor_id,
                 "distributor_name": distributor_name_raw,
                 "quantity_column_used": qty_col_label,
+                "bales_column_used": bales_col_label,
                 "quantity_unit_used": quantity_unit_used,
+                "sheets_read": workbook.get("sheet_names"),
                 "total_lines": len(matched_items),
                 "matched_lines": matched_count,
                 "unmatched_lines": unmatched_count,
                 "flagged_lines": flagged_count,
+                "bale_mismatch_lines": bale_mismatch_count,
                 "key_fields": key_fields,
                 "existing_order": _sanitize_for_json(existing_order) if existing_order else None,
                 "issue_items": _sanitize_for_json([m for m in matched_items if m.get("has_issue")]),
                 "unmatched_items": _sanitize_for_json([m for m in matched_items if not m["matched"]]),
                 "flagged_items": _sanitize_for_json([m for m in matched_items if not m["is_clean_bale_multiple"]]),
+                "bale_mismatch_items": _sanitize_for_json(bale_mismatch_items),
                 "all_items": _sanitize_for_json(matched_items),
                 "sample_items": _sanitize_for_json(matched_items[:10]),
             }), 200
@@ -358,6 +347,7 @@ def upload_filled_order():
             matched_count = sum(1 for m in matched_items if m["matched"])
             unmatched_count = len(matched_items) - matched_count
             flagged_count = sum(1 for m in matched_items if not m["is_clean_bale_multiple"])
+            bale_mismatch_count = sum(1 for m in matched_items if m.get("bale_qty_mismatch"))
 
         category = (category or "").strip()
         season = (season or "").strip()

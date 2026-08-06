@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>NEXORA — Android UI Preview</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="stage">
+    <header class="stage-head">
+      <p class="stage-kicker">Android UI preview</p>
+      <h1>NEXORA Mobile</h1>
+      <p class="stage-sub">Same server engines · fresh phone interface · tap the tabs</p>
+    </header>
+
+    <div class="phone">
+      <div class="phone-notch" aria-hidden="true"></div>
+      <div class="phone-status">
+        <span>9:41</span>
+        <span class="phone-status-right">5G · 86%</span>
+      </div>
+
+      <!-- LOGIN -->
+      <section class="screen is-active" id="screen-login" data-screen="login">
+        <div class="login-hero">
+          <div class="brand-orb" aria-hidden="true"></div>
+          <p class="brand-word">NEXORA</p>
+          <p class="brand-tag">Order intelligence · on the go</p>
+        </div>
+        <form class="login-form" onsubmit="event.preventDefault(); go('home')">
+          <label>
+            <span>Username</span>
+            <input type="text" value="hop_prizm" autocomplete="username" />
+          </label>
+          <label>
+            <span>Password</span>
+            <input type="password" value="••••••••" autocomplete="current-password" />
+          </label>
+          <button type="submit" class="btn-primary">Sign in</button>
+          <p class="login-hint">Powered by your live Flask server</p>
+        </form>
+      </section>
+
+      <!-- HOME -->
+      <section class="screen" id="screen-home" data-screen="home">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">Good evening</p>
+            <h2>Dashboard</h2>
+          </div>
+          <button class="avatar" type="button" title="Profile">HP</button>
+        </div>
+
+        <div class="scroll">
+          <div class="kpi-row">
+            <article class="kpi">
+              <p class="kpi-label">FO seasons</p>
+              <p class="kpi-value">3</p>
+              <p class="kpi-meta">live widgets</p>
+            </article>
+            <article class="kpi">
+              <p class="kpi-label">Matches</p>
+              <p class="kpi-value">12</p>
+              <p class="kpi-meta">this week</p>
+            </article>
+          </div>
+
+          <article class="widget-card">
+            <div class="widget-head">
+              <div>
+                <h3>AW26 · Filled Orders</h3>
+                <p>ExMill · brand × size</p>
+              </div>
+              <span class="chip">Live</span>
+            </div>
+            <table class="mini-table">
+              <thead>
+                <tr><th>Brand</th><th>Size</th><th>Pcs</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Allure</td><td>KB FS</td><td>240</td></tr>
+                <tr><td>Beaucale</td><td>KS</td><td>180</td></tr>
+                <tr><td>Blumen</td><td>SB</td><td>96</td></tr>
+              </tbody>
+            </table>
+            <button class="btn-gold" type="button" onclick="go('orders')">Open details</button>
+          </article>
+
+          <article class="widget-card widget-card--accent">
+            <div class="widget-head">
+              <div>
+                <h3>Target vs Achievement</h3>
+                <p>North · FY26</p>
+              </div>
+              <span class="chip chip--soft">78%</span>
+            </div>
+            <div class="progress">
+              <div class="progress-bar" style="width:78%"></div>
+            </div>
+            <p class="widget-foot">₹ 4.2 Cr achieved · ₹ 5.4 Cr target</p>
+          </article>
+
+          <button class="quick-cta" type="button" onclick="go('orders')">
+            <span>Start Order Desk</span>
+            <span class="quick-cta-arrow">→</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ORDERS -->
+      <section class="screen" id="screen-orders" data-screen="orders">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">Fulfillment</p>
+            <h2>Order Desk</h2>
+          </div>
+          <button class="icon-btn" type="button" aria-label="Upload">↑</button>
+        </div>
+
+        <div class="rail">
+          <button class="rail-item is-done" type="button">Article</button>
+          <button class="rail-item is-done" type="button">FO</button>
+          <button class="rail-item is-active" type="button">SO Pack</button>
+          <button class="rail-item" type="button">Match</button>
+          <button class="rail-item" type="button">CI</button>
+        </div>
+
+        <div class="scroll">
+          <article class="action-card">
+            <p class="action-kicker">Step 3 · SO Pack</p>
+            <h3>Upload sales order PDFs</h3>
+            <p class="action-copy">Same SO Pack engine on server. Multi-PDF analyze, then Match FO.</p>
+            <div class="drop">
+              <p class="drop-title">Tap to pick files</p>
+              <p class="drop-meta">PDF · up to 20 files</p>
+            </div>
+            <button class="btn-primary" type="button" onclick="go('match')">Analyze pack</button>
+          </article>
+
+          <article class="list-card">
+            <div class="list-row">
+              <div>
+                <p class="list-title">FO 7122 · Parnami</p>
+                <p class="list-meta">Saved · AW26</p>
+              </div>
+              <span class="pill">Ready</span>
+            </div>
+            <div class="list-row">
+              <div>
+                <p class="list-title">SO Pack · 6 PDFs</p>
+                <p class="list-meta">Last run · today 6:12 pm</p>
+              </div>
+              <span class="pill pill--gold">Match</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- MATCH -->
+      <section class="screen" id="screen-match" data-screen="match">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">FO ↔ SO</p>
+            <h2>Order Match</h2>
+          </div>
+          <span class="chip">± ₹10</span>
+        </div>
+
+        <div class="scroll">
+          <div class="summary-row">
+            <div class="summary-pill ok"><strong>18</strong><span>Match</span></div>
+            <div class="summary-pill warn"><strong>3</strong><span>Qty Δ</span></div>
+            <div class="summary-pill bad"><strong>1</strong><span>Miss</span></div>
+          </div>
+
+          <article class="match-card">
+            <div class="match-top">
+              <h3>Allure · KB FS</h3>
+              <span class="status-ok">MATCH</span>
+            </div>
+            <p class="match-line">FO ExMill ₹ 1,24,500 · SO Net ₹ 1,24,498</p>
+            <p class="match-line dim">Brand soft-key · size code KB FS</p>
+          </article>
+
+          <article class="match-card">
+            <div class="match-top">
+              <h3>Beaucale · KS</h3>
+              <span class="status-warn">QTY −3</span>
+            </div>
+            <p class="match-line">FO 180 pcs · SO 177 pcs</p>
+            <p class="match-line dim">Value within ± ₹10 · qty short</p>
+          </article>
+
+          <article class="match-card">
+            <div class="match-top">
+              <h3>Celebrating India · SB</h3>
+              <span class="status-ok">MATCH</span>
+            </div>
+            <p class="match-line">Fuzzy brand · Celebareting India</p>
+            <p class="match-line dim">Value aligned</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- MORE -->
+      <section class="screen" id="screen-more" data-screen="more">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">Account</p>
+            <h2>More</h2>
+          </div>
+        </div>
+        <div class="scroll">
+          <article class="settings-card">
+            <p class="settings-label">Theme</p>
+            <div class="theme-row">
+              <button class="theme-swatch is-on" type="button" data-theme="emerald" style="--sw:#123C32;--sw2:#C9A227"></button>
+              <button class="theme-swatch" type="button" data-theme="bright" style="--sw:#0f2744;--sw2:#0d9488"></button>
+              <button class="theme-swatch" type="button" data-theme="custom" style="--sw:#1a1a2e;--sw2:#e8b86d"></button>
+            </div>
+            <p class="settings-hint">Colours follow server theme preference</p>
+          </article>
+          <button class="settings-link" type="button">Party master</button>
+          <button class="settings-link" type="button">Article master</button>
+          <button class="settings-link" type="button">Sign out</button>
+        </div>
+      </section>
+
+      <nav class="tabbar" id="tabbar">
+        <button type="button" class="tab is-active" data-go="home">
+          <span class="tab-ico">▣</span>
+          <span>Home</span>
+        </button>
+        <button type="button" class="tab" data-go="orders">
+          <span class="tab-ico">☰</span>
+          <span>Orders</span>
+        </button>
+        <button type="button" class="tab" data-go="match">
+          <span class="tab-ico">⇄</span>
+          <span>Match</span>
+        </button>
+        <button type="button" class="tab" data-go="more">
+          <span class="tab-ico">···</span>
+          <span>More</span>
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

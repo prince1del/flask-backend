@@ -21,14 +21,15 @@ def _schema_conn(db_path):
     return conn
 
 
-def test_brand_alias_maps_blumen_to_bluman(tmp_path):
+def test_brand_alias_maps_bluemen_family_to_blumen(tmp_path):
     conn = _schema_conn(tmp_path / "alias.sqlite3")
     amdb.ensure_default_brand_aliases(conn, 1)
     alias_map = amdb.get_brand_alias_map(conn, 1)
-    assert alias_map["blumen"] == "Bluman"
-    assert alias_map["bluemen"] == "Bluman"
-    assert amdb.canonicalize_brand_name("Blumen", alias_map) == "Bluman"
-    assert amdb.canonicalize_brand_name("Bluemen", alias_map) == "Bluman"
+    assert alias_map["bluemen"] == "Blumen"
+    assert alias_map["bluman"] == "Blumen"
+    assert amdb.canonicalize_brand_name("Bluemen", alias_map) == "Blumen"
+    assert amdb.canonicalize_brand_name("Bluman", alias_map) == "Blumen"
+    assert amdb.canonicalize_brand_name("Blumen", alias_map) == "Blumen"
     conn.close()
 
 
@@ -37,7 +38,7 @@ def test_apply_brand_aliases_rebuilds_item_key(tmp_path):
     lookup = {"Bed": ["brand", "TC", "size"]}
     articles = [{
         "category": "Bed",
-        "brand": "Blumen",
+        "brand": "Bluemen",
         "size": "DB BS",
         "product_type": "Sheet Sets",
         "mrp": 1129,
@@ -47,8 +48,8 @@ def test_apply_brand_aliases_rebuilds_item_key(tmp_path):
         "extra_attributes": {"TC": "104"},
     }]
     amdb.apply_brand_aliases_to_articles(conn, 1, articles, lookup, ["brand", "size"])
-    assert articles[0]["brand"] == "Bluman"
-    assert articles[0]["item_key"] == "BLUMAN|104|DB BS"
+    assert articles[0]["brand"] == "Blumen"
+    assert articles[0]["item_key"] == "BLUMEN|104|DB BS"
     conn.close()
 
 
@@ -78,7 +79,7 @@ def test_merge_blumen_bluemen_duplicates(tmp_path):
     )
     assert removed == 1
     assert float(updated["mrp"]) == 1299
-    assert updated["brand"] == "Bluman"
+    assert updated["brand"] == "Blumen"
 
     remaining = amdb.get_all_articles(conn, 1)
     assert len(remaining) == 1
@@ -100,9 +101,9 @@ def test_classify_flags_duplicate_blumen_bluemen_rows(tmp_path):
         "item_key": "BLUEMEN|104|DB BS", "extra_attributes": {"TC": "104"},
     })
     upload_row = {
-        "category": "Bed", "brand": "Bluemen", "size": "DB BS", "product_type": "Sheet Sets",
+        "category": "Bed", "brand": "Blumen", "size": "DB BS", "product_type": "Sheet Sets",
         "mrp": 1299, "ptr": 866, "ex_mill_price": 733.9, "bale_pack_size": 18,
-        "item_key": "BLUEMEN|104|DB BS", "extra_attributes": {"TC": "104"},
+        "item_key": "BLUMEN|104|DB BS", "extra_attributes": {"TC": "104"},
     }
     result = amdb.classify_upload_article(conn, 1, upload_row, ["brand", "TC", "size"])
     assert result["action"] == "conflict"
@@ -115,9 +116,9 @@ def test_upload_applies_alias_before_conflict(tmp_path, monkeypatch):
     db_path = tmp_path / "upload_alias.sqlite3"
     conn = _schema_conn(db_path)
     amdb.insert_article(conn, 1, {
-        "category": "Bed", "brand": "Bluemen", "size": "DB BS", "product_type": "Sheet Sets",
+        "category": "Bed", "brand": "Blumen", "size": "DB BS", "product_type": "Sheet Sets",
         "mrp": 1129, "ptr": 790.3, "ex_mill_price": 621, "bale_pack_size": 18,
-        "item_key": "BLUEMEN|104|DB BS", "extra_attributes": {"TC": "104"},
+        "item_key": "BLUMEN|104|DB BS", "extra_attributes": {"TC": "104"},
     }, workspace_id="ws-1")
     conn.close()
 
@@ -163,11 +164,11 @@ def test_upload_applies_alias_before_conflict(tmp_path, monkeypatch):
     assert resp.status_code == 200, payload
     assert payload["status"] == "price_mismatch_confirmation_required"
     assert len(payload["conflicts"]) == 1
-    assert payload["conflicts"][0]["brand"] == "Bluman"
+    assert payload["conflicts"][0]["brand"] == "Blumen"
 
 
 def test_urban_living_luxury_new_is_not_fuzzy_duplicate():
-    assert amparser.brands_match_fuzzy("Blumen", "Bluemen")
+    assert amparser.brands_match_fuzzy("Blumen", "Blumen")
     assert not amparser.brands_match_fuzzy(
         "Urban Living Luxury",
         "Urban Living Luxury New",

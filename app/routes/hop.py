@@ -13,6 +13,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from app import hop_db, hop_ops, hop_deals
 from app.hop_schema import (
+    DEAL_STAGES,
     DEAL_STEPS,
     HOP_ROLE,
     HOP_WORKSPACE_ID,
@@ -185,6 +186,7 @@ def hop_meta():
                 "project_stages": PROJECT_STAGES,
                 "lead_stages": LEAD_STAGES,
                 "deal_steps": DEAL_STEPS,
+                "deal_stages": DEAL_STAGES,
             },
         }
     )
@@ -714,14 +716,50 @@ def leads_patch(lead_id: int):
     return jsonify({"success": True, "data": row})
 
 
-# ---------- Deals (new stepwise CRM) ----------
+# ---------- Deals (CRM v2 — 8-stage pipeline) ----------
+@hop_bp.route("/deals/meta", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_meta():
+    ensure_hop_schema(_db_path())
+    return jsonify({"success": True, "data": hop_deals.deal_meta()})
+
+
+@hop_bp.route("/deals/board", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_board():
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_deals.board_deals(conn, _ws(), q=request.args.get("q"))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/deals/attention", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_attention():
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_deals.attention_deals(conn, _ws())
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/deals", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def deals_list():
     ensure_hop_schema(_db_path())
     with hop_db.connect(_db_path()) as conn:
-        rows = hop_deals.list_deals(conn, _ws(), q=request.args.get("q"))
+        rows = hop_deals.list_deals(
+            conn,
+            _ws(),
+            q=request.args.get("q"),
+            stage=request.args.get("stage"),
+            status=request.args.get("status"),
+            owner=request.args.get("owner"),
+            health=request.args.get("health"),
+        )
     return jsonify({"success": True, "data": rows})
 
 
@@ -733,7 +771,6 @@ def deals_create():
     payload = _payload()
     new_party = payload.get("new_party") if isinstance(payload.get("new_party"), dict) else None
     if new_party and (new_party.get("company") or "").strip():
-        # Same fuzzy gate as party modal — "Kunwar" vs "Kunwar Julka".
         blocked = _maybe_party_duplicate_response(
             {
                 **new_party,
@@ -742,7 +779,6 @@ def deals_create():
         )
         if blocked:
             return blocked
-        # Confirmed (or no match): avoid a second check if create_customer later gains one.
         payload = {
             **payload,
             "new_party": {**new_party, "force_save": True},
@@ -766,9 +802,18 @@ def deals_get(deal_id: int):
         if not row:
             return _json_error("Deal not found", "NOT_FOUND", 404)
         events = hop_deals.list_deal_events(conn, _ws(), deal_id)
+        activities = hop_deals.list_activities(conn, _ws(), deal_id)
+        lines = hop_deals.list_deal_lines(conn, _ws(), deal_id)
+        appointments = hop_deals.list_appointments(conn, _ws(), deal_id)
+        stage_history = hop_deals.list_stage_history(conn, _ws(), deal_id)
     row = dict(row)
     row["events"] = events
-    row["steps"] = DEAL_STEPS
+    row["activities"] = activities
+    row["lines"] = lines
+    row["appointments"] = appointments
+    row["stage_history"] = stage_history
+    row["stages"] = DEAL_STAGES
+    row["steps"] = DEAL_STEPS  # legacy compat
     return jsonify({"success": True, "data": row})
 
 
@@ -785,6 +830,122 @@ def deals_patch(deal_id: int):
     return jsonify({"success": True, "data": row})
 
 
+@hop_bp.route("/deals/<int:deal_id>/stage", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_move_stage(deal_id: int):
+    ensure_hop_schema(_db_path())
+    payload = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_deals.move_stage(
+                conn,
+                _ws(),
+                deal_id,
+                payload.get("to_stage") or "",
+                reason=payload.get("reason"),
+                actor=payload.get("actor"),
+            )
+    except ValueError as exc:
+        return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/deals/<int:deal_id>/activities", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_activities(deal_id: int):
+    ensure_hop_schema(_db_path())
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            rows = hop_deals.list_activities(conn, _ws(), deal_id)
+        return jsonify({"success": True, "data": rows})
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_deals.log_activity(conn, _ws(), deal_id, _payload())
+    except ValueError as exc:
+        return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/deals/<int:deal_id>/appointments", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_appointments(deal_id: int):
+    ensure_hop_schema(_db_path())
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            rows = hop_deals.list_appointments(conn, _ws(), deal_id)
+        return jsonify({"success": True, "data": rows})
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_deals.create_appointment(conn, _ws(), deal_id, _payload())
+    except ValueError as exc:
+        return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/deals/<int:deal_id>/lines", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_lines(deal_id: int):
+    ensure_hop_schema(_db_path())
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            rows = hop_deals.list_deal_lines(conn, _ws(), deal_id)
+        return jsonify({"success": True, "data": rows})
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_deals.add_deal_line(conn, _ws(), deal_id, _payload())
+    except ValueError as exc:
+        return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/deals/<int:deal_id>/lines/bulk", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_lines_bulk(deal_id: int):
+    ensure_hop_schema(_db_path())
+    payload = _payload()
+    actor = None
+    try:
+        from flask_jwt_extended import get_jwt_identity
+
+        actor = get_jwt_identity()
+    except Exception:
+        actor = None
+    if isinstance(actor, dict):
+        actor = actor.get("name") or actor.get("email") or actor.get("sub")
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            result = hop_deals.bulk_save_deal_lines(
+                conn, _ws(), deal_id, payload, actor=str(actor) if actor else None
+            )
+    except ValueError as exc:
+        return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": result})
+
+
+@hop_bp.route("/deals/<int:deal_id>/lines/<int:line_id>", methods=["PATCH", "DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def deals_line_item(deal_id: int, line_id: int):
+    ensure_hop_schema(_db_path())
+    if request.method == "DELETE":
+        with hop_db.connect(_db_path()) as conn:
+            ok = hop_deals.soft_delete_deal_line(conn, _ws(), deal_id, line_id)
+        if not ok:
+            return _json_error("Requirement line not found", "NOT_FOUND", 404)
+        return jsonify({"success": True, "data": {"deleted": True, "id": line_id, "soft": True}})
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_deals.update_deal_line(conn, _ws(), deal_id, line_id, _payload())
+    except ValueError as exc:
+        return _json_error(str(exc), status=404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": row})
+
+
 @hop_bp.route("/deals/<int:deal_id>", methods=["DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -794,7 +955,7 @@ def deals_delete(deal_id: int):
         ok = hop_deals.delete_deal(conn, _ws(), deal_id)
     if not ok:
         return _json_error("Deal not found", "NOT_FOUND", 404)
-    return jsonify({"success": True, "data": {"deleted": True, "id": deal_id}})
+    return jsonify({"success": True, "data": {"deleted": True, "id": deal_id, "soft": True}})
 
 
 # ---------- Meetings ----------
@@ -1003,17 +1164,28 @@ def parties_check_duplicates():
     company = str(payload.get("company") or payload.get("name") or "").strip()
     if not company:
         return _json_error("company is required", "VALIDATION_ERROR", 400)
+    # Search typing uses a softer floor so Sidhi/Siddhi/sidh still surface.
+    purpose = str(payload.get("purpose") or "").strip().lower()
+    min_score = payload.get("min_score")
+    try:
+        min_score_f = float(min_score) if min_score is not None else (
+            55.0 if purpose == "search" else None
+        )
+    except (TypeError, ValueError):
+        min_score_f = 55.0 if purpose == "search" else None
     with hop_db.connect(_db_path()) as conn:
-        matches = find_party_matches(
-            conn,
-            _ws(),
+        kwargs = dict(
             company=company,
             gst_no=str(payload.get("gst_no") or ""),
             mobile=str(payload.get("mobile") or ""),
             party_type=str(payload.get("party_type") or "both"),
             exclude_id=payload.get("exclude_id"),
             exclude_party_type=payload.get("exclude_party_type"),
+            limit=int(payload.get("limit") or (12 if purpose == "search" else 8)),
         )
+        if min_score_f is not None:
+            kwargs["min_score"] = min_score_f
+        matches = find_party_matches(conn, _ws(), **kwargs)
     return jsonify({"success": True, "data": {"matches": matches, "count": len(matches)}})
 
 
@@ -1455,8 +1627,61 @@ def commission_invoices_list():
     ensure_hop_schema(_db_path())
     q = (request.args.get("q") or "").strip() or None
     with hop_db.connect(_db_path()) as conn:
+        hop_ops.sync_commission_from_expenses(conn, _ws())
         rows = hop_ops.list_tax_invoices_for_commission(conn, _ws(), q=q)
     return jsonify({"success": True, "data": rows})
+
+
+@hop_bp.route("/commission/by-agent", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def commission_by_agent():
+    """Who got how much commission, and when (grouped by agent)."""
+    ensure_hop_schema(_db_path())
+    q = (request.args.get("q") or "").strip() or None
+    date_from = (request.args.get("date_from") or "").strip() or None
+    date_to = (request.args.get("date_to") or "").strip() or None
+    payment_status = (request.args.get("payment_status") or "").strip() or None
+    with hop_db.connect(_db_path()) as conn:
+        hop_ops.sync_commission_from_expenses(conn, _ws())
+        data = hop_ops.list_commission_by_agent(
+            conn,
+            _ws(),
+            q=q,
+            date_from=date_from,
+            date_to=date_to,
+            payment_status=payment_status,
+        )
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/commission/records", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def commission_records():
+    """Commission payment history — filter by date / party / search."""
+    ensure_hop_schema(_db_path())
+    q = (request.args.get("q") or "").strip() or None
+    date_from = (request.args.get("date_from") or "").strip() or None
+    date_to = (request.args.get("date_to") or "").strip() or None
+    agent_party_id = request.args.get("agent_party_id", type=int)
+    agent_party_type = (request.args.get("agent_party_type") or "").strip() or None
+    agent_name = (request.args.get("agent_name") or "").strip() or None
+    payment_status = (request.args.get("payment_status") or "").strip() or None
+    with hop_db.connect(_db_path()) as conn:
+        hop_ops.sync_commission_from_expenses(conn, _ws())
+        data = hop_ops.list_commission_records(
+            conn,
+            _ws(),
+            q=q,
+            date_from=date_from,
+            date_to=date_to,
+            agent_party_id=agent_party_id,
+            agent_party_type=agent_party_type,
+            agent_name=agent_name,
+            payment_status=payment_status,
+        )
+    return jsonify({"success": True, "data": data})
 
 
 @hop_bp.route("/commission/worksheet", methods=["GET"])

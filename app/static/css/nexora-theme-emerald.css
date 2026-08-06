@@ -1,11 +1,11 @@
 /*
   NEXORA premium theme (Emerald + Muted Gold + Ivory)
-  Activated when html[data-hop-theme="emerald"] is set.
+  Activated when html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) is set.
   Palette: Emerald #123C32 · Gold #C9A227 · Ivory #F8F4EA · Text #1F1F1F · Beige #DED3BE.
   Default NEXORA dark remains when attribute is missing or "nexora".
 */
 
-html[data-hop-theme="emerald"] {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) {
   color-scheme: light;
   /* Bridge legacy NEXORA cyan tokens → emerald gold */
   --hop-c-accent: #C9A227;
@@ -17,47 +17,60 @@ html[data-hop-theme="emerald"] {
   --nx-gold-2: #A8861F;
   --nxt-cyan: #C9A227;
   --nxt-cyan-dim: rgba(201, 162, 39, 0.16);
+  /* Dashboard FO / TA widgets */
+  --dash-widget-bg: #123C32;
+  --dash-widget-bg-deep: #0E322A;
+  --dash-widget-bg-header: #164A3E;
+  --dash-widget-border: rgba(201, 162, 39, 0.35);
+  --dash-widget-text: #F8F4EA;
+  --dash-widget-muted: #A8C5B8;
+  --dash-widget-accent: #C9A227;
+  --dash-widget-accent-fg: #123C32;
+  --dash-widget-shadow: rgba(12, 40, 34, 0.28);
+  --dash-widget-row-alt: #123C32;
+  --dash-widget-surface-border: rgba(255, 255, 255, 0.12);
+  --dash-widget-ctrl-border: rgba(201, 162, 39, 0.4);
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard).workspace-shell:not(.hidden) {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard).workspace-shell:not(.hidden) {
   background: #F8F4EA !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-theme.hop-shell {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-theme.hop-shell {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
   border-color: #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-nav {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-nav {
   background: #123C32 !important;
   border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
   color: #D6CFC0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-nav-group,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-nav-caret {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-nav-group,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-nav-caret {
   color: #9A9080 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-nav-item,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-nav-btn {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-nav-item,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-nav-btn {
   color: #D6CFC0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-nav-item:hover,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-nav-btn:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-nav-item:hover,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-nav-btn:hover {
   background: rgba(255, 255, 255, 0.06) !important;
   color: #ffffff !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-nav-item.active,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-nav-btn.active {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-nav-item.active,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-nav-btn.active {
   background: rgba(201, 162, 39, 0.22) !important;
   color: #E8D48B !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-core {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-core:not(.nx-core--logo) {
   --nx-core-glow-a: rgba(201, 162, 39, 0.5);
   --nx-core-glow-b: rgba(232, 212, 139, 0.7);
   background: radial-gradient(circle at 30% 30%, #E8D48B, #C9A227 70%) !important;
@@ -65,274 +78,274 @@ html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-cor
   animation: nx-pulse 3.2s ease-in-out infinite !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-brand-word {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-brand-word {
   color: #ffffff !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-brand-sub {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-brand-sub {
   color: #9A9080 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-main {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-main {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-display,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-title,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) h2 {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-display,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-title,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) h2 {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-text-dim,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-text-faint,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-eyebrow {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-text-dim,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-text-faint,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-eyebrow {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-card,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-form-card {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-card,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-form-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-card::before {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-card::before {
   background: transparent !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-card:hover,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-form-card:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-card:hover,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-form-card:hover {
   background: #ffffff !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-btn {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-btn {
   border: 1px solid #DED3BE !important;
   background: #ffffff !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-btn:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-btn:hover {
   border-color: #DED3BE !important;
   background: #F5EFE0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-btn-primary {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-btn-primary {
   background: #C9A227 !important;
   border-color: #C9A227 !important;
   color: #ffffff !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .nx-btn-primary:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .nx-btn-primary:hover {
   background: #A8861F !important;
   border-color: #A8861F !important;
   color: #ffffff !important;
 }
 
 /* KPI / dashboard cards */
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-card {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-kpi-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-card:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-kpi-card:hover {
   background: #ffffff !important;
   border-color: #DED3BE !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-label {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-kpi-label {
   color: #6B6254 !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-value {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-kpi-value {
   color: #1F1F1F !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-value.is-na {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-kpi-value.is-na {
   color: #8A7F6E !important;
 }
 
 /* Invoice / ledger chrome */
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-topbar {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-topbar {
   background: #ffffff !important;
   border-bottom: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-title {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-title {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-mobile-back {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-mobile-back {
   border: 1px solid #DED3BE !important;
   background: #ffffff !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-ctrl,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-search,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-party-toggle,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-form-grid input,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-form-grid select,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-form-grid textarea {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-ctrl,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-search,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-party-toggle,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-form-grid input,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-form-grid select,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-form-grid textarea {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-text-btn {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-text-btn {
   color: #A8861F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-sep {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-sep {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.05);
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card span {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card span {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card strong {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card strong {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card--paid {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card--paid {
   border-left: 3px solid #15803d !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card--paid strong { color: #15803d !important; }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card--unpaid {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card--paid strong { color: #15803d !important; }
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card--unpaid {
   border-left: 3px solid #1F5C70 !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card--unpaid strong { color: #1F5C70 !important; }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card--overdue {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card--unpaid strong { color: #1F5C70 !important; }
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card--overdue {
   border-left: 3px solid #b91c1c !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card--overdue strong { color: #b91c1c !important; }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-card--total {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card--overdue strong { color: #b91c1c !important; }
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-card--total {
   border-left: 3px solid #3F3A32 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-op {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-op {
   color: #8A7F6E !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-table-card {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-table-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-table-head {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-table-head {
   border-bottom: 1px solid #DED3BE !important;
   background: #ffffff !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-table-head strong {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-table-head strong {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-count {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-count {
   background: #EFE7D8 !important;
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-table th {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-table th {
   color: #A8861F !important;
   background: #FBF7EE !important;
   border-bottom: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-table td {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-table td {
   color: #1F1F1F !important;
   border-bottom: 1px solid #EFE7D8 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-table tbody tr:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-table tbody tr:hover {
   background: #F5EFE0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-row.is-selected {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-row.is-selected {
   background: #F3EBD0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-empty {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-empty {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-badge--paid {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-badge--paid {
   background: #dcfce7 !important;
   color: #15803d !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-badge--unpaid,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-badge--open {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-badge--unpaid,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-badge--open {
   background: #E8F0F2 !important;
   color: #1F5C70 !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-badge--overdue {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-badge--overdue {
   background: #fee2e2 !important;
   color: #b91c1c !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .inv-badge--partial {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .inv-badge--partial {
   background: #fef3c7 !important;
   color: #b45309 !important;
 }
 
 /* Party / module tables */
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-table,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-table,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-table {
   color: #1F1F1F;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-table th,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table th {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-table th,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-table th {
   color: #A8861F !important;
   background: #FBF7EE !important;
   border-bottom: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-table td,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table td {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-table td,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-table td {
   color: #1F1F1F !important;
   border-bottom: 1px solid #EFE7D8 !important;
 }
 
 /* Commission bar */
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-title strong,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-party,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-results strong {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-title strong,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-party,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-results strong {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-meta,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-fields label,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-results span {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-meta,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-fields label,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-results span {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-meta b {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-meta b {
   color: #A8861F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-fields input {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-fields input {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-table th {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-table th {
   color: #A8861F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-comm-table td {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-comm-table td {
   color: #1F1F1F !important;
 }
 
@@ -406,249 +419,249 @@ html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-co
   color: #67e8f9;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-theme-card {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-theme-card {
   background: #ffffff !important;
   border: 1px solid #DED3BE !important;
   color: #1F1F1F !important;
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-theme-card.is-active {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-theme-card.is-active {
   border-color: #C9A227 !important;
   box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.25);
 }
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-theme-card .hop-theme-badge {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-theme-card .hop-theme-badge {
   color: #A8861F !important;
 }
 
 /* Doc preview modal stays readable in bright mode */
-html[data-hop-theme="emerald"] .hop-doc-preview-modal {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .hop-doc-preview-modal {
   color: #1F1F1F;
 }
 
 /* ========== Parties (full light surface — was broken/mixed) ========== */
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-view--parties,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-view--parties .pty-page,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-view--parties .mod-page {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-view--parties,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-view--parties .pty-page,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-view--parties .mod-page {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-topbar {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-topbar {
   background: #ffffff !important;
   border-bottom: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-topbar-title {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-topbar-title {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-topbar-sub {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-topbar-sub {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-layout {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-layout {
   background: #F8F4EA !important;
   border: none !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-sidebar {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-sidebar {
   background: #ffffff !important;
   border-right: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-detail {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-detail {
   background: #ffffff !important;
   border-left: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-search {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-search {
   background: #FBF7EE !important;
   border: 1px solid #DED3BE !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-search:focus {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-search:focus {
   border-color: #C9A227 !important;
   box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.15);
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-list-header {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-list-header {
   color: #6B6254 !important;
   border-bottom: 1px solid #DED3BE !important;
   background: #FBF7EE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item-wrap {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item-wrap {
   border-bottom: 1px solid #EFE7D8 !important;
   background: transparent !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item-wrap.is-active {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item-wrap.is-active {
   background: #F5EFE0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item {
   background: transparent !important;
   color: #1F1F1F !important;
   border-bottom: none !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item:hover {
   background: #FBF7EE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item.is-active {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item.is-active {
   background: #F3EBD0 !important;
   border-left: 3px solid #C9A227 !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item-name {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item-name {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item-bal {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item-bal {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-item-bal.is-due {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-item-bal.is-due {
   color: #b91c1c !important;
   font-weight: 600;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-badge-c {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-badge-c {
   background: #F3EBD0 !important;
   color: #A8861F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-badge-v {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-badge-v {
   background: #ede9fe !important;
   color: #6d28d9 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-empty-list,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-no-selection,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-no-selection p {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-empty-list,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-no-selection,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-no-selection p {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-detail-header {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-detail-header {
   background: #ffffff !important;
   border-bottom: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-detail-name {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-detail-name {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-detail-type {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-detail-type {
   background: #F3EBD0 !important;
   border: 1px solid #DED3BE !important;
   color: #A8861F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-meta-row {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-meta-row {
   color: #3F3A32 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-meta-text em {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-meta-text em {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-meta-ico {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-meta-ico {
   background: #EFE7D8 !important;
   color: #C9A227 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-chip {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-chip {
   background: #FBF7EE !important;
   border: 1px solid #DED3BE !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-chip:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-chip:hover {
   border-color: #DED3BE !important;
   background: #F5EFE0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-chip svg {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-chip svg {
   color: #C9A227 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-action-btn {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-action-btn {
   background: #EFE7D8 !important;
   color: #5C5346 !important;
   border: 1px solid #DED3BE;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-action-btn:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-action-btn:hover {
   background: #DED3BE !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-section {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-section {
   background: #ffffff !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-header strong {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-header strong {
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-total-sale {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-total-sale {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-total-sale em {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-total-sale em {
   color: #A8861F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-other {
   border-top: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other summary,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other-hint {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-other summary,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-other-hint {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other summary span {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-other summary span {
   background: #EFE7D8 !important;
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table th {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-table th {
   color: #A8861F !important;
   background: #FBF7EE !important;
   border-bottom: 1px solid #DED3BE !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table td {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-table td {
   color: #1F1F1F !important;
   border-bottom: 1px solid #EFE7D8 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-row:hover {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-row:hover {
   background: #F5EFE0 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-view {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-view {
   color: #6B6254 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-row:hover .pty-txn-view-ico {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-row:hover .pty-txn-view-ico {
   color: #C9A227 !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .pty-txn-amt.is-due {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .pty-txn-amt.is-due {
   color: #b91c1c !important;
 }
 
 /* Generic module pages in bright mode */
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-view--module .mod-page,
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-view--fullpage {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-view--module .mod-page,
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-view--fullpage {
   background: #F8F4EA !important;
   color: #1F1F1F !important;
 }
 
-html[data-hop-theme="emerald"] :is(#hop-executive-workspace, #dashboard) .hop-view-header {
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-view-header {
   color: #1F1F1F;
 }

@@ -71,6 +71,32 @@ def name_fingerprint(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", normalize_party_name(name))
 
 
+def _fold_repeats(s: str) -> str:
+    """Collapse repeated letters: siddhi → sidhi, sidhhi → sidhi."""
+    return re.sub(r"(.)\1+", r"\1", s or "")
+
+
+def _prefix_type_score(fa: str, fb: str) -> float:
+    """Typing prefix: sidh ≈ Siddhi / Siddhi Chandla (min 3–4 chars)."""
+    if not fa or not fb:
+        return 0.0
+    a2, b2 = _fold_repeats(fa), _fold_repeats(fb)
+    pairs = ((fa, fb), (a2, b2))
+    best = 0.0
+    for shorter, longer in pairs:
+        if len(shorter) > len(longer):
+            shorter, longer = longer, shorter
+        # 3-letter only when almost whole first name; 4+ always for starts-with
+        if len(shorter) < 3:
+            continue
+        if not longer.startswith(shorter):
+            continue
+        if len(shorter) < 4 and len(longer) > len(shorter) + 2:
+            continue
+        best = max(best, 0.80 + 0.16 * (len(shorter) / max(len(longer), 1)))
+    return min(0.96, best)
+
+
 def _levenshtein_ratio(a: str, b: str) -> float:
     if a == b:
         return 1.0
@@ -145,7 +171,10 @@ def _short_name_alias_score(na: str, nb: str) -> float:
 
 
 def name_similarity(a: str, b: str) -> float:
-    """0..1 similarity with punctuation / synonym awareness."""
+    """0..1 similarity with punctuation / synonym / spelling-variant awareness.
+
+    Handles Sidhi ≈ Siddhi ≈ Sidhhi and short typing prefixes like sidh → Siddhi.
+    """
     na, nb = normalize_party_name(a), normalize_party_name(b)
     if not na or not nb:
         return 0.0
@@ -154,8 +183,12 @@ def name_similarity(a: str, b: str) -> float:
     fa, fb = name_fingerprint(a), name_fingerprint(b)
     if fa and fa == fb:
         return 0.99
+    fa2, fb2 = _fold_repeats(fa), _fold_repeats(fb)
+    if fa2 and fa2 == fb2:
+        return 0.97
     # Compact Levenshtein (smcourier vs smlogistics after fold → both smlogistics)
     compact = _levenshtein_ratio(fa, fb) if fa and fb else 0.0
+    folded = _levenshtein_ratio(fa2, fb2) if fa2 and fb2 else 0.0
     token = _token_jaccard(na, nb)
     spaced = _levenshtein_ratio(na, nb)
     # Prefix boost: same leading token(s) e.g. both start with "sm"
@@ -166,7 +199,19 @@ def name_similarity(a: str, b: str) -> float:
         if len(ta) > 1 and len(tb) > 1 and ta[1] == tb[1]:
             prefix = 0.2
     alias = _short_name_alias_score(na, nb)
-    score = max(compact, spaced * 0.95, token * 0.9, alias) + (prefix if alias < 0.86 else 0.0)
+    # First-token fuzzy (sidh vs siddhi chandla → compare first tokens only)
+    first_tok = 0.0
+    if ta and tb:
+        tfa, tfb = _fold_repeats(re.sub(r"[^a-z0-9]", "", ta[0])), _fold_repeats(re.sub(r"[^a-z0-9]", "", tb[0]))
+        if tfa and tfb:
+            if tfa == tfb:
+                first_tok = 0.94
+            else:
+                first_tok = max(_prefix_type_score(tfa, tfb), _levenshtein_ratio(tfa, tfb) * 0.92)
+    type_prefix = _prefix_type_score(fa, fb)
+    score = max(compact, folded * 0.98, spaced * 0.95, token * 0.9, alias, first_tok, type_prefix)
+    if alias < 0.86 and prefix and score < 0.9:
+        score = min(1.0, score + prefix)
     return min(1.0, score)
 
 

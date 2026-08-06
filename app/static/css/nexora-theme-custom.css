@@ -14,324 +14,344 @@ html[data-hop-theme="custom"] {
   --hop-c-card: #ffffff;
   --hop-c-nav-text: #D6CFC0;
   --hop-c-nav-muted: #9A9080;
+  /* Bridge legacy NEXORA cyan tokens → custom accent */
+  --nx-gold: var(--hop-c-accent);
+  --nx-gold-2: var(--hop-c-accent-dark);
+  --nxt-cyan: var(--hop-c-accent);
+  --nxt-cyan-dim: var(--hop-c-accent-soft);
+  /* Dashboard FO / TA widgets — follow custom sidebar + accent */
+  --dash-widget-bg: var(--hop-c-sidebar);
+  --dash-widget-bg-deep: color-mix(in srgb, var(--hop-c-sidebar) 82%, #000);
+  --dash-widget-bg-header: color-mix(in srgb, var(--hop-c-sidebar) 72%, #fff);
+  --dash-widget-border: color-mix(in srgb, var(--hop-c-accent) 40%, transparent);
+  --dash-widget-text: var(--hop-c-bg);
+  --dash-widget-muted: color-mix(in srgb, var(--hop-c-bg) 62%, var(--hop-c-sidebar));
+  --dash-widget-accent: var(--hop-c-accent);
+  --dash-widget-accent-fg: var(--hop-c-sidebar);
+  --dash-widget-shadow: color-mix(in srgb, var(--hop-c-sidebar) 35%, transparent);
+  --dash-widget-row-alt: var(--hop-c-sidebar);
+  --dash-widget-surface-border: rgba(255, 255, 255, 0.12);
+  --dash-widget-ctrl-border: color-mix(in srgb, var(--hop-c-accent) 40%, transparent);
 }
 
 html[data-hop-theme="custom"] {
   color-scheme: light;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace.workspace-shell:not(.hidden) {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard).workspace-shell:not(.hidden) {
   background: var(--hop-c-bg) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-theme.hop-shell {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-theme.hop-shell {
   background: var(--hop-c-bg) !important;
   color: var(--hop-c-text) !important;
   border-color: var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-nav {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-nav {
   background: var(--hop-c-sidebar) !important;
   border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
   color: var(--hop-c-nav-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-nav-group,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-nav-caret {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-nav-group,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-nav-caret {
   color: var(--hop-c-nav-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-nav-item,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-nav-btn {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-nav-item,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-nav-btn {
   color: var(--hop-c-nav-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-nav-item:hover,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-nav-btn:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-nav-item:hover,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-nav-btn:hover {
   background: rgba(255, 255, 255, 0.06) !important;
   color: var(--hop-c-card) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-nav-item.active,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-nav-btn.active {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-nav-item.active,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-nav-btn.active {
   background: var(--hop-c-accent-soft) !important;
   color: var(--hop-c-accent-light) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-core {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-core:not(.nx-core--logo) {
+  --nx-core-glow-a: var(--hop-c-accent-glow, rgba(201, 162, 39, 0.5));
+  --nx-core-glow-b: color-mix(in srgb, var(--hop-c-accent-light, #E8D48B) 70%, transparent);
   background: radial-gradient(circle at 30% 30%, var(--hop-c-accent-light), var(--hop-c-accent) 70%) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 14px 2px var(--hop-c-accent-glow) !important;
-  animation: none !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 18px 2px var(--nx-core-glow-a) !important;
+  animation: nx-pulse 3.2s ease-in-out infinite !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-brand-word {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-brand-word {
   color: var(--hop-c-card) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-brand-sub {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-brand-sub {
   color: var(--hop-c-nav-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-main {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-main {
   background: var(--hop-c-bg) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-display,
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-title,
-html[data-hop-theme="custom"] #hop-executive-workspace h2 {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-display,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-title,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) h2 {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-text-dim,
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-text-faint,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-eyebrow {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-text-dim,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-text-faint,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-eyebrow {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-card,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-form-card {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-card,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-form-card {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-card::before {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-card::before {
   background: transparent !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-card:hover,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-form-card:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-card:hover,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-form-card:hover {
   background: var(--hop-c-card) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-btn {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-btn {
   border: 1px solid var(--hop-c-border) !important;
   background: var(--hop-c-card) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-btn:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-btn:hover {
   border-color: var(--hop-c-border) !important;
   background: var(--hop-c-bg-soft) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-btn-primary {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-btn-primary {
   background: var(--hop-c-accent) !important;
   border-color: var(--hop-c-accent) !important;
   color: var(--hop-c-card) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .nx-btn-primary:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .nx-btn-primary:hover {
   background: var(--hop-c-accent-dark) !important;
   border-color: var(--hop-c-accent-dark) !important;
   color: var(--hop-c-card) !important;
 }
 
 /* KPI / dashboard cards */
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-kpi-card {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-card {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-kpi-card:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-card:hover {
   background: var(--hop-c-card) !important;
   border-color: var(--hop-c-border) !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-kpi-label {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-label {
   color: var(--hop-c-muted) !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-kpi-value {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-value {
   color: var(--hop-c-text) !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-kpi-value.is-na {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-kpi-value.is-na {
   color: var(--hop-c-muted) !important;
 }
 
 /* Invoice / ledger chrome */
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-topbar {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-topbar {
   background: var(--hop-c-card) !important;
   border-bottom: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-title {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-title {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-mobile-back {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-mobile-back {
   border: 1px solid var(--hop-c-border) !important;
   background: var(--hop-c-card) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-ctrl,
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-search,
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-party-toggle,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-form-grid input,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-form-grid select,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-form-grid textarea {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-ctrl,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-search,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-party-toggle,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-form-grid input,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-form-grid select,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-form-grid textarea {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-text-btn {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-text-btn {
   color: var(--hop-c-accent-dark) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-sep {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-sep {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.05);
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card span {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card span {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card strong {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card strong {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card--paid {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card--paid {
   border-left: 3px solid #15803d !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card--paid strong { color: #15803d !important; }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card--unpaid {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card--paid strong { color: #15803d !important; }
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card--unpaid {
   border-left: 3px solid #1F5C70 !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card--unpaid strong { color: #1F5C70 !important; }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card--overdue {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card--unpaid strong { color: #1F5C70 !important; }
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card--overdue {
   border-left: 3px solid #b91c1c !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card--overdue strong { color: #b91c1c !important; }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-card--total {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card--overdue strong { color: #b91c1c !important; }
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-card--total {
   border-left: 3px solid #3F3A32 !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-op {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-op {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-table-card {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-table-card {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-table-head {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-table-head {
   border-bottom: 1px solid var(--hop-c-border) !important;
   background: var(--hop-c-card) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-table-head strong {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-table-head strong {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-count {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-count {
   background: #EFE7D8 !important;
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-table th {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-table th {
   color: var(--hop-c-accent-dark) !important;
   background: #FBF7EE !important;
   border-bottom: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-table td {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-table td {
   color: var(--hop-c-text) !important;
   border-bottom: 1px solid #EFE7D8 !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-table tbody tr:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-table tbody tr:hover {
   background: var(--hop-c-bg-soft) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-row.is-selected {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-row.is-selected {
   background: #F3EBD0 !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-empty {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-empty {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-badge--paid {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-badge--paid {
   background: #dcfce7 !important;
   color: #15803d !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-badge--unpaid,
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-badge--open {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-badge--unpaid,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-badge--open {
   background: #E8F0F2 !important;
   color: #1F5C70 !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-badge--overdue {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-badge--overdue {
   background: #fee2e2 !important;
   color: #b91c1c !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .inv-badge--partial {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .inv-badge--partial {
   background: #fef3c7 !important;
   color: #b45309 !important;
 }
 
 /* Party / module tables */
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-table,
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-table {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-table,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table {
   color: var(--hop-c-text);
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-table th,
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-table th {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-table th,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table th {
   color: var(--hop-c-accent-dark) !important;
   background: #FBF7EE !important;
   border-bottom: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-table td,
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-table td {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-table td,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table td {
   color: var(--hop-c-text) !important;
   border-bottom: 1px solid #EFE7D8 !important;
 }
 
 /* Commission bar */
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   box-shadow: 0 1px 2px rgba(15, 39, 68, 0.06);
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-title strong,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-party,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-results strong {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-title strong,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-party,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-results strong {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-meta,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-fields label,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-results span {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-meta,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-fields label,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-results span {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-meta b {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-meta b {
   color: var(--hop-c-accent-dark) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-bar-fields input {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-bar-fields input {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-table th {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-table th {
   color: var(--hop-c-accent-dark) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-table td {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-comm-table td {
   color: var(--hop-c-text) !important;
 }
 
@@ -405,16 +425,16 @@ html[data-hop-theme="custom"] #hop-executive-workspace .hop-comm-table td {
   color: #67e8f9;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-theme-card {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-theme-card {
   background: var(--hop-c-card) !important;
   border: 1px solid var(--hop-c-border) !important;
   color: var(--hop-c-text) !important;
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-theme-card.is-active {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-theme-card.is-active {
   border-color: var(--hop-c-accent) !important;
   box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.25);
 }
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-theme-card .hop-theme-badge {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-theme-card .hop-theme-badge {
   color: var(--hop-c-accent-dark) !important;
 }
 
@@ -424,231 +444,231 @@ html[data-hop-theme="custom"] .hop-doc-preview-modal {
 }
 
 /* ========== Parties (full light surface — was broken/mixed) ========== */
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-view--parties,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-view--parties .pty-page,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-view--parties .mod-page {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-view--parties,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-view--parties .pty-page,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-view--parties .mod-page {
   background: var(--hop-c-bg) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-topbar {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-topbar {
   background: var(--hop-c-card) !important;
   border-bottom: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-topbar-title {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-topbar-title {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-topbar-sub {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-topbar-sub {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-layout {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-layout {
   background: var(--hop-c-bg) !important;
   border: none !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-sidebar {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-sidebar {
   background: var(--hop-c-card) !important;
   border-right: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-detail {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-detail {
   background: var(--hop-c-card) !important;
   border-left: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-search {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-search {
   background: #FBF7EE !important;
   border: 1px solid var(--hop-c-border) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-search:focus {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-search:focus {
   border-color: var(--hop-c-accent) !important;
   box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.15);
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-list-header {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-list-header {
   color: var(--hop-c-muted) !important;
   border-bottom: 1px solid var(--hop-c-border) !important;
   background: #FBF7EE !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item-wrap {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item-wrap {
   border-bottom: 1px solid #EFE7D8 !important;
   background: transparent !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item-wrap.is-active {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item-wrap.is-active {
   background: var(--hop-c-bg-soft) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item {
   background: transparent !important;
   color: var(--hop-c-text) !important;
   border-bottom: none !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item:hover {
   background: #FBF7EE !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item.is-active {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item.is-active {
   background: #F3EBD0 !important;
   border-left: 3px solid var(--hop-c-accent) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item-name {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item-name {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item-bal {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item-bal {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-item-bal.is-due {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-item-bal.is-due {
   color: #b91c1c !important;
   font-weight: 600;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-badge-c {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-badge-c {
   background: #F3EBD0 !important;
   color: var(--hop-c-accent-dark) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-badge-v {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-badge-v {
   background: #ede9fe !important;
   color: #6d28d9 !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-empty-list,
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-no-selection,
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-no-selection p {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-empty-list,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-no-selection,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-no-selection p {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-detail-header {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-detail-header {
   background: var(--hop-c-card) !important;
   border-bottom: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-detail-name {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-detail-name {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-detail-type {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-detail-type {
   background: #F3EBD0 !important;
   border: 1px solid var(--hop-c-border) !important;
   color: var(--hop-c-accent-dark) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-meta-row {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-meta-row {
   color: #3F3A32 !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-meta-text em {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-meta-text em {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-meta-ico {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-meta-ico {
   background: #EFE7D8 !important;
   color: var(--hop-c-accent) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-chip {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-chip {
   background: #FBF7EE !important;
   border: 1px solid var(--hop-c-border) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-chip:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-chip:hover {
   border-color: var(--hop-c-border) !important;
   background: var(--hop-c-bg-soft) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-chip svg {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-chip svg {
   color: var(--hop-c-accent) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-action-btn {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-action-btn {
   background: #EFE7D8 !important;
   color: #5C5346 !important;
   border: 1px solid var(--hop-c-border);
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-action-btn:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-action-btn:hover {
   background: var(--hop-c-border) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-section {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-section {
   background: var(--hop-c-card) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-header strong {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-header strong {
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-total-sale {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-total-sale {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-total-sale em {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-total-sale em {
   color: var(--hop-c-accent-dark) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-other {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other {
   border-top: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-other summary,
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-other-hint {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other summary,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other-hint {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-other summary span {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-other summary span {
   background: #EFE7D8 !important;
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-table th {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table th {
   color: var(--hop-c-accent-dark) !important;
   background: #FBF7EE !important;
   border-bottom: 1px solid var(--hop-c-border) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-table td {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-table td {
   color: var(--hop-c-text) !important;
   border-bottom: 1px solid #EFE7D8 !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-row:hover {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-row:hover {
   background: var(--hop-c-bg-soft) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-view {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-view {
   color: var(--hop-c-muted) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-row:hover .pty-txn-view-ico {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-row:hover .pty-txn-view-ico {
   color: var(--hop-c-accent) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .pty-txn-amt.is-due {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .pty-txn-amt.is-due {
   color: #b91c1c !important;
 }
 
 /* Generic module pages in bright mode */
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-view--module .mod-page,
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-view--fullpage {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-view--module .mod-page,
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-view--fullpage {
   background: var(--hop-c-bg) !important;
   color: var(--hop-c-text) !important;
 }
 
-html[data-hop-theme="custom"] #hop-executive-workspace .hop-view-header {
+html[data-hop-theme="custom"] :is(#hop-executive-workspace, #dashboard) .hop-view-header {
   color: var(--hop-c-text);
 }
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from calendar import monthrange
 from datetime import datetime, timezone, timedelta
@@ -1593,12 +1594,13 @@ def _tax_invoice_base_row(conn: sqlite3.Connection, workspace_id: str, party_txn
     else:
         taxable = grand
         tax = gst or line_tax
+    inv_date = d.get("invoice_date")
     return {
         "party_txn_id": d.get("party_txn_id"),
         "invoice_id": d.get("invoice_id"),
         "source_txn_id": d.get("source_txn_id"),
-        "invoice_no": str(d.get("invoice_no") or ""),
-        "invoice_date": d.get("invoice_date"),
+        "invoice_no": _commission_invoice_no(d.get("invoice_no"), inv_date),
+        "invoice_date": inv_date,
         "party_name": str(d.get("party_name") or ""),
         "status": d.get("status_text") or "",
         "invoice_total": round(grand, 2),
@@ -1606,6 +1608,508 @@ def _tax_invoice_base_row(conn: sqlite3.Connection, workspace_id: str, party_txn
         "amount_before_tax": round(max(0.0, taxable), 2),
         "balance_amount": round(_f(d.get("balance_amount")), 2),
     }
+
+
+_COMMISSION_EXPENSE_NO_RE = re.compile(r"^comm[\s/_-]", re.I)
+_COMMISSION_WORD_RE = re.compile(r"\bcommission\b", re.I)
+_INVOICE_FY_SERIAL_RE = re.compile(
+    r"(?:hop\s*/\s*)?(\d{4}\s*-\s*\d{2})\s*/\s*(\d+)",
+    re.I,
+)
+_INVOICE_NUMBER_RE = re.compile(
+    r"(?:invoice\s*(?:number|no\.?|#)?\s*)(\d{2,6})\b",
+    re.I,
+)
+
+
+def _extract_commission_invoice_refs(text: str) -> list[dict[str, str | None]]:
+    """Parse invoice refs from expense line text like 'HOP/2026-27/110' or '2026-27/101'."""
+    raw = str(text or "")
+    # Avoid false hits from PO Number LAKSA/2026-27/129 etc.
+    scrub = re.sub(r"\bpo\s*(?:number|no\.?|#)?\s*[A-Za-z0-9/_-]+", " ", raw, flags=re.I)
+    refs: list[dict[str, str | None]] = []
+    seen: set[str] = set()
+    for m in _INVOICE_FY_SERIAL_RE.finditer(scrub):
+        fy = re.sub(r"\s+", "", m.group(1))
+        serial = m.group(2).lstrip("0") or m.group(2)
+        key = f"{fy}/{serial}"
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append({"fy": fy, "serial": serial, "raw": m.group(0)})
+    if refs:
+        return refs
+    for m in _INVOICE_NUMBER_RE.finditer(scrub):
+        serial = m.group(1).lstrip("0") or m.group(1)
+        key = f"serial:{serial}"
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append({"fy": None, "serial": serial, "raw": m.group(1)})
+    return refs
+
+
+def _indian_fy_of_date(ymd: str | None) -> str | None:
+    s = (ymd or "")[:10]
+    if len(s) < 7:
+        return None
+    try:
+        y = int(s[0:4])
+        m = int(s[5:7])
+    except ValueError:
+        return None
+    # FY Apr–Mar: 2026-07 → 2026-27
+    start = y if m >= 4 else y - 1
+    return f"{start}-{str(start + 1)[-2:]}"
+
+
+def _match_sale_invoice_for_commission(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    *,
+    serial: str,
+    fy: str | None,
+    around_date: str | None,
+) -> dict[str, Any] | None:
+    serial_n = str(serial or "").lstrip("0") or str(serial or "")
+    if not serial_n:
+        return None
+    rows = conn.execute(
+        """
+        SELECT id, source_txn_id, txn_number, txn_date, party_name, total_amount, balance_amount
+        FROM hop_party_transactions
+        WHERE workspace_id = ?
+          AND txn_type = 1
+          AND (
+            txn_number = ?
+            OR txn_number = ?
+            OR txn_number LIKE ?
+            OR txn_number LIKE ?
+          )
+        ORDER BY date(txn_date) DESC, id DESC
+        """,
+        (
+            workspace_id,
+            serial_n,
+            serial,
+            f"%/{serial_n}",
+            f"%/{serial}",
+        ),
+    ).fetchall()
+    if not rows:
+        return None
+    cands = [dict(r) for r in rows]
+    around = (around_date or "")[:10]
+    want_fy = fy or _indian_fy_of_date(around)
+
+    def score(row: dict[str, Any]) -> tuple:
+        d = (row.get("txn_date") or "")[:10]
+        row_fy = _indian_fy_of_date(d)
+        fy_ok = 0 if (want_fy and row_fy == want_fy) else (1 if want_fy else 0)
+        try:
+            delta = abs(
+                (datetime.strptime(d, "%Y-%m-%d") - datetime.strptime(around, "%Y-%m-%d")).days
+            ) if d and around else 99999
+        except ValueError:
+            delta = 99999
+        return (fy_ok, delta, -int(row.get("id") or 0))
+
+    cands.sort(key=score)
+    return cands[0]
+
+
+def _is_commission_expense_txn(txn: dict[str, Any], line_blob: str) -> bool:
+    # Caller may already filter txn_type=7; treat missing type as expense.
+    ty = txn.get("txn_type")
+    if ty is not None and int(ty or 0) not in (0, 7):
+        return False
+    no = str(txn.get("txn_number") or "")
+    if _COMMISSION_EXPENSE_NO_RE.search(no):
+        return True
+    blob = f"{no} {txn.get('notes') or ''} {line_blob}"
+    return bool(_COMMISSION_WORD_RE.search(blob))
+
+
+def sync_commission_from_expenses(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+) -> dict[str, Any]:
+    """Auto-create/update commission entries from Vyapar commission Expense vouchers."""
+    expenses = conn.execute(
+        """
+        SELECT id, source_txn_id, txn_type, txn_number, txn_date, party_name, party_id, party_type,
+               total_amount, notes, status_text
+        FROM hop_party_transactions
+        WHERE workspace_id = ?
+          AND txn_type = 7
+        ORDER BY id DESC
+        """,
+        (workspace_id,),
+    ).fetchall()
+    created = 0
+    updated = 0
+    linked = 0
+    now = _now()
+
+    for er in expenses:
+        exp = dict(er)
+        sid = exp.get("source_txn_id")
+        if sid is None:
+            continue
+        lines = conn.execute(
+            """
+            SELECT line_no, item_name, description, line_total, rate
+            FROM hop_txn_lines
+            WHERE workspace_id = ? AND source_txn_id = ?
+            ORDER BY line_no ASC, id ASC
+            """,
+            (workspace_id, int(sid)),
+        ).fetchall()
+        line_dicts = [dict(l) for l in lines] or [
+            {
+                "line_no": 1,
+                "item_name": exp.get("notes") or "commission",
+                "description": "",
+                "line_total": _f(exp.get("total_amount")),
+                "rate": _f(exp.get("total_amount")),
+            }
+        ]
+        line_blob = " ".join(
+            f"{x.get('item_name') or ''} {x.get('description') or ''}" for x in line_dicts
+        )
+        if not _is_commission_expense_txn(exp, line_blob):
+            continue
+
+        # Build work units: one per invoice ref on a line; else one standalone per line.
+        units: list[dict[str, Any]] = []
+        for ld in line_dicts:
+            text = f"{ld.get('item_name') or ''} {ld.get('description') or ''}"
+            refs = _extract_commission_invoice_refs(text)
+            gross = _f(ld.get("line_total") if ld.get("line_total") is not None else ld.get("rate"))
+            if refs:
+                share = gross / max(len(refs), 1)
+                for ref in refs:
+                    units.append(
+                        {
+                            "line_no": int(ld.get("line_no") or 1),
+                            "text": text.strip(),
+                            "gross": round(share, 2),
+                            "ref": ref,
+                        }
+                    )
+            else:
+                units.append(
+                    {
+                        "line_no": int(ld.get("line_no") or 1),
+                        "text": text.strip() or "commission",
+                        "gross": round(gross, 2),
+                        "ref": None,
+                    }
+                )
+
+        gross_sum = sum(float(u["gross"]) for u in units) or 1.0
+        net_total = _f(exp.get("total_amount"))
+        # If expense total looks like net-after-TDS and lines look like gross.
+        for u in units:
+            weight = float(u["gross"]) / gross_sum
+            net = round(net_total * weight, 2)
+            gross = float(u["gross"])
+            # Prefer gross from line; if line equals expense net, treat as net (tds unknown).
+            if abs(gross_sum - net_total) < 0.05:
+                commission_amount = net
+                tds_amount = 0.0
+            else:
+                commission_amount = gross
+                tds_amount = round(max(0.0, commission_amount - net), 2)
+                # If line gross < net (data oddity), snap
+                if commission_amount + 0.05 < net:
+                    commission_amount = net
+                    tds_amount = 0.0
+            net_commission = round(commission_amount - tds_amount, 2)
+
+            inv = None
+            ref = u.get("ref")
+            if ref:
+                inv = _match_sale_invoice_for_commission(
+                    conn,
+                    workspace_id,
+                    serial=str(ref.get("serial") or ""),
+                    fy=ref.get("fy"),  # type: ignore[arg-type]
+                    around_date=(exp.get("txn_date") or "")[:10],
+                )
+
+            agent_name = (exp.get("party_name") or "").strip() or None
+            agent_party_id = exp.get("party_id")
+            agent_party_type = (exp.get("party_type") or "").strip().lower() or None
+            if agent_party_type not in ("customer", "vendor"):
+                agent_party_type = "customer" if agent_party_id else None
+            paid_on = (exp.get("txn_date") or "")[:10] or None
+            exp_pay_status, exp_paid_on = _payment_status_from_expense_txn(exp)
+            if exp_pay_status == "paid":
+                paid_on = exp_paid_on or paid_on
+            else:
+                paid_on = None
+            exp_no = exp.get("txn_number") or ""
+            note_bits = [u["text"]] if u.get("text") else []
+            if exp_no:
+                note_bits.append(f"Expense {exp_no}")
+            notes = " · ".join(note_bits)[:500]
+
+            party_txn_id = int(inv["id"]) if inv else None
+            sale_sid = int(inv["source_txn_id"]) if inv and inv.get("source_txn_id") is not None else None
+            raw_inv_no = (inv.get("txn_number") if inv else None) or (
+                str(ref.get("serial")) if ref else None
+            ) or exp_no
+            invoice_date = (inv.get("txn_date") if inv else None) or paid_on
+            invoice_no = _commission_invoice_no(raw_inv_no, invoice_date)
+            party_name = (inv.get("party_name") if inv else None) or ""
+            invoice_total = _f(inv.get("total_amount")) if inv else 0.0
+
+            amount_before_tax = 0.0
+            tax_amount = 0.0
+            commission_pct = 0.0
+            tds_pct = 0.0
+            if party_txn_id:
+                base = _tax_invoice_base_row(conn, workspace_id, party_txn_id)
+                if base:
+                    amount_before_tax = _f(base.get("amount_before_tax"))
+                    tax_amount = _f(base.get("tax_amount"))
+                    invoice_total = _f(base.get("invoice_total"))
+                    if amount_before_tax > 0.009:
+                        commission_pct = round(commission_amount * 100.0 / amount_before_tax, 4)
+                    if commission_amount > 0.009 and tds_amount > 0:
+                        tds_pct = round(tds_amount * 100.0 / commission_amount, 4)
+
+            existing = None
+            if sale_sid is not None:
+                existing = conn.execute(
+                    """
+                    SELECT * FROM hop_commission_entries
+                    WHERE workspace_id=? AND source_txn_id=?
+                    """,
+                    (workspace_id, sale_sid),
+                ).fetchone()
+            if not existing and party_txn_id:
+                existing = conn.execute(
+                    """
+                    SELECT * FROM hop_commission_entries
+                    WHERE workspace_id=? AND party_txn_id=?
+                    """,
+                    (workspace_id, party_txn_id),
+                ).fetchone()
+            if not existing:
+                existing = conn.execute(
+                    """
+                    SELECT * FROM hop_commission_entries
+                    WHERE workspace_id=? AND expense_source_txn_id=? AND expense_line_no=?
+                      AND COALESCE(invoice_no, '') = COALESCE(?, '')
+                    """,
+                    (workspace_id, int(sid), int(u["line_no"]), invoice_no),
+                ).fetchone()
+
+            if existing:
+                ed = dict(existing)
+                # Enrich; only overwrite money fields when entry came from expense or was empty.
+                origin = (ed.get("origin") or "manual").strip().lower() or "manual"
+                overwrite_money = origin == "expense" or _f(ed.get("commission_amount")) <= 0.009
+                conn.execute(
+                    """
+                    UPDATE hop_commission_entries SET
+                        party_txn_id=COALESCE(?, party_txn_id),
+                        source_txn_id=COALESCE(?, source_txn_id),
+                        invoice_no=COALESCE(NULLIF(?, ''), invoice_no),
+                        party_name=CASE WHEN ? != '' THEN ? ELSE party_name END,
+                        invoice_date=COALESCE(NULLIF(?, ''), invoice_date),
+                        invoice_total=CASE WHEN ? > 0 THEN ? ELSE invoice_total END,
+                        amount_before_tax=CASE WHEN ? > 0 THEN ? ELSE amount_before_tax END,
+                        tax_amount=CASE WHEN ? > 0 THEN ? ELSE tax_amount END,
+                        commission_pct=CASE WHEN ? THEN ? ELSE commission_pct END,
+                        tds_pct=CASE WHEN ? THEN ? ELSE tds_pct END,
+                        commission_amount=CASE WHEN ? THEN ? ELSE commission_amount END,
+                        tds_amount=CASE WHEN ? THEN ? ELSE tds_amount END,
+                        net_commission=CASE WHEN ? THEN ? ELSE net_commission END,
+                        agent_name=COALESCE(NULLIF(agent_name, ''), ?),
+                        agent_party_id=COALESCE(agent_party_id, ?),
+                        agent_party_type=COALESCE(NULLIF(agent_party_type, ''), ?),
+                        paid_on=CASE
+                            WHEN lower(COALESCE(payment_status, '')) = 'unpaid' THEN paid_on
+                            ELSE ?
+                        END,
+                        payment_status=CASE
+                            WHEN lower(COALESCE(payment_status, '')) = 'unpaid' THEN payment_status
+                            ELSE ?
+                        END,
+                        expense_source_txn_id=?,
+                        expense_txn_number=?,
+                        expense_line_no=?,
+                        origin=CASE
+                            WHEN origin IS NULL OR TRIM(origin)='' THEN 'expense'
+                            ELSE origin
+                        END,
+                        notes=CASE WHEN notes IS NULL OR TRIM(notes)='' THEN ? ELSE notes END,
+                        updated_at=?
+                    WHERE id=? AND workspace_id=?
+                    """,
+                    (
+                        party_txn_id,
+                        sale_sid,
+                        invoice_no,
+                        party_name,
+                        party_name,
+                        invoice_date,
+                        invoice_total,
+                        invoice_total,
+                        amount_before_tax,
+                        amount_before_tax,
+                        tax_amount,
+                        tax_amount,
+                        overwrite_money,
+                        commission_pct,
+                        overwrite_money,
+                        tds_pct,
+                        overwrite_money,
+                        commission_amount,
+                        overwrite_money,
+                        tds_amount,
+                        overwrite_money,
+                        net_commission,
+                        agent_name,
+                        int(agent_party_id) if agent_party_id else None,
+                        agent_party_type,
+                        paid_on,
+                        exp_pay_status,
+                        int(sid),
+                        exp_no,
+                        int(u["line_no"]),
+                        notes,
+                        now,
+                        int(ed["id"]),
+                        workspace_id,
+                    ),
+                )
+                updated += 1
+                if party_txn_id:
+                    linked += 1
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO hop_commission_entries (
+                        workspace_id, party_txn_id, source_txn_id, invoice_no, party_name, invoice_date,
+                        invoice_total, amount_before_tax, tax_amount,
+                        commission_pct, tds_pct, commission_amount, tds_amount, net_commission,
+                        notes, agent_name, paid_on, agent_party_id, agent_party_type,
+                        expense_source_txn_id, expense_txn_number, expense_line_no, origin,
+                        payment_status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'expense', ?, ?, ?)
+                    """,
+                    (
+                        workspace_id,
+                        party_txn_id,
+                        sale_sid,
+                        invoice_no,
+                        party_name,
+                        invoice_date,
+                        invoice_total,
+                        amount_before_tax,
+                        tax_amount,
+                        commission_pct,
+                        tds_pct,
+                        commission_amount,
+                        tds_amount,
+                        net_commission,
+                        notes,
+                        agent_name,
+                        paid_on,
+                        int(agent_party_id) if agent_party_id else None,
+                        agent_party_type,
+                        int(sid),
+                        exp_no,
+                        int(u["line_no"]),
+                        exp_pay_status,
+                        now,
+                        now,
+                    ),
+                )
+                created += 1
+                if party_txn_id:
+                    linked += 1
+
+    conn.commit()
+    return {"created": created, "updated": updated, "linked": linked}
+
+
+def _payment_status_from_expense_txn(exp: dict[str, Any]) -> tuple[str, str | None]:
+    """Mirror Vyapar expense Paid/Unpaid → (payment_status, paid_on)."""
+    bal = _f(exp.get("balance_amount"))
+    total = _f(exp.get("total_amount"))
+    st = str(exp.get("status_text") or "").strip().lower()
+    paid_on = (str(exp.get("txn_date") or "")[:10] or None)
+    if bal <= 0.009 and (total > 0.009 or st in ("paid", "used", "")):
+        return "paid", paid_on
+    if st in ("paid", "used"):
+        return "paid", paid_on
+    if bal > 0.05 or st in ("unpaid", "open", "partial"):
+        return "unpaid", None
+    if bal <= 0.009:
+        return "paid", paid_on
+    return "unpaid", None
+
+
+def _normalize_commission_payment_status(
+    raw: Any,
+    *,
+    paid_on: str | None = None,
+    expense_source_txn_id: Any = None,
+) -> str:
+    """Explicit paid/unpaid wins; else infer from expense link or paid_on."""
+    s = str(raw or "").strip().lower()
+    if s in ("paid", "unpaid"):
+        return s
+    if expense_source_txn_id not in (None, "", 0, "0"):
+        return "paid"
+    if (paid_on or "").strip()[:10]:
+        return "paid"
+    return "unpaid"
+
+
+def _commission_invoice_no(bill_or_no: Any, invoice_date: str | None = None) -> str:
+    from app.hop_doc_numbers import format_full_doc_number
+
+    if isinstance(bill_or_no, dict):
+        return format_full_doc_number(
+            bill_or_no.get("invoice_no"),
+            txn_date=bill_or_no.get("invoice_date") or invoice_date,
+            txn_type=1,
+        )
+    return format_full_doc_number(bill_or_no, txn_date=invoice_date, txn_type=1)
+
+
+def _resolve_commission_agent(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    payload: dict[str, Any],
+) -> tuple[int | None, str | None, str | None]:
+    """Resolve Paid-to party link → (agent_party_id, agent_party_type, agent_name)."""
+    raw_type = str(payload.get("agent_party_type") or "").strip().lower()
+    party_type = raw_type if raw_type in ("customer", "vendor") else None
+    party_id = payload.get("agent_party_id")
+    try:
+        party_id_i = int(party_id) if party_id not in (None, "", 0, "0") else None
+    except (TypeError, ValueError):
+        party_id_i = None
+    name_fallback = str(payload.get("agent_name") or "").strip() or None
+    if party_id_i and party_type:
+        table = "hop_customers" if party_type == "customer" else "hop_vendors"
+        row = conn.execute(
+            f"SELECT company, contact_person FROM {table} WHERE workspace_id=? AND id=?",
+            (workspace_id, party_id_i),
+        ).fetchone()
+        if not row:
+            raise ValueError("Selected party not found for commission agent")
+        d = dict(row)
+        name = (d.get("company") or d.get("contact_person") or "").strip() or name_fallback
+        return party_id_i, party_type, name
+    return None, None, name_fallback
 
 
 def list_tax_invoices_for_commission(
@@ -1630,6 +2134,14 @@ def list_tax_invoices_for_commission(
             e.commission_amount,
             e.tds_amount,
             e.net_commission,
+            e.agent_name,
+            e.paid_on,
+            e.payment_status,
+            e.expense_txn_number,
+            e.expense_source_txn_id,
+            e.origin,
+            e.agent_party_id,
+            e.agent_party_type,
             e.id AS entry_id
         FROM hop_party_transactions t
         LEFT JOIN hop_commission_entries e
@@ -1646,9 +2158,17 @@ def list_tax_invoices_for_commission(
     for r in rows:
         d = dict(r)
         party = str(d.get("party_name") or "")
-        inv_no = str(d.get("invoice_no") or "")
-        if needle and needle not in party.lower() and needle not in inv_no.lower():
+        inv_no = _commission_invoice_no(d.get("invoice_no"), d.get("invoice_date"))
+        agent = str(d.get("agent_name") or "")
+        if needle and needle not in party.lower() and needle not in inv_no.lower() and needle not in agent.lower():
             continue
+        pay_st = None
+        if d.get("entry_id"):
+            pay_st = _normalize_commission_payment_status(
+                d.get("payment_status"),
+                paid_on=d.get("paid_on"),
+                expense_source_txn_id=d.get("expense_source_txn_id"),
+            )
         out.append(
             {
                 "party_txn_id": d.get("party_txn_id"),
@@ -1665,9 +2185,224 @@ def list_tax_invoices_for_commission(
                 "commission_amount": _f(d.get("commission_amount")) if d.get("entry_id") else None,
                 "tds_amount": _f(d.get("tds_amount")) if d.get("entry_id") else None,
                 "net_commission": _f(d.get("net_commission")) if d.get("entry_id") else None,
+                "agent_name": agent if d.get("entry_id") else None,
+                "paid_on": ((d.get("paid_on") or "")[:10] or None) if d.get("entry_id") else None,
+                "payment_status": pay_st,
+                "expense_txn_number": (d.get("expense_txn_number") or None) if d.get("entry_id") else None,
+                "expense_source_txn_id": d.get("expense_source_txn_id") if d.get("entry_id") else None,
+                "origin": ((d.get("origin") or "manual") if d.get("entry_id") else None),
+                "agent_party_id": d.get("agent_party_id") if d.get("entry_id") else None,
+                "agent_party_type": d.get("agent_party_type") if d.get("entry_id") else None,
             }
         )
     return out
+
+
+def list_commission_records(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    *,
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    agent_party_id: int | None = None,
+    agent_party_type: str | None = None,
+    agent_name: str | None = None,
+    payment_status: str | None = None,
+) -> dict[str, Any]:
+    """Flat commission payment history — who / when / how much, with date filters."""
+    df = (date_from or "").strip()[:10] or None
+    dt = (date_to or "").strip()[:10] or None
+    apt = (agent_party_type or "").strip().lower() or None
+    if apt not in (None, "customer", "vendor"):
+        apt = None
+    agent_name_f = (agent_name or "").strip() or None
+    pay_filter = str(payment_status or "").strip().lower() or None
+    if pay_filter not in (None, "paid", "unpaid"):
+        pay_filter = None
+    rows = conn.execute(
+        """
+        SELECT
+            id, agent_name, agent_party_id, agent_party_type, paid_on, invoice_date,
+            invoice_no, party_name, invoice_total, amount_before_tax,
+            commission_pct, tds_pct, commission_amount, tds_amount, net_commission,
+            party_txn_id, source_txn_id, notes, updated_at,
+            expense_txn_number, expense_source_txn_id, origin, payment_status
+        FROM hop_commission_entries
+        WHERE workspace_id = ?
+        ORDER BY date(COALESCE(NULLIF(paid_on, ''), invoice_date)) DESC, id DESC
+        """,
+        (workspace_id,),
+    ).fetchall()
+    needle = (q or "").strip().lower()
+    dated: list[dict[str, Any]] = []
+    payees_map: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        d = dict(r)
+        pay_st = _normalize_commission_payment_status(
+            d.get("payment_status"),
+            paid_on=d.get("paid_on"),
+            expense_source_txn_id=d.get("expense_source_txn_id"),
+        )
+        when = (
+            (d.get("paid_on") or "")[:10]
+            if pay_st == "paid"
+            else (d.get("invoice_date") or "")[:10]
+        ) or (d.get("paid_on") or d.get("invoice_date") or "")[:10]
+        agent = (d.get("agent_name") or "").strip() or "Unassigned"
+        party = str(d.get("party_name") or "")
+        inv = _commission_invoice_no(d.get("invoice_no"), d.get("invoice_date"))
+        exp_no = str(d.get("expense_txn_number") or "")
+        if pay_filter and pay_st != pay_filter:
+            continue
+        # Date filter: paid rows by paid_on; unpaid by invoice_date
+        date_key = (d.get("paid_on") or d.get("invoice_date") or "")[:10]
+        if df and date_key and date_key < df:
+            continue
+        if dt and date_key and date_key > dt:
+            continue
+        if not date_key and (df or dt):
+            continue
+        if (
+            needle
+            and needle not in agent.lower()
+            and needle not in party.lower()
+            and needle not in inv.lower()
+            and needle not in exp_no.lower()
+            and needle not in pay_st
+        ):
+            continue
+        pid = d.get("agent_party_id")
+        ptype = (d.get("agent_party_type") or "").strip().lower() or None
+        if pid and ptype in ("customer", "vendor"):
+            pkey = f"{ptype}:{int(pid)}"
+        else:
+            pkey = f"name:{agent}"
+        if pkey not in payees_map:
+            payees_map[pkey] = {
+                "key": pkey,
+                "label": agent,
+                "agent_name": agent,
+                "agent_party_id": int(pid) if pid else None,
+                "agent_party_type": ptype if pid else None,
+            }
+        dated.append(
+            {
+                "id": d.get("id"),
+                "when": when or None,
+                "paid_on": (d.get("paid_on") or "")[:10] or None,
+                "invoice_date": (d.get("invoice_date") or "")[:10] or None,
+                "invoice_no": inv,
+                "party_name": party,
+                "invoice_total": _f(d.get("invoice_total")),
+                "agent_name": agent,
+                "agent_party_id": d.get("agent_party_id"),
+                "agent_party_type": d.get("agent_party_type"),
+                "commission_pct": _f(d.get("commission_pct")),
+                "tds_pct": _f(d.get("tds_pct")),
+                "commission_amount": _f(d.get("commission_amount")),
+                "tds_amount": _f(d.get("tds_amount")),
+                "net_commission": _f(d.get("net_commission")),
+                "party_txn_id": d.get("party_txn_id"),
+                "source_txn_id": d.get("source_txn_id"),
+                "notes": d.get("notes") or "",
+                "expense_txn_number": exp_no or None,
+                "expense_source_txn_id": d.get("expense_source_txn_id"),
+                "origin": d.get("origin") or "manual",
+                "payment_status": pay_st,
+                "_payee_key": pkey,
+            }
+        )
+
+    out: list[dict[str, Any]] = []
+    for row in dated:
+        if agent_party_id is not None:
+            if int(row.get("agent_party_id") or 0) != int(agent_party_id):
+                continue
+            if apt and str(row.get("agent_party_type") or "") != apt:
+                continue
+        elif agent_name_f:
+            if str(row.get("agent_name") or "").strip().lower() != agent_name_f.lower():
+                continue
+        clean = {k: v for k, v in row.items() if k != "_payee_key"}
+        out.append(clean)
+
+    payees = sorted(payees_map.values(), key=lambda p: str(p["label"]).lower())
+    return {
+        "records": out,
+        "payees": payees,
+        "summary": {
+            "bills": len(out),
+            "commission_amount": round(sum(float(r["commission_amount"]) for r in out), 2),
+            "tds_amount": round(sum(float(r["tds_amount"]) for r in out), 2),
+            "net_commission": round(sum(float(r["net_commission"]) for r in out), 2),
+            "people": len({(r.get("agent_party_type"), r.get("agent_party_id"), r["agent_name"]) for r in out}),
+        },
+        "filters": {
+            "date_from": df,
+            "date_to": dt,
+            "q": needle or None,
+            "agent_name": agent_name_f,
+            "payment_status": pay_filter,
+        },
+    }
+
+
+def list_commission_by_agent(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    *,
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    payment_status: str | None = None,
+) -> dict[str, Any]:
+    """Group saved commission by agent — who got how much, when."""
+    flat = list_commission_records(
+        conn,
+        workspace_id,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        payment_status=payment_status,
+    )
+    groups: dict[str, dict[str, Any]] = {}
+    for e in flat["records"]:
+        agent = e["agent_name"]
+        key = f"{e.get('agent_party_type') or ''}:{e.get('agent_party_id') or ''}:{agent}"
+        bucket = groups.setdefault(
+            key,
+            {
+                "agent_name": agent,
+                "agent_party_id": e.get("agent_party_id"),
+                "agent_party_type": e.get("agent_party_type"),
+                "bills": 0,
+                "commission_amount": 0.0,
+                "tds_amount": 0.0,
+                "net_commission": 0.0,
+                "entries": [],
+            },
+        )
+        bucket["bills"] += 1
+        bucket["commission_amount"] = round(bucket["commission_amount"] + float(e["commission_amount"]), 2)
+        bucket["tds_amount"] = round(bucket["tds_amount"] + float(e["tds_amount"]), 2)
+        bucket["net_commission"] = round(bucket["net_commission"] + float(e["net_commission"]), 2)
+        bucket["entries"].append(e)
+    agents = sorted(
+        groups.values(),
+        key=lambda g: (-float(g["net_commission"]), str(g["agent_name"]).lower()),
+    )
+    return {
+        "agents": agents,
+        "summary": {
+            "people": len(agents),
+            "bills": flat["summary"]["bills"],
+            "commission_amount": flat["summary"]["commission_amount"],
+            "tds_amount": flat["summary"]["tds_amount"],
+            "net_commission": flat["summary"]["net_commission"],
+        },
+        "filters": flat["filters"],
+    }
 
 
 def get_commission_worksheet(
@@ -1704,12 +2439,62 @@ def get_commission_worksheet(
     c_pct = _f(entry.get("commission_pct")) if entry else 0.0
     t_pct = _f(entry.get("tds_pct")) if entry else 0.0
     amounts = compute_commission_amounts(bill["amount_before_tax"], c_pct, t_pct)
+    exp_sid = (entry or {}).get("expense_source_txn_id")
+    exp_no = (entry or {}).get("expense_txn_number") or ""
+    vyapar_pay = None
+    vyapar_paid_on = None
+    if exp_sid not in (None, "", 0, "0"):
+        exp_row = conn.execute(
+            """
+            SELECT txn_date, total_amount, balance_amount, status_text, txn_number
+            FROM hop_party_transactions
+            WHERE workspace_id=? AND source_txn_id=? AND txn_type=7
+            """,
+            (workspace_id, int(exp_sid)),
+        ).fetchone()
+        if exp_row:
+            ed = dict(exp_row)
+            vyapar_pay, vyapar_paid_on = _payment_status_from_expense_txn(ed)
+            exp_no = ed.get("txn_number") or exp_no
+    # Stored status (user may override Vyapar after confirm)
+    raw_st = str((entry or {}).get("payment_status") or "").strip().lower()
+    if raw_st in ("paid", "unpaid"):
+        pay_st = raw_st
+    elif vyapar_pay:
+        pay_st = vyapar_pay
+    else:
+        pay_st = _normalize_commission_payment_status(
+            None,
+            paid_on=(entry or {}).get("paid_on"),
+            expense_source_txn_id=exp_sid,
+        )
+    if pay_st == "paid":
+        paid_display = (
+            ((entry or {}).get("paid_on") or "")[:10]
+            or (vyapar_paid_on or "")[:10]
+            or ""
+        )
+    else:
+        paid_display = ""
     return {
         "bill": bill,
         "entry": {
             "id": entry.get("id") if entry else None,
             "notes": (entry or {}).get("notes") or "",
+            "agent_name": (entry or {}).get("agent_name") or "",
+            "agent_party_id": (entry or {}).get("agent_party_id"),
+            "agent_party_type": (entry or {}).get("agent_party_type") or "",
+            "origin": (entry or {}).get("origin") or "",
+            "expense_txn_number": exp_no,
+            "expense_source_txn_id": exp_sid,
+            "vyapar_payment_status": vyapar_pay,
+            "vyapar_paid_on": (vyapar_paid_on or "")[:10] if vyapar_paid_on else None,
+            "status_locked": False,
+            "status_source": "vyapar_expense" if exp_sid not in (None, "", 0, "0") else "manual",
             **amounts,
+            # After amounts so status fields always win
+            "paid_on": paid_display,
+            "payment_status": pay_st,
         },
         "formula": {
             "base": "Amount before tax",
@@ -1734,20 +2519,37 @@ def upsert_commission_entry(
     c_pct = _f(payload.get("commission_pct"))
     t_pct = _f(payload.get("tds_pct"))
     notes = str(payload.get("notes") or "").strip()
+    agent_party_id, agent_party_type, agent_name = _resolve_commission_agent(
+        conn, workspace_id, payload
+    )
+    paid_on_raw = str(payload.get("paid_on") or "").strip()[:10] or None
+    if "payment_status" in payload and str(payload.get("payment_status") or "").strip():
+        payment_status = _normalize_commission_payment_status(payload.get("payment_status"))
+    else:
+        payment_status = "paid" if paid_on_raw else "unpaid"
+    if payment_status == "paid":
+        paid_on = paid_on_raw or (bill.get("invoice_date") or "")[:10] or None
+        if not paid_on:
+            raise ValueError("Paid on date is required when status is Paid")
+    else:
+        paid_on = None
     amounts = compute_commission_amounts(bill["amount_before_tax"], c_pct, t_pct)
     now = _now()
     sid = bill.get("source_txn_id")
     existing = None
     if sid is not None:
         existing = conn.execute(
-            "SELECT id FROM hop_commission_entries WHERE workspace_id=? AND source_txn_id=?",
+            "SELECT id, expense_source_txn_id, origin FROM hop_commission_entries WHERE workspace_id=? AND source_txn_id=?",
             (workspace_id, int(sid)),
         ).fetchone()
     if not existing:
         existing = conn.execute(
-            "SELECT id FROM hop_commission_entries WHERE workspace_id=? AND party_txn_id=?",
+            "SELECT id, expense_source_txn_id, origin FROM hop_commission_entries WHERE workspace_id=? AND party_txn_id=?",
             (workspace_id, party_txn_id),
         ).fetchone()
+
+    # Expense-linked: keep user choice. Sync will re-apply Vyapar Paid unless user left Unpaid.
+    # (No force overwrite here — frontend confirms override when Vyapar is Paid.)
 
     vals = (
         party_txn_id,
@@ -1764,6 +2566,11 @@ def upsert_commission_entry(
         amounts["tds_amount"],
         amounts["net_commission"],
         notes,
+        agent_name,
+        paid_on,
+        payment_status,
+        agent_party_id,
+        agent_party_type,
         now,
     )
     if existing:
@@ -1773,7 +2580,7 @@ def upsert_commission_entry(
                 party_txn_id=?, source_txn_id=?, invoice_no=?, party_name=?, invoice_date=?,
                 invoice_total=?, amount_before_tax=?, tax_amount=?,
                 commission_pct=?, tds_pct=?, commission_amount=?, tds_amount=?, net_commission=?,
-                notes=?, updated_at=?
+                notes=?, agent_name=?, paid_on=?, payment_status=?, agent_party_id=?, agent_party_type=?, updated_at=?
             WHERE id=? AND workspace_id=?
             """,
             (*vals, int(existing["id"]), workspace_id),
@@ -1786,8 +2593,9 @@ def upsert_commission_entry(
                 workspace_id, party_txn_id, source_txn_id, invoice_no, party_name, invoice_date,
                 invoice_total, amount_before_tax, tax_amount,
                 commission_pct, tds_pct, commission_amount, tds_amount, net_commission,
-                notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                notes, agent_name, paid_on, payment_status, agent_party_id, agent_party_type,
+                origin, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?)
             """,
             (workspace_id, *vals[:-1], now, now),
         )
@@ -2287,36 +3095,122 @@ def report_receivables(conn: sqlite3.Connection, workspace_id: str) -> dict:
 
 
 def report_customer_dashboard(conn: sqlite3.Connection, workspace_id: str) -> list[dict]:
+    """Customer Dashboard from Vyapar-synced ledger (sale invoices) + CRM extras."""
     customers = list_customers(conn, workspace_id)
     projects = list_projects(conn, workspace_id)
-    orders = list_orders(conn, workspace_id)
-    invoices = list_invoices(conn, workspace_id)
     meetings = list_meetings(conn, workspace_id)
-    out = []
+
+    # Vyapar Sale Invoice (txn_type=1) — primary business / outstanding / last purchase
+    sale_by_party: dict[int, dict[str, Any]] = {}
+    for r in conn.execute(
+        """
+        SELECT
+            party_id,
+            COUNT(*) AS invoice_count,
+            COALESCE(SUM(total_amount), 0) AS total_business,
+            COALESCE(SUM(CASE WHEN COALESCE(balance_amount, 0) > 0.009 THEN balance_amount ELSE 0 END), 0) AS outstanding,
+            MAX(txn_date) AS last_purchase
+        FROM hop_party_transactions
+        WHERE workspace_id = ?
+          AND txn_type = 1
+          AND LOWER(COALESCE(party_type, '')) = 'customer'
+          AND party_id IS NOT NULL
+        GROUP BY party_id
+        """,
+        (workspace_id,),
+    ).fetchall():
+        d = dict(r)
+        try:
+            pid = int(d.get("party_id"))
+        except (TypeError, ValueError):
+            continue
+        sale_by_party[pid] = d
+
+    # Fallback: hop_invoices when party_txn link missing
+    inv_by_customer: dict[int, dict[str, Any]] = {}
+    for r in conn.execute(
+        """
+        SELECT
+            customer_id,
+            COUNT(*) AS invoice_count,
+            COALESCE(SUM(amount), 0) AS total_business,
+            COALESCE(SUM(CASE WHEN COALESCE(balance, 0) > 0.009 THEN balance ELSE 0 END), 0) AS outstanding,
+            MAX(COALESCE(invoice_date, created_at)) AS last_purchase
+        FROM hop_invoices
+        WHERE workspace_id = ?
+          AND customer_id IS NOT NULL
+        GROUP BY customer_id
+        """,
+        (workspace_id,),
+    ).fetchall():
+        d = dict(r)
+        try:
+            cid = int(d.get("customer_id"))
+        except (TypeError, ValueError):
+            continue
+        inv_by_customer[cid] = d
+
+    projects_by_customer: dict[int, int] = {}
+    for p in projects:
+        try:
+            cid = int(p.get("customer_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if cid:
+            projects_by_customer[cid] = projects_by_customer.get(cid, 0) + 1
+
+    meetings_by_customer: dict[int, str] = {}
+    for m in meetings:
+        try:
+            cid = int(m.get("customer_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not cid:
+            continue
+        when = str(m.get("scheduled_at") or m.get("created_at") or "")
+        prev = meetings_by_customer.get(cid) or ""
+        if when > prev:
+            meetings_by_customer[cid] = when
+
+    out: list[dict] = []
     for c in customers:
-        cid = c["id"]
-        cps = [p for p in projects if p.get("customer_id") == cid]
-        cos = [o for o in orders if o.get("customer_id") == cid]
-        cins = [i for i in invoices if i.get("customer_id") == cid]
-        cms = [m for m in meetings if m.get("customer_id") == cid]
-        revenue = sum(float(o.get("order_value") or 0) for o in cos)
-        outstanding = sum(float(i.get("balance") or 0) for i in cins)
-        last_meeting = max((m.get("scheduled_at") or "" for m in cms), default=None) or None
-        last_purchase = max((o.get("won_at") or o.get("created_at") or "" for o in cos), default=None) or None
+        cid = int(c["id"])
+        sale = sale_by_party.get(cid) or {}
+        inv = inv_by_customer.get(cid) or {}
+        invoice_count = int(sale.get("invoice_count") or inv.get("invoice_count") or 0)
+        revenue = _f(sale.get("total_business") if sale else inv.get("total_business"))
+        outstanding = _f(sale.get("outstanding") if sale else inv.get("outstanding"))
+        last_purchase = (sale.get("last_purchase") or inv.get("last_purchase") or None)
+        if last_purchase:
+            last_purchase = str(last_purchase)[:10]
+        last_meeting = meetings_by_customer.get(cid)
+        if last_meeting:
+            last_meeting = str(last_meeting)[:10]
+        aov = round(revenue / invoice_count, 2) if invoice_count and revenue else 0.0
         out.append(
             {
                 "customer_id": cid,
                 "company": c.get("company"),
-                "city": c.get("city"),
+                "city": c.get("city") or c.get("state") or None,
                 "potential_rating": c.get("potential_rating"),
-                "total_business": revenue,
-                "projects": len(cps),
-                "average_order_value": round(revenue / len(cos), 2) if cos else 0,
-                "outstanding": outstanding,
+                "total_business": round(revenue, 2),
+                "projects": projects_by_customer.get(cid, 0),
+                "invoice_count": invoice_count,
+                "average_order_value": aov,
+                "outstanding": round(outstanding, 2),
                 "last_meeting": last_meeting,
                 "last_purchase": last_purchase,
+                "source": c.get("source") or None,
             }
         )
+
+    out.sort(
+        key=lambda r: (
+            -float(r.get("total_business") or 0),
+            -float(r.get("outstanding") or 0),
+            str(r.get("company") or "").lower(),
+        )
+    )
     return out
 
 

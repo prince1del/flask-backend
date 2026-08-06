@@ -65,10 +65,6 @@ def test_master_distributor_and_retailer_crud_via_api(client):
     assert updated["firm_name"] == "Alpha International"
     assert updated["phone_number"] == "8888888888"
 
-    delete_resp = client.delete(f"/api/v1/masters/distributors/{distributor['id']}")
-    assert delete_resp.status_code == 200
-    assert delete_resp.get_json()["success"] is True
-
     retailer_resp = client.post(
         "/api/v1/masters/retailers",
         json={
@@ -103,6 +99,16 @@ def test_master_distributor_and_retailer_crud_via_api(client):
 
     retailer_delete = client.delete(f"/api/v1/masters/retailers/{retailer['id']}")
     assert retailer_delete.status_code == 200
+
+    delete_resp = client.delete(f"/api/v1/masters/distributors/{distributor['id']}")
+    assert delete_resp.status_code == 200
+    assert delete_resp.get_json()["success"] is True
+
+    gone = client.get(f"/api/v1/masters/distributors/{distributor['id']}")
+    assert gone.status_code in (404, 400, 200)
+    if gone.status_code == 200:
+        payload = gone.get_json()
+        assert payload.get("success") is False or payload.get("data") in (None, {})
 
 
 def test_bulk_upload_reinstates_ambiguous_match_detection(tmp_path):

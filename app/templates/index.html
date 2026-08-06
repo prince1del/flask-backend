@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#05070d" id="hop-theme-color-meta">
+    <meta name="theme-color" content="#F8F4EA" id="hop-theme-color-meta">
     <script>
       (function () {
         try {
-          var core = { nexora: '#05070d', bright: '#f4f7fb', emerald: '#F8F4EA', custom: '#F8F4EA' };
+          var core = { bright: '#f4f7fb', emerald: '#F8F4EA', custom: '#F8F4EA' };
           var luxury = {
             royal_navy:1, burgundy_antique:1, black_soft_gold:1, deep_teal_brass:1,
             chocolate_gold:1, plum_rose:1, olive_brass:1, midnight_copper:1
@@ -22,7 +22,7 @@
                 if (v) return v;
               }
             }
-            return 'nexora';
+            return 'emerald';
           }
           function readStoredCustom() {
             var legacy = localStorage.getItem('hop_theme_custom_v1');
@@ -37,8 +37,8 @@
             }
             return {};
           }
-          var t = readStoredTheme() || 'nexora';
-          if (!core[t] && !luxury[t]) t = 'nexora';
+          var t = readStoredTheme() || 'emerald';
+          if (!core[t] && !luxury[t]) t = 'emerald';
           var useCustomCss = (t === 'custom' || luxury[t]);
           document.documentElement.setAttribute('data-hop-theme', useCustomCss ? 'custom' : t);
           var meta = document.getElementById('hop-theme-color-meta');
@@ -72,7 +72,7 @@
           }
           if (meta) meta.setAttribute('content', themeColor);
         } catch (e) {
-          document.documentElement.setAttribute('data-hop-theme', 'nexora');
+          document.documentElement.setAttribute('data-hop-theme', 'emerald');
         }
       })();
     </script>
@@ -81,14 +81,14 @@
     <title>Business Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260802-widget-dark">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260805-widget-theme">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260802-widget-dark">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260802-theme-accent">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260802-theme-accent">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260802-theme-accent">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260805-widget-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260805-widget-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260805-widget-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260805-widget-theme">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260802-theme-accent">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260805-widget-theme">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -701,6 +701,31 @@
             opacity: 0.75;
             white-space: nowrap !important;
         }
+        #article-master-workspace #am-list-count.am-count-has-selection {
+            opacity: 1 !important;
+            color: var(--hop-c-accent-dark, #8A6D12) !important;
+        }
+        /* Selection column: fixed narrow width — does not grow the AM shell */
+        #article-master-workspace .am-articles-table .am-col-select {
+            width: 28px !important;
+            min-width: 28px !important;
+            max-width: 28px !important;
+            padding: 4px 2px !important;
+            text-align: center !important;
+            box-sizing: border-box !important;
+        }
+        #article-master-workspace .am-articles-table .am-col-select input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: var(--hop-c-accent, #C9A227);
+        }
+        #article-master-workspace .am-articles-table.am-selecting th:nth-child(2),
+        #article-master-workspace .am-articles-table.am-selecting td:nth-child(2) {
+            /* Absorb checkbox column by slightly tightening Category */
+            padding-left: 6px !important;
+        }
         #article-master-workspace .bd-am-upload-result {
             flex: 0 0 auto !important;
             margin: 0 !important;
@@ -827,7 +852,9 @@
     <header class="nexora-header">
         <div class="header-left">
             <button type="button" id="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Open menu" aria-controls="bd-left-nav" aria-expanded="false" onclick="toggleMobileNav()">Menu</button>
-            <button type="button" class="nexora-logo" onclick="goToHomePage()" title="Go to home" aria-label="NEXORA home"></button>
+            <button type="button" class="nexora-logo" onclick="goToHomePage()" title="Go to home" aria-label="NEXORA home">
+                <img class="nexora-logo-img" src="{{ url_for('static', filename='icons/nexora/nexora-horizontal-dark.png') }}" alt="NEXORA" decoding="async" />
+            </button>
         </div>
         <div class="header-center" id="global-search-shell">
             <input class="global-search" id="global-search-input" type="search" placeholder="Search parties, articles, orders..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="scheduleGlobalSearch()" onkeydown="if(event.key==='Enter'){runGlobalSearch();}" />
@@ -913,7 +940,12 @@
         <div class="nx-theme hop-shell bd-shell dashboard-grid">
             <aside id="bd-left-nav" class="hop-nav left-nav" aria-label="NEXORA navigation">
                 <div class="hop-nav-brand sidebar-brand" role="button" tabindex="0" onclick="goToHomePage()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goToHomePage();}" title="Go to home" aria-label="Go to home">
-                    <div class="nx-core" aria-hidden="true"></div>
+                    <div class="nx-core nx-core--logo" aria-hidden="true">
+                        <span class="nx-core-bolt nx-core-bolt--1"></span>
+                        <span class="nx-core-bolt nx-core-bolt--2"></span>
+                        <span class="nx-core-bolt nx-core-bolt--3"></span>
+                        <img src="{{ url_for('static', filename='icons/nexora/nexora-appicon.png') }}" alt="" width="32" height="32" decoding="async" />
+                    </div>
                     <div class="bd-nav-brand-text">
                         <div class="bd-nav-brand-company" id="bd-nav-brand-company" title="Company">NORTH HEAD OFFICE</div>
                     </div>
@@ -1553,14 +1585,15 @@
                 <div class="nx-od-feature-main">
                     <span class="nx-od-feature-badge">Primary workflow</span>
                     <h3 class="nx-display">Order Fulfillment</h3>
-                    <p class="nx-text-dim">Move documents through a clean sequence and keep every SO / CI linked to the right distributor and order reference.</p>
+                    <p class="nx-text-dim">Move documents through a clean sequence — Article Master, distributor filled orders, SO Pack, then CI.</p>
                     <button type="button" class="nx-btn nx-btn-primary nx-od-feature-cta" onclick="openModule('OrderFulfillment')">Open Order Fulfillment</button>
                 </div>
                 <ol class="nx-od-pipeline" aria-label="Order fulfillment steps">
                     <li><span>01</span><strong>Article Master</strong><em>Catalog base</em></li>
-                    <li><span>02</span><strong>Filled Order</strong><em>Sheet upload</em></li>
-                    <li><span>03</span><strong>Sales Order</strong><em>SO PDF</em></li>
-                    <li><span>04</span><strong>Invoice (CI)</strong><em>Commercial invoice</em></li>
+                    <li><span>02</span><strong>Filled Order</strong><em>Distributor Excel</em></li>
+                    <li><span>03</span><strong>SO Pack</strong><em>Analyze &amp; Excel</em></li>
+                    <li><span>04</span><strong>Order Match</strong><em>FO vs SO</em></li>
+                    <li><span>05</span><strong>Invoice (CI)</strong><em>Commercial invoice</em></li>
                 </ol>
             </article>
 
@@ -1582,113 +1615,230 @@
     </section>
 
     <section id="order-fulfillment-workspace" class="workspace-shell hidden">
-        <div class="nx-theme nx-of-screen">
-            <header class="nx-of-top">
-                <div class="nx-of-top-title">
-                    <p class="nx-text-faint hop-eyebrow">Order Desk</p>
-                    <h2 class="nx-display">Order Fulfillment</h2>
+        <div class="nx-theme nx-of-screen nx-of-vyapar">
+            <aside class="of-rail" aria-label="Order Fulfillment">
+                <div class="of-rail-head">
+                    <p class="of-rail-kicker" id="of-rail-kicker">Order Desk</p>
+                    <h2 class="of-rail-title" id="of-rail-title">Fulfillment</h2>
                 </div>
-                <button class="back-btn" onclick="goBack()">← Back</button>
-            </header>
+                <nav class="of-rail-nav" role="tablist" id="of-rail-default-nav">
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="article-master" onclick="showOfSection('article-master')">
+                        <span class="of-rail-num">1</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">Article Master</span>
+                            <span class="of-rail-hint">Catalog</span>
+                        </span>
+                    </button>
+                    <button type="button" class="of-rail-item is-active" role="tab" data-of-section="filled-order" onclick="showOfSection('filled-order')">
+                        <span class="of-rail-num">2</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">Filled Order</span>
+                            <span class="of-rail-hint">Distributor Excel</span>
+                        </span>
+                    </button>
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="so-pack" onclick="showOfSection('so-pack')">
+                        <span class="of-rail-num">3</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">SO Pack</span>
+                            <span class="of-rail-hint">Analyze &amp; Excel</span>
+                        </span>
+                    </button>
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="order-match" onclick="openOrderMatchWorkspace()">
+                        <span class="of-rail-num">4</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">Order Match</span>
+                            <span class="of-rail-hint">FO vs SO results</span>
+                        </span>
+                    </button>
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="invoice-ci" onclick="showOfSection('invoice-ci')">
+                        <span class="of-rail-num">5</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">Invoice (CI)</span>
+                            <span class="of-rail-hint">Commercial invoice</span>
+                        </span>
+                    </button>
+                    <button type="button" class="back-btn of-rail-back" onclick="goBack()">← Back</button>
+                </nav>
+                <div class="of-rail-nav hidden" id="of-rail-saved-nav" aria-label="Saved order distributors">
+                    <div id="of-saved-distributor-list" class="of-saved-distributor-list"></div>
+                </div>
+                <div class="of-rail-nav hidden" id="of-rail-match-nav" aria-label="Order match distributors">
+                    <div id="of-match-distributor-list" class="of-saved-distributor-list"></div>
+                </div>
+            </aside>
 
-            <div class="of-upload-grid">
-                <article class="nx-card of-step-card">
-                    <div class="of-step-head"><span class="of-step-num">1</span><h3>Article Master</h3></div>
-                    <input type="file" id="of-am-upload-file" accept=".xlsx,.xls" />
-                    <div class="of-step-actions">
-                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadArticleMasterSheet(null, null, 'of-am')">Upload</button>
-                        <button type="button" class="nx-btn" onclick="openModule('ArticleMaster')">View</button>
+            <div class="of-stage">
+                <header class="of-stage-head">
+                    <div class="of-stage-titles">
+                        <p class="nx-text-faint hop-eyebrow" id="of-stage-eyebrow">Order Desk</p>
+                        <h2 class="nx-display" id="of-stage-title">Filled Order</h2>
+                        <p class="of-stage-sub" id="of-stage-sub">Upload distributor filled-order Excel and save to the season catalog.</p>
                     </div>
-                    <div id="of-am-upload-result" class="nx-of-msg"></div>
-                    <p id="of-am-summary" class="nx-text-faint nx-of-summary hidden">—</p>
-                </article>
+                </header>
 
-                <article class="nx-card of-step-card of-step-card--wide">
-                    <div class="of-step-head"><span class="of-step-num">2</span><h3>Filled Order</h3></div>
-                    <input type="file" id="of-fo-upload-file" accept=".xlsx,.xls" onchange="onFilledOrderFileSelected('of-fo')" />
-                    <div class="of-step-extra">
+                <!-- Saved Orders detail lives outside of-pane switching (pane was not painting). -->
+                <div id="of-saved-workspace" class="of-saved-workspace" hidden>
+                    <div class="of-saved-toolbar of-saved-toolbar--compact">
+                        <div class="of-saved-toolbar-top">
+                            <div class="of-saved-toolbar-id">
+                                <strong id="of-saved-distributor-title">Select a distributor</strong>
+                                <select id="of-saved-order-pick" onchange="onOfSavedOrderPickChanged(this.value)" aria-label="Saved order">
+                                    <option value="">Select saved order</option>
+                                </select>
+                            </div>
+                            <div class="of-saved-toolbar-actions">
+                                <button type="button" class="nx-btn nx-btn-danger" id="of-saved-delete-btn" onclick="deleteOfSavedSelectedOrder()">Delete</button>
+                                <button type="button" class="nx-btn nx-btn-primary" onclick="exitOfSavedOrdersWorkspace()">← Back</button>
+                            </div>
+                        </div>
+                        <div class="of-saved-stats" id="of-saved-detail-meta" aria-live="polite">Select a distributor from the left.</div>
+                    </div>
+                    <div class="of-saved-table-wrap">
+                        <table class="of-saved-detail-table" id="of-saved-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>Brand</th><th>Size</th><th>Product</th><th>MRP</th><th>PTR</th>
+                                    <th>Ex-Mill</th><th>Bale Size</th><th>Raw Qty</th><th>Unit</th>
+                                    <th>Final Pcs</th><th>Matched</th><th>Flag</th>
+                                </tr>
+                            </thead>
+                            <tbody id="of-saved-detail-tbody"><tr><td colspan="12">Select a distributor to view saved orders.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Order Match (FO vs SO) — same Saved Orders layout. -->
+                <div id="of-match-workspace" class="of-saved-workspace" hidden>
+                    <div class="of-saved-toolbar of-saved-toolbar--compact">
+                        <div class="of-saved-toolbar-top">
+                            <div class="of-saved-toolbar-id">
+                                <strong id="of-match-distributor-title">Select a distributor</strong>
+                                <select id="of-match-run-pick" onchange="onOrderMatchRunPickChanged(this.value)" aria-label="Match run">
+                                    <option value="">Select match</option>
+                                </select>
+                            </div>
+                            <div class="of-saved-toolbar-actions">
+                                <button type="button" class="nx-btn nx-btn-danger" onclick="deleteOrderMatchSelectedRun()">Delete</button>
+                                <button type="button" class="nx-btn nx-btn-primary" onclick="exitOrderMatchWorkspace()">← Back</button>
+                            </div>
+                        </div>
+                        <div class="of-saved-stats" id="of-match-detail-meta" aria-live="polite">Match a Filled Order from SO Pack, then open results here.</div>
+                    </div>
+                    <div class="of-saved-table-wrap">
+                        <table class="of-saved-detail-table" id="of-match-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>Brand</th><th>Size</th>
+                                    <th>FO Qty</th><th>SO Qty</th><th>Δ Qty</th>
+                                    <th>FO ExMill</th><th>SO Net</th><th>Δ Value</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="of-match-detail-tbody"><tr><td colspan="9">No match selected.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="of-pane" data-of-pane="article-master" hidden>
+                    <div class="of-pane-toolbar">
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="openModule('ArticleMaster')">Open Article Master</button>
+                    </div>
+                    <div class="of-pane-body">
+                        <div class="nx-card of-pane-card">
+                            <h3 class="of-pane-card-title">Catalog status</h3>
+                            <p id="of-am-summary" class="nx-text-faint nx-of-summary">—</p>
+                            <p class="of-pane-help">Article Master is the source of truth for brand, size, rates and bale pack. Open it to upload or edit booking forms.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="of-pane is-active" data-of-pane="filled-order">
+                    <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <input type="file" id="of-fo-upload-file" accept=".xlsx,.xls" onchange="onFilledOrderFileSelected('of-fo')" />
                         <select id="of-fo-category-select" disabled title="Category">
-                            <option value="">Category</option>
+                            <option value="">— Choose a file first —</option>
                             <option value="Bed">Bed</option>
                             <option value="Bath">Bath</option>
                             <option value="TOB">TOB</option>
-                            <option value="TOB Pillow">TOB Pillow</option>
+                            <option value="Pillow">Pillow</option>
                         </select>
-                        <select id="of-fo-distributor-select" disabled title="Distributor"><option value="">Distributor</option></select>
-                    </div>
-                    <div class="of-step-actions">
+                        <select id="of-fo-distributor-select" disabled title="Distributor"><option value="">— Choose a file first —</option></select>
                         <button type="button" class="nx-btn nx-btn-primary" onclick="uploadFilledOrder({}, 'of-fo')">Upload</button>
                     </div>
-                    <div id="of-fo-upload-result" class="nx-of-msg"></div>
-                    <p id="of-fo-summary" class="nx-text-faint nx-of-summary hidden">—</p>
-                </article>
-
-                <article class="nx-card of-step-card">
-                    <div class="of-step-head"><span class="of-step-num">3</span><h3>Sales Order</h3></div>
-                    <input type="file" id="of-sales-order-file" accept=".pdf" />
-                    <div class="of-step-actions">
-                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadSalesOrderV2()">Upload SO</button>
+                    <div class="of-pane-body">
+                        <div id="of-fo-upload-result" class="nx-of-msg"></div>
+                        <div class="nx-card of-pane-card">
+                            <h3 class="of-pane-card-title">Saved filled orders</h3>
+                            <p id="of-fo-summary" class="nx-text-faint nx-of-summary">—</p>
+                            <div style="margin-top:10px;">
+                                <button type="button" class="nx-btn nx-btn-primary" onclick="openOfSavedOrdersWorkspace()">View saved orders</button>
+                            </div>
+                        </div>
                     </div>
-                    <div id="of-sales-order-result" class="nx-of-msg"></div>
-                </article>
+                </div>
 
-                <article class="nx-card of-step-card">
-                    <div class="of-step-head"><span class="of-step-num">4</span><h3>SO Pack</h3></div>
-                    <input type="file" id="of-so-pack-file" accept=".zip,.rar,application/zip,application/x-rar-compressed" />
-                    <div class="of-step-actions">
+                <div class="of-pane" data-of-pane="so-pack" hidden>
+                    <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <input type="file" id="of-so-pack-file" multiple accept=".zip,.rar,.pdf,application/pdf,application/zip,application/x-rar-compressed" />
                         <button type="button" class="nx-btn nx-btn-primary" onclick="analyzeSoPack()">Analyze</button>
-                        <button type="button" class="nx-btn" onclick="downloadSoPackExcel()">Excel</button>
-                    </div>
-                    <div id="of-so-pack-result" class="nx-of-msg"></div>
-                </article>
-
-                <article class="nx-card of-step-card">
-                    <div class="of-step-head"><span class="of-step-num">5</span><h3>Invoice (CI)</h3></div>
-                    <input type="file" id="of-invoice-file" accept=".pdf" />
-                    <div class="of-step-actions">
-                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadInvoiceV2()">Upload CI</button>
-                    </div>
-                    <div id="of-invoice-result" class="nx-of-msg"></div>
-                </article>
-            </div>
-
-            <div class="nx-of-bottom is-tracking">
-                <div class="nx-of-bottom-bar">
-                    <div class="nx-of-bottom-tabs" role="tablist">
-                        <button type="button" class="nx-btn" role="tab" id="of-bottom-tab-pack" data-of-bottom="pack" onclick="showOfBottomPanel('pack')">SO Pack Results</button>
-                        <button type="button" class="nx-btn nx-btn-primary" role="tab" id="of-bottom-tab-tracking" data-of-bottom="tracking" onclick="showOfBottomPanel('tracking')">SO &amp; CI Tracking</button>
-                    </div>
-                    <div class="nx-of-bottom-actions">
+                        <button type="button" class="nx-btn" id="of-so-pack-excel-btn" onclick="downloadSoPackExcel()" disabled title="Analyze first">Excel Download</button>
                         <div class="nx-of-tabs" id="of-so-pack-sheet-tabs">
                             <button type="button" class="nx-btn nx-btn-primary" data-so-pack-tab="consolidated" onclick="showSoPackTab('consolidated')">Consolidated</button>
                             <button type="button" class="nx-btn" data-so-pack-tab="so_summary" onclick="showSoPackTab('so_summary')">SO Summary</button>
                             <button type="button" class="nx-btn" data-so-pack-tab="line_detail" onclick="showSoPackTab('line_detail')">Line Detail</button>
                         </div>
-                        <button type="button" class="nx-btn" id="of-tracking-refresh-btn" onclick="loadOrderFulfillmentUploads()">Refresh</button>
+                    </div>
+                    <div class="of-pane-body">
+                        <div id="of-so-pack-result" class="nx-of-msg"></div>
+                        <div id="of-so-pack-preview" class="nx-card nx-of-panel nx-of-preview of-pane-card of-pane-card--fill hidden">
+                            <div class="of-pack-meta">
+                                <div id="of-so-pack-batch-bar" class="hidden" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem;">
+                                    <label for="of-so-pack-pick" class="nx-text-dim" style="font-size:0.85rem;">Distributor pack</label>
+                                    <select id="of-so-pack-pick" onchange="selectSoPackBatchItem(this.value)" style="max-width:min(100%,28rem);"></select>
+                                </div>
+                                <div id="of-so-pack-fo-match-bar" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.65rem;">
+                                    <label for="of-so-pack-fo-pick" class="nx-text-dim" style="font-size:0.85rem;">Filled Order</label>
+                                    <select id="of-so-pack-fo-pick" style="max-width:min(100%,28rem);" title="Saved filled order for this distributor">
+                                        <option value="">— Analyze pack first —</option>
+                                    </select>
+                                    <button type="button" class="nx-btn nx-btn-primary" id="of-so-pack-fo-match-btn" onclick="runSoPackFoMatch()" disabled>Match FO</button>
+                                    <button type="button" class="nx-btn" onclick="openOrderMatchWorkspace()">View matches</button>
+                                </div>
+                                <p id="of-so-pack-status" class="nx-of-panel-status nx-text-dim"></p>
+                                <div id="of-so-pack-kpis" class="of-kpi-strip"></div>
+                            </div>
+                            <div class="of-tracking-wrap">
+                                <table class="data-table of-pack-table" id="of-so-pack-table">
+                                    <thead id="of-so-pack-thead"></thead>
+                                    <tbody id="of-so-pack-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div id="of-so-pack-preview" class="nx-card nx-of-panel nx-of-preview hidden" role="tabpanel">
-                    <div class="of-pack-meta">
-                        <p id="of-so-pack-status" class="nx-of-panel-status nx-text-dim"></p>
-                        <div id="of-so-pack-kpis" class="of-kpi-strip"></div>
+                <div class="of-pane" data-of-pane="invoice-ci" hidden>
+                    <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <input type="file" id="of-invoice-file" accept=".pdf" />
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadInvoiceV2()">Upload CI</button>
+                        <button type="button" class="nx-btn" onclick="loadOrderFulfillmentUploads()">Refresh</button>
                     </div>
-                    <div class="of-tracking-wrap">
-                        <table class="data-table of-pack-table" id="of-so-pack-table">
-                            <thead id="of-so-pack-thead"></thead>
-                            <tbody id="of-so-pack-tbody"></tbody>
-                        </table>
+                    <div class="of-pane-body">
+                        <div id="of-invoice-result" class="nx-of-msg"></div>
+                        <div class="nx-card nx-of-panel of-pane-card of-pane-card--fill">
+                            <div class="of-pane-card-head">
+                                <h3 class="of-pane-card-title">SO &amp; CI Tracking</h3>
+                                <p class="of-pane-help">CI uploads and SO / CI tracking for this distributor.</p>
+                            </div>
+                            <div class="of-tracking-wrap">
+                                <table class="data-table" id="of-tracking-table-ci">
+                                    <thead><tr><th>Order Ref No</th><th>Distributor</th><th>SO Uploaded</th><th>CI Uploaded</th><th>Payment Status</th><th>Transit Status</th><th>Actions</th></tr></thead>
+                                    <tbody id="of-tracking-tbody-ci"><tr><td colspan="7">Tap Refresh after upload.</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
-
-                <section id="of-tracking-panel" class="nx-card nx-of-panel nx-of-tracking" role="tabpanel">
-                    <div class="of-tracking-wrap">
-                        <table class="data-table" id="of-tracking-table">
-                            <thead><tr><th>Order Ref No</th><th>Distributor</th><th>SO Uploaded</th><th>CI Uploaded</th><th>Payment Status</th><th>Transit Status</th><th>Actions</th></tr></thead>
-                            <tbody id="of-tracking-tbody"><tr><td colspan="7">Loading...</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
             </div>
         </div>
 
@@ -1784,7 +1934,7 @@
                     </label>
                     <label class="bd-am-filter-inline">
                         <span>Search</span>
-                        <input type="search" id="am-search-filter" placeholder="Brand, size, item key…" autocomplete="off" oninput="renderArticleMasterTable()" />
+                        <input type="search" id="am-search-filter" placeholder="Brand, King, Double, Single…" autocomplete="off" oninput="renderArticleMasterTable()" />
                     </label>
                     <span id="am-list-count">0 articles</span>
                 </div>
@@ -1795,7 +1945,8 @@
                     <button type="button" class="nx-btn" onclick="loadArticleMasterList()">Refresh</button>
                     <button type="button" class="nx-btn" onclick="downloadArticleMasterExcel()">Download</button>
                     <button type="button" class="nx-btn" onclick="scanArticleMasterDuplicates()">Merge</button>
-                    <button type="button" class="nx-btn" onclick="deleteAllArticleMaster()" title="Delete filtered category or all">Delete</button>
+                    <button type="button" class="nx-btn hidden" id="am-cancel-selection-btn" onclick="exitArticleMasterSelectionMode()" title="Clear selection">Cancel</button>
+                    <button type="button" class="nx-btn" id="am-delete-btn" onclick="onArticleMasterDeleteClick()" title="Delete selected articles or delete all">Delete</button>
                 </div>
                 <div class="bd-am-stats" aria-label="Article counts">
                     <span class="bd-am-stat-chip">Total <strong id="am-stat-total">0</strong></span>
@@ -1812,20 +1963,27 @@
                         <table class="data-table am-articles-table">
                             <thead>
                                 <tr>
+                                    <th class="am-col-select" style="display:none" title="Select all">
+                                        <input type="checkbox" id="am-select-all" aria-label="Select all visible articles"
+                                            onchange="toggleArticleMasterSelectAll(this.checked)" />
+                                    </th>
                                     <th>Category</th>
                                     <th>Brand</th>
-                                    <th>Size</th>
+                                    <th title="Taught size name (e.g. Hand Towel, Double Bedsheet)">Size</th>
+                                    <th title="Physical size from booking (e.g. 75x150, 274x274)">Size</th>
                                     <th>Product</th>
                                     <th>MRP</th>
                                     <th>PTR</th>
                                     <th>Ex-Mill</th>
+                                    <th class="am-col-dist-margin">Dist. Margin %</th>
+                                    <th class="am-col-retailer-margin">Retailer Margin %</th>
+                                    <th class="am-col-perceived-margin">Proposed Cust. Disc. %</th>
                                     <th>Bale Pack</th>
-                                    <th>Item Key</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="am-articles-tbody">
-                                <tr><td colspan="10">Loading...</td></tr>
+                                <tr><td colspan="12">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2857,14 +3015,21 @@
             <h2>Price History</h2>
             <p id="am-price-history-label" class="subtitle"></p>
             <div style="overflow-x: auto;">
-                <table class="data-table" style="width: 100%;">
+                <table class="data-table" style="width: 100%; table-layout: fixed;">
+                    <colgroup>
+                        <col style="width:18%">
+                        <col style="width:18%">
+                        <col style="width:18%">
+                        <col style="width:22%">
+                        <col style="width:24%">
+                    </colgroup>
                     <thead>
                         <tr><th>Field</th><th>Old</th><th>New</th><th>Changed By</th><th>When</th></tr>
                     </thead>
                     <tbody id="am-price-history-tbody"><tr><td colspan="5">Loading...</td></tr></tbody>
                 </table>
             </div>
-            <button onclick="closeModal('am-price-history-modal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+            <button type="button" onclick="closeModal('am-price-history-modal')" class="nx-btn" style="margin-top: 12px;">Close</button>
         </div>
     </div>
 
@@ -2889,8 +3054,9 @@
         <div class="modal-content fo-detail-modal-content">
             <h2>Filled Order Detail</h2>
             <p id="fo-detail-label" class="subtitle"></p>
-            <div style="display:flex; gap:12px; margin-bottom:10px;">
-                <button class="btn btn-secondary" onclick="downloadFilledOrder(filledOrdersState.activeOrderId)">Download Excel</button>
+            <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+                <button type="button" class="nx-btn" onclick="closeModal('fo-detail-modal'); openOfFilledOrdersListModal()">← Back to Saved Orders</button>
+                <button type="button" class="nx-btn nx-btn-primary" onclick="downloadFilledOrder(filledOrdersState.activeOrderId)">Download Excel</button>
             </div>
             <div class="fo-detail-table-scroll">
                 <table class="data-table fo-detail-table">
@@ -2904,7 +3070,38 @@
                     <tbody id="fo-detail-tbody"><tr><td colspan="13">Loading...</td></tr></tbody>
                 </table>
             </div>
-            <button onclick="closeModal('fo-detail-modal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+            <button type="button" onclick="closeModal('fo-detail-modal')" class="nx-btn" style="margin-top: 12px;">Close</button>
+        </div>
+    </div>
+
+    <div id="of-fo-list-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto; max-width: 1200px; width: min(96vw, 1200px);">
+            <h2>Saved Filled Orders</h2>
+            <p class="subtitle">Count: <span id="fo-list-count">0 orders</span></p>
+            <div style="overflow-x: auto;">
+                <table class="data-table" style="min-width: 1100px;">
+                    <thead>
+                        <tr>
+                            <th>Distributor</th>
+                            <th>Category</th>
+                            <th>Season</th>
+                            <th>Qty Column</th>
+                            <th>Qty Unit</th>
+                            <th>Lines</th>
+                            <th>Bales</th>
+                            <th>Pieces</th>
+                            <th>Ex-Mill Value</th>
+                            <th>Matched</th>
+                            <th>Unmatched</th>
+                            <th>Flagged</th>
+                            <th>Saved On</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fo-orders-tbody"><tr><td colspan="14">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <button type="button" onclick="closeModal('of-fo-list-modal')" class="nx-btn" style="margin-top: 12px;">Close</button>
         </div>
     </div>
 
@@ -2989,7 +3186,7 @@
             <p>© 2026</p>
         </div>
     </footer>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260802-drive-in-app"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260802-theme-accent"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260805-order-desk-direct"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260804-emerald-default"></script>
 </body>
 </html>

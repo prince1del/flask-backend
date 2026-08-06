@@ -16,6 +16,19 @@ html[data-hop-theme="bright"] {
   --nx-gold-2: #14b8a6;
   --nxt-cyan: #0d9488;
   --nxt-cyan-dim: rgba(13, 148, 136, 0.16);
+  /* Dashboard FO / TA widgets — navy + teal */
+  --dash-widget-bg: #0f2744;
+  --dash-widget-bg-deep: #0a1a2e;
+  --dash-widget-bg-header: #163a5c;
+  --dash-widget-border: rgba(13, 148, 136, 0.4);
+  --dash-widget-text: #f8fafc;
+  --dash-widget-muted: #94a3b8;
+  --dash-widget-accent: #0d9488;
+  --dash-widget-accent-fg: #ffffff;
+  --dash-widget-shadow: rgba(15, 39, 68, 0.28);
+  --dash-widget-row-alt: #0f2744;
+  --dash-widget-surface-border: rgba(255, 255, 255, 0.12);
+  --dash-widget-ctrl-border: rgba(13, 148, 136, 0.4);
 }
 
 html[data-hop-theme="bright"] :is(#hop-executive-workspace, #dashboard).workspace-shell:not(.hidden) {
@@ -56,7 +69,7 @@ html[data-hop-theme="bright"] :is(#hop-executive-workspace, #dashboard) .hop-nav
   color: #5eead4 !important;
 }
 
-html[data-hop-theme="bright"] :is(#hop-executive-workspace, #dashboard) .nx-core {
+html[data-hop-theme="bright"] :is(#hop-executive-workspace, #dashboard) .nx-core:not(.nx-core--logo) {
   --nx-core-glow-a: rgba(13, 148, 136, 0.5);
   --nx-core-glow-b: rgba(94, 234, 212, 0.7);
   background: radial-gradient(circle at 30% 30%, #5eead4, #0d9488 70%) !important;
