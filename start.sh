@@ -99,6 +99,7 @@ exec gunicorn "app.web_app:create_app()" \
   --bind 0.0.0.0:${PORT:-10000} \
   --workers 1 \
   --threads 2 \
-  --timeout 120 \
-  --max-requests 200 \
-  --max-requests-jitter 40
+  --timeout 300 \
+  --graceful-timeout 60 \
+  --max-requests 100 \
+  --max-requests-jitter 20

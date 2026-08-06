@@ -449,9 +449,18 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
     sql = f"""
         SELECT {", ".join(select_cols)},
-               n.full_name AS party_name, n.name_group_id
+               n.full_name AS party_name, n.name_group_id,
+               COALESCE(li.line_total, 0) AS line_total,
+               COALESCE(li.line_tax_total, 0) AS line_tax_total
         FROM kb_transactions t
         LEFT JOIN kb_names n ON n.name_id = t.txn_name_id
+        LEFT JOIN (
+            SELECT lineitem_txn_id,
+                   COALESCE(SUM(total_amount), 0) AS line_total,
+                   COALESCE(SUM(lineitem_tax_amount), 0) AS line_tax_total
+            FROM kb_lineitems
+            GROUP BY lineitem_txn_id
+        ) li ON li.lineitem_txn_id = t.txn_id
         WHERE trim(coalesce(t.txn_ref_number_char, '')) != '' OR t.txn_name_id IS NOT NULL
         ORDER BY t.txn_id
     """
@@ -460,12 +469,8 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for r in rows:
         d = dict(r)
-        sums = conn.execute(
-            "SELECT COALESCE(SUM(total_amount),0), COALESCE(SUM(lineitem_tax_amount),0) FROM kb_lineitems WHERE lineitem_txn_id=?",
-            (r["txn_id"],),
-        ).fetchone()
-        d["line_total"] = float(sums[0] or 0)
-        d["line_tax_total"] = float(sums[1] or 0)
+        d["line_total"] = float(d.get("line_total") or 0)
+        d["line_tax_total"] = float(d.get("line_tax_total") or 0)
         d["txn_label"] = _txn_label(int(d.get("txn_type") or 0))
         d["status_label"] = _status_label(d.get("txn_status"))
 
@@ -536,6 +541,7 @@ def _fetch_txn_payments(conn: sqlite3.Connection) -> dict[int, float]:
 
 
 def preview_vyapar_backup(file_bytes: bytes, filename: str) -> dict[str, Any]:
+    """Lightweight scan — counts + small samples only (safe for Render timeouts)."""
     sqlite_bytes = _extract_sqlite_bytes(file_bytes, filename)
     src, src_path = _with_source_db(sqlite_bytes)
     try:
@@ -545,18 +551,125 @@ def preview_vyapar_backup(file_bytes: bytes, filename: str) -> dict[str, Any]:
         firm = src.execute(
             "SELECT firm_name, firm_email, firm_phone FROM kb_firms ORDER BY firm_id LIMIT 1"
         ).fetchone()
-        parties = _fetch_parties(src)
-        items = _fetch_items(src)
-        txns = _fetch_txns(src)
-        txn_pay = _fetch_txn_payments(src)
+
+        parties_total = int(
+            src.execute(
+                """
+                SELECT COUNT(*) FROM (
+                  SELECT DISTINCT name_id FROM kb_names
+                  WHERE name_type = 1 AND trim(coalesce(full_name, '')) != ''
+                )
+                """
+            ).fetchone()[0]
+            or 0
+        )
+        items_total = int(
+            src.execute(
+                """
+                SELECT COUNT(*) FROM kb_items
+                WHERE item_is_active = 1 AND trim(coalesce(item_name,'')) != ''
+                """
+            ).fetchone()[0]
+            or 0
+        )
+        txns_total = int(
+            src.execute(
+                """
+                SELECT COUNT(*) FROM kb_transactions
+                WHERE trim(coalesce(txn_ref_number_char, '')) != '' OR txn_name_id IS NOT NULL
+                """
+            ).fetchone()[0]
+            or 0
+        )
+
         by_group: dict[str, int] = {}
-        for p in parties:
-            gid = str(p.get("name_group_id") or "unknown")
-            by_group[gid] = by_group.get(gid, 0) + 1
+        for row in src.execute(
+            """
+            SELECT coalesce(cast(name_group_id as text), 'unknown') AS gid, COUNT(*) AS c
+            FROM kb_names
+            WHERE name_type = 1 AND trim(coalesce(full_name, '')) != ''
+            GROUP BY 1
+            """
+        ).fetchall():
+            by_group[str(row["gid"])] = int(row["c"] or 0)
+
         txn_types: dict[str, int] = {}
-        for t in txns:
-            k = str(t.get("txn_type"))
-            txn_types[k] = txn_types.get(k, 0) + 1
+        for row in src.execute(
+            """
+            SELECT cast(txn_type as text) AS tt, COUNT(*) AS c
+            FROM kb_transactions
+            WHERE trim(coalesce(txn_ref_number_char, '')) != '' OR txn_name_id IS NOT NULL
+            GROUP BY 1
+            """
+        ).fetchall():
+            txn_types[str(row["tt"])] = int(row["c"] or 0)
+
+        party_samples = [
+            {
+                "name": _clean(p["full_name"]),
+                "mobile": _clean(p["phone_number"]),
+                "email": _clean(p["email"]),
+                "group": p["name_group_id"],
+                "gst": _clean(p["name_gstin_number"]),
+            }
+            for p in src.execute(
+                """
+                SELECT full_name, phone_number, email, name_group_id, name_gstin_number
+                FROM kb_names
+                WHERE name_type = 1 AND trim(coalesce(full_name, '')) != ''
+                ORDER BY name_id
+                LIMIT 8
+                """
+            ).fetchall()
+        ]
+        item_samples = [
+            {
+                "name": _clean(i["item_name"]),
+                "code": _clean(i["item_code"]),
+                "sell": float(i["item_sale_unit_price"] or 0),
+                "buy": float(i["item_purchase_unit_price"] or 0),
+                "category": _clean(i["category_name"]),
+            }
+            for i in src.execute(
+                """
+                SELECT i.item_name, i.item_code, i.item_sale_unit_price, i.item_purchase_unit_price,
+                       c.item_category_name AS category_name
+                FROM kb_items i
+                LEFT JOIN kb_item_categories_mapping m ON m.item_id = i.item_id
+                LEFT JOIN kb_item_categories c ON c.item_category_id = m.category_id
+                WHERE i.item_is_active = 1 AND trim(coalesce(i.item_name,'')) != ''
+                ORDER BY i.item_id
+                LIMIT 8
+                """
+            ).fetchall()
+        ]
+        txn_samples = []
+        for t in src.execute(
+            """
+            SELECT t.txn_id, t.txn_type, t.txn_status, t.txn_balance_amount,
+                   n.full_name AS party_name, t.txn_display_name,
+                   COALESCE((
+                     SELECT SUM(total_amount) FROM kb_lineitems WHERE lineitem_txn_id = t.txn_id
+                   ), 0) AS line_total
+            FROM kb_transactions t
+            LEFT JOIN kb_names n ON n.name_id = t.txn_name_id
+            WHERE trim(coalesce(t.txn_ref_number_char, '')) != '' OR t.txn_name_id IS NOT NULL
+            ORDER BY t.txn_id
+            LIMIT 8
+            """
+        ).fetchall():
+            txn_samples.append(
+                {
+                    "txn_id": int(t["txn_id"] or 0),
+                    "txn_type": int(t["txn_type"] or 0),
+                    "txn_label": _txn_label(int(t["txn_type"] or 0)),
+                    "status": _status_label(t["txn_status"]),
+                    "party_name": _clean(t["party_name"] or t["txn_display_name"]),
+                    "amount": float(t["line_total"] or t["txn_balance_amount"] or 0),
+                    "paid": 0.0,
+                }
+            )
+
         return {
             "source": {
                 "filename": filename,
@@ -567,45 +680,16 @@ def preview_vyapar_backup(file_bytes: bytes, filename: str) -> dict[str, Any]:
                 "firm_phone": _clean(firm["firm_phone"]) if firm else "",
             },
             "detected": {
-                "parties_total": len(parties),
-                "items_total": len(items),
-                "transactions_total": len(txns),
+                "parties_total": parties_total,
+                "items_total": items_total,
+                "transactions_total": txns_total,
                 "group_split": by_group,
                 "txn_type_split": txn_types,
             },
             "samples": {
-                "parties": [
-                    {
-                        "name": _clean(p.get("full_name")),
-                        "mobile": _clean(p.get("phone_number")),
-                        "email": _clean(p.get("email")),
-                        "group": p.get("name_group_id"),
-                        "gst": _clean(p.get("name_gstin_number")),
-                    }
-                    for p in parties[:8]
-                ],
-                "items": [
-                    {
-                        "name": _clean(i.get("item_name")),
-                        "code": _clean(i.get("item_code")),
-                        "sell": float(i.get("item_sale_unit_price") or 0),
-                        "buy": float(i.get("item_purchase_unit_price") or 0),
-                        "category": _clean(i.get("category_name")),
-                    }
-                    for i in items[:8]
-                ],
-                "transactions": [
-                    {
-                        "txn_id": int(t.get("txn_id") or 0),
-                        "txn_type": int(t.get("txn_type") or 0),
-                        "txn_label": _clean(t.get("txn_label")),
-                        "status": _clean(t.get("status_label")),
-                        "party_name": _clean(t.get("party_name") or t.get("txn_display_name")),
-                        "amount": float(t.get("line_total") or t.get("txn_balance_amount") or 0),
-                        "paid": float(txn_pay.get(int(t.get("txn_id") or 0), 0)),
-                    }
-                    for t in txns[:8]
-                ],
+                "parties": party_samples,
+                "items": item_samples,
+                "transactions": txn_samples,
             },
         }
     finally:

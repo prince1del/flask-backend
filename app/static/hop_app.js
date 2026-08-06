@@ -4966,7 +4966,11 @@ async function hopPreviewVyaparBackup() {
     _vypHideLoader();
     openHopView('vyapar_import');
   } catch (e) {
-    _vypResultDialog(false, 'Preview Failed', [e.message || 'Could not read the backup file.']);
+    const msg = String(e.message || '');
+    const hint = /502|503|error page|Failed to fetch|network/i.test(msg)
+      ? 'Render server timed out on this large backup. Wait 30s, hard-refresh (Ctrl+Shift+R), then try Preview again. If it still fails, import from a local Flask run.'
+      : (msg || 'Could not read the backup file.');
+    _vypResultDialog(false, 'Preview Failed', [hint]);
   }
 }
 
@@ -4985,7 +4989,7 @@ async function hopRunVyaparImport() {
   }))) return;
   const fd = new FormData();
   fd.append('backup_file', file, file.name || 'backup.vyb');
-  _vypShowLoader('Importing data…');
+  _vypShowLoader('Importing data… this can take a few minutes on large backups');
   try {
     const data = await hopApi('/api/v1/hop/vyapar-import/apply', { method: 'POST', body: fd });
     const lines = [
@@ -5004,7 +5008,11 @@ async function hopRunVyaparImport() {
     hopState.customers = [];
     hopState.vendors = [];
   } catch (e) {
-    _vypResultDialog(false, 'Import Failed', [e.message || 'Something went wrong during import.']);
+    const msg = String(e.message || '');
+    const hint = /502|503|error page|Failed to fetch|network/i.test(msg)
+      ? 'Server timed out while importing (large backup). Wait a minute and retry Import once — do not double-click. For very large files, run import on local Flask.'
+      : (msg || 'Something went wrong during import.');
+    _vypResultDialog(false, 'Import Failed', [hint]);
   }
 }
 
