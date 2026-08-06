@@ -2380,7 +2380,10 @@ function bindHopNavClicks() {
 
   const isNavControl = (el) => {
     if (!el || !el.closest) return null;
-    return el.closest('.hop-nav-btn[data-hop-view], button.hop-nav-logout');
+    // Include fold toggles (Sale / Purchase / Settings) — they have no data-hop-view.
+    return el.closest(
+      '.hop-nav-btn[data-hop-view], button.hop-nav-logout, button.hop-nav-fold-toggle, .hop-nav-fold-toggle',
+    );
   };
 
   const runNav = (btn) => {
@@ -2390,6 +2393,12 @@ function bindHopNavClicks() {
     lastNavAt = now;
     if (btn.classList.contains('hop-nav-logout')) {
       if (typeof logout === 'function') logout();
+      return;
+    }
+    if (btn.classList.contains('hop-nav-fold-toggle')) {
+      const fold = btn.closest('[data-hop-fold]');
+      const foldId = fold?.getAttribute('data-hop-fold');
+      if (foldId) hopToggleNavFold(foldId);
       return;
     }
     const view = btn.getAttribute('data-hop-view');
@@ -2450,14 +2459,21 @@ function bindHopNavClicks() {
         event.stopPropagation();
         return;
       }
-      // Mouse / trackpad only path (phones use touchend above).
-      if (window.matchMedia('(pointer: coarse)').matches) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
       const btn = isNavControl(event.target);
       if (!btn) return;
+      // Phones: fold toggles + nav items run via touchend; still allow fold
+      // if a browser synthesizes click without a matched touchend.
+      if (window.matchMedia('(pointer: coarse)').matches) {
+        if (btn.classList.contains('hop-nav-fold-toggle')) {
+          event.preventDefault();
+          event.stopPropagation();
+          runNav(btn);
+        } else {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       runNav(btn);

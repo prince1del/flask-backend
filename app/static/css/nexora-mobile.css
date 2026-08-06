@@ -323,13 +323,19 @@ html {
     margin-top: 10px !important;
   }
 
-  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold-toggle,
-  body.mobile-nav-open .left-nav .hop-nav-fold-toggle {
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold:not(.is-collapsed) .hop-nav-fold-items,
+  body.mobile-nav-open .left-nav .hop-nav-fold:not(.is-collapsed) .hop-nav-fold-items {
     display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    width: 100% !important;
-    gap: 8px !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+    pointer-events: auto !important;
+  }
+
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-sub,
+  body.mobile-nav-open .left-nav .hop-nav-sub {
+    display: flex !important;
+    pointer-events: auto !important;
+    min-height: 42px !important;
   }
 
   body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold-toggle .nav-label,
