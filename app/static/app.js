@@ -503,6 +503,12 @@ function applyRoleBasedUI() {
   requestAnimationFrame(() => bdSyncSidebarScroll());
 }
 
+function syncLoginOpenBodyClass() {
+  const loginModal = document.getElementById('loginModal');
+  const open = !!(loginModal && !loginModal.classList.contains('hidden'));
+  document.body.classList.toggle('nx-login-open', open);
+}
+
 function loadAuthState() {
   authState.accessToken = localStorage.getItem('authAccessToken');
   authState.refreshToken = localStorage.getItem('authRefreshToken');
@@ -529,6 +535,7 @@ function loadAuthState() {
       hopResetThemeChromeToDefault();
     }
   }
+  syncLoginOpenBodyClass();
 }
 
 function getStoredUpdateVersion(key) {
@@ -1135,6 +1142,7 @@ async function login() {
     document.getElementById('loginModal')?.classList.add('hidden');
     document.getElementById('dashboard')?.classList.remove('hidden');
     document.getElementById('ask-nexora-btn')?.classList.remove('hidden');
+    if (typeof syncLoginOpenBodyClass === 'function') syncLoginOpenBodyClass();
     setUserProfileButton(authState.username);
     if (errorEl) {
       errorEl.textContent = '';
@@ -1252,6 +1260,7 @@ async function logout(reason) {
   const askNexoraButton = document.getElementById('ask-nexora-btn');
   if (loginModal) loginModal.classList.remove('hidden');
   if (dashboard) dashboard.classList.add('hidden');
+  if (typeof syncLoginOpenBodyClass === 'function') syncLoginOpenBodyClass();
   document.getElementById('hop-executive-workspace')?.classList.add('hidden');
   document.getElementById('global-search-shell')?.classList.remove('hidden');
   document.getElementById('global-search-trigger')?.classList.remove('hidden');

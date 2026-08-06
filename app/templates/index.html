@@ -89,7 +89,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-ui">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260806-mobile-ui">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-mobile-ui">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-mobile-ui2">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -911,18 +911,23 @@
 
     <div id="loginModal" class="modal">
         <div class="modal-content login-sheet" style="max-height: 85vh; overflow-y: auto;">
+            <div class="login-brand" aria-hidden="true">
+                <div class="login-brand-orb"></div>
+                <p class="login-brand-word">PRIZM</p>
+                <p class="login-brand-sub">HOUSE OF PRIZM · NEXORA</p>
+            </div>
             <h2>Nexora Login</h2>
             <p class="login-hint nx-text-dim" style="margin:0 0 12px;font-size:0.85rem;color:#94a3b8;">Sign in to continue</p>
             <form id="loginForm" onsubmit="event.preventDefault(); login();">
             <div class="form-group">
-                <label for="username">Username:</label>
+                <label for="username">Username</label>
                 <input type="text" id="username" name="username" placeholder="Username" autocomplete="username" autocapitalize="none" spellcheck="false" enterkeyhint="next">
             </div>
             <div class="form-group">
-                <label for="password">Password:</label>
+                <label for="password">Password</label>
                 <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password" enterkeyhint="go">
             </div>
-            <button type="submit" class="btn btn-primary">Login</button>
+            <button type="submit" class="btn btn-primary login-submit-btn">Login</button>
             </form>
             <p id="loginError" class="error" role="status"></p>
         </div>
@@ -3190,7 +3195,7 @@
             <p>© 2026</p>
         </div>
     </footer>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260806-mobile-ui"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-mobile-ui"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260806-mobile-ui2"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-mobile-ui2"></script>
 </body>
 </html>
