@@ -1,0 +1,472 @@
+/*
+  NEXORA / HoP — mobile-first polish
+  Load LAST so it wins over desktop layout rules.
+  Goal: usable phone UX (login → dashboard → Order Desk → tables).
+*/
+
+/* ---- Global phone safety ---- */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (max-width: 900px) {
+  *,
+  *::before,
+  *::after {
+    /* keep box model safe without breaking abs-positioned chrome */
+    box-sizing: border-box;
+  }
+
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Stop iOS zoom-on-focus (needs >= 16px) */
+  input,
+  select,
+  textarea,
+  button,
+  .btn,
+  .nx-btn {
+    font-size: 16px !important;
+  }
+
+  button,
+  .btn,
+  .nx-btn,
+  .mobile-bottom-nav__btn,
+  .mobile-nav-toggle,
+  .hop-nav-btn,
+  .nav-item,
+  .of-rail-item {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  /* ---- Login: clean phone sheet ---- */
+  body:has(#loginModal:not(.hidden)) .nexora-header,
+  body:has(#loginModal:not(.hidden)) #mobile-bottom-nav,
+  body:has(#loginModal:not(.hidden)) #mobile-nav-toggle,
+  body:has(#loginModal:not(.hidden)) .mobile-nav-backdrop,
+  body:has(#loginModal:not(.hidden)) #dashboard,
+  body:has(#loginModal:not(.hidden)) .workspace-shell {
+    display: none !important;
+  }
+
+  body:has(#loginModal:not(.hidden)) {
+    padding-bottom: 0 !important;
+    background: #0d1f1a !important;
+  }
+
+  #loginModal.modal {
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    padding: 0 !important;
+    inset: 0 !important;
+    background:
+      radial-gradient(ellipse 80% 45% at 50% 0%, rgba(201, 162, 39, 0.22), transparent 55%),
+      linear-gradient(165deg, #123C32 0%, #0a1a16 55%, #071210 100%) !important;
+    backdrop-filter: none !important;
+    z-index: 20000 !important;
+  }
+
+  #loginModal .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 100dvh !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding:
+      calc(28px + env(safe-area-inset-top, 0px))
+      22px
+      calc(28px + env(safe-area-inset-bottom, 0px)) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #loginModal .modal-content::before {
+    content: "PRIZM";
+    display: block;
+    font-family: "Orbitron", sans-serif;
+    font-weight: 700;
+    font-size: 1.55rem;
+    letter-spacing: 0.14em;
+    color: #F8F4EA;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  #loginModal .modal-content::after {
+    content: "HOUSE OF PRIZM · NEXORA";
+    display: block;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    color: rgba(248, 244, 234, 0.55);
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  #loginModal .modal-content h2 {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+  }
+
+  #loginModal .login-hint {
+    text-align: center !important;
+    color: rgba(248, 244, 234, 0.7) !important;
+    margin: 0 0 18px !important;
+    font-size: 0.9rem !important;
+  }
+
+  #loginModal .form-group {
+    margin-bottom: 14px !important;
+  }
+
+  #loginModal .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.78rem !important;
+    font-weight: 650;
+    color: rgba(248, 244, 234, 0.72) !important;
+  }
+
+  #loginModal input {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    min-height: 48px !important;
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(222, 211, 190, 0.45) !important;
+    background: #F8F4EA !important;
+    color: #1F1F1F !important;
+    font-size: 16px !important;
+  }
+
+  #loginModal .btn-primary,
+  #loginModal button.btn {
+    width: 100% !important;
+    min-height: 50px !important;
+    margin-top: 8px !important;
+    border-radius: 12px !important;
+    background: #C9A227 !important;
+    border: 1px solid #C9A227 !important;
+    color: #123C32 !important;
+    font-weight: 700 !important;
+    font-size: 1rem !important;
+  }
+
+  #loginModal #loginError {
+    text-align: center;
+    margin-top: 12px;
+    color: #ffb4b4 !important;
+  }
+
+  /* ---- Header compact ---- */
+  .nexora-header {
+    min-height: 52px !important;
+  }
+
+  .header-search input,
+  #global-search-input {
+    min-height: 40px !important;
+    font-size: 16px !important;
+  }
+
+  .header-right .btn-ask-nexora,
+  .btn-ask-nexora span:not(.ask-icon) {
+    display: none !important;
+  }
+
+  /* ---- Bottom nav: Home / Orders / Menu ---- */
+  .mobile-bottom-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    height: auto !important;
+    min-height: 56px;
+    background: #123C32 !important;
+    border-top: 1px solid rgba(201, 162, 39, 0.35) !important;
+  }
+
+  .mobile-bottom-nav__btn {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    color: #F8F4EA !important;
+    font-size: 0.7rem !important;
+  }
+
+  .mobile-nav-toggle {
+    border-color: rgba(201, 162, 39, 0.45) !important;
+    background: rgba(201, 162, 39, 0.18) !important;
+    color: #F8F4EA !important;
+  }
+
+  /* Drawer uses emerald sidebar */
+  #dashboard .left-nav,
+  .left-nav#bd-left-nav,
+  aside.left-nav,
+  #hop-executive-workspace .hop-nav,
+  aside.hop-nav {
+    background: #123C32 !important;
+    border-right-color: rgba(201, 162, 39, 0.28) !important;
+  }
+
+  /* ---- Dashboard FO / TA widgets: stack in flow (not absolute off-screen) ---- */
+  .dashboard-fo-widget-layer,
+  #dashboard-fo-widget-layer {
+    position: relative !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    padding: 0 0 8px !important;
+    pointer-events: auto !important;
+    z-index: 1 !important;
+    overflow: visible !important;
+  }
+
+  .dashboard-fo-widget-layer .fo-season-widget,
+  .dashboard-fo-widget-layer .fo-season-widget.fo-playing-card-compact,
+  .dashboard-fo-widget-layer .fo-season-widget.ta-playing-card-compact,
+  #dashboard .ta-draggable-widget.ta-playing-card-compact,
+  #dashboard-ta-widget.ta-playing-card-compact {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    right: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    z-index: 1 !important;
+  }
+
+  .dashboard-fo-widget-layer .fo-season-widget .ta-widget-drag-handle,
+  #dashboard .ta-draggable-widget .ta-widget-drag-handle {
+    display: none !important;
+  }
+
+  .dashboard-fo-widget-layer .fo-season-table-wrap,
+  .dashboard-fo-widget-layer .ta-playing-card-table-wrap,
+  #dashboard .ta-draggable-widget .ta-playing-card-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ---- Tables: swipe horizontally ---- */
+  .table-wrap,
+  .table-scroll,
+  .party-master-scroll-wrapper,
+  .am-scroll-wrapper,
+  .hop-table-wrap,
+  .of-pane-body,
+  .data-table-wrap,
+  .ta-playing-card-table-wrap,
+  .fo-season-table-wrap,
+  .nx-oc-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100% !important;
+  }
+
+  table.data-table,
+  .party-master-table,
+  .am-table,
+  .ta-excel-table-widget,
+  .hop-table,
+  .of-table {
+    min-width: 520px;
+  }
+
+  /* ---- Cards / panels full width ---- */
+  .nx-card,
+  .hop-form-card,
+  .executive-panel,
+  .card-highlight,
+  .workspace-header,
+  .of-pane,
+  .of-stage {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .workspace-header,
+  .hop-view-header,
+  .nx-of-top {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .nx-of-profile-bar {
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+  }
+
+  .nx-of-profile-bar label {
+    width: 100% !important;
+  }
+
+  /* Order Desk rail: horizontal chips */
+  .of-rail-nav {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .of-rail-item {
+    min-width: 132px !important;
+    min-height: 56px !important;
+  }
+
+  /* Forms: stack */
+  .form-row,
+  .hop-form-grid,
+  .nx-party-grid,
+  .am-toolbar,
+  .fo-toolbar,
+  .modal-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .modal-actions .btn,
+  .am-toolbar .btn,
+  .fo-toolbar .btn {
+    width: 100% !important;
+  }
+
+  /* Modals fit phone */
+  .modal {
+    padding: 12px !important;
+    align-items: flex-end !important;
+  }
+
+  .modal:not(#loginModal) .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: min(92dvh, 920px) !important;
+    border-radius: 18px 18px 12px 12px !important;
+    margin: 0 !important;
+  }
+
+  /* Parties / Article Master full bleed */
+  body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
+  body.bd-hop-ui #article-master-workspace.am-workspace:not(.hidden),
+  body.bd-hop-ui #order-fulfillment-workspace:not(.hidden),
+  body.bd-hop-ui #order-desk-workspace:not(.hidden),
+  body.bd-hop-ui #filled-orders-workspace:not(.hidden),
+  body.bd-hop-ui #target-vs-achievement-workspace:not(.hidden) {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Saved lists / match workspace */
+  .om-layout,
+  .fo-saved-layout,
+  .so-pack-layout {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .om-list,
+  .fo-saved-list,
+  .so-pack-list {
+    max-height: 40vh !important;
+    width: 100% !important;
+  }
+
+  /* Toast + dock above bottom nav */
+  .nx-toast-stack {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+  }
+
+  #dashboard-widget-dock,
+  .dashboard-widget-dock {
+    left: 8px !important;
+    right: 8px !important;
+    width: auto !important;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Greeting / hero on home before login shouldn't fight login */
+  .greeting-row,
+  .subtitle {
+    padding-inline: 12px;
+  }
+
+  .greeting-row h2 {
+    font-size: 1.25rem !important;
+  }
+
+  /* KPI grids */
+  .hop-kpi-grid,
+  .overview-cards {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  @media (max-width: 380px) {
+    .hop-kpi-grid,
+    .overview-cards {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  /* Reduce accidental horizontal page scroll */
+  #dashboard .dashboard-grid,
+  .content-inner,
+  .hop-main,
+  .main-content {
+    overflow-x: hidden !important;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 400px) {
+  .nexora-header .header-search {
+    display: none !important;
+  }
+
+  .nexora-header {
+    grid-template-columns: auto auto !important;
+  }
+}
+
+/* Desktop: this file stays quiet */
+@media (min-width: 901px) {
+  /* no-op — login keeps desktop modal */
+}

@@ -81,14 +81,15 @@
     <title>Business Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260805-widget-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260806-mobile-ui">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260805-widget-theme">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260805-widget-theme">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260805-widget-theme">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260805-widget-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260806-mobile-ui">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260806-mobile-ui">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260806-mobile-ui">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-ui">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260805-widget-theme">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260806-mobile-ui">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-mobile-ui">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -892,8 +893,9 @@
     </header>
     <div id="mobile-nav-backdrop" class="mobile-nav-backdrop" hidden onclick="closeMobileNav()" aria-hidden="true"></div>
     <nav id="mobile-bottom-nav" class="mobile-bottom-nav" aria-label="Mobile quick navigation">
-        <button type="button" class="mobile-bottom-nav__btn" onclick="toggleMobileNav()">Menu</button>
         <button type="button" class="mobile-bottom-nav__btn" onclick="mobileNavHome()">Home</button>
+        <button type="button" class="mobile-bottom-nav__btn" onclick="mobileNavOrders()">Orders</button>
+        <button type="button" class="mobile-bottom-nav__btn" onclick="toggleMobileNav()">Menu</button>
     </nav>
 
     <section class="premium-welcome card-highlight">
@@ -908,18 +910,20 @@
     </section>
 
     <div id="loginModal" class="modal">
-        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+        <div class="modal-content login-sheet" style="max-height: 85vh; overflow-y: auto;">
             <h2>Nexora Login</h2>
             <p class="login-hint nx-text-dim" style="margin:0 0 12px;font-size:0.85rem;color:#94a3b8;">Sign in to continue</p>
+            <form id="loginForm" onsubmit="event.preventDefault(); login();">
             <div class="form-group">
-                <label>Username:</label>
-                <input type="text" id="username" placeholder="Username">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" placeholder="Username" autocomplete="username" autocapitalize="none" spellcheck="false" enterkeyhint="next">
             </div>
             <div class="form-group">
-                <label>Password:</label>
-                <input type="password" id="password" placeholder="Password">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password" enterkeyhint="go">
             </div>
-            <button onclick="login()" class="btn btn-primary">Login</button>
+            <button type="submit" class="btn btn-primary">Login</button>
+            </form>
             <p id="loginError" class="error" role="status"></p>
         </div>
     </div>
@@ -3186,7 +3190,7 @@
             <p>© 2026</p>
         </div>
     </footer>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260805-order-desk-direct"></script>
-    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260804-emerald-default"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260806-mobile-ui"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-mobile-ui"></script>
 </body>
 </html>
