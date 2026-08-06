@@ -81,15 +81,15 @@
     <title>Business Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260806-mobile-ui">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260806-mobile-nav3">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260806-mobile-ui">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260806-mobile-ui">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260806-mobile-ui">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-ui">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260806-mobile-nav3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260806-mobile-nav3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260806-mobile-nav3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260806-mobile-ui">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-mobile-ui2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260806-mobile-nav3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-mobile-nav3">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
            master data grids, party master lists) */
@@ -958,6 +958,7 @@
                     <div class="bd-nav-brand-text">
                         <div class="bd-nav-brand-company" id="bd-nav-brand-company" title="Company">NORTH HEAD OFFICE</div>
                     </div>
+                    <button type="button" class="mobile-nav-close" onclick="event.stopPropagation(); closeMobileNav();" aria-label="Close menu">✕</button>
                 </div>
                 <nav class="hop-nav-list nav-list">
                     <button type="button" id="nav-my-day" class="nx-nav-item hop-nav-btn nav-item hidden" onclick="openModule('MyDay')"><span class="nav-label">My Day</span></button>
@@ -1303,6 +1304,7 @@
                         <div class="nx-brand-word">PRIZM</div>
                         <div class="nx-brand-sub">HOUSE OF PRIZM</div>
                     </div>
+                    <button type="button" class="mobile-nav-close" onclick="closeMobileNav()" aria-label="Close menu">✕</button>
                 </div>
                 <nav class="hop-nav-list">
                     <button type="button" class="nx-nav-item hop-nav-btn active" data-hop-view="dashboard" onclick="openHopView('dashboard')">Dashboard</button>

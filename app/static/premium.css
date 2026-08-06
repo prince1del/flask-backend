@@ -4263,8 +4263,8 @@ body.hop-module-fullscreen .nx-toast-stack {
     top: 0 !important;
     left: -110% !important;
     bottom: 0 !important;
-    width: min(300px, 86vw) !important;
-    max-width: 300px !important;
+    width: min(280px, 78vw) !important;
+    max-width: 280px !important;
     height: 100dvh !important;
     z-index: 10090 !important;
     margin: 0 !important;
@@ -4327,9 +4327,20 @@ body.hop-module-fullscreen .nx-toast-stack {
   body.mobile-nav-open .left-nav .nav-label,
   body.mobile-nav-open #dashboard .left-nav .sidebar-brand div:not(.sidebar-logo):not(.nx-core),
   body.mobile-nav-open .left-nav .hop-nav-group,
-  body.mobile-nav-open #hop-executive-workspace .hop-nav-group {
+  body.mobile-nav-open #hop-executive-workspace .hop-nav-group,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .nav-label,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold-toggle .nav-label,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .nx-brand-word,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .nx-brand-sub {
     display: block !important;
-    color: #9eb0d0 !important;
+    color: #F8F4EA !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold-toggle {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
   }
   body.mobile-nav-open .left-nav .nav-item {
     justify-content: flex-start !important;

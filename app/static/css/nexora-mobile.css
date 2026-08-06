@@ -247,6 +247,121 @@ html {
     font-size: 0.7rem !important;
   }
 
+  /* Drawer — narrower + show labels (Sale/Purchase were blank arrows) */
+  #dashboard .left-nav,
+  .left-nav#bd-left-nav,
+  aside.left-nav,
+  #hop-executive-workspace .hop-nav,
+  aside.hop-nav {
+    width: min(280px, 78vw) !important;
+    max-width: 280px !important;
+    padding-top: calc(12px + env(safe-area-inset-top, 0px)) !important;
+    background: #123C32 !important;
+    border-right: 1px solid rgba(201, 162, 39, 0.28) !important;
+  }
+
+  .hop-nav-brand,
+  .left-nav .sidebar-brand,
+  #hop-executive-workspace .hop-nav-brand {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    position: relative !important;
+    padding-right: 40px !important;
+  }
+
+  .mobile-nav-close {
+    display: none;
+  }
+
+  body.mobile-nav-open .mobile-nav-close {
+    display: inline-flex !important;
+    position: absolute !important;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #F8F4EA !important;
+    font-size: 1rem !important;
+    font-weight: 700;
+    cursor: pointer;
+    z-index: 2;
+  }
+
+  /* CRITICAL: max-width:1120px hides .nav-label — restore for HoP + BD drawers */
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .nav-label,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold-toggle .nav-label,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .nx-brand-word,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .nx-brand-sub,
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-group,
+  body.mobile-nav-open #dashboard .left-nav .nav-label,
+  body.mobile-nav-open .left-nav .nav-label,
+  body.mobile-nav-open .left-nav .bd-nav-brand-text,
+  body.mobile-nav-open .left-nav .bd-nav-brand-company,
+  body.mobile-nav-open .left-nav .hop-nav-group {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    color: #F8F4EA !important;
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-group,
+  body.mobile-nav-open .left-nav .hop-nav-group {
+    color: #9A9080 !important;
+    font-size: 0.68rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    margin-top: 10px !important;
+  }
+
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold-toggle,
+  body.mobile-nav-open .left-nav .hop-nav-fold-toggle {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-fold-toggle .nav-label,
+  body.mobile-nav-open .left-nav .hop-nav-fold-toggle .nav-label {
+    flex: 1 1 auto !important;
+    text-align: left !important;
+  }
+
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-caret,
+  body.mobile-nav-open .left-nav .hop-nav-caret {
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    color: #E8D48B !important;
+    opacity: 1 !important;
+  }
+
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-btn.nx-nav-item,
+  body.mobile-nav-open .left-nav .hop-nav-btn.nx-nav-item,
+  body.mobile-nav-open .left-nav .nav-item {
+    justify-content: flex-start !important;
+    text-align: left !important;
+    min-height: 44px !important;
+    padding: 10px 12px !important;
+  }
+
+  body.mobile-nav-open #hop-executive-workspace .hop-nav .hop-nav-btn.nx-nav-item.active,
+  body.mobile-nav-open .left-nav .nav-item.active {
+    background: rgba(201, 162, 39, 0.22) !important;
+    border-color: rgba(201, 162, 39, 0.4) !important;
+    color: #E8D48B !important;
+  }
+
   .mobile-nav-toggle {
     border-color: rgba(201, 162, 39, 0.45) !important;
     background: rgba(201, 162, 39, 0.18) !important;
@@ -502,8 +617,11 @@ html {
   }
 }
 
-/* Desktop: keep brand block tidy inside modal card */
 @media (min-width: 901px) {
+  .mobile-nav-close {
+    display: none !important;
+  }
+
   #loginModal .login-brand {
     display: flex;
     flex-direction: column;
