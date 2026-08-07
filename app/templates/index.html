@@ -88,7 +88,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-brand-compact">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-add-top">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -1675,6 +1675,9 @@
                                     <span class="dsr-brand-dd-caret" aria-hidden="true">▾</span>
                                 </button>
                                 <div class="dsr-brand-dd-panel hidden" id="dsr-brand-dd-panel" role="listbox" aria-multiselectable="true">
+                                    <div class="dsr-brand-dd-foot">
+                                        <button type="button" class="dsr-brand-dd-add" id="dsr-add-competitor-btn" onclick="event.stopPropagation(); promptAddDsrCompetitorBrand();">+ Add new brand</button>
+                                    </div>
                                     <div class="dsr-brand-dd-list" id="dsr-brand-dd-list">
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing" onchange="syncDsrBrandDropdownLabel()"> Bombay Dyeing</label>
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Ddecor" onchange="syncDsrBrandDropdownLabel()"> Ddecor</label>
@@ -1684,9 +1687,6 @@
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Spaces" onchange="syncDsrBrandDropdownLabel()"> Spaces</label>
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Swayam" onchange="syncDsrBrandDropdownLabel()"> Swayam</label>
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Welspun" onchange="syncDsrBrandDropdownLabel()"> Welspun</label>
-                                    </div>
-                                    <div class="dsr-brand-dd-foot">
-                                        <button type="button" class="dsr-brand-dd-add" id="dsr-add-competitor-btn" onclick="event.stopPropagation(); promptAddDsrCompetitorBrand();">+ Add new brand</button>
                                     </div>
                                 </div>
                             </div>

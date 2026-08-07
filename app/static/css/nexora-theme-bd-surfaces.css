@@ -3612,20 +3612,25 @@ body.bd-hop-ui .nexora-logo:focus-visible {
   opacity: 0.55;
   font-size: 0.68rem;
 }
+#market-visit-workspace .dsr-card,
+#market-visit-workspace .dsr-form,
+#market-visit-workspace .dsr-section {
+  overflow: visible !important;
+}
 #market-visit-workspace .dsr-brand-dd-panel {
   position: absolute;
-  z-index: 5700;
+  z-index: 5800;
   top: calc(100% + 4px);
   left: 0;
   width: 100%;
-  min-width: 220px;
+  min-width: 240px;
   display: flex;
   flex-direction: column;
-  max-height: 220px;
+  max-height: min(280px, 50vh);
   border-radius: 8px;
   border: 1px solid var(--hop-c-border, #DED3BE);
   background: var(--hop-c-card, #ffffff);
-  box-shadow: 0 10px 24px rgba(15, 39, 68, 0.14);
+  box-shadow: 0 12px 28px rgba(15, 39, 68, 0.16);
   padding: 0;
   overflow: hidden;
 }
@@ -3634,7 +3639,8 @@ body.bd-hop-ui .nexora-logo:focus-visible {
   flex-direction: column;
   gap: 0;
   padding: 4px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -3668,19 +3674,22 @@ body.bd-hop-ui .nexora-logo:focus-visible {
 }
 #market-visit-workspace .dsr-brand-dd-foot {
   flex: 0 0 auto;
-  border-top: 1px solid color-mix(in srgb, var(--hop-c-border, #DED3BE) 80%, transparent);
-  background: color-mix(in srgb, var(--hop-c-bg, #F8F4EA) 55%, #ffffff);
+  border-bottom: 1px solid color-mix(in srgb, var(--hop-c-border, #DED3BE) 80%, transparent);
+  border-top: 0;
+  background: color-mix(in srgb, var(--hop-c-accent, #C9A227) 12%, #ffffff);
+  z-index: 2;
 }
 #market-visit-workspace .dsr-brand-dd-add {
   width: 100%;
   border: 0;
   background: transparent;
-  padding: 7px 8px;
+  padding: 9px 10px;
   text-align: left;
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-weight: 700;
   color: var(--hop-c-accent, #C9A227);
   cursor: pointer;
+  line-height: 1.3;
 }
 #market-visit-workspace .dsr-brand-dd-add:hover {
   background: color-mix(in srgb, var(--hop-c-accent, #C9A227) 12%, transparent);
