@@ -1801,7 +1801,7 @@ async function loadMarketVisitWorkspace() {
     if (countEl) countEl.textContent = `${rows.length} visit${rows.length === 1 ? '' : 's'}`;
     if (tbody) {
       if (!rows.length) {
-        tbody.innerHTML = '<tr class="cloud-hub-empty-row"><td colspan="5">No visits yet. Save one above.</td></tr>';
+        tbody.innerHTML = '<tr class="dsr-empty-row"><td colspan="5">No visits yet. Save one above.</td></tr>';
       } else {
         tbody.innerHTML = rows.map((r) => `
           <tr>
@@ -1814,12 +1814,94 @@ async function loadMarketVisitWorkspace() {
       }
     }
     if (statusEl) statusEl.textContent = '';
+    await loadDsrCompetitorBrands({ selectBrand: null });
   } catch (error) {
     if (statusEl) statusEl.textContent = error.message || 'Unable to load visits.';
     if (countEl) countEl.textContent = 'Error';
     if (tbody) {
-      tbody.innerHTML = '<tr class="cloud-hub-empty-row"><td colspan="5">Unable to load visits.</td></tr>';
+      tbody.innerHTML = '<tr class="dsr-empty-row"><td colspan="5">Unable to load visits.</td></tr>';
     }
+  }
+}
+
+function openDsrExportModal() {
+  const modal = document.getElementById('dsr-export-modal');
+  const today = _dsrTodayIso();
+  const exportFrom = document.getElementById('dsr-export-from');
+  const exportTo = document.getElementById('dsr-export-to');
+  if (exportFrom && !exportFrom.value) exportFrom.value = today;
+  if (exportTo && !exportTo.value) exportTo.value = today;
+  const statusEl = document.getElementById('dsr-export-status');
+  if (statusEl) statusEl.textContent = '';
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+}
+
+function closeDsrExportModal() {
+  const modal = document.getElementById('dsr-export-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function renderDsrCompetitorBrandChips(brands, selectedNames) {
+  const wrap = document.getElementById('dsr-competitor-chips');
+  if (!wrap) return;
+  const selected = new Set(
+    (selectedNames || []).map((n) => String(n || '').trim().toLowerCase()).filter(Boolean)
+  );
+  const addBtnHtml =
+    '<button type="button" class="btn btn-secondary dsr-add-brand-btn" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add brand</button>';
+  const chips = (brands || [])
+    .map((brand) => {
+      const name = String(brand || '').trim();
+      if (!name) return '';
+      const checked = selected.has(name.toLowerCase()) ? ' checked' : '';
+      return `<label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="${_dsrEsc(name)}"${checked}> ${_dsrEsc(name)}</label>`;
+    })
+    .join('');
+  wrap.innerHTML = `${addBtnHtml}${chips}`;
+}
+
+async function loadDsrCompetitorBrands({ selectBrand } = {}) {
+  try {
+    const response = await fetchWithAuth('/api/v1/dsr-market/competitor-brands');
+    const data = await response.json();
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error?.message || data.error || 'Failed to load brands');
+    }
+    const brands = Array.isArray(data.data) ? data.data : [];
+    const selected = selectBrand ? [selectBrand] : Array.from(
+      document.querySelectorAll('input[name="dsr-competitor"]:checked')
+    ).map((el) => el.value);
+    renderDsrCompetitorBrandChips(brands, selected);
+  } catch (error) {
+    const statusEl = document.getElementById('dsr-market-status');
+    if (statusEl) statusEl.textContent = error.message || 'Unable to load competitor brands.';
+  }
+}
+
+async function promptAddDsrCompetitorBrand() {
+  const name = (window.prompt('New competitor brand name:') || '').trim();
+  if (!name) return;
+  try {
+    const response = await fetchWithAuth('/api/v1/dsr-market/competitor-brands', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error?.message || data.error || 'Failed to add brand');
+    }
+    const brands = Array.isArray(data.data) ? data.data : [];
+    renderDsrCompetitorBrandChips(brands, [name]);
+    if (typeof nexoraToast === 'function') nexoraToast(`Brand added: ${name}`, 'success');
+  } catch (error) {
+    if (typeof nexoraToast === 'function') nexoraToast(error.message || 'Unable to add brand', 'error');
   }
 }
 
@@ -1916,39 +1998,8 @@ function syncDsrOrderLacsTotal() {
   totalEl.value = String(Math.round(sum * 100) / 100);
 }
 
-function promptAddDsrCompetitorBrand() {
-  const name = (window.prompt('New competitor brand name:') || '').trim();
-  if (!name) return;
-  const wrap = document.getElementById('dsr-competitor-chips');
-  if (!wrap) return;
-  const existing = Array.from(document.querySelectorAll('input[name="dsr-competitor"]')).some(
-    (el) => (el.value || '').toLowerCase() === name.toLowerCase()
-  );
-  if (existing) {
-    document.querySelectorAll('input[name="dsr-competitor"]').forEach((el) => {
-      if ((el.value || '').toLowerCase() === name.toLowerCase()) el.checked = true;
-    });
-    return;
-  }
-  const label = document.createElement('label');
-  label.className = 'dsr-brand-chip';
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.name = 'dsr-competitor';
-  input.value = name;
-  input.checked = true;
-  label.appendChild(input);
-  label.appendChild(document.createTextNode(` ${name}`));
-  const addBtn = document.getElementById('dsr-add-competitor-btn');
-  if (addBtn && addBtn.parentElement === wrap) {
-    wrap.insertBefore(label, addBtn.nextSibling);
-  } else {
-    wrap.appendChild(label);
-  }
-}
-
 async function exportDsrMarketExcel() {
-  const statusEl = document.getElementById('dsr-market-status');
+  const statusEl = document.getElementById('dsr-export-status') || document.getElementById('dsr-market-status');
   const from = (document.getElementById('dsr-export-from')?.value || '').trim();
   const to = (document.getElementById('dsr-export-to')?.value || '').trim();
   if (!from || !to) {
@@ -1988,6 +2039,7 @@ async function exportDsrMarketExcel() {
     URL.revokeObjectURL(link.href);
     if (statusEl) statusEl.textContent = `Downloaded ${downloadName}`;
     if (typeof nexoraToast === 'function') nexoraToast(`Downloaded: ${downloadName}`, 'success');
+    closeDsrExportModal();
   } catch (error) {
     if (statusEl) statusEl.textContent = error.message || 'Unable to export.';
     if (typeof nexoraToast === 'function') nexoraToast(error.message || 'Export failed', 'error');

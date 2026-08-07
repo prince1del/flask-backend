@@ -3147,57 +3147,16 @@ html[data-hop-theme="custom"] .nx-confirm-backdrop {
   background: rgba(15, 23, 42, 0.48) !important;
 }
 
-/* ---------- Market Visit (DSR) — kill Nexora navy/cyan chrome ----------
-   Cloud Hub card classes ship dark navy + cyan borders. On BD themes those
-   must follow --hop-c-* / emerald ivory, not NEXORA blue.
-*/
-body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card,
-body.bd-hop-ui #market-visit-workspace .cloud-hub-main {
-  background: var(--hop-c-card, #ffffff) !important;
-  border: 1px solid var(--hop-c-border, #DED3BE) !important;
-  box-shadow: 0 8px 28px rgba(18, 60, 50, 0.08) !important;
-  color: var(--hop-c-text, #1F1F1F) !important;
-}
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-main {
-  border-color: #e2e8f0 !important;
-  box-shadow: 0 8px 28px rgba(15, 39, 68, 0.08) !important;
-  color: #0f172a !important;
-}
-body.bd-hop-ui #market-visit-workspace #dsr-market-form.bd-master-form-grid > label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--hop-c-text, #1F1F1F) !important;
-  font-size: 0.78rem;
-  font-weight: 650;
-}
+body.bd-hop-ui #market-visit-workspace .dsr-card,
+body.bd-hop-ui #market-visit-workspace .dsr-card-head h3,
+body.bd-hop-ui #market-visit-workspace .dsr-field,
 body.bd-hop-ui #market-visit-workspace .dsr-brand-chip {
   color: var(--hop-c-text, #1F1F1F) !important;
-  font-size: 0.78rem;
 }
-body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card h3,
-body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar h3 {
-  color: var(--hop-c-text, #1F1F1F) !important;
-}
-body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar p,
-body.bd-hop-ui #market-visit-workspace .cloud-hub-hint,
-body.bd-hop-ui #market-visit-workspace .cloud-hub-info {
+body.bd-hop-ui #market-visit-workspace .dsr-card-head p,
+body.bd-hop-ui #market-visit-workspace .dsr-section-title,
+body.bd-hop-ui #market-visit-workspace .dsr-status {
   color: var(--hop-c-muted, #6B6254) !important;
-}
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar p,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-hint,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-info,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace #dsr-market-form.bd-master-form-grid > label,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .dsr-brand-chip,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card h3,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar h3 {
-  color: #0f172a !important;
-}
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar p,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-hint,
-html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-info {
-  color: #64748b !important;
 }
 
 /* BD nav mark: never keep default NEXORA cyan/purple sparks */
@@ -3218,4 +3177,299 @@ html[data-hop-theme="bright"] body.bd-hop-ui #dashboard .bd-shell .hop-nav-brand
 }
 body.bd-hop-ui .nexora-logo:focus-visible {
   outline-color: color-mix(in srgb, var(--hop-c-accent, var(--nx-gold, #C9A227)) 55%, transparent) !important;
+}
+
+/* ---------- Market Visit (DSR) — professional page layout ---------- */
+#market-visit-workspace.workspace-shell {
+  overflow: auto;
+  min-height: 0;
+}
+#market-visit-workspace .dsr-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+#market-visit-workspace .dsr-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+#market-visit-workspace .dsr-excel-icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--hop-c-border, #DED3BE);
+  background: var(--hop-c-card, #ffffff);
+  color: #217346;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(18, 60, 50, 0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+#market-visit-workspace .dsr-excel-icon-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--hop-c-accent, #C9A227);
+  box-shadow: 0 8px 20px rgba(18, 60, 50, 0.12);
+}
+#market-visit-workspace .dsr-refresh-btn {
+  min-height: 40px;
+  padding: 0 14px;
+}
+#market-visit-workspace .dsr-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1080px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 4px 28px;
+  box-sizing: border-box;
+}
+#market-visit-workspace .dsr-status {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--hop-c-muted, #6B6254);
+}
+#market-visit-workspace .dsr-card {
+  background: var(--hop-c-card, #ffffff);
+  border: 1px solid var(--hop-c-border, #DED3BE);
+  border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(18, 60, 50, 0.07);
+  color: var(--hop-c-text, #1F1F1F);
+  overflow: hidden;
+}
+#market-visit-workspace .dsr-card-head {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--hop-c-border, #DED3BE) 80%, transparent);
+}
+#market-visit-workspace .dsr-card-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--hop-c-text, #1F1F1F);
+}
+#market-visit-workspace .dsr-card-head p {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--hop-c-muted, #6B6254);
+}
+#market-visit-workspace .dsr-form {
+  padding: 8px 20px 20px;
+}
+#market-visit-workspace .dsr-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed color-mix(in srgb, var(--hop-c-border, #DED3BE) 85%, transparent);
+}
+#market-visit-workspace .dsr-section:first-of-type {
+  margin-top: 0;
+  padding-top: 4px;
+  border-top: 0;
+}
+#market-visit-workspace .dsr-section-title {
+  margin: 0 0 12px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hop-c-muted, #6B6254);
+}
+#market-visit-workspace .dsr-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+#market-visit-workspace .dsr-form-grid--order {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+#market-visit-workspace .dsr-form-grid--notes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+#market-visit-workspace .dsr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 650;
+  color: var(--hop-c-text, #1F1F1F);
+  min-width: 0;
+}
+#market-visit-workspace .dsr-span-2 { grid-column: span 2; }
+#market-visit-workspace .dsr-span-full { grid-column: 1 / -1; }
+#market-visit-workspace .dsr-field input,
+#market-visit-workspace .dsr-field select,
+#market-visit-workspace .dsr-field textarea,
+#dsr-export-modal .dsr-field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--hop-c-border, #DED3BE);
+  background: #fff;
+  color: var(--hop-c-text, #1F1F1F);
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+#market-visit-workspace .dsr-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+#market-visit-workspace .dsr-field--total input {
+  background: color-mix(in srgb, var(--hop-c-accent, #C9A227) 10%, #ffffff);
+  border-color: color-mix(in srgb, var(--hop-c-accent, #C9A227) 45%, var(--hop-c-border, #DED3BE));
+  font-weight: 700;
+}
+#market-visit-workspace .dsr-brand-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+#market-visit-workspace .dsr-brand-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hop-c-border, #DED3BE);
+  background: color-mix(in srgb, var(--hop-c-bg, #F8F4EA) 70%, #ffffff);
+  font-size: 0.78rem;
+  font-weight: 550;
+  color: var(--hop-c-text, #1F1F1F);
+  cursor: pointer;
+}
+#market-visit-workspace .dsr-add-brand-btn {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+#market-visit-workspace .dsr-form-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--hop-c-border, #DED3BE) 80%, transparent);
+}
+#market-visit-workspace .dsr-form-foot .btn-primary {
+  min-height: 42px;
+  padding: 0 22px;
+  border-radius: 11px;
+  font-weight: 700;
+}
+#market-visit-workspace .dsr-table-wrap {
+  overflow: auto;
+  max-height: min(42vh, 420px);
+}
+#market-visit-workspace .dsr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+#market-visit-workspace .dsr-table th,
+#market-visit-workspace .dsr-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--hop-c-border, #DED3BE) 75%, transparent);
+  color: var(--hop-c-text, #1F1F1F);
+}
+#market-visit-workspace .dsr-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--hop-c-muted, #6B6254);
+  background: color-mix(in srgb, var(--hop-c-bg, #F8F4EA) 80%, #ffffff);
+  position: sticky;
+  top: 0;
+}
+#market-visit-workspace .dsr-empty-row td {
+  text-align: center;
+  color: var(--hop-c-muted, #6B6254);
+  padding: 22px 14px;
+}
+
+#dsr-export-modal.modal:not(.hidden) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 5600;
+}
+#dsr-export-modal .dsr-export-modal-card {
+  width: min(420px, 92vw);
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--hop-c-border, #DED3BE);
+  background: var(--hop-c-card, #ffffff);
+  color: var(--hop-c-text, #1F1F1F);
+  box-shadow: 0 22px 50px rgba(15, 39, 68, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#dsr-export-modal .dsr-export-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#dsr-export-modal .dsr-export-modal-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+#dsr-export-modal .dsr-export-close {
+  border: 0;
+  background: transparent;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--hop-c-muted, #6B6254);
+  line-height: 1;
+  padding: 4px 6px;
+}
+#dsr-export-modal .dsr-export-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--hop-c-muted, #6B6254);
+}
+#dsr-export-modal .dsr-export-owner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  color: var(--hop-c-text, #1F1F1F);
+}
+#dsr-export-modal .dsr-export-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+@media (max-width: 980px) {
+  #market-visit-workspace .dsr-form-grid,
+  #market-visit-workspace .dsr-form-grid--order {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #market-visit-workspace .dsr-span-2 { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+  #market-visit-workspace .dsr-form-grid,
+  #market-visit-workspace .dsr-form-grid--order,
+  #market-visit-workspace .dsr-form-grid--notes {
+    grid-template-columns: 1fr;
+  }
+  #market-visit-workspace .dsr-span-2,
+  #market-visit-workspace .dsr-span-full { grid-column: auto; }
+  #market-visit-workspace .dsr-page-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }

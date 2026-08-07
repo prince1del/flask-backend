@@ -88,7 +88,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-dsr-noblue">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-dsr-layout">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -1583,116 +1583,123 @@
     </section>
 
     <section id="market-visit-workspace" class="workspace-shell hidden">
-        <div class="workspace-header">
+        <div class="workspace-header dsr-page-header">
             <div>
                 <div class="workspace-breadcrumb"><span>CRM</span><span>›</span><span>Market Visit</span></div>
                 <h2>Market Visit (DSR)</h2>
-                <p class="subtitle">Same DSR Excel columns as field sheet — shared with the Android app via <code>/api/v1/dsr-market</code>.</p>
+                <p class="subtitle">Field visit log — same columns as July DSR Excel.</p>
             </div>
-            <button class="back-btn" onclick="goBack()">← Back</button>
+            <div class="dsr-page-actions">
+                <button type="button" class="dsr-excel-icon-btn" id="dsr-open-export-btn" onclick="openDsrExportModal()" title="Download Excel" aria-label="Download Excel">
+                    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                        <path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm1 13H9v-2h6v2zm0-4H9V9h6v2zm-1-7.5V9h3.5L14 3.5z"/>
+                        <path fill="#217346" d="M4 14.5V20h7.5L4 14.5z"/>
+                    </svg>
+                </button>
+                <button type="button" class="btn btn-secondary dsr-refresh-btn" onclick="loadMarketVisitWorkspace()">Refresh</button>
+                <button class="back-btn" onclick="goBack()">← Back</button>
+            </div>
         </div>
 
-        <div class="cloud-hub-layout" style="align-items:start;">
-            <aside class="cloud-hub-side" style="max-width:420px;">
-                <div class="cloud-hub-drive-card">
-                    <h3 style="margin:0 0 8px;">Download Excel</h3>
-                    <p class="cloud-hub-hint" style="margin-bottom:12px;">Export visits for a date range (same layout as July DSR).</p>
-                    <label class="cloud-hub-search" style="display:block;margin-bottom:8px;">
-                        <span class="sr-only">From date</span>
-                        <input type="date" id="dsr-export-from" />
-                    </label>
-                    <label class="cloud-hub-search" style="display:block;margin-bottom:12px;">
-                        <span class="sr-only">To date</span>
-                        <input type="date" id="dsr-export-to" />
-                    </label>
-                    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:0.9rem;">
-                        <input type="checkbox" id="dsr-export-include-owner" />
-                        Include Owner's Name in Excel
-                    </label>
-                    <div class="cloud-hub-actions">
-                        <button type="button" class="btn btn-primary" onclick="exportDsrMarketExcel()">Download DSR Excel</button>
-                        <button type="button" class="btn btn-secondary" onclick="loadMarketVisitWorkspace()">Refresh list</button>
-                    </div>
-                    <p id="dsr-market-status" class="cloud-hub-status" style="margin-top:12px;"></p>
-                </div>
-            </aside>
+        <div class="dsr-page">
+            <p id="dsr-market-status" class="dsr-status" aria-live="polite"></p>
 
-            <div class="cloud-hub-main">
-                <div class="cloud-hub-toolbar">
+            <div class="dsr-card">
+                <div class="dsr-card-head">
                     <div>
                         <h3>Add visit</h3>
-                        <p>Saved to the workspace DB — visible on phone and desktop.</p>
+                        <p>Saved to workspace — visible on phone and desktop.</p>
                     </div>
                 </div>
-                <form id="dsr-market-form" class="bd-master-form-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:20px;" onsubmit="return saveDsrMarketVisit(event)">
-                    <label>Date *<input type="date" id="dsr-visit-date" required></label>
-                    <label>Location<input type="text" id="dsr-location" autocomplete="address-level2"></label>
-                    <label>Customer *<input type="text" id="dsr-customer-name" required autocomplete="organization"></label>
-                    <label>Owner's Name<input type="text" id="dsr-owner-name" autocomplete="name"></label>
-                    <label>Contact Nos.<input type="text" id="dsr-contact-nos"></label>
-                    <label>MBO / AWD / ARS
-                        <select id="dsr-channel-type">
-                            <option value="MBO" selected>MBO</option>
-                            <option value="ARS">ARS</option>
-                            <option value="AWD">AWD</option>
-                        </select>
-                    </label>
-                    <label>Type (A / B / C)
-                        <select id="dsr-customer-type">
-                            <option value="" selected>Select</option>
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                        </select>
-                    </label>
-                    <label>City and Area<input type="text" id="dsr-city-area"></label>
-                    <label>Existing OR New
-                        <select id="dsr-existing-or-new">
-                            <option value="Existing" selected>Existing</option>
-                            <option value="New">New</option>
-                        </select>
-                    </label>
-                    <label>BED<input type="number" step="0.01" id="dsr-bed" oninput="syncDsrOrderLacsTotal()"></label>
-                    <label>BATH<input type="number" step="0.01" id="dsr-bath" oninput="syncDsrOrderLacsTotal()"></label>
-                    <label>TOB<input type="number" step="0.01" id="dsr-tob" oninput="syncDsrOrderLacsTotal()"></label>
-                    <label>OTHERS<input type="number" step="0.01" id="dsr-others" oninput="syncDsrOrderLacsTotal()"></label>
-                    <label>Order Recd. in Lacs (total)<input type="number" step="0.01" id="dsr-order-lacs" readonly title="Auto: BED + BATH + TOB + OTHERS"></label>
-                    <label>Branding in Store
-                        <select id="dsr-branding-yn">
-                            <option value="Yes">Yes</option>
-                            <option value="No" selected>No</option>
-                        </select>
-                    </label>
-                    <label style="grid-column:1/-1;">Complete Address<textarea id="dsr-address" rows="2"></textarea></label>
-                    <label style="grid-column:1/-1;">Competitor Brands
-                        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;" id="dsr-competitor-chips">
-                            <button type="button" class="btn btn-secondary" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add new brand</button>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing"> Bombay Dyeing</label>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Ddecor"> Ddecor</label>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Portico"> Portico</label>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Raymonds"> Raymonds</label>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Sansar"> Sansar</label>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Spaces"> Spaces</label>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Swayam"> Swayam</label>
-                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Welspun"> Welspun</label>
+                <form id="dsr-market-form" class="dsr-form" onsubmit="return saveDsrMarketVisit(event)">
+                    <div class="dsr-section">
+                        <h4 class="dsr-section-title">Visit details</h4>
+                        <div class="dsr-form-grid">
+                            <label class="dsr-field">Date *<input type="date" id="dsr-visit-date" required></label>
+                            <label class="dsr-field">Location<input type="text" id="dsr-location" autocomplete="address-level2" placeholder="City / market"></label>
+                            <label class="dsr-field dsr-span-2">Customer *<input type="text" id="dsr-customer-name" required autocomplete="organization"></label>
+                            <label class="dsr-field">Owner's Name<input type="text" id="dsr-owner-name" autocomplete="name"></label>
+                            <label class="dsr-field">Contact Nos.<input type="text" id="dsr-contact-nos"></label>
+                            <label class="dsr-field">MBO / AWD / ARS
+                                <select id="dsr-channel-type">
+                                    <option value="MBO" selected>MBO</option>
+                                    <option value="ARS">ARS</option>
+                                    <option value="AWD">AWD</option>
+                                </select>
+                            </label>
+                            <label class="dsr-field">Type (A / B / C)
+                                <select id="dsr-customer-type">
+                                    <option value="" selected>Select</option>
+                                    <option value="A">A</option>
+                                    <option value="B">B</option>
+                                    <option value="C">C</option>
+                                </select>
+                            </label>
+                            <label class="dsr-field">Existing OR New
+                                <select id="dsr-existing-or-new">
+                                    <option value="Existing" selected>Existing</option>
+                                    <option value="New">New</option>
+                                </select>
+                            </label>
+                            <label class="dsr-field">Branding in Store
+                                <select id="dsr-branding-yn">
+                                    <option value="Yes">Yes</option>
+                                    <option value="No" selected>No</option>
+                                </select>
+                            </label>
+                            <label class="dsr-field dsr-span-2">City and Area<input type="text" id="dsr-city-area"></label>
+                            <label class="dsr-field dsr-span-full">Complete Address<textarea id="dsr-address" rows="2"></textarea></label>
                         </div>
-                        <input type="hidden" id="dsr-competitors" value="">
-                    </label>
-                    <label style="grid-column:1/-1;">Feedback from Retailer<textarea id="dsr-feedback" rows="2"></textarea></label>
-                    <label style="grid-column:1/-1;">Remarks from SM<textarea id="dsr-sm-remarks" rows="2"></textarea></label>
-                    <div style="grid-column:1/-1;">
+                    </div>
+
+                    <div class="dsr-section">
+                        <h4 class="dsr-section-title">Order (₹ Lacs)</h4>
+                        <div class="dsr-form-grid dsr-form-grid--order">
+                            <label class="dsr-field">BED<input type="number" step="0.01" id="dsr-bed" oninput="syncDsrOrderLacsTotal()"></label>
+                            <label class="dsr-field">BATH<input type="number" step="0.01" id="dsr-bath" oninput="syncDsrOrderLacsTotal()"></label>
+                            <label class="dsr-field">TOB<input type="number" step="0.01" id="dsr-tob" oninput="syncDsrOrderLacsTotal()"></label>
+                            <label class="dsr-field">OTHERS<input type="number" step="0.01" id="dsr-others" oninput="syncDsrOrderLacsTotal()"></label>
+                            <label class="dsr-field dsr-field--total">Order Recd. in Lacs (total)<input type="number" step="0.01" id="dsr-order-lacs" readonly title="Auto: BED + BATH + TOB + OTHERS"></label>
+                        </div>
+                    </div>
+
+                    <div class="dsr-section">
+                        <h4 class="dsr-section-title">Brands &amp; notes</h4>
+                        <label class="dsr-field dsr-span-full">Competitor Brands
+                            <div class="dsr-brand-chips" id="dsr-competitor-chips">
+                                <button type="button" class="btn btn-secondary dsr-add-brand-btn" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add brand</button>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing"> Bombay Dyeing</label>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Ddecor"> Ddecor</label>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Portico"> Portico</label>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Raymonds"> Raymonds</label>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Sansar"> Sansar</label>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Spaces"> Spaces</label>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Swayam"> Swayam</label>
+                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Welspun"> Welspun</label>
+                            </div>
+                            <input type="hidden" id="dsr-competitors" value="">
+                        </label>
+                        <div class="dsr-form-grid dsr-form-grid--notes">
+                            <label class="dsr-field">Feedback from Retailer<textarea id="dsr-feedback" rows="3"></textarea></label>
+                            <label class="dsr-field">Remarks from SM<textarea id="dsr-sm-remarks" rows="3"></textarea></label>
+                        </div>
+                    </div>
+
+                    <div class="dsr-form-foot">
                         <button type="submit" class="btn btn-primary" id="dsr-save-btn">Save visit</button>
                     </div>
                 </form>
+            </div>
 
-                <div class="cloud-hub-toolbar">
+            <div class="dsr-card dsr-card--list">
+                <div class="dsr-card-head">
                     <div>
                         <h3>Recent visits</h3>
                         <p id="dsr-visit-count">Loading…</p>
                     </div>
                 </div>
-                <div class="cloud-hub-files-wrap">
-                    <table class="cloud-hub-files-table">
+                <div class="dsr-table-wrap">
+                    <table class="dsr-table">
                         <thead>
                             <tr>
                                 <th>Date</th>
@@ -1703,13 +1710,38 @@
                             </tr>
                         </thead>
                         <tbody id="dsr-visits-tbody">
-                            <tr class="cloud-hub-empty-row"><td colspan="5">No visits yet.</td></tr>
+                            <tr class="dsr-empty-row"><td colspan="5">No visits yet.</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
     </section>
+
+    <div id="dsr-export-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content dsr-export-modal-card" role="dialog" aria-labelledby="dsr-export-modal-title">
+            <div class="dsr-export-modal-head">
+                <h3 id="dsr-export-modal-title">Download DSR Excel</h3>
+                <button type="button" class="dsr-export-close" onclick="closeDsrExportModal()" aria-label="Close">✕</button>
+            </div>
+            <p class="dsr-export-hint">Pick a date range (same layout as July DSR).</p>
+            <label class="dsr-field">From
+                <input type="date" id="dsr-export-from" />
+            </label>
+            <label class="dsr-field">To
+                <input type="date" id="dsr-export-to" />
+            </label>
+            <label class="dsr-export-owner">
+                <input type="checkbox" id="dsr-export-include-owner" />
+                Include Owner's Name in Excel
+            </label>
+            <p id="dsr-export-status" class="dsr-status" aria-live="polite"></p>
+            <div class="dsr-export-modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeDsrExportModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="exportDsrMarketExcel()">Download</button>
+            </div>
+        </div>
+    </div>
 
     <section id="order-desk-workspace" class="workspace-shell hidden">
         <div class="nx-theme nx-od-screen nx-od-hub">
@@ -3327,7 +3359,7 @@
             <p>© 2026</p>
         </div>
     </footer>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260806-mobile-ui2"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-dsr-layout"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>
