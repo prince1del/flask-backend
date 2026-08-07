@@ -88,7 +88,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-dsr-layout">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-ymd1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -1615,7 +1615,10 @@
                     <div class="dsr-section">
                         <h4 class="dsr-section-title">Visit details</h4>
                         <div class="dsr-form-grid">
-                            <label class="dsr-field">Date *<input type="date" id="dsr-visit-date" required></label>
+                            <label class="dsr-field">Date *
+                                <input type="hidden" id="dsr-visit-date" required value="">
+                                <div class="nx-ymd" data-nx-ymd-input="dsr-visit-date"></div>
+                            </label>
                             <label class="dsr-field">Location<input type="text" id="dsr-location" autocomplete="address-level2" placeholder="City / market"></label>
                             <label class="dsr-field dsr-span-2">Customer *<input type="text" id="dsr-customer-name" required autocomplete="organization"></label>
                             <label class="dsr-field">Owner's Name<input type="text" id="dsr-owner-name" autocomplete="name"></label>
@@ -1726,10 +1729,12 @@
             </div>
             <p class="dsr-export-hint">Pick a date range (same layout as July DSR).</p>
             <label class="dsr-field">From
-                <input type="date" id="dsr-export-from" />
+                <input type="hidden" id="dsr-export-from" value="">
+                <div class="nx-ymd" data-nx-ymd-input="dsr-export-from"></div>
             </label>
             <label class="dsr-field">To
-                <input type="date" id="dsr-export-to" />
+                <input type="hidden" id="dsr-export-to" value="">
+                <div class="nx-ymd" data-nx-ymd-input="dsr-export-to"></div>
             </label>
             <label class="dsr-export-owner">
                 <input type="checkbox" id="dsr-export-include-owner" />
@@ -3359,7 +3364,8 @@
             <p>© 2026</p>
         </div>
     </footer>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-dsr-layout"></script>
+    <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd1"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-ymd1"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>

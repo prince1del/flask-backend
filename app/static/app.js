@@ -586,6 +586,7 @@ function initApp() {
   checkForUpdates();
   initDashboardTaWidgetDrag();
   initDashboardFoWidgetsDrag();
+  if (typeof initNxYmdPickers === 'function') initNxYmdPickers(document);
   window.addEventListener('resize', scheduleCustomersLayout);
   window.addEventListener('resize', scheduleArticleMasterLayout);
 }
@@ -1783,9 +1784,18 @@ async function loadMarketVisitWorkspace() {
   const exportFrom = document.getElementById('dsr-export-from');
   const exportTo = document.getElementById('dsr-export-to');
   const today = _dsrTodayIso();
+  if (typeof initNxYmdPickers === 'function') {
+    initNxYmdPickers(document.getElementById('market-visit-workspace') || document);
+    initNxYmdPickers(document.getElementById('dsr-export-modal') || document);
+  }
   if (visitDateEl && !visitDateEl.value) visitDateEl.value = today;
   if (exportFrom && !exportFrom.value) exportFrom.value = today;
   if (exportTo && !exportTo.value) exportTo.value = today;
+  if (typeof syncNxYmdPicker === 'function') {
+    syncNxYmdPicker('dsr-visit-date');
+    syncNxYmdPicker('dsr-export-from');
+    syncNxYmdPicker('dsr-export-to');
+  }
   if (!authState.accessToken) {
     if (statusEl) statusEl.textContent = 'Please login first.';
     return;
@@ -1827,10 +1837,17 @@ async function loadMarketVisitWorkspace() {
 function openDsrExportModal() {
   const modal = document.getElementById('dsr-export-modal');
   const today = _dsrTodayIso();
+  if (typeof initNxYmdPickers === 'function') {
+    initNxYmdPickers(modal || document);
+  }
   const exportFrom = document.getElementById('dsr-export-from');
   const exportTo = document.getElementById('dsr-export-to');
   if (exportFrom && !exportFrom.value) exportFrom.value = today;
   if (exportTo && !exportTo.value) exportTo.value = today;
+  if (typeof syncNxYmdPicker === 'function') {
+    syncNxYmdPicker('dsr-export-from');
+    syncNxYmdPicker('dsr-export-to');
+  }
   const statusEl = document.getElementById('dsr-export-status');
   if (statusEl) statusEl.textContent = '';
   if (modal) {
@@ -1869,18 +1886,24 @@ function renderDsrCompetitorBrandChips(brands, selectedNames) {
 async function loadDsrCompetitorBrands({ selectBrand } = {}) {
   try {
     const response = await fetchWithAuth('/api/v1/dsr-market/competitor-brands');
-    const data = await response.json();
-    if (!response.ok || data.success === false) {
-      throw new Error(data.error?.message || data.error || 'Failed to load brands');
+    const raw = await response.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      throw new Error('Competitor brands API unavailable (not JSON). Try Refresh after deploy.');
     }
-    const brands = Array.isArray(data.data) ? data.data : [];
+    if (!response.ok || data?.success === false) {
+      throw new Error(data?.error?.message || data?.error || 'Failed to load brands');
+    }
+    const brands = Array.isArray(data?.data) ? data.data : [];
     const selected = selectBrand ? [selectBrand] : Array.from(
       document.querySelectorAll('input[name="dsr-competitor"]:checked')
     ).map((el) => el.value);
     renderDsrCompetitorBrandChips(brands, selected);
   } catch (error) {
-    const statusEl = document.getElementById('dsr-market-status');
-    if (statusEl) statusEl.textContent = error.message || 'Unable to load competitor brands.';
+    // Keep static chips from HTML if API fails — don't spam status with parse noise
+    console.warn('loadDsrCompetitorBrands', error);
   }
 }
 
@@ -1893,11 +1916,17 @@ async function promptAddDsrCompetitorBrand() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
-    const data = await response.json();
-    if (!response.ok || data.success === false) {
-      throw new Error(data.error?.message || data.error || 'Failed to add brand');
+    const raw = await response.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      throw new Error('Add brand failed — server returned HTML instead of JSON.');
     }
-    const brands = Array.isArray(data.data) ? data.data : [];
+    if (!response.ok || data?.success === false) {
+      throw new Error(data?.error?.message || data?.error || 'Failed to add brand');
+    }
+    const brands = Array.isArray(data?.data) ? data.data : [];
     renderDsrCompetitorBrandChips(brands, [name]);
     if (typeof nexoraToast === 'function') nexoraToast(`Brand added: ${name}`, 'success');
   } catch (error) {
@@ -6941,6 +6970,7 @@ function openModule(moduleName) {
     pinBdShellForModule(document.getElementById('market-visit-workspace'));
     document.getElementById('sales-workspace')?.classList.add('hidden');
     setActiveSidebarItem('Market Visit');
+    if (typeof initNxYmdPickers === 'function') initNxYmdPickers(document);
     loadMarketVisitWorkspace();
     return;
   }
