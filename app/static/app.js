@@ -1864,24 +1864,73 @@ function closeDsrExportModal() {
   }
 }
 
-function renderDsrCompetitorBrandChips(brands, selectedNames) {
+function syncDsrBrandDropdownLabel() {
+  const label = document.getElementById('dsr-brand-dd-label');
+  const selected = Array.from(
+    document.querySelectorAll('input[name="dsr-competitor"]:checked')
+  ).map((el) => (el.value || '').trim()).filter(Boolean);
+  if (!label) return;
+  if (!selected.length) {
+    label.textContent = 'Select brands';
+    return;
+  }
+  if (selected.length <= 2) {
+    label.textContent = selected.join(', ');
+    return;
+  }
+  label.textContent = `${selected.length} selected · ${selected.slice(0, 2).join(', ')}…`;
+}
+
+function toggleDsrBrandDropdown(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
   const wrap = document.getElementById('dsr-competitor-chips');
-  if (!wrap) return;
+  const panel = document.getElementById('dsr-brand-dd-panel');
+  const trigger = document.getElementById('dsr-brand-dd-trigger');
+  if (!wrap || !panel || !trigger) return;
+  const open = panel.classList.contains('hidden');
+  closeDsrBrandDropdown();
+  if (open) {
+    panel.classList.remove('hidden');
+    wrap.classList.add('is-open');
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+}
+
+function closeDsrBrandDropdown() {
+  const wrap = document.getElementById('dsr-competitor-chips');
+  const panel = document.getElementById('dsr-brand-dd-panel');
+  const trigger = document.getElementById('dsr-brand-dd-trigger');
+  panel?.classList.add('hidden');
+  wrap?.classList.remove('is-open');
+  trigger?.setAttribute('aria-expanded', 'false');
+}
+
+function renderDsrCompetitorBrandChips(brands, selectedNames) {
+  const list = document.getElementById('dsr-brand-dd-list');
+  if (!list) return;
   const selected = new Set(
     (selectedNames || []).map((n) => String(n || '').trim().toLowerCase()).filter(Boolean)
   );
-  const addBtnHtml =
-    '<button type="button" class="btn btn-secondary dsr-add-brand-btn" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add brand</button>';
-  const chips = (brands || [])
-    .map((brand) => {
-      const name = String(brand || '').trim();
-      if (!name) return '';
-      const checked = selected.has(name.toLowerCase()) ? ' checked' : '';
-      return `<label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="${_dsrEsc(name)}"${checked}> ${_dsrEsc(name)}</label>`;
-    })
-    .join('');
-  wrap.innerHTML = `${addBtnHtml}${chips}`;
+  const names = (brands || []).map((b) => String(b || '').trim()).filter(Boolean);
+  const fallback = [
+    'Bombay Dyeing', 'Ddecor', 'Portico', 'Raymonds', 'Sansar', 'Spaces', 'Swayam', 'Welspun',
+  ];
+  const finalNames = names.length ? names : fallback;
+  list.innerHTML = finalNames.map((name) => {
+    const checked = selected.has(name.toLowerCase()) ? ' checked' : '';
+    return `<label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="${_dsrEsc(name)}"${checked} onchange="syncDsrBrandDropdownLabel()"> ${_dsrEsc(name)}</label>`;
+  }).join('');
+  syncDsrBrandDropdownLabel();
 }
+
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('dsr-competitor-chips');
+  if (!wrap) return;
+  if (!wrap.contains(e.target)) closeDsrBrandDropdown();
+});
 
 async function loadDsrCompetitorBrands({ selectBrand } = {}) {
   try {
@@ -1902,8 +1951,8 @@ async function loadDsrCompetitorBrands({ selectBrand } = {}) {
     ).map((el) => el.value);
     renderDsrCompetitorBrandChips(brands, selected);
   } catch (error) {
-    // Keep static chips from HTML if API fails — don't spam status with parse noise
     console.warn('loadDsrCompetitorBrands', error);
+    syncDsrBrandDropdownLabel();
   }
 }
 
@@ -1927,7 +1976,11 @@ async function promptAddDsrCompetitorBrand() {
       throw new Error(data?.error?.message || data?.error || 'Failed to add brand');
     }
     const brands = Array.isArray(data?.data) ? data.data : [];
-    renderDsrCompetitorBrandChips(brands, [name]);
+    const keep = Array.from(
+      document.querySelectorAll('input[name="dsr-competitor"]:checked')
+    ).map((el) => el.value);
+    if (!keep.map((x) => x.toLowerCase()).includes(name.toLowerCase())) keep.push(name);
+    renderDsrCompetitorBrandChips(brands, keep);
     if (typeof nexoraToast === 'function') nexoraToast(`Brand added: ${name}`, 'success');
   } catch (error) {
     if (typeof nexoraToast === 'function') nexoraToast(error.message || 'Unable to add brand', 'error');

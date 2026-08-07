@@ -88,7 +88,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-ymd1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-brand-dd">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -1669,16 +1669,24 @@
                     <div class="dsr-section">
                         <h4 class="dsr-section-title">Brands &amp; notes</h4>
                         <label class="dsr-field dsr-span-full">Competitor Brands
-                            <div class="dsr-brand-chips" id="dsr-competitor-chips">
-                                <button type="button" class="btn btn-secondary dsr-add-brand-btn" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add brand</button>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing"> Bombay Dyeing</label>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Ddecor"> Ddecor</label>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Portico"> Portico</label>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Raymonds"> Raymonds</label>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Sansar"> Sansar</label>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Spaces"> Spaces</label>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Swayam"> Swayam</label>
-                                <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Welspun"> Welspun</label>
+                            <div class="dsr-brand-dd" id="dsr-competitor-chips">
+                                <button type="button" class="dsr-brand-dd-trigger" id="dsr-brand-dd-trigger" onclick="toggleDsrBrandDropdown(event)" aria-haspopup="listbox" aria-expanded="false">
+                                    <span id="dsr-brand-dd-label">Select brands</span>
+                                    <span class="dsr-brand-dd-caret" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="dsr-brand-dd-panel hidden" id="dsr-brand-dd-panel" role="listbox" aria-multiselectable="true">
+                                    <div class="dsr-brand-dd-list" id="dsr-brand-dd-list">
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing" onchange="syncDsrBrandDropdownLabel()"> Bombay Dyeing</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Ddecor" onchange="syncDsrBrandDropdownLabel()"> Ddecor</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Portico" onchange="syncDsrBrandDropdownLabel()"> Portico</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Raymonds" onchange="syncDsrBrandDropdownLabel()"> Raymonds</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Sansar" onchange="syncDsrBrandDropdownLabel()"> Sansar</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Spaces" onchange="syncDsrBrandDropdownLabel()"> Spaces</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Swayam" onchange="syncDsrBrandDropdownLabel()"> Swayam</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Welspun" onchange="syncDsrBrandDropdownLabel()"> Welspun</label>
+                                    </div>
+                                    <button type="button" class="dsr-brand-dd-add" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add brand</button>
+                                </div>
                             </div>
                             <input type="hidden" id="dsr-competitors" value="">
                         </label>
@@ -3365,7 +3373,7 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd1"></script>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-ymd1"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-brand-dd"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>
