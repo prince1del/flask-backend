@@ -15,27 +15,36 @@ from app.routes.auth import get_workspace_id, require_jwt_auth, require_role
 
 dsr_market_bp = Blueprint("dsr_market", __name__, url_prefix="/api/v1/dsr-market")
 
-HEADERS = [
-    "Sr. No.",
-    "Date",
-    "Day",
-    "Name of Customer",
-    "ContactNos.",
-    "MBO / ARS",
-    "Type (A / B / C)",
-    "Complete Address",
-    "City and Area",
-    "Existing OR New",
-    "Order Recd. in Lacs",
-    "BED",
-    "BATH",
-    "TOB",
-    "OTHERS",
-    "Other Competitor Brands available in store",
-    "Branding in Store -  Y / N",
-    "Feed Back from Retailer",
-    "Remarks from SM",
-]
+
+def _excel_headers(include_owner: bool) -> list[str]:
+    headers = [
+        "Sr. No.",
+        "Date",
+        "Day",
+        "Name of Customer",
+    ]
+    if include_owner:
+        headers.append("Owner's Name")
+    headers.extend(
+        [
+            "ContactNos.",
+            "MBO / ARS",
+            "Type (A / B / C)",
+            "Complete Address",
+            "City and Area",
+            "Existing OR New",
+            "Order Recd. in Lacs",
+            "BED",
+            "BATH",
+            "TOB",
+            "OTHERS",
+            "Other Competitor Brands available in store",
+            "Branding in Store - Yes / No",
+            "Feed Back from Retailer",
+            "Remarks from SM",
+        ]
+    )
+    return headers
 
 
 def _db_path() -> str:
@@ -52,6 +61,8 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
             username TEXT,
             visit_date TEXT NOT NULL,
             customer_name TEXT NOT NULL,
+            location TEXT,
+            owner_name TEXT,
             contact_nos TEXT,
             channel_type TEXT,
             customer_type TEXT,
@@ -71,6 +82,11 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(dsr_market_visits)")}
+    if "owner_name" not in cols:
+        conn.execute("ALTER TABLE dsr_market_visits ADD COLUMN owner_name TEXT")
+    if "location" not in cols:
+        conn.execute("ALTER TABLE dsr_market_visits ADD COLUMN location TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_dsr_market_ws_date "
         "ON dsr_market_visits(workspace_id, visit_date)"
@@ -91,6 +107,10 @@ def _user_id() -> int | None:
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
     return dict(row)
+
+
+def _truthy_flag(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 @dsr_market_bp.route("/visits", methods=["POST"])
@@ -115,11 +135,11 @@ def create_visit():
         cur = conn.execute(
             """
             INSERT INTO dsr_market_visits (
-                workspace_id, user_id, username, visit_date, customer_name, contact_nos,
+                workspace_id, user_id, username, visit_date, customer_name, location, owner_name, contact_nos,
                 channel_type, customer_type, address, city_area, existing_or_new,
                 order_lacs, bed, bath, tob, others, competitor_brands, branding_yn,
                 retailer_feedback, sm_remarks, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 workspace_id,
@@ -127,6 +147,8 @@ def create_visit():
                 user.get("username"),
                 visit_date,
                 customer_name,
+                (data.get("location") or "").strip() or None,
+                (data.get("owner_name") or "").strip() or None,
                 (data.get("contact_nos") or "").strip() or None,
                 (data.get("channel_type") or "").strip() or None,
                 (data.get("customer_type") or "").strip() or None,
@@ -188,17 +210,19 @@ def list_visits():
     return jsonify({"success": True, "data": [_row_to_dict(r) for r in rows], "count": len(rows)})
 
 
-def _build_excel(rows: list[dict], sm_name: str, period_label: str) -> bytes:
+def _build_excel(rows: list[dict], sm_name: str, period_label: str, include_owner: bool) -> bytes:
+    """Build DSR Excel. Note: `location` is app-only and must never appear in export."""
     wb = Workbook()
     ws = wb.active
     ws.title = "DSR"
+    headers = _excel_headers(include_owner)
 
     ws["S1"] = "All Remarks received from Retailers"
     ws["B2"] = "Name of the SM :"
     ws["D2"] = sm_name or ""
     ws["H2"] = f"DSR Report from  {period_label}"
 
-    for col, header in enumerate(HEADERS, start=1):
+    for col, header in enumerate(headers, start=1):
         cell = ws.cell(row=5, column=col, value=header)
         cell.font = Font(bold=True)
         cell.alignment = Alignment(wrap_text=True, vertical="center")
@@ -222,34 +246,43 @@ def _build_excel(rows: list[dict], sm_name: str, period_label: str) -> bytes:
         show_date = visit_date != last_date
         last_date = visit_date
 
-        values = [
+        values: list = [
             sr,
             date_display if show_date else "",
             day_name if show_date else "",
             item.get("customer_name") or "",
-            item.get("contact_nos") or "",
-            item.get("channel_type") or "",
-            item.get("customer_type") or "",
-            item.get("address") or "",
-            item.get("city_area") or "",
-            item.get("existing_or_new") or "",
-            item.get("order_lacs") if item.get("order_lacs") is not None else "",
-            item.get("bed") or "",
-            item.get("bath") or "",
-            item.get("tob") or "",
-            item.get("others") or "",
-            item.get("competitor_brands") or "",
-            item.get("branding_yn") or "",
-            item.get("retailer_feedback") or "",
-            item.get("sm_remarks") or "",
         ]
+        if include_owner:
+            values.append(item.get("owner_name") or "")
+        values.extend(
+            [
+                item.get("contact_nos") or "",
+                item.get("channel_type") or "",
+                item.get("customer_type") or "",
+                item.get("address") or "",
+                item.get("city_area") or "",
+                item.get("existing_or_new") or "",
+                item.get("order_lacs") if item.get("order_lacs") is not None else "",
+                item.get("bed") or "",
+                item.get("bath") or "",
+                item.get("tob") or "",
+                item.get("others") or "",
+                item.get("competitor_brands") or "",
+                item.get("branding_yn") or "",
+                item.get("retailer_feedback") or "",
+                item.get("sm_remarks") or "",
+            ]
+        )
         for col, val in enumerate(values, start=1):
             ws.cell(row=excel_row, column=col, value=val)
         excel_row += 1
 
     from openpyxl.utils import get_column_letter
 
-    widths = [8, 12, 12, 28, 14, 10, 12, 28, 16, 12, 12, 8, 8, 8, 10, 28, 12, 32, 32]
+    widths = [8, 12, 12, 28]
+    if include_owner:
+        widths.append(20)
+    widths.extend([14, 10, 12, 28, 16, 12, 12, 8, 8, 8, 10, 28, 12, 32, 32])
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -270,6 +303,10 @@ def export_excel():
         return jsonify(
             {"success": False, "error": {"message": "from and to dates are required (YYYY-MM-DD)"}}
         ), 400
+
+    include_owner = _truthy_flag(
+        request.args.get("include_owner") or request.args.get("includeOwner")
+    )
 
     user = _current_user()
     with sqlite3.connect(_db_path()) as conn:
@@ -297,7 +334,9 @@ def export_excel():
     if rows and rows[0].get("username"):
         sm_name = rows[0]["username"] or sm_name
 
-    content = _build_excel(rows, sm_name=sm_name, period_label=period)
+    content = _build_excel(
+        rows, sm_name=sm_name, period_label=period, include_owner=include_owner
+    )
     filename = f"DSR_{from_date}_to_{to_date}.xlsx"
     return send_file(
         io.BytesIO(content),

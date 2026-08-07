@@ -3146,3 +3146,76 @@ html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .nx-confirm-backd
 html[data-hop-theme="custom"] .nx-confirm-backdrop {
   background: rgba(15, 23, 42, 0.48) !important;
 }
+
+/* ---------- Market Visit (DSR) — kill Nexora navy/cyan chrome ----------
+   Cloud Hub card classes ship dark navy + cyan borders. On BD themes those
+   must follow --hop-c-* / emerald ivory, not NEXORA blue.
+*/
+body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card,
+body.bd-hop-ui #market-visit-workspace .cloud-hub-main {
+  background: var(--hop-c-card, #ffffff) !important;
+  border: 1px solid var(--hop-c-border, #DED3BE) !important;
+  box-shadow: 0 8px 28px rgba(18, 60, 50, 0.08) !important;
+  color: var(--hop-c-text, #1F1F1F) !important;
+}
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-main {
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 8px 28px rgba(15, 39, 68, 0.08) !important;
+  color: #0f172a !important;
+}
+body.bd-hop-ui #market-visit-workspace #dsr-market-form.bd-master-form-grid > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--hop-c-text, #1F1F1F) !important;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+body.bd-hop-ui #market-visit-workspace .dsr-brand-chip {
+  color: var(--hop-c-text, #1F1F1F) !important;
+  font-size: 0.78rem;
+}
+body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card h3,
+body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar h3 {
+  color: var(--hop-c-text, #1F1F1F) !important;
+}
+body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar p,
+body.bd-hop-ui #market-visit-workspace .cloud-hub-hint,
+body.bd-hop-ui #market-visit-workspace .cloud-hub-info {
+  color: var(--hop-c-muted, #6B6254) !important;
+}
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar p,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-hint,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-info,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace #dsr-market-form.bd-master-form-grid > label,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .dsr-brand-chip,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-drive-card h3,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar h3 {
+  color: #0f172a !important;
+}
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-toolbar p,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-hint,
+html[data-hop-theme="bright"] body.bd-hop-ui #market-visit-workspace .cloud-hub-info {
+  color: #64748b !important;
+}
+
+/* BD nav mark: never keep default NEXORA cyan/purple sparks */
+body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo,
+body.bd-hop-ui #dashboard .bd-shell .hop-nav-brand .nx-core--logo {
+  --nx-spark-a: var(--hop-c-accent-light, var(--nx-gold, #C9A227)) !important;
+  --nx-spark-b: var(--hop-c-accent, var(--nx-gold, #C9A227)) !important;
+}
+body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo img,
+body.bd-hop-ui #dashboard .bd-shell .hop-nav-brand .nx-core--logo img {
+  animation: none !important;
+  /* Blue appicon → theme gold/accent cast */
+  filter: sepia(0.85) saturate(2.4) hue-rotate(5deg) brightness(1.05) !important;
+}
+html[data-hop-theme="bright"] body.bd-hop-ui #bd-left-nav .hop-nav-brand .nx-core--logo img,
+html[data-hop-theme="bright"] body.bd-hop-ui #dashboard .bd-shell .hop-nav-brand .nx-core--logo img {
+  filter: sepia(0.7) saturate(3) hue-rotate(130deg) brightness(0.95) !important;
+}
+body.bd-hop-ui .nexora-logo:focus-visible {
+  outline-color: color-mix(in srgb, var(--hop-c-accent, var(--nx-gold, #C9A227)) 55%, transparent) !important;
+}

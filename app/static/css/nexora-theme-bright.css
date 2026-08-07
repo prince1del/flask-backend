@@ -12,6 +12,11 @@ html[data-hop-theme="bright"] {
   --hop-c-accent-light: #5eead4;
   --hop-c-accent-soft: rgba(13, 148, 136, 0.22);
   --hop-c-accent-glow: rgba(13, 148, 136, 0.45);
+  --hop-c-card: #ffffff;
+  --hop-c-bg: #f4f7fb;
+  --hop-c-text: #0f172a;
+  --hop-c-muted: #64748b;
+  --hop-c-border: #e2e8f0;
   --nx-gold: #0d9488;
   --nx-gold-2: #14b8a6;
   --nxt-cyan: #0d9488;

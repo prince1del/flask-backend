@@ -1834,9 +1834,17 @@ async function saveDsrMarketVisit(event) {
     return false;
   }
   const orderRaw = (document.getElementById('dsr-order-lacs')?.value || '').trim();
+  const competitorBrands = Array.from(
+    document.querySelectorAll('input[name="dsr-competitor"]:checked')
+  )
+    .map((el) => (el.value || '').trim())
+    .filter(Boolean)
+    .join(', ');
   const body = {
     visit_date: visitDate,
     customer_name: customerName,
+    location: (document.getElementById('dsr-location')?.value || '').trim() || null,
+    owner_name: (document.getElementById('dsr-owner-name')?.value || '').trim() || null,
     contact_nos: (document.getElementById('dsr-contact-nos')?.value || '').trim() || null,
     channel_type: (document.getElementById('dsr-channel-type')?.value || '').trim() || null,
     customer_type: (document.getElementById('dsr-customer-type')?.value || '').trim() || null,
@@ -1848,7 +1856,7 @@ async function saveDsrMarketVisit(event) {
     bath: (document.getElementById('dsr-bath')?.value || '').trim() || null,
     tob: (document.getElementById('dsr-tob')?.value || '').trim() || null,
     others: (document.getElementById('dsr-others')?.value || '').trim() || null,
-    competitor_brands: (document.getElementById('dsr-competitors')?.value || '').trim() || null,
+    competitor_brands: competitorBrands || null,
     branding_yn: (document.getElementById('dsr-branding-yn')?.value || '').trim() || null,
     retailer_feedback: (document.getElementById('dsr-feedback')?.value || '').trim() || null,
     sm_remarks: (document.getElementById('dsr-sm-remarks')?.value || '').trim() || null,
@@ -1864,11 +1872,15 @@ async function saveDsrMarketVisit(event) {
     if (!response.ok || data.success === false) {
       throw new Error(data.error?.message || data.error || 'Save failed');
     }
-    ['dsr-customer-name', 'dsr-contact-nos', 'dsr-customer-type', 'dsr-address', 'dsr-city-area',
-      'dsr-order-lacs', 'dsr-bed', 'dsr-bath', 'dsr-tob', 'dsr-others', 'dsr-competitors',
+    // Keep location for next visit; clear customer-specific fields only.
+    ['dsr-customer-name', 'dsr-owner-name', 'dsr-contact-nos', 'dsr-customer-type', 'dsr-address', 'dsr-city-area',
+      'dsr-order-lacs', 'dsr-bed', 'dsr-bath', 'dsr-tob', 'dsr-others',
       'dsr-feedback', 'dsr-sm-remarks'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.value = '';
+    });
+    document.querySelectorAll('input[name="dsr-competitor"]').forEach((el) => {
+      el.checked = false;
     });
     if (typeof nexoraToast === 'function') nexoraToast('Visit saved', 'success');
     if (statusEl) statusEl.textContent = 'Visit saved.';
@@ -1882,6 +1894,59 @@ async function saveDsrMarketVisit(event) {
   return false;
 }
 
+function syncDsrOrderLacsTotal() {
+  const part = (id) => {
+    const raw = (document.getElementById(id)?.value || '').trim().replace(/,/g, '');
+    if (!raw) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const bedEl = document.getElementById('dsr-bed');
+  const bathEl = document.getElementById('dsr-bath');
+  const tobEl = document.getElementById('dsr-tob');
+  const othersEl = document.getElementById('dsr-others');
+  const totalEl = document.getElementById('dsr-order-lacs');
+  if (!totalEl) return;
+  const allBlank = [bedEl, bathEl, tobEl, othersEl].every((el) => !(el?.value || '').trim());
+  if (allBlank) {
+    totalEl.value = '';
+    return;
+  }
+  const sum = part('dsr-bed') + part('dsr-bath') + part('dsr-tob') + part('dsr-others');
+  totalEl.value = String(Math.round(sum * 100) / 100);
+}
+
+function promptAddDsrCompetitorBrand() {
+  const name = (window.prompt('New competitor brand name:') || '').trim();
+  if (!name) return;
+  const wrap = document.getElementById('dsr-competitor-chips');
+  if (!wrap) return;
+  const existing = Array.from(document.querySelectorAll('input[name="dsr-competitor"]')).some(
+    (el) => (el.value || '').toLowerCase() === name.toLowerCase()
+  );
+  if (existing) {
+    document.querySelectorAll('input[name="dsr-competitor"]').forEach((el) => {
+      if ((el.value || '').toLowerCase() === name.toLowerCase()) el.checked = true;
+    });
+    return;
+  }
+  const label = document.createElement('label');
+  label.className = 'dsr-brand-chip';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.name = 'dsr-competitor';
+  input.value = name;
+  input.checked = true;
+  label.appendChild(input);
+  label.appendChild(document.createTextNode(` ${name}`));
+  const addBtn = document.getElementById('dsr-add-competitor-btn');
+  if (addBtn && addBtn.parentElement === wrap) {
+    wrap.insertBefore(label, addBtn.nextSibling);
+  } else {
+    wrap.appendChild(label);
+  }
+}
+
 async function exportDsrMarketExcel() {
   const statusEl = document.getElementById('dsr-market-status');
   const from = (document.getElementById('dsr-export-from')?.value || '').trim();
@@ -1891,9 +1956,10 @@ async function exportDsrMarketExcel() {
     return;
   }
   if (statusEl) statusEl.textContent = 'Preparing Excel…';
+  const includeOwner = !!document.getElementById('dsr-export-include-owner')?.checked;
   try {
     const response = await fetchWithAuth(
-      `/api/v1/dsr-market/export?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      `/api/v1/dsr-market/export?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&include_owner=${includeOwner ? '1' : '0'}`,
     );
     if (!response.ok) {
       let message = 'Export failed';

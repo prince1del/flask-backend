@@ -13,6 +13,11 @@ html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) {
   --hop-c-accent-light: #E8D48B;
   --hop-c-accent-soft: rgba(201, 162, 39, 0.22);
   --hop-c-accent-glow: rgba(201, 162, 39, 0.45);
+  --hop-c-card: #ffffff;
+  --hop-c-bg: #F8F4EA;
+  --hop-c-text: #1F1F1F;
+  --hop-c-muted: #6B6254;
+  --hop-c-border: #DED3BE;
   --nx-gold: #C9A227;
   --nx-gold-2: #A8861F;
   --nxt-cyan: #C9A227;

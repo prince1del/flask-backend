@@ -84,11 +84,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260806-mobile-nav3">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260806-mobile-nav3">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260806-mobile-nav3">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260806-mobile-nav3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260807-dsr-noblue">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260806-mobile-nav3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -1605,6 +1605,10 @@
                         <span class="sr-only">To date</span>
                         <input type="date" id="dsr-export-to" />
                     </label>
+                    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:0.9rem;">
+                        <input type="checkbox" id="dsr-export-include-owner" />
+                        Include Owner's Name in Excel
+                    </label>
                     <div class="cloud-hub-actions">
                         <button type="button" class="btn btn-primary" onclick="exportDsrMarketExcel()">Download DSR Excel</button>
                         <button type="button" class="btn btn-secondary" onclick="loadMarketVisitWorkspace()">Refresh list</button>
@@ -1622,20 +1626,58 @@
                 </div>
                 <form id="dsr-market-form" class="bd-master-form-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:20px;" onsubmit="return saveDsrMarketVisit(event)">
                     <label>Date *<input type="date" id="dsr-visit-date" required></label>
+                    <label>Location<input type="text" id="dsr-location" autocomplete="address-level2"></label>
                     <label>Customer *<input type="text" id="dsr-customer-name" required autocomplete="organization"></label>
+                    <label>Owner's Name<input type="text" id="dsr-owner-name" autocomplete="name"></label>
                     <label>Contact Nos.<input type="text" id="dsr-contact-nos"></label>
-                    <label>MBO / AWD / ARS<input type="text" id="dsr-channel-type" value="MBO"></label>
-                    <label>Type (A / B / C)<input type="text" id="dsr-customer-type"></label>
+                    <label>MBO / AWD / ARS
+                        <select id="dsr-channel-type">
+                            <option value="MBO" selected>MBO</option>
+                            <option value="ARS">ARS</option>
+                            <option value="AWD">AWD</option>
+                        </select>
+                    </label>
+                    <label>Type (A / B / C)
+                        <select id="dsr-customer-type">
+                            <option value="" selected>Select</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                        </select>
+                    </label>
                     <label>City and Area<input type="text" id="dsr-city-area"></label>
-                    <label>Existing OR New<input type="text" id="dsr-existing-or-new" value="Existing"></label>
-                    <label>Order Recd. in Lacs<input type="number" step="0.01" id="dsr-order-lacs"></label>
-                    <label>BED<input type="text" id="dsr-bed"></label>
-                    <label>BATH<input type="text" id="dsr-bath"></label>
-                    <label>TOB<input type="text" id="dsr-tob"></label>
-                    <label>OTHERS<input type="text" id="dsr-others"></label>
-                    <label>Branding (Y/N)<input type="text" id="dsr-branding-yn" value="N"></label>
+                    <label>Existing OR New
+                        <select id="dsr-existing-or-new">
+                            <option value="Existing" selected>Existing</option>
+                            <option value="New">New</option>
+                        </select>
+                    </label>
+                    <label>BED<input type="number" step="0.01" id="dsr-bed" oninput="syncDsrOrderLacsTotal()"></label>
+                    <label>BATH<input type="number" step="0.01" id="dsr-bath" oninput="syncDsrOrderLacsTotal()"></label>
+                    <label>TOB<input type="number" step="0.01" id="dsr-tob" oninput="syncDsrOrderLacsTotal()"></label>
+                    <label>OTHERS<input type="number" step="0.01" id="dsr-others" oninput="syncDsrOrderLacsTotal()"></label>
+                    <label>Order Recd. in Lacs (total)<input type="number" step="0.01" id="dsr-order-lacs" readonly title="Auto: BED + BATH + TOB + OTHERS"></label>
+                    <label>Branding in Store
+                        <select id="dsr-branding-yn">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                        </select>
+                    </label>
                     <label style="grid-column:1/-1;">Complete Address<textarea id="dsr-address" rows="2"></textarea></label>
-                    <label style="grid-column:1/-1;">Competitor Brands<textarea id="dsr-competitors" rows="2"></textarea></label>
+                    <label style="grid-column:1/-1;">Competitor Brands
+                        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;" id="dsr-competitor-chips">
+                            <button type="button" class="btn btn-secondary" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add new brand</button>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing"> Bombay Dyeing</label>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Ddecor"> Ddecor</label>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Portico"> Portico</label>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Raymonds"> Raymonds</label>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Sansar"> Sansar</label>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Spaces"> Spaces</label>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Swayam"> Swayam</label>
+                            <label class="dsr-brand-chip"><input type="checkbox" name="dsr-competitor" value="Welspun"> Welspun</label>
+                        </div>
+                        <input type="hidden" id="dsr-competitors" value="">
+                    </label>
                     <label style="grid-column:1/-1;">Feedback from Retailer<textarea id="dsr-feedback" rows="2"></textarea></label>
                     <label style="grid-column:1/-1;">Remarks from SM<textarea id="dsr-sm-remarks" rows="2"></textarea></label>
                     <div style="grid-column:1/-1;">
