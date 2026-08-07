@@ -88,7 +88,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-brand-dd">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-add-brand">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -1685,7 +1685,9 @@
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Swayam" onchange="syncDsrBrandDropdownLabel()"> Swayam</label>
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Welspun" onchange="syncDsrBrandDropdownLabel()"> Welspun</label>
                                     </div>
-                                    <button type="button" class="dsr-brand-dd-add" id="dsr-add-competitor-btn" onclick="promptAddDsrCompetitorBrand()">+ Add brand</button>
+                                    <div class="dsr-brand-dd-foot">
+                                        <button type="button" class="dsr-brand-dd-add" id="dsr-add-competitor-btn" onclick="event.stopPropagation(); promptAddDsrCompetitorBrand();">+ Add new brand</button>
+                                    </div>
                                 </div>
                             </div>
                             <input type="hidden" id="dsr-competitors" value="">
