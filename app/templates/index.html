@@ -965,6 +965,7 @@
                     <button type="button" id="nav-dashboard" class="nx-nav-item hop-nav-btn nav-item active" onclick="openModule('Dashboard')"><span class="nav-label">Dashboard</span></button>
                     <div class="hop-nav-group bd-nav-group-crm">CRM</div>
                     <button type="button" id="nav-customers" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Customers')"><span class="nav-label">Know your Customer</span></button>
+                    <button type="button" id="nav-market-visit" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('MarketVisit')"><span class="nav-label">Market Visit</span></button>
                     <div class="hop-nav-group bd-nav-group-sales">Sales</div>
                     <button type="button" id="nav-order-desk" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('OrderDesk')"><span class="nav-label">Order Desk</span></button>
                     <div class="hop-nav-group bd-nav-group-reports">Reports</div>
@@ -1574,6 +1575,93 @@
                         </thead>
                         <tbody id="cloud-hub-files-tbody">
                             <tr class="cloud-hub-empty-row"><td colspan="4">Connect Google Drive to see files.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="market-visit-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>CRM</span><span>›</span><span>Market Visit</span></div>
+                <h2>Market Visit (DSR)</h2>
+                <p class="subtitle">Same DSR Excel columns as field sheet — shared with the Android app via <code>/api/v1/dsr-market</code>.</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="cloud-hub-layout" style="align-items:start;">
+            <aside class="cloud-hub-side" style="max-width:420px;">
+                <div class="cloud-hub-drive-card">
+                    <h3 style="margin:0 0 8px;">Download Excel</h3>
+                    <p class="cloud-hub-hint" style="margin-bottom:12px;">Export visits for a date range (same layout as July DSR).</p>
+                    <label class="cloud-hub-search" style="display:block;margin-bottom:8px;">
+                        <span class="sr-only">From date</span>
+                        <input type="date" id="dsr-export-from" />
+                    </label>
+                    <label class="cloud-hub-search" style="display:block;margin-bottom:12px;">
+                        <span class="sr-only">To date</span>
+                        <input type="date" id="dsr-export-to" />
+                    </label>
+                    <div class="cloud-hub-actions">
+                        <button type="button" class="btn btn-primary" onclick="exportDsrMarketExcel()">Download DSR Excel</button>
+                        <button type="button" class="btn btn-secondary" onclick="loadMarketVisitWorkspace()">Refresh list</button>
+                    </div>
+                    <p id="dsr-market-status" class="cloud-hub-status" style="margin-top:12px;"></p>
+                </div>
+            </aside>
+
+            <div class="cloud-hub-main">
+                <div class="cloud-hub-toolbar">
+                    <div>
+                        <h3>Add visit</h3>
+                        <p>Saved to the workspace DB — visible on phone and desktop.</p>
+                    </div>
+                </div>
+                <form id="dsr-market-form" class="bd-master-form-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:20px;" onsubmit="return saveDsrMarketVisit(event)">
+                    <label>Date *<input type="date" id="dsr-visit-date" required></label>
+                    <label>Customer *<input type="text" id="dsr-customer-name" required autocomplete="organization"></label>
+                    <label>Contact Nos.<input type="text" id="dsr-contact-nos"></label>
+                    <label>MBO / AWD / ARS<input type="text" id="dsr-channel-type" value="MBO"></label>
+                    <label>Type (A / B / C)<input type="text" id="dsr-customer-type"></label>
+                    <label>City and Area<input type="text" id="dsr-city-area"></label>
+                    <label>Existing OR New<input type="text" id="dsr-existing-or-new" value="Existing"></label>
+                    <label>Order Recd. in Lacs<input type="number" step="0.01" id="dsr-order-lacs"></label>
+                    <label>BED<input type="text" id="dsr-bed"></label>
+                    <label>BATH<input type="text" id="dsr-bath"></label>
+                    <label>TOB<input type="text" id="dsr-tob"></label>
+                    <label>OTHERS<input type="text" id="dsr-others"></label>
+                    <label>Branding (Y/N)<input type="text" id="dsr-branding-yn" value="N"></label>
+                    <label style="grid-column:1/-1;">Complete Address<textarea id="dsr-address" rows="2"></textarea></label>
+                    <label style="grid-column:1/-1;">Competitor Brands<textarea id="dsr-competitors" rows="2"></textarea></label>
+                    <label style="grid-column:1/-1;">Feedback from Retailer<textarea id="dsr-feedback" rows="2"></textarea></label>
+                    <label style="grid-column:1/-1;">Remarks from SM<textarea id="dsr-sm-remarks" rows="2"></textarea></label>
+                    <div style="grid-column:1/-1;">
+                        <button type="submit" class="btn btn-primary" id="dsr-save-btn">Save visit</button>
+                    </div>
+                </form>
+
+                <div class="cloud-hub-toolbar">
+                    <div>
+                        <h3>Recent visits</h3>
+                        <p id="dsr-visit-count">Loading…</p>
+                    </div>
+                </div>
+                <div class="cloud-hub-files-wrap">
+                    <table class="cloud-hub-files-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Customer</th>
+                                <th>Channel</th>
+                                <th>City</th>
+                                <th>Order (Lacs)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dsr-visits-tbody">
+                            <tr class="cloud-hub-empty-row"><td colspan="5">No visits yet.</td></tr>
                         </tbody>
                     </table>
                 </div>

@@ -1760,6 +1760,174 @@ async function loadCloudHubWorkspace() {
   await loadCloudHubFiles();
 }
 
+function _dsrTodayIso() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function _dsrEsc(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function loadMarketVisitWorkspace() {
+  const statusEl = document.getElementById('dsr-market-status');
+  const tbody = document.getElementById('dsr-visits-tbody');
+  const countEl = document.getElementById('dsr-visit-count');
+  const visitDateEl = document.getElementById('dsr-visit-date');
+  const exportFrom = document.getElementById('dsr-export-from');
+  const exportTo = document.getElementById('dsr-export-to');
+  const today = _dsrTodayIso();
+  if (visitDateEl && !visitDateEl.value) visitDateEl.value = today;
+  if (exportFrom && !exportFrom.value) exportFrom.value = today;
+  if (exportTo && !exportTo.value) exportTo.value = today;
+  if (!authState.accessToken) {
+    if (statusEl) statusEl.textContent = 'Please login first.';
+    return;
+  }
+  if (countEl) countEl.textContent = 'Loading…';
+  try {
+    const response = await fetchWithAuth('/api/v1/dsr-market/visits?limit=200');
+    const data = await response.json();
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error?.message || data.error || 'Failed to load visits');
+    }
+    const rows = Array.isArray(data.data) ? data.data : [];
+    if (countEl) countEl.textContent = `${rows.length} visit${rows.length === 1 ? '' : 's'}`;
+    if (tbody) {
+      if (!rows.length) {
+        tbody.innerHTML = '<tr class="cloud-hub-empty-row"><td colspan="5">No visits yet. Save one above.</td></tr>';
+      } else {
+        tbody.innerHTML = rows.map((r) => `
+          <tr>
+            <td>${_dsrEsc(r.visit_date)}</td>
+            <td>${_dsrEsc(r.customer_name)}</td>
+            <td>${_dsrEsc(r.channel_type || '')}</td>
+            <td>${_dsrEsc(r.city_area || '')}</td>
+            <td>${r.order_lacs != null ? _dsrEsc(r.order_lacs) : ''}</td>
+          </tr>`).join('');
+      }
+    }
+    if (statusEl) statusEl.textContent = '';
+  } catch (error) {
+    if (statusEl) statusEl.textContent = error.message || 'Unable to load visits.';
+    if (countEl) countEl.textContent = 'Error';
+    if (tbody) {
+      tbody.innerHTML = '<tr class="cloud-hub-empty-row"><td colspan="5">Unable to load visits.</td></tr>';
+    }
+  }
+}
+
+async function saveDsrMarketVisit(event) {
+  if (event) event.preventDefault();
+  const statusEl = document.getElementById('dsr-market-status');
+  const btn = document.getElementById('dsr-save-btn');
+  const customerName = (document.getElementById('dsr-customer-name')?.value || '').trim();
+  const visitDate = (document.getElementById('dsr-visit-date')?.value || '').trim();
+  if (!customerName || !visitDate) {
+    if (statusEl) statusEl.textContent = 'Customer name and date are required.';
+    return false;
+  }
+  const orderRaw = (document.getElementById('dsr-order-lacs')?.value || '').trim();
+  const body = {
+    visit_date: visitDate,
+    customer_name: customerName,
+    contact_nos: (document.getElementById('dsr-contact-nos')?.value || '').trim() || null,
+    channel_type: (document.getElementById('dsr-channel-type')?.value || '').trim() || null,
+    customer_type: (document.getElementById('dsr-customer-type')?.value || '').trim() || null,
+    address: (document.getElementById('dsr-address')?.value || '').trim() || null,
+    city_area: (document.getElementById('dsr-city-area')?.value || '').trim() || null,
+    existing_or_new: (document.getElementById('dsr-existing-or-new')?.value || '').trim() || null,
+    order_lacs: orderRaw === '' ? null : Number(orderRaw),
+    bed: (document.getElementById('dsr-bed')?.value || '').trim() || null,
+    bath: (document.getElementById('dsr-bath')?.value || '').trim() || null,
+    tob: (document.getElementById('dsr-tob')?.value || '').trim() || null,
+    others: (document.getElementById('dsr-others')?.value || '').trim() || null,
+    competitor_brands: (document.getElementById('dsr-competitors')?.value || '').trim() || null,
+    branding_yn: (document.getElementById('dsr-branding-yn')?.value || '').trim() || null,
+    retailer_feedback: (document.getElementById('dsr-feedback')?.value || '').trim() || null,
+    sm_remarks: (document.getElementById('dsr-sm-remarks')?.value || '').trim() || null,
+  };
+  if (btn) btn.disabled = true;
+  try {
+    const response = await fetchWithAuth('/api/v1/dsr-market/visits', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error?.message || data.error || 'Save failed');
+    }
+    ['dsr-customer-name', 'dsr-contact-nos', 'dsr-customer-type', 'dsr-address', 'dsr-city-area',
+      'dsr-order-lacs', 'dsr-bed', 'dsr-bath', 'dsr-tob', 'dsr-others', 'dsr-competitors',
+      'dsr-feedback', 'dsr-sm-remarks'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    if (typeof nexoraToast === 'function') nexoraToast('Visit saved', 'success');
+    if (statusEl) statusEl.textContent = 'Visit saved.';
+    await loadMarketVisitWorkspace();
+  } catch (error) {
+    if (statusEl) statusEl.textContent = error.message || 'Unable to save visit.';
+    if (typeof nexoraToast === 'function') nexoraToast(error.message || 'Save failed', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+  return false;
+}
+
+async function exportDsrMarketExcel() {
+  const statusEl = document.getElementById('dsr-market-status');
+  const from = (document.getElementById('dsr-export-from')?.value || '').trim();
+  const to = (document.getElementById('dsr-export-to')?.value || '').trim();
+  if (!from || !to) {
+    if (statusEl) statusEl.textContent = 'Pick from and to dates for export.';
+    return;
+  }
+  if (statusEl) statusEl.textContent = 'Preparing Excel…';
+  try {
+    const response = await fetchWithAuth(
+      `/api/v1/dsr-market/export?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    );
+    if (!response.ok) {
+      let message = 'Export failed';
+      try {
+        const data = await response.json();
+        message = data.error?.message || data.error || message;
+      } catch (_) { /* ignore */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    let downloadName = `DSR_${from}_to_${to}.xlsx`;
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    const plainMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+    if (utfMatch) {
+      try { downloadName = decodeURIComponent(utfMatch[1]); } catch (_) { /* keep */ }
+    } else if (plainMatch) {
+      downloadName = plainMatch[1];
+    }
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = downloadName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    if (statusEl) statusEl.textContent = `Downloaded ${downloadName}`;
+    if (typeof nexoraToast === 'function') nexoraToast(`Downloaded: ${downloadName}`, 'success');
+  } catch (error) {
+    if (statusEl) statusEl.textContent = error.message || 'Unable to export.';
+    if (typeof nexoraToast === 'function') nexoraToast(error.message || 'Export failed', 'error');
+  }
+}
+
 async function disconnectGoogleDrive() {
   const statusEl = document.getElementById('cloud-hub-status') || document.getElementById('storage-status');
   if (!authState.accessToken) {
@@ -6135,6 +6303,7 @@ function showHopShell(viewName) {
     'executive-home-workspace',
     'target-vs-achievement-workspace',
     'cloud-hub-workspace',
+    'market-visit-workspace',
   ].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
   document.getElementById('hop-executive-workspace')?.classList.remove('hidden');
   currentModuleKey = 'hopexecutive';
@@ -6315,7 +6484,7 @@ function showDashboardWorkspace() {
   document.getElementById('bd-home-view')?.classList.remove('hidden');
   document.getElementById('bd-module-mount')?.classList.add('hidden');
   document.getElementById('party-master-section')?.classList.add('hidden');
-  ['sales-workspace', 'purchase-workspace', 'inventory-workspace', 'article-master-workspace', 'order-desk-workspace', 'order-fulfillment-workspace', 'order-cycle-workspace', 'executive-home-workspace', 'hop-executive-workspace', 'target-vs-achievement-workspace', 'cloud-hub-workspace', 'filled-orders-workspace', 'settings-workspace'].forEach((id) => {
+  ['sales-workspace', 'purchase-workspace', 'inventory-workspace', 'article-master-workspace', 'order-desk-workspace', 'order-fulfillment-workspace', 'order-cycle-workspace', 'executive-home-workspace', 'hop-executive-workspace', 'target-vs-achievement-workspace', 'cloud-hub-workspace', 'market-visit-workspace', 'filled-orders-workspace', 'settings-workspace'].forEach((id) => {
     document.getElementById(id)?.classList.add('hidden');
   });
   if (authState.role === 'sales_executive') {
@@ -6610,6 +6779,7 @@ function openModule(moduleName) {
   if (typeof clearHopActiveScrollLock === 'function') clearHopActiveScrollLock();
   document.getElementById('target-vs-achievement-workspace')?.classList.add('hidden');
   document.getElementById('cloud-hub-workspace')?.classList.add('hidden');
+  document.getElementById('market-visit-workspace')?.classList.add('hidden');
   if (normalized !== 'settings') {
     document.getElementById('settings-workspace')?.classList.add('hidden');
   }
@@ -6646,6 +6816,14 @@ function openModule(moduleName) {
     document.getElementById('sales-workspace')?.classList.add('hidden');
     setActiveSidebarItem('Cloud Hub');
     loadCloudHubWorkspace();
+    return;
+  }
+
+  if (normalized === 'marketvisit' || normalized === 'dsr' || normalized === 'dsrmarket') {
+    pinBdShellForModule(document.getElementById('market-visit-workspace'));
+    document.getElementById('sales-workspace')?.classList.add('hidden');
+    setActiveSidebarItem('Market Visit');
+    loadMarketVisitWorkspace();
     return;
   }
 

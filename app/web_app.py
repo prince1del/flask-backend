@@ -63,6 +63,7 @@ from app.routes import (
     masters_bp,
     executive_bp,
     hop_bp,
+    dsr_market_bp,
 )
 import app.models  # register SQLAlchemy models
 from app.routes.auth import register_auth_hooks
@@ -307,6 +308,7 @@ def create_app() -> Flask:
     app.register_blueprint(nexora_ask_bp)
     app.register_blueprint(executive_bp)
     app.register_blueprint(hop_bp)
+    app.register_blueprint(dsr_market_bp)
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:
