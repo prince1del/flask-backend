@@ -2046,6 +2046,7 @@ async function saveDsrMarketVisit(event) {
     document.querySelectorAll('input[name="dsr-competitor"]').forEach((el) => {
       el.checked = false;
     });
+    if (typeof syncDsrBrandDropdownLabel === 'function') syncDsrBrandDropdownLabel();
     if (typeof nexoraToast === 'function') nexoraToast('Visit saved', 'success');
     if (statusEl) statusEl.textContent = 'Visit saved.';
     await loadMarketVisitWorkspace();
