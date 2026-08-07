@@ -9076,7 +9076,7 @@ async function loadOrderMatchRunDetail(runId) {
     renderOrderMatchDetailRows((run && run.rows) || []);
   } catch (err) {
     if (meta) meta.textContent = err.message || 'Load failed';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="9">${foEscapeText(err.message || 'Load failed')}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="10">${foEscapeText(err.message || 'Load failed')}</td></tr>`;
   }
 }
 
