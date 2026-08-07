@@ -1864,6 +1864,45 @@ function closeDsrExportModal() {
   }
 }
 
+function toggleDsrSelect(event, inputId) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const root = document.querySelector(`.dsr-select[data-dsr-select="${inputId}"]`);
+  if (!root) return;
+  const panel = root.querySelector('.dsr-select-panel');
+  const wasOpen = panel && !panel.classList.contains('hidden');
+  closeAllDsrSelects();
+  closeDsrBrandDropdown();
+  if (!wasOpen && panel) {
+    panel.classList.remove('hidden');
+    root.classList.add('is-open');
+  }
+}
+
+function closeAllDsrSelects() {
+  document.querySelectorAll('.dsr-select').forEach((root) => {
+    root.classList.remove('is-open');
+    root.querySelector('.dsr-select-panel')?.classList.add('hidden');
+  });
+}
+
+function pickDsrSelect(inputId, value) {
+  const input = document.getElementById(inputId);
+  const root = document.querySelector(`.dsr-select[data-dsr-select="${inputId}"]`);
+  if (input) {
+    input.value = value;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const label = root?.querySelector('.dsr-select-label');
+  if (label) label.textContent = value === '' ? 'Select' : value;
+  root?.querySelectorAll('.dsr-select-option').forEach((btn) => {
+    btn.classList.toggle('is-selected', (btn.getAttribute('data-value') || '') === value);
+  });
+  closeAllDsrSelects();
+}
+
 function syncDsrBrandDropdownLabel() {
   const label = document.getElementById('dsr-brand-dd-label');
   const selected = Array.from(
@@ -1927,9 +1966,9 @@ function renderDsrCompetitorBrandChips(brands, selectedNames) {
 }
 
 document.addEventListener('click', (e) => {
-  const wrap = document.getElementById('dsr-competitor-chips');
-  if (!wrap) return;
-  if (!wrap.contains(e.target)) closeDsrBrandDropdown();
+  const brandWrap = document.getElementById('dsr-competitor-chips');
+  if (brandWrap && !brandWrap.contains(e.target)) closeDsrBrandDropdown();
+  if (!e.target.closest?.('.dsr-select')) closeAllDsrSelects();
 });
 
 async function loadDsrCompetitorBrands({ selectBrand } = {}) {

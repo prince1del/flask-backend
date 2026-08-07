@@ -88,7 +88,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-add-top">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-compact-all">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -1624,31 +1624,47 @@
                             <label class="dsr-field">Owner's Name<input type="text" id="dsr-owner-name" autocomplete="name"></label>
                             <label class="dsr-field">Contact Nos.<input type="text" id="dsr-contact-nos"></label>
                             <label class="dsr-field">MBO / AWD / ARS
-                                <select id="dsr-channel-type">
-                                    <option value="MBO" selected>MBO</option>
-                                    <option value="ARS">ARS</option>
-                                    <option value="AWD">AWD</option>
-                                </select>
+                                <input type="hidden" id="dsr-channel-type" value="MBO">
+                                <div class="dsr-select" data-dsr-select="dsr-channel-type">
+                                    <button type="button" class="dsr-select-trigger" onclick="toggleDsrSelect(event,'dsr-channel-type')"><span class="dsr-select-label">MBO</span><span class="dsr-select-caret">▾</span></button>
+                                    <div class="dsr-select-panel hidden">
+                                        <button type="button" class="dsr-select-option" data-value="MBO" onclick="pickDsrSelect('dsr-channel-type','MBO')">MBO</button>
+                                        <button type="button" class="dsr-select-option" data-value="ARS" onclick="pickDsrSelect('dsr-channel-type','ARS')">ARS</button>
+                                        <button type="button" class="dsr-select-option" data-value="AWD" onclick="pickDsrSelect('dsr-channel-type','AWD')">AWD</button>
+                                    </div>
+                                </div>
                             </label>
                             <label class="dsr-field">Type (A / B / C)
-                                <select id="dsr-customer-type">
-                                    <option value="" selected>Select</option>
-                                    <option value="A">A</option>
-                                    <option value="B">B</option>
-                                    <option value="C">C</option>
-                                </select>
+                                <input type="hidden" id="dsr-customer-type" value="">
+                                <div class="dsr-select" data-dsr-select="dsr-customer-type">
+                                    <button type="button" class="dsr-select-trigger" onclick="toggleDsrSelect(event,'dsr-customer-type')"><span class="dsr-select-label">Select</span><span class="dsr-select-caret">▾</span></button>
+                                    <div class="dsr-select-panel hidden">
+                                        <button type="button" class="dsr-select-option" data-value="" onclick="pickDsrSelect('dsr-customer-type','')">Select</button>
+                                        <button type="button" class="dsr-select-option" data-value="A" onclick="pickDsrSelect('dsr-customer-type','A')">A</button>
+                                        <button type="button" class="dsr-select-option" data-value="B" onclick="pickDsrSelect('dsr-customer-type','B')">B</button>
+                                        <button type="button" class="dsr-select-option" data-value="C" onclick="pickDsrSelect('dsr-customer-type','C')">C</button>
+                                    </div>
+                                </div>
                             </label>
                             <label class="dsr-field">Existing OR New
-                                <select id="dsr-existing-or-new">
-                                    <option value="Existing" selected>Existing</option>
-                                    <option value="New">New</option>
-                                </select>
+                                <input type="hidden" id="dsr-existing-or-new" value="Existing">
+                                <div class="dsr-select" data-dsr-select="dsr-existing-or-new">
+                                    <button type="button" class="dsr-select-trigger" onclick="toggleDsrSelect(event,'dsr-existing-or-new')"><span class="dsr-select-label">Existing</span><span class="dsr-select-caret">▾</span></button>
+                                    <div class="dsr-select-panel hidden">
+                                        <button type="button" class="dsr-select-option" data-value="Existing" onclick="pickDsrSelect('dsr-existing-or-new','Existing')">Existing</button>
+                                        <button type="button" class="dsr-select-option" data-value="New" onclick="pickDsrSelect('dsr-existing-or-new','New')">New</button>
+                                    </div>
+                                </div>
                             </label>
                             <label class="dsr-field">Branding in Store
-                                <select id="dsr-branding-yn">
-                                    <option value="Yes">Yes</option>
-                                    <option value="No" selected>No</option>
-                                </select>
+                                <input type="hidden" id="dsr-branding-yn" value="No">
+                                <div class="dsr-select" data-dsr-select="dsr-branding-yn">
+                                    <button type="button" class="dsr-select-trigger" onclick="toggleDsrSelect(event,'dsr-branding-yn')"><span class="dsr-select-label">No</span><span class="dsr-select-caret">▾</span></button>
+                                    <div class="dsr-select-panel hidden">
+                                        <button type="button" class="dsr-select-option" data-value="Yes" onclick="pickDsrSelect('dsr-branding-yn','Yes')">Yes</button>
+                                        <button type="button" class="dsr-select-option" data-value="No" onclick="pickDsrSelect('dsr-branding-yn','No')">No</button>
+                                    </div>
+                                </div>
                             </label>
                             <label class="dsr-field dsr-span-2">City and Area<input type="text" id="dsr-city-area"></label>
                             <label class="dsr-field dsr-span-full">Complete Address<textarea id="dsr-address" rows="2"></textarea></label>
@@ -3375,7 +3391,7 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd1"></script>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-brand-dd"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-compact-all"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>
