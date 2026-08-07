@@ -1148,6 +1148,39 @@ def _sheet_name_looks_non_order(sheet_name: str) -> bool:
     return any(hint in norm for hint in NON_ORDER_SHEET_HINTS)
 
 
+# Tabs produced by Order Desk → SO Pack Excel download (not a distributor FO).
+_SO_PACK_SHEET_MARKERS = frozenset({
+    "consolidated",
+    "so summary",
+    "line item detail",
+    "brand wise size wise summary",
+    "brand wise summary",
+})
+
+
+def looks_like_so_pack_workbook(path) -> bool:
+    """True when the file is an SO Pack consolidation export, not a filled order."""
+    with open_excel_file(path) as xl:
+        names = {amparser._norm(n) for n in xl.sheet_names}
+    hits = names & _SO_PACK_SHEET_MARKERS
+    if len(hits) >= 2:
+        return True
+    # Single-tab exports / renamed sheets: title row on Consolidated-style layout.
+    if "consolidated" in names or "line item detail" in names:
+        return True
+    return False
+
+
+def so_pack_upload_guidance() -> str:
+    return (
+        "This Excel looks like an SO Pack export (Consolidated / SO Summary / "
+        "Line Item Detail), not a distributor filled order. "
+        "For Filled Order, upload the distributor booking sheet that has "
+        "Brand + Size columns (e.g. Choice Corner.xlsx from Distributor Order) — "
+        "not the SO Pack download."
+    )
+
+
 def sheet_has_order_headers(raw_df) -> bool:
     """True when a worksheet looks like a filled-order line table (Brand + Size)."""
     if raw_df is None or raw_df.empty:
@@ -1204,6 +1237,8 @@ def detect_category_from_order_file(path, filename: str | None = None) -> str | 
     Article Master). Filename is only a weak hint — works for SAIN.xls,
     BND.xlsx, Choice Corner, etc., not one-off per distributor.
     """
+    if looks_like_so_pack_workbook(path):
+        raise ValueError(so_pack_upload_guidance())
     sheet_names = list_order_sheet_names(path)
     sheet_name = sheet_names[0] if sheet_names else None
     if not sheet_name:
@@ -1378,6 +1413,8 @@ def parse_filled_order_workbook(
     BND teaching: ``base order`` Qty + ``additional order`` Additional quantity
     are summed into one line per Brand+Size.
     """
+    if looks_like_so_pack_workbook(path):
+        raise ValueError(so_pack_upload_guidance())
     sheet_names = list_order_sheet_names(path)
     sheet_results = []
     all_parsed = []

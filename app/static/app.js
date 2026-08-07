@@ -7953,7 +7953,8 @@ const GLOBAL_SEARCH_COLUMNS = {
     ['address', 'Address'],
   ],
   orders: [
-    ['order_ref_no', 'Order Ref No'],
+    ['order_ref_no', 'SO / Order Ref'],
+    ['invoice_no', 'CI No'],
     ['distributor_name', 'Distributor'],
     ['transit_status', 'Transit Status'],
     ['payment_status', 'Payment Status'],
@@ -12386,7 +12387,7 @@ async function onFilledOrderFileSelected(prefix = 'fo') {
     if (data.warning && !parts.length) {
       if (resultEl) {
         resultEl.textContent =
-          `"${file.name}" ready — could not auto-detect distributor/category (${data.warning}). Please select manually.`;
+          `"${file.name}" — ${data.warning} Select category/distributor manually only if this is a real distributor Excel (Brand + Size), not an SO Pack export.`;
       }
       return;
     }
@@ -12397,8 +12398,12 @@ async function onFilledOrderFileSelected(prefix = 'fo') {
       return;
     }
     if (resultEl) {
-      const warn = data.warning ? ` (note: ${data.warning})` : '';
-      resultEl.textContent = `${parts.join(' | ')} — click Upload to continue.${warn}`;
+      if (data.warning) {
+        resultEl.textContent =
+          `${parts.join(' | ')} — but file did not parse as a filled order: ${data.warning}`;
+      } else {
+        resultEl.textContent = `${parts.join(' | ')} — click Upload to continue.`;
+      }
     }
   } catch (error) {
     if (resultEl) {

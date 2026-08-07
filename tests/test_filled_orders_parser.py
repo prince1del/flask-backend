@@ -599,3 +599,23 @@ def test_balaji_xlsx_auto_selects_total_qty():
     assert wb["quantity_column_used"] == "TOTAL"
     rows = wb["parsed_rows"]
     assert sum(float(r["raw_qty_value"] or 0) for r in rows) == 5316
+
+
+def test_so_pack_export_rejected_with_clear_guidance(tmp_path):
+    """SO Pack download must not be accepted as a distributor filled order."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Consolidated"
+    ws.append(["SO-wise Product Consolidation"])
+    ws.append(["SO Number", "Product Name", "Total Qty"])
+    ws.append(["102876117", "ASTER 1+2 DB SET", 216])
+    wb.create_sheet("SO Summary")
+    wb.create_sheet("Line Item Detail")
+    path = tmp_path / "CHOICE CORNER BOMBAY DYEING_SO_Pack.xlsx"
+    wb.save(path)
+
+    assert foparser.looks_like_so_pack_workbook(path) is True
+    with pytest.raises(ValueError, match="SO Pack export"):
+        foparser.detect_category_from_order_file(path, filename=path.name)
+    with pytest.raises(ValueError, match="Brand \\+ Size"):
+        foparser.parse_filled_order_workbook(path, "Bed")
