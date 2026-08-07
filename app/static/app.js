@@ -8996,7 +8996,7 @@ function renderOrderMatchDetailRows(rows) {
   if (!tbody) return;
   const list = rows || [];
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="9">No Brand×Size lines in this match.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10">No Brand×Size lines in this match.</td></tr>';
     return;
   }
   const ordered = [...list].sort((a, b) => {
@@ -9011,16 +9011,16 @@ function renderOrderMatchDetailRows(rows) {
   tbody.innerHTML = ordered.map((r) => {
     const status = r.status || '';
     const ok = status === 'MATCH' || status === 'MATCH_FUZZY_BRAND';
+    const statusWord = status === 'MATCH_FUZZY_BRAND' ? 'Fuzzy' : (ok ? 'Match' : status);
     const soNums = Array.isArray(r.so_numbers)
       ? r.so_numbers.map((n) => String(n || '').trim()).filter(Boolean)
       : [];
-    const soSuffix = soNums.length
-      ? ` · ${soNums.map((n) => (/^so\b/i.test(n) ? n : `SO ${n}`)).join(', ')}`
-      : '';
-    const statusLabel = (status === 'MATCH_FUZZY_BRAND' ? 'Fuzzy' : (ok ? 'Match' : status)) + soSuffix;
+    const soLabel = soNums.length
+      ? soNums.map((n) => (/^so\b/i.test(n) ? n : `SO ${n}`)).join(', ')
+      : '—';
     const statusHtml = ok
-      ? `<span class="of-saved-ok" title="${foEscapeText(status + (soNums.length ? ` · ${soNums.join(', ')}` : ''))}">✓ ${foEscapeText(statusLabel)}</span>`
-      : `<span class="of-saved-flag" title="${foEscapeText(status + (soNums.length ? ` · ${soNums.join(', ')}` : ''))}">${foEscapeText(statusLabel)}</span>`;
+      ? `<span class="of-match-status of-match-status--ok" title="${foEscapeText(status)}">✓ ${foEscapeText(statusWord)}</span>`
+      : `<span class="of-match-status of-match-status--flag" title="${foEscapeText(status)}">${foEscapeText(statusWord || '—')}</span>`;
     return `<tr>
       <td>${foEscapeText(r.brand || '')}</td>
       <td>${foEscapeText(r.size || '')}</td>
@@ -9030,7 +9030,8 @@ function renderOrderMatchDetailRows(rows) {
       <td>${formatFilledOrderAmount(r.fo_exmill_value)}</td>
       <td>${formatFilledOrderAmount(r.so_net_amount)}</td>
       <td>${formatFilledOrderAmount(r.delta_value)}</td>
-      <td>${statusHtml}</td>
+      <td class="of-match-col-status">${statusHtml}</td>
+      <td class="of-match-col-so">${foEscapeText(soLabel)}</td>
     </tr>`;
   }).join('');
 }
@@ -9060,7 +9061,7 @@ async function loadOrderMatchRunDetail(runId) {
   const tbody = document.getElementById('of-match-detail-tbody');
   const meta = document.getElementById('of-match-detail-meta');
   if (meta) meta.textContent = 'Loading match…';
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9">Loading…</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10">Loading…</td></tr>';
   try {
     const response = await fetchWithAuth(`/api/v1/order-fulfillment/order-match/${runId}`);
     const data = await parseApiJson(response);
