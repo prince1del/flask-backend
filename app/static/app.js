@@ -9011,9 +9011,16 @@ function renderOrderMatchDetailRows(rows) {
   tbody.innerHTML = ordered.map((r) => {
     const status = r.status || '';
     const ok = status === 'MATCH' || status === 'MATCH_FUZZY_BRAND';
+    const soNums = Array.isArray(r.so_numbers)
+      ? r.so_numbers.map((n) => String(n || '').trim()).filter(Boolean)
+      : [];
+    const soSuffix = soNums.length
+      ? ` · ${soNums.map((n) => (/^so\b/i.test(n) ? n : `SO ${n}`)).join(', ')}`
+      : '';
+    const statusLabel = (status === 'MATCH_FUZZY_BRAND' ? 'Fuzzy' : (ok ? 'Match' : status)) + soSuffix;
     const statusHtml = ok
-      ? `<span class="of-saved-ok" title="${foEscapeText(status)}">✓ ${foEscapeText(status === 'MATCH_FUZZY_BRAND' ? 'Fuzzy' : 'Match')}</span>`
-      : `<span class="of-saved-flag" title="${foEscapeText(status)}">${foEscapeText(status)}</span>`;
+      ? `<span class="of-saved-ok" title="${foEscapeText(status + (soNums.length ? ` · ${soNums.join(', ')}` : ''))}">✓ ${foEscapeText(statusLabel)}</span>`
+      : `<span class="of-saved-flag" title="${foEscapeText(status + (soNums.length ? ` · ${soNums.join(', ')}` : ''))}">${foEscapeText(statusLabel)}</span>`;
     return `<tr>
       <td>${foEscapeText(r.brand || '')}</td>
       <td>${foEscapeText(r.size || '')}</td>

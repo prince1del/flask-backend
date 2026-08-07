@@ -114,6 +114,13 @@ def _safe_float(v: Any) -> float | None:
         return None
 
 
+def _normalize_so_number(so_number: Any) -> str | None:
+    text = str(so_number or "").strip()
+    if not text or text.lower() in {"nan", "none", "-"}:
+        return None
+    return text
+
+
 def _bucket_add(
     buckets: dict[tuple[str, str], dict[str, Any]],
     *,
@@ -121,6 +128,7 @@ def _bucket_add(
     size: str,
     qty: float | None,
     value: float | None,
+    so_number: Any = None,
 ) -> None:
     key = match_pair_key(brand, size)
     if not key[0] and not key[1]:
@@ -137,6 +145,7 @@ def _bucket_add(
             "size": size_code,
             "qty": 0.0,
             "value": 0.0,
+            "so_numbers": [],
         }
         row = buckets[key]
     row["qty"] = round(row["qty"] + qty_f, 3)
@@ -147,6 +156,11 @@ def _bucket_add(
     # Always keep short size code (KB FS), never long "King Fitted Sheet"
     if size_code:
         row["size"] = size_code
+    so_n = _normalize_so_number(so_number)
+    if so_n:
+        nums = row.setdefault("so_numbers", [])
+        if so_n not in nums:
+            nums.append(so_n)
 
 
 def build_fo_buckets_from_workbook(
@@ -221,7 +235,14 @@ def build_so_buckets_from_line_detail(line_detail: list[dict[str, Any]]) -> dict
         qty = _safe_float(row.get("qty")) or 0.0
         net = _safe_float(row.get("net_amount")) or 0.0
         if brand and size:
-            _bucket_add(buckets, brand=str(brand), size=str(size), qty=qty, value=net)
+            _bucket_add(
+                buckets,
+                brand=str(brand),
+                size=str(size),
+                qty=qty,
+                value=net,
+                so_number=row.get("so_number"),
+            )
         else:
             others_qty += qty
             others_net += net
@@ -378,6 +399,7 @@ def compare_fo_so_buckets(
         fo_brand_raw = (fo_row or {}).get("brand")
         d_qty = round(so_qty - fo_qty, 3)
         d_val = round(so_val - fo_val, 2)
+        so_numbers = list((so_row or {}).get("so_numbers") or [])
 
         if fo_row and not so_row:
             status = "MISSING_ON_SO"
@@ -414,6 +436,7 @@ def compare_fo_so_buckets(
                 "so_net_amount": so_val,
                 "delta_value": d_val,
                 "status": status,
+                "so_numbers": so_numbers,
             }
         )
 
