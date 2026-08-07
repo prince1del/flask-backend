@@ -1,6 +1,12 @@
-/* Year → Month → Day date picker (replaces native <input type="date"> calendar). */
+/* Year → Month → Day date picker — manual type + dropdown pick. */
 (function (global) {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const MONTH_INDEX = Object.fromEntries(
+    MONTHS.map((m, i) => [m.toLowerCase(), i + 1]).concat(
+      ['january','february','march','april','may','june','july','august','september','october','november','december']
+        .map((m, i) => [m, i + 1])
+    )
+  );
 
   function todayIso() {
     const d = new Date();
@@ -18,17 +24,48 @@
   function parseIso(iso) {
     const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return null;
-    return { y: Number(m[1]), mo: Number(m[2]), d: Number(m[3]) };
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo)) return null;
+    return { y, mo, d };
   }
 
   function formatLabel(iso) {
     const p = parseIso(iso);
-    if (!p) return 'Select date';
+    if (!p) return '';
     return `${String(p.d).padStart(2, '0')} ${MONTHS[p.mo - 1]} ${p.y}`;
   }
 
   function daysInMonth(y, mo) {
     return new Date(y, mo, 0).getDate();
+  }
+
+  function toIso(y, mo, d) {
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  /** Accept ISO, DD/MM/YYYY, DD-MM-YYYY, DD MMM YYYY */
+  function parseFlexible(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return null;
+    const iso = parseIso(text);
+    if (iso) return iso;
+    let m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) {
+      const d = Number(m[1]);
+      const mo = Number(m[2]);
+      const y = Number(m[3]);
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= daysInMonth(y, mo)) return { y, mo, d };
+    }
+    m = text.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/);
+    if (m) {
+      const d = Number(m[1]);
+      const mo = MONTH_INDEX[m[2].toLowerCase()];
+      const y = Number(m[3]);
+      if (mo && d >= 1 && d <= daysInMonth(y, mo)) return { y, mo, d };
+    }
+    return null;
   }
 
   function closeAll(exceptRoot) {
@@ -43,8 +80,11 @@
     const input = document.getElementById(inputId);
     const root = document.querySelector(`.nx-ymd[data-nx-ymd-input="${inputId}"]`);
     if (!input || !root) return;
-    const label = root.querySelector('.nx-ymd-label');
-    if (label) label.textContent = formatLabel(input.value);
+    const typed = root.querySelector('.nx-ymd-input');
+    if (typed) {
+      typed.value = formatLabel(input.value) || input.value || '';
+      typed.classList.toggle('is-invalid', !!(typed.value.trim() && !parseFlexible(typed.value) && !parseIso(input.value)));
+    }
   }
 
   function mount(rootOrInputId) {
@@ -63,13 +103,16 @@
       return;
     }
     root.dataset.mounted = '1';
+    if (input.type !== 'hidden') input.type = 'hidden';
     const state = { step: 'year', y: null, mo: null };
 
     root.innerHTML = `
-      <button type="button" class="nx-ymd-trigger" aria-haspopup="dialog">
-        <span class="nx-ymd-label">${esc(formatLabel(input.value))}</span>
-        <span class="nx-ymd-caret" aria-hidden="true">▾</span>
-      </button>
+      <div class="nx-ymd-combo">
+        <input type="text" class="nx-ymd-input" inputmode="text" autocomplete="off"
+          placeholder="DD/MM/YYYY or pick ▾" aria-label="Date (type or pick)"
+          value="${esc(formatLabel(input.value) || '')}" />
+        <button type="button" class="nx-ymd-pick-btn" aria-haspopup="dialog" title="Pick date">▾</button>
+      </div>
       <div class="nx-ymd-panel hidden" role="dialog" aria-label="Pick date">
         <div class="nx-ymd-nav">
           <button type="button" class="nx-ymd-back hidden" aria-label="Back">←</button>
@@ -79,17 +122,38 @@
       </div>
     `;
 
-    const trigger = root.querySelector('.nx-ymd-trigger');
+    const typed = root.querySelector('.nx-ymd-input');
+    const pickBtn = root.querySelector('.nx-ymd-pick-btn');
     const panel = root.querySelector('.nx-ymd-panel');
     const body = root.querySelector('.nx-ymd-body');
     const titleEl = root.querySelector('.nx-ymd-title');
     const backBtn = root.querySelector('.nx-ymd-back');
 
-    function setIso(y, mo, d) {
-      input.value = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      syncLabel(input.id);
+    function applyParsed(parsed, rewriteDisplay) {
+      if (!parsed) return false;
+      input.value = toIso(parsed.y, parsed.mo, parsed.d);
+      if (rewriteDisplay && typed) typed.value = formatLabel(input.value);
+      typed?.classList.remove('is-invalid');
       input.dispatchEvent(new Event('change', { bubbles: true }));
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+
+    function commitTyped() {
+      const raw = (typed?.value || '').trim();
+      if (!raw) {
+        input.value = '';
+        typed?.classList.remove('is-invalid');
+        return;
+      }
+      const parsed = parseFlexible(raw);
+      if (!applyParsed(parsed, true)) {
+        typed?.classList.add('is-invalid');
+      }
+    }
+
+    function setIso(y, mo, d) {
+      applyParsed({ y, mo, d }, true);
     }
 
     function render() {
@@ -177,6 +241,7 @@
 
     function openPanel() {
       closeAll(root);
+      commitTyped();
       const parsed = parseIso(input.value);
       state.step = 'year';
       state.y = parsed?.y || null;
@@ -191,11 +256,31 @@
       panel.classList.add('hidden');
     }
 
-    trigger.addEventListener('click', (e) => {
+    pickBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (root.classList.contains('is-open')) closePanel();
       else openPanel();
+    });
+    typed.addEventListener('click', (e) => e.stopPropagation());
+    typed.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitTyped();
+        typed.blur();
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        openPanel();
+      }
+    });
+    typed.addEventListener('blur', () => commitTyped());
+    typed.addEventListener('input', () => {
+      typed.classList.remove('is-invalid');
+      const parsed = parseFlexible(typed.value);
+      if (parsed) {
+        input.value = toIso(parsed.y, parsed.mo, parsed.d);
+      }
     });
     backBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -237,7 +322,7 @@
     if (e.key === 'Escape') closeAll();
   });
 
-  global.NxYmdPicker = { init, mount, syncLabel, todayIso, closeAll };
+  global.NxYmdPicker = { init, mount, syncLabel, todayIso, closeAll, parseFlexible };
   global.initNxYmdPickers = init;
   global.syncNxYmdPicker = syncLabel;
 })(window);

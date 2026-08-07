@@ -3550,6 +3550,49 @@ body.bd-hop-ui .nexora-logo:focus-visible {
   position: relative;
   width: 100%;
 }
+.nx-ymd-combo {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--hop-c-border, #DED3BE);
+  background: #fff;
+  overflow: hidden;
+}
+.nx-ymd.is-open .nx-ymd-combo {
+  border-color: var(--hop-c-accent, #C9A227);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hop-c-accent, #C9A227) 20%, transparent);
+}
+.nx-ymd-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 6px 10px !important;
+  font-size: 0.78rem !important;
+  font-weight: 550 !important;
+  background: transparent !important;
+  color: var(--hop-c-text, #1F1F1F) !important;
+}
+.nx-ymd-input.is-invalid {
+  color: #b91c1c !important;
+}
+.nx-ymd-pick-btn {
+  flex: 0 0 34px;
+  border: 0;
+  border-left: 1px solid var(--hop-c-border, #DED3BE);
+  background: color-mix(in srgb, var(--hop-c-bg, #F8F4EA) 60%, #ffffff);
+  color: var(--hop-c-text, #1F1F1F);
+  cursor: pointer;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.nx-ymd-pick-btn:hover {
+  background: color-mix(in srgb, var(--hop-c-accent, #C9A227) 14%, #ffffff);
+}
 .nx-ymd-trigger {
   width: 100%;
   min-height: 40px;
