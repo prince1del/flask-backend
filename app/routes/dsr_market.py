@@ -15,6 +15,17 @@ from app.routes.auth import get_workspace_id, require_jwt_auth, require_role
 
 dsr_market_bp = Blueprint("dsr_market", __name__, url_prefix="/api/v1/dsr-market")
 
+DEFAULT_COMPETITOR_BRANDS = [
+    "Bombay Dyeing",
+    "Ddecor",
+    "Portico",
+    "Raymonds",
+    "Sansar",
+    "Spaces",
+    "Swayam",
+    "Welspun",
+]
+
 
 def _excel_headers(include_owner: bool) -> list[str]:
     headers = [
@@ -91,6 +102,42 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_dsr_market_ws_date "
         "ON dsr_market_visits(workspace_id, visit_date)"
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dsr_competitor_brands (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            brand_name TEXT NOT NULL,
+            brand_key TEXT NOT NULL,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            UNIQUE(workspace_id, brand_key)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dsr_competitor_ws "
+        "ON dsr_competitor_brands(workspace_id)"
+    )
+
+
+def _brand_key(name: str) -> str:
+    return " ".join((name or "").strip().lower().split())
+
+
+def _merged_competitor_brands(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT brand_name FROM dsr_competitor_brands WHERE workspace_id = ? "
+        "ORDER BY brand_name COLLATE NOCASE ASC",
+        (workspace_id,),
+    ).fetchall()
+    custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
+    by_key: dict[str, str] = {}
+    for name in DEFAULT_COMPETITOR_BRANDS + custom:
+        key = _brand_key(name)
+        if key and key not in by_key:
+            by_key[key] = name.strip()
+    return sorted(by_key.values(), key=lambda s: s.lower())
 
 
 def _current_user() -> dict:
@@ -344,3 +391,57 @@ def export_excel():
         as_attachment=True,
         download_name=filename,
     )
+
+
+@dsr_market_bp.route("/competitor-brands", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def list_competitor_brands():
+    workspace_id = get_workspace_id()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        brands = _merged_competitor_brands(conn, workspace_id)
+    return jsonify(
+        {
+            "success": True,
+            "data": brands,
+            "defaults": list(DEFAULT_COMPETITOR_BRANDS),
+            "count": len(brands),
+        }
+    )
+
+
+@dsr_market_bp.route("/competitor-brands", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_competitor_brand():
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or data.get("brand_name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "error": {"message": "name is required"}}), 400
+    key = _brand_key(name)
+    if not key:
+        return jsonify({"success": False, "error": {"message": "name is required"}}), 400
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        existing = conn.execute(
+            "SELECT brand_name FROM dsr_competitor_brands "
+            "WHERE workspace_id = ? AND brand_key = ?",
+            (workspace_id, key),
+        ).fetchone()
+        if existing is None and key not in {_brand_key(b) for b in DEFAULT_COMPETITOR_BRANDS}:
+            conn.execute(
+                """
+                INSERT INTO dsr_competitor_brands (
+                    workspace_id, brand_name, brand_key, created_by, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (workspace_id, name, key, _user_id(), created_at),
+            )
+            conn.commit()
+        brands = _merged_competitor_brands(conn, workspace_id)
+
+    return jsonify({"success": True, "data": brands, "count": len(brands)}), 201
