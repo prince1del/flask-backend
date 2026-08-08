@@ -138,24 +138,34 @@ Visit data JSON:
 {json.dumps(payload, ensure_ascii=False)}
 """
 
-    body = json.dumps(
+    body_json = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 400,
+            "responseMimeType": "application/json",
+        },
+    }
+    body = json.dumps(body_json).encode("utf-8")
+    body_plain = json.dumps(
         {
-            "contents": [{"parts": [{"text": prompt}]}],
+            "contents": body_json["contents"],
             "generationConfig": {
                 "temperature": 0.2,
                 "maxOutputTokens": 400,
-                "responseMimeType": "application/json",
             },
         }
     ).encode("utf-8")
 
     models = get_ocr_gemini_models()
-    # Prefer lighter flash models for text polish.
+    # Prefer lighter flash models for text polish (free-tier friendly).
     preferred = (
-        "gemini-2.0-flash-lite-001",
+        "gemini-2.5-flash",
         "gemini-2.0-flash",
         "gemini-flash-latest",
+        "gemini-2.0-flash-lite-001",
         "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
     )
     ordered: list[str] = []
     for m in preferred + tuple(models):
@@ -163,66 +173,78 @@ Visit data JSON:
             ordered.append(m)
 
     last_error = "api_error"
+    last_detail = ""
+    saw_quota = False
     for model in ordered:
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={key}"
-        )
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            cands = data.get("candidates") or []
-            if not cands:
-                last_error = "no_candidates"
-                continue
-            parts = (cands[0].get("content") or {}).get("parts") or []
-            text = ""
-            for part in parts:
-                if isinstance(part, dict) and part.get("text"):
-                    text += part["text"]
-            parsed = _extract_json_object(text)
-            if not parsed:
-                last_error = "unparsed"
-                continue
-            feedback = str(parsed.get("retailer_feedback") or "").strip()
-            remarks = str(parsed.get("sm_remarks") or "").strip()
-            if not feedback and not remarks:
-                last_error = "empty"
-                continue
-            # Safety: if model blanked a field that had content, keep original.
-            fallback = _fallback_from_row(row)
-            return {
-                "retailer_feedback": feedback or fallback["retailer_feedback"],
-                "sm_remarks": remarks or fallback["sm_remarks"],
-            }, None
-        except urllib.error.HTTPError as exc:
+        for payload in (body, body_plain):
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={key}"
+            )
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
             try:
-                detail = json.loads(exc.read().decode("utf-8"))
-                msg = (detail.get("error", {}) or {}).get("message", "") or ""
-            except Exception:
-                msg = ""
-            if exc.code == 429 or "quota" in msg.lower():
-                return _fallback_from_row(row), "quota_exceeded"
-            if exc.code in (401, 403) or "API key" in msg:
-                return _fallback_from_row(row), "invalid_api_key"
-            if exc.code == 404:
-                last_error = "model_not_found"
+                with urllib.request.urlopen(req, timeout=45) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                cands = data.get("candidates") or []
+                if not cands:
+                    last_error = "no_candidates"
+                    continue
+                parts = (cands[0].get("content") or {}).get("parts") or []
+                text = ""
+                for part in parts:
+                    if isinstance(part, dict) and part.get("text"):
+                        text += part["text"]
+                parsed = _extract_json_object(text)
+                if not parsed:
+                    last_error = "unparsed"
+                    continue
+                feedback = str(parsed.get("retailer_feedback") or "").strip()
+                remarks = str(parsed.get("sm_remarks") or "").strip()
+                if not feedback and not remarks:
+                    last_error = "empty"
+                    continue
+                # Safety: if model blanked a field that had content, keep original.
+                fallback = _fallback_from_row(row)
+                return {
+                    "retailer_feedback": feedback or fallback["retailer_feedback"],
+                    "sm_remarks": remarks or fallback["sm_remarks"],
+                }, None
+            except urllib.error.HTTPError as exc:
+                try:
+                    detail = json.loads(exc.read().decode("utf-8"))
+                    msg = (detail.get("error", {}) or {}).get("message", "") or ""
+                except Exception:
+                    msg = ""
+                last_detail = (msg or str(exc))[:220]
+                if exc.code == 429 or "quota" in msg.lower():
+                    saw_quota = True
+                    last_error = "quota_exceeded"
+                    # Try next model — free tier quotas are often per-model.
+                    break
+                if exc.code in (401, 403) or "API key" in msg:
+                    return _fallback_from_row(row), "invalid_api_key"
+                if exc.code == 404:
+                    last_error = "model_not_found"
+                    break
+                last_error = f"http_{exc.code}"
                 continue
-            last_error = f"http_{exc.code}"
-            continue
-        except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError, IndexError):
-            last_error = "api_error"
-            continue
-        except Exception:
-            last_error = "api_error"
-            continue
+            except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError, IndexError):
+                last_error = "api_error"
+                continue
+            except Exception:
+                last_error = "api_error"
+                continue
 
+    if saw_quota and last_error == "quota_exceeded":
+        detail_bit = f" ({last_detail})" if last_detail else ""
+        return _fallback_from_row(row), f"quota_exceeded{detail_bit}"
+    if last_detail and last_error.startswith("http_"):
+        return _fallback_from_row(row), f"{last_error}:{last_detail}"
     return _fallback_from_row(row), last_error
 
 

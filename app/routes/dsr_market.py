@@ -787,7 +787,8 @@ def polish_notes():
 
     notes, err = polish_visit_notes(row)
     if err and err not in ("empty",):
-        status = 503 if err in {"missing_api_key", "invalid_api_key", "quota_exceeded"} else 502
+        soft = err.startswith(("missing_api_key", "invalid_api_key", "quota_exceeded"))
+        status = 503 if soft else 502
         return jsonify(
             {
                 "success": False,
