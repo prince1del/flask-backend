@@ -243,40 +243,56 @@ def _resolve_distributor_display_name(conn, distributor_id, distributor_name_raw
 
 
 def build_season_overview(conn, user_id: int) -> list[dict]:
-    """Group filled orders by season for dashboard widgets (per distributor totals)."""
+    """Group filled orders by season (+ category when a season has more than one).
+
+    Single-category season → one card titled \"AW26\".
+    Multi-category season → separate cards \"AW26 - (Bed)\", \"AW26 - (Bath)\", …
+    """
     from collections import defaultdict
 
     orders = list_filled_orders(conn, user_id)
-    season_groups: dict[str, dict[str, dict]] = defaultdict(dict)
+    # season -> set of categories present
+    season_categories: dict[str, set[str]] = defaultdict(set)
+    # (season, category) -> distributor buckets
+    slot_groups: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
+
     for order in orders:
         season = (order.get("season") or "—").strip() or "—"
+        category = (order.get("category") or "—").strip() or "—"
+        season_categories[season].add(category)
         dist_id = order.get("distributor_id")
         key = str(dist_id) if dist_id is not None else (order.get("distributor_name_raw") or f"order-{order['id']}")
         name = _resolve_distributor_display_name(conn, dist_id, order.get("distributor_name_raw"))
-        bucket = season_groups[season].get(key)
+        bucket = slot_groups[(season, category)].get(key)
         if not bucket:
             bucket = {
                 "distributor_name": name,
                 "total_piece_qty": 0.0,
                 "total_ex_mill_value": 0.0,
             }
-            season_groups[season][key] = bucket
+            slot_groups[(season, category)][key] = bucket
         bucket["total_piece_qty"] += float(order.get("total_piece_qty") or 0)
         bucket["total_ex_mill_value"] += float(order.get("total_ex_mill_value") or 0)
 
     overview = []
-    for season in sorted(season_groups.keys(), reverse=True):
-        rows = list(season_groups[season].values())
-        rows.sort(key=lambda r: (r["distributor_name"] or "").lower())
-        for row in rows:
-            row["total_piece_qty"] = round(row["total_piece_qty"], 2)
-            row["total_ex_mill_value"] = round(row["total_ex_mill_value"], 2)
-        overview.append({
-            "season": season,
-            "rows": rows,
-            "total_piece_qty": round(sum(r["total_piece_qty"] for r in rows), 2),
-            "total_ex_mill_value": round(sum(r["total_ex_mill_value"] for r in rows), 2),
-        })
+    for season in sorted(season_categories.keys(), reverse=True):
+        cats = sorted(season_categories[season], key=lambda c: c.lower())
+        multi = len(cats) > 1
+        for category in cats:
+            rows = list(slot_groups[(season, category)].values())
+            rows.sort(key=lambda r: (r["distributor_name"] or "").lower())
+            for row in rows:
+                row["total_piece_qty"] = round(row["total_piece_qty"], 2)
+                row["total_ex_mill_value"] = round(row["total_ex_mill_value"], 2)
+            label = f"{season} - ({category})" if multi else season
+            overview.append({
+                "season": season,
+                "category": category,
+                "label": label,
+                "rows": rows,
+                "total_piece_qty": round(sum(r["total_piece_qty"] for r in rows), 2),
+                "total_ex_mill_value": round(sum(r["total_ex_mill_value"] for r in rows), 2),
+            })
     return overview
 
 

@@ -917,20 +917,22 @@ function renderFoSeasonOverviewRows(rows) {
 
 function buildFoSeasonWidgetCard(seasonData, index) {
   const season = seasonData.season || '—';
-  const safeId = season.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const title = seasonData.label || season;
+  const safeId = `${season}_${seasonData.category || 'all'}_${index}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   const rowCount = (seasonData.rows || []).length;
   return `
     <article
       id="dashboard-fo-widget-${safeId}"
       class="fo-season-widget ta-playing-card-compact card-highlight ta-draggable-widget fo-playing-card-compact"
       data-fo-season="${foEscapeText(season)}"
+      data-fo-category="${foEscapeText(seasonData.category || '')}"
       data-fo-widget-index="${index}"
     >
-      <button type="button" class="ta-widget-minimize-btn" data-fo-season="${foEscapeText(season)}" onclick="minimizeFoWidget(this.dataset.foSeason)" aria-label="Minimize widget" title="Minimize">─</button>
+      <button type="button" class="ta-widget-minimize-btn" data-fo-season="${foEscapeText(safeId)}" onclick="minimizeFoWidget(this.dataset.foSeason)" aria-label="Minimize widget" title="Minimize">─</button>
       <button type="button" class="ta-widget-drag-handle" aria-label="Drag to move" title="Drag">⠿</button>
       <div class="ta-playing-card-inner">
         <div class="ta-playing-card-header ta-widget-drag-surface">
-          <h2>${foEscapeText(season)}</h2>
+          <h2>${foEscapeText(title)}</h2>
           <p>${rowCount} distributor${rowCount === 1 ? '' : 's'} · pcs · ex-mill</p>
         </div>
         <div class="ta-playing-card-table-wrap ta-excel-sheet ta-widget-sheet fo-season-table-wrap">
@@ -958,40 +960,52 @@ function buildFoSeasonWidgetCard(seasonData, index) {
 }
 
 function buildFoSeasonOverviewFromOrders(orders) {
-  const bySeason = {};
+  const bySeasonCat = {};
+  const seasonCats = {};
   (orders || []).forEach((order) => {
     const season = (order.season || '—').trim() || '—';
-    if (!bySeason[season]) bySeason[season] = {};
+    const category = (order.category || '—').trim() || '—';
+    if (!seasonCats[season]) seasonCats[season] = new Set();
+    seasonCats[season].add(category);
+    const slotKey = `${season}||${category}`;
+    if (!bySeasonCat[slotKey]) bySeasonCat[slotKey] = { season, category, dists: {} };
     const key = order.distributor_id || order.distributor_name_raw || order.id;
     const dist = (filledOrdersState.distributors || []).find((d) => d.id === order.distributor_id);
     const name = dist
       ? getFilledOrderDistributorLabel(dist)
       : (order.distributor_name_raw || `Distributor #${order.distributor_id || '?'}`);
-    if (!bySeason[season][key]) {
-      bySeason[season][key] = {
+    if (!bySeasonCat[slotKey].dists[key]) {
+      bySeasonCat[slotKey].dists[key] = {
         distributor_name: name,
         total_piece_qty: 0,
         total_ex_mill_value: 0,
       };
     }
-    const row = bySeason[season][key];
+    const row = bySeasonCat[slotKey].dists[key];
     row.total_piece_qty += Number(order.total_piece_qty) || 0;
     row.total_ex_mill_value += Number(order.total_ex_mill_value) || 0;
   });
-  return Object.keys(bySeason)
-    .sort()
-    .reverse()
-    .map((season) => {
-      const rows = Object.values(bySeason[season]).sort((a, b) =>
+  const seasonsSorted = Object.keys(seasonCats).sort().reverse();
+  const out = [];
+  seasonsSorted.forEach((season) => {
+    const cats = [...seasonCats[season]].sort((a, b) => a.localeCompare(b));
+    const multi = cats.length > 1;
+    cats.forEach((category) => {
+      const slot = bySeasonCat[`${season}||${category}`];
+      const rows = Object.values(slot.dists).sort((a, b) =>
         (a.distributor_name || '').localeCompare(b.distributor_name || ''),
       );
-      return {
+      out.push({
         season,
+        category,
+        label: multi ? `${season} - (${category})` : season,
         rows,
         total_piece_qty: rows.reduce((sum, row) => sum + row.total_piece_qty, 0),
         total_ex_mill_value: rows.reduce((sum, row) => sum + row.total_ex_mill_value, 0),
-      };
+      });
     });
+  });
+  return out;
 }
 
 function renderFoSeasonWidgets(layer, seasons) {
@@ -9084,7 +9098,7 @@ async function openOrderMatchWorkspace(focusRunId) {
   const tbody = document.getElementById('of-match-detail-tbody');
   const meta = document.getElementById('of-match-detail-meta');
   if (meta) meta.textContent = 'Loading matches…';
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9">Loading matches…</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10">Loading matches…</td></tr>';
 
   try {
     const response = await fetchWithAuth('/api/v1/order-fulfillment/order-match/list');
@@ -9123,7 +9137,7 @@ async function openOrderMatchWorkspace(focusRunId) {
     orderMatchState.selectedRunId = null;
     renderOrderMatchRunPicker();
     if (meta) meta.textContent = 'No matches yet. On SO Pack, pick a Filled Order and click Match FO.';
-    if (tbody) tbody.innerHTML = '<tr><td colspan="9">No matches yet.</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="10">No matches yet.</td></tr>';
   }
 }
 
