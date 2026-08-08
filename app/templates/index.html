@@ -1884,6 +1884,24 @@
         </div>
     </div>
 
+    <div id="ptodo-due-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content ptodo-modal-card" role="alertdialog" aria-labelledby="ptodo-due-heading">
+            <div class="dsr-export-modal-head">
+                <h3 id="ptodo-due-heading">To-Do Reminder</h3>
+                <button type="button" class="dsr-export-close" onclick="ptodoCloseDueModal()" aria-label="Close">✕</button>
+            </div>
+            <p id="ptodo-due-title" style="font-weight:650;margin:8px 0;"></p>
+            <p id="ptodo-due-meta" class="subtitle"></p>
+            <div class="ptodo-form-actions" style="flex-wrap:wrap;justify-content:flex-start;">
+                <button type="button" class="btn btn-primary" onclick="ptodoDueDone()">Done</button>
+                <button type="button" class="btn btn-secondary" onclick="ptodoDueSnooze('30m')">Remind 30m</button>
+                <button type="button" class="btn btn-secondary" onclick="ptodoDueSnooze('1h')">Remind 1h</button>
+                <button type="button" class="btn btn-secondary" onclick="ptodoDueSnooze('tomorrow_morning')">Tomorrow AM</button>
+                <button type="button" class="btn btn-secondary" onclick="ptodoDueOpen()">Open</button>
+            </div>
+        </div>
+    </div>
+
     <div id="dsr-export-modal" class="modal hidden" aria-hidden="true">
         <div class="modal-content dsr-export-modal-card" role="dialog" aria-labelledby="dsr-export-modal-title">
             <div class="dsr-export-modal-head">
@@ -3529,7 +3547,7 @@
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260807-om-cols"></script>
-    <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo1"></script>
+    <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>

@@ -474,6 +474,114 @@ def reopen_todo(todo_id: int):
     return _set_status(todo_id, "pending")
 
 
+def _resolve_snooze_reminder(data: dict) -> tuple[str | None, str | None]:
+    """Return (iso_reminder, error_message)."""
+    explicit = (data.get("reminder_datetime") or "").strip()
+    if explicit:
+        return explicit, None
+    preset = (data.get("preset") or "").strip().lower()
+    now = datetime.now()
+    if preset in {"30m", "30min", "30_minutes"}:
+        return (now + timedelta(minutes=30)).astimezone().isoformat(), None
+    if preset in {"1h", "60m", "1_hour"}:
+        return (now + timedelta(hours=1)).astimezone().isoformat(), None
+    if preset in {"tomorrow_morning", "tomorrow"}:
+        tmr = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+        return tmr.astimezone().isoformat(), None
+    minutes = data.get("minutes")
+    try:
+        if minutes is not None:
+            mins = int(minutes)
+            if mins <= 0:
+                return None, "minutes must be positive"
+            return (now + timedelta(minutes=mins)).astimezone().isoformat(), None
+    except (TypeError, ValueError):
+        return None, "minutes must be an integer"
+    return None, "Provide preset (30m|1h|tomorrow_morning), minutes, or reminder_datetime"
+
+
+@personal_todos_bp.route("/<int:todo_id>/snooze", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def snooze_todo(todo_id: int):
+    uid, err = _require_user_id()
+    if err:
+        return err
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    reminder, msg = _resolve_snooze_reminder(data)
+    if reminder is None:
+        return jsonify({"success": False, "error": {"message": msg}}), 400
+    now = _now_iso()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        row = _get_owned(conn, todo_id, workspace_id, uid)
+        if not row:
+            return jsonify({"success": False, "error": {"message": "To-Do not found"}}), 404
+        if row["status"] == "done":
+            return jsonify(
+                {"success": False, "error": {"message": "Cannot snooze a completed To-Do"}}
+            ), 400
+        conn.execute(
+            """
+            UPDATE personal_todos
+            SET reminder_datetime = ?, updated_at = ?
+            WHERE id = ? AND workspace_id = ? AND user_id = ?
+            """,
+            (reminder, now, todo_id, workspace_id, uid),
+        )
+        conn.commit()
+        row = _get_owned(conn, todo_id, workspace_id, uid)
+    return jsonify({"success": True, "data": _row_to_dict(row)})
+
+
+@personal_todos_bp.route("/due-reminders", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def due_reminders():
+    """Todos whose reminder_datetime is due now (or overdue) and not Done."""
+    uid, err = _require_user_id()
+    if err:
+        return err
+    workspace_id = get_workspace_id()
+    now = datetime.now(timezone.utc)
+
+    def _parse_reminder(raw: str | None) -> datetime | None:
+        if not raw:
+            return None
+        text = raw.strip()
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except ValueError:
+            return None
+
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT * FROM personal_todos
+            WHERE workspace_id = ? AND user_id = ?
+              AND status != 'done'
+              AND reminder_datetime IS NOT NULL
+              AND reminder_datetime != ''
+            ORDER BY id ASC
+            LIMIT 200
+            """,
+            (workspace_id, uid),
+        ).fetchall()
+    items = []
+    for r in rows:
+        rem = _parse_reminder(r["reminder_datetime"])
+        if rem is not None and rem <= now:
+            items.append(_row_to_dict(r))
+    items = items[:50]
+    return jsonify({"success": True, "data": {"todos": items, "count": len(items)}})
+
+
 @personal_todos_bp.route("/presets/due-dates", methods=["GET"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")

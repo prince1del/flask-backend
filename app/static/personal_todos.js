@@ -413,4 +413,104 @@ async function loadPersonalTodoWidgets() {
   } catch (_) {
     /* ignore widget errors */
   }
+  ptodoStartDueReminderPolling();
 }
+
+/** Phase 2 — in-app due reminder alerts (desktop/web). */
+const ptodoDueAlerted = new Set();
+let ptodoDuePollTimer = null;
+let ptodoDueQueue = [];
+
+function ptodoStartDueReminderPolling() {
+  if (ptodoDuePollTimer) return;
+  ptodoPollDueReminders();
+  ptodoDuePollTimer = setInterval(ptodoPollDueReminders, 60_000);
+}
+
+async function ptodoPollDueReminders() {
+  if (!authState?.accessToken) return;
+  try {
+    const response = await fetchWithAuth('/api/v1/personal-todos/due-reminders');
+    const data = await response.json();
+    if (!response.ok || !data.success) return;
+    const todos = data.data?.todos || [];
+    todos.forEach((t) => {
+      if (!t.id || ptodoDueAlerted.has(t.id)) return;
+      ptodoDueAlerted.add(t.id);
+      ptodoDueQueue.push(t);
+    });
+    ptodoShowNextDueAlert();
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function ptodoShowNextDueAlert() {
+  const modal = document.getElementById('ptodo-due-modal');
+  if (!modal || !modal.classList.contains('hidden')) return;
+  const todo = ptodoDueQueue.shift();
+  if (!todo) return;
+  document.getElementById('ptodo-due-title').textContent = todo.task_title || 'To-Do Reminder';
+  document.getElementById('ptodo-due-meta').textContent = [
+    todo.category,
+    todo.person_party,
+    todo.due_date,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  modal.dataset.todoId = String(todo.id);
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function ptodoCloseDueModal() {
+  const modal = document.getElementById('ptodo-due-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  delete modal.dataset.todoId;
+  setTimeout(ptodoShowNextDueAlert, 200);
+}
+
+async function ptodoDueDone() {
+  const id = document.getElementById('ptodo-due-modal')?.dataset?.todoId;
+  if (!id) return ptodoCloseDueModal();
+  try {
+    await fetchWithAuth(`/api/v1/personal-todos/${id}/done`, { method: 'POST' });
+    if (currentModuleKey === 'todo') loadPersonalTodoWorkspace();
+    loadPersonalTodoWidgets();
+  } catch (_) {
+    /* ignore */
+  }
+  ptodoCloseDueModal();
+}
+
+async function ptodoDueSnooze(preset) {
+  const id = document.getElementById('ptodo-due-modal')?.dataset?.todoId;
+  if (!id) return ptodoCloseDueModal();
+  try {
+    await fetchWithAuth(`/api/v1/personal-todos/${id}/snooze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset }),
+    });
+    ptodoDueAlerted.delete(Number(id));
+    if (currentModuleKey === 'todo') loadPersonalTodoWorkspace();
+    loadPersonalTodoWidgets();
+  } catch (error) {
+    alert(error.message || 'Unable to snooze');
+  }
+  ptodoCloseDueModal();
+}
+
+function ptodoDueOpen() {
+  ptodoCloseDueModal();
+  openModule('ToDo');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (authState?.accessToken) ptodoStartDueReminderPolling();
+  }, 2500);
+});
+

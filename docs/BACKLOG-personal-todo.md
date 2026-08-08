@@ -1,14 +1,17 @@
 # Personal To-Do — backlog
 
-Phase 1 (shipped / in progress): diary CRUD, quick add, sections, filters, search, Hold/Done/Undo, My Day/dashboard widget, Android bottom nav + desktop/web module. Reminder **fields** saved; no push yet.
+## Phase 1 — shipped
 
-## Phase 2 — reminders & notifications
+Diary CRUD, quick add, sections, filters, search, Hold/Done/Undo, My Day/dashboard widget, Android bottom nav + desktop/web module.
 
-- [ ] Fire reminder at `reminder_datetime` (Android local notification)
-- [ ] Notification actions: **Done** · **Remind Later** · **Open**
-- [ ] Snooze options: 30 min · 1 hour · Tomorrow morning · Custom (update reminder only; no duplicate task)
-- [ ] Desktop/web in-app reminder alert when due
+## Phase 2 — reminders (in progress / shipping)
+
+- [x] Fire reminder at `reminder_datetime` (Android local notification)
+- [x] Notification actions: **Done** · **Remind Later** · **Open**
+- [x] Snooze options: 30 min · 1 hour · Tomorrow morning (+ custom via API/ISO)
+- [x] Desktop/web in-app reminder alert when due (`/due-reminders` poll)
 - [ ] Optional: FCM / cross-device push later
+- [ ] Richer custom date-time picker UI on Android (ISO field works today)
 
 ## Phase 3 — nice-to-haves
 
@@ -24,3 +27,4 @@ Phase 1 (shipped / in progress): diary CRUD, quick add, sections, filters, searc
 - Categories: English only
 - Status: Pending | Hold | Done only
 - Not CRM workflow; personal work diary
+- Snooze updates `reminder_datetime` only — never duplicates the task
