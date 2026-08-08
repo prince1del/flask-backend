@@ -150,6 +150,36 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_dsr_day_close "
         "ON dsr_day_closures(workspace_id, user_id, visit_date)"
     )
+    # Approach Distributor — prospect pipeline (Customers tab + New distributor visits)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dsr_approach_distributors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            user_id INTEGER,
+            username TEXT,
+            firm_name TEXT NOT NULL,
+            owner_name TEXT,
+            contact_nos TEXT,
+            city_area TEXT,
+            location TEXT,
+            address TEXT,
+            monthly_ht TEXT,
+            main_categories TEXT,
+            channel_type TEXT,
+            existing_or_new TEXT,
+            customer_type TEXT,
+            source_visit_id INTEGER,
+            notes_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dsr_approach_ws "
+        "ON dsr_approach_distributors(workspace_id, firm_name COLLATE NOCASE)"
+    )
 
 
 def _brand_key(name: str) -> str:
@@ -468,6 +498,16 @@ def create_visit():
             ),
         )
         visit_id = int(cur.lastrowid)
+        if draft_party_kind == "distributor":
+            _upsert_approach_from_visit(
+                conn,
+                workspace_id=workspace_id,
+                uid=uid,
+                username=user.get("username"),
+                data=data,
+                visit_id=visit_id,
+                visit_intel_json=visit_intel_json,
+            )
         conn.commit()
         row = conn.execute("SELECT * FROM dsr_market_visits WHERE id = ?", (visit_id,)).fetchone()
 
@@ -1581,3 +1621,359 @@ def day_close():
             "message": f"Day closed for {visit_date}",
         }
     )
+
+
+def _parse_notes(raw) -> list:
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+
+def _approach_row_to_dict(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["notes"] = _parse_notes(d.pop("notes_json", None))
+    cats = d.get("main_categories")
+    if isinstance(cats, str) and cats.strip().startswith("["):
+        try:
+            d["main_categories_list"] = json.loads(cats)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            d["main_categories_list"] = [c.strip() for c in cats.split(",") if c.strip()]
+    elif isinstance(cats, str) and cats.strip():
+        d["main_categories_list"] = [c.strip() for c in cats.split(",") if c.strip()]
+    else:
+        d["main_categories_list"] = []
+    return d
+
+
+def _categories_to_store(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        cleaned = [str(x).strip() for x in value if str(x).strip()]
+        return json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+    text = str(value).strip()
+    return text or None
+
+
+def _upsert_approach_from_visit(
+    conn: sqlite3.Connection,
+    *,
+    workspace_id: str,
+    uid,
+    username,
+    data: dict,
+    visit_id: int,
+    visit_intel_json: str | None,
+) -> int | None:
+    """Mirror New-distributor visit fields into Approach Distributor list."""
+    firm = (data.get("customer_name") or "").strip()
+    if not firm:
+        return None
+
+    monthly_ht = None
+    main_categories = None
+    if visit_intel_json:
+        try:
+            intel = json.loads(visit_intel_json)
+            if isinstance(intel, dict):
+                monthly_ht = (str(intel.get("monthly_ht_business") or "").strip() or None)
+                cats = intel.get("main_categories")
+                main_categories = _categories_to_store(cats)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    if main_categories is None:
+        parts = []
+        if _truthy_flag(str(data.get("bed") or "")):
+            parts.append("Bedsheets")
+        if _truthy_flag(str(data.get("bath") or "")):
+            parts.append("Towels")
+        if _truthy_flag(str(data.get("tob") or "")):
+            parts.append("Comforters / Blankets / Pillows")
+        if _truthy_flag(str(data.get("others") or "")):
+            parts.append("Other")
+        main_categories = _categories_to_store(parts)
+
+    owner_name = (data.get("owner_name") or "").strip() or None
+    contact_nos = (data.get("contact_nos") or "").strip() or None
+    city_area = (data.get("city_area") or data.get("area_text") or "").strip() or None
+    location = (data.get("location") or "").strip() or None
+    address = (data.get("address") or "").strip() or None
+    monthly_ht = monthly_ht or (str(data.get("monthly_ht") or "").strip() or None)
+    channel_type = (data.get("channel_type") or "AWD").strip() or "AWD"
+    existing_or_new = (data.get("existing_or_new") or "New").strip() or "New"
+    customer_type = (data.get("customer_type") or "").strip() or None
+    now = datetime.now(timezone.utc).isoformat()
+
+    existing = conn.execute(
+        """
+        SELECT id FROM dsr_approach_distributors
+        WHERE workspace_id = ? AND lower(firm_name) = lower(?)
+        ORDER BY id DESC LIMIT 1
+        """,
+        (workspace_id, firm),
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            """
+            UPDATE dsr_approach_distributors SET
+                owner_name = COALESCE(?, owner_name),
+                contact_nos = COALESCE(?, contact_nos),
+                city_area = COALESCE(?, city_area),
+                location = COALESCE(?, location),
+                address = COALESCE(?, address),
+                monthly_ht = COALESCE(?, monthly_ht),
+                main_categories = COALESCE(?, main_categories),
+                channel_type = COALESCE(?, channel_type),
+                existing_or_new = COALESCE(?, existing_or_new),
+                customer_type = COALESCE(?, customer_type),
+                source_visit_id = ?,
+                updated_at = ?,
+                user_id = COALESCE(user_id, ?),
+                username = COALESCE(username, ?)
+            WHERE id = ?
+            """,
+            (
+                owner_name,
+                contact_nos,
+                city_area,
+                location,
+                address,
+                monthly_ht,
+                main_categories,
+                channel_type,
+                existing_or_new,
+                customer_type,
+                visit_id,
+                now,
+                uid,
+                username,
+                int(existing["id"]),
+            ),
+        )
+        return int(existing["id"])
+
+    cur = conn.execute(
+        """
+        INSERT INTO dsr_approach_distributors (
+            workspace_id, user_id, username, firm_name,
+            owner_name, contact_nos, city_area, location, address,
+            monthly_ht, main_categories, channel_type, existing_or_new, customer_type,
+            source_visit_id, notes_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            workspace_id,
+            uid,
+            username,
+            firm,
+            owner_name,
+            contact_nos,
+            city_area,
+            location,
+            address,
+            monthly_ht,
+            main_categories,
+            channel_type,
+            existing_or_new,
+            customer_type,
+            visit_id,
+            "[]",
+            now,
+            now,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+@dsr_market_bp.route("/approach-distributors", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def list_approach_distributors():
+    workspace_id = get_workspace_id()
+    q = (request.args.get("q") or "").strip().lower()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        rows = conn.execute(
+            """
+            SELECT * FROM dsr_approach_distributors
+            WHERE workspace_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (workspace_id,),
+        ).fetchall()
+    items = [_approach_row_to_dict(r) for r in rows]
+    if q:
+        items = [
+            x
+            for x in items
+            if q in (x.get("firm_name") or "").lower()
+            or q in (x.get("owner_name") or "").lower()
+            or q in (x.get("city_area") or "").lower()
+            or q in (x.get("contact_nos") or "").lower()
+            or q in (x.get("location") or "").lower()
+        ]
+    return jsonify({"success": True, "data": items, "count": len(items)})
+
+
+@dsr_market_bp.route("/approach-distributors", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def create_approach_distributor():
+    workspace_id = get_workspace_id()
+    user = _current_user()
+    data = request.get_json(silent=True) or {}
+    firm = (data.get("firm_name") or data.get("customer_name") or data.get("name") or "").strip()
+    if not firm:
+        return jsonify({"success": False, "error": {"message": "firm_name is required"}}), 400
+
+    now = datetime.now(timezone.utc).isoformat()
+    main_categories = _categories_to_store(
+        data.get("main_categories_list")
+        if data.get("main_categories_list") is not None
+        else data.get("main_categories")
+    )
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        # Upsert by firm name so Customers form + Market Visit stay one record.
+        existing = conn.execute(
+            """
+            SELECT id FROM dsr_approach_distributors
+            WHERE workspace_id = ? AND lower(firm_name) = lower(?)
+            ORDER BY id DESC LIMIT 1
+            """,
+            (workspace_id, firm),
+        ).fetchone()
+        fields = (
+            (data.get("owner_name") or "").strip() or None,
+            (data.get("contact_nos") or data.get("phone") or "").strip() or None,
+            (data.get("city_area") or data.get("city") or "").strip() or None,
+            (data.get("location") or "").strip() or None,
+            (data.get("address") or "").strip() or None,
+            (str(data.get("monthly_ht") or "").strip() or None),
+            main_categories,
+            (data.get("channel_type") or "AWD").strip() or "AWD",
+            (data.get("existing_or_new") or "New").strip() or "New",
+            (data.get("customer_type") or "").strip() or None,
+        )
+        if existing:
+            conn.execute(
+                """
+                UPDATE dsr_approach_distributors SET
+                    owner_name = COALESCE(?, owner_name),
+                    contact_nos = COALESCE(?, contact_nos),
+                    city_area = COALESCE(?, city_area),
+                    location = COALESCE(?, location),
+                    address = COALESCE(?, address),
+                    monthly_ht = COALESCE(?, monthly_ht),
+                    main_categories = COALESCE(?, main_categories),
+                    channel_type = COALESCE(?, channel_type),
+                    existing_or_new = COALESCE(?, existing_or_new),
+                    customer_type = COALESCE(?, customer_type),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (*fields, now, int(existing["id"])),
+            )
+            row_id = int(existing["id"])
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO dsr_approach_distributors (
+                    workspace_id, user_id, username, firm_name,
+                    owner_name, contact_nos, city_area, location, address,
+                    monthly_ht, main_categories, channel_type, existing_or_new, customer_type,
+                    source_visit_id, notes_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    workspace_id,
+                    _user_id(),
+                    user.get("username"),
+                    firm,
+                    *fields,
+                    data.get("source_visit_id"),
+                    "[]",
+                    now,
+                    now,
+                ),
+            )
+            row_id = int(cur.lastrowid)
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM dsr_approach_distributors WHERE id = ?", (row_id,)
+        ).fetchone()
+    return jsonify({"success": True, "data": _approach_row_to_dict(row)}), 201
+
+
+@dsr_market_bp.route("/approach-distributors/<int:approach_id>", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def get_approach_distributor(approach_id: int):
+    workspace_id = get_workspace_id()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        row = conn.execute(
+            "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?",
+            (approach_id, workspace_id),
+        ).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": {"message": "Not found"}}), 404
+    return jsonify({"success": True, "data": _approach_row_to_dict(row)})
+
+
+@dsr_market_bp.route("/approach-distributors/<int:approach_id>/notes", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_approach_distributor_note(approach_id: int):
+    """Append a free-text note. Linking to other entities comes later."""
+    workspace_id = get_workspace_id()
+    user = _current_user()
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or data.get("note") or "").strip()
+    if not text:
+        return jsonify({"success": False, "error": {"message": "note text is required"}}), 400
+
+    now = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        row = conn.execute(
+            "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?",
+            (approach_id, workspace_id),
+        ).fetchone()
+        if not row:
+            return jsonify({"success": False, "error": {"message": "Not found"}}), 404
+        notes = _parse_notes(row["notes_json"])
+        notes.append(
+            {
+                "id": f"n-{int(datetime.now(timezone.utc).timestamp() * 1000)}",
+                "text": text,
+                "created_at": now,
+                "username": user.get("username"),
+                "user_id": _user_id(),
+                # link_type / link_id reserved for later
+            }
+        )
+        conn.execute(
+            """
+            UPDATE dsr_approach_distributors
+            SET notes_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (json.dumps(notes, ensure_ascii=False), now, approach_id),
+        )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT * FROM dsr_approach_distributors WHERE id = ?", (approach_id,)
+        ).fetchone()
+    return jsonify({"success": True, "data": _approach_row_to_dict(updated)})
