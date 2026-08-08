@@ -282,9 +282,11 @@ Visit data JSON:
                 last_error = "api_error"
                 continue
 
-    if saw_quota and last_error == "quota_exceeded":
+    if saw_quota and last_error.startswith("quota_exceeded"):
         detail_bit = f" ({last_detail})" if last_detail else ""
         return _fallback_from_row(row), f"quota_exceeded{detail_bit}"
+    if last_detail and last_error in {"unparsed", "empty", "no_candidates"}:
+        return _fallback_from_row(row), f"{last_error}: {last_detail}"
     if last_detail and last_error.startswith("http_"):
         return _fallback_from_row(row), f"{last_error}:{last_detail}"
     return _fallback_from_row(row), last_error
