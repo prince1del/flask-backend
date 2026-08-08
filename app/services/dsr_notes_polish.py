@@ -53,8 +53,9 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
     cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s*```$", "", cleaned)
+    # Some models wrap JSON in prose — take first object span.
     try:
         data = json.loads(cleaned)
         if isinstance(data, dict):
@@ -69,7 +70,47 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
             if isinstance(data, dict):
                 return data
         except Exception:
-            return None
+            pass
+    # Loose key extraction if JSON is slightly broken.
+    fb = re.search(
+        r'"retailer_feedback"\s*:\s*"(.*?)"\s*(?:,|\})',
+        cleaned,
+        flags=re.DOTALL,
+    )
+    sm = re.search(
+        r'"sm_remarks"\s*:\s*"(.*?)"\s*(?:,|\})',
+        cleaned,
+        flags=re.DOTALL,
+    )
+    if fb or sm:
+        def _unescape(s: str) -> str:
+            return (
+                s.replace("\\n", "\n")
+                .replace('\\"', '"')
+                .replace("\\\\", "\\")
+                .strip()
+            )
+
+        return {
+            "retailer_feedback": _unescape(fb.group(1)) if fb else "",
+            "sm_remarks": _unescape(sm.group(1)) if sm else "",
+        }
+    # Prose fallback: two labeled paragraphs.
+    fb2 = re.search(
+        r"(?:retailer[_\s-]*feedback|feedback)\s*[:\-]\s*(.+?)(?:\n\s*\n|sm[_\s-]*remarks|remarks\s*from|$)",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    sm2 = re.search(
+        r"(?:sm[_\s-]*remarks|remarks(?:\s*from\s*sm)?)\s*[:\-]\s*(.+)$",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if fb2 or sm2:
+        return {
+            "retailer_feedback": (fb2.group(1).strip() if fb2 else ""),
+            "sm_remarks": (sm2.group(1).strip() if sm2 else ""),
+        }
     return None
 
 
@@ -202,6 +243,7 @@ Visit data JSON:
                 parsed = _extract_json_object(text)
                 if not parsed:
                     last_error = "unparsed"
+                    last_detail = (text or "")[:180].replace("\n", " ")
                     continue
                 feedback = str(parsed.get("retailer_feedback") or "").strip()
                 remarks = str(parsed.get("sm_remarks") or "").strip()
