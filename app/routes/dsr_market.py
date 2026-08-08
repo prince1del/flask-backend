@@ -187,7 +187,77 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
     if "is_draft" in d:
         d["is_draft"] = bool(d.get("is_draft"))
+    return _enrich_row_narratives(d)
+
+
+def _looks_like_legacy_narrative(text: str | None) -> bool:
+    """Pipe dumps / label stubs from older app builds — not engine prose."""
+    t = (text or "").strip()
+    if not t:
+        return True
+    if " | " in t or t.count("|") >= 1:
+        return True
+    low = t.lower()
+    if low.startswith("response:") or "opp:" in low or low.startswith("expects:"):
+        return True
+    if "visit focus:" in low and "response:" in low:
+        return True
+    # Chip-ish fragment without a full sentence
+    if "the " not in low and "further " not in low and len(t) < 160 and t.count(",") >= 2:
+        return True
+    return False
+
+
+def _enrich_row_narratives(d: dict) -> dict:
+    """Prefer deterministic engine text whenever visit_intel_json exists.
+
+    Heals older rows that still store pipe-joined dumps so app + Excel match.
+    """
+    intel = d.get("visit_intel_json")
+    if not intel:
+        return d
+    intel_s = intel if isinstance(intel, str) else json.dumps(intel, ensure_ascii=False)
+    feedback, remarks = _resolve_visit_narratives(d, intel_s)
+    # Force engine output when it produced text (do not keep legacy dumps).
+    if feedback:
+        d["retailer_feedback"] = feedback
+    elif _looks_like_legacy_narrative(d.get("retailer_feedback")):
+        d["retailer_feedback"] = None
+    if remarks:
+        d["sm_remarks"] = remarks
+    elif _looks_like_legacy_narrative(d.get("sm_remarks")):
+        d["sm_remarks"] = None
     return d
+
+
+def _persist_enriched_narratives(conn: sqlite3.Connection, rows: list[dict]) -> int:
+    """Write engine narratives back to DB when they differ from stored dumps."""
+    updated = 0
+    for d in rows:
+        visit_id = d.get("id")
+        intel = d.get("visit_intel_json")
+        if visit_id is None or not intel:
+            continue
+        fb = (d.get("retailer_feedback") or "").strip() or None
+        sm = (d.get("sm_remarks") or "").strip() or None
+        cur = conn.execute(
+            "SELECT retailer_feedback, sm_remarks FROM dsr_market_visits WHERE id = ?",
+            (visit_id,),
+        ).fetchone()
+        if not cur:
+            continue
+        old_fb = (cur[0] or "").strip() or None
+        old_sm = (cur[1] or "").strip() or None
+        if fb == old_fb and sm == old_sm:
+            continue
+        conn.execute(
+            "UPDATE dsr_market_visits SET retailer_feedback = ?, sm_remarks = ? WHERE id = ?",
+            (fb, sm, visit_id),
+        )
+        updated += 1
+    if updated:
+        conn.commit()
+    return updated
 
 
 def _truthy_flag(raw: str | None) -> bool:
@@ -252,10 +322,11 @@ def _resolve_visit_narratives(data: dict, visit_intel_json: str | None) -> tuple
     """Generate HO narratives from structured intel when present; else keep client text."""
     from app.services.dsr_visit_narrative import generate_visit_narratives
 
+    client_fb = (data.get("retailer_feedback") or "").strip() or None
+    client_sm = (data.get("sm_remarks") or "").strip() or None
+
     if not visit_intel_json:
-        feedback = (data.get("retailer_feedback") or "").strip() or None
-        remarks = (data.get("sm_remarks") or "").strip() or None
-        return feedback, remarks
+        return client_fb, client_sm
 
     narratives = generate_visit_narratives(
         visit_intel_json=visit_intel_json,
@@ -266,11 +337,11 @@ def _resolve_visit_narratives(data: dict, visit_intel_json: str | None) -> tuple
     )
     feedback = (narratives.get("retailer_feedback") or "").strip() or None
     remarks = (narratives.get("sm_remarks") or "").strip() or None
-    # If generator produced nothing (empty intel), fall back to any client text.
-    if not feedback:
-        feedback = (data.get("retailer_feedback") or "").strip() or None
-    if not remarks:
-        remarks = (data.get("sm_remarks") or "").strip() or None
+    # Fall back to client only when it is real prose — never keep pipe/chip dumps.
+    if not feedback and client_fb and not _looks_like_legacy_narrative(client_fb):
+        feedback = client_fb
+    if not remarks and client_sm and not _looks_like_legacy_narrative(client_sm):
+        remarks = client_sm
     return feedback, remarks
 
 
@@ -580,8 +651,11 @@ def list_visits():
         query += " ORDER BY visit_date DESC, id DESC LIMIT ?"
         params.append(request.args.get("limit", 500, type=int) or 500)
         rows = conn.execute(query, tuple(params)).fetchall()
+        data = [_row_to_dict(r) for r in rows]
+        # Heal DB: replace stored pipe dumps with engine narratives.
+        _persist_enriched_narratives(conn, data)
 
-    return jsonify({"success": True, "data": [_row_to_dict(r) for r in rows], "count": len(rows)})
+    return jsonify({"success": True, "data": data, "count": len(data)})
 
 
 @dsr_market_bp.route("/report-tree", methods=["GET"])
@@ -814,6 +888,44 @@ def _build_excel(rows: list[dict], sm_name: str, period_label: str, include_owne
     return buf.getvalue()
 
 
+@dsr_market_bp.route("/regenerate-narratives", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def regenerate_narratives():
+    """Backfill retailer_feedback / sm_remarks from visit_intel_json (deterministic)."""
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    from_date = (data.get("from") or data.get("from_date") or request.args.get("from") or "").strip()
+    to_date = (data.get("to") or data.get("to_date") or request.args.get("to") or "").strip()
+
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        query = "SELECT * FROM dsr_market_visits WHERE workspace_id = ?"
+        params: list = [workspace_id]
+        if from_date:
+            query += " AND visit_date >= ?"
+            params.append(from_date)
+        if to_date:
+            query += " AND visit_date <= ?"
+            params.append(to_date)
+        uid = _user_id()
+        if request.args.get("all") != "1" and uid is not None:
+            query += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        raw_rows = conn.execute(query, tuple(params)).fetchall()
+        enriched = [_enrich_row_narratives(dict(r)) for r in raw_rows]
+        updated = _persist_enriched_narratives(conn, enriched)
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {"scanned": len(enriched), "updated": updated},
+            "message": f"Regenerated narratives for {updated} of {len(enriched)} visits",
+        }
+    )
+
+
 @dsr_market_bp.route("/export", methods=["GET"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")
@@ -844,7 +956,8 @@ def export_excel():
             query += " AND (user_id = ? OR user_id IS NULL)"
             params.append(uid)
         query += " ORDER BY visit_date ASC, id ASC"
-        rows = [dict(r) for r in conn.execute(query, tuple(params)).fetchall()]
+        rows = [_enrich_row_narratives(dict(r)) for r in conn.execute(query, tuple(params)).fetchall()]
+        _persist_enriched_narratives(conn, rows)
 
     try:
         start = datetime.strptime(from_date, "%Y-%m-%d")
