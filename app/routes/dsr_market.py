@@ -617,15 +617,153 @@ def export_excel():
     if not sm_name:
         sm_name = (user.get("username") or "").strip()
 
+    polish = _truthy_flag(request.args.get("polish") or request.args.get("ai"))
+    polish_meta: dict = {}
+    if polish:
+        from app.services.dsr_notes_polish import polish_rows
+
+        rows, polish_meta = polish_rows(rows)
+        if polish_meta.get("errors") == ["missing_api_key"]:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "message": (
+                            "GEMINI_API_KEY not set. Add free key from "
+                            "https://aistudio.google.com/apikey on Render Environment, then redeploy."
+                        )
+                    },
+                    "meta": polish_meta,
+                }
+            ), 503
+
     content = _build_excel(
         rows, sm_name=sm_name, period_label=period, include_owner=include_owner
     )
     filename = f"DSR_{from_date}_to_{to_date}.xlsx"
-    return send_file(
+    if polish:
+        filename = f"DSR_{from_date}_to_{to_date}_polished.xlsx"
+    resp = send_file(
         io.BytesIO(content),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=filename,
+    )
+    if polish and polish_meta:
+        resp.headers["X-DSR-Polish"] = json.dumps(
+            {
+                "polished_count": polish_meta.get("polished_count"),
+                "row_count": polish_meta.get("row_count"),
+                "errors": polish_meta.get("errors") or [],
+            }
+        )
+    return resp
+
+
+@dsr_market_bp.route("/polish-notes", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def polish_notes():
+    """Test/preview: polish one visit's feedback + SM remarks via Gemini free API.
+
+    Body (either):
+      { "visit_id": 123 }
+      or full visit fields + optional visit_intel_json / retailer_feedback / sm_remarks
+    """
+    from app.services.dsr_notes_polish import gemini_configured, polish_visit_notes
+
+    if not gemini_configured():
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "message": (
+                        "GEMINI_API_KEY not set. Get a free key at "
+                        "https://aistudio.google.com/apikey and set it on Render."
+                    )
+                },
+                "data": {"gemini_configured": False},
+            }
+        ), 503
+
+    payload = request.get_json(silent=True) or {}
+    row: dict = {}
+    visit_id = payload.get("visit_id")
+    if visit_id is not None:
+        workspace_id = get_workspace_id()
+        with sqlite3.connect(_db_path()) as conn:
+            conn.row_factory = sqlite3.Row
+            _ensure_table(conn)
+            found = conn.execute(
+                "SELECT * FROM dsr_market_visits WHERE id = ? AND workspace_id = ?",
+                (int(visit_id), workspace_id),
+            ).fetchone()
+        if not found:
+            return jsonify({"success": False, "error": {"message": "Visit not found"}}), 404
+        row = dict(found)
+    else:
+        row = {
+            "customer_name": payload.get("customer_name"),
+            "retailer_feedback": payload.get("retailer_feedback"),
+            "sm_remarks": payload.get("sm_remarks"),
+            "customer_type": payload.get("customer_type"),
+            "visit_intel_json": payload.get("visit_intel_json")
+            or payload.get("intel")
+            or {},
+        }
+
+    notes, err = polish_visit_notes(row)
+    if err and err not in ("empty",):
+        status = 503 if err in {"missing_api_key", "invalid_api_key", "quota_exceeded"} else 502
+        return jsonify(
+            {
+                "success": False,
+                "error": {"message": f"Gemini polish failed: {err}"},
+                "data": {
+                    "gemini_configured": True,
+                    "original": {
+                        "retailer_feedback": row.get("retailer_feedback"),
+                        "sm_remarks": row.get("sm_remarks"),
+                    },
+                    "polished": notes,
+                },
+            }
+        ), status
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "gemini_configured": True,
+                "original": {
+                    "retailer_feedback": row.get("retailer_feedback"),
+                    "sm_remarks": row.get("sm_remarks"),
+                },
+                "polished": notes,
+                "error": err,
+            },
+        }
+    )
+
+
+@dsr_market_bp.route("/polish-status", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def polish_status():
+    from app.services.dsr_notes_polish import gemini_configured
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "gemini_configured": gemini_configured(),
+                "hint": (
+                    None
+                    if gemini_configured()
+                    else "Set GEMINI_API_KEY from https://aistudio.google.com/apikey"
+                ),
+            },
+        }
     )
 
 
