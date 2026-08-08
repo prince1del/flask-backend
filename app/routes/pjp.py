@@ -814,14 +814,33 @@ def today_plan():
 @require_jwt_auth
 @require_role("admin", "sales_executive")
 def week_plan():
-    """Current calendar week Monday→Sunday — for My Day weekly glance."""
+    """Calendar week Monday→Sunday — for My Day weekly glance.
+
+    Optional query:
+      week_offset — 0 = current week, -1 = previous, +1 = next (clamped ±12)
+      start_date  — any date in the desired week (YYYY-MM-DD); overrides week_offset
+    """
     uid, err = _require_user_id()
     if err:
         return err
     workspace_id = get_workspace_id()
     today = date.today()
-    # Monday = 0 … Sunday = 6
-    start = today - timedelta(days=today.weekday())
+    start_raw = (request.args.get("start_date") or "").strip()
+    week_offset = request.args.get("week_offset", default=0, type=int) or 0
+    week_offset = max(-12, min(12, week_offset))
+
+    if start_raw:
+        try:
+            anchor = date.fromisoformat(start_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": {"message": "Invalid start_date"}}), 400
+        start = anchor - timedelta(days=anchor.weekday())
+        # Derive offset vs current week Monday for clients that display it.
+        current_monday = today - timedelta(days=today.weekday())
+        week_offset = (start - current_monday).days // 7
+    else:
+        start = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
+
     end = start + timedelta(days=6)
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
@@ -851,6 +870,7 @@ def week_plan():
             "data": {
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
+                "week_offset": week_offset,
                 "days": days,
                 "planned_days": planned,
             },
