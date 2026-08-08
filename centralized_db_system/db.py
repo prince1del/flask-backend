@@ -2799,12 +2799,60 @@ class CentralizedDB:
     def _normalize_text(self, value: Any) -> str:
         return " ".join(str(value or "").strip().split())
 
+    def _party_name_fold(self, value: Any) -> str:
+        """Fold common honorific spellings so Shri/Shree/Sri/Sriram match."""
+        text = self._normalize_text(value).lower()
+        if not text:
+            return ""
+        # Glued forms first (shreeram / sriram → shriram)
+        text = re.sub(r"\bshree(?=[a-z])", "shri", text)
+        text = re.sub(r"\bsree(?=[a-z])", "shri", text)
+        text = re.sub(r"\bsri(?=[a-z])", "shri", text)
+        # Spaced honorifics
+        text = re.sub(r"\bshree\b", "shri", text)
+        text = re.sub(r"\bsree\b", "shri", text)
+        text = re.sub(r"\bsri\b", "shri", text)
+        return self._normalize_text(text)
+
+    def _party_name_compact(self, value: Any) -> str:
+        """Letters/digits only after honorific fold (Shri Ram → shriram)."""
+        return re.sub(r"[^a-z0-9]", "", self._party_name_fold(value))
+
+    def _global_search_party_name_variants(self, query: str) -> list[str]:
+        """Generate spelling variants for party search (shriram / shree ram / sri ram)."""
+        raw = (query or "").strip()
+        if not raw:
+            return []
+        folded = self._party_name_fold(raw)
+        compact = self._party_name_compact(raw)
+        variants: list[str] = [raw]
+        if folded and folded.lower() != raw.lower():
+            variants.append(folded)
+        if compact and len(compact) >= 4:
+            variants.append(compact)
+            # Re-insert spaces for common 2-token honorific+name (shriram → shri ram)
+            if compact.startswith("shri") and len(compact) > 4:
+                spaced = f"shri {compact[4:]}"
+                variants.append(spaced)
+        # Deduplicate preserving order
+        out: list[str] = []
+        seen: set[str] = set()
+        for v in variants:
+            key = v.lower()
+            if key in seen or not v.strip():
+                continue
+            seen.add(key)
+            out.append(v)
+        return out
+
     def _canonicalize_known_master_name(self, value: Any) -> str:
         raw_value = str(value or "").strip()
         if not raw_value:
             return ""
 
         normalized_value = self._normalize_text(raw_value).lower()
+        folded = self._party_name_fold(raw_value)
+        compact = self._party_name_compact(raw_value)
         alias_map = {
             "bnd": "Bernina International P Ltd",
             "choice corner": "Choice Corner Bombay Dyeing",
@@ -2815,9 +2863,18 @@ class CentralizedDB:
             "kag": "Kalra Agencies",
             "ptj": "Parnami Textiles",
             "shri ram": "Shri Ram & Co",
+            "shriram": "Shri Ram & Co",
+            "shree ram": "Shri Ram & Co",
+            "sri ram": "Shri Ram & Co",
+            "sriram": "Shri Ram & Co",
             "dca": "DCA Marketing",
         }
-        return alias_map.get(normalized_value, raw_value)
+        return (
+            alias_map.get(normalized_value)
+            or alias_map.get(folded)
+            or alias_map.get(compact)
+            or raw_value
+        )
 
     def _fuzzy_match_distributor(
         self,
@@ -6140,23 +6197,26 @@ class CentralizedDB:
     def _global_search_expand_terms(
         self, query: str, workspace_id: str | None = None
     ) -> list[str]:
-        """Expand nicknames/aliases (bnd → Bernina International P Ltd)."""
+        """Expand nicknames/aliases (bnd → Bernina) and Shri/Shree/Sri spelling variants."""
         raw = (query or "").strip()
         if not raw:
             return []
 
-        terms: list[str] = [raw]
+        terms: list[str] = list(self._global_search_party_name_variants(raw))
         canonical = self._canonicalize_known_master_name(raw)
         if canonical and canonical.lower() != raw.lower():
             terms.append(canonical)
+            terms.extend(self._global_search_party_name_variants(canonical))
 
         nick = raw.lower()
+        folded_nick = self._party_name_fold(raw)
         with sqlite3.connect(self.db_path) as conn:
             sql = (
                 "SELECT firm_name, name, firm_nick_name FROM master_distributors "
-                "WHERE LOWER(TRIM(COALESCE(firm_nick_name, ''))) = ?"
+                "WHERE LOWER(TRIM(COALESCE(firm_nick_name, ''))) = ? "
+                "OR LOWER(TRIM(COALESCE(firm_nick_name, ''))) = ?"
             )
-            params: list[Any] = [nick]
+            params: list[Any] = [nick, folded_nick]
             if workspace_id:
                 sql += " AND workspace_id = ?"
                 params.append(workspace_id)
@@ -6176,6 +6236,101 @@ class CentralizedDB:
             unique.append(term)
         return unique
 
+    def _supplement_parties_by_folded_name(
+        self,
+        results: dict[str, list[dict[str, Any]]],
+        query: str,
+        search_terms: list[str],
+        workspace_id: str | None = None,
+    ) -> None:
+        """Merge distributors/retailers matched via Shri/Shree/Sri folding + compact keys."""
+        compacts = {
+            self._party_name_compact(t)
+            for t in ([query] + list(search_terms))
+            if len(self._party_name_compact(t)) >= 4
+        }
+        folds = {
+            self._party_name_fold(t)
+            for t in ([query] + list(search_terms))
+            if len(self._party_name_fold(t)) >= 4
+        }
+        if not compacts and not folds:
+            return
+
+        def _party_hit(text: str) -> bool:
+            fold = self._party_name_fold(text)
+            compact = self._party_name_compact(text)
+            if any(f and f in fold for f in folds):
+                return True
+            if any(c and c in compact for c in compacts):
+                return True
+            return False
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            dist_sql = (
+                "SELECT id, distributor_id AS buyer_code, COALESCE(firm_name, name) AS firm_name, "
+                "firm_nick_name, name AS contact_person, phone_number, location AS city, "
+                "gst_no, zone, region, address FROM master_distributors"
+            )
+            dist_params: list[Any] = []
+            if workspace_id:
+                dist_sql += " WHERE workspace_id = ?"
+                dist_params.append(workspace_id)
+            dist_rows = conn.execute(dist_sql, dist_params).fetchall()
+
+            seen_dist = {
+                int(d["id"])
+                for d in results.get("distributors") or []
+                if d.get("id") is not None
+            }
+            for row in dist_rows:
+                rid = int(row["id"])
+                if rid in seen_dist:
+                    continue
+                blob = " ".join(
+                    str(row[k] or "")
+                    for k in ("firm_name", "firm_nick_name", "contact_person")
+                )
+                if not _party_hit(blob):
+                    continue
+                results.setdefault("distributors", []).append(dict(row))
+                seen_dist.add(rid)
+
+            retail_sql = (
+                "SELECT mr.id, mr.name, mr.contact_person, mr.distributor_id, "
+                "mr.phone_number, mr.location AS city, mr.gst_no, mr.address, "
+                "COALESCE(md.firm_name, md.name, 'Unassigned') AS distributor_name, "
+                "COALESCE(md.firm_nick_name, '') AS distributor_nick_name "
+                "FROM master_retailers mr "
+                "LEFT JOIN master_distributors md ON mr.distributor_id = md.id"
+            )
+            retail_params: list[Any] = []
+            if workspace_id:
+                retail_sql += " WHERE mr.workspace_id = ?"
+                retail_params.append(workspace_id)
+            retail_rows = conn.execute(retail_sql, retail_params).fetchall()
+
+            seen_ret = {
+                int(r["id"])
+                for r in results.get("retailers") or []
+                if r.get("id") is not None
+            }
+            for row in retail_rows:
+                rid = int(row["id"])
+                if rid in seen_ret:
+                    continue
+                blob = " ".join(
+                    str(row[k] or "")
+                    for k in ("name", "contact_person", "distributor_name", "distributor_nick_name")
+                )
+                if not _party_hit(blob):
+                    continue
+                item = dict(row)
+                item.pop("distributor_id", None)
+                results.setdefault("retailers", []).append(item)
+                seen_ret.add(rid)
+
     def _global_search_record_matches(
         self,
         query: str,
@@ -6187,6 +6342,17 @@ class CentralizedDB:
         if not candidates:
             return False
 
+        query_compacts = {
+            self._party_name_compact(t)
+            for t in candidates
+            if len(self._party_name_compact(t)) >= 4
+        }
+        query_folds = {
+            self._party_name_fold(t)
+            for t in candidates
+            if self._party_name_fold(t)
+        }
+
         for term in candidates:
             normalized = str(term).strip().lower()
             if not normalized:
@@ -6197,12 +6363,28 @@ class CentralizedDB:
                 text = str(value).lower()
                 if normalized in text:
                     return True
+                fold_text = self._party_name_fold(value)
+                if any(f and f in fold_text for f in query_folds):
+                    return True
+                compact_text = self._party_name_compact(value)
+                if any(c and c in compact_text for c in query_compacts):
+                    return True
 
             primary = self._global_search_primary_name(category, record).lower()
             if primary:
                 if len(normalized) >= 3 and primary.startswith(normalized):
                     return True
                 if fuzz.ratio(normalized, primary) >= 90:
+                    return True
+                primary_compact = self._party_name_compact(primary)
+                if any(
+                    c and (c in primary_compact or primary_compact in c)
+                    for c in query_compacts
+                ):
+                    return True
+                if fuzz.partial_ratio(
+                    self._party_name_fold(normalized), self._party_name_fold(primary)
+                ) >= 88:
                     return True
         return False
 
@@ -6684,6 +6866,13 @@ class CentralizedDB:
                     # Fresh / partial DBs may lack article_master or brand_aliases.
                     # Party/order search above must still succeed.
                     results["article_master"] = []
+
+        # Always merge party hits by folded honorific spellings (Shree/Sri/Shri Ram),
+        # even when FTS already found some retailers — otherwise distributor fallback
+        # is skipped and "Shree ram" never finds "Shri Ram Distributor".
+        self._supplement_parties_by_folded_name(
+            results, normalized_query, search_terms, workspace_id
+        )
 
         results = self._filter_global_search_results(
             normalized_query, results, terms=search_terms
