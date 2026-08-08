@@ -400,6 +400,79 @@ def list_visits():
     return jsonify({"success": True, "data": [_row_to_dict(r) for r in rows], "count": len(rows)})
 
 
+@dsr_market_bp.route("/report-tree", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def report_tree():
+    """Year → month folder index for in-app report browsing (no Excel download)."""
+    workspace_id = get_workspace_id()
+    uid = _user_id()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        query = (
+            "SELECT substr(visit_date, 1, 4) AS y, substr(visit_date, 6, 2) AS m, "
+            "COUNT(*) AS visit_count, COUNT(DISTINCT visit_date) AS day_count "
+            "FROM dsr_market_visits WHERE workspace_id = ? "
+            "AND visit_date IS NOT NULL AND length(visit_date) >= 7"
+        )
+        params: list = [workspace_id]
+        if request.args.get("all") != "1" and uid is not None:
+            query += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        query += " GROUP BY y, m ORDER BY y DESC, m DESC"
+        rows = conn.execute(query, tuple(params)).fetchall()
+
+    month_names = {
+        "01": "January",
+        "02": "February",
+        "03": "March",
+        "04": "April",
+        "05": "May",
+        "06": "June",
+        "07": "July",
+        "08": "August",
+        "09": "September",
+        "10": "October",
+        "11": "November",
+        "12": "December",
+    }
+    by_year: dict[str, dict] = {}
+    for y, m, visit_count, day_count in rows:
+        year = str(y or "").strip()
+        month = str(m or "").strip().zfill(2)
+        if not year.isdigit() or not month.isdigit():
+            continue
+        bucket = by_year.setdefault(
+            year,
+            {"year": int(year), "visit_count": 0, "months": []},
+        )
+        bucket["visit_count"] += int(visit_count or 0)
+        bucket["months"].append(
+            {
+                "year": int(year),
+                "month": int(month),
+                "month_key": f"{year}-{month}",
+                "label": f"{month_names.get(month, month)} {year}",
+                "from_date": f"{year}-{month}-01",
+                "to_date": _month_end(int(year), int(month)),
+                "visit_count": int(visit_count or 0),
+                "day_count": int(day_count or 0),
+            }
+        )
+
+    years = sorted(by_year.values(), key=lambda item: item["year"], reverse=True)
+    return jsonify({"success": True, "data": {"years": years}, "count": len(years)})
+
+
+def _month_end(year: int, month: int) -> str:
+    if month == 12:
+        return f"{year}-12-31"
+    nxt = datetime(year, month + 1, 1)
+    last = nxt.toordinal() - 1
+    d = datetime.fromordinal(last)
+    return d.strftime("%Y-%m-%d")
+
+
 def _excel_cell_text(value) -> str | float | int:
     """Normalize values so Excel cells stay readable (no runaway strings)."""
     if value is None:
