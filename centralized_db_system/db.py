@@ -6707,10 +6707,11 @@ class CentralizedDB:
             results["retailers"] = retailers_structured
 
         # Third tier: typo-tolerant fuzzy matching against distributor/
-        # retailer names (e.g. "binina" should still find "Bernina").
-        # Only runs if neither FTS prefix-match nor exact LIKE-match
-        # found anything.
-        if not any(results.values()):
+        # retailer names (e.g. "binina" → "Bernina", "Shree ram" → "Shri Ram").
+        # IMPORTANT: run whenever distributors are still empty — do NOT wait for
+        # a fully empty result set. Retailer-only FTS/LIKE hits (e.g. "Shree Ram
+        # Furnishing") used to short-circuit this engine and hide distributors.
+        if not results.get("distributors"):
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 dist_query = "SELECT id, distributor_id, firm_name, firm_nick_name, name, phone_number, location, gst_no, zone, region, address FROM master_distributors"
@@ -6730,8 +6731,18 @@ class CentralizedDB:
                     retail_params.append(workspace_id)
                 all_retailers = conn.execute(retail_query, retail_params).fetchall()
 
-            normalized_lower = normalized_query.lower()
-            term_lowers = [str(t).strip().lower() for t in search_terms if str(t).strip()]
+            normalized_lower = self._party_name_fold(normalized_query)
+            compact_query = self._party_name_compact(normalized_query)
+            term_lowers = [
+                self._party_name_fold(t)
+                for t in search_terms
+                if str(t).strip()
+            ]
+            term_compacts = {
+                self._party_name_compact(t)
+                for t in search_terms
+                if len(self._party_name_compact(t)) >= 4
+            }
             fuzzy_dist_matches = []
             for d in all_distributors:
                 candidates = [
@@ -6744,29 +6755,53 @@ class CentralizedDB:
                     if not candidate:
                         continue
                     cand_l = candidate.lower()
-                    if any(t == cand_l or t in cand_l for t in term_lowers):
+                    cand_fold = self._party_name_fold(candidate)
+                    cand_compact = self._party_name_compact(candidate)
+                    if any(t == cand_l or t in cand_l or t in cand_fold for t in term_lowers):
                         score = max(score, 100)
-                    score = max(score, fuzz.ratio(normalized_lower, cand_l))
-                if score >= 90:
+                    if any(c and c in cand_compact for c in term_compacts):
+                        score = max(score, 100)
+                    # Same scoring family as _fuzzy_match_distributor (upload engine)
+                    score = max(
+                        score,
+                        fuzz.ratio(normalized_lower, cand_fold),
+                        fuzz.token_set_ratio(normalized_lower, cand_fold),
+                        fuzz.partial_ratio(normalized_lower, cand_fold)
+                        if len(normalized_lower) >= 5
+                        else 0,
+                        fuzz.partial_ratio(compact_query, cand_compact)
+                        if len(compact_query) >= 5
+                        else 0,
+                    )
+                if score >= 85:
                     fuzzy_dist_matches.append((score, d))
             fuzzy_dist_matches.sort(key=lambda item: -item[0])
             matched_dist_ids = {int(d["id"]) for _score, d in fuzzy_dist_matches[:25]}
-            results["distributors"] = [
-                {
-                    "id": d["id"],
-                    "buyer_code": d["distributor_id"],
-                    "firm_name": d["firm_name"] or d["name"],
-                    "firm_nick_name": d["firm_nick_name"],
-                    "contact_person": d["name"],
-                    "phone_number": d["phone_number"],
-                    "city": d["location"],
-                    "gst_no": d["gst_no"],
-                    "zone": d["zone"],
-                    "region": d["region"],
-                    "address": d["address"],
-                }
-                for _score, d in fuzzy_dist_matches[:25]
-            ]
+            existing_dist_ids = {
+                int(row["id"])
+                for row in results.get("distributors") or []
+                if row.get("id") is not None
+            }
+            for _score, d in fuzzy_dist_matches[:25]:
+                did = int(d["id"])
+                if did in existing_dist_ids:
+                    continue
+                results.setdefault("distributors", []).append(
+                    {
+                        "id": d["id"],
+                        "buyer_code": d["distributor_id"],
+                        "firm_name": d["firm_name"] or d["name"],
+                        "firm_nick_name": d["firm_nick_name"],
+                        "contact_person": d["name"],
+                        "phone_number": d["phone_number"],
+                        "city": d["location"],
+                        "gst_no": d["gst_no"],
+                        "zone": d["zone"],
+                        "region": d["region"],
+                        "address": d["address"],
+                    }
+                )
+                existing_dist_ids.add(did)
 
             dist_name_by_id = {
                 int(d["id"]): (
@@ -6776,48 +6811,88 @@ class CentralizedDB:
                 for d in all_distributors
                 if d["id"] is not None
             }
-            fuzzy_retail_matches = []
-            for r in all_retailers:
-                candidate = (r["name"] or "")
-                distributor_name, distributor_nick = dist_name_by_id.get(
-                    int(r["distributor_id"] or 0), ("", "")
-                )
-                score = max(
-                    fuzz.ratio(normalized_lower, candidate.lower()) if candidate else 0,
-                    fuzz.ratio(normalized_lower, distributor_name.lower()) if distributor_name else 0,
-                    fuzz.ratio(normalized_lower, distributor_nick.lower()) if distributor_nick else 0,
-                )
-                linked_to_matched_dist = (
-                    r["distributor_id"] is not None
-                    and int(r["distributor_id"]) in matched_dist_ids
-                )
-                substring_hit = any(
-                    t in candidate.lower()
-                    or (distributor_name and t in distributor_name.lower())
-                    or (distributor_nick and t in distributor_nick.lower())
-                    for t in term_lowers
-                )
-                if score >= 90 or linked_to_matched_dist or substring_hit:
-                    fuzzy_retail_matches.append(
-                        (score if score else 100, r, distributor_name or "Unassigned", distributor_nick)
+            # Only rebuild retailers from fuzzy tier when none were found yet;
+            # otherwise merge linked retailers for newly matched distributors.
+            if not results.get("retailers"):
+                fuzzy_retail_matches = []
+                for r in all_retailers:
+                    candidate = (r["name"] or "")
+                    distributor_name, distributor_nick = dist_name_by_id.get(
+                        int(r["distributor_id"] or 0), ("", "")
                     )
-            fuzzy_retail_matches.sort(key=lambda item: -item[0])
-            fuzzy_retailers_structured = []
-            for _score, r, distributor_name, distributor_nick in fuzzy_retail_matches[:100]:
-                fuzzy_retailers_structured.append(
-                    {
-                        "id": r["id"],
-                        "name": r["name"],
-                        "contact_person": r["contact_person"],
-                        "distributor_name": distributor_name,
-                        "distributor_nick_name": distributor_nick,
-                        "phone_number": r["phone_number"],
-                        "city": r["location"],
-                        "gst_no": r["gst_no"],
-                        "address": r["address"],
-                    }
-                )
-            results["retailers"] = fuzzy_retailers_structured
+                    score = max(
+                        fuzz.ratio(normalized_lower, self._party_name_fold(candidate)) if candidate else 0,
+                        fuzz.ratio(normalized_lower, self._party_name_fold(distributor_name)) if distributor_name else 0,
+                        fuzz.ratio(normalized_lower, self._party_name_fold(distributor_nick)) if distributor_nick else 0,
+                        fuzz.partial_ratio(
+                            compact_query, self._party_name_compact(candidate)
+                        )
+                        if candidate and len(compact_query) >= 5
+                        else 0,
+                    )
+                    linked_to_matched_dist = (
+                        r["distributor_id"] is not None
+                        and int(r["distributor_id"]) in matched_dist_ids
+                    )
+                    substring_hit = any(
+                        t in candidate.lower()
+                        or t in self._party_name_fold(candidate)
+                        or (distributor_name and t in self._party_name_fold(distributor_name))
+                        or (distributor_nick and t in self._party_name_fold(distributor_nick))
+                        for t in term_lowers
+                    )
+                    if score >= 85 or linked_to_matched_dist or substring_hit:
+                        fuzzy_retail_matches.append(
+                            (score if score else 100, r, distributor_name or "Unassigned", distributor_nick)
+                        )
+                fuzzy_retail_matches.sort(key=lambda item: -item[0])
+                fuzzy_retailers_structured = []
+                for _score, r, distributor_name, distributor_nick in fuzzy_retail_matches[:100]:
+                    fuzzy_retailers_structured.append(
+                        {
+                            "id": r["id"],
+                            "name": r["name"],
+                            "contact_person": r["contact_person"],
+                            "distributor_name": distributor_name,
+                            "distributor_nick_name": distributor_nick,
+                            "phone_number": r["phone_number"],
+                            "city": r["location"],
+                            "gst_no": r["gst_no"],
+                            "address": r["address"],
+                        }
+                    )
+                results["retailers"] = fuzzy_retailers_structured
+            elif matched_dist_ids:
+                seen_ret = {
+                    int(r["id"])
+                    for r in results.get("retailers") or []
+                    if r.get("id") is not None
+                }
+                for r in all_retailers:
+                    if r["distributor_id"] is None:
+                        continue
+                    if int(r["distributor_id"]) not in matched_dist_ids:
+                        continue
+                    rid = int(r["id"])
+                    if rid in seen_ret:
+                        continue
+                    distributor_name, distributor_nick = dist_name_by_id.get(
+                        int(r["distributor_id"]), ("Unassigned", "")
+                    )
+                    results.setdefault("retailers", []).append(
+                        {
+                            "id": r["id"],
+                            "name": r["name"],
+                            "contact_person": r["contact_person"],
+                            "distributor_name": distributor_name or "Unassigned",
+                            "distributor_nick_name": distributor_nick,
+                            "phone_number": r["phone_number"],
+                            "city": r["location"],
+                            "gst_no": r["gst_no"],
+                            "address": r["address"],
+                        }
+                    )
+                    seen_ret.add(rid)
 
         if user_id:
             like_query = f"%{normalized_query.lower()}%"
