@@ -25,6 +25,7 @@ from .masters import masters_bp
 from .executive import executive_bp
 from .hop import hop_bp
 from .dsr_market import dsr_market_bp
+from .personal_todos import personal_todos_bp
 
 __all__ = [
     'target_achievement_bp',
@@ -54,4 +55,5 @@ __all__ = [
     'executive_bp',
     'hop_bp',
     'dsr_market_bp',
+    'personal_todos_bp',
 ]

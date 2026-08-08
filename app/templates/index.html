@@ -83,6 +83,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260806-mobile-nav3">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/personal-todos.css') }}?v=20260809-ptodo1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260807-om-cols">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
@@ -966,6 +967,7 @@
                     <div class="hop-nav-group bd-nav-group-crm">CRM</div>
                     <button type="button" id="nav-customers" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Customers')"><span class="nav-label">Know your Customer</span></button>
                     <button type="button" id="nav-market-visit" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('MarketVisit')"><span class="nav-label">Market Visit</span></button>
+                    <button type="button" id="nav-personal-todo" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('ToDo')"><span class="nav-label">To-Do</span></button>
                     <div class="hop-nav-group bd-nav-group-sales">Sales</div>
                     <button type="button" id="nav-order-desk" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('OrderDesk')"><span class="nav-label">Order Desk</span></button>
                     <div class="hop-nav-group bd-nav-group-reports">Reports</div>
@@ -1086,6 +1088,15 @@
                     </section>
 
                     <section id="dashboard-fo-widgets-layer" class="dashboard-fo-widget-layer hidden" aria-label="Filled order season widgets"></section>
+
+                    <section id="dashboard-todo-widget" class="card-highlight ptodo-dash-widget" aria-label="My To-Do">
+                        <div class="section-title-row">
+                            <h2>My To-Do</h2>
+                            <button type="button" class="btn btn-secondary" onclick="openModule('ToDo')">View all →</button>
+                        </div>
+                        <p id="ptodo-dash-counts" class="subtitle">Loading…</p>
+                        <div id="ptodo-dash-preview" class="ptodo-dash-list"></div>
+                    </section>
 
                     <section class="ai-summary card-highlight" id="dashboard-fake-ai-summary">
                         <div class="section-title-row">
@@ -1240,6 +1251,15 @@
             <div class="executive-home-panels">
                 <div class="card-highlight executive-panel hidden" aria-hidden="true">
                     <p class="subtitle">My Day is temporarily hidden.</p>
+                </div>
+
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>My To-Do</h2>
+                        <button type="button" class="btn btn-secondary" onclick="openModule('ToDo')">View all →</button>
+                    </div>
+                    <p id="ptodo-myday-counts" class="subtitle">—</p>
+                    <div id="ptodo-myday-preview" class="ptodo-dash-list"></div>
                 </div>
 
                 <div class="card-highlight executive-panel">
@@ -1746,6 +1766,123 @@
             </div>
         </div>
     </section>
+
+    <section id="personal-todo-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Work</span><span>›</span><span>To-Do</span></div>
+                <h2>My To-Do</h2>
+                <p class="subtitle">Personal work diary — quick notes you must not forget.</p>
+            </div>
+            <div class="dsr-page-actions">
+                <button type="button" class="btn btn-primary" onclick="ptodoOpenForm()">+ Add To-Do</button>
+                <button type="button" class="btn btn-secondary" onclick="loadPersonalTodoWorkspace()">Refresh</button>
+                <button class="back-btn" onclick="goBack()">← Back</button>
+            </div>
+        </div>
+
+        <div class="ptodo-page">
+            <div class="ptodo-quick">
+                <input type="text" id="ptodo-quick-input" placeholder="What do you need to remember?" maxlength="500"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();ptodoQuickAdd();}">
+                <button type="button" class="btn btn-primary" onclick="ptodoQuickAdd()">Save</button>
+            </div>
+
+            <div class="ptodo-filters">
+                <div class="ptodo-filter-row" id="ptodo-bucket-filters">
+                    <button type="button" class="ptodo-chip active" data-bucket="all" onclick="ptodoSetBucket('all')">All</button>
+                    <button type="button" class="ptodo-chip" data-bucket="today" onclick="ptodoSetBucket('today')">Today</button>
+                    <button type="button" class="ptodo-chip" data-bucket="overdue" onclick="ptodoSetBucket('overdue')">Overdue</button>
+                    <button type="button" class="ptodo-chip" data-bucket="upcoming" onclick="ptodoSetBucket('upcoming')">Upcoming</button>
+                    <button type="button" class="ptodo-chip" data-bucket="hold" onclick="ptodoSetBucket('hold')">Hold</button>
+                    <button type="button" class="ptodo-chip" data-bucket="completed" onclick="ptodoSetBucket('completed')">Completed</button>
+                    <button type="button" class="ptodo-chip" data-bucket="no_due" onclick="ptodoSetBucket('no_due')">No Due Date</button>
+                </div>
+                <div class="ptodo-filter-row">
+                    <input type="search" id="ptodo-search" placeholder="Search tasks, people, report…" oninput="ptodoDebouncedReload()">
+                    <select id="ptodo-category-filter" onchange="loadPersonalTodoWorkspace()">
+                        <option value="">All categories</option>
+                        <option>Boss Task</option>
+                        <option>Retailer Query</option>
+                        <option>Distributor Query</option>
+                        <option>Call</option>
+                        <option>Report</option>
+                        <option>Internal Work</option>
+                        <option>Other</option>
+                    </select>
+                </div>
+            </div>
+
+            <p id="ptodo-status" class="dsr-status" aria-live="polite"></p>
+            <div id="ptodo-list" class="ptodo-list"></div>
+        </div>
+    </section>
+
+    <div id="ptodo-form-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content ptodo-modal-card" role="dialog" aria-labelledby="ptodo-form-title">
+            <div class="dsr-export-modal-head">
+                <h3 id="ptodo-form-title">Add To-Do</h3>
+                <button type="button" class="dsr-export-close" onclick="ptodoCloseForm()" aria-label="Close">✕</button>
+            </div>
+            <form id="ptodo-form" class="ptodo-form" onsubmit="return ptodoSaveForm(event)">
+                <input type="hidden" id="ptodo-edit-id" value="">
+                <label class="dsr-field">What needs to be done? *
+                    <input type="text" id="ptodo-task-title" required maxlength="500" placeholder="Parnami ko stock availability confirm karni hai">
+                </label>
+                <label class="dsr-field">Type / Category
+                    <select id="ptodo-category">
+                        <option value="">Select</option>
+                        <option>Boss Task</option>
+                        <option>Retailer Query</option>
+                        <option>Distributor Query</option>
+                        <option>Call</option>
+                        <option>Report</option>
+                        <option>Internal Work</option>
+                        <option>Other</option>
+                    </select>
+                </label>
+                <label class="dsr-field">Person / Party
+                    <input type="text" id="ptodo-person" maxlength="200" placeholder="Amit Sir / Parnami / ABC Retailer">
+                </label>
+                <label class="dsr-field">Given By
+                    <input type="text" id="ptodo-given-by" maxlength="200" placeholder="Especially for Boss Tasks">
+                </label>
+                <div class="ptodo-form-grid">
+                    <label class="dsr-field">Due
+                        <select id="ptodo-due-preset" onchange="ptodoOnDuePreset()">
+                            <option value="none">No Due Date</option>
+                            <option value="today">Today</option>
+                            <option value="tomorrow">Tomorrow</option>
+                            <option value="date">Select Date</option>
+                        </select>
+                    </label>
+                    <label class="dsr-field" id="ptodo-due-date-wrap" style="display:none;">Due date
+                        <input type="date" id="ptodo-due-date">
+                    </label>
+                    <label class="dsr-field">Due time (optional)
+                        <input type="time" id="ptodo-due-time">
+                    </label>
+                    <label class="dsr-field">Priority
+                        <select id="ptodo-priority">
+                            <option value="normal">Normal</option>
+                            <option value="important">Important</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+                    </label>
+                </div>
+                <label class="dsr-field">Reminder (saved for Phase 2 notifications)
+                    <input type="datetime-local" id="ptodo-reminder">
+                </label>
+                <label class="dsr-field">Remark / Notes
+                    <textarea id="ptodo-remarks" rows="3" maxlength="2000" placeholder="Optional notes"></textarea>
+                </label>
+                <div class="ptodo-form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="ptodoCloseForm()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save To-Do</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <div id="dsr-export-modal" class="modal hidden" aria-hidden="true">
         <div class="modal-content dsr-export-modal-card" role="dialog" aria-labelledby="dsr-export-modal-title">
@@ -3392,6 +3529,7 @@
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260807-om-cols"></script>
+    <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo1"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>

@@ -6590,6 +6590,7 @@ function showHopShell(viewName) {
     'target-vs-achievement-workspace',
     'cloud-hub-workspace',
     'market-visit-workspace',
+    'personal-todo-workspace',
   ].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
   document.getElementById('hop-executive-workspace')?.classList.remove('hidden');
   currentModuleKey = 'hopexecutive';
@@ -6770,7 +6771,7 @@ function showDashboardWorkspace() {
   document.getElementById('bd-home-view')?.classList.remove('hidden');
   document.getElementById('bd-module-mount')?.classList.add('hidden');
   document.getElementById('party-master-section')?.classList.add('hidden');
-  ['sales-workspace', 'purchase-workspace', 'inventory-workspace', 'article-master-workspace', 'order-desk-workspace', 'order-fulfillment-workspace', 'order-cycle-workspace', 'executive-home-workspace', 'hop-executive-workspace', 'target-vs-achievement-workspace', 'cloud-hub-workspace', 'market-visit-workspace', 'filled-orders-workspace', 'settings-workspace'].forEach((id) => {
+  ['sales-workspace', 'purchase-workspace', 'inventory-workspace', 'article-master-workspace', 'order-desk-workspace', 'order-fulfillment-workspace', 'order-cycle-workspace', 'executive-home-workspace', 'hop-executive-workspace', 'target-vs-achievement-workspace', 'cloud-hub-workspace', 'market-visit-workspace', 'personal-todo-workspace', 'filled-orders-workspace', 'settings-workspace'].forEach((id) => {
     document.getElementById(id)?.classList.add('hidden');
   });
   if (authState.role === 'sales_executive') {
@@ -6783,6 +6784,7 @@ function showDashboardWorkspace() {
     }
     loadTaFyOverviewCard();
     loadFilledOrdersSeasonWidgets();
+    if (typeof loadPersonalTodoWidgets === 'function') loadPersonalTodoWidgets();
   }
 }
 
@@ -6901,6 +6903,7 @@ function renderExecutiveHome(data) {
   renderExecutivePendingActions(data.pending_actions || []);
   renderExecutiveOrderStatus(data.order_status || []);
   renderExecutiveVisits(data.recent_visits || []);
+  if (typeof loadPersonalTodoWidgets === 'function') loadPersonalTodoWidgets();
   refreshTaYearSelects().then(() => {
     if (currentModuleKey === 'targetvsachievement') loadTaTargetWorkspace();
   });
@@ -7066,6 +7069,7 @@ function openModule(moduleName) {
   document.getElementById('target-vs-achievement-workspace')?.classList.add('hidden');
   document.getElementById('cloud-hub-workspace')?.classList.add('hidden');
   document.getElementById('market-visit-workspace')?.classList.add('hidden');
+  document.getElementById('personal-todo-workspace')?.classList.add('hidden');
   if (normalized !== 'settings') {
     document.getElementById('settings-workspace')?.classList.add('hidden');
   }
@@ -7111,6 +7115,14 @@ function openModule(moduleName) {
     setActiveSidebarItem('Market Visit');
     if (typeof initNxYmdPickers === 'function') initNxYmdPickers(document);
     loadMarketVisitWorkspace();
+    return;
+  }
+
+  if (normalized === 'todo' || normalized === 'todos' || normalized === 'personaltodo') {
+    pinBdShellForModule(document.getElementById('personal-todo-workspace'));
+    document.getElementById('sales-workspace')?.classList.add('hidden');
+    setActiveSidebarItem('To-Do');
+    loadPersonalTodoWorkspace();
     return;
   }
 
