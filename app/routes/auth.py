@@ -226,6 +226,7 @@ def get_request_user_id() -> int | None:
 
 def get_user_row(username: str) -> dict[str, object] | None:
     db = _get_auth_db()
+    db.ensure_user_profile_columns()
     conn = sqlite3.connect(str(db.db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -233,12 +234,18 @@ def get_user_row(username: str) -> dict[str, object] | None:
             row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()
         }
         select_columns = ["id", "username", "password_hash"]
-        if "role" in columns:
-            select_columns.append("role")
-        if "workspace_id" in columns:
-            select_columns.append("workspace_id")
-        query = f"SELECT {', '.join(select_columns)} FROM users WHERE username = ?"
-        row = conn.execute(query, (username,)).fetchone()
+        for col in ("role", "workspace_id", "email", "full_name", "phone", "status"):
+            if col in columns:
+                select_columns.append(col)
+        if "email" in columns:
+            query = (
+                f"SELECT {', '.join(select_columns)} FROM users "
+                "WHERE username = ? OR lower(IFNULL(email,'')) = lower(?)"
+            )
+            row = conn.execute(query, (username, username)).fetchone()
+        else:
+            query = f"SELECT {', '.join(select_columns)} FROM users WHERE username = ?"
+            row = conn.execute(query, (username,)).fetchone()
         data = dict(row) if row is not None else None
         if data is not None and "role" not in data:
             data["role"] = "unassigned"
@@ -305,6 +312,9 @@ def api_login() -> tuple[Response, int]:
                     "user": {
                         "id": user_row.get("id", 1),
                         "username": user_row.get("username", username),
+                        "email": user_row.get("email"),
+                        "full_name": user_row.get("full_name"),
+                        "phone": user_row.get("phone"),
                         "role": user_row.get("role", "unassigned"),
                         "workspace_id": user_row.get("workspace_id", "default"),
                         "ui_theme": ui_theme,
@@ -314,6 +324,39 @@ def api_login() -> tuple[Response, int]:
         ),
         200,
     )
+
+
+@auth_blueprint.route("/api/v1/me/profile", methods=["GET"])
+@require_jwt_auth
+def get_my_profile() -> tuple[Response, int]:
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    profile = _get_auth_db().get_user_profile(user_id)
+    if profile is None:
+        return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": "User not found"}}), 404
+    return jsonify({"success": True, "data": profile}), 200
+
+
+@auth_blueprint.route("/api/v1/me/profile", methods=["PUT"])
+@require_jwt_auth
+def put_my_profile() -> tuple[Response, int]:
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    data = request.get_json(silent=True) or {}
+    try:
+        profile = _get_auth_db().update_user_profile(
+            user_id,
+            username=data.get("username") if "username" in data else None,
+            email=data.get("email") if "email" in data else None,
+            full_name=data.get("full_name") if "full_name" in data else None,
+            phone=data.get("phone") if "phone" in data else None,
+            password=data.get("password") if "password" in data else None,
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"code": "INVALID", "message": str(exc)}}), 400
+    return jsonify({"success": True, "data": profile, "message": "Profile updated"}), 200
 
 
 @auth_blueprint.route("/api/v1/me/ui-theme", methods=["GET"])

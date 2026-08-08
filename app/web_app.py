@@ -206,6 +206,12 @@ def create_app() -> Flask:
         db.create_all()
         _ensure_filled_orders_schema(app)
         _ensure_article_master_schema(app)
+        try:
+            cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+            result = cdb.migrate_bd_owner_login()
+            app.logger.info("BD owner login migrate: %s", result)
+        except Exception as exc:
+            app.logger.warning("BD owner login migrate skipped: %s", exc)
 
     @app.route("/", methods=["GET", "POST"])
     @app.route("/dashboard")

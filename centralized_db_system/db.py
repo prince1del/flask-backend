@@ -1573,12 +1573,170 @@ class CentralizedDB:
             return False
 
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT password_hash FROM users WHERE username = ?", (username,)
-            ).fetchone()
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "email" in cols:
+                row = conn.execute(
+                    "SELECT password_hash FROM users WHERE username = ? OR lower(IFNULL(email,'')) = lower(?)",
+                    (username, username),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT password_hash FROM users WHERE username = ?", (username,)
+                ).fetchone()
             if not row:
                 return False
             return check_password_hash(row[0], password)
+
+    def ensure_user_profile_columns(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_column_exists(conn, "users", "email", "TEXT")
+            self._ensure_column_exists(conn, "users", "full_name", "TEXT")
+            self._ensure_column_exists(conn, "users", "phone", "TEXT")
+            self._ensure_column_exists(conn, "users", "updated_at", "TEXT")
+
+    def get_user_profile(self, user_id: int) -> dict[str, Any] | None:
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT id, username, email, full_name, phone, role, workspace_id, status
+                FROM users WHERE id = ?
+                """,
+                (int(user_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def update_user_profile(
+        self,
+        user_id: int,
+        *,
+        username: str | None = None,
+        email: str | None = None,
+        full_name: str | None = None,
+        phone: str | None = None,
+        password: str | None = None,
+    ) -> dict[str, Any]:
+        """Owner/self profile update — fields used when creating a user id."""
+        self.ensure_user_profile_columns()
+        uid = int(user_id)
+        with sqlite3.connect(self.db_path) as conn:
+            existing = conn.execute(
+                "SELECT id, username FROM users WHERE id = ?", (uid,)
+            ).fetchone()
+            if existing is None:
+                raise ValueError("User not found")
+
+            sets: list[str] = []
+            params: list[Any] = []
+
+            if username is not None:
+                clean_user = username.strip()
+                if not clean_user:
+                    raise ValueError("User Id is required")
+                clash = conn.execute(
+                    "SELECT id FROM users WHERE username = ? AND id != ?",
+                    (clean_user, uid),
+                ).fetchone()
+                if clash:
+                    raise ValueError("User Id already taken")
+                sets.append("username = ?")
+                params.append(clean_user)
+
+            if email is not None:
+                clean_email = email.strip()
+                if clean_email:
+                    clash = conn.execute(
+                        "SELECT id FROM users WHERE lower(IFNULL(email,'')) = lower(?) AND id != ?",
+                        (clean_email, uid),
+                    ).fetchone()
+                    if clash:
+                        raise ValueError("Email already taken")
+                sets.append("email = ?")
+                params.append(clean_email or None)
+
+            if full_name is not None:
+                sets.append("full_name = ?")
+                params.append(full_name.strip() or None)
+
+            if phone is not None:
+                sets.append("phone = ?")
+                params.append(phone.strip() or None)
+
+            if password is not None and str(password).strip():
+                sets.append("password_hash = ?")
+                params.append(generate_password_hash(str(password).strip()))
+
+            if sets:
+                sets.append("updated_at = ?")
+                params.append(datetime.now(timezone.utc).isoformat())
+                params.append(uid)
+                conn.execute(
+                    f"UPDATE users SET {', '.join(sets)} WHERE id = ?",
+                    tuple(params),
+                )
+                conn.commit()
+
+        profile = self.get_user_profile(uid)
+        if profile is None:
+            raise ValueError("User not found")
+        return profile
+
+    def migrate_bd_owner_login(
+        self,
+        old_username: str = "bd_gt_north_head",
+        new_username: str = "kps.julka@gmail.com",
+        new_password: str = "@Princeking123",
+        full_name: str | None = "K.P.S. Julka",
+    ) -> dict[str, Any]:
+        """
+        One-shot: rename legacy BD login → email User Id (idempotent).
+        Keeps same user id + workspace so Party Master / DSR stay linked.
+        """
+        self.ensure_user_profile_columns()
+        old_u = (old_username or "").strip()
+        new_u = (new_username or "").strip()
+        with sqlite3.connect(self.db_path) as conn:
+            old_row = conn.execute(
+                "SELECT id FROM users WHERE username = ?", (old_u,)
+            ).fetchone()
+            new_row = conn.execute(
+                "SELECT id FROM users WHERE username = ?", (new_u,)
+            ).fetchone()
+            if old_row is None and new_row is not None:
+                return {
+                    "action": "already_renamed",
+                    "user_id": int(new_row[0]),
+                    "username": new_u,
+                }
+            if old_row is None:
+                return {"action": "noop", "reason": "old user not found"}
+            if new_row is not None and int(new_row[0]) != int(old_row[0]):
+                return {"action": "blocked", "reason": "target username already exists"}
+            uid = int(old_row[0])
+            conn.execute(
+                """
+                UPDATE users SET
+                    username = ?,
+                    password_hash = ?,
+                    email = ?,
+                    full_name = COALESCE(NULLIF(full_name, ''), ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    new_u,
+                    generate_password_hash(new_password),
+                    new_u,
+                    full_name,
+                    datetime.now(timezone.utc).isoformat(),
+                    uid,
+                ),
+            )
+            conn.commit()
+            return {"action": "renamed", "user_id": uid, "username": new_u}
 
     def ensure_default_admin_user(self) -> None:
         if os.getenv("AUTH_ENABLED", "false").lower() not in {"1", "true", "yes", "on"}:

@@ -416,6 +416,8 @@ def init_db():
     _add_column_if_missing(conn, 'storage_accounts', 'updated_at TEXT')
 
     _add_column_if_missing(conn, 'users', 'email TEXT')
+    _add_column_if_missing(conn, 'users', 'full_name TEXT')
+    _add_column_if_missing(conn, 'users', 'phone TEXT')
     _add_column_if_missing(conn, 'users', 'updated_at TEXT')
     _add_column_if_missing(conn, 'users', 'gdrive_access_token TEXT')
     _add_column_if_missing(conn, 'users', 'gdrive_refresh_token TEXT')
