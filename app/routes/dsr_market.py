@@ -400,34 +400,86 @@ def list_visits():
     return jsonify({"success": True, "data": [_row_to_dict(r) for r in rows], "count": len(rows)})
 
 
+def _excel_cell_text(value) -> str | float | int:
+    """Normalize values so Excel cells stay readable (no runaway strings)."""
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    # Keep newlines for wrap; collapse huge pipe dumps into line breaks.
+    text = text.replace(" | ", "\n").replace(" |", "\n").replace("| ", "\n")
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    # Soft cap — full detail stays in visit_intel_json on server.
+    if len(text) > 800:
+        text = text[:797].rstrip() + "…"
+    return text
+
+
 def _build_excel(rows: list[dict], sm_name: str, period_label: str, include_owner: bool) -> bytes:
     """Build DSR Excel. Note: `location` is app-only and must never appear in export."""
+    from openpyxl.styles import Border, Side, PatternFill
+    from openpyxl.utils import get_column_letter
+
     wb = Workbook()
     ws = wb.active
     ws.title = "DSR"
     headers = _excel_headers(include_owner)
+    last_col = len(headers)
 
-    ws["S1"] = "All Remarks received from Retailers"
-    ws["B2"] = "Name of the SM :"
-    ws["D2"] = sm_name or ""
-    ws["H2"] = f"DSR Report from  {period_label}"
+    thin = Border(
+        left=Side(style="thin", color="FFCCCCCC"),
+        right=Side(style="thin", color="FFCCCCCC"),
+        top=Side(style="thin", color="FFCCCCCC"),
+        bottom=Side(style="thin", color="FFCCCCCC"),
+    )
+    header_fill = PatternFill("solid", fgColor="FF1B5E20")
+    header_font = Font(bold=True, color="FFFFFFFF", size=10)
+    title_font = Font(bold=True, size=14, color="FF1B5E20")
+    label_font = Font(bold=True, size=10)
+    wrap_top = Alignment(wrap_text=True, vertical="top", horizontal="left")
+    wrap_center = Alignment(wrap_text=True, vertical="center", horizontal="center")
+
+    # Title block (do not park labels in random far columns — breaks mobile Excel view).
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=min(8, last_col))
+    ws["A1"] = f"DSR Report — {period_label}"
+    ws["A1"].font = title_font
+    ws["A1"].alignment = Alignment(vertical="center", horizontal="left")
+
+    ws["A2"] = "Name of the SM :"
+    ws["A2"].font = label_font
+    ws.merge_cells(start_row=2, start_column=2, end_row=2, end_column=min(4, last_col))
+    ws["B2"] = sm_name or ""
+    ws["B2"].alignment = Alignment(vertical="center")
+
+    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[2].height = 18
+    ws.row_dimensions[3].height = 8
+    ws.row_dimensions[5].height = 36
 
     for col, header in enumerate(headers, start=1):
         cell = ws.cell(row=5, column=col, value=header)
-        cell.font = Font(bold=True)
-        cell.alignment = Alignment(wrap_text=True, vertical="center")
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
+        cell.border = thin
 
-    # Group by date so first row of a day gets the date (like sample sheet)
+    # Prefer non-draft visits for HO; if only drafts exist, still export them.
+    export_rows = [r for r in rows if not r.get("is_draft")]
+    if not export_rows:
+        export_rows = rows
+
     last_date = None
     sr = 0
     excel_row = 6
-    for item in rows:
+    for item in export_rows:
         sr += 1
         visit_date = item.get("visit_date") or ""
         day_name = ""
         date_display = ""
         try:
-            dt = datetime.strptime(visit_date[:10], "%Y-%m-%d")
+            dt = datetime.strptime(str(visit_date)[:10], "%Y-%m-%d")
             day_name = dt.strftime("%A")
             date_display = dt.strftime("%d-%b-%Y")
         except ValueError:
@@ -463,18 +515,40 @@ def _build_excel(rows: list[dict], sm_name: str, period_label: str, include_owne
                 item.get("sm_remarks") or "",
             ]
         )
+
+        # Guard: never write more cells than headers (avoids "cell se bahar" layout).
+        values = values[:last_col]
+        while len(values) < last_col:
+            values.append("")
+
+        max_lines = 1
         for col, val in enumerate(values, start=1):
-            ws.cell(row=excel_row, column=col, value=val)
+            cleaned = _excel_cell_text(val)
+            cell = ws.cell(row=excel_row, column=col, value=cleaned)
+            cell.border = thin
+            # Sr / date / day / short flags centered; long text wraps.
+            if col in {1, 2, 3} or (
+                isinstance(cleaned, str) and cleaned.upper() in {"Y", "N", "YES", "NO"}
+            ):
+                cell.alignment = wrap_center
+            else:
+                cell.alignment = wrap_top
+            if isinstance(cleaned, str) and cleaned:
+                max_lines = max(max_lines, cleaned.count("\n") + 1)
+
+        # Grow row for wrapped feedback / remarks.
+        ws.row_dimensions[excel_row].height = min(120, max(18, 14 * max_lines))
         excel_row += 1
 
-    from openpyxl.utils import get_column_letter
-
-    widths = [8, 12, 12, 28]
+    widths = [6, 12, 11, 26]
     if include_owner:
-        widths.append(20)
-    widths.extend([14, 10, 12, 28, 16, 12, 12, 8, 8, 8, 10, 28, 12, 32, 32])
-    for i, w in enumerate(widths, start=1):
+        widths.append(18)
+    widths.extend([13, 10, 11, 26, 16, 11, 10, 7, 7, 7, 9, 22, 10, 28, 28])
+    for i, w in enumerate(widths[:last_col], start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws.freeze_panes = "A6"
+    ws.auto_filter.ref = f"A5:{get_column_letter(last_col)}{max(5, excel_row - 1)}"
 
     buf = io.BytesIO()
     wb.save(buf)
