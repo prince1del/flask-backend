@@ -441,6 +441,22 @@ def delete_filled_order(conn, user_id, filled_order_id):
     return True
 
 
+def delete_filled_orders_by_ids(conn, user_id, raw_ids):
+    """Delete many FO headers; skip missing / invalid ids. Returns count deleted."""
+    deleted = 0
+    for raw in raw_ids or []:
+        try:
+            oid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        try:
+            delete_filled_order(conn, user_id, oid)
+            deleted += 1
+        except ValueError:
+            continue
+    return deleted
+
+
 def delete_filled_order_item(conn, user_id, filled_order_id, item_id):
     order_row = conn.execute(
         "SELECT id FROM filled_orders WHERE id = ? AND user_id = ?",

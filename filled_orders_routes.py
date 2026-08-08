@@ -676,6 +676,24 @@ def download_filled_order(filled_order_id):
     )
 
 
+@filled_orders_bp.route("/delete-selected", methods=["POST"])
+@require_jwt_auth
+def delete_selected_filled_orders():
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or data.get("filled_order_ids") or []
+    if not isinstance(raw_ids, list):
+        return jsonify({"error": "ids must be a list"}), 400
+    if not raw_ids:
+        return jsonify({"error": "No ids provided"}), 400
+    user_id = _get_current_user_id()
+    conn = _get_db_connection()
+    try:
+        deleted = fodb.delete_filled_orders_by_ids(conn, user_id, raw_ids)
+    finally:
+        conn.close()
+    return jsonify({"status": "success", "deleted": deleted}), 200
+
+
 @filled_orders_bp.route("/<int:filled_order_id>", methods=["DELETE"])
 @require_jwt_auth
 def delete_filled_order_route(filled_order_id):

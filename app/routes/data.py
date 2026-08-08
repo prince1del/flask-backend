@@ -2935,6 +2935,44 @@ def order_match_delete(run_id: int) -> Response:
         conn.close()
 
 
+@data_blueprint.route("/api/v1/order-fulfillment/order-match/delete-selected", methods=["POST"])
+@require_jwt_auth
+def order_match_delete_selected() -> Response:
+    from app.services import fo_so_match_db as matchdb
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or data.get("run_ids") or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return _json_response(
+            {"success": False, "error": {"message": "ids must be a non-empty list"}},
+            400,
+        )
+    conn = sqlite3.connect(_db_path())
+    deleted = 0
+    try:
+        for raw in raw_ids:
+            try:
+                run_id = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if matchdb.delete_match_run(conn, user_id, run_id):
+                deleted += 1
+        return _json_response({"success": True, "data": {"deleted": deleted}})
+    finally:
+        conn.close()
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/upload/sales-order", methods=["POST"])
 @require_jwt_auth
 def upload_sales_order_v2() -> Response:
@@ -3401,23 +3439,62 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
     if file_references is None:
         return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
 
+    _cleanup_order_fulfillment_files(file_references)
+    return _json_response({"success": True, "data": {"deleted_tracking_id": tracking_id}})
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/tracking/delete-selected", methods=["POST"])
+@require_jwt_auth
+def delete_selected_order_fulfillment_tracking() -> Response:
+    """Bulk-delete SO/CI tracking rows (and linked files when under upload root)."""
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or data.get("tracking_ids") or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return _json_response(
+            {"success": False, "error": {"message": "ids must be a non-empty list"}},
+            400,
+        )
+    db = CentralizedDB(_db_path())
+    workspace_id = get_workspace_id()
+    deleted = 0
+    for raw in raw_ids:
+        try:
+            tracking_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        file_references = db.delete_order_lifecycle_tracking(
+            tracking_id, workspace_id=workspace_id
+        )
+        if file_references is None:
+            continue
+        _cleanup_order_fulfillment_files(file_references)
+        deleted += 1
+    return _json_response({"success": True, "data": {"deleted": deleted}})
+
+
+def _cleanup_order_fulfillment_files(file_references) -> None:
+    if not file_references:
+        return
     upload_root = (
         Path("app/instance/order_fulfillment_files")
         if Path("app/instance").exists()
         else Path("instance/order_fulfillment_files")
     ).resolve()
-    for file_ref in file_references.values():
+    values = (
+        file_references.values()
+        if isinstance(file_references, dict)
+        else list(file_references)
+    )
+    for file_ref in values:
         if not file_ref:
             continue
         try:
             file_path = Path(file_ref).resolve()
-            file_path.relative_to(upload_root)  # only delete if genuinely inside our upload root
+            file_path.relative_to(upload_root)
             if file_path.exists():
                 file_path.unlink()
         except (ValueError, OSError):
-            continue  # outside upload root, already deleted, or otherwise inaccessible — skip silently
-
-    return _json_response({"success": True, "data": {"deleted_tracking_id": tracking_id}})
+            continue
 
 
 def _json_response(payload: dict, status: int = 200) -> Response:
