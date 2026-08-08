@@ -356,6 +356,17 @@ def put_my_profile() -> tuple[Response, int]:
         )
     except ValueError as exc:
         return jsonify({"success": False, "error": {"code": "INVALID", "message": str(exc)}}), 400
+    except Exception as exc:
+        current_app.logger.exception("put_my_profile failed")
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {"code": "SERVER_ERROR", "message": f"Profile save failed: {exc}"},
+                }
+            ),
+            500,
+        )
     return jsonify({"success": True, "data": profile, "message": "Profile updated"}), 200
 
 

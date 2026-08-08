@@ -1598,11 +1598,22 @@ class CentralizedDB:
         self.ensure_user_profile_columns()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            wanted = [
+                "id",
+                "username",
+                "email",
+                "full_name",
+                "phone",
+                "role",
+                "workspace_id",
+                "status",
+            ]
+            select_cols = [c for c in wanted if c in cols]
+            if "id" not in select_cols or "username" not in select_cols:
+                return None
             row = conn.execute(
-                """
-                SELECT id, username, email, full_name, phone, role, workspace_id, status
-                FROM users WHERE id = ?
-                """,
+                f"SELECT {', '.join(select_cols)} FROM users WHERE id = ?",
                 (int(user_id),),
             ).fetchone()
         if row is None:
