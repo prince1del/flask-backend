@@ -2852,6 +2852,11 @@ def so_pack_match_filled_order() -> Response:
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/list", methods=["GET"])
 @require_jwt_auth
 def order_match_list() -> Response:
+    """
+    FO ↔ SO Pack match runs (Order Match page + BD app SO tab).
+    Shared across team by default so a match saved on desktop is
+    visible in the mobile app. Pass ?mine=1 to restrict to current user.
+    """
     from app.services import fo_so_match_db as matchdb
 
     user = getattr(request, "user", None)
@@ -2865,9 +2870,12 @@ def order_match_list() -> Response:
             {"success": False, "error": {"message": "Authentication required"}},
             401,
         )
+    mine_only = str(request.args.get("mine") or "").strip().lower() in ("1", "true", "yes")
     conn = sqlite3.connect(_db_path())
     try:
-        runs = matchdb.list_match_runs(conn, user_id)
+        runs = matchdb.list_match_runs(
+            conn, user_id=user_id if mine_only else None
+        )
         return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
     finally:
         conn.close()
@@ -2876,22 +2884,18 @@ def order_match_list() -> Response:
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["GET"])
 @require_jwt_auth
 def order_match_get(run_id: int) -> Response:
+    """Match run detail with line rows — shared read for desktop + BD app."""
     from app.services import fo_so_match_db as matchdb
 
     user = getattr(request, "user", None)
-    user_id = (
-        int(user["user_id"])
-        if isinstance(user, dict) and user.get("user_id") is not None
-        else None
-    )
-    if user_id is None:
+    if not (isinstance(user, dict) and user.get("user_id") is not None):
         return _json_response(
             {"success": False, "error": {"message": "Authentication required"}},
             401,
         )
     conn = sqlite3.connect(_db_path())
     try:
-        run = matchdb.get_match_run(conn, user_id, run_id)
+        run = matchdb.get_match_run(conn, run_id, user_id=None)
         if not run:
             return _json_response(
                 {"success": False, "error": {"message": "Match run not found"}},
@@ -3277,6 +3281,108 @@ def list_order_fulfillment_uploads() -> Response:
         "success": True,
         "data": {"order_sheets": order_sheets, "tracking_records": tracking_records},
     })
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/tracking/<int:tracking_id>", methods=["GET"])
+@require_jwt_auth
+def get_order_fulfillment_tracking(tracking_id: int) -> Response:
+    """Single SO/CI lifecycle record — mobile global-search detail."""
+    db = CentralizedDB(_db_path())
+    workspace_id = get_workspace_id()
+    tracking = db.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
+    if tracking is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Tracking record not found"}},
+            404,
+        )
+
+    distributor_name = "Unknown"
+    distributor_id = tracking.get("distributor_id")
+    if distributor_id is not None:
+        try:
+            with sqlite3.connect(_db_path()) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT COALESCE(firm_name, name, 'Unknown') AS distributor_name "
+                    "FROM master_distributors WHERE id = ?",
+                    (distributor_id,),
+                ).fetchone()
+                if row:
+                    distributor_name = row["distributor_name"]
+        except Exception:
+            pass
+
+    invoice_no = None
+    try:
+        with sqlite3.connect(_db_path()) as conn:
+            conn.row_factory = sqlite3.Row
+            ci_row = conn.execute(
+                "SELECT document_number FROM processed_documents "
+                "WHERE tracking_id = ? AND document_type = 'CI' LIMIT 1",
+                (tracking_id,),
+            ).fetchone()
+            if ci_row:
+                invoice_no = ci_row["document_number"]
+    except Exception:
+        pass
+    if not invoice_no:
+        invoice_no = db._extract_ci_invoice_no(tracking.get("commercial_invoice_parsed"))
+
+    # Line-level FO/SO/CI reconciliation (match results).
+    items = []
+    try:
+        raw_items = db.list_order_lifecycle_items_for_tracking(
+            tracking_id, workspace_id=workspace_id or "default"
+        )
+        for it in raw_items:
+            items.append(
+                {
+                    "id": it.get("id"),
+                    "product_code": it.get("product_code"),
+                    "item_key": it.get("item_key"),
+                    "item_name": it.get("item_name"),
+                    "brand": it.get("brand"),
+                    "color": it.get("color"),
+                    "ordered_qty": it.get("ordered_qty"),
+                    "fulfilled_qty": it.get("fulfilled_qty"),
+                    "so_qty": it.get("so_qty"),
+                    "ci_qty": it.get("ci_qty"),
+                    "ordered_value": it.get("ordered_value"),
+                    "so_value": it.get("so_value"),
+                    "ci_value": it.get("ci_value"),
+                    "has_discrepancy": bool(it.get("has_discrepancy")),
+                    "discrepancy_notes": it.get("discrepancy_notes"),
+                }
+            )
+    except Exception:
+        items = []
+
+    # Don't dump huge parsed blobs to mobile — keep summary fields + items.
+    payload = {
+        "tracking_id": tracking.get("tracking_id"),
+        "order_ref_no": tracking.get("order_ref_no"),
+        "invoice_no": invoice_no,
+        "distributor_id": distributor_id,
+        "distributor_name": distributor_name,
+        "transit_status": tracking.get("transit_status"),
+        "payment_status": tracking.get("payment_status"),
+        "receiving_status": tracking.get("receiving_status"),
+        "order_received_date": tracking.get("order_received_date"),
+        "order_filled_date": tracking.get("order_filled_date"),
+        "sales_order_generated_date": tracking.get("sales_order_generated_date"),
+        "commercial_invoice_date": tracking.get("commercial_invoice_date"),
+        "dispatch_date": tracking.get("dispatch_date"),
+        "expected_delivery_date": tracking.get("expected_delivery_date"),
+        "actual_delivery_date": tracking.get("actual_delivery_date"),
+        "pod_number": tracking.get("pod_number"),
+        "has_sales_order": bool(tracking.get("sales_order_file_reference")),
+        "has_commercial_invoice": bool(tracking.get("commercial_invoice_file_reference")),
+        "order_sheet_name": tracking.get("order_sheet_name"),
+        "created_at": tracking.get("created_at"),
+        "items": items,
+        "item_count": len(items),
+    }
+    return _json_response({"success": True, "data": payload})
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/tracking/<int:tracking_id>", methods=["DELETE"])
