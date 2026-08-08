@@ -238,6 +238,42 @@ def _master_db():
     return CentralizedDB()
 
 
+def _day_is_closed(conn: sqlite3.Connection, workspace_id: str, user_id: int | None, visit_date: str) -> bool:
+    if user_id is None or not visit_date:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM dsr_day_closures WHERE workspace_id = ? AND user_id = ? AND visit_date = ?",
+        (workspace_id, user_id, visit_date),
+    ).fetchone()
+    return row is not None
+
+
+def _resolve_visit_narratives(data: dict, visit_intel_json: str | None) -> tuple[str | None, str | None]:
+    """Generate HO narratives from structured intel when present; else keep client text."""
+    from app.services.dsr_visit_narrative import generate_visit_narratives
+
+    if not visit_intel_json:
+        feedback = (data.get("retailer_feedback") or "").strip() or None
+        remarks = (data.get("sm_remarks") or "").strip() or None
+        return feedback, remarks
+
+    narratives = generate_visit_narratives(
+        visit_intel_json=visit_intel_json,
+        retailer_name=(data.get("customer_name") or "").strip(),
+        retailer_id=data.get("linked_retailer_id") or data.get("retailer_id"),
+        visit_date=(data.get("visit_date") or "").strip(),
+        customer_type=(data.get("customer_type") or "").strip() or None,
+    )
+    feedback = (narratives.get("retailer_feedback") or "").strip() or None
+    remarks = (narratives.get("sm_remarks") or "").strip() or None
+    # If generator produced nothing (empty intel), fall back to any client text.
+    if not feedback:
+        feedback = (data.get("retailer_feedback") or "").strip() or None
+    if not remarks:
+        remarks = (data.get("sm_remarks") or "").strip() or None
+    return feedback, remarks
+
+
 @dsr_market_bp.route("/visits", methods=["POST"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")
@@ -314,6 +350,9 @@ def create_visit():
         else:
             visit_intel_json = (str(intel_raw).strip() if intel_raw is not None else "") or None
 
+        # Generate narratives on Save from structured intel; store once for app + Excel.
+        retailer_feedback, sm_remarks = _resolve_visit_narratives(data, visit_intel_json)
+
         cur = conn.execute(
             """
             INSERT INTO dsr_market_visits (
@@ -346,8 +385,8 @@ def create_visit():
                 (data.get("others") or "").strip() or None,
                 (data.get("competitor_brands") or "").strip() or None,
                 (data.get("branding_yn") or "").strip() or None,
-                (data.get("retailer_feedback") or "").strip() or None,
-                (data.get("sm_remarks") or "").strip() or None,
+                retailer_feedback,
+                sm_remarks,
                 visit_intel_json,
                 is_draft,
                 draft_party_kind,
@@ -362,6 +401,151 @@ def create_visit():
         row = conn.execute("SELECT * FROM dsr_market_visits WHERE id = ?", (visit_id,)).fetchone()
 
     return jsonify({"success": True, "data": _row_to_dict(row)}), 201
+
+
+@dsr_market_bp.route("/visits/<int:visit_id>", methods=["PATCH", "PUT"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def update_visit(visit_id: int):
+    """Update visit questionnaire; regenerate narratives unless day is closed/locked."""
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    force = _truthy_flag(str(data.get("force") if data.get("force") is not None else "0"))
+
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        uid = _user_id()
+        row = conn.execute(
+            "SELECT * FROM dsr_market_visits WHERE id = ? AND workspace_id = ?",
+            (visit_id, workspace_id),
+        ).fetchone()
+        if not row:
+            return jsonify({"success": False, "error": {"message": "Visit not found"}}), 404
+        visit = dict(row)
+        if uid is not None and visit.get("user_id") not in (None, uid):
+            role = (_current_user().get("role") or "").strip().lower()
+            if role not in {"admin", "hop_admin"}:
+                return jsonify({"success": False, "error": {"message": "Not allowed"}}), 403
+
+        visit_date = (data.get("visit_date") or visit.get("visit_date") or "").strip()
+        owner_uid = visit.get("user_id") if visit.get("user_id") is not None else uid
+        if _day_is_closed(conn, workspace_id, owner_uid, visit_date) and not force:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "message": (
+                            f"Visit day {visit_date} is closed. "
+                            "Re-open / unlock the day before editing, or pass force=1."
+                        ),
+                        "code": "day_closed",
+                    },
+                }
+            ), 409
+
+        customer_name = (data.get("customer_name") or visit.get("customer_name") or "").strip()
+        if not customer_name:
+            return jsonify(
+                {"success": False, "error": {"message": "customer_name is required"}}
+            ), 400
+
+        intel_raw = data.get("visit_intel_json", visit.get("visit_intel_json"))
+        if isinstance(intel_raw, (dict, list)):
+            visit_intel_json = json.dumps(intel_raw, ensure_ascii=False)
+        elif intel_raw is None:
+            visit_intel_json = None
+        else:
+            visit_intel_json = (str(intel_raw).strip() or None)
+
+        merged = {
+            **visit,
+            **{k: v for k, v in data.items() if v is not None},
+            "customer_name": customer_name,
+            "visit_date": visit_date,
+            "visit_intel_json": visit_intel_json,
+        }
+        # Always regenerate narratives on update from current structured intel.
+        retailer_feedback, sm_remarks = _resolve_visit_narratives(merged, visit_intel_json)
+
+        area_text = (data.get("area_text") if "area_text" in data else visit.get("area_text"))
+        if area_text is not None:
+            area_text = (str(area_text).strip() or None)
+
+        def _pick(key: str, strip: bool = True):
+            if key in data:
+                val = data.get(key)
+                if val is None:
+                    return None
+                return (str(val).strip() or None) if strip else val
+            return visit.get(key)
+
+        conn.execute(
+            """
+            UPDATE dsr_market_visits SET
+                visit_date = ?,
+                customer_name = ?,
+                location = ?,
+                owner_name = ?,
+                contact_nos = ?,
+                channel_type = ?,
+                customer_type = ?,
+                address = ?,
+                city_area = ?,
+                existing_or_new = ?,
+                order_lacs = ?,
+                bed = ?,
+                bath = ?,
+                tob = ?,
+                others = ?,
+                competitor_brands = ?,
+                branding_yn = ?,
+                retailer_feedback = ?,
+                sm_remarks = ?,
+                visit_intel_json = ?,
+                linked_distributor_id = ?,
+                linked_retailer_id = ?,
+                area_text = ?
+            WHERE id = ? AND workspace_id = ?
+            """,
+            (
+                visit_date,
+                customer_name,
+                _pick("location"),
+                _pick("owner_name"),
+                _pick("contact_nos"),
+                _pick("channel_type"),
+                _pick("customer_type"),
+                _pick("address"),
+                _pick("city_area") or area_text,
+                _pick("existing_or_new"),
+                data.get("order_lacs") if "order_lacs" in data else visit.get("order_lacs"),
+                _pick("bed"),
+                _pick("bath"),
+                _pick("tob"),
+                _pick("others"),
+                _pick("competitor_brands"),
+                _pick("branding_yn"),
+                retailer_feedback,
+                sm_remarks,
+                visit_intel_json,
+                data.get("linked_distributor_id")
+                if "linked_distributor_id" in data
+                else visit.get("linked_distributor_id"),
+                data.get("linked_retailer_id")
+                if "linked_retailer_id" in data
+                else visit.get("linked_retailer_id"),
+                area_text,
+                visit_id,
+                workspace_id,
+            ),
+        )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT * FROM dsr_market_visits WHERE id = ?", (visit_id,)
+        ).fetchone()
+
+    return jsonify({"success": True, "data": _row_to_dict(updated)})
 
 
 @dsr_market_bp.route("/visits", methods=["GET"])
@@ -485,8 +669,9 @@ def _excel_cell_text(value) -> str | float | int:
     while "\n\n\n" in text:
         text = text.replace("\n\n\n", "\n\n")
     # Soft cap — full detail stays in visit_intel_json on server.
-    if len(text) > 800:
-        text = text[:797].rstrip() + "…"
+    # Narratives can be multi-sentence HO prose; allow more room than pipe dumps.
+    if len(text) > 2000:
+        text = text[:1997].rstrip() + "…"
     return text
 
 
