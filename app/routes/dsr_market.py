@@ -367,11 +367,12 @@ def _resolve_visit_narratives(data: dict, visit_intel_json: str | None) -> tuple
     )
     feedback = (narratives.get("retailer_feedback") or "").strip() or None
     remarks = (narratives.get("sm_remarks") or "").strip() or None
-    # Fall back to client only when it is real prose — never keep pipe/chip dumps.
+    # Prefer SM remarks typed by the executive (desktop + mobile).
+    if client_sm and not _looks_like_legacy_narrative(client_sm):
+        remarks = client_sm
+    # Fall back to client feedback only when it is real prose — never keep pipe/chip dumps.
     if not feedback and client_fb and not _looks_like_legacy_narrative(client_fb):
         feedback = client_fb
-    if not remarks and client_sm and not _looks_like_legacy_narrative(client_sm):
-        remarks = client_sm
     return feedback, remarks
 
 
