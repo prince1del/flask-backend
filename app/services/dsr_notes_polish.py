@@ -134,67 +134,60 @@ def polish_visit_notes(row: dict[str, Any]) -> tuple[dict[str, str], str | None]
     sells_well = (intel.get("bd_sells_well") or "").strip()
     not_moving = (intel.get("bd_not_moving") or "").strip()
 
-    payload = {
-        "customer_name": row.get("customer_name"),
-        "existing_feedback_cell": row.get("retailer_feedback"),
-        "existing_remarks_cell": row.get("sm_remarks"),
-        "manual_issue_detail": manual_issue,
-        "manual_expects_from_bd": manual_expects,
-        "manual_next_action": manual_next,
-        "sells_well": sells_well,
-        "not_moving": not_moving,
-        "issues": intel.get("issues") or [],
-        "retailer_response": intel.get("retailer_response"),
-        "opportunity_score": intel.get("opportunity_score") or row.get("customer_type"),
-        "visit_focus": intel.get("visit_focus"),
-        "distributor": intel.get("distributor"),
-        "brands_on_shelf": intel.get("brands_on_shelf") or [],
-        "top_selling_brands": intel.get("top_selling_brands") or [],
-        "bd_availability": intel.get("bd_availability"),
-        "pending_since": intel.get("pending_since"),
-        "follow_up_date": intel.get("follow_up_date"),
-        "responsible": intel.get("responsible"),
-    }
+    prompt = f"""Write two short DSR Excel cells for ONE retailer outlet visit.
+Pure English. Keep manual free-text almost as written (light grammar only).
+Do not invent facts. Do not mention overall market. No labels like Issues: and no | pipes.
+Max 70 words per field.
 
-    prompt = f"""You write two short cells for a company Daily Sales Report (DSR) Excel.
-This is ONE retailer / outlet visit — not a market overview.
+Manual issue detail: {manual_issue or "(none)"}
+Manual expects: {manual_expects or "(none)"}
+Manual next action: {manual_next or "(none)"}
+Sells well: {sells_well or "(none)"}
+Not moving: {not_moving or "(none)"}
+Issues list: {json.dumps(intel.get("issues") or [], ensure_ascii=False)}
+Retailer response: {intel.get("retailer_response") or ""}
+Opportunity: {intel.get("opportunity_score") or row.get("customer_type") or ""}
+Distributor: {intel.get("distributor") or ""}
+Visit focus: {intel.get("visit_focus") or ""}
+Existing feedback cell: {row.get("retailer_feedback") or ""}
+Existing remarks cell: {row.get("sm_remarks") or ""}
+Customer: {row.get("customer_name") or ""}
 
-Return ONLY valid JSON:
-{{
-  "retailer_feedback": "...",
-  "sm_remarks": "..."
-}}
-
-Rules:
-- Pure English only.
-- Keep manual free-text almost as written (light grammar only). Manual fields are the hero.
-- Do NOT invent facts, amounts, brands, grades, or dates.
-- Do NOT write "overall market", area essays, or city market summaries.
-- Do NOT use labels like "Issues:", "Visit focus:", or pipe "|" separators.
-- retailer_feedback: 2–4 short sentences about THIS outlet only.
-- sm_remarks: 2–3 short sentences; lead with manual_next_action when present.
-- Max ~70 words per field. If a field has no facts, return empty string for that field.
-
-Visit data JSON:
-{json.dumps(payload, ensure_ascii=False)}
+Return JSON only with keys retailer_feedback and sm_remarks.
 """
 
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "retailer_feedback": {"type": "STRING"},
+            "sm_remarks": {"type": "STRING"},
+        },
+        "required": ["retailer_feedback", "sm_remarks"],
+    }
     body_json = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 400,
+            "maxOutputTokens": 500,
             "responseMimeType": "application/json",
+            "responseSchema": schema,
         },
     }
     body = json.dumps(body_json).encode("utf-8")
     body_plain = json.dumps(
         {
-            "contents": body_json["contents"],
+            "contents": [{"parts": [{"text": prompt + '\nExample: {"retailer_feedback":"...","sm_remarks":"..."}'}]}],
             "generationConfig": {
                 "temperature": 0.2,
-                "maxOutputTokens": 400,
+                "maxOutputTokens": 500,
+                "responseMimeType": "application/json",
             },
+        }
+    ).encode("utf-8")
+    body_loose = json.dumps(
+        {
+            "contents": [{"parts": [{"text": prompt + '\nReply with JSON only: {"retailer_feedback":"...","sm_remarks":"..."}'}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500},
         }
     ).encode("utf-8")
 
@@ -206,18 +199,18 @@ Visit data JSON:
         "gemini-flash-latest",
         "gemini-2.0-flash-lite-001",
         "gemini-1.5-flash",
-        "gemini-1.5-flash-8b",
     )
     ordered: list[str] = []
     for m in preferred + tuple(models):
         if m not in ordered:
             ordered.append(m)
+    ordered = ordered[:4]
 
     last_error = "api_error"
     last_detail = ""
     saw_quota = False
     for model in ordered:
-        for payload in (body, body_plain):
+        for payload in (body, body_plain, body_loose):
             url = (
                 "https://generativelanguage.googleapis.com/v1beta/models/"
                 f"{model}:generateContent?key={key}"
@@ -273,6 +266,7 @@ Visit data JSON:
                 if exc.code == 404:
                     last_error = "model_not_found"
                     break
+                # Schema unsupported on some models — try next payload/model.
                 last_error = f"http_{exc.code}"
                 continue
             except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError, IndexError):
