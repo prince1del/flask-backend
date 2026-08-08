@@ -2987,6 +2987,25 @@ class CentralizedDB:
         """Letters/digits only after honorific fold (Shri Ram → shriram)."""
         return re.sub(r"[^a-z0-9]", "", self._party_name_fold(value))
 
+    def _party_name_phonetic(self, value: Any) -> str:
+        """
+        Soft key for Indic English spelling variants:
+        nitin/niten, sunil/suneel, raman/roman → same key.
+        Keep first letter, strip vowels from the rest, collapse repeats.
+        """
+        text = self._party_name_compact(value)
+        if not text:
+            return ""
+        text = (
+            text.replace("ee", "i")
+            .replace("oo", "u")
+            .replace("aa", "a")
+            .replace("ie", "i")
+            .replace("ei", "i")
+        )
+        text = re.sub(r"(.)\1+", r"\1", text)
+        return text[0] + re.sub(r"[aeiou]", "", text[1:])
+
     def _global_search_party_name_variants(self, query: str) -> list[str]:
         """Generate spelling variants for party search (shriram / shree ram / sri ram)."""
         raw = (query or "").strip()
@@ -3121,11 +3140,13 @@ class CentralizedDB:
                 )
                 best_score = max(best_score, token_score, partial_score, despaced_score)
 
+            ref_phon = self._party_name_phonetic(normalized_ref)
+
             # Word-level comparisons — catches a short nickname/typo
             # matching just ONE word of a longer official firm name
             # (e.g. "Benrina" vs the "Bernina" in "Bernina
             # International P Ltd").
-            for candidate_text in (name, firm_name):
+            for candidate_text in (name, firm_name, firm_nick_name):
                 if not candidate_text:
                     continue
                 for word in self._normalize_text(candidate_text).lower().split():
@@ -3134,6 +3155,9 @@ class CentralizedDB:
                     word_score = fuzz.ratio(normalized_ref, word)
                     if word_score >= word_threshold:
                         best_score = max(best_score, word_score)
+                    # Indic spelling: nitin/niten, sunil/suneel, raman/roman
+                    if ref_phon and len(ref_phon) >= 3 and self._party_name_phonetic(word) == ref_phon:
+                        best_score = max(best_score, 94)
 
             # Accept if either the whole-string or any word-level
             # comparison cleared its threshold — both are already
@@ -6426,13 +6450,23 @@ class CentralizedDB:
         if not compacts and not folds:
             return
 
+        query_phon = self._party_name_phonetic(query)
+
         def _party_hit(text: str) -> bool:
             fold = self._party_name_fold(text)
             compact = self._party_name_compact(text)
+            phon = self._party_name_phonetic(text)
             if any(f and f in fold for f in folds):
                 return True
             if any(c and c in compact for c in compacts):
                 return True
+            # Indic spelling variants: nitin/niten, sunil/suneel, raman/roman
+            if query_phon and len(query_phon) >= 3:
+                if phon == query_phon:
+                    return True
+                for word in re.findall(r"[a-z0-9]+", fold):
+                    if len(word) >= 3 and self._party_name_phonetic(word) == query_phon:
+                        return True
             return False
 
         with sqlite3.connect(self.db_path) as conn:
@@ -6923,6 +6957,7 @@ class CentralizedDB:
 
             normalized_lower = self._party_name_fold(normalized_query)
             compact_query = self._party_name_compact(normalized_query)
+            phon_query = self._party_name_phonetic(normalized_query)
             term_lowers = [
                 self._party_name_fold(t)
                 for t in search_terms
@@ -6933,6 +6968,13 @@ class CentralizedDB:
                 for t in search_terms
                 if len(self._party_name_compact(t)) >= 4
             }
+            term_phons = {
+                self._party_name_phonetic(t)
+                for t in search_terms
+                if len(self._party_name_phonetic(t)) >= 3
+            }
+            if phon_query and len(phon_query) >= 3:
+                term_phons.add(phon_query)
             fuzzy_dist_matches = []
             for d in all_distributors:
                 candidates = [
@@ -6947,10 +6989,20 @@ class CentralizedDB:
                     cand_l = candidate.lower()
                     cand_fold = self._party_name_fold(candidate)
                     cand_compact = self._party_name_compact(candidate)
+                    cand_phon = self._party_name_phonetic(candidate)
                     if any(t == cand_l or t in cand_l or t in cand_fold for t in term_lowers):
                         score = max(score, 100)
                     if any(c and c in cand_compact for c in term_compacts):
                         score = max(score, 100)
+                    if any(
+                        p and (p == cand_phon or any(
+                            self._party_name_phonetic(w) == p
+                            for w in re.findall(r"[a-z0-9]+", cand_fold)
+                            if len(w) >= 3
+                        ))
+                        for p in term_phons
+                    ):
+                        score = max(score, 94)
                     # Same scoring family as _fuzzy_match_distributor (upload engine)
                     score = max(
                         score,
@@ -7007,11 +7059,13 @@ class CentralizedDB:
                 fuzzy_retail_matches = []
                 for r in all_retailers:
                     candidate = (r["name"] or "")
+                    contact = (r["contact_person"] or "")
                     distributor_name, distributor_nick = dist_name_by_id.get(
                         int(r["distributor_id"] or 0), ("", "")
                     )
                     score = max(
                         fuzz.ratio(normalized_lower, self._party_name_fold(candidate)) if candidate else 0,
+                        fuzz.ratio(normalized_lower, self._party_name_fold(contact)) if contact else 0,
                         fuzz.ratio(normalized_lower, self._party_name_fold(distributor_name)) if distributor_name else 0,
                         fuzz.ratio(normalized_lower, self._party_name_fold(distributor_nick)) if distributor_nick else 0,
                         fuzz.partial_ratio(
@@ -7020,6 +7074,15 @@ class CentralizedDB:
                         if candidate and len(compact_query) >= 5
                         else 0,
                     )
+                    for text in (candidate, contact, distributor_name, distributor_nick):
+                        if not text:
+                            continue
+                        phon = self._party_name_phonetic(text)
+                        if phon_query and len(phon_query) >= 3 and phon == phon_query:
+                            score = max(score, 94)
+                        for word in re.findall(r"[a-z0-9]+", self._party_name_fold(text)):
+                            if len(word) >= 3 and phon_query and self._party_name_phonetic(word) == phon_query:
+                                score = max(score, 94)
                     linked_to_matched_dist = (
                         r["distributor_id"] is not None
                         and int(r["distributor_id"]) in matched_dist_ids
@@ -7027,6 +7090,7 @@ class CentralizedDB:
                     substring_hit = any(
                         t in candidate.lower()
                         or t in self._party_name_fold(candidate)
+                        or (contact and t in self._party_name_fold(contact))
                         or (distributor_name and t in self._party_name_fold(distributor_name))
                         or (distributor_nick and t in self._party_name_fold(distributor_nick))
                         for t in term_lowers
