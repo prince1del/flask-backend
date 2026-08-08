@@ -918,34 +918,46 @@ function renderFoSeasonOverviewRows(rows) {
 function buildFoSeasonWidgetCard(seasonData, index) {
   const season = seasonData.season || '—';
   const title = seasonData.label || season;
-  const safeId = `${season}_${seasonData.category || 'all'}_${index}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const rowCount = (seasonData.rows || []).length;
+  const safeId = `${season}_${index}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const categories = seasonData.categories || [];
+  const flatRows = seasonData.rows || [];
+  const catNames = categories.map((c) => c.category).filter(Boolean);
+  const rowCount = flatRows.length || categories.reduce((n, c) => n + ((c.rows || []).length), 0);
+  const bodyHtml = categories.length
+    ? categories.map((block) => `
+        <div class="fo-season-cat-block" style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 4px;">
+            <strong>${foEscapeText(block.category || 'Other')}</strong>
+            <span>${formatFilledOrderAmount(block.total_ex_mill_value)}</span>
+          </div>
+          <table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
+            <thead>
+              <tr><th>Distributor</th><th>Qty</th><th>Amount</th></tr>
+            </thead>
+            <tbody>${renderFoSeasonOverviewRows(block.rows || [])}</tbody>
+          </table>
+        </div>
+      `).join('')
+    : `<table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
+        <thead><tr><th>Distributor</th><th>Qty</th><th>Amount</th></tr></thead>
+        <tbody>${renderFoSeasonOverviewRows(flatRows)}</tbody>
+      </table>`;
   return `
     <article
       id="dashboard-fo-widget-${safeId}"
       class="fo-season-widget ta-playing-card-compact card-highlight ta-draggable-widget fo-playing-card-compact"
       data-fo-season="${foEscapeText(season)}"
-      data-fo-category="${foEscapeText(seasonData.category || '')}"
       data-fo-widget-index="${index}"
     >
-      <button type="button" class="ta-widget-minimize-btn" data-fo-season="${foEscapeText(safeId)}" onclick="minimizeFoWidget(this.dataset.foSeason)" aria-label="Minimize widget" title="Minimize">─</button>
+      <button type="button" class="ta-widget-minimize-btn" data-fo-season="${foEscapeText(season)}" onclick="minimizeFoWidget(this.dataset.foSeason)" aria-label="Minimize widget" title="Minimize">─</button>
       <button type="button" class="ta-widget-drag-handle" aria-label="Drag to move" title="Drag">⠿</button>
       <div class="ta-playing-card-inner">
         <div class="ta-playing-card-header ta-widget-drag-surface">
           <h2>${foEscapeText(title)}</h2>
-          <p>${rowCount} distributor${rowCount === 1 ? '' : 's'} · pcs · ex-mill</p>
+          <p>${catNames.length ? foEscapeText(catNames.join(' · ')) + ' · ' : ''}${rowCount} distributor${rowCount === 1 ? '' : 's'} · pcs · ex-mill</p>
         </div>
         <div class="ta-playing-card-table-wrap ta-excel-sheet ta-widget-sheet fo-season-table-wrap">
-          <table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
-            <thead>
-              <tr>
-                <th>Distributor</th>
-                <th>Qty</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>${renderFoSeasonOverviewRows(seasonData.rows || [])}</tbody>
-          </table>
+          ${bodyHtml}
         </div>
         <div class="ta-playing-card-footer fo-season-widget-footer">
           <div class="fo-season-widget-totals">
@@ -960,7 +972,7 @@ function buildFoSeasonWidgetCard(seasonData, index) {
 }
 
 function buildFoSeasonOverviewFromOrders(orders) {
-  const bySeasonCat = {};
+  const slotGroups = {};
   const seasonCats = {};
   (orders || []).forEach((order) => {
     const season = (order.season || '—').trim() || '—';
@@ -968,44 +980,64 @@ function buildFoSeasonOverviewFromOrders(orders) {
     if (!seasonCats[season]) seasonCats[season] = new Set();
     seasonCats[season].add(category);
     const slotKey = `${season}||${category}`;
-    if (!bySeasonCat[slotKey]) bySeasonCat[slotKey] = { season, category, dists: {} };
+    if (!slotGroups[slotKey]) slotGroups[slotKey] = {};
     const key = order.distributor_id || order.distributor_name_raw || order.id;
     const dist = (filledOrdersState.distributors || []).find((d) => d.id === order.distributor_id);
     const name = dist
       ? getFilledOrderDistributorLabel(dist)
       : (order.distributor_name_raw || `Distributor #${order.distributor_id || '?'}`);
-    if (!bySeasonCat[slotKey].dists[key]) {
-      bySeasonCat[slotKey].dists[key] = {
+    if (!slotGroups[slotKey][key]) {
+      slotGroups[slotKey][key] = {
         distributor_name: name,
         total_piece_qty: 0,
         total_ex_mill_value: 0,
       };
     }
-    const row = bySeasonCat[slotKey].dists[key];
+    const row = slotGroups[slotKey][key];
     row.total_piece_qty += Number(order.total_piece_qty) || 0;
     row.total_ex_mill_value += Number(order.total_ex_mill_value) || 0;
   });
-  const seasonsSorted = Object.keys(seasonCats).sort().reverse();
-  const out = [];
-  seasonsSorted.forEach((season) => {
-    const cats = [...seasonCats[season]].sort((a, b) => a.localeCompare(b));
-    const multi = cats.length > 1;
-    cats.forEach((category) => {
-      const slot = bySeasonCat[`${season}||${category}`];
-      const rows = Object.values(slot.dists).sort((a, b) =>
+  return Object.keys(seasonCats)
+    .sort()
+    .reverse()
+    .map((season) => {
+      const cats = [...seasonCats[season]].sort((a, b) => a.localeCompare(b));
+      const seasonDist = {};
+      const categories = cats.map((category) => {
+        const rows = Object.values(slotGroups[`${season}||${category}`] || {}).sort((a, b) =>
+          (a.distributor_name || '').localeCompare(b.distributor_name || ''),
+        );
+        rows.forEach((row) => {
+          const dname = row.distributor_name || '';
+          if (!seasonDist[dname]) {
+            seasonDist[dname] = {
+              distributor_name: row.distributor_name,
+              total_piece_qty: 0,
+              total_ex_mill_value: 0,
+            };
+          }
+          seasonDist[dname].total_piece_qty += row.total_piece_qty;
+          seasonDist[dname].total_ex_mill_value += row.total_ex_mill_value;
+        });
+        return {
+          category,
+          rows,
+          total_piece_qty: rows.reduce((sum, row) => sum + row.total_piece_qty, 0),
+          total_ex_mill_value: rows.reduce((sum, row) => sum + row.total_ex_mill_value, 0),
+        };
+      });
+      const seasonRows = Object.values(seasonDist).sort((a, b) =>
         (a.distributor_name || '').localeCompare(b.distributor_name || ''),
       );
-      out.push({
+      return {
         season,
-        category,
-        label: multi ? `${season} - (${category})` : season,
-        rows,
-        total_piece_qty: rows.reduce((sum, row) => sum + row.total_piece_qty, 0),
-        total_ex_mill_value: rows.reduce((sum, row) => sum + row.total_ex_mill_value, 0),
-      });
+        label: season,
+        categories,
+        rows: seasonRows,
+        total_piece_qty: seasonRows.reduce((sum, row) => sum + row.total_piece_qty, 0),
+        total_ex_mill_value: seasonRows.reduce((sum, row) => sum + row.total_ex_mill_value, 0),
+      };
     });
-  });
-  return out;
 }
 
 function renderFoSeasonWidgets(layer, seasons) {

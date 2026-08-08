@@ -243,23 +243,21 @@ def _resolve_distributor_display_name(conn, distributor_id, distributor_name_raw
 
 
 def build_season_overview(conn, user_id: int) -> list[dict]:
-    """Group filled orders by season (+ category when a season has more than one).
+    """One card per season; categories (Bed, Bath, … any) nest inside.
 
-    Single-category season → one card titled \"AW26\".
-    Multi-category season → separate cards \"AW26 - (Bed)\", \"AW26 - (Bath)\", …
+    Expand UI shows each category block with distributor totals under it.
     """
     from collections import defaultdict
 
     orders = list_filled_orders(conn, user_id)
-    # season -> set of categories present
-    season_categories: dict[str, set[str]] = defaultdict(set)
     # (season, category) -> distributor buckets
     slot_groups: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
+    season_cats: dict[str, set[str]] = defaultdict(set)
 
     for order in orders:
         season = (order.get("season") or "—").strip() or "—"
         category = (order.get("category") or "—").strip() or "—"
-        season_categories[season].add(category)
+        season_cats[season].add(category)
         dist_id = order.get("distributor_id")
         key = str(dist_id) if dist_id is not None else (order.get("distributor_name_raw") or f"order-{order['id']}")
         name = _resolve_distributor_display_name(conn, dist_id, order.get("distributor_name_raw"))
@@ -275,24 +273,47 @@ def build_season_overview(conn, user_id: int) -> list[dict]:
         bucket["total_ex_mill_value"] += float(order.get("total_ex_mill_value") or 0)
 
     overview = []
-    for season in sorted(season_categories.keys(), reverse=True):
-        cats = sorted(season_categories[season], key=lambda c: c.lower())
-        multi = len(cats) > 1
+    for season in sorted(season_cats.keys(), reverse=True):
+        cats = sorted(season_cats[season], key=lambda c: c.lower())
+        category_blocks = []
+        # Season-level distributor rollup (all categories combined)
+        season_dist: dict[str, dict] = {}
         for category in cats:
             rows = list(slot_groups[(season, category)].values())
             rows.sort(key=lambda r: (r["distributor_name"] or "").lower())
             for row in rows:
                 row["total_piece_qty"] = round(row["total_piece_qty"], 2)
                 row["total_ex_mill_value"] = round(row["total_ex_mill_value"], 2)
-            label = f"{season} - ({category})" if multi else season
-            overview.append({
-                "season": season,
+                dname = row["distributor_name"] or ""
+                agg = season_dist.get(dname)
+                if not agg:
+                    agg = {
+                        "distributor_name": row["distributor_name"],
+                        "total_piece_qty": 0.0,
+                        "total_ex_mill_value": 0.0,
+                    }
+                    season_dist[dname] = agg
+                agg["total_piece_qty"] += row["total_piece_qty"]
+                agg["total_ex_mill_value"] += row["total_ex_mill_value"]
+            category_blocks.append({
                 "category": category,
-                "label": label,
                 "rows": rows,
                 "total_piece_qty": round(sum(r["total_piece_qty"] for r in rows), 2),
                 "total_ex_mill_value": round(sum(r["total_ex_mill_value"] for r in rows), 2),
             })
+        season_rows = list(season_dist.values())
+        season_rows.sort(key=lambda r: (r["distributor_name"] or "").lower())
+        for row in season_rows:
+            row["total_piece_qty"] = round(row["total_piece_qty"], 2)
+            row["total_ex_mill_value"] = round(row["total_ex_mill_value"], 2)
+        overview.append({
+            "season": season,
+            "label": season,
+            "categories": category_blocks,
+            "rows": season_rows,
+            "total_piece_qty": round(sum(r["total_piece_qty"] for r in season_rows), 2),
+            "total_ex_mill_value": round(sum(r["total_ex_mill_value"] for r in season_rows), 2),
+        })
     return overview
 
 
