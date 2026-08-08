@@ -6557,6 +6557,26 @@ class CentralizedDB:
                     return True
         return False
 
+    @staticmethod
+    def _query_looks_like_so_ci_number(query: str) -> bool:
+        """SO/CI search only — party/brand names like 'aster' must not open orders."""
+        q = (query or "").strip()
+        if len(q) < 2:
+            return False
+        if not any(ch.isdigit() for ch in q):
+            return False
+        if re.match(r"^(so|ci|inv|invoice)[\s\-_/]*\d", q, re.I):
+            return True
+        compact = re.sub(r"[\s\-_/\\.]", "", q)
+        if not compact:
+            return False
+        digits = sum(1 for ch in compact if ch.isdigit())
+        if digits >= 4:
+            return True
+        if digits >= 3 and (digits / len(compact)) >= 0.5:
+            return True
+        return False
+
     def _filter_global_search_results(
         self,
         query: str,
@@ -6609,6 +6629,7 @@ class CentralizedDB:
         search_terms = self._global_search_expand_terms(normalized_query, workspace_id)
         fts_parts = [self._build_fts_prefix_query(term) for term in search_terms]
         fts_query = " OR ".join(f"({part})" for part in fts_parts if part)
+        so_ci_query = self._query_looks_like_so_ci_number(normalized_query)
         with sqlite3.connect(self.db_path) as conn:
             try:
                 if workspace_id:
@@ -6687,7 +6708,7 @@ class CentralizedDB:
                 ).fetchall()
                 results["retailers"] = [dict(r) for r in retail_rows]
 
-            if ids_by_category.get("orders"):
+            if so_ci_query and ids_by_category.get("orders"):
                 placeholders = ",".join("?" * len(ids_by_category["orders"]))
                 order_rows = conn.execute(
                     f"SELECT olt.tracking_id, olt.order_ref_no, "
@@ -6719,59 +6740,59 @@ class CentralizedDB:
                     enriched_orders.append(item)
                 results["orders"] = enriched_orders
 
-            # Direct SO / CI number lookup (works even before FTS index refresh)
-            like_query = f"%{normalized_query.lower()}%"
-            order_like_sql = (
-                "SELECT DISTINCT olt.tracking_id, olt.order_ref_no, "
-                "COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name, "
-                "olt.transit_status, olt.payment_status, "
-                "CASE WHEN olt.sales_order_file_reference IS NOT NULL "
-                "AND TRIM(olt.sales_order_file_reference) != '' THEN 1 ELSE 0 END AS has_sales_order, "
-                "CASE WHEN olt.commercial_invoice_file_reference IS NOT NULL "
-                "AND TRIM(olt.commercial_invoice_file_reference) != '' THEN 1 ELSE 0 END AS has_commercial_invoice, "
-                "olt.commercial_invoice_parsed, "
-                "("
-                "  SELECT pd.document_number FROM processed_documents pd "
-                "  WHERE pd.tracking_id = olt.tracking_id AND pd.document_type = 'CI' "
-                "  LIMIT 1"
-                ") AS invoice_no "
-                "FROM order_lifecycle_tracking olt "
-                "LEFT JOIN master_distributors md ON olt.distributor_id = md.id "
-                "LEFT JOIN processed_documents pd ON pd.tracking_id = olt.tracking_id "
-                "WHERE ("
-                "LOWER(COALESCE(olt.order_ref_no, '')) LIKE ? "
-                "OR LOWER(COALESCE(olt.commercial_invoice_parsed, '')) LIKE ? "
-                "OR LOWER(COALESCE(olt.sales_order_parsed, '')) LIKE ? "
-                "OR LOWER(COALESCE(pd.document_number, '')) LIKE ? "
-                "OR LOWER(COALESCE(md.firm_name, '')) LIKE ? "
-                "OR LOWER(COALESCE(md.name, '')) LIKE ?"
-                ")"
-            )
-            order_like_params: list[Any] = [like_query] * 6
-            if workspace_id:
-                order_like_sql += " AND olt.workspace_id = ?"
-                order_like_params.append(workspace_id)
-            order_like_sql += " LIMIT 50"
-            order_like_rows = conn.execute(order_like_sql, tuple(order_like_params)).fetchall()
-            if order_like_rows:
-                seen_order_ids = {
-                    int(o["tracking_id"])
-                    for o in results["orders"]
-                    if o.get("tracking_id") is not None
-                }
-                for r in order_like_rows:
-                    item = dict(r)
-                    tracking_id = item.get("tracking_id")
-                    if tracking_id is not None and int(tracking_id) in seen_order_ids:
-                        continue
-                    parsed = item.pop("commercial_invoice_parsed", None)
-                    if not item.get("invoice_no"):
-                        item["invoice_no"] = self._extract_ci_invoice_no(parsed)
-                    item["has_sales_order"] = bool(item.get("has_sales_order"))
-                    item["has_commercial_invoice"] = bool(item.get("has_commercial_invoice"))
-                    results["orders"].append(item)
-                    if tracking_id is not None:
-                        seen_order_ids.add(int(tracking_id))
+            # Direct SO / CI number lookup only — never match brand text inside PDF JSON
+            # or distributor names (e.g. search "aster" must not open SO/CI).
+            if so_ci_query:
+                like_query = f"%{normalized_query.lower()}%"
+                order_like_sql = (
+                    "SELECT DISTINCT olt.tracking_id, olt.order_ref_no, "
+                    "COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name, "
+                    "olt.transit_status, olt.payment_status, "
+                    "CASE WHEN olt.sales_order_file_reference IS NOT NULL "
+                    "AND TRIM(olt.sales_order_file_reference) != '' THEN 1 ELSE 0 END AS has_sales_order, "
+                    "CASE WHEN olt.commercial_invoice_file_reference IS NOT NULL "
+                    "AND TRIM(olt.commercial_invoice_file_reference) != '' THEN 1 ELSE 0 END AS has_commercial_invoice, "
+                    "olt.commercial_invoice_parsed, "
+                    "("
+                    "  SELECT pd.document_number FROM processed_documents pd "
+                    "  WHERE pd.tracking_id = olt.tracking_id AND pd.document_type = 'CI' "
+                    "  LIMIT 1"
+                    ") AS invoice_no "
+                    "FROM order_lifecycle_tracking olt "
+                    "LEFT JOIN master_distributors md ON olt.distributor_id = md.id "
+                    "LEFT JOIN processed_documents pd ON pd.tracking_id = olt.tracking_id "
+                    "WHERE ("
+                    "LOWER(COALESCE(olt.order_ref_no, '')) LIKE ? "
+                    "OR LOWER(COALESCE(pd.document_number, '')) LIKE ?"
+                    ")"
+                )
+                order_like_params: list[Any] = [like_query, like_query]
+                if workspace_id:
+                    order_like_sql += " AND olt.workspace_id = ?"
+                    order_like_params.append(workspace_id)
+                order_like_sql += " LIMIT 50"
+                order_like_rows = conn.execute(order_like_sql, tuple(order_like_params)).fetchall()
+                if order_like_rows:
+                    seen_order_ids = {
+                        int(o["tracking_id"])
+                        for o in results["orders"]
+                        if o.get("tracking_id") is not None
+                    }
+                    for r in order_like_rows:
+                        item = dict(r)
+                        tracking_id = item.get("tracking_id")
+                        if tracking_id is not None and int(tracking_id) in seen_order_ids:
+                            continue
+                        parsed = item.pop("commercial_invoice_parsed", None)
+                        if not item.get("invoice_no"):
+                            item["invoice_no"] = self._extract_ci_invoice_no(parsed)
+                        item["has_sales_order"] = bool(item.get("has_sales_order"))
+                        item["has_commercial_invoice"] = bool(item.get("has_commercial_invoice"))
+                        results["orders"].append(item)
+                        if tracking_id is not None:
+                            seen_order_ids.add(int(tracking_id))
+            else:
+                results["orders"] = []
 
             if ids_by_category.get("stock"):
                 placeholders = ",".join("?" * len(ids_by_category["stock"]))
@@ -7122,40 +7143,42 @@ class CentralizedDB:
             normalized_query, results, terms=search_terms
         )
 
-        # FO ↔ SO Pack Order Match runs store SO numbers in rows_json
-        # (not order_lifecycle_tracking). Without this, searching an SO
-        # number like 102876395 returns empty even after Match FO.
-        match_hits = self._search_order_match_runs_for_query(normalized_query)
-        if match_hits:
-            seen_match_ids = {
-                int(o["match_run_id"])
-                for o in results["orders"]
-                if o.get("match_run_id") is not None
-            }
-            seen_refs = {
-                str(o.get("order_ref_no") or "").strip().lower()
-                for o in results["orders"]
-                if o.get("order_ref_no")
-            }
-            for hit in match_hits:
-                mid = hit.get("match_run_id")
-                ref = str(hit.get("order_ref_no") or "").strip().lower()
-                if mid is not None and int(mid) in seen_match_ids:
-                    continue
-                if ref and ref in seen_refs and mid is None:
-                    continue
-                results["orders"].append(hit)
-                if mid is not None:
-                    seen_match_ids.add(int(mid))
-                if ref:
-                    seen_refs.add(ref)
+        # FO ↔ SO Pack Order Match — only when query looks like an SO/CI number.
+        # Name/brand searches (e.g. "aster") must not open this section.
+        if so_ci_query:
+            match_hits = self._search_order_match_runs_for_query(normalized_query)
+            if match_hits:
+                seen_match_ids = {
+                    int(o["match_run_id"])
+                    for o in results["orders"]
+                    if o.get("match_run_id") is not None
+                }
+                seen_refs = {
+                    str(o.get("order_ref_no") or "").strip().lower()
+                    for o in results["orders"]
+                    if o.get("order_ref_no")
+                }
+                for hit in match_hits:
+                    mid = hit.get("match_run_id")
+                    ref = str(hit.get("order_ref_no") or "").strip().lower()
+                    if mid is not None and int(mid) in seen_match_ids:
+                        continue
+                    if ref and ref in seen_refs and mid is None:
+                        continue
+                    results["orders"].append(hit)
+                    if mid is not None:
+                        seen_match_ids.add(int(mid))
+                    if ref:
+                        seen_refs.add(ref)
+        else:
+            results["orders"] = []
 
         return {"query": normalized_query, "results": results}
 
     def _search_order_match_runs_for_query(self, query: str) -> list[dict[str, Any]]:
-        """Find Order Match runs whose SO numbers / party / file match q."""
+        """Find Order Match runs by SO number only (not party/brand text)."""
         q = (query or "").strip().lower()
-        if len(q) < 2:
+        if len(q) < 2 or not self._query_looks_like_so_ci_number(query):
             return []
         like = f"%{q}%"
         try:
@@ -7176,13 +7199,10 @@ class CentralizedDB:
                            filled_order_id, season, category, rows_json
                     FROM fo_so_match_runs
                     WHERE LOWER(COALESCE(rows_json, '')) LIKE ?
-                       OR LOWER(COALESCE(distributor_name, '')) LIKE ?
-                       OR LOWER(COALESCE(so_buyer_label, '')) LIKE ?
-                       OR LOWER(COALESCE(so_source_filename, '')) LIKE ?
                     ORDER BY id DESC
                     LIMIT 40
                     """,
-                    (like, like, like, like),
+                    (like,),
                 ).fetchall()
             except sqlite3.OperationalError:
                 return []
@@ -7225,9 +7245,9 @@ class CentralizedDB:
             # fields missed it, still label the hit with the typed SO number.
             if so_hit is None and q.isdigit() and q in (rows_json or "").lower():
                 so_hit = query.strip()
+            # No structured SO number hit → skip (do not fall back to party/file name).
             if so_hit is None:
-                # Party/file name match — still surface the run.
-                so_hit = (row[2] or query or "").strip() or None
+                continue
             status_bits = " · ".join(
                 p for p in (season, category, "Order Match") if p
             )
