@@ -9377,9 +9377,10 @@ class CentralizedDB:
             return cursor.rowcount > 0
 
     def list_master_distributors(
-        self, limit: int = 50, workspace_id: str | None = None
+        self, limit: int = 50, workspace_id: str | None = None, offset: int = 0
     ) -> list[dict[str, Any]]:
         safe_limit = max(1, int(limit))
+        safe_offset = max(0, int(offset))
         params: list[Any] = []
         query = """
                 SELECT
@@ -9420,8 +9421,8 @@ class CentralizedDB:
             params.append(workspace_id)
         else:
             query += " WHERE IFNULL(status, 'active') != 'inactive'"
-        query += " ORDER BY id DESC LIMIT ?"
-        params.append(safe_limit)
+        query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+        params.extend([safe_limit, safe_offset])
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(query, tuple(params)).fetchall()
 
@@ -9502,21 +9503,37 @@ class CentralizedDB:
         }
 
     def list_master_retailers(
-        self, limit: int = 50, workspace_id: str | None = None
+        self, limit: int = 50, workspace_id: str | None = None, offset: int = 0
     ) -> list[dict[str, Any]]:
         safe_limit = max(1, int(limit))
+        safe_offset = max(0, int(offset))
         params: list[Any] = []
+        # JOIN distributor name in SQL — avoids loading a second full Party Master into RAM.
         query = """
-                SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, owner_name, contact_person, state, pincode, category, birthday, anniversary, phone_number_2
-                FROM master_retailers
+                SELECT
+                    mr.id, mr.retailer_id, mr.retailer_code, mr.name, mr.distributor_id,
+                    mr.location, mr.latitude, mr.longitude, mr.status, mr.created_at,
+                    mr.phone_number, mr.email, mr.address, mr.gst_no,
+                    mr.secondary_retailer_name, mr.secondary_retailer_phone_number,
+                    mr.secondary_retailer_birthday, mr.secondary_retailer_anniversary,
+                    mr.sales_executive_name, mr.sales_executive_phone_number,
+                    mr.sales_executive_email, mr.sales_executive_birthday,
+                    mr.sales_executive_anniversary, mr.owner_name, mr.contact_person,
+                    mr.state, mr.pincode, mr.category, mr.birthday, mr.anniversary,
+                    mr.phone_number_2,
+                    COALESCE(md.firm_name, md.name) AS distributor_name
+                FROM master_retailers mr
+                LEFT JOIN master_distributors md
+                    ON md.id = mr.distributor_id
+                    AND (mr.workspace_id IS NULL OR md.workspace_id = mr.workspace_id)
                 """
         if workspace_id:
-            query += " WHERE workspace_id = ? AND IFNULL(status, 'active') != 'inactive'"
+            query += " WHERE mr.workspace_id = ? AND IFNULL(mr.status, 'active') != 'inactive'"
             params.append(workspace_id)
         else:
-            query += " WHERE IFNULL(status, 'active') != 'inactive'"
-        query += " ORDER BY id DESC LIMIT ?"
-        params.append(safe_limit)
+            query += " WHERE IFNULL(mr.status, 'active') != 'inactive'"
+        query += " ORDER BY mr.id DESC LIMIT ? OFFSET ?"
+        params.extend([safe_limit, safe_offset])
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(query, tuple(params)).fetchall()
 
@@ -9553,6 +9570,7 @@ class CentralizedDB:
                 "birthday": row[28],
                 "anniversary": row[29],
                 "phone_number_2": row[30],
+                "distributor_name": row[31] or "Unassigned",
             }
             for row in rows
         ]

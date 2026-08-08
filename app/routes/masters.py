@@ -72,10 +72,13 @@ def bulk_upload_retailers():
 @require_jwt_auth
 def list_distributors():
     workspace_id = get_workspace_id()
-    # Cap payload size — free Render OOMs on huge Party Master JSON.
-    limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 1000)
+    # Page-sized responses — clients should walk offset to load full Party Master.
+    limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 500)
+    offset = max(request.args.get("offset", 0, type=int) or 0, 0)
     db = _get_db()
-    distributors = db.list_master_distributors(limit=limit, workspace_id=workspace_id)
+    distributors = db.list_master_distributors(
+        limit=limit, offset=offset, workspace_id=workspace_id
+    )
     return jsonify({"success": True, "data": distributors}), 200
 
 
@@ -158,20 +161,13 @@ def delete_distributor(distributor_id):
 @require_jwt_auth
 def list_retailers():
     workspace_id = get_workspace_id()
-    # Cap payload — this route also loads distributors for name join (2× RAM).
-    limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 1000)
+    # Page-sized — distributor name comes from SQL JOIN (no 2× Party Master in RAM).
+    limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 500)
+    offset = max(request.args.get("offset", 0, type=int) or 0, 0)
     db = _get_db()
-    retailers = db.list_master_retailers(limit=limit, workspace_id=workspace_id)
-    # Attach a readable distributor name/label to each retailer row —
-    # showing a bare internal distributor_id number is not useful in
-    # a grid view meant for a real person to read.
-    distributors_by_id = {
-        d["id"]: (d.get("firm_name") or d.get("name") or "Unnamed Distributor")
-        for d in db.list_master_distributors(limit=limit, workspace_id=workspace_id)
-    }
-    for retailer in retailers:
-        did = retailer.get("distributor_id")
-        retailer["distributor_name"] = distributors_by_id.get(did, "Unassigned") if did else "Unassigned"
+    retailers = db.list_master_retailers(
+        limit=limit, offset=offset, workspace_id=workspace_id
+    )
     return jsonify({"success": True, "data": retailers}), 200
 
 
