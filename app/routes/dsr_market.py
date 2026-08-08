@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sqlite3
 from calendar import month_name
 from datetime import datetime, timezone
@@ -98,6 +99,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dsr_market_visits ADD COLUMN owner_name TEXT")
     if "location" not in cols:
         conn.execute("ALTER TABLE dsr_market_visits ADD COLUMN location TEXT")
+    # Full retailer questionnaire (app intelligence). Never exported to HO Excel.
+    if "visit_intel_json" not in cols:
+        conn.execute("ALTER TABLE dsr_market_visits ADD COLUMN visit_intel_json TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_dsr_market_ws_date "
         "ON dsr_market_visits(workspace_id, visit_date)"
@@ -179,14 +183,20 @@ def create_visit():
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
+        intel_raw = data.get("visit_intel_json")
+        if isinstance(intel_raw, (dict, list)):
+            visit_intel_json = json.dumps(intel_raw, ensure_ascii=False)
+        else:
+            visit_intel_json = (str(intel_raw).strip() if intel_raw is not None else "") or None
+
         cur = conn.execute(
             """
             INSERT INTO dsr_market_visits (
                 workspace_id, user_id, username, visit_date, customer_name, location, owner_name, contact_nos,
                 channel_type, customer_type, address, city_area, existing_or_new,
                 order_lacs, bed, bath, tob, others, competitor_brands, branding_yn,
-                retailer_feedback, sm_remarks, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                retailer_feedback, sm_remarks, visit_intel_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 workspace_id,
@@ -211,6 +221,7 @@ def create_visit():
                 (data.get("branding_yn") or "").strip() or None,
                 (data.get("retailer_feedback") or "").strip() or None,
                 (data.get("sm_remarks") or "").strip() or None,
+                visit_intel_json,
                 created_at,
             ),
         )
