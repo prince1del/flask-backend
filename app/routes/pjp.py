@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -544,6 +544,52 @@ def today_plan():
             "data": {
                 "plan_date": today,
                 "day": _day_dict(row) if row else _empty_day(date.today()),
+            },
+        }
+    )
+
+
+@pjp_bp.route("/week", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def week_plan():
+    """Upcoming 7 days from today (inclusive) — for My Day weekly glance."""
+    uid, err = _require_user_id()
+    if err:
+        return err
+    workspace_id = get_workspace_id()
+    start = date.today()
+    end = start + timedelta(days=6)
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        rows = conn.execute(
+            """
+            SELECT * FROM monthly_pjp_days
+            WHERE workspace_id = ? AND user_id = ?
+              AND plan_date >= ? AND plan_date <= ?
+            ORDER BY plan_date ASC
+            """,
+            (workspace_id, uid, start.isoformat(), end.isoformat()),
+        ).fetchall()
+    by_date = {r["plan_date"]: _day_dict(r) for r in rows}
+    days = []
+    planned = 0
+    for i in range(7):
+        d = start + timedelta(days=i)
+        entry = by_date.get(d.isoformat()) or _empty_day(d)
+        place = (entry.get("place_to_visit") or "").strip()
+        if place and place.lower() not in {"holiday", "leave"}:
+            planned += 1
+        days.append(entry)
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "days": days,
+                "planned_days": planned,
             },
         }
     )

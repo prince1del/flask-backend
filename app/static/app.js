@@ -6786,6 +6786,7 @@ function showDashboardWorkspace() {
     loadTaFyOverviewCard();
     loadFilledOrdersSeasonWidgets();
     if (typeof loadPersonalTodoWidgets === 'function') loadPersonalTodoWidgets();
+    if (typeof loadPjpWeekWidgets === 'function') loadPjpWeekWidgets();
   }
 }
 
@@ -6905,6 +6906,7 @@ function renderExecutiveHome(data) {
   renderExecutiveOrderStatus(data.order_status || []);
   renderExecutiveVisits(data.recent_visits || []);
   if (typeof loadPersonalTodoWidgets === 'function') loadPersonalTodoWidgets();
+  if (typeof loadPjpWeekWidgets === 'function') loadPjpWeekWidgets();
   refreshTaYearSelects().then(() => {
     if (currentModuleKey === 'targetvsachievement') loadTaTargetWorkspace();
   });

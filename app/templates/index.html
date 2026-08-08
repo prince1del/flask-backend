@@ -84,7 +84,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260806-mobile-nav3">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/personal-todos.css') }}?v=20260809-ptodo1">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/pjp.css') }}?v=20260809-pjp1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pjp.css') }}?v=20260809-pjp2">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260807-om-cols">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
@@ -1091,6 +1091,15 @@
 
                     <section id="dashboard-fo-widgets-layer" class="dashboard-fo-widget-layer hidden" aria-label="Filled order season widgets"></section>
 
+                    <section id="dashboard-pjp-week-widget" class="card-highlight ptodo-dash-widget" aria-label="This week’s PJP">
+                        <div class="section-title-row">
+                            <h2>This week’s PJP</h2>
+                            <button type="button" class="btn btn-secondary" onclick="openModule('PJP')">Full plan →</button>
+                        </div>
+                        <p id="pjp-dash-week-range" class="subtitle">Loading…</p>
+                        <div id="pjp-dash-week-list" class="pjp-week-list"></div>
+                    </section>
+
                     <section id="dashboard-todo-widget" class="card-highlight ptodo-dash-widget" aria-label="My To-Do">
                         <div class="section-title-row">
                             <h2>My To-Do</h2>
@@ -1253,6 +1262,15 @@
             <div class="executive-home-panels">
                 <div class="card-highlight executive-panel hidden" aria-hidden="true">
                     <p class="subtitle">My Day is temporarily hidden.</p>
+                </div>
+
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>This week’s PJP</h2>
+                        <button type="button" class="btn btn-secondary" onclick="openModule('PJP')">Full plan →</button>
+                    </div>
+                    <p id="pjp-week-range" class="subtitle">—</p>
+                    <div id="pjp-week-list" class="pjp-week-list"></div>
                 </div>
 
                 <div class="card-highlight executive-panel">
@@ -3581,7 +3599,7 @@
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260807-om-cols"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
-    <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp1"></script>
+    <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp2"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>

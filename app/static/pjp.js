@@ -127,3 +127,43 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+async function loadPjpWeekWidgets() {
+  try {
+    const response = await fetchWithAuth('/api/v1/pjp/week');
+    const data = await response.json();
+    if (!response.ok || !data.success) return;
+    const payload = data.data || {};
+    const days = payload.days || [];
+    const range = `${payload.start_date || ''} – ${payload.end_date || ''} · ${payload.planned_days || 0} planned`;
+    ['pjp-week-range', 'pjp-dash-week-range'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = range;
+    });
+    const html = days
+      .map((d) => {
+        const place = (d.place_to_visit || '').trim();
+        const label = place || (d.day_type === 'weekend' ? 'Weekend' : 'Not planned');
+        const route =
+          d.from_place || d.to_place
+            ? `${d.from_place || '—'} → ${d.to_place || '—'}`
+            : '';
+        const act = d.business_activity || '';
+        const meta = [route, act].filter(Boolean).join(' · ');
+        return `<div class="pjp-week-row">
+          <div class="pjp-week-date">${escapeHtml((d.day_name || '').slice(0, 3))}<strong>${escapeHtml((d.plan_date || '').slice(8))}</strong></div>
+          <div class="pjp-week-body">
+            <div class="pjp-week-place">${escapeHtml(label)}</div>
+            ${meta ? `<div class="pjp-week-meta">${escapeHtml(meta)}</div>` : ''}
+          </div>
+        </div>`;
+      })
+      .join('');
+    ['pjp-week-list', 'pjp-dash-week-list'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html || '<p class="subtitle">No days planned yet.</p>';
+    });
+  } catch (_) {
+    /* ignore — My Day remains usable */
+  }
+}
