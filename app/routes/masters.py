@@ -82,6 +82,16 @@ def list_distributors():
     return jsonify({"success": True, "data": distributors}), 200
 
 
+@masters_bp.route("/party-sync", methods=["GET"])
+@require_jwt_auth
+def party_master_sync():
+    """Lightweight fingerprint for multi-device Party Master auto-sync (Android)."""
+    workspace_id = get_workspace_id()
+    db = _get_db()
+    data = db.get_party_master_fingerprint(workspace_id)
+    return jsonify({"success": True, "data": data}), 200
+
+
 @masters_bp.route("/distributors", methods=["POST"])
 @require_jwt_auth
 def create_distributor():

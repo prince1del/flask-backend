@@ -9462,6 +9462,76 @@ class CentralizedDB:
             for row in rows
         ]
 
+    def get_party_master_fingerprint(self, workspace_id: str | None = None) -> dict[str, Any]:
+        """
+        Tiny sync stamp for mobile multi-device Party Master.
+        Create / edit / delete changes the stamp so clients pull only when stale.
+        """
+        ws = (workspace_id or "").strip() or None
+
+        def _stamp_distributors() -> tuple[int, int, int]:
+            q = """
+                SELECT
+                    COUNT(*),
+                    IFNULL(MAX(id), 0),
+                    IFNULL(SUM(
+                        id
+                        + LENGTH(IFNULL(name, ''))
+                        + LENGTH(IFNULL(firm_name, ''))
+                        + LENGTH(IFNULL(phone_number, ''))
+                        + LENGTH(IFNULL(address, ''))
+                        + LENGTH(IFNULL(location, ''))
+                        + LENGTH(IFNULL(gst_no, ''))
+                    ), 0)
+                FROM master_distributors
+                WHERE IFNULL(status, 'active') != 'inactive'
+            """
+            params: list[Any] = []
+            if ws:
+                q += " AND workspace_id = ?"
+                params.append(ws)
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute(q, tuple(params)).fetchone()
+            return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
+
+        def _stamp_retailers() -> tuple[int, int, int]:
+            q = """
+                SELECT
+                    COUNT(*),
+                    IFNULL(MAX(id), 0),
+                    IFNULL(SUM(
+                        id
+                        + LENGTH(IFNULL(name, ''))
+                        + LENGTH(IFNULL(phone_number, ''))
+                        + LENGTH(IFNULL(address, ''))
+                        + LENGTH(IFNULL(location, ''))
+                        + LENGTH(IFNULL(gst_no, ''))
+                        + LENGTH(IFNULL(CAST(distributor_id AS TEXT), ''))
+                    ), 0)
+                FROM master_retailers
+                WHERE IFNULL(status, 'active') != 'inactive'
+            """
+            params: list[Any] = []
+            if ws:
+                q += " AND workspace_id = ?"
+                params.append(ws)
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute(q, tuple(params)).fetchone()
+            return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
+
+        d_count, d_max, d_stamp = _stamp_distributors()
+        r_count, r_max, r_stamp = _stamp_retailers()
+        fingerprint = f"d:{d_count}:{d_max}:{d_stamp}|r:{r_count}:{r_max}:{r_stamp}"
+        return {
+            "fingerprint": fingerprint,
+            "distributor_count": d_count,
+            "retailer_count": r_count,
+            "distributor_max_id": d_max,
+            "retailer_max_id": r_max,
+            "distributor_stamp": d_stamp,
+            "retailer_stamp": r_stamp,
+        }
+
     def get_master_retailer_by_name(
         self, name: str, workspace_id: str | None = None
     ) -> dict[str, Any] | None:
