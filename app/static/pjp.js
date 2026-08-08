@@ -128,6 +128,36 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
+async function pjpImportExcel(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const status = document.getElementById('pjp-status');
+  if (status) status.textContent = `Importing ${file.name}…`;
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await fetchWithAuth('/api/v1/pjp/import', {
+      method: 'POST',
+      body: form,
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error?.message || 'Unable to import Excel');
+    }
+    const ym = data.data?.year_month;
+    if (ym) pjpYearMonth = ym;
+    const planned = data.data?.stats?.planned_days ?? data.data?.import?.planned_days ?? 0;
+    if (status) status.textContent = `Imported ${ym || ''} · ${planned} planned days`;
+    await loadPjpWorkspace();
+    if (typeof loadPjpWeekWidgets === 'function') loadPjpWeekWidgets();
+  } catch (error) {
+    if (status) status.textContent = error.message || 'Import failed';
+    alert(error.message || 'Unable to import PJP Excel');
+  } finally {
+    if (input) input.value = '';
+  }
+}
+
 async function loadPjpWeekWidgets() {
   try {
     const response = await fetchWithAuth('/api/v1/pjp/week');

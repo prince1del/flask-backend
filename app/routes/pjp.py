@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import calendar
+import re
 import sqlite3
+import tempfile
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -426,96 +429,354 @@ def bulk_upsert_month(year_month: str):
     days = data.get("days") or []
     if not isinstance(days, list):
         return jsonify({"success": False, "error": {"message": "days must be an array"}}), 400
-    now = _now_iso()
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_tables(conn)
-        if any(k in data for k in ("sm_name", "zone", "title", "note")):
-            conn.execute(
-                """
-                INSERT INTO monthly_pjp_meta (
-                    workspace_id, user_id, year_month, sm_name, zone, title, note, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(workspace_id, user_id, year_month) DO UPDATE SET
-                    sm_name = COALESCE(excluded.sm_name, monthly_pjp_meta.sm_name),
-                    zone = COALESCE(excluded.zone, monthly_pjp_meta.zone),
-                    title = COALESCE(excluded.title, monthly_pjp_meta.title),
-                    note = COALESCE(excluded.note, monthly_pjp_meta.note),
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    workspace_id,
-                    uid,
-                    year_month,
-                    (data.get("sm_name") or "").strip() or None,
-                    (data.get("zone") or "").strip() or None,
-                    (data.get("title") or "").strip() or None,
-                    (data.get("note") or "").strip() or None,
-                    now,
-                ),
-            )
-        for item in days:
-            if not isinstance(item, dict):
-                continue
-            raw_date = (item.get("plan_date") or item.get("date") or "").strip()
-            try:
-                d = date.fromisoformat(raw_date)
-            except ValueError:
-                continue
-            if d.strftime("%Y-%m") != year_month:
-                continue
-            place = (item.get("place_to_visit") or item.get("places_to_visit") or "").strip() or None
-            day_type = _infer_day_type(
-                d, place, (item.get("day_type") or "").strip().lower() or None
-            )
-            kms = item.get("travel_kms")
-            try:
-                kms_val = float(kms) if kms is not None and str(kms).strip() != "" else None
-            except (TypeError, ValueError):
-                kms_val = None
-            conn.execute(
-                """
-                INSERT INTO monthly_pjp_days (
-                    workspace_id, user_id, plan_date, day_name,
-                    place_to_visit, from_place, to_place,
-                    business_activity, particulars, travel_kms, night_stay,
-                    day_type, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(workspace_id, user_id, plan_date) DO UPDATE SET
-                    day_name = excluded.day_name,
-                    place_to_visit = excluded.place_to_visit,
-                    from_place = excluded.from_place,
-                    to_place = excluded.to_place,
-                    business_activity = excluded.business_activity,
-                    particulars = excluded.particulars,
-                    travel_kms = excluded.travel_kms,
-                    night_stay = excluded.night_stay,
-                    day_type = excluded.day_type,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    workspace_id,
-                    uid,
-                    d.isoformat(),
-                    _day_name(d),
-                    place,
-                    (item.get("from_place") or item.get("from") or "").strip() or None,
-                    (item.get("to_place") or item.get("to") or "").strip() or None,
-                    (
-                        item.get("business_activity")
-                        or item.get("purpose_of_visit")
-                        or ""
-                    ).strip()
-                    or None,
-                    (item.get("particulars") or "").strip() or None,
-                    kms_val,
-                    (item.get("night_stay") or "").strip() or None,
-                    day_type,
-                    now,
-                ),
-            )
+        _apply_month_bulk(conn, workspace_id, uid, year_month, data, days)
         conn.commit()
         payload = _month_payload(conn, workspace_id, uid, year_month)
+    return jsonify({"success": True, "data": payload})
+
+
+def _apply_month_bulk(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    user_id: int,
+    year_month: str,
+    meta: dict,
+    days: list,
+) -> None:
+    now = _now_iso()
+    if any(k in meta for k in ("sm_name", "zone", "title", "note")):
+        conn.execute(
+            """
+            INSERT INTO monthly_pjp_meta (
+                workspace_id, user_id, year_month, sm_name, zone, title, note, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(workspace_id, user_id, year_month) DO UPDATE SET
+                sm_name = COALESCE(excluded.sm_name, monthly_pjp_meta.sm_name),
+                zone = COALESCE(excluded.zone, monthly_pjp_meta.zone),
+                title = COALESCE(excluded.title, monthly_pjp_meta.title),
+                note = COALESCE(excluded.note, monthly_pjp_meta.note),
+                updated_at = excluded.updated_at
+            """,
+            (
+                workspace_id,
+                user_id,
+                year_month,
+                (meta.get("sm_name") or "").strip() or None,
+                (meta.get("zone") or "").strip() or None,
+                (meta.get("title") or "").strip() or None,
+                (meta.get("note") or "").strip() or None,
+                now,
+            ),
+        )
+    for item in days:
+        if not isinstance(item, dict):
+            continue
+        raw_date = (item.get("plan_date") or item.get("date") or "").strip()
+        try:
+            d = date.fromisoformat(raw_date)
+        except ValueError:
+            continue
+        if d.strftime("%Y-%m") != year_month:
+            continue
+        place = (item.get("place_to_visit") or item.get("places_to_visit") or "").strip() or None
+        day_type = _infer_day_type(
+            d, place, (item.get("day_type") or "").strip().lower() or None
+        )
+        kms = item.get("travel_kms")
+        try:
+            kms_val = float(kms) if kms is not None and str(kms).strip() != "" else None
+        except (TypeError, ValueError):
+            kms_val = None
+        conn.execute(
+            """
+            INSERT INTO monthly_pjp_days (
+                workspace_id, user_id, plan_date, day_name,
+                place_to_visit, from_place, to_place,
+                business_activity, particulars, travel_kms, night_stay,
+                day_type, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(workspace_id, user_id, plan_date) DO UPDATE SET
+                day_name = excluded.day_name,
+                place_to_visit = excluded.place_to_visit,
+                from_place = excluded.from_place,
+                to_place = excluded.to_place,
+                business_activity = excluded.business_activity,
+                particulars = excluded.particulars,
+                travel_kms = excluded.travel_kms,
+                night_stay = excluded.night_stay,
+                day_type = excluded.day_type,
+                updated_at = excluded.updated_at
+            """,
+            (
+                workspace_id,
+                user_id,
+                d.isoformat(),
+                _day_name(d),
+                place,
+                (item.get("from_place") or item.get("from") or "").strip() or None,
+                (item.get("to_place") or item.get("to") or "").strip() or None,
+                (
+                    item.get("business_activity")
+                    or item.get("purpose_of_visit")
+                    or ""
+                ).strip()
+                or None,
+                (item.get("particulars") or "").strip() or None,
+                kms_val,
+                (item.get("night_stay") or "").strip() or None,
+                day_type,
+                now,
+            ),
+        )
+
+
+def _norm_header(value) -> str:
+    text = str(value or "").replace("\xa0", " ").strip().lower()
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _parse_pjp_excel(file_bytes: bytes, filename: str = "") -> dict:
+    """Parse BD Excel travel-plan into {year_month, meta, days}."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise RuntimeError("openpyxl is required for PJP Excel import") from exc
+
+    suffix = Path(filename or "pjp.xlsx").suffix.lower() or ".xlsx"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+    try:
+        wb = load_workbook(tmp_path, data_only=True)
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    # Prefer the first sheet that has a Date header
+    chosen = None
+    header_row = None
+    colmap: dict[str, int] = {}
+    for sn in wb.sheetnames:
+        ws = wb[sn]
+        for r in range(1, min(20, (ws.max_row or 1) + 1)):
+            headers = {}
+            for c in range(1, min(16, (ws.max_column or 1) + 1)):
+                h = _norm_header(ws.cell(r, c).value)
+                if not h:
+                    continue
+                headers[h] = c
+            # map aliases
+            date_c = next((c for h, c in headers.items() if h == "date" or h.startswith("date")), None)
+            place_c = next(
+                (
+                    c
+                    for h, c in headers.items()
+                    if "place" in h or h in {"town", "market", "location"}
+                ),
+                None,
+            )
+            if date_c and place_c:
+                chosen = ws
+                header_row = r
+                colmap = {
+                    "date": date_c,
+                    "place": place_c,
+                    "from": next((c for h, c in headers.items() if h.startswith("from")), None),
+                    "to": next((c for h, c in headers.items() if h == "to" or h.startswith("to ")), None),
+                    "activity": next(
+                        (
+                            c
+                            for h, c in headers.items()
+                            if "business" in h or "purpose" in h or "activit" in h
+                        ),
+                        None,
+                    ),
+                    "particulars": next(
+                        (c for h, c in headers.items() if "particular" in h or h == "remarks"),
+                        None,
+                    ),
+                    "kms": next((c for h, c in headers.items() if "km" in h or "kms" in h), None),
+                    "night": next((c for h, c in headers.items() if "night" in h), None),
+                }
+                break
+        if chosen:
+            break
+    if not chosen or not header_row:
+        raise ValueError(
+            "Could not find PJP header row (need Date + Places to Visit columns)"
+        )
+
+    sm_name = None
+    zone = None
+    title = None
+    note = None
+    # Scan top rows for SM / Zone / title / disclaimer
+    for r in range(1, header_row):
+        for c in range(1, min(10, (chosen.max_column or 1) + 1)):
+            raw = chosen.cell(r, c).value
+            if raw is None:
+                continue
+            text = str(raw).replace("\xa0", " ").strip()
+            low = text.lower()
+            if low in {"sm name", "sm", "sales manager"}:
+                sm_name = str(chosen.cell(r, c + 1).value or "").strip() or sm_name
+            elif low == "zone":
+                zone = str(chosen.cell(r, c + 1).value or "").strip() or zone
+            elif "travel" in low and "plan" in low:
+                title = text
+            elif "subject to change" in low:
+                note = text
+
+    days: list[dict] = []
+    year_months: dict[str, int] = {}
+
+    def _as_date(value) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y"):
+                try:
+                    return datetime.strptime(text, fmt).date()
+                except ValueError:
+                    continue
+        return None
+
+    def _txt(value) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            t = value.replace("\xa0", " ").strip()
+            return t or None
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+        return str(value).strip() or None
+
+    for r in range(header_row + 1, (chosen.max_row or header_row) + 1):
+        d = _as_date(chosen.cell(r, colmap["date"]).value)
+        if not d:
+            continue
+        place = _txt(chosen.cell(r, colmap["place"]).value) if colmap.get("place") else None
+        frm = _txt(chosen.cell(r, colmap["from"]).value) if colmap.get("from") else None
+        to = _txt(chosen.cell(r, colmap["to"]).value) if colmap.get("to") else None
+        activity = (
+            _txt(chosen.cell(r, colmap["activity"]).value) if colmap.get("activity") else None
+        )
+        particulars = (
+            _txt(chosen.cell(r, colmap["particulars"]).value)
+            if colmap.get("particulars")
+            else None
+        )
+        # Older sheets used Purpose column only — already mapped to activity
+        night = _txt(chosen.cell(r, colmap["night"]).value) if colmap.get("night") else None
+        kms_raw = chosen.cell(r, colmap["kms"]).value if colmap.get("kms") else None
+        try:
+            kms_val = float(kms_raw) if kms_raw is not None and str(kms_raw).strip() != "" else None
+        except (TypeError, ValueError):
+            kms_val = None
+        day_type = _infer_day_type(d, place, None)
+        days.append(
+            {
+                "plan_date": d.isoformat(),
+                "place_to_visit": place,
+                "from_place": frm,
+                "to_place": to,
+                "business_activity": activity,
+                "particulars": particulars,
+                "travel_kms": kms_val,
+                "night_stay": night,
+                "day_type": day_type,
+            }
+        )
+        ym = d.strftime("%Y-%m")
+        year_months[ym] = year_months.get(ym, 0) + 1
+
+    if not days:
+        raise ValueError("No dated rows found in the Excel file")
+
+    # Primary month = most common year-month in the sheet
+    year_month = max(year_months.items(), key=lambda kv: kv[1])[0]
+    days = [d for d in days if d["plan_date"].startswith(year_month)]
+    if not title:
+        title = f"Travel Plan for the month {year_month}"
+    return {
+        "year_month": year_month,
+        "sm_name": sm_name,
+        "zone": zone,
+        "title": title,
+        "note": note,
+        "days": days,
+        "sheet": chosen.title,
+    }
+
+
+@pjp_bp.route("/import", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def import_pjp_excel():
+    """Upload monthly PJP Excel (.xlsx) and upsert the full month."""
+    uid, err = _require_user_id()
+    if err:
+        return err
+    uploaded = request.files.get("file") or request.files.get("excel")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"success": False, "error": {"message": "Upload an Excel file (.xlsx)"}}), 400
+    filename = uploaded.filename
+    if not filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify(
+            {"success": False, "error": {"message": "Only .xlsx / .xlsm PJP files are supported"}}
+        ), 400
+    file_bytes = uploaded.read()
+    if not file_bytes:
+        return jsonify({"success": False, "error": {"message": "Empty file"}}), 400
+    try:
+        parsed = _parse_pjp_excel(file_bytes, filename)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+    except Exception as exc:
+        return jsonify({"success": False, "error": {"message": f"Unable to read Excel: {exc}"}}), 400
+
+    # Optional override: force year_month from form (rare)
+    force_ym = (request.form.get("year_month") or "").strip()
+    year_month = force_ym if _parse_ym(force_ym) else parsed["year_month"]
+    if force_ym and _parse_ym(force_ym):
+        parsed["days"] = [
+            d for d in parsed["days"] if str(d.get("plan_date") or "").startswith(year_month)
+        ]
+
+    workspace_id = get_workspace_id()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        _apply_month_bulk(
+            conn,
+            workspace_id,
+            uid,
+            year_month,
+            {
+                "sm_name": parsed.get("sm_name"),
+                "zone": parsed.get("zone"),
+                "title": parsed.get("title"),
+                "note": parsed.get("note"),
+            },
+            parsed.get("days") or [],
+        )
+        conn.commit()
+        payload = _month_payload(conn, workspace_id, uid, year_month)
+    payload["import"] = {
+        "filename": filename,
+        "sheet": parsed.get("sheet"),
+        "imported_days": len(parsed.get("days") or []),
+        "planned_days": payload.get("stats", {}).get("planned_days"),
+    }
     return jsonify({"success": True, "data": payload})
 
 

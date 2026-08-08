@@ -1795,6 +1795,10 @@
                 <p class="subtitle">Monthly travel plan — same columns as your Excel PJP sheets.</p>
             </div>
             <div class="dsr-page-actions">
+                <label class="btn btn-primary" style="margin:0;cursor:pointer;">
+                    Import Excel
+                    <input type="file" id="pjp-excel-input" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange="pjpImportExcel(this)">
+                </label>
                 <button type="button" class="btn btn-secondary" onclick="pjpShiftMonth(-1)">← Prev</button>
                 <button type="button" class="btn btn-secondary" onclick="pjpShiftMonth(1)">Next →</button>
                 <button type="button" class="btn btn-secondary" onclick="loadPjpWorkspace()">Refresh</button>
@@ -3599,7 +3603,7 @@
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260807-om-cols"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
-    <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp2"></script>
+    <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp3"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>

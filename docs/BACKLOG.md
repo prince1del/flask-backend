@@ -15,13 +15,13 @@ Mirror — keep in sync when changing backlog.
 
 ## B. BD / Market Visit (user-deferred)
 
+- [x] **PJP Excel import** — `POST /api/v1/pjp/import` + Android/desktop Import Excel button
 - [ ] **Area auto-territory**
 - [ ] **Settings contents** (beyond Drive)
 - [ ] **Revisit discussion history**
 - [ ] **Gemini in-app API**
 - [ ] **Retailer visit report template engine**
 - [ ] **Approach “Add note” linking**
-- [ ] **PJP Excel import** into `/api/v1/pjp/months/{ym}/bulk`
 
 ---
 
