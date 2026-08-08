@@ -1682,7 +1682,7 @@ def _upsert_approach_from_visit(
         try:
             intel = json.loads(visit_intel_json)
             if isinstance(intel, dict):
-                monthly_ht = (str(intel.get("monthly_ht_business") or "").strip() or None)
+                monthly_ht = (str(intel.get("annual_ht_business") or intel.get("monthly_ht_business") or "").strip() or None)
                 cats = intel.get("main_categories")
                 main_categories = _categories_to_store(cats)
         except (TypeError, ValueError, json.JSONDecodeError):
@@ -1704,7 +1704,9 @@ def _upsert_approach_from_visit(
     city_area = (data.get("city_area") or data.get("area_text") or "").strip() or None
     location = (data.get("location") or "").strip() or None
     address = (data.get("address") or "").strip() or None
-    monthly_ht = monthly_ht or (str(data.get("monthly_ht") or "").strip() or None)
+    monthly_ht = monthly_ht or (
+        str(data.get("annual_ht") or data.get("monthly_ht") or "").strip() or None
+    )
     channel_type = (data.get("channel_type") or "AWD").strip() or "AWD"
     existing_or_new = (data.get("existing_or_new") or "New").strip() or "New"
     customer_type = (data.get("customer_type") or "").strip() or None
@@ -1858,7 +1860,7 @@ def create_approach_distributor():
             (data.get("city_area") or data.get("city") or "").strip() or None,
             (data.get("location") or "").strip() or None,
             (data.get("address") or "").strip() or None,
-            (str(data.get("monthly_ht") or "").strip() or None),
+            (str(data.get("annual_ht") or data.get("monthly_ht") or "").strip() or None),
             main_categories,
             (data.get("channel_type") or "AWD").strip() or "AWD",
             (data.get("existing_or_new") or "New").strip() or "New",
