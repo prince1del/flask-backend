@@ -165,7 +165,7 @@ async function loadPjpWeekWidgets() {
     if (!response.ok || !data.success) return;
     const payload = data.data || {};
     const days = payload.days || [];
-    const range = `${payload.start_date || ''} – ${payload.end_date || ''} · ${payload.planned_days || 0} planned`;
+    const range = `Mon–Sun · ${payload.start_date || ''} – ${payload.end_date || ''} · ${payload.planned_days || 0} planned`;
     ['pjp-week-range', 'pjp-dash-week-range'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.textContent = range;
