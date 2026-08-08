@@ -84,6 +84,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260806-mobile-nav3">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/personal-todos.css') }}?v=20260809-ptodo1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pjp.css') }}?v=20260809-pjp1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260807-om-cols">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
@@ -967,6 +968,7 @@
                     <div class="hop-nav-group bd-nav-group-crm">CRM</div>
                     <button type="button" id="nav-customers" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Customers')"><span class="nav-label">Know your Customer</span></button>
                     <button type="button" id="nav-market-visit" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('MarketVisit')"><span class="nav-label">Market Visit</span></button>
+                    <button type="button" id="nav-pjp" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('PJP')"><span class="nav-label">PJP</span></button>
                     <button type="button" id="nav-personal-todo" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('ToDo')"><span class="nav-label">To-Do</span></button>
                     <div class="hop-nav-group bd-nav-group-sales">Sales</div>
                     <button type="button" id="nav-order-desk" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('OrderDesk')"><span class="nav-label">Order Desk</span></button>
@@ -1764,6 +1766,37 @@
                     </table>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <section id="pjp-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Work</span><span>›</span><span>PJP</span></div>
+                <h2>Permanent Journey Plan</h2>
+                <p class="subtitle">Monthly travel plan — same columns as your Excel PJP sheets.</p>
+            </div>
+            <div class="dsr-page-actions">
+                <button type="button" class="btn btn-secondary" onclick="pjpShiftMonth(-1)">← Prev</button>
+                <button type="button" class="btn btn-secondary" onclick="pjpShiftMonth(1)">Next →</button>
+                <button type="button" class="btn btn-secondary" onclick="loadPjpWorkspace()">Refresh</button>
+                <button class="back-btn" onclick="goBack()">← Back</button>
+            </div>
+        </div>
+        <div class="pjp-page">
+            <div class="pjp-hero">
+                <div>
+                    <h3 id="pjp-month-title">Month</h3>
+                    <p class="subtitle" id="pjp-meta">Travel plan for the month</p>
+                    <p class="subtitle" id="pjp-stats"></p>
+                </div>
+                <div class="pjp-hero-actions">
+                    <button type="button" class="btn btn-secondary" onclick="pjpShiftMonth(-1)">Prev</button>
+                    <button type="button" class="btn btn-secondary" onclick="pjpShiftMonth(1)">Next</button>
+                </div>
+            </div>
+            <p id="pjp-status" class="dsr-status" aria-live="polite"></p>
+            <div id="pjp-day-list" class="pjp-day-list"></div>
         </div>
     </section>
 
@@ -3548,6 +3581,7 @@
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v=20260807-om-cols"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
+    <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp1"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>
 </body>
 </html>

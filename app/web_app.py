@@ -65,6 +65,7 @@ from app.routes import (
     hop_bp,
     dsr_market_bp,
     personal_todos_bp,
+    pjp_bp,
 )
 import app.models  # register SQLAlchemy models
 from app.routes.auth import register_auth_hooks
@@ -317,6 +318,7 @@ def create_app() -> Flask:
     app.register_blueprint(hop_bp)
     app.register_blueprint(dsr_market_bp)
     app.register_blueprint(personal_todos_bp)
+    app.register_blueprint(pjp_bp)
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:

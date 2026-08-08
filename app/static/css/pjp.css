@@ -1,0 +1,77 @@
+/* Monthly PJP workspace */
+.pjp-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: linear-gradient(120deg, #1f4b3a 0%, #2f6b52 55%, #3d7a63 100%);
+  color: #f4faf6;
+  margin-bottom: 16px;
+}
+.pjp-hero h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+.pjp-hero .subtitle {
+  margin: 4px 0 0;
+  color: rgba(244, 250, 246, 0.78);
+}
+.pjp-hero-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.pjp-day-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.pjp-day-card {
+  border: 1px solid rgba(31, 75, 58, 0.12);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.pjp-day-card.is-empty {
+  opacity: 0.72;
+  background: #f7f8f7;
+}
+.pjp-day-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+.pjp-day-date {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+.pjp-day-place {
+  font-weight: 650;
+  margin-top: 2px;
+}
+.pjp-day-route,
+.pjp-day-activity,
+.pjp-day-note {
+  margin-top: 6px;
+  font-size: 0.88rem;
+  color: #374151;
+}
+.pjp-day-note {
+  color: #6b7280;
+}
+.pjp-night {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.1);
+  color: #6d28d9;
+}
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
