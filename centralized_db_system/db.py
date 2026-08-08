@@ -1592,6 +1592,7 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "users", "email", "TEXT")
             self._ensure_column_exists(conn, "users", "full_name", "TEXT")
             self._ensure_column_exists(conn, "users", "phone", "TEXT")
+            self._ensure_column_exists(conn, "users", "employee_id", "TEXT")
             self._ensure_column_exists(conn, "users", "updated_at", "TEXT")
 
     def get_user_profile(self, user_id: int) -> dict[str, Any] | None:
@@ -1605,6 +1606,7 @@ class CentralizedDB:
                 "email",
                 "full_name",
                 "phone",
+                "employee_id",
                 "role",
                 "workspace_id",
                 "status",
@@ -1628,6 +1630,7 @@ class CentralizedDB:
         email: str | None = None,
         full_name: str | None = None,
         phone: str | None = None,
+        employee_id: str | None = None,
         password: str | None = None,
     ) -> dict[str, Any]:
         """Owner/self profile update — fields used when creating a user id."""
@@ -1675,6 +1678,18 @@ class CentralizedDB:
             if phone is not None:
                 sets.append("phone = ?")
                 params.append(phone.strip() or None)
+
+            if employee_id is not None:
+                clean_emp = employee_id.strip()
+                if clean_emp:
+                    clash = conn.execute(
+                        "SELECT id FROM users WHERE lower(IFNULL(employee_id,'')) = lower(?) AND id != ?",
+                        (clean_emp, uid),
+                    ).fetchone()
+                    if clash:
+                        raise ValueError("Employee Id already taken")
+                sets.append("employee_id = ?")
+                params.append(clean_emp or None)
 
             if password is not None and str(password).strip():
                 sets.append("password_hash = ?")

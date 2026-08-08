@@ -352,6 +352,7 @@ def put_my_profile() -> tuple[Response, int]:
             email=data.get("email") if "email" in data else None,
             full_name=data.get("full_name") if "full_name" in data else None,
             phone=data.get("phone") if "phone" in data else None,
+            employee_id=data.get("employee_id") if "employee_id" in data else None,
             password=data.get("password") if "password" in data else None,
         )
     except ValueError as exc:
