@@ -594,9 +594,28 @@ def export_excel():
     except ValueError:
         period = f"{from_date} to {to_date}"
 
-    sm_name = user.get("username") or ""
-    if rows and rows[0].get("username"):
-        sm_name = rows[0]["username"] or sm_name
+    # Prefer profile full_name (Settings → My profile), not login id like bd_gt_north_head.
+    sm_name = ""
+    uid = _user_id()
+    if uid is not None:
+        try:
+            from centralized_db_system.db import CentralizedDB
+
+            profile = CentralizedDB(_db_path()).get_user_profile(uid) or {}
+            sm_name = (profile.get("full_name") or "").strip()
+            if not sm_name:
+                email = (profile.get("email") or "").strip()
+                if "@" in email:
+                    local = email.split("@", 1)[0]
+                    sm_name = " ".join(
+                        p.capitalize() for p in local.replace(".", " ").replace("_", " ").split() if p
+                    )
+                else:
+                    sm_name = (profile.get("username") or "").strip()
+        except Exception:
+            sm_name = ""
+    if not sm_name:
+        sm_name = (user.get("username") or "").strip()
 
     content = _build_excel(
         rows, sm_name=sm_name, period_label=period, include_owner=include_owner
