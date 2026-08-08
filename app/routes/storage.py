@@ -27,11 +27,18 @@ def connect_storage():
         user_id = user['user_id']
         workspace_id = get_workspace_id()
 
-        # Use GOOGLE_OAUTH_REDIRECT_URI from .env so it matches Google Cloud Console exactly.
         host = request.host_url.rstrip('/')
+        # Prefer env redirect URI, but never use localhost redirect when the
+        # live request is already on a public host (mobile / Render).
+        env_redirect = (GoogleDriveOAuth.REDIRECT_URI or "").strip()
+        if env_redirect and "localhost" not in env_redirect and "127.0.0.1" not in env_redirect:
+            redirect_uri = env_redirect
+        else:
+            redirect_uri = f"{host}/api/v1/storage/oauth-callback"
+
         oauth_url, state = GoogleDriveOAuth.get_auth_url(
             host_url=host,
-            redirect_uri=None,
+            redirect_uri=redirect_uri,
             state_payload={
                 'user_id': user_id,
                 'workspace_id': workspace_id,
@@ -46,11 +53,29 @@ def connect_storage():
             }
         }), 200
     except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return jsonify({
+            'success': False,
+            'error': {
+                'code': 'OAUTH_CONFIG',
+                'message': str(e),
+            },
+        }), 400
     except RuntimeError as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'error': {
+                'code': 'OAUTH_RUNTIME',
+                'message': str(e),
+            },
+        }), 500
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'error': {
+                'code': 'OAUTH_FAILED',
+                'message': str(e),
+            },
+        }), 500
 
 @storage_bp.route('/account', methods=['GET'])
 @require_jwt_auth
@@ -101,7 +126,11 @@ def oauth_callback():
             ), 400
 
         host = request.host_url.rstrip('/')
-        redirect_uri = f'{host}/api/v1/storage/oauth-callback'
+        env_redirect = (GoogleDriveOAuth.REDIRECT_URI or "").strip()
+        if env_redirect and "localhost" not in env_redirect and "127.0.0.1" not in env_redirect:
+            redirect_uri = env_redirect
+        else:
+            redirect_uri = f'{host}/api/v1/storage/oauth-callback'
         try:
             token_data = GoogleDriveOAuth.exchange_code_for_token(
                 auth_code=code,

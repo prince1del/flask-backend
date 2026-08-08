@@ -60,10 +60,11 @@ class GoogleDriveOAuth:
         if cls.REDIRECT_URI:
             return cls.REDIRECT_URI.strip()
         if host_url:
-            return host_url.rstrip("/") + "/api/gdrive/callback"
+            return host_url.rstrip("/") + "/api/v1/storage/oauth-callback"
         raise ValueError(
             "Google Drive OAuth redirect URI is not configured. "
-            "Set GOOGLE_OAUTH_REDIRECT_URI to a URI registered in Google Cloud Console."
+            "Set GOOGLE_OAUTH_REDIRECT_URI to a URI registered in Google Cloud Console "
+            "(e.g. https://YOUR-HOST/api/v1/storage/oauth-callback)."
         )
 
     @classmethod
