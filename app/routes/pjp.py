@@ -814,12 +814,14 @@ def today_plan():
 @require_jwt_auth
 @require_role("admin", "sales_executive")
 def week_plan():
-    """Upcoming 7 days from today (inclusive) — for My Day weekly glance."""
+    """Current calendar week Monday→Sunday — for My Day weekly glance."""
     uid, err = _require_user_id()
     if err:
         return err
     workspace_id = get_workspace_id()
-    start = date.today()
+    today = date.today()
+    # Monday = 0 … Sunday = 6
+    start = today - timedelta(days=today.weekday())
     end = start + timedelta(days=6)
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
