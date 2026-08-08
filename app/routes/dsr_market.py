@@ -705,9 +705,9 @@ def party_match():
 
     db = _master_db()
     if kind == "retailer":
-        parties = db.list_master_retailers(limit=5000, workspace_id=workspace_id) or []
+        parties = db.list_master_retailers(limit=800, workspace_id=workspace_id) or []
     else:
-        parties = db.list_master_distributors(limit=5000, workspace_id=workspace_id) or []
+        parties = db.list_master_distributors(limit=800, workspace_id=workspace_id) or []
 
     scored = []
     for party in parties:
@@ -812,9 +812,9 @@ def resolve_draft(visit_id: int):
         db = _master_db()
         if link_party_id is None and not force_create:
             if kind == "retailer":
-                parties = db.list_master_retailers(limit=5000, workspace_id=workspace_id) or []
+                parties = db.list_master_retailers(limit=800, workspace_id=workspace_id) or []
             else:
-                parties = db.list_master_distributors(limit=5000, workspace_id=workspace_id) or []
+                parties = db.list_master_distributors(limit=800, workspace_id=workspace_id) or []
             scored = []
             for party in parties:
                 score, reasons = _score_party_candidate(match_payload, party, kind)
