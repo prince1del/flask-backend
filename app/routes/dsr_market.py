@@ -659,6 +659,38 @@ def update_visit(visit_id: int):
     return jsonify({"success": True, "data": _row_to_dict(updated)})
 
 
+@dsr_market_bp.route("/visits/<int:visit_id>", methods=["DELETE"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def delete_visit(visit_id: int):
+    """Permanently delete a market visit owned by the caller (admins may delete any)."""
+    workspace_id = get_workspace_id()
+
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        uid = _user_id()
+        row = conn.execute(
+            "SELECT * FROM dsr_market_visits WHERE id = ? AND workspace_id = ?",
+            (visit_id, workspace_id),
+        ).fetchone()
+        if not row:
+            return jsonify({"success": False, "error": {"message": "Visit not found"}}), 404
+        visit = dict(row)
+        if uid is not None and visit.get("user_id") not in (None, uid):
+            role = (_current_user().get("role") or "").strip().lower()
+            if role not in {"admin", "hop_admin"}:
+                return jsonify({"success": False, "error": {"message": "Not allowed"}}), 403
+
+        conn.execute(
+            "DELETE FROM dsr_market_visits WHERE id = ? AND workspace_id = ?",
+            (visit_id, workspace_id),
+        )
+        conn.commit()
+
+    return jsonify({"success": True, "data": {"id": visit_id, "deleted": True}})
+
+
 @dsr_market_bp.route("/visits", methods=["GET"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")
