@@ -130,37 +130,154 @@ def save_match_run(
     )
     conn.commit()
     run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
-    return get_match_run(conn, user_id, run_id)
+    return get_match_run(conn, run_id, user_id=user_id)
 
 
-def get_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> dict[str, Any] | None:
+def get_match_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    user_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Load one match run. If user_id is set, ownership is enforced (desktop).
+    Mobile/BD reads pass user_id=None so any auth'd user can open a shared run.
+    """
     ensure_schema(conn)
     cols = ", ".join(RUN_COLUMNS)
-    row = conn.execute(
-        f"SELECT {cols} FROM fo_so_match_runs WHERE id = ? AND user_id = ?",
-        (run_id, user_id),
-    ).fetchone()
+    if user_id is None:
+        row = conn.execute(
+            f"SELECT {cols} FROM fo_so_match_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            f"SELECT {cols} FROM fo_so_match_runs WHERE id = ? AND user_id = ?",
+            (run_id, user_id),
+        ).fetchone()
     if not row:
         return None
     data = _row_to_dict(row, RUN_COLUMNS)
     try:
-        data["rows"] = json.loads(data.pop("rows_json") or "[]")
+        rows = json.loads(data.pop("rows_json") or "[]")
     except json.JSONDecodeError:
-        data["rows"] = []
+        rows = []
         data.pop("rows_json", None)
+    # Normalize so_numbers to strings so mobile can show "which SO" per line.
+    if isinstance(rows, list):
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            nums = r.get("so_numbers")
+            if nums is not None:
+                if not isinstance(nums, list):
+                    nums = [nums]
+                r["so_numbers"] = [
+                    str(n).strip()
+                    for n in nums
+                    if n is not None and str(n).strip()
+                ]
+            breakdown = r.get("so_breakdown")
+            if isinstance(breakdown, list):
+                cleaned = []
+                for cell in breakdown:
+                    if not isinstance(cell, dict):
+                        continue
+                    so_n = str(cell.get("so_number") or "").strip()
+                    if not so_n:
+                        continue
+                    cleaned.append(
+                        {
+                            "so_number": so_n,
+                            "qty": float(cell.get("qty") or 0),
+                            "net": float(cell.get("net") or 0),
+                            "gst": float(cell.get("gst") or 0),
+                            "total": float(cell.get("total") or 0),
+                        }
+                    )
+                r["so_breakdown"] = cleaned
+            elif r.get("so_numbers"):
+                # Legacy match rows: split line SO qty/net evenly across listed SOs.
+                split_n = max(1, len(r["so_numbers"]))
+                so_qty = float(r.get("so_qty") or 0) / split_n
+                so_net = float(r.get("so_net_amount") or 0) / split_n
+                r["so_breakdown"] = [
+                    {
+                        "so_number": so_n,
+                        "qty": round(so_qty, 3),
+                        "net": round(so_net, 2),
+                        "gst": 0.0,
+                        "total": round(so_net, 2),
+                    }
+                    for so_n in r["so_numbers"]
+                ]
+    data["rows"] = rows
+    data["so_totals"] = _compute_so_totals_from_rows(rows if isinstance(rows, list) else [])
     return data
 
 
-def list_match_runs(conn: sqlite3.Connection, user_id: int, limit: int = 200) -> list[dict[str, Any]]:
+def _compute_so_totals_from_rows(rows: list[Any]) -> dict[str, dict[str, float]]:
+    so_totals: dict[str, dict[str, float]] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        breakdown = r.get("so_breakdown") or []
+        if not isinstance(breakdown, list):
+            continue
+        for cell in breakdown:
+            if not isinstance(cell, dict):
+                continue
+            so_n = str(cell.get("so_number") or "").strip()
+            if not so_n:
+                continue
+            acc = so_totals.setdefault(
+                so_n, {"qty": 0.0, "net": 0.0, "gst": 0.0, "total": 0.0, "exmill": 0.0}
+            )
+            acc["qty"] = round(acc["qty"] + float(cell.get("qty") or 0), 3)
+            acc["net"] = round(acc["net"] + float(cell.get("net") or 0), 2)
+            acc["gst"] = round(acc["gst"] + float(cell.get("gst") or 0), 2)
+            acc["total"] = round(acc["total"] + float(cell.get("total") or 0), 2)
+        fo_ex = float(r.get("fo_exmill_value") or 0)
+        so_line_qty = sum(float(c.get("qty") or 0) for c in breakdown if isinstance(c, dict))
+        if fo_ex and breakdown:
+            for cell in breakdown:
+                if not isinstance(cell, dict):
+                    continue
+                so_n = str(cell.get("so_number") or "").strip()
+                if not so_n or so_n not in so_totals:
+                    continue
+                share = (
+                    float(cell.get("qty") or 0) / so_line_qty
+                    if so_line_qty > 1e-12
+                    else (1.0 / max(1, len(breakdown)))
+                )
+                so_totals[so_n]["exmill"] = round(
+                    so_totals[so_n]["exmill"] + fo_ex * share, 2
+                )
+    return so_totals
+
+
+def list_match_runs(
+    conn: sqlite3.Connection,
+    user_id: int | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """List match runs. user_id=None → all runs (shared with BD app / team)."""
     ensure_schema(conn)
     cols = ", ".join(c for c in RUN_COLUMNS if c != "rows_json")
-    rows = conn.execute(
-        f"""SELECT {cols} FROM fo_so_match_runs
-            WHERE user_id = ?
-            ORDER BY id DESC
-            LIMIT ?""",
-        (user_id, limit),
-    ).fetchall()
+    if user_id is None:
+        rows = conn.execute(
+            f"""SELECT {cols} FROM fo_so_match_runs
+                ORDER BY id DESC
+                LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            f"""SELECT {cols} FROM fo_so_match_runs
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?""",
+            (user_id, limit),
+        ).fetchall()
     keys = [c for c in RUN_COLUMNS if c != "rows_json"]
     return [_row_to_dict(r, keys) for r in rows]
 

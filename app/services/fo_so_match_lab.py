@@ -129,13 +129,17 @@ def _bucket_add(
     qty: float | None,
     value: float | None,
     so_number: Any = None,
+    gst_amount: float | None = None,
+    total_amount: float | None = None,
 ) -> None:
     key = match_pair_key(brand, size)
     if not key[0] and not key[1]:
         return
     qty_f = float(qty or 0)
     val_f = float(value or 0)
-    if abs(qty_f) < 1e-12 and abs(val_f) < 1e-12:
+    gst_f = float(gst_amount or 0)
+    total_f = float(total_amount) if total_amount is not None else round(val_f + gst_f, 2)
+    if abs(qty_f) < 1e-12 and abs(val_f) < 1e-12 and abs(total_f) < 1e-12:
         return
     size_code = display_size_code(size)
     row = buckets.get(key)
@@ -146,6 +150,7 @@ def _bucket_add(
             "qty": 0.0,
             "value": 0.0,
             "so_numbers": [],
+            "by_so": {},
         }
         row = buckets[key]
     row["qty"] = round(row["qty"] + qty_f, 3)
@@ -161,6 +166,15 @@ def _bucket_add(
         nums = row.setdefault("so_numbers", [])
         if so_n not in nums:
             nums.append(so_n)
+        by_so = row.setdefault("by_so", {})
+        cell = by_so.get(so_n)
+        if not cell:
+            cell = {"qty": 0.0, "net": 0.0, "gst": 0.0, "total": 0.0}
+            by_so[so_n] = cell
+        cell["qty"] = round(float(cell["qty"]) + qty_f, 3)
+        cell["net"] = round(float(cell["net"]) + val_f, 2)
+        cell["gst"] = round(float(cell["gst"]) + gst_f, 2)
+        cell["total"] = round(float(cell["total"]) + total_f, 2)
 
 
 def build_fo_buckets_from_workbook(
@@ -234,6 +248,10 @@ def build_so_buckets_from_line_detail(line_detail: list[dict[str, Any]]) -> dict
         size = enriched.get("product_type")
         qty = _safe_float(row.get("qty")) or 0.0
         net = _safe_float(row.get("net_amount")) or 0.0
+        gst = _safe_float(row.get("gst_amount")) or 0.0
+        total = _safe_float(row.get("total_amount"))
+        if total is None:
+            total = round(net + gst, 2)
         if brand and size:
             _bucket_add(
                 buckets,
@@ -242,6 +260,8 @@ def build_so_buckets_from_line_detail(line_detail: list[dict[str, Any]]) -> dict
                 qty=qty,
                 value=net,
                 so_number=row.get("so_number"),
+                gst_amount=gst,
+                total_amount=total,
             )
         else:
             others_qty += qty
@@ -400,6 +420,30 @@ def compare_fo_so_buckets(
         d_qty = round(so_qty - fo_qty, 3)
         d_val = round(so_val - fo_val, 2)
         so_numbers = list((so_row or {}).get("so_numbers") or [])
+        by_so = (so_row or {}).get("by_so") or {}
+        so_breakdown = [
+            {
+                "so_number": so_n,
+                "qty": round(float(cell.get("qty") or 0), 3),
+                "net": round(float(cell.get("net") or 0), 2),
+                "gst": round(float(cell.get("gst") or 0), 2),
+                "total": round(float(cell.get("total") or 0), 2),
+            }
+            for so_n, cell in sorted(by_so.items(), key=lambda x: str(x[0]))
+        ]
+        # Legacy rows without by_so: approximate one bucket per listed SO number.
+        if not so_breakdown and so_numbers:
+            split_n = max(1, len(so_numbers))
+            for so_n in so_numbers:
+                so_breakdown.append(
+                    {
+                        "so_number": so_n,
+                        "qty": round(so_qty / split_n, 3),
+                        "net": round(so_val / split_n, 2),
+                        "gst": 0.0,
+                        "total": round(so_val / split_n, 2),
+                    }
+                )
 
         if fo_row and not so_row:
             status = "MISSING_ON_SO"
@@ -437,6 +481,7 @@ def compare_fo_so_buckets(
                 "delta_value": d_val,
                 "status": status,
                 "so_numbers": so_numbers,
+                "so_breakdown": so_breakdown,
             }
         )
 
@@ -445,12 +490,45 @@ def compare_fo_so_buckets(
     fo_val_t = round(sum(b["value"] for b in fo.values()), 2)
     so_val_t = round(sum(b["value"] for b in so.values()), 2)
 
+    # Per-SO rollups for mobile headers (qty / net / final incl. tax).
+    so_totals: dict[str, dict[str, float]] = {}
+    for r in rows:
+        for cell in r.get("so_breakdown") or []:
+            so_n = str(cell.get("so_number") or "").strip()
+            if not so_n:
+                continue
+            acc = so_totals.setdefault(
+                so_n, {"qty": 0.0, "net": 0.0, "gst": 0.0, "total": 0.0, "exmill": 0.0}
+            )
+            acc["qty"] = round(acc["qty"] + float(cell.get("qty") or 0), 3)
+            acc["net"] = round(acc["net"] + float(cell.get("net") or 0), 2)
+            acc["gst"] = round(acc["gst"] + float(cell.get("gst") or 0), 2)
+            acc["total"] = round(acc["total"] + float(cell.get("total") or 0), 2)
+        # Attribute FO ExMill to SOs proportionally by SO qty on that line.
+        breakdown = r.get("so_breakdown") or []
+        fo_ex = float(r.get("fo_exmill_value") or 0)
+        so_line_qty = sum(float(c.get("qty") or 0) for c in breakdown) or 0.0
+        if fo_ex and breakdown:
+            for cell in breakdown:
+                so_n = str(cell.get("so_number") or "").strip()
+                if not so_n or so_n not in so_totals:
+                    continue
+                share = (
+                    float(cell.get("qty") or 0) / so_line_qty
+                    if so_line_qty > 1e-12
+                    else (1.0 / len(breakdown))
+                )
+                so_totals[so_n]["exmill"] = round(
+                    so_totals[so_n]["exmill"] + fo_ex * share, 2
+                )
+
     return {
         "dummy": True,
         "grain": "brand_x_size",
         "compare": {"qty": True, "fo_exmill_vs_so_net": True},
         "rows": rows,
         "counts": counts,
+        "so_totals": so_totals,
         "totals": {
             "fo_qty": fo_qty_t,
             "so_qty": so_qty_t,
