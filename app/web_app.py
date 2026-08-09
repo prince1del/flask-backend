@@ -255,9 +255,10 @@ def create_app() -> Flask:
     def premium_dashboard():
         return render_template("index-premium.html")
 
-    @app.route("/health", methods=["GET"])
-    def health() -> str:
-        return "OK", 200
+    @app.route("/health", methods=["GET", "HEAD"])
+    def health():
+        # Lightweight keep-alive target for UptimeRobot / Render — no DB work.
+        return jsonify({"status": "ok", "service": "nexora"}), 200
 
     @app.route("/api/v1/app/version", methods=["GET"])
     def app_version():

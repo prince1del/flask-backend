@@ -90,12 +90,15 @@ except Exception:
     sys.exit(1)
 PY
 
-# Starter = 512MB: keep 1 worker. max-requests recycles memory without looking like a hard crash every few minutes.
-exec gunicorn "app.web_app:create_app()" \
+# Starter = 512MB: single worker + preload (one create_app, less OOM than factory recycle).
+# max-requests recycles memory; keep jitter so recycle is not synchronized with health pings.
+exec gunicorn wsgi:app \
   --bind 0.0.0.0:${PORT:-10000} \
   --workers "${WEB_CONCURRENCY:-1}" \
-  --threads 1 \
-  --timeout 300 \
-  --graceful-timeout 60 \
-  --max-requests 400 \
-  --max-requests-jitter 40
+  --threads "${WEB_THREADS:-2}" \
+  --preload \
+  --timeout 120 \
+  --graceful-timeout 30 \
+  --keep-alive 5 \
+  --max-requests 200 \
+  --max-requests-jitter 50
