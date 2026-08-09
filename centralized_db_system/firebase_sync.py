@@ -12,6 +12,9 @@ except ImportError:  # pragma: no cover
 
 from .sync import OfflineSyncStore
 
+# CentralizedDB() is constructed per request — never spam stdout on every hit.
+_FIREBASE_MISSING_LOGGED = False
+
 
 class FirebaseSync:
     """Minimal Firebase integration for syncing records to a cloud database."""
@@ -44,12 +47,17 @@ class FirebaseSync:
         )
 
     def _initialize_client(self) -> None:
+        global _FIREBASE_MISSING_LOGGED
         self._client = None
         if firebase_admin is None or credentials is None or db is None:
-            print("--- Firebase Admin Libraries Missing! ---")
+            if not _FIREBASE_MISSING_LOGGED:
+                _FIREBASE_MISSING_LOGGED = True
+                print("--- Firebase Admin Libraries Missing! (once; optional, not used for Party Master) ---")
             return
         if not self._looks_like_real_firebase_config():
-            print("--- Invalid Firebase URL Configuration ---")
+            if not _FIREBASE_MISSING_LOGGED:
+                _FIREBASE_MISSING_LOGGED = True
+                print("--- Invalid Firebase URL Configuration ---")
             return
 
         try:

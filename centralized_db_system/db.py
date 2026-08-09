@@ -1455,9 +1455,16 @@ class CentralizedDB:
         self.db_path = self._resolve_db_path(db_path)
         self._table_columns: dict[str, set[str]] = {}
         self.sync_store = sync_store or OfflineSyncStore()
-        self.firebase_sync = FirebaseSync(sync_store=self.sync_store)
+        # Lazy — constructing FirebaseSync on every CentralizedDB() flooded Render logs.
+        self._firebase_sync: FirebaseSync | None = None
         self.article_service = ArticleMasterService(str(self.db_path))
         self._initialize()
+
+    @property
+    def firebase_sync(self) -> FirebaseSync:
+        if self._firebase_sync is None:
+            self._firebase_sync = FirebaseSync(sync_store=self.sync_store)
+        return self._firebase_sync
 
     def _resolve_db_path(self, db_path: str | None = None) -> Path:
         if db_path:
@@ -2721,6 +2728,8 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "invoices", "invoice_amount", "REAL")
             self._ensure_column_exists(conn, "invoices", "status", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "firm_name", "TEXT")
+            self._ensure_column_exists(conn, "master_distributors", "updated_at", "TEXT")
+            self._ensure_column_exists(conn, "master_retailers", "updated_at", "TEXT")
             self._ensure_column_exists(
                 conn, "master_distributors", "firm_nick_name", "TEXT"
             )
@@ -9801,6 +9810,10 @@ class CentralizedDB:
         if not fields:
             return self.get_master_distributor(distributor_id, workspace_id=workspace_id)
 
+        # Always bump updated_at for delta sync clients.
+        fields = dict(fields)
+        fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+
         set_clause = ", ".join(f"{col} = ?" for col in fields)
         params = list(fields.values()) + [distributor_id, workspace_id]
 
@@ -9835,6 +9848,7 @@ class CentralizedDB:
     def list_master_distributors(
         self, limit: int = 50, workspace_id: str | None = None, offset: int = 0,
         include_inactive: bool = True,
+        since: str | None = None,
     ) -> list[dict[str, Any]]:
         safe_limit = max(1, int(limit))
         safe_offset = max(0, int(offset))
@@ -9872,7 +9886,8 @@ class CentralizedDB:
                     credit_limit,
                     status,
                     created_at,
-                    phone_number_2
+                    phone_number_2,
+                    updated_at
                 FROM master_distributors
                 """
         where_parts: list[str] = []
@@ -9881,6 +9896,11 @@ class CentralizedDB:
             params.append(workspace_id)
         if not include_inactive:
             where_parts.append("IFNULL(status, 'active') != 'inactive'")
+        since_norm = (since or "").strip()
+        if since_norm:
+            # Delta: rows created/updated at or after watermark (ISO or comparable text).
+            where_parts.append("COALESCE(updated_at, created_at) >= ?")
+            params.append(since_norm)
         if where_parts:
             query += " WHERE " + " AND ".join(where_parts)
         # Active first, then name — past/inactive still visible with red light on clients.
@@ -9929,6 +9949,7 @@ class CentralizedDB:
                 "status": row[29] or "active",
                 "created_at": row[30],
                 "phone_number_2": row[31],
+                "updated_at": row[32],
             }
             for row in rows
         ]
@@ -10045,7 +10066,11 @@ class CentralizedDB:
         }
 
     def list_master_retailers(
-        self, limit: int = 50, workspace_id: str | None = None, offset: int = 0
+        self,
+        limit: int = 50,
+        workspace_id: str | None = None,
+        offset: int = 0,
+        since: str | None = None,
     ) -> list[dict[str, Any]]:
         safe_limit = max(1, int(limit))
         safe_offset = max(0, int(offset))
@@ -10063,17 +10088,23 @@ class CentralizedDB:
                     mr.sales_executive_anniversary, mr.owner_name, mr.contact_person,
                     mr.state, mr.pincode, mr.category, mr.birthday, mr.anniversary,
                     mr.phone_number_2,
-                    COALESCE(md.firm_name, md.name) AS distributor_name
+                    COALESCE(md.firm_name, md.name) AS distributor_name,
+                    mr.updated_at
                 FROM master_retailers mr
                 LEFT JOIN master_distributors md
                     ON md.id = mr.distributor_id
                     AND (mr.workspace_id IS NULL OR md.workspace_id = mr.workspace_id)
                 """
+        where_parts: list[str] = []
         if workspace_id:
-            query += " WHERE mr.workspace_id = ? AND IFNULL(mr.status, 'active') != 'inactive'"
+            where_parts.append("mr.workspace_id = ?")
             params.append(workspace_id)
-        else:
-            query += " WHERE IFNULL(mr.status, 'active') != 'inactive'"
+        where_parts.append("IFNULL(mr.status, 'active') != 'inactive'")
+        since_norm = (since or "").strip()
+        if since_norm:
+            where_parts.append("COALESCE(mr.updated_at, mr.created_at) >= ?")
+            params.append(since_norm)
+        query += " WHERE " + " AND ".join(where_parts)
         query += " ORDER BY mr.id DESC LIMIT ? OFFSET ?"
         params.extend([safe_limit, safe_offset])
         with sqlite3.connect(self.db_path) as conn:
@@ -10113,6 +10144,7 @@ class CentralizedDB:
                 "anniversary": row[29],
                 "phone_number_2": row[30],
                 "distributor_name": row[31] or "Unassigned",
+                "updated_at": row[32],
             }
             for row in rows
         ]
@@ -10292,6 +10324,9 @@ class CentralizedDB:
 
         if not fields:
             return self.get_master_retailer(retailer_id, workspace_id=workspace_id)
+
+        fields = dict(fields)
+        fields["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         set_clause = ", ".join(f"{col} = ?" for col in fields)
         params = list(fields.values()) + [retailer_id, workspace_id]

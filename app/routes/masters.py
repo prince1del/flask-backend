@@ -14,6 +14,10 @@ Endpoints:
 """
 
 import tempfile
+import threading
+import time
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, request, jsonify, current_app, send_file
@@ -22,9 +26,53 @@ from centralized_db_system.db import CentralizedDB
 
 masters_bp = Blueprint("masters", __name__, url_prefix="/api/v1/masters")
 
+# Temporary shield: identical masters list query spam (Android cancel/restart storms).
+_MASTERS_HIT_LOCK = threading.Lock()
+_MASTERS_HITS: dict[str, list[float]] = defaultdict(list)
+
 
 def _get_db() -> CentralizedDB:
     return CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+
+
+def _client_key() -> str:
+    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return forwarded or (request.remote_addr or "unknown")
+
+
+def _throttle_identical_list(max_same: int = 2, window_sec: float = 3.0):
+    """Reject the same IP+path+query more than max_same times inside window_sec."""
+    key = f"{_client_key()}|{request.full_path}"
+    now = time.time()
+    with _MASTERS_HIT_LOCK:
+        hits = _MASTERS_HITS[key]
+        hits[:] = [t for t in hits if now - t < window_sec]
+        if len(hits) >= max_same:
+            return False
+        hits.append(now)
+        # Bound memory
+        if len(_MASTERS_HITS) > 2000:
+            stale = [k for k, v in _MASTERS_HITS.items() if not v or now - v[-1] > 60]
+            for k in stale[:500]:
+                _MASTERS_HITS.pop(k, None)
+    return True
+
+
+def _normalize_since(raw: str | None) -> str | None:
+    """Accept ISO timestamp or epoch ms/seconds for delta sync."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        n = int(text)
+        # ms vs seconds
+        if n > 10_000_000_000:
+            n = n / 1000.0
+        try:
+            return datetime.fromtimestamp(n, tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    return text
 
 
 def _save_upload_to_temp(file_storage) -> Path:
@@ -32,7 +80,6 @@ def _save_upload_to_temp(file_storage) -> Path:
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     file_storage.save(tmp.name)
     return Path(tmp.name)
-
 
 @masters_bp.route("/distributors/bulk-upload", methods=["POST"])
 @require_jwt_auth
@@ -71,10 +118,16 @@ def bulk_upload_retailers():
 @masters_bp.route("/distributors", methods=["GET"])
 @require_jwt_auth
 def list_distributors():
+    if not _throttle_identical_list():
+        return jsonify({
+            "success": False,
+            "error": {"message": "Too many identical Party Master requests — retry shortly"},
+        }), 429
     workspace_id = get_workspace_id()
     # Page-sized responses — clients should walk offset to load full Party Master.
     limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 5000)
     offset = max(request.args.get("offset", 0, type=int) or 0, 0)
+    since = _normalize_since(request.args.get("since"))
     include_inactive = str(request.args.get("include_inactive", "1")).lower() not in (
         "0",
         "false",
@@ -86,8 +139,9 @@ def list_distributors():
         offset=offset,
         workspace_id=workspace_id,
         include_inactive=include_inactive,
+        since=since,
     )
-    return jsonify({"success": True, "data": distributors}), 200
+    return jsonify({"success": True, "data": distributors, "delta": bool(since)}), 200
 
 
 @masters_bp.route("/party-sync", methods=["GET"])
@@ -180,15 +234,21 @@ def delete_distributor(distributor_id):
 @masters_bp.route("/retailers", methods=["GET"])
 @require_jwt_auth
 def list_retailers():
+    if not _throttle_identical_list():
+        return jsonify({
+            "success": False,
+            "error": {"message": "Too many identical Party Master requests — retry shortly"},
+        }), 429
     workspace_id = get_workspace_id()
     # Page-sized — distributor name comes from SQL JOIN (no 2× Party Master in RAM).
     limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 500)
     offset = max(request.args.get("offset", 0, type=int) or 0, 0)
+    since = _normalize_since(request.args.get("since"))
     db = _get_db()
     retailers = db.list_master_retailers(
-        limit=limit, offset=offset, workspace_id=workspace_id
+        limit=limit, offset=offset, workspace_id=workspace_id, since=since
     )
-    return jsonify({"success": True, "data": retailers}), 200
+    return jsonify({"success": True, "data": retailers, "delta": bool(since)}), 200
 
 
 @masters_bp.route("/retailers", methods=["POST"])
