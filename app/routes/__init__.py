@@ -25,6 +25,7 @@ from .masters import masters_bp
 from .executive import executive_bp
 from .hop import hop_bp
 from .dsr_market import dsr_market_bp
+from .distributor_zone import distributor_zone_bp
 from .personal_todos import personal_todos_bp
 from .pjp import pjp_bp
 
@@ -56,6 +57,7 @@ __all__ = [
     'executive_bp',
     'hop_bp',
     'dsr_market_bp',
+    'distributor_zone_bp',
     'personal_todos_bp',
     'pjp_bp',
 ]

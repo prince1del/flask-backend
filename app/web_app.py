@@ -64,6 +64,7 @@ from app.routes import (
     executive_bp,
     hop_bp,
     dsr_market_bp,
+    distributor_zone_bp,
     personal_todos_bp,
     pjp_bp,
 )
@@ -317,6 +318,7 @@ def create_app() -> Flask:
     app.register_blueprint(executive_bp)
     app.register_blueprint(hop_bp)
     app.register_blueprint(dsr_market_bp)
+    app.register_blueprint(distributor_zone_bp)
     app.register_blueprint(personal_todos_bp)
     app.register_blueprint(pjp_bp)
 
