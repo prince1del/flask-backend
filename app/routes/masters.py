@@ -133,6 +133,7 @@ def create_distributor():
         sales_executive_anniversary=payload.get("sales_executive_anniversary"),
         distributor_code=payload.get("distributor_code"),
         credit_limit=payload.get("credit_limit"),
+        phone_number_2=payload.get("phone_number_2"),
         workspace_id=workspace_id,
     )
     record = db.get_master_distributor(distributor_id, workspace_id=workspace_id)

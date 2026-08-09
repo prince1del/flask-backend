@@ -2704,6 +2704,7 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "master_distributors", "email", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "address", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "zone", "TEXT")
+            self._ensure_column_exists(conn, "master_distributors", "territory", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "region", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "gst_no", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "buyer_code", "TEXT")
@@ -9380,6 +9381,7 @@ class CentralizedDB:
         gst_no: str | None = None,
         buyer_code: str | None = None,
         zone: str | None = None,
+        territory: str | None = None,
         region: str | None = None,
         location: str | None = None,
         address: str | None = None,
@@ -9402,6 +9404,7 @@ class CentralizedDB:
         credit_limit: float | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
+        phone_number_2: str | None = None,
         status: str = "active",
         workspace_id: str = "default",
         conn: sqlite3.Connection | None = None,
@@ -9464,6 +9467,7 @@ class CentralizedDB:
                     gst_no,
                     buyer_code,
                     zone,
+                    territory,
                     region,
                     payment_terms,
                     birthday,
@@ -9483,7 +9487,7 @@ class CentralizedDB:
                     status,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     distributor_code or self._generate_unique_master_id("D"),
@@ -9500,6 +9504,7 @@ class CentralizedDB:
                     gst_no,
                     buyer_code,
                     zone,
+                    territory,
                     region,
                     payment_terms,
                     birthday,
@@ -9520,6 +9525,12 @@ class CentralizedDB:
                     created_at,
                 ),
             )
+            new_id = int(cursor.lastrowid)
+            if phone_number_2:
+                connection.execute(
+                    "UPDATE master_distributors SET phone_number_2 = ? WHERE id = ? AND workspace_id = ?",
+                    (phone_number_2, new_id, workspace_id),
+                )
             # PERFORMANCE: only commit here if THIS call opened the
             # connection itself. When bulk_upload_masters() passes in
             # a shared conn for the whole batch, committing on every
@@ -9708,7 +9719,7 @@ class CentralizedDB:
     def get_master_distributor(
         self, distributor_id: int, workspace_id: str | None = None
     ) -> dict[str, Any] | None:
-        query = "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, buyer_code, zone, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at FROM master_distributors WHERE id = ?"
+        query = "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, buyer_code, zone, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at, phone_number_2 FROM master_distributors WHERE id = ?"
         params: list[Any] = [distributor_id]
         if workspace_id:
             query += " AND workspace_id = ?"
@@ -9750,6 +9761,7 @@ class CentralizedDB:
             "longitude": row[29],
             "status": row[30],
             "created_at": row[31],
+            "phone_number_2": row[32],
         }
 
     # Every column on master_distributors that's safe to update via the API -
@@ -9758,7 +9770,7 @@ class CentralizedDB:
     # set already proven to exist by get_master_distributor()'s SELECT list.
     _DISTRIBUTOR_UPDATABLE_FIELDS = {
         "distributor_id", "distributor_code", "firm_name", "firm_nick_name", "name",
-        "phone_number", "location", "address", "pincode", "email", "gst_no",
+        "phone_number", "phone_number_2", "location", "address", "pincode", "email", "gst_no",
         "buyer_code", "zone", "region", "payment_terms", "birthday", "anniversary",
         "secondary_distributor_name", "secondary_distributor_phone_number",
         "secondary_distributor_birthday", "secondary_distributor_anniversary",
@@ -9857,7 +9869,8 @@ class CentralizedDB:
                     sales_executive_anniversary,
                     credit_limit,
                     status,
-                    created_at
+                    created_at,
+                    phone_number_2
                 FROM master_distributors
                 """
         where_parts: list[str] = []
@@ -9912,6 +9925,7 @@ class CentralizedDB:
                 "credit_limit": row[27],
                 "status": row[28] or "active",
                 "created_at": row[29],
+                "phone_number_2": row[30],
             }
             for row in rows
         ]
