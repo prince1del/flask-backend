@@ -127,7 +127,8 @@ def _dedupe_years_by_display(
         ):
             by_label[label] = year
     deduped = list(by_label.values())
-    deduped.sort(key=lambda y: fiscal_year_sort_key(y.get("display_year")))
+    # Newest FY first (current year on top for mobile + dashboard).
+    deduped.sort(key=lambda y: fiscal_year_sort_key(y.get("display_year")), reverse=True)
     return deduped
 
 def _get_year_or_404(year_id: int, workspace_id: str) -> dict | None:
