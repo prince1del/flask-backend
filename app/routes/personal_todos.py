@@ -260,7 +260,9 @@ def todos_summary():
     today = [t for t in items if t["bucket"] == "today"]
     upcoming = [t for t in items if t["bucket"] == "upcoming"]
     hold = [t for t in items if t["bucket"] == "hold"]
-    preview = [t for t in items if t["bucket"] != "hold"][:5]
+    # Active work preview (exclude hold) — enough rows for nested home-widget scroll.
+    open_items = [t for t in items if t["bucket"] != "hold"]
+    preview = open_items[:20]
     return jsonify(
         {
             "success": True,
@@ -269,6 +271,7 @@ def todos_summary():
                 "today_count": len(today),
                 "upcoming_count": len(upcoming),
                 "hold_count": len(hold),
+                "pending_count": len(open_items),
                 "preview": preview,
             },
         }
