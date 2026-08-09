@@ -620,6 +620,137 @@ def set_distributor_target(year_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@target_achievement_bp.route('/years/<int:year_id>/distributor-target', methods=['DELETE'])
+@require_jwt_auth
+def delete_distributor_target(year_id):
+    """Delete one distributor target (or reset Others to 0). Body: distributor_name."""
+    try:
+        data = request.get_json(silent=True) or {}
+        distributor_name = (data.get('distributor_name') or request.args.get('distributor_name') or '').strip()
+        if not distributor_name:
+            return jsonify({'success': False, 'error': 'distributor_name required'}), 400
+        workspace_id = get_workspace_id()
+        year = _get_year_or_404(year_id, workspace_id)
+        if not year:
+            return jsonify({'success': False, 'error': 'Year not found'}), 404
+        result = _cdb().delete_target_distributor_target(
+            workspace_id=workspace_id,
+            financial_year_id=year_id,
+            distributor_name=distributor_name,
+        )
+        fy_money = _money_payload(result.get('fy_target_lakhs') or 0)
+        return jsonify({
+            'success': True,
+            'data': {
+                'distributor_name': result.get('distributor_name'),
+                'is_others': result.get('is_others'),
+                'fy_target_lakhs': fy_money['target_lakhs'],
+                'fy_target_rupees': fy_money['target_rupees'],
+                'fy_target_narration': fy_money['target_narration'],
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@target_achievement_bp.route('/years/<int:year_id>', methods=['DELETE'])
+@require_jwt_auth
+def delete_year(year_id):
+    """Permanently delete a fiscal year and its target/achievement breakup."""
+    try:
+        workspace_id = get_workspace_id()
+        year = _get_year_or_404(year_id, workspace_id)
+        if not year:
+            return jsonify({'success': False, 'error': 'Year not found'}), 404
+        fy_label = year.get('display_year') or year.get('financial_year') or year.get('year') or ''
+        ok = _cdb().delete_financial_year_for_workspace(workspace_id, year_id)
+        if not ok:
+            return jsonify({'success': False, 'error': 'Unable to delete fiscal year'}), 500
+        return jsonify({'success': True, 'data': {'year_id': year_id, 'fy_label': fy_label}}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@target_achievement_bp.route('/monthly', methods=['GET'])
+@require_jwt_auth
+def get_monthly_distributor_data():
+    """List distributor amounts for a calendar month (YYYY-MM)."""
+    try:
+        year_month = (request.args.get('year_month') or '').strip()
+        if not year_month or len(year_month) < 7:
+            return jsonify({'success': False, 'error': 'year_month required (YYYY-MM)'}), 400
+        workspace_id = get_workspace_id()
+        rows_raw = _cdb().list_monthly_distributor_entries(workspace_id, year_month)
+        rows = []
+        for r in rows_raw:
+            money = _money_payload(r.get('amount_lakhs') or 0)
+            rows.append({
+                'distributor_name': r.get('distributor_name'),
+                'nick': r.get('nick'),
+                'amount_lakhs': money['target_lakhs'],
+                'amount_rupees': money['target_rupees'],
+                'amount_narration': money['target_narration'],
+                'updated_at': r.get('updated_at'),
+            })
+        return jsonify({
+            'success': True,
+            'data': {
+                'year_month': year_month,
+                'rows': rows,
+                'input_unit': 'rupees',
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@target_achievement_bp.route('/monthly', methods=['POST'])
+@require_jwt_auth
+def save_monthly_distributor_data():
+    """Save one distributor amount for a calendar month. Prefer amount_rupees."""
+    try:
+        data = request.get_json(silent=True) or {}
+        year_month = (data.get('year_month') or '').strip()
+        distributor_name = (data.get('distributor_name') or '').strip()
+        nick = (data.get('nick') or '').strip() or None
+        if data.get('amount_rupees') is not None:
+            amount_lakhs = _rupees_to_lakhs(data.get('amount_rupees'))
+        elif data.get('amount_lakhs') is not None:
+            amount_lakhs = float(data.get('amount_lakhs'))
+        else:
+            amount_lakhs = None
+        if not year_month or not distributor_name or amount_lakhs is None:
+            return jsonify({
+                'success': False,
+                'error': 'year_month, distributor_name and amount_rupees required',
+            }), 400
+        if float(amount_lakhs) < 0:
+            return jsonify({'success': False, 'error': 'amount must be >= 0'}), 400
+        workspace_id = get_workspace_id()
+        result = _cdb().upsert_monthly_distributor_entry(
+            workspace_id=workspace_id,
+            year_month=year_month,
+            distributor_name=distributor_name,
+            amount_lakhs=float(amount_lakhs),
+            nick=nick,
+        )
+        money = _money_payload(result.get('amount_lakhs') or 0)
+        return jsonify({
+            'success': True,
+            'data': {
+                'year_month': year_month,
+                'distributor_name': distributor_name,
+                'amount_lakhs': money['target_lakhs'],
+                'amount_rupees': money['target_rupees'],
+                'amount_narration': money['target_narration'],
+                'deleted': bool(result.get('deleted')),
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @target_achievement_bp.route('/years/<int:year_id>/achievement', methods=['DELETE'])
 @require_jwt_auth
 def clear_fy_achievement(year_id):

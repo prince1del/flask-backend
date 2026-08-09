@@ -596,6 +596,24 @@ class CentralizedDB:
                 "ON target_achievement_category_breakup(financial_year_id, distributor_name)"
             )
             self._migrate_category_breakup_schema(conn)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_achievement_monthly (
+                    id INTEGER PRIMARY KEY,
+                    workspace_id TEXT NOT NULL DEFAULT 'default',
+                    year_month TEXT NOT NULL,
+                    distributor_name TEXT NOT NULL,
+                    nick TEXT,
+                    amount_lakhs REAL DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(workspace_id, year_month, distributor_name)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ta_monthly_ym "
+                "ON target_achievement_monthly(workspace_id, year_month)"
+            )
             conn.commit()
 
     def _migrate_category_breakup_schema(self, conn: sqlite3.Connection) -> None:
@@ -963,6 +981,163 @@ class CentralizedDB:
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def delete_financial_year_for_workspace(self, workspace_id: str, fy_id: int) -> bool:
+        """Workspace-scoped FY delete (cascade breakup / category / uploads)."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM target_achievement_years WHERE id = ? AND workspace_id = ?",
+                (fy_id, workspace_id),
+            ).fetchone()
+            if not row:
+                return False
+            conn.execute(
+                "DELETE FROM target_achievement_breakup WHERE financial_year_id = ?",
+                (fy_id,),
+            )
+            conn.execute(
+                "DELETE FROM target_achievement_category_breakup WHERE financial_year_id = ?",
+                (fy_id,),
+            )
+            conn.execute(
+                "DELETE FROM target_achievement_uploads WHERE financial_year_id = ?",
+                (fy_id,),
+            )
+            cursor = conn.execute(
+                "DELETE FROM target_achievement_years WHERE id = ? AND workspace_id = ?",
+                (fy_id, workspace_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_target_distributor_target(
+        self,
+        *,
+        workspace_id: str,
+        financial_year_id: int,
+        distributor_name: str,
+    ) -> dict[str, Any]:
+        """Remove one distributor target row (Others → reset to 0). Returns fy total lakhs."""
+        self.ensure_target_achievement_tables()
+        name = (distributor_name or "").strip()
+        if not name:
+            raise ValueError("distributor_name required")
+        is_others = name.lower() == "others"
+        self._invalidate_table_columns_cache("target_achievement_breakup")
+        with sqlite3.connect(self.db_path) as conn:
+            self._migrate_legacy_breakup_schema(conn)
+            cols = self._breakup_table_columns(conn)
+            params: list[Any] = [financial_year_id]
+            ws_clause = ""
+            if "workspace_id" in cols:
+                ws_clause = " AND workspace_id = ?"
+                params.append(workspace_id)
+
+            if is_others:
+                # Keep Others row but zero the target.
+                sets: list[str] = []
+                if "target_lakhs" in cols:
+                    sets.append("target_lakhs = 0")
+                if "target_amount" in cols:
+                    sets.append("target_amount = 0")
+                if sets:
+                    where = f"financial_year_id = ?{ws_clause}"
+                    name_col = "distributor_name" if "distributor_name" in cols else "attribute_name"
+                    where += f" AND LOWER({name_col}) = 'others'"
+                    if "attribute_type" in cols:
+                        where += " AND attribute_type = 'distributor'"
+                    conn.execute(
+                        f"UPDATE target_achievement_breakup SET {', '.join(sets)} WHERE {where}",
+                        tuple(params),
+                    )
+            else:
+                name_col = "distributor_name" if "distributor_name" in cols else "attribute_name"
+                del_sql = (
+                    f"DELETE FROM target_achievement_breakup WHERE financial_year_id = ?{ws_clause} "
+                    f"AND LOWER({name_col}) = LOWER(?)"
+                )
+                del_params = list(params) + [name]
+                if "attribute_type" in cols:
+                    del_sql += " AND attribute_type = 'distributor'"
+                conn.execute(del_sql, tuple(del_params))
+            conn.commit()
+
+        fy_total = self.sync_financial_year_target_from_breakup(workspace_id, financial_year_id)
+        return {"distributor_name": name, "fy_target_lakhs": fy_total, "is_others": is_others}
+
+    def list_monthly_distributor_entries(
+        self, workspace_id: str, year_month: str
+    ) -> list[dict[str, Any]]:
+        """List monthly distributor amounts for YYYY-MM."""
+        self.ensure_target_achievement_tables()
+        ym = (year_month or "").strip()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT distributor_name, nick, amount_lakhs, updated_at
+                FROM target_achievement_monthly
+                WHERE workspace_id = ? AND year_month = ?
+                ORDER BY LOWER(distributor_name)
+                """,
+                (workspace_id, ym),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def upsert_monthly_distributor_entry(
+        self,
+        *,
+        workspace_id: str,
+        year_month: str,
+        distributor_name: str,
+        amount_lakhs: float,
+        nick: str | None = None,
+    ) -> dict[str, Any]:
+        """Upsert one monthly distributor amount (lakhs). Zero amount deletes the row."""
+        self.ensure_target_achievement_tables()
+        ym = (year_month or "").strip()
+        name = (distributor_name or "").strip()
+        if not ym or not name:
+            raise ValueError("year_month and distributor_name required")
+        amount = float(amount_lakhs or 0)
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            if amount <= 0:
+                conn.execute(
+                    """
+                    DELETE FROM target_achievement_monthly
+                    WHERE workspace_id = ? AND year_month = ? AND LOWER(distributor_name) = LOWER(?)
+                    """,
+                    (workspace_id, ym, name),
+                )
+                conn.commit()
+                return {
+                    "year_month": ym,
+                    "distributor_name": name,
+                    "amount_lakhs": 0.0,
+                    "deleted": True,
+                }
+            conn.execute(
+                """
+                INSERT INTO target_achievement_monthly (
+                    workspace_id, year_month, distributor_name, nick, amount_lakhs, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(workspace_id, year_month, distributor_name) DO UPDATE SET
+                    nick = COALESCE(excluded.nick, target_achievement_monthly.nick),
+                    amount_lakhs = excluded.amount_lakhs,
+                    updated_at = excluded.updated_at
+                """,
+                (workspace_id, ym, name, (nick or "").strip() or None, amount, now),
+            )
+            conn.commit()
+        return {
+            "year_month": ym,
+            "distributor_name": name,
+            "nick": nick,
+            "amount_lakhs": amount,
+            "deleted": False,
+        }
 
     def save_upload_record(
         self,
