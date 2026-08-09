@@ -9645,7 +9645,8 @@ class CentralizedDB:
             return cursor.rowcount > 0
 
     def list_master_distributors(
-        self, limit: int = 50, workspace_id: str | None = None, offset: int = 0
+        self, limit: int = 50, workspace_id: str | None = None, offset: int = 0,
+        include_inactive: bool = True,
     ) -> list[dict[str, Any]]:
         safe_limit = max(1, int(limit))
         safe_offset = max(0, int(offset))
@@ -9684,12 +9685,22 @@ class CentralizedDB:
                     created_at
                 FROM master_distributors
                 """
+        where_parts: list[str] = []
         if workspace_id:
-            query += " WHERE workspace_id = ? AND IFNULL(status, 'active') != 'inactive'"
+            where_parts.append("workspace_id = ?")
             params.append(workspace_id)
-        else:
-            query += " WHERE IFNULL(status, 'active') != 'inactive'"
-        query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+        if not include_inactive:
+            where_parts.append("IFNULL(status, 'active') != 'inactive'")
+        if where_parts:
+            query += " WHERE " + " AND ".join(where_parts)
+        # Active first, then name — past/inactive still visible with red light on clients.
+        query += """
+            ORDER BY
+                CASE WHEN lower(IFNULL(status, 'active')) = 'inactive' THEN 1 ELSE 0 END,
+                lower(IFNULL(firm_name, name)) ASC,
+                id DESC
+            LIMIT ? OFFSET ?
+        """
         params.extend([safe_limit, safe_offset])
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(query, tuple(params)).fetchall()
@@ -9724,7 +9735,7 @@ class CentralizedDB:
                 "sales_executive_birthday": row[25],
                 "sales_executive_anniversary": row[26],
                 "credit_limit": row[27],
-                "status": row[28],
+                "status": row[28] or "active",
                 "created_at": row[29],
             }
             for row in rows
@@ -9750,6 +9761,7 @@ class CentralizedDB:
                         + LENGTH(IFNULL(address, ''))
                         + LENGTH(IFNULL(location, ''))
                         + LENGTH(IFNULL(gst_no, ''))
+                        + LENGTH(IFNULL(status, ''))
                     ), 0)
                 FROM master_distributors
                 WHERE IFNULL(status, 'active') != 'inactive'

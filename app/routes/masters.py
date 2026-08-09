@@ -75,9 +75,17 @@ def list_distributors():
     # Page-sized responses — clients should walk offset to load full Party Master.
     limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 500)
     offset = max(request.args.get("offset", 0, type=int) or 0, 0)
+    include_inactive = str(request.args.get("include_inactive", "1")).lower() not in (
+        "0",
+        "false",
+        "no",
+    )
     db = _get_db()
     distributors = db.list_master_distributors(
-        limit=limit, offset=offset, workspace_id=workspace_id
+        limit=limit,
+        offset=offset,
+        workspace_id=workspace_id,
+        include_inactive=include_inactive,
     )
     return jsonify({"success": True, "data": distributors}), 200
 
