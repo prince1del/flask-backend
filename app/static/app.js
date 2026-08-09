@@ -7400,7 +7400,7 @@ function populateMasterRetailerDistributorOptions(records) {
 function resetMasterDistributorForm() {
   document.getElementById('master-distributor-id').value = '';
   document.getElementById('master-distributor-form-title').textContent = 'Add Distributor';
-  ['master-distributor-firm-name','master-distributor-firm-nick-name','master-distributor-name','master-distributor-code','master-distributor-phone','master-distributor-phone-2','master-distributor-email','master-distributor-address','master-distributor-location','master-distributor-region','master-distributor-pincode','master-distributor-gst','master-distributor-territory','master-distributor-zone','master-distributor-payment-terms','master-distributor-credit-limit','master-distributor-birthday','master-distributor-anniversary','master-distributor-secondary-name','master-distributor-secondary-phone','master-distributor-secondary-birthday','master-distributor-secondary-anniversary','master-distributor-sales-name','master-distributor-sales-phone','master-distributor-sales-email','master-distributor-sales-birthday','master-distributor-sales-anniversary'].forEach((id) => {
+  ['master-distributor-firm-name','master-distributor-firm-nick-name','master-distributor-name','master-distributor-code','master-distributor-phone','master-distributor-phone-2','master-distributor-email','master-distributor-address','master-distributor-location','master-distributor-region','master-distributor-pincode','master-distributor-gst','master-distributor-territory','master-distributor-payment-terms','master-distributor-credit-limit','master-distributor-birthday','master-distributor-anniversary','master-distributor-secondary-name','master-distributor-secondary-phone','master-distributor-secondary-birthday','master-distributor-secondary-anniversary','master-distributor-sales-name','master-distributor-sales-phone','master-distributor-sales-email','master-distributor-sales-birthday','master-distributor-sales-anniversary'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -7447,11 +7447,14 @@ function openMasterRetailerForm() {
 async function saveMasterDistributor(event) {
   event.preventDefault();
   const id = document.getElementById('master-distributor-id').value;
+  const distCode = document.getElementById('master-distributor-code').value.trim() || undefined;
+  const territoryVal = document.getElementById('master-distributor-territory')?.value.trim() || undefined;
   const body = {
     name: document.getElementById('master-distributor-name').value.trim(),
     firm_name: document.getElementById('master-distributor-firm-name').value.trim() || undefined,
     firm_nick_name: document.getElementById('master-distributor-firm-nick-name').value.trim() || undefined,
-    distributor_code: document.getElementById('master-distributor-code').value.trim() || undefined,
+    distributor_code: distCode,
+    buyer_code: distCode,
     phone_number: document.getElementById('master-distributor-phone').value.trim() || undefined,
     phone_number_2: document.getElementById('master-distributor-phone-2').value.trim() || undefined,
     email: document.getElementById('master-distributor-email').value.trim() || undefined,
@@ -7460,8 +7463,8 @@ async function saveMasterDistributor(event) {
     region: document.getElementById('master-distributor-region').value.trim() || undefined,
     pincode: document.getElementById('master-distributor-pincode').value.trim() || undefined,
     gst_no: document.getElementById('master-distributor-gst').value.trim() || undefined,
-    territory: document.getElementById('master-distributor-territory')?.value.trim() || undefined,
-    zone: document.getElementById('master-distributor-zone').value.trim() || undefined,
+    territory: territoryVal,
+    zone: territoryVal,
     payment_terms: document.getElementById('master-distributor-payment-terms').value.trim() || undefined,
     credit_limit: document.getElementById('master-distributor-credit-limit').value.trim() ? parseFloat(document.getElementById('master-distributor-credit-limit').value) : undefined,
     birthday: document.getElementById('master-distributor-birthday').value.trim() || undefined,
@@ -7506,7 +7509,8 @@ async function editMasterDistributor(id) {
     document.getElementById('master-distributor-firm-name').value = record.firm_name || '';
     document.getElementById('master-distributor-firm-nick-name').value = record.firm_nick_name || '';
     document.getElementById('master-distributor-name').value = record.name || '';
-    document.getElementById('master-distributor-code').value = record.distributor_code || record.distributor_id || '';
+    document.getElementById('master-distributor-code').value =
+      record.buyer_code || record.distributor_code || record.distributor_id || '';
     document.getElementById('master-distributor-phone').value = record.phone_number || '';
     document.getElementById('master-distributor-phone-2').value = record.phone_number_2 || '';
     document.getElementById('master-distributor-email').value = record.email || '';
@@ -7516,8 +7520,7 @@ async function editMasterDistributor(id) {
     document.getElementById('master-distributor-pincode').value = record.pincode || '';
     document.getElementById('master-distributor-gst').value = record.gst_no || '';
     const territoryEl = document.getElementById('master-distributor-territory');
-    if (territoryEl) territoryEl.value = record.territory || '';
-    document.getElementById('master-distributor-zone').value = record.zone || '';
+    if (territoryEl) territoryEl.value = record.territory || record.zone || '';
     document.getElementById('master-distributor-payment-terms').value = record.payment_terms || '';
     document.getElementById('master-distributor-credit-limit').value = record.credit_limit ?? '';
     document.getElementById('master-distributor-birthday').value = record.birthday || '';
