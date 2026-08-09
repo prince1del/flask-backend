@@ -1,25 +1,19 @@
 #!/usr/bin/env sh
 set -e
 export FLASK_APP=wsgi:app
+# Limit glibc arenas — Python on Linux otherwise fragments toward OOM on 512MB.
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+export PYTHONUNBUFFERED=1
 
-# One boot process only — calling create_app() 4× used to spike RAM and OOM on 512MB plans.
+# Lightweight migrate/seed (soft-fail). Skip entirely with SKIP_STARTUP_BOOT=1.
+if [ "${SKIP_STARTUP_BOOT:-0}" != "1" ]; then
 python - <<'PY'
+import gc
 import os
 import sys
 import traceback
 
 print("boot: DATABASE_URL set=", bool((os.getenv("DATABASE_URL") or "").strip()))
-print(
-    "boot: DATABASE_URL scheme=",
-    ((os.getenv("DATABASE_URL") or "").split("://")[0] if os.getenv("DATABASE_URL") else "none"),
-)
-try:
-    import psycopg
-
-    print("boot: psycopg=", psycopg.__version__)
-except Exception as e:
-    print("boot: psycopg import failed:", e)
-
 try:
     from sqlalchemy import inspect
     from flask_migrate import upgrade, stamp
@@ -29,35 +23,40 @@ try:
     from centralized_db_system.db import CentralizedDB
 
     app = create_app()
-    print("SQLALCHEMY_DATABASE_URI=", (app.config.get("SQLALCHEMY_DATABASE_URI") or "")[:80])
-    print("DATABASE_PATH=", app.config.get("DATABASE_PATH"))
-    cdb = CentralizedDB(app.config["DATABASE_PATH"])
-    print("CentralizedDB ready")
-
+    db_path = app.config["DATABASE_PATH"]
+    print("DATABASE_PATH=", db_path)
     uri = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+
     with app.app_context():
         tables = set(inspect(db.engine).get_table_names())
         if "postgresql" in uri:
             if "alembic_version" not in tables:
                 stamp(revision="head")
-                print("Postgres: stamped alembic head after create_all")
+                print("Postgres: stamped alembic head")
             else:
                 try:
                     upgrade()
-                    print("Postgres: flask db upgrade ok")
+                    print("Postgres: upgrade ok")
                 except Exception as e:
                     print("Postgres: upgrade soft-fail:", e)
         else:
-            upgrade()
-            print("SQLite: flask db upgrade ok")
+            try:
+                upgrade()
+                print("SQLite: upgrade ok")
+            except Exception as e:
+                print("SQLite: upgrade soft-fail:", e)
 
-    # BD owner seed (idempotent)
-    username = os.getenv("SEED_USERNAME", "kps.julka@gmail.com")
-    password = os.getenv("SEED_PASSWORD", "@Princeking123")
-    role = os.getenv("SEED_ROLE", "sales_executive")
-    workspace = os.getenv("SEED_WORKSPACE", "bombay_dyeing_gt_north")
+    cdb = CentralizedDB(db_path)
     try:
-        print("SEED", cdb.create_user(username, password, role=role, workspace_id=workspace))
+        print(
+            "SEED",
+            cdb.create_user(
+                os.getenv("SEED_USERNAME", "kps.julka@gmail.com"),
+                os.getenv("SEED_PASSWORD", "@Princeking123"),
+                role=os.getenv("SEED_ROLE", "sales_executive"),
+                workspace_id=os.getenv("SEED_WORKSPACE", "bombay_dyeing_gt_north"),
+            ),
+        )
     except ValueError as e:
         print("SEED skip:", e)
     except Exception as e:
@@ -68,16 +67,15 @@ try:
     except Exception as e:
         print("BD login migrate skip:", e)
 
-    # HoP admin seed
-    db_path = app.config["DATABASE_PATH"]
-    ensure_hop_schema(db_path)
-    hop_user = os.getenv("HOP_ADMIN_USERNAME", "hop_prizm")
-    hop_pass = os.getenv("HOP_ADMIN_PASSWORD", "Prizm@2026!")
     try:
+        ensure_hop_schema(db_path)
         print(
             "HOP SEED",
-            CentralizedDB(db_path).create_user(
-                hop_user, hop_pass, role=HOP_ROLE, workspace_id=HOP_WORKSPACE_ID
+            cdb.create_user(
+                os.getenv("HOP_ADMIN_USERNAME", "hop_prizm"),
+                os.getenv("HOP_ADMIN_PASSWORD", "Prizm@2026!"),
+                role=HOP_ROLE,
+                workspace_id=HOP_WORKSPACE_ID,
             ),
         )
     except ValueError as e:
@@ -85,20 +83,25 @@ try:
     except Exception as e:
         print("HOP SEED err:", e)
 
+    # Free peak RAM before gunicorn starts (same shell, sequential).
+    del cdb, app, db
+    gc.collect()
+    print("boot: released create_app memory")
 except Exception:
     traceback.print_exc()
-    sys.exit(1)
+    # Prefer serving over failing deploy if migrate/seed OOMs or errors.
+    print("boot: continuing to gunicorn despite boot error", file=sys.stderr)
 PY
+fi
 
-# Starter = 512MB: single worker + preload (one create_app, less OOM than factory recycle).
-# max-requests recycles memory; keep jitter so recycle is not synchronized with health pings.
+# 512MB Starter: NO --preload (master+worker ≈ 2× RAM). One sync worker only.
 exec gunicorn wsgi:app \
   --bind 0.0.0.0:${PORT:-10000} \
-  --workers "${WEB_CONCURRENCY:-1}" \
-  --threads "${WEB_THREADS:-2}" \
-  --preload \
+  --workers 1 \
+  --threads 1 \
+  --worker-class sync \
   --timeout 120 \
-  --graceful-timeout 30 \
-  --keep-alive 5 \
-  --max-requests 200 \
-  --max-requests-jitter 50
+  --graceful-timeout 20 \
+  --keep-alive 2 \
+  --max-requests "${GUNICORN_MAX_REQUESTS:-150}" \
+  --max-requests-jitter 30
