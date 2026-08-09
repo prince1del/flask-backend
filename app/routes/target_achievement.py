@@ -11,6 +11,62 @@ from centralized_db_system.db import CentralizedDB
 # Create blueprint
 target_achievement_bp = Blueprint('target_achievement', __name__, url_prefix='/api/v1/target-achievement')
 
+# DB stores targets in lakhs for backward compatibility.
+# Clients enter full INR (e.g. 30000000 = 3 Crore) via target_rupees.
+LAKH_RUPEES = 100_000.0
+OTHERS_DISTRIBUTOR_NAME = "Others"
+
+
+def _lakhs_to_rupees(lakhs) -> float:
+    return round(float(lakhs or 0) * LAKH_RUPEES, 2)
+
+
+def _rupees_to_lakhs(rupees) -> float:
+    return round(float(rupees or 0) / LAKH_RUPEES, 6)
+
+
+def _narrate_inr_cr_lakh(rupees) -> str:
+    """30000000 → '3 Crore'; 1500000 → '15 Lakh'; 35000000 → '3 Crore 50 Lakh'."""
+    n = int(round(float(rupees or 0)))
+    if n <= 0:
+        return "0"
+    crore = n // 10_000_000
+    rem = n % 10_000_000
+    lakh = rem // 100_000
+    rem_rs = rem % 100_000
+    parts: list[str] = []
+    if crore:
+        parts.append(f"{crore} Crore")
+    if lakh:
+        parts.append(f"{lakh} Lakh")
+    if rem_rs and not parts:
+        parts.append(f"₹{n:,}")
+    elif rem_rs and parts:
+        # Keep narration at Cr/Lakh grain; ignore sub-lakh remainder.
+        pass
+    return " ".join(parts) if parts else "0"
+
+
+def _money_payload(lakhs) -> dict:
+    rupees = _lakhs_to_rupees(lakhs)
+    return {
+        "target_lakhs": float(lakhs or 0),
+        "target_rupees": rupees,
+        "target_narration": _narrate_inr_cr_lakh(rupees),
+    }
+
+
+def _resolve_target_lakhs_from_body(data: dict):
+    """Prefer target_rupees (full INR); fallback target_lakhs / target."""
+    if data.get("target_rupees") is not None:
+        return _rupees_to_lakhs(data.get("target_rupees"))
+    if data.get("target_lakhs") is not None:
+        return float(data.get("target_lakhs"))
+    if data.get("target") is not None:
+        return float(data.get("target"))
+    return None
+
+
 def get_db():
     conn = sqlite3.connect(current_app.config['DATABASE_PATH'])
     conn.row_factory = sqlite3.Row
@@ -169,6 +225,15 @@ def get_fy_overview():
                     "achievement": summary.get("active_achievement") or 0,
                     "percentage": summary.get("percentage") or 0,
                     "unit": "lakhs",
+                    "target_rupees": _lakhs_to_rupees(summary.get("target_lakhs") or 0),
+                    "achievement_rupees": _lakhs_to_rupees(summary.get("active_achievement") or 0),
+                    "target_narration": _narrate_inr_cr_lakh(
+                        _lakhs_to_rupees(summary.get("target_lakhs") or 0)
+                    ),
+                    "achievement_narration": _narrate_inr_cr_lakh(
+                        _lakhs_to_rupees(summary.get("active_achievement") or 0)
+                    ),
+                    "input_unit": "rupees",
                 }
             )
 
@@ -183,12 +248,20 @@ def create_year():
     try:
         data = request.get_json()
         year = normalize_fiscal_year(data.get('year') or data.get('financial_year'))
-        target = data.get('target')
-        unit = (data.get('unit') or 'lakhs').lower()
+        # Prefer full INR; fall back to lakhs for older clients.
+        if data.get('target_rupees') is not None:
+            target = _rupees_to_lakhs(data.get('target_rupees'))
+            unit = 'lakhs'
+        else:
+            target = data.get('target')
+            unit = (data.get('unit') or 'lakhs').lower()
+            if target is None:
+                target = 0
 
-        if not year or target is None:
-            return jsonify({'success': False, 'error': 'Year and target required'}), 400
+        if not year:
+            return jsonify({'success': False, 'error': 'Year required'}), 400
 
+        target = float(target or 0)
         workspace_id = get_workspace_id()
         _cdb().merge_duplicate_fiscal_years(workspace_id)
         conn = get_db()
@@ -199,6 +272,21 @@ def create_year():
 
         if existing:
             year_id = int(existing["id"])
+            # Creating/opening an FY with target 0 must not wipe rolled-up distributor totals.
+            if float(target or 0) == 0:
+                conn.close()
+                return jsonify(
+                    {
+                        'success': True,
+                        'data': {
+                            'year_id': year_id,
+                            'year': year,
+                            'target': existing.get('target') or existing.get('target_amount') or 0,
+                            'unit': unit,
+                            'updated_existing': True,
+                        },
+                    }
+                ), 200
             sets = []
             params: list = []
             if 'target_amount' in cols:
@@ -360,26 +448,58 @@ def get_distributor_targets(year_id):
         year = _get_year_or_404(year_id, workspace_id)
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
+        # Keep FY target in sync with distributor sum (includes Others).
+        rolled = _cdb().sync_financial_year_target_from_breakup(workspace_id, year_id)
         breakup = _cdb().list_target_distributor_breakup(workspace_id, year_id)
-        rows = [
-            {
-                "distributor_name": r.get("distributor_name"),
-                "display_label": r.get("display_label") or r.get("distributor_name"),
-                "target_lakhs": r.get("target_lakhs") or 0,
-            }
-            for r in breakup
-            if float(r.get("target_lakhs") or 0) > 0
-        ]
+        rows = []
+        has_others = False
+        for r in breakup:
+            name = (r.get("distributor_name") or "").strip()
+            tl = float(r.get("target_lakhs") or 0)
+            if tl <= 0 and name.lower() != OTHERS_DISTRIBUTOR_NAME.lower():
+                continue
+            if name.lower() == OTHERS_DISTRIBUTOR_NAME.lower():
+                has_others = True
+            money = _money_payload(tl)
+            rows.append(
+                {
+                    "distributor_name": name,
+                    "display_label": r.get("display_label") or name,
+                    "is_others": name.lower() == OTHERS_DISTRIBUTOR_NAME.lower(),
+                    "target_lakhs": money["target_lakhs"],
+                    "target_rupees": money["target_rupees"],
+                    "target_narration": money["target_narration"],
+                }
+            )
+        if not has_others:
+            money0 = _money_payload(0)
+            rows.append(
+                {
+                    "distributor_name": OTHERS_DISTRIBUTOR_NAME,
+                    "display_label": OTHERS_DISTRIBUTOR_NAME,
+                    "is_others": True,
+                    "target_lakhs": 0.0,
+                    "target_rupees": 0.0,
+                    "target_narration": money0["target_narration"],
+                }
+            )
+        # Named distributors first, Others last.
+        rows.sort(key=lambda x: (1 if x.get("is_others") else 0, (x.get("display_label") or "").lower()))
         fy_label = year.get("display_year") or year.get("financial_year") or year.get("year") or ""
-        target = year.get("target") or year.get("target_amount") or 0
+        fy_money = _money_payload(rolled)
         return jsonify(
             {
                 'success': True,
                 'data': {
                     'fy_label': fy_label,
-                    'target_lakhs': target,
+                    'year_id': year_id,
+                    'target_lakhs': fy_money["target_lakhs"],
+                    'target_rupees': fy_money["target_rupees"],
+                    'target_narration': fy_money["target_narration"],
                     'rows': rows,
                     'unit': 'lakhs',
+                    'input_unit': 'rupees',
+                    'others_name': OTHERS_DISTRIBUTOR_NAME,
                 },
             }
         ), 200
@@ -456,14 +576,19 @@ def set_manual_fy_achievement(year_id):
 @target_achievement_bp.route('/years/<int:year_id>/distributor-target', methods=['POST'])
 @require_jwt_auth
 def set_distributor_target(year_id):
-    """Set distributor-wise FY target manually (lakhs)."""
+    """Set distributor-wise FY target. Prefer target_rupees (full INR); FY total = sum."""
     try:
         data = request.get_json(silent=True) or {}
         distributor_name = (data.get('distributor_name') or '').strip()
-        target = data.get('target_lakhs', data.get('target'))
+        target_lakhs = _resolve_target_lakhs_from_body(data)
         nick = (data.get('nick') or '').strip() or None
-        if not distributor_name or target is None:
-            return jsonify({'success': False, 'error': 'distributor_name and target_lakhs required'}), 400
+        if not distributor_name or target_lakhs is None:
+            return jsonify({
+                'success': False,
+                'error': 'distributor_name and target_rupees (or target_lakhs) required',
+            }), 400
+        if float(target_lakhs) < 0:
+            return jsonify({'success': False, 'error': 'target must be >= 0'}), 400
 
         workspace_id = get_workspace_id()
         if not _get_year_or_404(year_id, workspace_id):
@@ -473,10 +598,25 @@ def set_distributor_target(year_id):
             workspace_id=workspace_id,
             financial_year_id=year_id,
             distributor_name=distributor_name,
-            target_lakhs=float(target),
+            target_lakhs=float(target_lakhs),
             nick=nick,
         )
-        return jsonify({'success': True, 'data': {'distributor_name': distributor_name, 'target_lakhs': float(target)}}), 200
+        fy_total = _cdb().sync_financial_year_target_from_breakup(workspace_id, year_id)
+        money = _money_payload(target_lakhs)
+        fy_money = _money_payload(fy_total)
+        return jsonify({
+            'success': True,
+            'data': {
+                'distributor_name': distributor_name,
+                'target_lakhs': money['target_lakhs'],
+                'target_rupees': money['target_rupees'],
+                'target_narration': money['target_narration'],
+                'fy_target_lakhs': fy_money['target_lakhs'],
+                'fy_target_rupees': fy_money['target_rupees'],
+                'fy_target_narration': fy_money['target_narration'],
+                'input_unit': 'rupees',
+            },
+        }), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

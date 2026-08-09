@@ -1541,7 +1541,7 @@
                 <button type="button" class="btn btn-secondary" onclick="openDistributorTargetModal()">Distributor target</button>
                 <button type="button" class="btn btn-danger" onclick="deleteTaFyTargets()">Delete FY targets</button>
             </div>
-            <p class="ta-entry-hint">Manual entry: click <strong>FY target</strong> for the overall year target (lakhs), or <strong>Distributor target</strong> for each distributor name + target.</p>
+            <p class="ta-entry-hint">Set <strong>Distributor target</strong> (and Others) in full ₹ — e.g. <code>30000000</code> = 3 Crore. FY target = sum of all distributors.</p>
             <div class="executive-table-wrap" style="margin-top: 12px;">
                 <table class="data-table">
                     <thead>
@@ -3212,7 +3212,7 @@
 
     <div id="distributorTargetModal" class="modal hidden">
         <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
-            <h2>Distributor target (lakhs)</h2>
+            <h2>Distributor target</h2>
             <div id="dist-target-status" class="form-inline-status hidden" role="status"></div>
             <div class="form-group">
                 <label>Fiscal year</label>
@@ -3227,8 +3227,9 @@
                 <input type="text" id="dist-target-name" placeholder="e.g. BERNINA INTERNATIONAL P LTD" />
             </div>
             <div class="form-group">
-                <label>Target (lakhs)</label>
-                <input type="number" id="dist-target-amount" step="0.01" placeholder="e.g. 300" />
+                <label>Target (₹ full figure)</label>
+                <input type="number" id="dist-target-amount" step="1" placeholder="e.g. 30000000 (= 3 Crore)" />
+                <p class="ta-entry-hint" style="margin-top:6px;">Narration uses Crore / Lakh. FY total = sum of all distributors + Others.</p>
             </div>
             <button onclick="submitDistributorTarget()" class="btn btn-primary">Save target</button>
             <button onclick="closeModal('distributorTargetModal')" class="btn btn-secondary">Cancel</button>

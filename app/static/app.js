@@ -2634,6 +2634,23 @@ function formatLakhs(value) {
   return `${num.toLocaleString(undefined, { maximumFractionDigits: 2 })} L`;
 }
 
+/** Full INR → "3 Crore" / "15 Lakh" / "3 Crore 50 Lakh" */
+function formatInrCrLakh(rupees) {
+  const n = Math.round(Number(rupees || 0));
+  if (n <= 0) return '0';
+  const crore = Math.floor(n / 10000000);
+  const rem = n % 10000000;
+  const lakh = Math.floor(rem / 100000);
+  const parts = [];
+  if (crore) parts.push(`${crore} Crore`);
+  if (lakh) parts.push(`${lakh} Lakh`);
+  return parts.length ? parts.join(' ') : `₹${n.toLocaleString('en-IN')}`;
+}
+
+function lakhsToRupees(lakhs) {
+  return Number(lakhs || 0) * 100000;
+}
+
 function normalizeFiscalYearLabel(raw) {
   const text = String(raw || '').trim();
   if (!text) return '';
@@ -2969,7 +2986,12 @@ async function loadTaTargetWorkspace() {
     const label = year ? getFiscalYearDisplayLabel(year) : 'Fiscal year';
     const fyTarget = year ? (year.target ?? year.target_amount ?? 0) : 0;
 
-    if (fyTargetEl) fyTargetEl.textContent = formatLakhs(fyTarget);
+    if (fyTargetEl) {
+      const fyRs = targetsData.data?.target_rupees ?? lakhsToRupees(fyTarget);
+      const fyNarr = targetsData.data?.target_narration || formatInrCrLakh(fyRs);
+      fyTargetEl.textContent = fyNarr;
+      fyTargetEl.title = `₹${Number(fyRs || 0).toLocaleString('en-IN')}`;
+    }
     if (fyLabelEl) fyLabelEl.textContent = label;
 
     if (!targetsRes.ok || !targetsData.success) {
@@ -2982,14 +3004,16 @@ async function loadTaTargetWorkspace() {
         '<tr><td colspan="2">No distributor targets yet — use Distributor target to add them.</td></tr>';
     } else {
       tbody.innerHTML = rows
-        .map(
-          (r) => `
+        .map((r) => {
+          const rs = r.target_rupees ?? lakhsToRupees(r.target_lakhs);
+          const narr = r.target_narration || formatInrCrLakh(rs);
+          return `
           <tr>
             <td>${r.display_label || r.distributor_name || '—'}</td>
-            <td>${formatLakhs(r.target_lakhs)}</td>
+            <td title="₹${Number(rs || 0).toLocaleString('en-IN')}">${narr}</td>
           </tr>
-        `,
-        )
+        `;
+        })
         .join('');
     }
 
@@ -3150,9 +3174,14 @@ async function submitDistributorTarget() {
   const yearId = document.getElementById('dist-target-year-select')?.value;
   const distributorName = document.getElementById('dist-target-name')?.value.trim();
   const nick = document.getElementById('dist-target-nick')?.value.trim();
-  const target = parseFloat(document.getElementById('dist-target-amount')?.value || '0');
-  if (!yearId || !distributorName || Number.isNaN(target) || target <= 0) {
-    setFormInlineStatus('dist-target-status', 'Fiscal year, distributor name, and target (lakhs) are required.', 'error');
+  const raw = document.getElementById('dist-target-amount')?.value || '0';
+  const targetRupees = parseFloat(String(raw).replace(/,/g, ''));
+  if (!yearId || !distributorName || Number.isNaN(targetRupees) || targetRupees <= 0) {
+    setFormInlineStatus(
+      'dist-target-status',
+      'Fiscal year, distributor name, and target in ₹ (e.g. 30000000 = 3 Crore) are required.',
+      'error',
+    );
     return;
   }
   try {
@@ -3161,7 +3190,7 @@ async function submitDistributorTarget() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         distributor_name: distributorName,
-        target_lakhs: target,
+        target_rupees: targetRupees,
         nick: nick || undefined,
       }),
     });
@@ -3169,10 +3198,15 @@ async function submitDistributorTarget() {
     if (!response.ok || !data.success) {
       throw new Error(data.error?.message || data.error || 'Unable to save distributor target');
     }
+    const narr = data.data?.target_narration || formatInrCrLakh(targetRupees);
+    const fyNarr = data.data?.fy_target_narration || '';
     closeModal('distributorTargetModal');
     setFormInlineStatus('dist-target-status', '');
     refreshActiveTargetUi();
     if (currentModuleKey === 'myday') loadExecutiveHome();
+    if (fyNarr) {
+      console.info(`Saved ${distributorName}: ${narr} · FY total ${fyNarr}`);
+    }
   } catch (error) {
     setFormInlineStatus('dist-target-status', error.message || 'Failed to save distributor target.', 'error');
   }

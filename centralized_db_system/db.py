@@ -11525,6 +11525,7 @@ class CentralizedDB:
             sum(float(row.get("target_lakhs") or row.get("achievement_lakhs") or 0) for row in distributors),
             4,
         )
+        self.sync_financial_year_target_from_breakup(workspace_id, financial_year_id)
         return {
             "distributor_count": len(distributors),
             "total_target_lakhs": total_target,
@@ -11713,6 +11714,42 @@ class CentralizedDB:
             nick=nick,
             source="manual",
         )
+        # Company / FY target = sum of all distributor (+ Others) targets.
+        self.sync_financial_year_target_from_breakup(workspace_id, financial_year_id)
+
+    def sync_financial_year_target_from_breakup(
+        self, workspace_id: str, financial_year_id: int
+    ) -> float:
+        """Roll up distributor (+ Others) targets into FY year target (lakhs)."""
+        self.ensure_target_achievement_tables()
+        breakup = self.list_target_distributor_breakup(workspace_id, financial_year_id)
+        total = round(sum(float(r.get("target_lakhs") or 0) for r in breakup), 6)
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            year_cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(target_achievement_years)").fetchall()
+            }
+            sets: list[str] = []
+            params: list[Any] = []
+            if "target_amount" in year_cols:
+                sets.append("target_amount = ?")
+                params.append(total)
+            if "target" in year_cols:
+                sets.append("target = ?")
+                params.append(total)
+            if "updated_at" in year_cols:
+                sets.append("updated_at = ?")
+                params.append(now)
+            if sets:
+                params.extend([financial_year_id, workspace_id])
+                conn.execute(
+                    f"UPDATE target_achievement_years SET {', '.join(sets)} "
+                    "WHERE id = ? AND workspace_id = ?",
+                    tuple(params),
+                )
+                conn.commit()
+        return total
 
     def sync_financial_year_achievement_from_breakup(
         self, workspace_id: str, financial_year_id: int
