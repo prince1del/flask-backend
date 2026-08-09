@@ -73,7 +73,7 @@ def bulk_upload_retailers():
 def list_distributors():
     workspace_id = get_workspace_id()
     # Page-sized responses — clients should walk offset to load full Party Master.
-    limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 500)
+    limit = min(max(request.args.get("limit", 500, type=int) or 500, 1), 5000)
     offset = max(request.args.get("offset", 0, type=int) or 0, 0)
     include_inactive = str(request.args.get("include_inactive", "1")).lower() not in (
         "0",
@@ -113,6 +113,7 @@ def create_distributor():
         gst_no=payload.get("gst_no"),
         buyer_code=payload.get("buyer_code"),
         zone=payload.get("zone"),
+        territory=payload.get("territory"),
         region=payload.get("region"),
         location=payload.get("location"),
         address=payload.get("address"),

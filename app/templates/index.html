@@ -85,12 +85,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/personal-todos.css') }}?v=20260809-ptodo1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pjp.css') }}?v=20260809-pjp2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260807-om-cols">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260809-kyc-edit">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260807-ymd-manual">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260809-kyc-edit">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-mobile.css') }}?v=20260806-fold-tap">
     <style>
         /* Excel-like bordered grid for all data tables (search results,
@@ -2712,8 +2712,7 @@
                         <div class="form-group"><label>Firm Name</label><input id="master-distributor-firm-name" type="text" /></div>
                         <div class="form-group"><label>Firm Nickname</label><input id="master-distributor-firm-nick-name" type="text" /></div>
                         <div class="form-group"><label>Contact Person</label><input id="master-distributor-name" type="text" /></div>
-                        <div class="form-group"><label>Distributor Code</label><input id="master-distributor-code" type="text" /></div>
-                        <div class="form-group"><label>Buyer Code</label><input id="master-distributor-buyer-code" type="text" /></div>
+                        <div class="form-group"><label>Distributor Code</label><input id="master-distributor-code" type="text" placeholder="Your distributor / firm code" /></div>
                         <div class="form-group"><label>GST Number</label><input id="master-distributor-gst" type="text" /></div>
                     </div>
                 </section>
@@ -2732,7 +2731,8 @@
                         <div class="form-group"><label>City</label><input id="master-distributor-location" type="text" /></div>
                         <div class="form-group"><label>State/Region</label><input id="master-distributor-region" type="text" /></div>
                         <div class="form-group"><label>Pincode</label><input id="master-distributor-pincode" type="text" /></div>
-                        <div class="form-group"><label>Zone</label><input id="master-distributor-zone" type="text" /></div>
+                        <div class="form-group"><label>Territory</label><input id="master-distributor-territory" type="text" placeholder="Sales territory" /></div>
+                        <div class="form-group"><label>Zone</label><input id="master-distributor-zone" type="text" placeholder="Zone (separate from territory)" /></div>
                     </div>
                 </section>
                 <section class="bd-master-form-section">
@@ -3602,7 +3602,7 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260807-om-cols"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260809-kyc-edit"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
     <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp3"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260806-fold-tap"></script>

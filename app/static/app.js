@@ -2618,15 +2618,21 @@ function openPartyMasterTab(tab) {
 let partyDetailRecordsCache = [];
 
 const PARTY_DETAIL_LABELS = {
-  name: 'Name', firm_name: 'Firm Name', contactPerson: 'Contact Person',
-  contact_person: 'Contact Person', distributor: 'Distributor',
-  distributor_name: 'Distributor', gst: 'GST Number', gst_no: 'GST Number',
-  gst_number: 'GST Number', territory: 'Territory', zone: 'Zone',
+  name: 'Name', firm_name: 'Firm Name', firmNickName: 'Firm Nickname',
+  contactPerson: 'Contact Person', contact_person: 'Contact Person',
+  distributor: 'Distributor', distributor_name: 'Distributor',
+  distributorCode: 'Distributor Code', distributor_code: 'Distributor Code',
+  gst: 'GST Number', gst_no: 'GST Number', gst_number: 'GST Number',
+  territory: 'Territory', zone: 'Zone',
   region: 'Region / State', state: 'State', city: 'City', location: 'City',
   pincode: 'Pincode', pin_code: 'Pincode', address: 'Address',
   storeType: 'Store Type', category: 'Category', phone: 'Phone',
-  phone_number: 'Phone', phone_number_2: 'Phone 2', email: 'Email',
+  phone_number: 'Phone', phone_number_2: 'Phone 2', phone2: 'Phone 2',
+  email: 'Email', paymentTerms: 'Payment Terms',
   creditLimit: 'Credit Limit', credit_limit: 'Credit Limit',
+  birthday: 'Birthday', anniversary: 'Anniversary',
+  secondaryName: 'Secondary Name', secondaryPhone: 'Secondary Phone',
+  salesName: 'Sales Executive', salesPhone: 'Sales Phone', salesEmail: 'Sales Email',
 };
 
 function formatLakhs(value) {
@@ -3279,12 +3285,16 @@ function showPartyDetail(record, editFn) {
 
   title.textContent = record.name || record.firm_name || 'Details';
   const preferredOrder = [
-    'name', 'firm_name', 'contactPerson', 'contact_person', 'distributor', 'distributor_name',
-    'gst', 'gst_no', 'phone', 'phone_number', 'email', 'city', 'state', 'pincode',
-    'territory', 'address', 'storeType', 'store_type', 'creditLimit', 'credit_limit',
+    'name', 'firm_name', 'firmNickName', 'contactPerson', 'contact_person',
+    'distributorCode', 'distributor_code', 'distributor', 'distributor_name',
+    'gst', 'gst_no', 'phone', 'phone_number', 'phone2', 'email',
+    'city', 'state', 'pincode', 'territory', 'zone', 'address',
+    'paymentTerms', 'storeType', 'store_type', 'creditLimit', 'credit_limit',
+    'birthday', 'anniversary', 'secondaryName', 'secondaryPhone',
+    'salesName', 'salesPhone', 'salesEmail',
   ];
   const entries = Object.entries(record).filter(([key, value]) => {
-    if (['actions', 'distributorKey', 'partyId', 'partyType'].includes(key)) return false;
+    if (['actions', 'distributorKey', 'partyId', 'partyType', 'source', 'buyerCode'].includes(key)) return false;
     return value !== null && value !== undefined && value !== '' && value !== '-';
   });
   entries.sort((a, b) => {
@@ -3324,9 +3334,25 @@ function showPartyDetail(record, editFn) {
 
   if (editFn) {
     editBtn.style.display = 'inline-block';
+    editBtn.textContent = 'Edit';
     editBtn.onclick = () => {
       closeModal('party-detail-modal');
       editFn();
+    };
+  } else if (record && record.partyId && record.partyType === 'distributor') {
+    editBtn.style.display = 'inline-block';
+    editBtn.textContent = 'Edit';
+    editBtn.onclick = () => {
+      closeModal('party-detail-modal');
+      openDistributorEditFromRecord(record);
+    };
+  } else if (record && record.partyId && record.partyType === 'retailer') {
+    editBtn.style.display = 'inline-block';
+    editBtn.textContent = 'Edit';
+    editBtn.onclick = () => {
+      closeModal('party-detail-modal');
+      if (record.source === 'master') editMasterRetailer(record.partyId);
+      else editRetailer(record.partyId);
     };
   } else {
     editBtn.style.display = 'none';
@@ -3513,7 +3539,7 @@ const ARTICLE_MASTER_ICON_HISTORY = '<svg viewBox="0 0 24 24" aria-hidden="true"
 function partyMasterActionButtons(editHandler, deleteHandler) {
   return `
     <div class="pm-action-btns">
-      <button type="button" class="pm-icon-btn pm-icon-edit" title="Edit" aria-label="Edit" onclick="event.stopPropagation();${editHandler}">${PARTY_MASTER_ICON_EDIT}</button>
+      <button type="button" class="pm-text-btn pm-text-edit" title="Edit" aria-label="Edit" onclick="event.stopPropagation();${editHandler}">Edit</button>
       <button type="button" class="pm-icon-btn pm-icon-delete" title="Delete forever" aria-label="Delete" onclick="event.stopPropagation();${deleteHandler}">${PARTY_MASTER_ICON_DELETE}</button>
     </div>
   `;
@@ -3574,10 +3600,11 @@ function articleMasterActionButtons(articleId, hasHistory) {
 
 const DISTRIBUTOR_TABLE_COLUMNS = [
   { key: 'name', label: 'Firm / Name', alwaysShow: true },
-  { key: 'buyerCode', label: 'Distributor Code', alwaysShow: true },
+  { key: 'distributorCode', label: 'Distributor Code', alwaysShow: true },
   { key: 'contactPerson', label: 'Contact Person' },
   { key: 'gst', label: 'GST Number' },
-  { key: 'territory', label: 'Territory / Zone' },
+  { key: 'territory', label: 'Territory' },
+  { key: 'zone', label: 'Zone' },
   { key: 'city', label: 'City' },
   { key: 'state', label: 'State / Region' },
   { key: 'pincode', label: 'Pincode' },
@@ -3886,32 +3913,46 @@ async function loadDistributors() {
         source: 'party',
         name: d.name,
         contactPerson: d.contact_person,
+        distributorCode: '',
         gst: d.gst_number,
-        territory: d.territory,
+        territory: d.territory || '',
+        zone: '',
         city: resolvePartyCity(d.city, d.address, d.name),
         state: d.state,
         pincode: formatPartyFieldValue('pincode', d.pin_code),
         address: d.address,
         phone: d.phone,
         creditLimit: d.credit_limit,
-        actions: partyMasterActionButtons(`editDistributor(${d.id})`, `deleteDistributor(${d.id})`),
+        actions: partyMasterActionButtons(`openDistributorEditFromRecord({partyId:${d.id},source:'party',partyType:'distributor'})`, `deleteDistributor(${d.id})`),
       }));
       const masterRecords = masterDistributors.map((d) => ({
         partyId: d.id,
         partyType: 'distributor',
         source: 'master',
         name: d.firm_name || d.name,
-        buyerCode: formatPartyFieldValue('buyerCode', d.distributor_code || d.distributor_id || d.buyer_code || ''),
+        firmNickName: d.firm_nick_name || '',
+        distributorCode: formatPartyFieldValue('distributorCode', d.distributor_code || d.distributor_id || ''),
         contactPerson: d.name,
         gst: d.gst_no,
-        territory: d.zone,
+        territory: d.territory || '',
+        zone: d.zone || '',
         city: resolvePartyCity(d.location, d.address, d.firm_name || d.name),
         state: d.region,
         pincode: formatPartyFieldValue('pincode', d.pincode),
         address: d.address,
         phone: d.phone_number,
+        phone2: d.phone_number_2 || '',
+        email: d.email || '',
+        paymentTerms: d.payment_terms || '',
+        birthday: d.birthday || '',
+        anniversary: d.anniversary || '',
+        secondaryName: d.secondary_distributor_name || '',
+        secondaryPhone: d.secondary_distributor_phone_number || '',
+        salesName: d.sales_executive_name || '',
+        salesPhone: d.sales_executive_phone_number || '',
+        salesEmail: d.sales_executive_email || '',
         creditLimit: d.credit_limit,
-        actions: partyMasterActionButtons(`editMasterDistributor(${d.id})`, `deleteMasterDistributor(${d.id})`),
+        actions: partyMasterActionButtons(`openDistributorEditFromRecord({partyId:${d.id},source:'master',partyType:'distributor'})`, `deleteMasterDistributor(${d.id})`),
       }));
       partyMasterState.rawDistributorRecords = [...partyRecords, ...masterRecords];
       const records = dedupePartyMasterPreferringMasters(partyMasterState.rawDistributorRecords);
@@ -4283,7 +4324,7 @@ function filterDistributorRecords(records) {
       if (recordCity !== cityKey) return false;
     }
     if (search) {
-      const haystack = [r.name, r.contactPerson, r.phone, r.gst, r.buyerCode, r.city, r.address]
+      const haystack = [r.name, r.contactPerson, r.phone, r.gst, r.distributorCode, r.territory, r.zone, r.city, r.address]
         .map((v) => String(v || '').toLowerCase())
         .join(' ');
       if (!haystack.includes(search)) return false;
@@ -7359,10 +7400,21 @@ function populateMasterRetailerDistributorOptions(records) {
 function resetMasterDistributorForm() {
   document.getElementById('master-distributor-id').value = '';
   document.getElementById('master-distributor-form-title').textContent = 'Add Distributor';
-  ['master-distributor-firm-name','master-distributor-firm-nick-name','master-distributor-name','master-distributor-code','master-distributor-buyer-code','master-distributor-phone','master-distributor-phone-2','master-distributor-email','master-distributor-address','master-distributor-location','master-distributor-region','master-distributor-pincode','master-distributor-gst','master-distributor-zone','master-distributor-payment-terms','master-distributor-credit-limit','master-distributor-birthday','master-distributor-anniversary','master-distributor-secondary-name','master-distributor-secondary-phone','master-distributor-secondary-birthday','master-distributor-secondary-anniversary','master-distributor-sales-name','master-distributor-sales-phone','master-distributor-sales-email','master-distributor-sales-birthday','master-distributor-sales-anniversary'].forEach((id) => {
+  ['master-distributor-firm-name','master-distributor-firm-nick-name','master-distributor-name','master-distributor-code','master-distributor-phone','master-distributor-phone-2','master-distributor-email','master-distributor-address','master-distributor-location','master-distributor-region','master-distributor-pincode','master-distributor-gst','master-distributor-territory','master-distributor-zone','master-distributor-payment-terms','master-distributor-credit-limit','master-distributor-birthday','master-distributor-anniversary','master-distributor-secondary-name','master-distributor-secondary-phone','master-distributor-secondary-birthday','master-distributor-secondary-anniversary','master-distributor-sales-name','master-distributor-sales-phone','master-distributor-sales-email','master-distributor-sales-birthday','master-distributor-sales-anniversary'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const body = document.querySelector('#master-distributor-form-modal .bd-master-form-body');
+  if (body) body.scrollTop = 0;
+}
+
+function openDistributorEditFromRecord(record) {
+  if (!record || !record.partyId) return;
+  if (record.source === 'master') {
+    editMasterDistributor(record.partyId);
+    return;
+  }
+  editDistributor(record.partyId);
 }
 
 function resetMasterRetailerForm() {
@@ -7400,7 +7452,6 @@ async function saveMasterDistributor(event) {
     firm_name: document.getElementById('master-distributor-firm-name').value.trim() || undefined,
     firm_nick_name: document.getElementById('master-distributor-firm-nick-name').value.trim() || undefined,
     distributor_code: document.getElementById('master-distributor-code').value.trim() || undefined,
-    buyer_code: document.getElementById('master-distributor-buyer-code').value.trim() || undefined,
     phone_number: document.getElementById('master-distributor-phone').value.trim() || undefined,
     phone_number_2: document.getElementById('master-distributor-phone-2').value.trim() || undefined,
     email: document.getElementById('master-distributor-email').value.trim() || undefined,
@@ -7409,6 +7460,7 @@ async function saveMasterDistributor(event) {
     region: document.getElementById('master-distributor-region').value.trim() || undefined,
     pincode: document.getElementById('master-distributor-pincode').value.trim() || undefined,
     gst_no: document.getElementById('master-distributor-gst').value.trim() || undefined,
+    territory: document.getElementById('master-distributor-territory')?.value.trim() || undefined,
     zone: document.getElementById('master-distributor-zone').value.trim() || undefined,
     payment_terms: document.getElementById('master-distributor-payment-terms').value.trim() || undefined,
     credit_limit: document.getElementById('master-distributor-credit-limit').value.trim() ? parseFloat(document.getElementById('master-distributor-credit-limit').value) : undefined,
@@ -7448,13 +7500,13 @@ async function editMasterDistributor(id) {
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.error?.message || 'Unable to load distributor');
     const record = data.data;
+    resetMasterDistributorForm();
     document.getElementById('master-distributor-id').value = record.id;
     document.getElementById('master-distributor-form-title').textContent = 'Edit Distributor';
     document.getElementById('master-distributor-firm-name').value = record.firm_name || '';
     document.getElementById('master-distributor-firm-nick-name').value = record.firm_nick_name || '';
     document.getElementById('master-distributor-name').value = record.name || '';
-    document.getElementById('master-distributor-code').value = record.distributor_code || '';
-    document.getElementById('master-distributor-buyer-code').value = record.buyer_code || '';
+    document.getElementById('master-distributor-code').value = record.distributor_code || record.distributor_id || '';
     document.getElementById('master-distributor-phone').value = record.phone_number || '';
     document.getElementById('master-distributor-phone-2').value = record.phone_number_2 || '';
     document.getElementById('master-distributor-email').value = record.email || '';
@@ -7463,9 +7515,11 @@ async function editMasterDistributor(id) {
     document.getElementById('master-distributor-region').value = record.region || '';
     document.getElementById('master-distributor-pincode').value = record.pincode || '';
     document.getElementById('master-distributor-gst').value = record.gst_no || '';
+    const territoryEl = document.getElementById('master-distributor-territory');
+    if (territoryEl) territoryEl.value = record.territory || '';
     document.getElementById('master-distributor-zone').value = record.zone || '';
     document.getElementById('master-distributor-payment-terms').value = record.payment_terms || '';
-    document.getElementById('master-distributor-credit-limit').value = record.credit_limit || '';
+    document.getElementById('master-distributor-credit-limit').value = record.credit_limit ?? '';
     document.getElementById('master-distributor-birthday').value = record.birthday || '';
     document.getElementById('master-distributor-anniversary').value = record.anniversary || '';
     document.getElementById('master-distributor-secondary-name').value = record.secondary_distributor_name || '';
@@ -7478,6 +7532,8 @@ async function editMasterDistributor(id) {
     document.getElementById('master-distributor-sales-birthday').value = record.sales_executive_birthday || '';
     document.getElementById('master-distributor-sales-anniversary').value = record.sales_executive_anniversary || '';
     toggleModal('master-distributor-form-modal', true);
+    const body = document.querySelector('#master-distributor-form-modal .bd-master-form-body');
+    if (body) body.scrollTop = 0;
   } catch (error) {
     alert(error.message || 'Error loading distributor.');
   }

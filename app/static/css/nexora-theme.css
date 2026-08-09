@@ -620,6 +620,46 @@
   font-size:11px;
 }
 
+.pm-action-btns{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:nowrap;
+}
+.pm-text-btn{
+  border:1px solid #D6CBB4;
+  background:#FFFDF8;
+  color:#1F1F1F;
+  border-radius:8px;
+  padding:5px 10px;
+  font-size:0.72rem;
+  font-weight:650;
+  cursor:pointer;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.pm-text-btn.pm-text-edit:hover{
+  border-color:#C9A227;
+  background:#FFF8E8;
+  color:#7A5A00;
+}
+.pm-icon-btn{
+  width:30px;
+  height:30px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:8px;
+  border:1px solid #E2D8C4;
+  background:#fff;
+  color:#5C5346;
+  cursor:pointer;
+  padding:0;
+}
+.pm-icon-btn svg{width:14px;height:14px;display:block;}
+.pm-icon-btn.pm-icon-delete{color:#B42318;border-color:#F0C7C2;background:#FFF5F4;}
+.pm-icon-btn.pm-icon-delete:hover{background:#FEE4E2;}
+
 #of-rail-saved-nav .of-rail-item,
 #of-rail-saved-nav .of-saved-distributor-btn{
   font-family:var(--nxt-font-body), 'Segoe UI', system-ui, sans-serif;
