@@ -2394,6 +2394,35 @@ def _so_pack_upload_kind(filename: str) -> str | None:
     return None
 
 
+def _so_pack_safe_filename(filename: str | None, kind: str | None = None) -> str:
+    """Basename only — strip path-like Content-Disposition names from mobile clients."""
+    raw = Path(filename or "so_pack").name
+    raw = raw.replace("\\", "/").split("/")[-1]
+    if ":" in raw:
+        raw = raw.split(":")[-1]
+    cleaned = "".join(ch if ch.isalnum() or ch in "._- " else "_" for ch in raw).strip()
+    if not cleaned or cleaned in {".", ".."}:
+        cleaned = "so_pack"
+    if kind and not _so_pack_upload_kind(cleaned):
+        cleaned = f"{cleaned}.{kind}"
+    return cleaned
+
+
+def _so_pack_sniff_kind(raw: bytes, filename: str | None = None) -> str | None:
+    kind = _so_pack_upload_kind(filename or "")
+    if kind:
+        return kind
+    if not raw:
+        return None
+    if raw[:4] == b"%PDF":
+        return "pdf"
+    if raw[:2] == b"PK":
+        return "zip"
+    if raw[:4] == b"Rar!" or raw[:7] == b"Rar!\x1a\x07\x00":
+        return "rar"
+    return None
+
+
 def _so_pack_collect_uploads():
     """Return ('single', filename, bytes) | ('pdfs', label, list[(name,bytes)]) | raise ValueError."""
     uploads = [f for f in request.files.getlist("file") if f and f.filename]
@@ -2404,30 +2433,26 @@ def _so_pack_collect_uploads():
     if not uploads:
         raise ValueError("file is required")
 
-    kinds = []
-    for f in uploads:
-        kind = _so_pack_upload_kind(f.filename or "")
-        if not kind:
-            raise ValueError("Upload ZIP, RAR, or PDF files only")
-        kinds.append(kind)
-
-    if len(uploads) == 1:
-        f = uploads[0]
-        raw = f.read()
-        if not raw:
-            raise ValueError("Empty file")
-        return "single", f.filename, raw
-
-    if not all(k == "pdf" for k in kinds):
-        raise ValueError(
-            "Multiple files must all be PDFs (use one ZIP/RAR per distributor pack)"
-        )
-    pdfs: list[tuple[str, bytes]] = []
+    prepared: list[tuple[str, bytes, str]] = []
     for f in uploads:
         raw = f.read()
         if not raw:
             raise ValueError(f"Empty file: {f.filename}")
-        pdfs.append((Path(f.filename or "SO.pdf").name, raw))
+        kind = _so_pack_sniff_kind(raw, f.filename)
+        if not kind:
+            raise ValueError("Upload ZIP, RAR, or PDF files only")
+        safe_name = _so_pack_safe_filename(f.filename, kind)
+        prepared.append((safe_name, raw, kind))
+
+    if len(prepared) == 1:
+        name, raw, _kind = prepared[0]
+        return "single", name, raw
+
+    if not all(k == "pdf" for _, _, k in prepared):
+        raise ValueError(
+            "Multiple files must all be PDFs (use one ZIP/RAR per distributor pack)"
+        )
+    pdfs: list[tuple[str, bytes]] = [(name, raw) for name, raw, _ in prepared]
     label = pdfs[0][0] if len(pdfs) == 1 else f"{len(pdfs)}_PDFs"
     return "pdfs", label, pdfs
 
