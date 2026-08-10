@@ -10298,7 +10298,13 @@ async function loadOrderFulfillmentUploads() {
       throw new Error((data.error && data.error.message) || 'Failed to load uploads');
     }
 
-    const tracking = data.data.tracking_records || [];
+    const tracking = (data.data.tracking_records || []).slice().sort((a, b) =>
+      String(a.distributor_name || a.order_ref_no || '').localeCompare(
+        String(b.distributor_name || b.order_ref_no || ''),
+        undefined,
+        { sensitivity: 'base' }
+      )
+    );
     const rowsHtml = tracking.length
       ? tracking
           .map(
