@@ -226,24 +226,31 @@ def get_fy_overview():
                     "active_achievement": 0.0,
                     "percentage": 0.0,
                 }
+            meta = db.fy_target_meta(workspace_id, year_id)
+            target_lakhs = float(meta.get("target_lakhs") or summary.get("target_lakhs") or 0)
+            dist_target = float(meta.get("distributor_target_lakhs") or 0)
+            ach = float(summary.get("active_achievement") or 0)
+            pct = round((ach / target_lakhs) * 100, 2) if target_lakhs > 0 else float(summary.get("percentage") or 0)
             rows.append(
                 {
                     "id": year_id,
                     "fy": fy_label,
-                    "target": summary.get("target_lakhs") or 0,
-                    "achievement": summary.get("active_achievement") or 0,
-                    "percentage": summary.get("percentage") or 0,
+                    "target": target_lakhs,
+                    "achievement": ach,
+                    "percentage": pct,
                     "unit": "lakhs",
-                    "target_rupees": _lakhs_to_rupees(summary.get("target_lakhs") or 0),
-                    "achievement_rupees": _lakhs_to_rupees(summary.get("active_achievement") or 0),
-                    "target_narration": _narrate_inr_cr_lakh(
-                        _lakhs_to_rupees(summary.get("target_lakhs") or 0)
-                    ),
-                    "achievement_narration": _narrate_inr_cr_lakh(
-                        _lakhs_to_rupees(summary.get("active_achievement") or 0)
-                    ),
+                    "target_rupees": _lakhs_to_rupees(target_lakhs),
+                    "achievement_rupees": _lakhs_to_rupees(ach),
+                    "target_narration": _narrate_inr_cr_lakh(_lakhs_to_rupees(target_lakhs)),
+                    "achievement_narration": _narrate_inr_cr_lakh(_lakhs_to_rupees(ach)),
                     "input_unit": "rupees",
                     "summary_error": summary_error,
+                    "target_source": meta.get("target_source"),
+                    "distributor_target_lakhs": dist_target,
+                    "distributor_target_rupees": _lakhs_to_rupees(dist_target),
+                    "distributor_target_narration": _narrate_inr_cr_lakh(
+                        _lakhs_to_rupees(dist_target)
+                    ),
                 }
             )
 
@@ -369,45 +376,78 @@ def create_year():
 @target_achievement_bp.route('/years/<int:year_id>', methods=['PUT'])
 @require_jwt_auth
 def update_year(year_id):
-    """Update fiscal year target (workspace-scoped)"""
+    """Update fiscal year target (manual FY target). Prefer target_rupees (full INR)."""
     try:
-        data = request.get_json()
-        target = data.get('target')
-
-        if target is None:
+        data = request.get_json(silent=True) or {}
+        if data.get('target_rupees') is not None:
+            target = _rupees_to_lakhs(data.get('target_rupees'))
+        elif data.get('target_lakhs') is not None:
+            target = float(data.get('target_lakhs'))
+        elif data.get('target') is not None:
+            target = float(data.get('target'))
+        else:
             return jsonify({'success': False, 'error': 'Target required'}), 400
 
-        workspace_id = get_workspace_id()
-        conn = get_db()
-        cursor = conn.cursor()
-        cols = {r[1] for r in cursor.execute('PRAGMA table_info(target_achievement_years)').fetchall()}
-        now = datetime.now().isoformat()
-        sets = []
-        params: list = []
-        if 'target_amount' in cols:
-            sets.append('target_amount = ?')
-            params.append(target)
-        if 'target' in cols:
-            sets.append('target = ?')
-            params.append(target)
-        if 'updated_at' in cols:
-            sets.append('updated_at = ?')
-            params.append(now)
-        if not sets:
-            conn.close()
-            return jsonify({'success': False, 'error': 'No target column in database'}), 500
-        params.extend([year_id, workspace_id])
-        cursor.execute(
-            f"UPDATE target_achievement_years SET {', '.join(sets)} WHERE id = ? AND workspace_id = ?",
-            tuple(params),
+        confirm_both = bool(
+            data.get('confirm_both')
+            or data.get('allow_both')
+            or data.get('keep_both')
         )
-        if cursor.rowcount == 0:
-            conn.close()
+        workspace_id = get_workspace_id()
+        if not _get_year_or_404(year_id, workspace_id):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
-        conn.commit()
-        conn.close()
 
-        return jsonify({'success': True, 'data': {'year_id': year_id, 'target': target, 'unit': 'lakhs'}}), 200
+        result = _cdb().set_fy_manual_target(
+            workspace_id,
+            year_id,
+            float(target),
+            confirm_both=confirm_both,
+        )
+        if result.get('needs_confirmation'):
+            dist = _money_payload(result.get('distributor_target_lakhs') or 0)
+            manual = _money_payload(result.get('manual_target_lakhs') or 0)
+            return jsonify(
+                {
+                    'success': False,
+                    'error': {
+                        'code': 'both_requires_confirm',
+                        'message': (
+                            'Distributor-wise targets already exist. Confirm to keep both '
+                            '(FY card uses manual target; distributor lines stay).'
+                        ),
+                    },
+                    'data': {
+                        'distributor_target_lakhs': dist['target_lakhs'],
+                        'distributor_target_rupees': dist['target_rupees'],
+                        'distributor_target_narration': dist['target_narration'],
+                        'manual_target_lakhs': manual['target_lakhs'],
+                        'manual_target_rupees': manual['target_rupees'],
+                        'manual_target_narration': manual['target_narration'],
+                    },
+                }
+            ), 409
+
+        money = _money_payload(result.get('target_lakhs') or 0)
+        dist = _money_payload(result.get('distributor_target_lakhs') or 0)
+        return jsonify(
+            {
+                'success': True,
+                'data': {
+                    'year_id': year_id,
+                    'target_lakhs': money['target_lakhs'],
+                    'target_rupees': money['target_rupees'],
+                    'target_narration': money['target_narration'],
+                    'distributor_target_lakhs': dist['target_lakhs'],
+                    'distributor_target_rupees': dist['target_rupees'],
+                    'distributor_target_narration': dist['target_narration'],
+                    'target_source': result.get('target_source'),
+                    'unit': 'lakhs',
+                    'input_unit': 'rupees',
+                },
+            }
+        ), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -458,8 +498,10 @@ def get_distributor_targets(year_id):
         year = _get_year_or_404(year_id, workspace_id)
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
-        # Keep FY target in sync with distributor sum (includes Others).
+        # Keep FY target in sync with distributor sum (includes Others),
+        # unless a manual / both FY target is locked on the year row.
         rolled = _cdb().sync_financial_year_target_from_breakup(workspace_id, year_id)
+        meta = _cdb().fy_target_meta(workspace_id, year_id)
         breakup = _cdb().list_target_distributor_breakup(workspace_id, year_id)
         rows = []
         has_others = False
@@ -510,7 +552,9 @@ def get_distributor_targets(year_id):
         # Named distributors first, Others last.
         rows.sort(key=lambda x: (1 if x.get("is_others") else 0, (x.get("display_label") or "").lower()))
         fy_label = year.get("display_year") or year.get("financial_year") or year.get("year") or ""
-        fy_money = _money_payload(rolled)
+        fy_target = float(meta.get("target_lakhs") or 0)
+        fy_money = _money_payload(fy_target)
+        dist_money = _money_payload(meta.get("distributor_target_lakhs") or rolled or 0)
         return jsonify(
             {
                 'success': True,
@@ -520,6 +564,10 @@ def get_distributor_targets(year_id):
                     'target_lakhs': fy_money["target_lakhs"],
                     'target_rupees': fy_money["target_rupees"],
                     'target_narration': fy_money["target_narration"],
+                    'distributor_target_lakhs': dist_money["target_lakhs"],
+                    'distributor_target_rupees': dist_money["target_rupees"],
+                    'distributor_target_narration': dist_money["target_narration"],
+                    'target_source': meta.get("target_source"),
                     'rows': rows,
                     'unit': 'lakhs',
                     'input_unit': 'rupees',
@@ -728,6 +776,7 @@ def set_distributor_target(year_id):
         if not _get_year_or_404(year_id, workspace_id):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
 
+        meta_before = _cdb().fy_target_meta(workspace_id, year_id)
         _cdb().set_target_distributor_target_lakhs(
             workspace_id=workspace_id,
             financial_year_id=year_id,
@@ -735,9 +784,20 @@ def set_distributor_target(year_id):
             target_lakhs=float(target_lakhs),
             nick=nick,
         )
-        fy_total = _cdb().sync_financial_year_target_from_breakup(workspace_id, year_id)
+        # If FY card already has a manual target, keep both (client should have confirmed).
+        if (meta_before.get("target_source") or "").lower() == "manual" and float(target_lakhs) > 0.5:
+            _cdb().set_fy_manual_target(
+                workspace_id,
+                year_id,
+                float(meta_before.get("target_lakhs") or 0),
+                confirm_both=True,
+            )
+        else:
+            _cdb().sync_financial_year_target_from_breakup(workspace_id, year_id)
+        meta = _cdb().fy_target_meta(workspace_id, year_id)
         money = _money_payload(target_lakhs)
-        fy_money = _money_payload(fy_total)
+        fy_money = _money_payload(meta.get("target_lakhs") or 0)
+        dist_money = _money_payload(meta.get("distributor_target_lakhs") or 0)
         return jsonify({
             'success': True,
             'data': {
@@ -748,6 +808,10 @@ def set_distributor_target(year_id):
                 'fy_target_lakhs': fy_money['target_lakhs'],
                 'fy_target_rupees': fy_money['target_rupees'],
                 'fy_target_narration': fy_money['target_narration'],
+                'distributor_target_lakhs': dist_money['target_lakhs'],
+                'distributor_target_rupees': dist_money['target_rupees'],
+                'distributor_target_narration': dist_money['target_narration'],
+                'target_source': meta.get('target_source'),
                 'input_unit': 'rupees',
             },
         }), 200

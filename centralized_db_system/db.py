@@ -12157,16 +12157,33 @@ class CentralizedDB:
     def sync_financial_year_target_from_breakup(
         self, workspace_id: str, financial_year_id: int
     ) -> float:
-        """Roll up distributor (+ Others) targets into FY year target (lakhs)."""
+        """
+        Roll up distributor (+ Others) targets into FY year target (lakhs).
+
+        If target_source is 'manual' or 'both', the year-level target is left alone
+        (user set it explicitly on the FY card). Still returns the distributor sum
+        so callers can show both numbers.
+        """
         self.ensure_target_achievement_tables()
         breakup = self.list_target_distributor_breakup(workspace_id, financial_year_id)
         total = round(sum(float(r.get("target_lakhs") or 0) for r in breakup), 6)
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
             year_cols = {
                 row[1]
                 for row in conn.execute("PRAGMA table_info(target_achievement_years)").fetchall()
             }
+            row = conn.execute(
+                "SELECT * FROM target_achievement_years WHERE id = ? AND workspace_id = ?",
+                (financial_year_id, workspace_id),
+            ).fetchone()
+            source = ""
+            if row and "target_source" in year_cols:
+                source = (dict(row).get("target_source") or "").strip().lower()
+            # Manual / both: keep FY card target; only distributor mode (or blank) rolls up.
+            if source in ("manual", "both"):
+                return total
             sets: list[str] = []
             params: list[Any] = []
             if "target_amount" in year_cols:
@@ -12175,6 +12192,9 @@ class CentralizedDB:
             if "target" in year_cols:
                 sets.append("target = ?")
                 params.append(total)
+            if "target_source" in year_cols and total > 0:
+                sets.append("target_source = ?")
+                params.append("distributors")
             if "updated_at" in year_cols:
                 sets.append("updated_at = ?")
                 params.append(now)
@@ -12187,6 +12207,110 @@ class CentralizedDB:
                 )
                 conn.commit()
         return total
+
+    def set_fy_manual_target(
+        self,
+        workspace_id: str,
+        financial_year_id: int,
+        target_lakhs: float,
+        *,
+        confirm_both: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Set FY-level manual target (lakhs).
+
+        - No distributor targets → target_source = manual
+        - Distributor targets exist + confirm_both → target_source = both (keeps both)
+        - Distributor targets exist without confirm → needs_confirmation (no write)
+        """
+        self.ensure_target_achievement_tables()
+        amount = float(target_lakhs or 0)
+        if amount < 0:
+            raise ValueError("target must be >= 0")
+        breakup = self.list_target_distributor_breakup(workspace_id, financial_year_id)
+        dist_sum = round(sum(float(r.get("target_lakhs") or 0) for r in breakup), 6)
+        if dist_sum > 0.5 and amount > 0.5 and not confirm_both:
+            return {
+                "needs_confirmation": True,
+                "distributor_target_lakhs": dist_sum,
+                "manual_target_lakhs": amount,
+            }
+        if amount <= 0.5 and dist_sum > 0.5:
+            source = "distributors"
+            # Clearing manual → fall back to distributor rollup as FY target.
+            write_amount = dist_sum
+        elif amount > 0.5 and dist_sum > 0.5:
+            source = "both"
+            write_amount = amount
+        elif amount > 0.5:
+            source = "manual"
+            write_amount = amount
+        else:
+            source = ""
+            write_amount = 0.0
+
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            year_cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(target_achievement_years)").fetchall()
+            }
+            sets: list[str] = []
+            params: list[Any] = []
+            if "target_amount" in year_cols:
+                sets.append("target_amount = ?")
+                params.append(write_amount)
+            if "target" in year_cols:
+                sets.append("target = ?")
+                params.append(write_amount)
+            if "target_source" in year_cols:
+                sets.append("target_source = ?")
+                params.append(source or None)
+            if "updated_at" in year_cols:
+                sets.append("updated_at = ?")
+                params.append(now)
+            if not sets:
+                raise RuntimeError("No target column on target_achievement_years")
+            params.extend([financial_year_id, workspace_id])
+            cur = conn.execute(
+                f"UPDATE target_achievement_years SET {', '.join(sets)} "
+                "WHERE id = ? AND workspace_id = ?",
+                tuple(params),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("Year not found")
+            conn.commit()
+        return {
+            "needs_confirmation": False,
+            "target_lakhs": write_amount,
+            "distributor_target_lakhs": dist_sum,
+            "target_source": source or None,
+        }
+
+    def fy_target_meta(
+        self, workspace_id: str, financial_year_id: int
+    ) -> dict[str, Any]:
+        """Year target + distributor sum + source for overview / UI."""
+        self.ensure_target_achievement_tables()
+        breakup = self.list_target_distributor_breakup(workspace_id, financial_year_id)
+        dist_sum = round(sum(float(r.get("target_lakhs") or 0) for r in breakup), 6)
+        target = 0.0
+        source = None
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM target_achievement_years WHERE id = ? AND workspace_id = ?",
+                (financial_year_id, workspace_id),
+            ).fetchone()
+            if row:
+                data = dict(row)
+                target = float(data.get("target_amount") or data.get("target") or 0)
+                source = (data.get("target_source") or "").strip() or None
+        return {
+            "target_lakhs": target,
+            "distributor_target_lakhs": dist_sum,
+            "target_source": source,
+        }
 
     def sync_financial_year_achievement_from_breakup(
         self, workspace_id: str, financial_year_id: int
