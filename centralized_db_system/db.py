@@ -11518,10 +11518,7 @@ class CentralizedDB:
                         ON CONFLICT(financial_year_id, attribute_type, attribute_name) DO UPDATE SET
                             achievement_amount = excluded.achievement_amount,
                             achievement_percent = excluded.achievement_percent,
-                            target_amount = CASE
-                                WHEN excluded.target_amount > 0 THEN excluded.target_amount
-                                ELSE target_achievement_breakup.target_amount
-                            END,
+                            target_amount = excluded.target_amount,
                             source = excluded.source
                         """,
                         (
@@ -11544,10 +11541,7 @@ class CentralizedDB:
                         ON CONFLICT(financial_year_id, attribute_type, attribute_name) DO UPDATE SET
                             achievement_amount = excluded.achievement_amount,
                             achievement_percent = excluded.achievement_percent,
-                            target_amount = CASE
-                                WHEN excluded.target_amount > 0 THEN excluded.target_amount
-                                ELSE target_achievement_breakup.target_amount
-                            END,
+                            target_amount = excluded.target_amount,
                             source = excluded.source
                         """,
                         (
@@ -12006,48 +12000,90 @@ class CentralizedDB:
         target_lakhs: float,
         nick: str | None = None,
     ) -> None:
-        """Set manual distributor target (lakhs); keeps existing achievement if any."""
-        display_name = distributor_name.strip()
-        if nick:
-            store_nick = nick.strip()
-        else:
-            store_nick = None
-        existing_achievement = 0.0
+        """Set manual distributor target (lakhs), including explicit 0 to clear; keeps achievement."""
         self.ensure_target_achievement_tables()
-        with sqlite3.connect(self.db_path) as conn:
-            if self._table_has_column("target_achievement_breakup", "attribute_type"):
-                row = conn.execute(
-                    """
-                    SELECT achievement_amount FROM target_achievement_breakup
-                    WHERE financial_year_id = ? AND attribute_type = 'distributor' AND attribute_name = ?
-                    """,
-                    (financial_year_id, display_name),
-                ).fetchone()
-                if row:
-                    existing_achievement = float(row[0] or 0)
-            elif self._table_has_column("target_achievement_breakup", "distributor_name"):
-                row = conn.execute(
-                    """
-                    SELECT achievement_excel, achievement_ci, achievement_manual, achievement
-                    FROM target_achievement_breakup
-                    WHERE financial_year_id = ? AND distributor_name = ?
-                    """,
-                    (financial_year_id, display_name),
-                ).fetchone()
-                if row:
-                    existing_achievement = float(
-                        row[0] or row[1] or row[2] or row[3] or 0
-                    )
-        self.upsert_target_distributor_breakup(
-            workspace_id=workspace_id,
-            financial_year_id=financial_year_id,
-            distributor_name=distributor_name,
-            achievement_lakhs=existing_achievement,
-            target_lakhs=target_lakhs,
-            nick=nick,
-            source="manual",
+        self._invalidate_table_columns_cache("target_achievement_breakup")
+        resolved = self.resolve_ta_distributor_reference(
+            distributor_name, workspace_id, nick
         )
-        # Company / FY target = sum of all distributor (+ Others) targets.
+        display_name = resolved["distributor_name"]
+        target_amount = float(target_lakhs or 0)
+        if target_amount < 0:
+            raise ValueError("target must be >= 0")
+
+        with sqlite3.connect(self.db_path) as conn:
+            self._migrate_legacy_breakup_schema(conn)
+            cols = self._breakup_table_columns(conn)
+            if "distributor_name" in cols:
+                self._consolidate_breakup_rows_for_resolved(
+                    conn, workspace_id, financial_year_id, resolved, cols
+                )
+
+            updated = 0
+            if "target_lakhs" in cols and "distributor_name" in cols:
+                params: list[Any] = [target_amount, financial_year_id, display_name]
+                sql = (
+                    "UPDATE target_achievement_breakup SET target_lakhs = ? "
+                    "WHERE financial_year_id = ? AND distributor_name = ?"
+                )
+                if "workspace_id" in cols:
+                    sql += " AND workspace_id = ?"
+                    params.append(workspace_id)
+                cur = conn.execute(sql, tuple(params))
+                updated = cur.rowcount
+                # Also match by distributor_id when name spelling differs.
+                if updated == 0 and resolved.get("distributor_id") and "distributor_id" in cols:
+                    params2: list[Any] = [
+                        target_amount,
+                        display_name,
+                        financial_year_id,
+                        resolved["distributor_id"],
+                    ]
+                    sql2 = (
+                        "UPDATE target_achievement_breakup "
+                        "SET target_lakhs = ?, distributor_name = ? "
+                        "WHERE financial_year_id = ? AND distributor_id = ?"
+                    )
+                    if "workspace_id" in cols:
+                        sql2 += " AND workspace_id = ?"
+                        params2.append(workspace_id)
+                    cur = conn.execute(sql2, tuple(params2))
+                    updated = cur.rowcount
+
+            if "target_amount" in cols and "attribute_type" in cols and "attribute_name" in cols:
+                params_a: list[Any] = [target_amount, financial_year_id, display_name]
+                sql_a = (
+                    "UPDATE target_achievement_breakup SET target_amount = ? "
+                    "WHERE financial_year_id = ? AND attribute_type = 'distributor' "
+                    "AND attribute_name = ?"
+                )
+                if "workspace_id" in cols:
+                    sql_a += " AND workspace_id = ?"
+                    params_a.append(workspace_id)
+                cur = conn.execute(sql_a, tuple(params_a))
+                updated = max(updated, cur.rowcount)
+
+            if updated == 0:
+                # No row yet — create Ach=0 shell so mid-year list can show Target-only / cleared.
+                conn.commit()
+            else:
+                # Keep identity fields in sync when we matched an existing row.
+                if "distributor_name" in cols:
+                    self._consolidate_breakup_rows_for_resolved(
+                        conn, workspace_id, financial_year_id, resolved, cols
+                    )
+                conn.commit()
+
+        if updated == 0:
+            self.upsert_target_distributor_breakup(
+                workspace_id=workspace_id,
+                financial_year_id=financial_year_id,
+                distributor_name=distributor_name,
+                achievement_lakhs=0.0,
+                target_lakhs=target_amount,
+                nick=nick,
+                source="manual",
+            )
         self.sync_financial_year_target_from_breakup(workspace_id, financial_year_id)
 
     def sync_financial_year_target_from_breakup(
