@@ -2201,6 +2201,43 @@ def _parse_filled_order_items(file_path: Path) -> list[dict[str, Any]]:
     return items
 
 
+def _order_fulfillment_files_root() -> Path:
+    root = (
+        Path("app/instance/order_fulfillment_files")
+        if Path("app/instance").exists()
+        else Path("instance/order_fulfillment_files")
+    )
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def _resolve_existing_order_fulfillment_source(path: Path | str) -> Path:
+    """
+    Allow shutil.move only for files that already live under the
+    order-fulfillment uploads root. Rejects absolute paths outside that
+    tree (config files, other tenants' uploads, etc.).
+    """
+    upload_root = _order_fulfillment_files_root()
+    raw = Path(path).expanduser()
+    candidates: list[Path] = []
+    if raw.is_absolute():
+        candidates.append(raw.resolve())
+    else:
+        candidates.append((Path.cwd() / raw).resolve())
+        candidates.append((upload_root / raw).resolve())
+
+    for candidate in candidates:
+        try:
+            candidate.relative_to(upload_root)
+        except ValueError:
+            continue
+        if candidate.is_file():
+            return candidate
+    raise ValueError(
+        f"Source file must be an existing upload under {upload_root}"
+    )
+
+
 def _cleanup_empty_parent_folders(path: Path, stop_at: Path) -> None:
     """
     After moving a file OUT of the old document-type tree
@@ -2244,11 +2281,9 @@ def _move_into_distributor_order_cycle_folder(
     safe_distributor_name = re.sub(r'[<>:"/\\|?*]', "_", distributor_name).strip() or "Unassigned"
     safe_order_sheet_name = re.sub(r'[<>:"/\\|?*]', "_", order_sheet_name or "Unassigned Order Sheet").strip()
 
-    upload_root = (
-        Path("app/instance/order_fulfillment_files")
-        if Path("app/instance").exists()
-        else Path("instance/order_fulfillment_files")
-    )
+    # Refuse to move arbitrary filesystem paths supplied by clients.
+    temp_path = _resolve_existing_order_fulfillment_source(temp_path)
+    upload_root = _order_fulfillment_files_root()
     order_sheet_dir = upload_root / "Order Cycle" / fy / safe_distributor_name / safe_order_sheet_name
 
     if doc_type in ("SO", "CI"):
@@ -3776,6 +3811,26 @@ def confirm_ci_so_link() -> Response:
     # Sheet the matched Sales Order was already filed under.
     matching_so_for_move = db.get_order_lifecycle_by_order_ref_no(order_ref_no, workspace_id=workspace_id)
     if matching_so_for_move and matching_so_for_move.get("distributor_id") and commercial_invoice_file_reference:
+        try:
+            commercial_invoice_file_reference = str(
+                _resolve_existing_order_fulfillment_source(commercial_invoice_file_reference)
+            )
+        except ValueError:
+            return Response(
+                json.dumps(
+                    {
+                        "success": False,
+                        "error": {
+                            "message": (
+                                "commercial_invoice_file_reference must point to a file "
+                                "previously uploaded under order fulfillment storage"
+                            )
+                        },
+                    }
+                ),
+                mimetype="application/json",
+                status=400,
+            )
         distributor_for_move = db.get_master_distributor(
             matching_so_for_move["distributor_id"], workspace_id=workspace_id
         )
@@ -3789,8 +3844,8 @@ def confirm_ci_so_link() -> Response:
                     order_sheet_name=matching_so_for_move.get("order_sheet_name"),
                 )
                 commercial_invoice_file_reference = str(moved_path)
-            except (FileNotFoundError, OSError):
-                pass  # File already moved or missing — proceed with the original reference
+            except (FileNotFoundError, OSError, ValueError):
+                pass  # File already moved or missing — proceed with the validated reference
 
     try:
         tracking_id = db.link_commercial_invoice_to_order_lifecycle(

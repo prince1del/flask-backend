@@ -494,10 +494,21 @@ def test_move_into_distributor_order_cycle_folder_with_order_sheet_level(tmp_pat
     Sheet Name folder.
     """
     monkeypatch.chdir(tmp_path)
-    from app.routes.data import _move_into_distributor_order_cycle_folder
+    from app.routes.data import (
+        _move_into_distributor_order_cycle_folder,
+        _order_fulfillment_files_root,
+    )
 
-    so_file = tmp_path / "102875606.pdf"
-    so_file.write_text("fake so content")
+    upload_root = _order_fulfillment_files_root()
+
+    def _stage(name: str) -> Path:
+        staging = upload_root / "CI" / "CI Received" / "FY2026-27"
+        staging.mkdir(parents=True, exist_ok=True)
+        path = staging / name
+        path.write_text(f"fake {name}")
+        return path
+
+    so_file = _stage("102875606.pdf")
     so_result = _move_into_distributor_order_cycle_folder(
         so_file, "Bernina International P Ltd", "SO",
         order_sheet_name="Order Sheets SS26", financial_year="FY2026-27",
@@ -507,8 +518,7 @@ def test_move_into_distributor_order_cycle_folder_with_order_sheet_level(tmp_pat
     assert so_result.parent.parent.name == "Order Sheets SS26"
     assert so_result.parent.parent.parent.name == "Bernina International P Ltd"
 
-    ci_file = tmp_path / "Commercial Invoice.pdf"
-    ci_file.write_text("fake ci content")
+    ci_file = _stage("Commercial Invoice.pdf")
     ci_result = _move_into_distributor_order_cycle_folder(
         ci_file, "Bernina International P Ltd", "CI",
         order_sheet_name="Order Sheets SS26", financial_year="FY2026-27",
@@ -518,14 +528,35 @@ def test_move_into_distributor_order_cycle_folder_with_order_sheet_level(tmp_pat
     # SO and CI sit in SEPARATE subfolders, both under the SAME order-sheet folder
     assert ci_result.parent.parent == so_result.parent.parent
 
-    filled_order_file = tmp_path / "placed_order.xlsx"
-    filled_order_file.write_text("fake filled order")
+    filled_order_file = _stage("placed_order.xlsx")
     filled_result = _move_into_distributor_order_cycle_folder(
         filled_order_file, "Bernina International P Ltd", "FilledOrder",
         order_sheet_name="Order Sheets SS26", financial_year="FY2026-27",
     )
     # Filled Order copy sits DIRECTLY in the order-sheet folder, no subfolder
     assert filled_result.parent == so_result.parent.parent
+
+
+def test_move_rejects_paths_outside_order_fulfillment_root(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.chdir(tmp_path)
+    from app.routes.data import (
+        _move_into_distributor_order_cycle_folder,
+        _resolve_existing_order_fulfillment_source,
+    )
+
+    outside = tmp_path / "secret-config.env"
+    outside.write_text("SECRET=1")
+
+    with pytest.raises(ValueError, match="under"):
+        _resolve_existing_order_fulfillment_source(outside)
+
+    with pytest.raises(ValueError, match="under"):
+        _move_into_distributor_order_cycle_folder(
+            outside, "Evil Dist", "CI", order_sheet_name="Sheet"
+        )
+    assert outside.exists(), "outside file must not be moved/deleted"
 
 
 def test_extract_order_sheet_item_key_from_real_material_description():
