@@ -209,9 +209,17 @@ def get_fy_overview():
         for year in years:
             year_id = int(year["id"])
             fy_label = year.get("display_year") or year.get("financial_year") or year.get("year") or ""
+            summary_error = False
             try:
                 summary = db.build_fy_achievement_summary(workspace_id, year_id, fy_label)
             except Exception:
+                summary_error = True
+                current_app.logger.exception(
+                    "FY achievement summary failed workspace=%s year_id=%s fy=%s",
+                    workspace_id,
+                    year_id,
+                    fy_label,
+                )
                 target = float(year.get("target") or year.get("target_amount") or 0)
                 summary = {
                     "target_lakhs": target,
@@ -235,6 +243,7 @@ def get_fy_overview():
                         _lakhs_to_rupees(summary.get("active_achievement") or 0)
                     ),
                     "input_unit": "rupees",
+                    "summary_error": summary_error,
                 }
             )
 

@@ -1390,16 +1390,23 @@ function renderTaFyOverviewRows(rows) {
     return '<tr><td colspan="4">No fiscal years yet — add targets under Target vs Achievement.</td></tr>';
   }
   return rows
-    .map(
-      (row) => `
+    .map((row) => {
+      if (row.summary_error) {
+        return `
+        <tr title="Achievement summary failed for this year — check server logs">
+          <td>${row.fy || '—'}</td>
+          <td>${formatTaTableAmount(row.target)}</td>
+          <td colspan="2" style="color:#b45309">Unavailable (calculation error)</td>
+        </tr>`;
+      }
+      return `
         <tr>
           <td>${row.fy || '—'}</td>
           <td>${formatTaTableAmount(row.target)}</td>
           <td>${formatTaTableAmount(row.achievement)}</td>
           <td class="${taPercentClass(row.percentage)}">${formatTaPercent(row.percentage)}</td>
-        </tr>
-      `,
-    )
+        </tr>`;
+    })
     .join('');
 }
 
