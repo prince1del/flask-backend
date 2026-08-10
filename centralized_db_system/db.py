@@ -6858,10 +6858,50 @@ class CentralizedDB:
         return False
 
     @staticmethod
+    def _parse_mrp_price_range(query: str) -> tuple[float, float] | None:
+        """Detect MRP band queries: '1000-2000', '0 - 3000', '₹1500 to 2500'."""
+        q = (query or "").strip()
+        if not q:
+            return None
+        cleaned = re.sub(r"(?i)\b(rs\.?|inr|mrp|price)\b", " ", q)
+        cleaned = cleaned.replace("₹", " ").replace("–", "-").replace("—", "-")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        m = re.match(
+            r"^([\d,.]+)\s*(?:-|to|/|~)\s*([\d,.]+)$",
+            cleaned,
+            re.IGNORECASE,
+        )
+        if not m:
+            return None
+
+        def _num(raw: str) -> float | None:
+            text = (raw or "").replace(",", "").strip()
+            try:
+                return float(text)
+            except ValueError:
+                return None
+
+        lo = _num(m.group(1))
+        hi = _num(m.group(2))
+        if lo is None or hi is None:
+            return None
+        if lo < 0 or hi < 0:
+            return None
+        if lo > hi:
+            lo, hi = hi, lo
+        # Guard: absurd ceilings are not MRP bands (avoid SO-like digit pairs).
+        if hi > 1_000_000:
+            return None
+        return lo, hi
+
+    @staticmethod
     def _query_looks_like_so_ci_number(query: str) -> bool:
         """SO/CI search only — party/brand names like 'aster' must not open orders."""
         q = (query or "").strip()
         if len(q) < 2:
+            return False
+        # "1000-2000" is an MRP band, not an SO/CI number.
+        if CentralizedDB._parse_mrp_price_range(q) is not None:
             return False
         if not any(ch.isdigit() for ch in q):
             return False
@@ -6876,6 +6916,37 @@ class CentralizedDB:
         if digits >= 3 and (digits / len(compact)) >= 0.5:
             return True
         return False
+
+    def _search_articles_by_mrp_range(
+        self,
+        lo: float,
+        hi: float,
+        user_id: int | None,
+    ) -> list[dict[str, Any]]:
+        """Return active Article Master SKUs whose MRP sits in [lo, hi]."""
+        if user_id is None:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key
+                    FROM article_master
+                    WHERE user_id = ?
+                      AND is_active = 1
+                      AND CAST(COALESCE(mrp, 0) AS REAL) >= ?
+                      AND CAST(COALESCE(mrp, 0) AS REAL) <= ?
+                    ORDER BY CAST(COALESCE(mrp, 0) AS REAL) ASC,
+                             LOWER(COALESCE(brand, '')),
+                             LOWER(COALESCE(size, ''))
+                    LIMIT 120
+                    """,
+                    (user_id, float(lo), float(hi)),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return []
+        return [dict(r) for r in rows]
 
     def _filter_global_search_results(
         self,
@@ -6911,18 +6982,33 @@ class CentralizedDB:
 
     def global_search(self, query: str, workspace_id: str | None = None, user_id: int | None = None) -> dict[str, Any]:
         normalized_query = (query or "").strip()
+        empty_results = {
+            "distributors": [],
+            "retailers": [],
+            "orders": [],
+            "stock": [],
+            "article_master": [],
+            "verifications": [],
+            "visit_logs": [],
+            "analytics": [],
+        }
         if not normalized_query:
             return {
                 "query": normalized_query,
+                "results": dict(empty_results),
+            }
+
+        # Home / global search: "1000 - 2000" → SKUs in that MRP band (Aster, Cardinal, …).
+        price_range = self._parse_mrp_price_range(normalized_query)
+        if price_range is not None:
+            lo, hi = price_range
+            articles = self._search_articles_by_mrp_range(lo, hi, user_id)
+            return {
+                "query": normalized_query,
+                "price_range": {"min": lo, "max": hi, "field": "mrp"},
                 "results": {
-                    "distributors": [],
-                    "retailers": [],
-                    "orders": [],
-                    "stock": [],
-                    "article_master": [],
-                    "verifications": [],
-                    "visit_logs": [],
-                    "analytics": [],
+                    **empty_results,
+                    "article_master": articles,
                 },
             }
 
