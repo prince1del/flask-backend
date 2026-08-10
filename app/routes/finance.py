@@ -186,14 +186,36 @@ def finance_summary():
 @finance_bp.route("/ledger", methods=["GET"])
 @require_jwt_auth
 def ledger_report():
+    """Recent invoices shaped as ledger-ish rows (stub — not a GL account ledger).
+
+    Invoice has no FinanceAccount link, so ``account_id`` is rejected rather than
+    silently filtering ``Invoice.id`` (the previous copy-paste footgun).
+    Optional ``invoice_id`` filters a single invoice by primary key.
+    """
     workspace_id = get_workspace_id()
     account_id = request.args.get("account_id", type=int)
+    invoice_id = request.args.get("invoice_id", type=int)
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
 
+    if account_id is not None:
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": "NOT_SUPPORTED",
+                    "message": (
+                        "Account-scoped ledger is not implemented (invoices are not "
+                        "linked to FinanceAccount). Omit account_id for recent invoices, "
+                        "or use invoice_id to filter one invoice."
+                    ),
+                },
+            }
+        ), 400
+
     query = Invoice.query.filter_by(workspace_id=workspace_id)
-    if account_id:
-        query = query.filter(Invoice.id == account_id)
+    if invoice_id is not None:
+        query = query.filter(Invoice.id == invoice_id)
     if start_date:
         query = query.filter(Invoice.invoice_date >= start_date)
     if end_date:
