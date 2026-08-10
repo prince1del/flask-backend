@@ -4795,9 +4795,9 @@ async function renderHopWipeDataModule(mount) {
         <span>Confirm by typing <strong>WIPE</strong></span>
         <input id="hop-wipe-confirm" type="text" autocomplete="off" placeholder="WIPE" />
       </label>
-      <label class="hop-vcard-field" style="margin-bottom:18px;opacity:.85">
-        <span>Password <em style="font-style:normal;color:#64748b">(optional for now — will be required later)</em></span>
-        <input id="hop-wipe-password" type="password" autocomplete="new-password" placeholder="Leave blank for now" />
+      <label class="hop-vcard-field" style="margin-bottom:18px">
+        <span>Your login password <em style="font-style:normal;color:#64748b">(required)</em></span>
+        <input id="hop-wipe-password" type="password" autocomplete="current-password" placeholder="Enter your password" />
       </label>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button type="button" class="nx-btn" style="border-color:rgba(248,113,113,.45);color:#f87171" onclick="hopRunWipeData()">Wipe all data</button>
@@ -4816,6 +4816,11 @@ async function hopRunWipeData() {
   if (typed !== 'WIPE') {
     if (statusEl) statusEl.textContent = 'Type WIPE exactly to confirm.';
     confirmEl?.focus();
+    return;
+  }
+  if (!String(password || '').trim()) {
+    if (statusEl) statusEl.textContent = 'Enter your login password to continue.';
+    document.getElementById('hop-wipe-password')?.focus();
     return;
   }
   if (!(await nexoraConfirm('Delete ALL business data now? This cannot be undone.', {

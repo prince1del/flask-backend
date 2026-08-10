@@ -275,12 +275,36 @@ def vyapar_import_apply():
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def settings_wipe_data():
-    """Wipe all hop_* business data. Password gate reserved for later."""
+    """Wipe all hop_* business data after verifying the signed-in user's password."""
     ensure_hop_schema(_db_path())
     payload = _payload()
-    # Future: require password when HOP_WIPE_PASSWORD is configured.
-    # For now the UI is open; password field is accepted but not enforced.
-    _ = str(payload.get("password") or "").strip()
+    password = str(payload.get("password") or "")
+    if not password.strip():
+        return _json_error(
+            "Password is required to wipe House of Prizm data.",
+            "PASSWORD_REQUIRED",
+            403,
+        )
+
+    user = getattr(request, "user", None) or {}
+    username = str(user.get("username") or "").strip()
+    if not username:
+        return _json_error(
+            "Authenticated user could not be resolved for password check.",
+            "UNAUTHORIZED",
+            401,
+        )
+
+    from centralized_db_system.db import CentralizedDB
+
+    db = CentralizedDB(_db_path())
+    if not db.authenticate_user(username, password):
+        return _json_error(
+            "Incorrect password. Wipe blocked.",
+            "INVALID_PASSWORD",
+            403,
+        )
+
     try:
         with hop_db.connect(_db_path()) as conn:
             result = hop_ops.wipe_hop_data(conn)
