@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import base64
 import json
 import os
 from pathlib import Path
 from typing import Any
+
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 
 class GoogleDriveOAuth:
@@ -18,35 +19,58 @@ class GoogleDriveOAuth:
         str(Path(__file__).resolve().parents[2] / "client_secrets.json"),
     )
     SCOPES = ["https://www.googleapis.com/auth/drive"]
+    # OAuth round-trip window — forged/expired states must not bind Drive tokens.
+    OAUTH_STATE_MAX_AGE_SECONDS = 60 * 60
+
+    @classmethod
+    def _state_secret(cls) -> str:
+        secret = (os.getenv("SECRET_KEY") or os.getenv("JWT_SECRET_KEY") or "").strip()
+        if not secret:
+            raise ValueError(
+                "SECRET_KEY (or JWT_SECRET_KEY) is required to sign Google OAuth state"
+            )
+        return secret
+
+    @classmethod
+    def _state_serializer(cls) -> URLSafeTimedSerializer:
+        return URLSafeTimedSerializer(
+            secret_key=cls._state_secret(),
+            salt="nexora-gdrive-oauth-state-v1",
+        )
 
     @classmethod
     def encode_oauth_state(cls, payload: dict[str, Any] | None = None) -> str:
+        """Return a signed, timed OAuth state (not forgeable without SECRET_KEY)."""
         data = dict(payload or {})
-        raw = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
-        return base64.urlsafe_b64encode(raw).decode("ascii")
+        return cls._state_serializer().dumps(data)
 
     @classmethod
     def parse_oauth_state(cls, state: str | None) -> dict[str, Any]:
+        """Verify and decode OAuth state. Unsigned/legacy/forged states return {}."""
         if not state:
             return {}
         try:
-            raw = base64.urlsafe_b64decode(state.encode("ascii"))
-            data = json.loads(raw.decode("utf-8"))
-            if not isinstance(data, dict):
-                return {}
-            # Normalize aliases / types from older clients
-            if "workspace_id" not in data and data.get("work_id") is not None:
-                data["workspace_id"] = data.get("work_id")
-            if data.get("workspace_id") is not None:
-                data["workspace_id"] = str(data["workspace_id"])
-            if data.get("user_id") is not None:
-                try:
-                    data["user_id"] = int(data["user_id"])
-                except (TypeError, ValueError):
-                    pass
-            return data
+            data = cls._state_serializer().loads(
+                state, max_age=cls.OAUTH_STATE_MAX_AGE_SECONDS
+            )
+        except (BadSignature, SignatureExpired, ValueError, TypeError):
+            return {}
         except Exception:
             return {}
+
+        if not isinstance(data, dict):
+            return {}
+        # Normalize aliases / types from older clients
+        if "workspace_id" not in data and data.get("work_id") is not None:
+            data["workspace_id"] = data.get("work_id")
+        if data.get("workspace_id") is not None:
+            data["workspace_id"] = str(data["workspace_id"])
+        if data.get("user_id") is not None:
+            try:
+                data["user_id"] = int(data["user_id"])
+            except (TypeError, ValueError):
+                pass
+        return data
 
     @classmethod
     def _resolve_redirect_uri(

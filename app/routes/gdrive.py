@@ -1,11 +1,8 @@
-import base64
 import logging
-import os
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 
-from flask import Blueprint, jsonify, redirect, request
+from flask import Blueprint, jsonify, request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
@@ -76,8 +73,12 @@ def start_gdrive_connect(user_id):
         )
         flow.redirect_uri = redirect_uri
 
-        state_data = f"{user_id}:{workspace_id}:{int(datetime.utcnow().timestamp())}"
-        state = base64.b64encode(state_data.encode()).decode()
+        state = GoogleDriveOAuth.encode_oauth_state(
+            {
+                "user_id": user_id,
+                "workspace_id": workspace_id,
+            }
+        )
 
         auth_uri, _ = flow.authorization_url(
             access_type="offline",
@@ -113,27 +114,19 @@ def gdrive_callback():
                 "<h1>Google Drive Connect Failed</h1><p>Missing authorization code or state.</p>"
             ), 400
 
-        # Cloud Hub sends JSON state; older flow used user:workspace:timestamp
+        # Signed OAuth state only — unsigned base64 user:workspace:ts is forgeable.
         parsed = GoogleDriveOAuth.parse_oauth_state(state)
-        if parsed.get("user_id") is not None:
-            user_id = parsed["user_id"]
-            workspace_id = (
-                parsed.get("workspace_id")
-                or parsed.get("work_id")
-                or "default"
-            )
-        else:
-            try:
-                state_data = base64.b64decode(state).decode()
-                parts = state_data.split(":")
-                if len(parts) != 3:
-                    raise ValueError("Invalid state payload")
-                user_id, workspace_id, _timestamp = parts
-            except Exception as decode_error:
-                return render_template_string(
-                    "<h1>Google Drive Connect Failed</h1><p>{{ message }}</p>",
-                    message=f"Invalid state: {decode_error}",
-                ), 400
+        user_id = parsed.get("user_id")
+        workspace_id = (
+            parsed.get("workspace_id")
+            or parsed.get("work_id")
+            or "default"
+        )
+        if user_id is None:
+            return render_template_string(
+                "<h1>Google Drive Connect Failed</h1>"
+                "<p>Invalid or expired OAuth state. Please reconnect from the app.</p>"
+            ), 400
 
         user_id = int(user_id)
         workspace_id = str(workspace_id or "default")
