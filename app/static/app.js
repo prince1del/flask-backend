@@ -2322,12 +2322,12 @@ async function requestDismissModal(modal) {
   if (!canAutoDismissModal(modal)) return;
   if (isCustomerFormModal(modal) && isCustomerFormDirty(modal)) {
     const ok = await nexoraConfirm(
-      'Form mein details bhari hain. Band karne se yeh save nahi hongi. Phir bhi band karein?',
+      'This form has unsaved details. Closing will discard them. Close anyway?',
       {
         title: 'Discard form?',
         danger: true,
-        okText: 'Band karo',
-        cancelText: 'Wapas form pe',
+        okText: 'Close',
+        cancelText: 'Keep editing',
       },
     );
     if (!ok) return;
