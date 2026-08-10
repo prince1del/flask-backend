@@ -4002,14 +4002,17 @@ def ai_assistant_query() -> Response:
         else:
             answer = f"Jarvis at your service, Boss. I could not find a distributor named {entity}."
     elif intent == "alerts":
-        alerts = db.list_data_entry_alerts()
+        alerts = db.list_data_entry_alerts(workspace_id=get_workspace_id())
         answer = (
             f"Jarvis at your service, Boss. You have {len(alerts)} active alerts."
             if alerts
             else "Jarvis at your service, Boss. No active alerts found."
         )
     elif intent == "pjp":
-        suggestions = db.get_morning_suggestion_list("2026-06-26")
+        today = datetime.now(timezone.utc).date().isoformat()
+        suggestions = db.get_morning_suggestion_list(
+            today, workspace_id=get_workspace_id()
+        )
         answer = (
             f"Jarvis at your service, Boss. There are {len(suggestions)} retailer visits suggested today."
             if suggestions
@@ -4161,7 +4164,10 @@ def dashboard_summary() -> Response:
             "alerts": len(alerts),
             "tasks": len(tasks),
         },
-        "suggestions": db.get_morning_suggestion_list("2026-06-26")[:3],
+        "suggestions": db.get_morning_suggestion_list(
+            datetime.now(timezone.utc).date().isoformat(),
+            workspace_id=workspace_id,
+        )[:3],
     }
     return Response(
         json.dumps(payload, ensure_ascii=False), mimetype="application/json"

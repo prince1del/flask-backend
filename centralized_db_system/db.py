@@ -979,28 +979,6 @@ class CentralizedDB:
             conn.commit()
             return True
 
-    def delete_financial_year(self, fy_id: int) -> bool:
-        """Delete FY and cascade breakup records."""
-        self.ensure_target_achievement_tables()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "DELETE FROM target_achievement_breakup WHERE financial_year_id = ?",
-                (fy_id,),
-            )
-            conn.execute(
-                "DELETE FROM target_achievement_category_breakup WHERE financial_year_id = ?",
-                (fy_id,),
-            )
-            conn.execute(
-                "DELETE FROM target_achievement_uploads WHERE financial_year_id = ?",
-                (fy_id,),
-            )
-            cursor = conn.execute(
-                "DELETE FROM target_achievement_years WHERE id = ?", (fy_id,)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-
     def delete_financial_year_for_workspace(self, workspace_id: str, fy_id: int) -> bool:
         """Workspace-scoped FY delete (cascade breakup / category / uploads)."""
         self.ensure_target_achievement_tables()
@@ -7608,13 +7586,34 @@ class CentralizedDB:
             ).fetchone()
         return row[0] if row else None
 
-    def get_morning_suggestion_list(self, current_date: str) -> list[dict[str, Any]]:
+    def get_morning_suggestion_list(
+        self, current_date: str, workspace_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Priority list of parties by days since last visit.
+
+        When workspace_id is set, only that tenant's master distributors /
+        retailers are included (fail-closed multi-tenant). Legacy calls
+        without workspace_id keep the old global distributors/retailers
+        tables for unit tests only — HTTP routes must pass workspace_id.
+        """
         suggestions: list[dict[str, Any]] = []
         with sqlite3.connect(self.db_path) as conn:
-            distributors = conn.execute(
-                "SELECT id FROM distributors ORDER BY id"
-            ).fetchall()
-            retailers = conn.execute("SELECT id FROM retailers ORDER BY id").fetchall()
+            if workspace_id:
+                distributors = conn.execute(
+                    "SELECT id FROM master_distributors WHERE workspace_id = ? ORDER BY id",
+                    (workspace_id,),
+                ).fetchall()
+                retailers = conn.execute(
+                    "SELECT id FROM master_retailers WHERE workspace_id = ? ORDER BY id",
+                    (workspace_id,),
+                ).fetchall()
+            else:
+                distributors = conn.execute(
+                    "SELECT id FROM distributors ORDER BY id"
+                ).fetchall()
+                retailers = conn.execute(
+                    "SELECT id FROM retailers ORDER BY id"
+                ).fetchall()
 
         for (distributor_id,) in distributors:
             last_visit = self.get_last_visit_date("distributor", distributor_id)

@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, current_app, jsonify, render_template, render_template_string, request
@@ -325,10 +326,17 @@ def create_app() -> Flask:
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:
-        current_date = request.args.get("current_date") or "2026-06-26"
+        current_date = (
+            request.args.get("current_date")
+            or datetime.now(timezone.utc).date().isoformat()
+        )
+        workspace_id = request.args.get("workspace_id") or "default"
         db_path = current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
         db = CentralizedDB(db_path)
-        suggestions = json.dumps(db.get_morning_suggestion_list(current_date), indent=2)
+        suggestions = json.dumps(
+            db.get_morning_suggestion_list(current_date, workspace_id=workspace_id),
+            indent=2,
+        )
         html = render_template_string(
             "<h1>Morning Suggestions</h1><pre>{{suggestions}}</pre><h2>Weekly PJP Planner</h2>",
             suggestions=suggestions,
