@@ -351,7 +351,14 @@ def record_payment(id):
     if amount_paid is None:
         return jsonify({'success': False, 'data': None, 'message': 'Payment amount is required'}), 400
 
-    amount_paid = float(amount_paid)
+    try:
+        amount_paid = float(amount_paid)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'data': None, 'message': 'Payment amount must be a number'}), 400
+
+    if amount_paid <= 0:
+        return jsonify({'success': False, 'data': None, 'message': 'Payment amount must be greater than zero'}), 400
+
     payment = InvoicePayment(
         invoice_id=id,
         amount_paid=amount_paid,

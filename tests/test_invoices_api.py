@@ -118,6 +118,33 @@ def test_record_payment(client):
     assert payload["data"]["payment_status"] == "partial"
 
 
+def test_record_payment_rejects_non_positive_and_non_numeric(client):
+    distributor = create_distributor(client)
+    retailer = create_retailer(client, distributor_id=distributor["id"])
+    order = create_sales_order(client, distributor["id"], retailer["id"])
+    invoice = client.post(
+        "/api/v1/invoices", json={"so_id": order["id"], "due_date": "2026-07-31"}
+    ).get_json()["data"]
+    path = f"/api/v1/invoices/{invoice['id']}/payment"
+
+    zero = client.post(path, json={"amount_paid": 0})
+    assert zero.status_code == 400
+    assert "greater than zero" in zero.get_json()["message"]
+
+    negative = client.post(path, json={"amount_paid": -10})
+    assert negative.status_code == 400
+    assert "greater than zero" in negative.get_json()["message"]
+
+    bad = client.post(path, json={"amount_paid": "abc"})
+    assert bad.status_code == 400
+    assert "must be a number" in bad.get_json()["message"]
+
+    # Invoice totals must stay unchanged after rejected attempts
+    refreshed = client.get(f"/api/v1/invoices/{invoice['id']}").get_json()["data"]
+    assert refreshed["paid_amount"] == 0
+    assert refreshed["payment_status"] == "unpaid"
+
+
 def test_create_dispatch(client):
     distributor = create_distributor(client)
     retailer = create_retailer(client, distributor_id=distributor["id"])
