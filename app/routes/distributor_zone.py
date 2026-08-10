@@ -133,6 +133,14 @@ def _fy_start_year(label: str | None) -> int:
     return start
 
 
+def _current_fy_start_year() -> int:
+    """Indian FY Apr–Mar: Apr 2026 → start 2026; Jan 2026 → start 2025."""
+    from datetime import date
+
+    today = date.today()
+    return today.year if today.month >= 4 else today.year - 1
+
+
 def _pick_year(db: CentralizedDB, workspace_id: str, year_id: int | None) -> dict | None:
     db.ensure_target_achievement_tables()
     with sqlite3.connect(db.db_path) as conn:
@@ -150,17 +158,22 @@ def _pick_year(db: CentralizedDB, workspace_id: str, year_id: int | None) -> dic
             ).fetchall()
     if not rows:
         return None
-    # Latest fiscal year by label (not DB id — creation order can differ).
-    best = max(
-        rows,
-        key=lambda r: (
-            _fy_start_year(
-                (r["financial_year"] if "financial_year" in r.keys() else None)
-                or (r["year"] if "year" in r.keys() else None)
-            ),
-            int(r["id"]),
-        ),
-    )
+
+    def _row_start(r) -> int:
+        return _fy_start_year(
+            (r["financial_year"] if "financial_year" in r.keys() else None)
+            or (r["year"] if "year" in r.keys() else None)
+        )
+
+    # Prefer calendar current FY when present; else nearest past FY (not future stubs).
+    current_start = _current_fy_start_year()
+    current_matches = [r for r in rows if _row_start(r) == current_start]
+    if current_matches:
+        best = max(current_matches, key=lambda r: int(r["id"]))
+    else:
+        past_or_now = [r for r in rows if _row_start(r) <= current_start]
+        pool = past_or_now or list(rows)
+        best = max(pool, key=lambda r: (_row_start(r), int(r["id"])))
     data = dict(best)
     raw = data.get("financial_year") or data.get("year") or ""
     label = normalize_fiscal_year(raw) or raw or ""
