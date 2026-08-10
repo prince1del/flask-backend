@@ -14,25 +14,25 @@ def attach_pod():
         return jsonify({"success": False, "error": {"message": "pod_id required"}}), 400
     pod_text = payload.get("pod_text")
     attachment = payload.get("attachment_reference")
+    if isinstance(attachment, str):
+        attachment = attachment.strip() or None
 
     db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
     workspace_id = get_workspace_id()
 
-    # If pod_text not provided and an attachment is provided, attempt OCR if pytesseract available
-    if not pod_text and attachment:
-        try:
-            from PIL import Image
-            import pytesseract
-            # In this environment we only support server-side path references; skip if file missing
-            try:
-                img = Image.open(attachment)
-                pod_text = pytesseract.image_to_string(img)
-            except Exception:
-                pod_text = None
-        except Exception:
-            pod_text = None
-
-    result = db.attach_pod_ocr(pod_id, pod_text=pod_text, attachment_reference=attachment)
+    # SECURITY: never Image.open()/OCR a client-supplied filesystem path.
+    # That allowed any authenticated user to force the server to read (and
+    # return OCR text from) arbitrary images on disk. attachment_reference is
+    # opaque metadata only — send pod_text from the client if OCR is needed.
+    try:
+        result = db.attach_pod_ocr(
+            pod_id,
+            pod_text=pod_text,
+            attachment_reference=attachment,
+            workspace_id=workspace_id,
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 404
     return jsonify({"success": True, "data": result}), 200
 
 

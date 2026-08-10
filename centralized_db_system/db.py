@@ -4531,14 +4531,46 @@ class CentralizedDB:
         ]
 
     # Phase 2.8 helpers
-    def attach_pod_ocr(self, pod_record_id: int, pod_text: str | None = None, attachment_reference: str | None = None) -> dict[str, Any]:
+    def attach_pod_ocr(
+        self,
+        pod_record_id: int,
+        pod_text: str | None = None,
+        attachment_reference: str | None = None,
+        workspace_id: str = "default",
+    ) -> dict[str, Any]:
+        workspace_id = str(workspace_id or "").strip() or "default"
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("SELECT id, pod_text, pod_attachment_reference FROM dispatch_pod_records WHERE id = ?", (pod_record_id,)).fetchone()
+            row = conn.execute(
+                """
+                SELECT id, pod_text, pod_attachment_reference
+                FROM dispatch_pod_records
+                WHERE id = ? AND workspace_id = ?
+                """,
+                (pod_record_id, workspace_id),
+            ).fetchone()
             if row is None:
                 raise ValueError("POD record not found")
-            conn.execute("UPDATE dispatch_pod_records SET pod_text = ?, pod_attachment_reference = ? WHERE id = ?", (pod_text or row[1], attachment_reference or row[2], pod_record_id))
+            conn.execute(
+                """
+                UPDATE dispatch_pod_records
+                SET pod_text = ?, pod_attachment_reference = ?
+                WHERE id = ? AND workspace_id = ?
+                """,
+                (
+                    pod_text if pod_text is not None else row[1],
+                    attachment_reference if attachment_reference is not None else row[2],
+                    pod_record_id,
+                    workspace_id,
+                ),
+            )
             conn.commit()
-        return {"id": pod_record_id, "pod_text": pod_text, "pod_attachment_reference": attachment_reference}
+        return {
+            "id": pod_record_id,
+            "pod_text": pod_text if pod_text is not None else row[1],
+            "pod_attachment_reference": (
+                attachment_reference if attachment_reference is not None else row[2]
+            ),
+        }
 
     def create_invoice_from_reconciliation(self, reconciliation_id: int, workspace_id: str = "default") -> int:
         with sqlite3.connect(self.db_path) as conn:

@@ -9,8 +9,20 @@ def test_attach_pod_ocr_and_invoice_creation(tmp_path):
     tracking_id = db.create_order_lifecycle_tracking(order_ref_no="SO-900", distributor_id=distributor_id)
 
     pod_id = db.record_dispatch_pod(tracking_id=tracking_id, pod_number="POD-900", dispatched_at="2026-07-01T00:00:00Z", workspace_id="default")
-    attached = db.attach_pod_ocr(pod_id, pod_text="Sample OCR text", attachment_reference="files/pod_900.jpg")
+    attached = db.attach_pod_ocr(
+        pod_id,
+        pod_text="Sample OCR text",
+        attachment_reference="files/pod_900.jpg",
+        workspace_id="default",
+    )
     assert attached["id"] == pod_id
+
+    # Cross-workspace attach must not succeed / must not leak
+    try:
+        db.attach_pod_ocr(pod_id, pod_text="stolen", workspace_id="other-ws")
+        raise AssertionError("expected cross-workspace attach to fail")
+    except ValueError:
+        pass
 
     rec_id = db.reconcile_invoice(tracking_id=tracking_id, invoice_number="INV-900", invoice_date="2026-07-02", invoice_amount=200.0, reconciled=True, workspace_id="default")
     inv_id = db.create_invoice_from_reconciliation(rec_id, workspace_id="default")
