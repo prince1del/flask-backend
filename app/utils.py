@@ -1,4 +1,5 @@
 import calendar
+import difflib
 import os
 import sqlite3
 from pathlib import Path
@@ -97,33 +98,142 @@ def infer_distributor_name(
     return candidate or None
 
 
+_INTENT_KEYWORDS: dict[str, list[str]] = {
+    "pjp": [
+        "retailers should i visit",
+        "visit today",
+        "which retailers",
+        "pjp",
+        "schedule",
+        "today's visits",
+        "todays visits",
+        "visit list",
+        "beat plan",
+        "tour plan",
+        "route plan",
+        "morning suggestion",
+        "visit plan",
+        "aaj kise milna",
+        "aaj kahan jana",
+        "aaj ka plan",
+        "aaj ka route",
+        "kis retailer ke paas jana",
+        "kaun se retailer",
+        "aaj ki visit",
+    ],
+    "last_visit": [
+        "last visit",
+        "visited",
+        "visit to",
+        "recent visit",
+        "when did i visit",
+        "when was the last",
+        "pichli visit",
+        "aakhri visit",
+        "aakhri baar",
+        "kab gaya tha",
+        "kab gayi thi",
+        "last gaya",
+        "kab mila tha",
+        "kab milne gaya",
+    ],
+    "alerts": [
+        "mismatch",
+        "alert",
+        "price mismatch",
+        "invoice",
+        "alerts",
+        "warning",
+        "data mismatch",
+        "koi alert",
+        "koi problem",
+        "koi issue",
+        "galti hai",
+        "error hai",
+        "flag hua",
+        "kya problem hai",
+    ],
+    "purchase_trends": [
+        "top-selling",
+        "top selling",
+        "purchase",
+        "trend",
+        "this month",
+        "best selling",
+        "trending",
+        "top article",
+        "top product",
+        "purchase pattern",
+        "sabse zyada bikne wala",
+        "sabse zyada bikta hai",
+        "kya bikta hai",
+        "kya bik raha hai",
+        "kharida",
+        "order kiya",
+    ],
+    "credit": [
+        "credit limit",
+        "outstanding",
+        "credit days",
+        "credit policy",
+        "credit status",
+        "account status",
+        "pending payment",
+        "udhar",
+        "baaki paisa",
+        "kitna udhar",
+        "kitna baaki hai",
+        "kitna baki hai",
+    ],
+}
+
+# Single-word anchors used only for typo-tolerant fallback matching —
+# kept separate from the phrase lists above so a near-miss on one word
+# (e.g. "alrt", "purchas") doesn't need every multi-word phrase to also
+# carry misspelled variants.
+_FUZZY_TERM_TO_INTENT: dict[str, str] = {
+    "visit": "last_visit",
+    "visited": "last_visit",
+    "pjp": "pjp",
+    "schedule": "pjp",
+    "alert": "alerts",
+    "alerts": "alerts",
+    "mismatch": "alerts",
+    "invoice": "alerts",
+    "purchase": "purchase_trends",
+    "trend": "purchase_trends",
+    "trending": "purchase_trends",
+    "credit": "credit",
+    "outstanding": "credit",
+}
+
+
+def _fuzzy_intent_from_words(normalized: str) -> str | None:
+    """Typo-tolerant fallback: catch near-misses like 'alrt' or 'purchas'
+    on the single-word anchors above, so small spelling/voice-transcription
+    slips don't all fall through to the generic search bucket."""
+    for word in normalized.split():
+        cleaned = word.strip(".,!?:;\"'()")
+        if len(cleaned) < 4:
+            continue
+        match = difflib.get_close_matches(
+            cleaned, _FUZZY_TERM_TO_INTENT.keys(), n=1, cutoff=0.82
+        )
+        if match:
+            return _FUZZY_TERM_TO_INTENT[match[0]]
+    return None
+
+
 def infer_ai_intent(query: str) -> str:
     normalized = (query or "").strip().lower()
-    if any(
-        term in normalized
-        for term in [
-            "retailers should i visit",
-            "visit today",
-            "which retailers",
-            "pjp",
-            "schedule",
-            "today's visits",
-            "visit list",
-        ]
-    ):
-        return "pjp"
-    if any(term in normalized for term in ["last visit", "visited", "visit to"]):
-        return "last_visit"
-    if any(
-        term in normalized
-        for term in ["mismatch", "alert", "price mismatch", "invoice"]
-    ):
-        return "alerts"
-    if any(
-        term in normalized
-        for term in ["top-selling", "top selling", "purchase", "trend", "this month"]
-    ):
-        return "purchase_trends"
+    if not normalized:
+        return "search"
+    for intent, phrases in _INTENT_KEYWORDS.items():
+        if any(phrase in normalized for phrase in phrases):
+            return intent
+    fuzzy_intent = _fuzzy_intent_from_words(normalized)
+    if fuzzy_intent:
+        return fuzzy_intent
     return "search"
 
 

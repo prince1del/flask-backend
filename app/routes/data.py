@@ -4061,7 +4061,7 @@ def ai_assistant_query() -> Response:
                 {
                     "intent": "wake",
                     "query": "",
-                    "answer": f"{ask_prefix} Listening — ask about last visit, PJP, alerts, parties, or MRP 1000-2000.",
+                    "answer": f"{ask_prefix} Listening — ask about last visit, PJP, alerts, credit status, parties, or MRP 1000-2000.",
                 },
                 ensure_ascii=False,
             ),
@@ -4123,6 +4123,26 @@ def ai_assistant_query() -> Response:
             answer = (
                 f"{ask_prefix} I couldn't identify the distributor for purchase trend analysis."
             )
+    elif intent == "credit":
+        policy_rows = db.list_credit_control(workspace_id=workspace_id)
+        if policy_rows:
+            non_active = [
+                row
+                for row in policy_rows
+                if str(row.get("account_status") or "ACTIVE").upper() != "ACTIVE"
+            ]
+            if non_active:
+                answer = (
+                    f"{ask_prefix} {len(non_active)} of {len(policy_rows)} "
+                    f"distributor credit account(s) are not active (on hold/blocked)."
+                )
+            else:
+                answer = (
+                    f"{ask_prefix} All {len(policy_rows)} distributor credit "
+                    f"account(s) are active."
+                )
+        else:
+            answer = f"{ask_prefix} No credit policy records found."
     else:
         search_results = db.global_search(
             query, workspace_id=workspace_id, user_id=user_id
