@@ -4038,6 +4038,41 @@ def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
     return "; ".join(chunks) if chunks else "No matching information found."
 
 
+def _find_distributor_fuzzy(
+    db: CentralizedDB, entity: str, workspace_id: str | None
+) -> dict[str, Any] | None:
+    """Resolve a distributor from a user-typed partial name for Ask Nexora.
+
+    get_master_distributor_by_name() requires an exact match against the
+    `name` column, which in this schema is usually the owner/contact's
+    personal name (e.g. "Prateek Kalra"), not the trade name — so a query
+    like "kalra", which only matches firm_name "Kalra Agencies", would
+    never resolve. Try the exact/aliased path first (cheap, canonicalized),
+    then fall back to a substring search across name/firm_name/
+    firm_nick_name.
+    """
+    entity = (entity or "").strip()
+    if not entity:
+        return None
+    exact = db.get_master_distributor_by_name(entity, workspace_id=workspace_id)
+    if exact:
+        return exact
+    like_query = f"%{entity.lower()}%"
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, distributor_id, distributor_code, firm_name, "
+            "firm_nick_name, name, phone_number, location, address, "
+            "pincode, email, gst_no, buyer_code, zone, region, "
+            "payment_terms, credit_limit, status FROM master_distributors "
+            "WHERE workspace_id = ? AND (LOWER(name) LIKE ? OR "
+            "LOWER(firm_name) LIKE ? OR LOWER(firm_nick_name) LIKE ?) "
+            "ORDER BY id LIMIT 1",
+            (workspace_id, like_query, like_query, like_query),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 @data_blueprint.route("/api/v1/ai-assistant/query", methods=["GET", "POST"])
 @require_jwt_auth
 def ai_assistant_query() -> Response:
@@ -4091,9 +4126,7 @@ def ai_assistant_query() -> Response:
         entity = (
             query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
         )
-        distributor = db.get_master_distributor_by_name(
-            entity, workspace_id=workspace_id
-        )
+        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
         if distributor:
             last_visit = db.get_last_visit_date("distributor", distributor["id"])
             answer = (
@@ -4139,13 +4172,8 @@ def ai_assistant_query() -> Response:
         else:
             answer = f"{ask_prefix} No PJP entry planned for today yet."
     elif intent == "purchase_trends":
-        # get_master_distributor_by_name() requires an exact name match, so
-        # strip filler words ("what is the top-selling design for X this
-        # month?") down to the likely party name before looking it up.
         entity = extract_party_name_candidate(query)
-        distributor = db.get_master_distributor_by_name(
-            entity, workspace_id=workspace_id
-        )
+        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
         if distributor:
             logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
             answer = (
@@ -4218,9 +4246,7 @@ def ai_assistant_query() -> Response:
             )
     elif intent == "category_orders":
         entity = extract_party_name_candidate(query)
-        distributor = db.get_master_distributor_by_name(
-            entity, workspace_id=workspace_id
-        )
+        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
         if distributor:
             logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
             if logs:
@@ -4251,9 +4277,7 @@ def ai_assistant_query() -> Response:
             )
     elif intent == "owner":
         entity = extract_party_name_candidate(query)
-        distributor = db.get_master_distributor_by_name(
-            entity, workspace_id=workspace_id
-        )
+        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
         if distributor:
             firm = distributor.get("firm_name") or distributor["name"]
             answer = (
@@ -4268,8 +4292,13 @@ def ai_assistant_query() -> Response:
         else:
             answer = f"{ask_prefix} I couldn't identify that distributor firm."
     else:
+        # Strip filler words so a sentence like "distributor kalra name" or
+        # "aster ka mrp aur exmill kya hai" narrows to the actual search
+        # term ("kalra" / "aster") — global_search's LIKE-based matching
+        # otherwise rarely matches a full natural-language sentence.
+        search_query = extract_party_name_candidate(query)
         search_results = db.global_search(
-            query, workspace_id=workspace_id, user_id=user_id
+            search_query, workspace_id=workspace_id, user_id=user_id
         )
         answer = f"{ask_prefix} {_summarize_ask_nexora_search(search_results)}"
 
