@@ -614,6 +614,25 @@ class CentralizedDB:
                 "CREATE INDEX IF NOT EXISTS idx_ta_monthly_ym "
                 "ON target_achievement_monthly(workspace_id, year_month)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_others_lines (
+                    id INTEGER PRIMARY KEY,
+                    workspace_id TEXT NOT NULL DEFAULT 'default',
+                    financial_year_id INTEGER NOT NULL,
+                    line_name TEXT NOT NULL,
+                    amount_lakhs REAL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(workspace_id, financial_year_id, line_name),
+                    FOREIGN KEY(financial_year_id) REFERENCES target_achievement_years(id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ta_others_lines_fy "
+                "ON target_others_lines(workspace_id, financial_year_id)"
+            )
             conn.commit()
 
     def _migrate_category_breakup_schema(self, conn: sqlite3.Connection) -> None:
@@ -12254,6 +12273,103 @@ class CentralizedDB:
                     )
                 return result
         return []
+
+    def list_others_lines(self, workspace_id: str, financial_year_id: int) -> list[dict]:
+        """Named achievement lines that roll into the Others distributor bucket."""
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, line_name, amount_lakhs, updated_at
+                FROM target_others_lines
+                WHERE workspace_id = ? AND financial_year_id = ?
+                ORDER BY LOWER(line_name)
+                """,
+                (workspace_id, financial_year_id),
+            ).fetchall()
+        return [
+            {
+                "id": int(r["id"]),
+                "line_name": r["line_name"],
+                "amount_lakhs": float(r["amount_lakhs"] or 0),
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
+
+    def replace_others_lines(
+        self,
+        *,
+        workspace_id: str,
+        financial_year_id: int,
+        lines: list[dict],
+        target_lakhs: float | None = None,
+        others_name: str = "Others",
+    ) -> dict:
+        """
+        Replace Others achievement lines and sync Others.achievement_manual = sum(lines).
+        Optional target_lakhs updates the Others target row.
+        """
+        self.ensure_target_achievement_tables()
+        cleaned: list[tuple[str, float]] = []
+        seen: set[str] = set()
+        for raw in lines or []:
+            name = str(raw.get("line_name") or raw.get("distributor_name") or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key == others_name.lower() or key in seen:
+                continue
+            seen.add(key)
+            if raw.get("amount_rupees") is not None:
+                amount_lakhs = float(raw.get("amount_rupees") or 0) / 100_000.0
+            else:
+                amount_lakhs = float(raw.get("amount_lakhs") or raw.get("amount") or 0)
+            if amount_lakhs < 0:
+                amount_lakhs = 0.0
+            cleaned.append((name, round(amount_lakhs, 6)))
+
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "DELETE FROM target_others_lines WHERE workspace_id = ? AND financial_year_id = ?",
+                (workspace_id, financial_year_id),
+            )
+            for name, amount_lakhs in cleaned:
+                conn.execute(
+                    """
+                    INSERT INTO target_others_lines (
+                        workspace_id, financial_year_id, line_name, amount_lakhs, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (workspace_id, financial_year_id, name, amount_lakhs, now, now),
+                )
+            conn.commit()
+
+        total_ach = round(sum(a for _, a in cleaned), 6)
+        self.upsert_target_distributor_breakup(
+            workspace_id=workspace_id,
+            financial_year_id=financial_year_id,
+            distributor_name=others_name,
+            achievement_lakhs=total_ach,
+            target_lakhs=target_lakhs,
+            nick=None,
+            source="manual",
+        )
+        fy_target = self.sync_financial_year_target_from_breakup(workspace_id, financial_year_id)
+        fy_ach = self.sync_financial_year_achievement_from_breakup(workspace_id, financial_year_id)
+        return {
+            "lines": [
+                {"line_name": n, "amount_lakhs": a, "amount_rupees": round(a * 100_000.0, 2)}
+                for n, a in cleaned
+            ],
+            "total_achievement_lakhs": total_ach,
+            "total_achievement_rupees": round(total_ach * 100_000.0, 2),
+            "fy_target_lakhs": fy_target,
+            "fy_achievement_lakhs": fy_ach,
+            "others_name": others_name,
+        }
 
     def set_fy_manual_achievement(
         self, workspace_id: str, financial_year_id: int, achievement_lakhs: float

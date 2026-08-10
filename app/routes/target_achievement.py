@@ -588,6 +588,116 @@ def set_manual_fy_achievement(year_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@target_achievement_bp.route('/years/<int:year_id>/others-lines', methods=['GET'])
+@require_jwt_auth
+def get_others_lines(year_id):
+    """List named parties under Others (online / ex-distributors) for a FY."""
+    try:
+        workspace_id = get_workspace_id()
+        year = _get_year_or_404(year_id, workspace_id)
+        if not year:
+            return jsonify({'success': False, 'error': 'Year not found'}), 404
+        rows = _cdb().list_others_lines(workspace_id, year_id)
+        total = sum(float(r.get('amount_lakhs') or 0) for r in rows)
+        payload_rows = []
+        for r in rows:
+            money = _money_payload(r.get('amount_lakhs') or 0)
+            payload_rows.append({
+                'id': r.get('id'),
+                'line_name': r.get('line_name'),
+                'distributor_name': r.get('line_name'),
+                'amount_lakhs': money['target_lakhs'],
+                'amount_rupees': money['target_rupees'],
+                'amount_narration': money['target_narration'],
+            })
+        total_money = _money_payload(total)
+        # Others target from distributor targets list
+        others_target = 0.0
+        for row in _cdb().list_target_distributor_breakup(workspace_id, year_id):
+            name = (row.get('distributor_name') or '').strip()
+            if name.lower() == OTHERS_DISTRIBUTOR_NAME.lower():
+                others_target = float(row.get('target_lakhs') or 0)
+                break
+        target_money = _money_payload(others_target)
+        return jsonify({
+            'success': True,
+            'data': {
+                'year_id': year_id,
+                'fy_label': year.get('display_year') or year.get('financial_year') or year.get('year') or '',
+                'others_name': OTHERS_DISTRIBUTOR_NAME,
+                'lines': payload_rows,
+                'total_achievement_lakhs': total_money['target_lakhs'],
+                'total_achievement_rupees': total_money['target_rupees'],
+                'total_achievement_narration': total_money['target_narration'],
+                'target_lakhs': target_money['target_lakhs'],
+                'target_rupees': target_money['target_rupees'],
+                'target_narration': target_money['target_narration'],
+                'input_unit': 'rupees',
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@target_achievement_bp.route('/years/<int:year_id>/others-lines', methods=['PUT', 'POST'])
+@require_jwt_auth
+def save_others_lines(year_id):
+    """
+    Replace Others named lines. Each line: line_name + amount_rupees (or amount_lakhs).
+    Sum becomes Others achievement and counts in FY achievement.
+    Optional target_rupees / target_lakhs for the Others target bucket.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        lines = data.get('lines')
+        if not isinstance(lines, list):
+            return jsonify({'success': False, 'error': 'lines array required'}), 400
+        workspace_id = get_workspace_id()
+        if not _get_year_or_404(year_id, workspace_id):
+            return jsonify({'success': False, 'error': 'Year not found'}), 404
+        target_lakhs = None
+        if data.get('target_rupees') is not None or data.get('target_lakhs') is not None:
+            target_lakhs = _resolve_target_lakhs_from_body(data)
+            if target_lakhs is not None and float(target_lakhs) < 0:
+                return jsonify({'success': False, 'error': 'target must be >= 0'}), 400
+        result = _cdb().replace_others_lines(
+            workspace_id=workspace_id,
+            financial_year_id=year_id,
+            lines=lines,
+            target_lakhs=target_lakhs,
+            others_name=OTHERS_DISTRIBUTOR_NAME,
+        )
+        total_money = _money_payload(result.get('total_achievement_lakhs') or 0)
+        fy_target = _money_payload(result.get('fy_target_lakhs') or 0)
+        out_lines = []
+        for row in result.get('lines') or []:
+            money = _money_payload(row.get('amount_lakhs') or 0)
+            out_lines.append({
+                'line_name': row.get('line_name'),
+                'distributor_name': row.get('line_name'),
+                'amount_lakhs': money['target_lakhs'],
+                'amount_rupees': money['target_rupees'],
+                'amount_narration': money['target_narration'],
+            })
+        return jsonify({
+            'success': True,
+            'data': {
+                'others_name': OTHERS_DISTRIBUTOR_NAME,
+                'lines': out_lines,
+                'total_achievement_lakhs': total_money['target_lakhs'],
+                'total_achievement_rupees': total_money['target_rupees'],
+                'total_achievement_narration': total_money['target_narration'],
+                'fy_target_lakhs': fy_target['target_lakhs'],
+                'fy_target_rupees': fy_target['target_rupees'],
+                'fy_target_narration': fy_target['target_narration'],
+                'input_unit': 'rupees',
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @target_achievement_bp.route('/years/<int:year_id>/distributor-target', methods=['POST'])
 @require_jwt_auth
 def set_distributor_target(year_id):
