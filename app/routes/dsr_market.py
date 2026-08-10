@@ -62,6 +62,15 @@ DEFAULT_VISIT_ISSUES = [
     "Other",
 ]
 
+DEFAULT_PLACEMENT_CATEGORIES = [
+    "Bedsheets",
+    "Towels",
+    "Comforters",
+    "Blankets",
+    "Pillows",
+    "Other",
+]
+
 
 def _excel_headers(include_owner: bool) -> list[str]:
     headers = [
@@ -222,6 +231,23 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS dsr_placement_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            category_name TEXT NOT NULL,
+            category_key TEXT NOT NULL,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            UNIQUE(workspace_id, category_key)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dsr_placement_cat_ws "
+        "ON dsr_placement_categories(workspace_id)"
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS dsr_day_closures (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             workspace_id TEXT NOT NULL,
@@ -358,6 +384,35 @@ def _merged_visit_issues(conn: sqlite3.Connection, workspace_id: str) -> list[st
     default_ordered = [
         by_key[k]
         for k in (_brand_key(n) for n in DEFAULT_VISIT_ISSUES)
+        if k in by_key
+    ]
+    extras = sorted(
+        (v for k, v in by_key.items() if k not in defaults_keys),
+        key=lambda s: s.lower(),
+    )
+    other_key = _brand_key("Other")
+    without_other = [n for n in default_ordered + extras if _brand_key(n) != other_key]
+    if other_key in by_key:
+        without_other.append(by_key[other_key])
+    return without_other
+
+
+def _merged_placement_categories(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT category_name FROM dsr_placement_categories WHERE workspace_id = ? "
+        "ORDER BY category_name COLLATE NOCASE ASC",
+        (workspace_id,),
+    ).fetchall()
+    custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
+    by_key: dict[str, str] = {}
+    for name in DEFAULT_PLACEMENT_CATEGORIES + custom:
+        key = _brand_key(name)
+        if key and key not in by_key:
+            by_key[key] = name.strip()
+    defaults_keys = {_brand_key(n) for n in DEFAULT_PLACEMENT_CATEGORIES}
+    default_ordered = [
+        by_key[k]
+        for k in (_brand_key(n) for n in DEFAULT_PLACEMENT_CATEGORIES)
         if k in by_key
     ]
     extras = sorted(
@@ -1604,6 +1659,66 @@ def add_visit_issue():
         issues = _merged_visit_issues(conn, workspace_id)
 
     return jsonify({"success": True, "data": issues, "count": len(issues)}), 201
+
+
+@dsr_market_bp.route("/placement-categories", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def list_placement_categories():
+    workspace_id = get_workspace_id()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        categories = _merged_placement_categories(conn, workspace_id)
+    return jsonify(
+        {
+            "success": True,
+            "data": categories,
+            "defaults": list(DEFAULT_PLACEMENT_CATEGORIES),
+            "count": len(categories),
+        }
+    )
+
+
+@dsr_market_bp.route("/placement-categories", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_placement_category():
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or data.get("category_name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "error": {"message": "name is required"}}), 400
+    key = _brand_key(name)
+    if not key:
+        return jsonify({"success": False, "error": {"message": "name is required"}}), 400
+    if key == _brand_key("Other"):
+        return jsonify(
+            {"success": False, "error": {"message": "Use Other free-text instead"}}
+        ), 400
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        existing = conn.execute(
+            "SELECT category_name FROM dsr_placement_categories "
+            "WHERE workspace_id = ? AND category_key = ?",
+            (workspace_id, key),
+        ).fetchone()
+        if existing is None and key not in {
+            _brand_key(b) for b in DEFAULT_PLACEMENT_CATEGORIES
+        }:
+            conn.execute(
+                """
+                INSERT INTO dsr_placement_categories (
+                    workspace_id, category_name, category_key, created_by, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (workspace_id, name, key, _user_id(), created_at),
+            )
+            conn.commit()
+        categories = _merged_placement_categories(conn, workspace_id)
+
+    return jsonify({"success": True, "data": categories, "count": len(categories)}), 201
 
 
 @dsr_market_bp.route("/open-days", methods=["GET"])
