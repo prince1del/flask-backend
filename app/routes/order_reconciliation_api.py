@@ -23,12 +23,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, request
 
-try:
-    from app.routes.auth import require_jwt_auth
-except Exception:  # pragma: no cover
-    def require_jwt_auth(func):  # type: ignore
-        return func
-
+from app.routes.auth import require_jwt_auth
 from centralized_db_system.order_reconciliation import reconcile_order_chain
 
 
