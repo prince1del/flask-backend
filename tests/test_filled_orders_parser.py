@@ -280,6 +280,90 @@ def test_match_and_normalize_unmatched_falls_back_to_file_values(tmp_path):
     assert result["bale_size_used"] == 6
 
 
+def test_bath_fo_shade_matches_am_color(tmp_path):
+    """Choice Corner style: Shade column + physical size must match AM Color + Bath Towel."""
+    header = [
+        "Brand", "Size", "Product", "Shade", "MRP", "PTR", "Ex-Mill", "Bale Pack Sizes", "Qty in Bales",
+    ]
+    rows = [["Tulip", "75x150", "Terry Towel", "WHITE", 999, 500, 400, 24, 2]]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bath", valid_rows)
+    parsed_rows = foparser.build_filled_order_rows(
+        valid_rows, header_row, col_mapping, detection["column_index"],
+    )
+
+    conn = _make_am_conn(tmp_path)
+    amdb.create_category(
+        conn, 1, "Bath", ["brand", "size", "color", "product"], is_confirmed=True,
+    )
+    amdb.upsert_article(conn, 1, {
+        "category": "Bath",
+        "product_type": "Terry Towel",
+        "brand": "Tulip",
+        "size": "Bath Towel",
+        "mrp": 999,
+        "ptr": 500,
+        "ex_mill_price": 400,
+        "bale_pack_size": 24,
+        "item_key": "TULIP|BATH TOWEL|WHITE|TERRY TOWEL",
+        "extra_attributes": {"Color": "White", "BS Size": "75x150"},
+    })
+
+    result = foparser.match_and_normalize(
+        conn, amdb, 1, parsed_rows[0],
+        ["brand", "size", "color", "product"],
+        category="Bath",
+    )
+    conn.close()
+
+    assert result["matched"] is True
+    assert result["size"] == "75x150"  # file physical size kept for display
+    assert (result["extra_attributes"] or {}).get("Color") == "White"
+    assert (result["extra_attributes"] or {}).get("BS Size") == "75x150"
+
+
+def test_bath_fo_blank_color_matches_am_with_color(tmp_path):
+    """FO without Shade/Color still matches when brand+size+product are unique."""
+    header = [
+        "Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Pack Sizes", "Qty in Bales",
+    ]
+    rows = [["Santino", "40x60(2pc)", "Terry Towel", 800, 400, 350, 12, 1]]
+    path = _write_workbook(tmp_path, header, rows)
+    header_row, col_mapping, valid_rows = _load_valid_rows(path)
+    detection = foparser.detect_quantity_column(header_row, col_mapping, "Bath", valid_rows)
+    parsed_rows = foparser.build_filled_order_rows(
+        valid_rows, header_row, col_mapping, detection["column_index"],
+    )
+
+    conn = _make_am_conn(tmp_path)
+    amdb.create_category(
+        conn, 1, "Bath", ["brand", "size", "color", "product"], is_confirmed=True,
+    )
+    amdb.upsert_article(conn, 1, {
+        "category": "Bath",
+        "product_type": "Terry Towel",
+        "brand": "Santino",
+        "size": "Hand Towel Set of 2",
+        "mrp": 800,
+        "ptr": 400,
+        "ex_mill_price": 350,
+        "bale_pack_size": 12,
+        "item_key": "SANTINO|HAND TOWEL SET OF 2|ASSORTED 01|TERRY TOWEL",
+        "extra_attributes": {"Color": "Assorted 01", "BS Size": "40x60(2pc)"},
+    })
+
+    result = foparser.match_and_normalize(
+        conn, amdb, 1, parsed_rows[0],
+        ["brand", "size", "color", "product"],
+        category="Bath",
+    )
+    conn.close()
+
+    assert result["matched"] is True
+    assert result["article_id"] is not None
+
+
 def test_annotate_item_issues_unmatched_with_hint(tmp_path):
     conn = _make_am_conn(tmp_path)
     amdb.create_category(conn, 1, "Bed", ["brand", "size"], is_confirmed=True)

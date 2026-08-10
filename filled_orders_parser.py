@@ -1059,6 +1059,64 @@ def build_filled_order_rows(valid_rows, header_row, col_mapping, qty_col_idx, ba
         })
     return rows
 
+def prepare_filled_order_identity(core_fields, extra_attributes, *, category=None):
+    """
+    Apply the same Article Master teaching used on AM upload so FO lines
+    key the same way (Shade→Color, towel size→Bath Towel + BS Size, etc.).
+
+    File Size spelling is kept for display (e.g. 75x150 / DBL BS); match keys
+    still normalize via build_item_key / normalize_key_part_value.
+    """
+    core = dict(core_fields or {})
+    extra_in = dict(extra_attributes or {})
+    raw_description = None
+    for key in list(extra_in.keys()):
+        if amparser.normalize_extra_column_name(key) == "description":
+            val = extra_in.pop(key)
+            if not amparser.is_blank_attr_value(val):
+                raw_description = val
+            break
+
+    # Collapse sticky aliases (Shade→Color, Packing spellings, …)
+    extra = amparser.merge_extra_attributes({}, extra_in)
+
+    raw_size_cell = core.get("size")
+    brand, size_norm = amparser.normalize_brand_and_size(core.get("brand"), core.get("size"))
+    if brand is not None:
+        core["brand"] = brand
+
+    cat = str(category or "").strip()
+    product_type = core.get("product_type")
+    if product_type in (None, ""):
+        product_type = amparser.DEFAULT_PRODUCT_BY_CATEGORY.get(cat)
+    product_type = amparser.normalize_product_spelling(product_type)
+    product_type = amparser.resolve_product_type(product_type, size_norm or raw_size_cell)
+    core["product_type"] = product_type
+
+    if cat == "Bath":
+        physical = amparser.towel_physical_size_code(raw_size_cell)
+        if physical and amparser.is_blank_attr_value(extra.get("BS Size")):
+            extra["BS Size"] = physical
+        raw_color = extra.get("Color")
+        color, packing, _is_pkg_only = amparser.normalize_towel_color_and_packing(
+            raw_color, raw_description,
+        )
+        if color:
+            extra["Color"] = color
+        elif "Color" in extra:
+            del extra["Color"]
+        if packing and amparser.is_blank_attr_value(extra.get("Packing")):
+            extra["Packing"] = packing
+        extra = amparser.strip_excluded_extra_attributes(extra, category="Bath")
+    elif cat in {"TOB", "Pillow"}:
+        extra = amparser.apply_tob_pillow_blend_and_units(extra, cat)
+        extra = amparser.strip_excluded_extra_attributes(extra, category=cat)
+    elif cat:
+        extra = amparser.strip_excluded_extra_attributes(extra, category=cat)
+
+    return core, extra
+
+
 def match_and_normalize(
     conn,
     amdb,
@@ -1081,8 +1139,15 @@ def match_and_normalize(
     had (there is no Article Master reference yet) so the row stays usable
     if later added to Article Master via resolve-unmatched.
     """
-    core_fields = parsed_row["core_fields"]
-    extra_attributes = parsed_row["extra_attributes"]
+    # Teach FO identity like AM upload (Shade→Color, towel sizes, …) before match.
+    core_fields, extra_attributes = prepare_filled_order_identity(
+        parsed_row.get("core_fields"),
+        parsed_row.get("extra_attributes"),
+        category=category,
+    )
+    parsed_row["core_fields"] = core_fields
+    parsed_row["extra_attributes"] = extra_attributes
+
     item_key = amparser.build_item_key(core_fields, extra_attributes, key_fields)
     if category:
         article = amdb.resolve_article_match(

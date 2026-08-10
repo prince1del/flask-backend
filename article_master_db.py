@@ -525,6 +525,20 @@ def get_article_by_item_key(conn, user_id, item_key):
     return synced[0] if synced else article
 
 
+def get_article_by_id(conn, user_id, article_id):
+    cols = ", ".join(ARTICLE_MASTER_COLUMNS)
+    row = conn.execute(
+        f"SELECT {cols} FROM article_master WHERE id = ? AND user_id = ?",
+        (article_id, user_id),
+    ).fetchone()
+    if row is None:
+        return None
+    article = _row_to_article_dict(row)
+    synced = sync_articles_core_prices_to_latest_season(conn, [article], persist=True)
+    article = synced[0] if synced else article
+    return _attach_history_flags(conn, [article])[0]
+
+
 def resolve_article_match(conn, user_id, category, core_fields, extra_attributes, key_fields):
     """
     Match a parsed row to Article Master. Tries exact item_key first, then
@@ -577,8 +591,9 @@ def resolve_article_match(conn, user_id, category, core_fields, extra_attributes
             if n_file and not n_cand:
                 matches = False
                 break
-            # Distributor order files often omit TC when brand+size are enough.
-            if not n_file and n_cand and field_l != "tc":
+            # Distributor FO often omits TC / Color when brand+size(+product) are enough.
+            # Bath AM keys include Color; booking sheets may leave Shade blank.
+            if not n_file and n_cand and field_l not in {"tc", "color", "colour"}:
                 matches = False
                 break
         if matches:

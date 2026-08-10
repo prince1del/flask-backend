@@ -627,6 +627,21 @@ def merge_duplicate_articles():
         return jsonify({"error": str(e)}), 500
 
 
+@article_master_bp.route("/<int:article_id>", methods=["GET"])
+@require_jwt_auth
+def get_one_article(article_id):
+    """Single article from server — used by mobile detail after global search."""
+    user_id = _get_current_user_id()
+    conn = _get_db_connection()
+    try:
+        article = amdb.get_article_by_id(conn, user_id, article_id)
+    finally:
+        conn.close()
+    if article is None:
+        return jsonify({"error": "Article not found"}), 404
+    return jsonify({"article": article}), 200
+
+
 @article_master_bp.route("/<int:article_id>", methods=["DELETE"])
 @require_jwt_auth
 def delete_one_article(article_id):
