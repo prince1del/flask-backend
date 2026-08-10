@@ -37,6 +37,7 @@ def decode_code():
     code = (payload.get("code") or "").strip()
     if not code:
         return jsonify({"success": False, "error": {"message": "code is required"}}), 400
+    workspace_id = get_workspace_id()
     db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
-    decoded = db.decode_material_code(code)
+    decoded = db.decode_material_code(code, workspace_id=workspace_id)
     return jsonify({"success": True, "data": decoded}), 200

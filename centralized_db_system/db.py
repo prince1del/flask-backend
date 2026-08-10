@@ -4644,13 +4644,22 @@ class CentralizedDB:
             for row in rows
         ]
 
-    def decode_material_code(self, code: str) -> dict[str, str]:
+    def decode_material_code(self, code: str, workspace_id: str) -> dict[str, str]:
         code = (code or "").strip()
-        if not code:
+        workspace_id = str(workspace_id or "").strip()
+        if not code or not workspace_id:
             return {}
         db = sqlite3.connect(self.db_path)
         try:
-            rows = db.execute("SELECT code_prefix, mapping_type, mapping_value FROM material_code_mappings ORDER BY LENGTH(code_prefix) DESC").fetchall()
+            rows = db.execute(
+                """
+                SELECT code_prefix, mapping_type, mapping_value
+                FROM material_code_mappings
+                WHERE workspace_id = ?
+                ORDER BY LENGTH(code_prefix) DESC
+                """,
+                (workspace_id,),
+            ).fetchall()
             result: dict[str, str] = {}
             for prefix, mtype, mvalue in rows:
                 if not prefix:
