@@ -494,6 +494,8 @@ def test_move_into_distributor_order_cycle_folder_with_order_sheet_level(tmp_pat
     Sheet Name folder.
     """
     monkeypatch.chdir(tmp_path)
+    from pathlib import Path
+
     from app.routes.data import (
         _move_into_distributor_order_cycle_folder,
         _order_fulfillment_files_root,
