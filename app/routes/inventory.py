@@ -149,17 +149,34 @@ def adjust_inventory():
     data = request.get_json(silent=True) or {}
     
     item_id = data.get('item_id')
-    quantity = data.get('quantity', 0)
     movement_type = data.get('movement_type', 'adjustment')  # receipt, issue, adjustment
     reason = data.get('reason', '')
     reference = data.get('reference_number', '')
-    
-    # Validate
-    if not item_id or not quantity:
+
+    if not item_id:
         return jsonify({'success': False, 'data': None, 'message': 'item_id and quantity required'}), 400
-    
+
     if movement_type not in ['receipt', 'issue', 'adjustment']:
         return jsonify({'success': False, 'data': None, 'message': 'Invalid movement_type'}), 400
+
+    raw_quantity = data.get('quantity', None)
+    if raw_quantity is None or raw_quantity == '':
+        return jsonify({'success': False, 'data': None, 'message': 'item_id and quantity required'}), 400
+    try:
+        quantity = float(raw_quantity)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'data': None, 'message': 'quantity must be a number'}), 400
+
+    # receipt/issue are directional magnitudes — negatives invert stock math and poison audit.
+    # adjustment may be positive or negative (signed delta).
+    if movement_type in ('receipt', 'issue') and quantity <= 0:
+        return jsonify({
+            'success': False,
+            'data': None,
+            'message': f'{movement_type} quantity must be greater than zero',
+        }), 400
+    if movement_type == 'adjustment' and quantity == 0:
+        return jsonify({'success': False, 'data': None, 'message': 'adjustment quantity cannot be zero'}), 400
     
     try:
         workspace_id = _get_workspace_id()

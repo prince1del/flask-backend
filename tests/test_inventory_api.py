@@ -73,6 +73,40 @@ def test_adjust_inventory_receipt(app, client):
     assert data['data']['item']['quantity_on_hand'] == 150
 
 
+def test_adjust_inventory_rejects_negative_receipt_and_issue(app, client):
+    item = create_inventory_item(app)
+    item_id = item['id']
+
+    receipt = client.post('/api/inventory/adjust', json={
+        'item_id': item_id,
+        'quantity': -1000,
+        'movement_type': 'receipt',
+    })
+    assert receipt.status_code == 400
+    assert 'greater than zero' in receipt.get_json()['message']
+
+    issue = client.post('/api/inventory/adjust', json={
+        'item_id': item_id,
+        'quantity': -50,
+        'movement_type': 'issue',
+    })
+    assert issue.status_code == 400
+    assert 'greater than zero' in issue.get_json()['message']
+
+    listed = client.get('/api/inventory').get_json()['data']
+    row = next(r for r in listed if r['id'] == item_id)
+    assert row['quantity_on_hand'] == 100
+
+    adj = client.post('/api/inventory/adjust', json={
+        'item_id': item_id,
+        'quantity': -10,
+        'movement_type': 'adjustment',
+        'reason': 'Cycle count',
+    })
+    assert adj.status_code == 200
+    assert adj.get_json()['data']['item']['quantity_on_hand'] == 90
+
+
 def test_adjust_inventory_issue_insufficient(app, client):
     item = create_inventory_item(app)
     item_id = item['id']
