@@ -48,6 +48,20 @@ DEFAULT_LOW_STOCK_REASONS = [
     "Other",
 ]
 
+DEFAULT_VISIT_ISSUES = [
+    "Stock availability",
+    "Delivery delay",
+    "Damaged/defective product",
+    "Packing issue",
+    "Replacement/claim pending",
+    "Billing issue",
+    "Distributor issue",
+    "Scheme/claim issue",
+    "Price issue",
+    "No sales support",
+    "Other",
+]
+
 
 def _excel_headers(include_owner: bool) -> list[str]:
     headers = [
@@ -191,6 +205,23 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS dsr_visit_issues (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            issue_name TEXT NOT NULL,
+            issue_key TEXT NOT NULL,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            UNIQUE(workspace_id, issue_key)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dsr_visit_issues_ws "
+        "ON dsr_visit_issues(workspace_id)"
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS dsr_day_closures (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             workspace_id TEXT NOT NULL,
@@ -304,6 +335,35 @@ def _merged_low_stock_reasons(conn: sqlite3.Connection, workspace_id: str) -> li
         key=lambda s: s.lower(),
     )
     # Keep "Other" last for the free-text box.
+    other_key = _brand_key("Other")
+    without_other = [n for n in default_ordered + extras if _brand_key(n) != other_key]
+    if other_key in by_key:
+        without_other.append(by_key[other_key])
+    return without_other
+
+
+def _merged_visit_issues(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT issue_name FROM dsr_visit_issues WHERE workspace_id = ? "
+        "ORDER BY issue_name COLLATE NOCASE ASC",
+        (workspace_id,),
+    ).fetchall()
+    custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
+    by_key: dict[str, str] = {}
+    for name in DEFAULT_VISIT_ISSUES + custom:
+        key = _brand_key(name)
+        if key and key not in by_key:
+            by_key[key] = name.strip()
+    defaults_keys = {_brand_key(n) for n in DEFAULT_VISIT_ISSUES}
+    default_ordered = [
+        by_key[k]
+        for k in (_brand_key(n) for n in DEFAULT_VISIT_ISSUES)
+        if k in by_key
+    ]
+    extras = sorted(
+        (v for k, v in by_key.items() if k not in defaults_keys),
+        key=lambda s: s.lower(),
+    )
     other_key = _brand_key("Other")
     without_other = [n for n in default_ordered + extras if _brand_key(n) != other_key]
     if other_key in by_key:
@@ -1486,6 +1546,64 @@ def add_low_stock_reason():
         reasons = _merged_low_stock_reasons(conn, workspace_id)
 
     return jsonify({"success": True, "data": reasons, "count": len(reasons)}), 201
+
+
+@dsr_market_bp.route("/visit-issues", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def list_visit_issues():
+    workspace_id = get_workspace_id()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        issues = _merged_visit_issues(conn, workspace_id)
+    return jsonify(
+        {
+            "success": True,
+            "data": issues,
+            "defaults": list(DEFAULT_VISIT_ISSUES),
+            "count": len(issues),
+        }
+    )
+
+
+@dsr_market_bp.route("/visit-issues", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_visit_issue():
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or data.get("issue_name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "error": {"message": "name is required"}}), 400
+    key = _brand_key(name)
+    if not key:
+        return jsonify({"success": False, "error": {"message": "name is required"}}), 400
+    if key == _brand_key("Other"):
+        return jsonify(
+            {"success": False, "error": {"message": "Use Other free-text instead"}}
+        ), 400
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        existing = conn.execute(
+            "SELECT issue_name FROM dsr_visit_issues "
+            "WHERE workspace_id = ? AND issue_key = ?",
+            (workspace_id, key),
+        ).fetchone()
+        if existing is None and key not in {_brand_key(b) for b in DEFAULT_VISIT_ISSUES}:
+            conn.execute(
+                """
+                INSERT INTO dsr_visit_issues (
+                    workspace_id, issue_name, issue_key, created_by, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (workspace_id, name, key, _user_id(), created_at),
+            )
+            conn.commit()
+        issues = _merged_visit_issues(conn, workspace_id)
+
+    return jsonify({"success": True, "data": issues, "count": len(issues)}), 201
 
 
 @dsr_market_bp.route("/open-days", methods=["GET"])
