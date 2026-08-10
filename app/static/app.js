@@ -9056,6 +9056,8 @@ const orderMatchState = {
   selectedDistributorKey: '',
   selectedRunId: null,
   detail: null,
+  expandedDistributorKeys: {},
+  expandedSeasonKeys: {},
 };
 
 function _orderMatchGroupKey(run) {
@@ -9073,7 +9075,43 @@ function _buildOrderMatchGroups() {
     }
     map.get(key).runs.push(run);
   }
-  return [...map.values()].sort((a, b) => a.distributorName.localeCompare(b.distributorName));
+  return [...map.values()].map((group) => {
+    const runs = group.runs
+      .slice()
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')) || Number(b.id || 0) - Number(a.id || 0));
+    const seasonMap = new Map();
+    runs.forEach((run) => {
+      const label = orderDeskSeasonLabel(run.season);
+      if (!seasonMap.has(label)) {
+        seasonMap.set(label, { label, runs: [], totalQty: 0, totalValue: 0 });
+      }
+      const bucket = seasonMap.get(label);
+      bucket.runs.push(run);
+      bucket.totalQty += Number(run.so_qty || run.fo_qty || 0);
+      bucket.totalValue += Number(run.so_net_amount || run.fo_exmill_value || 0);
+    });
+    const seasons = Array.from(seasonMap.values())
+      .map((s) => ({
+        ...s,
+        runs: s.runs.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      }))
+      .sort((a, b) => {
+        const aOther = a.label === 'Others' ? 1 : 0;
+        const bOther = b.label === 'Others' ? 1 : 0;
+        if (aOther !== bOther) return aOther - bOther;
+        const aDate = a.runs[0]?.created_at || '';
+        const bDate = b.runs[0]?.created_at || '';
+        return String(bDate).localeCompare(String(aDate)) || a.label.localeCompare(b.label);
+      });
+    return {
+      ...group,
+      runs,
+      seasons,
+      latest: runs[0] || null,
+      totalQty: runs.reduce((sum, r) => sum + Number(r.so_qty || r.fo_qty || 0), 0),
+      totalValue: runs.reduce((sum, r) => sum + Number(r.so_net_amount || r.fo_exmill_value || 0), 0),
+    };
+  }).sort((a, b) => a.distributorName.localeCompare(b.distributorName));
 }
 
 function renderOrderMatchDistributorRail() {
@@ -9086,21 +9124,94 @@ function renderOrderMatchDistributorRail() {
   }
   host.innerHTML = groups.map((group) => {
     const active = group.key === orderMatchState.selectedDistributorKey;
-    const latest = (group.runs[0] && String(group.runs[0].created_at || '').slice(0, 10)) || '';
+    const expanded = !!orderMatchState.expandedDistributorKeys[group.key];
+    const latest = group.latest || {};
+    const latestHint = [orderDeskSeasonLabel(latest.season), latest.category, String(latest.created_at || '').slice(0, 10)]
+      .filter(Boolean)
+      .join(' · ');
+    const metrics = formatOrderDeskQtyValue(group.totalQty, group.totalValue);
+    const seasonHtml = expanded
+      ? `<div class="of-tree-seasons">${(group.seasons || []).map((season) => {
+          const seasonKey = `${group.key}||${season.label}`;
+          const seasonOpen = !!orderMatchState.expandedSeasonKeys[seasonKey];
+          const seasonMetrics = formatOrderDeskQtyValue(season.totalQty, season.totalValue);
+          const runsHtml = seasonOpen
+            ? `<div class="of-tree-orders">${season.runs.map((r) => {
+                const selected = Number(orderMatchState.selectedRunId) === Number(r.id);
+                const title = [r.category, r.so_source_filename || r.fo_source_filename].filter(Boolean).join(' · ') || `Match #${r.id}`;
+                const hint = [
+                  orderDeskSeasonLabel(r.season),
+                  `${Number(r.match_count || 0)} matched`,
+                  formatOrderDeskQtyValue(r.so_qty || r.fo_qty, r.so_net_amount || r.fo_exmill_value),
+                ].filter(Boolean).join(' · ');
+                return `
+                  <button type="button"
+                    class="of-tree-order-btn ${selected ? 'is-active' : ''}"
+                    data-match-run-id="${Number(r.id)}">
+                    <span class="of-rail-label">${foEscapeText(title)}</span>
+                    <span class="of-rail-hint">${foEscapeText(hint)}</span>
+                  </button>`;
+              }).join('')}</div>`
+            : '';
+          const seasonHint = [season.runs.length > 1 ? `${season.runs.length} matches` : '', seasonMetrics]
+            .filter(Boolean)
+            .join(' · ');
+          return `
+            <div class="of-tree-season ${seasonOpen ? 'is-open' : ''}">
+              <button type="button" class="of-tree-season-btn" data-match-season-key="${encodeURIComponent(seasonKey)}">
+                <span class="of-tree-folder-ico">📁</span>
+                <span class="of-rail-text">
+                  <span class="of-rail-label">${foEscapeText(season.label)}</span>
+                  <span class="of-rail-hint">${foEscapeText(seasonHint)}</span>
+                </span>
+              </button>
+              ${runsHtml}
+            </div>`;
+        }).join('')}</div>`
+      : '';
+    const distHint = [latestHint, group.runs.length > 1 ? `${group.runs.length} matches` : '', metrics]
+      .filter(Boolean)
+      .join(' · ');
     return `
-      <button type="button" class="of-rail-item of-match-distributor-btn ${active ? 'is-active' : ''}" data-match-distributor-key="${encodeURIComponent(group.key)}">
-        <span class="of-rail-text">
-          <span class="of-rail-label">${foEscapeText(group.distributorName)}</span>
-          <span class="of-rail-hint">${group.runs.length} match${group.runs.length === 1 ? '' : 'es'}${latest ? ` · ${foEscapeText(latest)}` : ''}</span>
-        </span>
-      </button>`;
+      <div class="of-tree-dist ${expanded ? 'is-open' : ''} ${active ? 'is-active' : ''}">
+        <button type="button" class="of-rail-item of-match-distributor-btn ${active ? 'is-active' : ''}" data-match-distributor-key="${encodeURIComponent(group.key)}">
+          <span class="of-rail-text">
+            <span class="of-rail-label">${foEscapeText(group.distributorName)}</span>
+            <span class="of-rail-hint">${foEscapeText(distHint)}</span>
+          </span>
+        </button>
+        ${seasonHtml}
+      </div>`;
   }).join('');
   host.querySelectorAll('.of-match-distributor-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      selectOrderMatchDistributor(decodeURIComponent(btn.getAttribute('data-match-distributor-key') || ''));
+      toggleOrderMatchDistributor(decodeURIComponent(btn.getAttribute('data-match-distributor-key') || ''));
+    });
+  });
+  host.querySelectorAll('.of-tree-season-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = decodeURIComponent(btn.getAttribute('data-match-season-key') || '');
+      if (!key) return;
+      orderMatchState.expandedSeasonKeys[key] = !orderMatchState.expandedSeasonKeys[key];
+      renderOrderMatchDistributorRail();
+    });
+  });
+  host.querySelectorAll('.of-tree-order-btn[data-match-run-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const runId = Number(btn.getAttribute('data-match-run-id') || 0);
+      if (runId) selectOrderMatchRun(runId);
     });
   });
 }
+
+function toggleOrderMatchDistributor(key) {
+  if (!key) return;
+  const wasOpen = !!orderMatchState.expandedDistributorKeys[key];
+  orderMatchState.expandedDistributorKeys[key] = !wasOpen;
+  if (!wasOpen) selectOrderMatchDistributor(key);
+  else renderOrderMatchDistributorRail();
+}
+
 
 function renderOrderMatchRunPicker() {
   const picker = document.getElementById('of-match-run-pick');
@@ -9201,6 +9312,12 @@ function renderOrderMatchDetailRows(rows) {
 
 async function selectOrderMatchDistributor(key) {
   orderMatchState.selectedDistributorKey = key;
+  orderMatchState.expandedDistributorKeys[key] = true;
+  const _groupForExpand = (orderMatchState.grouped || []).find((g) => g.key === key);
+  const _latestRun = _groupForExpand?.latest || _groupForExpand?.runs?.[0];
+  if (_latestRun) {
+    orderMatchState.expandedSeasonKeys[`${key}||${orderDeskSeasonLabel(_latestRun.season)}`] = true;
+  }
   renderOrderMatchDistributorRail();
   const group = (orderMatchState.grouped || []).find((g) => g.key === key);
   const firstId = group && group.runs[0] ? group.runs[0].id : null;
@@ -9217,6 +9334,22 @@ async function selectOrderMatchDistributor(key) {
 async function onOrderMatchRunPickChanged(value) {
   const id = Number(value);
   if (!id) return;
+  await selectOrderMatchRun(id);
+}
+
+async function selectOrderMatchRun(runId) {
+  const id = Number(runId);
+  if (!id) return;
+  const group = (orderMatchState.grouped || []).find((g) =>
+    (g.runs || []).some((r) => Number(r.id) === id)
+  );
+  if (group) {
+    orderMatchState.selectedDistributorKey = group.key;
+    orderMatchState.expandedDistributorKeys[group.key] = true;
+    const run = (group.runs || []).find((r) => Number(r.id) === id);
+    orderMatchState.expandedSeasonKeys[`${group.key}||${orderDeskSeasonLabel(run && run.season)}`] = true;
+  }
+  renderOrderMatchDistributorRail();
   await loadOrderMatchRunDetail(id);
 }
 
@@ -10298,15 +10431,56 @@ async function loadOrderFulfillmentUploads() {
       throw new Error((data.error && data.error.message) || 'Failed to load uploads');
     }
 
-    const tracking = (data.data.tracking_records || []).slice().sort((a, b) =>
-      String(a.distributor_name || a.order_ref_no || '').localeCompare(
-        String(b.distributor_name || b.order_ref_no || ''),
-        undefined,
-        { sensitivity: 'base' }
-      )
-    );
-    const rowsHtml = tracking.length
+    const tracking = (data.data.tracking_records || []).slice();
+    const ciOnly = tracking.filter((t) => t.has_commercial_invoice);
+    const byDist = new Map();
+    ciOnly.forEach((t) => {
+      const key = t.distributor_id != null
+        ? `id:${t.distributor_id}`
+        : `name:${String(t.distributor_name || t.order_ref_no || 'Unknown').trim().toLowerCase()}`;
+      if (!byDist.has(key)) {
+        byDist.set(key, {
+          key,
+          name: t.distributor_name || t.order_ref_no || 'Unknown distributor',
+          rows: [],
+        });
+      }
+      byDist.get(key).rows.push(t);
+    });
+    const distGroups = [...byDist.values()]
+      .map((g) => ({
+        ...g,
+        rows: g.rows.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const rowsHtml = distGroups.length
+      ? distGroups.map((g) => {
+          const latest = g.rows[0] || {};
+          const header = `<tr class="of-tree-ci-dist"><td colspan="7"><strong>${foEscapeText(g.name)}</strong> · ${g.rows.length} CI · latest ${foEscapeText(latest.order_ref_no || '—')}</td></tr>
+            <tr class="of-tree-ci-season"><td colspan="7">📁 Others (${g.rows.length})</td></tr>`;
+          const body = g.rows.map((t) => `<tr>
+              <td>${t.order_ref_no || '-'}</td>
+              <td>${t.distributor_name || '-'}</td>
+              <td>${t.has_sales_order ? 'Yes' : 'No'}</td>
+              <td>${t.has_commercial_invoice ? 'Yes' : 'No'}</td>
+              <td>${t.payment_status || '-'}</td>
+              <td>${t.transit_status || '-'}</td>
+              <td><button onclick="deleteOrderFulfillmentTracking(${t.tracking_id}, '${(t.order_ref_no || '').replace(/'/g, "\\'")}')" class="btn btn-danger" style="padding: 2px 10px; font-size: 0.85rem;">Delete</button></td>
+            </tr>`).join('');
+          return header + body;
+        }).join('')
+      : '<tr><td colspan="7">No Sales Orders/Invoices tracked yet.</td></tr>';
+    // Keep SO tracking table alphabetical flat for uploads pane.
+    const soRowsHtml = tracking.length
       ? tracking
+          .slice()
+          .sort((a, b) =>
+            String(a.distributor_name || a.order_ref_no || '').localeCompare(
+              String(b.distributor_name || b.order_ref_no || ''),
+              undefined,
+              { sensitivity: 'base' }
+            )
+          )
           .map(
             (t) => `<tr>
               <td>${t.order_ref_no || '-'}</td>
@@ -10320,7 +10494,7 @@ async function loadOrderFulfillmentUploads() {
           )
           .join('')
       : '<tr><td colspan="7">No Sales Orders/Invoices tracked yet.</td></tr>';
-    if (trackingBody) trackingBody.innerHTML = rowsHtml;
+if (trackingBody) trackingBody.innerHTML = soRowsHtml;
     if (trackingBodyCi) trackingBodyCi.innerHTML = rowsHtml;
   } catch (error) {
     const errHtml = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
@@ -12399,7 +12573,23 @@ const ofSavedOrdersState = {
   grouped: [],
   selectedDistributorKey: '',
   selectedOrderId: null,
+  expandedDistributorKeys: {},
+  expandedSeasonKeys: {},
 };
+
+function orderDeskSeasonLabel(season) {
+  const s = String(season || '').trim();
+  return s || 'Others';
+}
+
+function formatOrderDeskQtyValue(qty, value) {
+  const parts = [];
+  const q = Number(qty || 0);
+  const v = Number(value || 0);
+  if (q > 0) parts.push(`${Math.round(q)} pcs`);
+  if (v > 0) parts.push(formatFilledOrderAmount(v));
+  return parts.join(' · ');
+}
 
 function getFilledOrderUploadPrefix(prefix) {
   return prefix || filledOrdersState.uploadUiPrefix || 'fo';
@@ -12713,10 +12903,47 @@ function _buildOfSavedDistributorGroups() {
     }
     map.get(key).orders.push(order);
   });
-  return Array.from(map.values()).map((group) => ({
-    ...group,
-    orders: group.orders.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
-  })).sort((a, b) => a.distributorName.localeCompare(b.distributorName));
+  return Array.from(map.values()).map((group) => {
+    const orders = group.orders
+      .slice()
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    const seasonMap = new Map();
+    orders.forEach((order) => {
+      const label = orderDeskSeasonLabel(order.season);
+      if (!seasonMap.has(label)) {
+        seasonMap.set(label, { label, orders: [], totalQty: 0, totalValue: 0 });
+      }
+      const bucket = seasonMap.get(label);
+      bucket.orders.push(order);
+      bucket.totalQty += Number(order.total_piece_qty || 0);
+      bucket.totalValue += Number(order.total_ex_mill_value || 0);
+    });
+    const seasons = Array.from(seasonMap.values())
+      .map((s) => ({
+        ...s,
+        orders: s.orders.sort((a, b) =>
+          String(b.created_at || '').localeCompare(String(a.created_at || ''))
+        ),
+      }))
+      .sort((a, b) => {
+        const aOther = a.label === 'Others' ? 1 : 0;
+        const bOther = b.label === 'Others' ? 1 : 0;
+        if (aOther !== bOther) return aOther - bOther;
+        const aDate = a.orders[0]?.created_at || '';
+        const bDate = b.orders[0]?.created_at || '';
+        return String(bDate).localeCompare(String(aDate)) || a.label.localeCompare(b.label);
+      });
+    const totalQty = orders.reduce((sum, o) => sum + Number(o.total_piece_qty || 0), 0);
+    const totalValue = orders.reduce((sum, o) => sum + Number(o.total_ex_mill_value || 0), 0);
+    return {
+      ...group,
+      orders,
+      seasons,
+      latest: orders[0] || null,
+      totalQty,
+      totalValue,
+    };
+  }).sort((a, b) => a.distributorName.localeCompare(b.distributorName));
 }
 
 function renderOfSavedDistributorRail() {
@@ -12729,22 +12956,116 @@ function renderOfSavedDistributorRail() {
   }
   host.innerHTML = groups.map((group) => {
     const active = group.key === ofSavedOrdersState.selectedDistributorKey;
-    const latestDate = (group.orders[0]?.created_at || '').slice(0, 10);
+    const expanded = !!ofSavedOrdersState.expandedDistributorKeys[group.key];
+    const latest = group.latest || {};
+    const latestHint = [orderDeskSeasonLabel(latest.season), latest.category, (latest.created_at || '').slice(0, 10)]
+      .filter(Boolean)
+      .join(' · ');
+    const metrics = formatOrderDeskQtyValue(group.totalQty, group.totalValue);
+    const seasonHtml = expanded
+      ? `<div class="of-tree-seasons">${(group.seasons || []).map((season) => {
+          const seasonKey = `${group.key}||${season.label}`;
+          const seasonOpen = !!ofSavedOrdersState.expandedSeasonKeys[seasonKey];
+          const seasonMetrics = formatOrderDeskQtyValue(season.totalQty, season.totalValue);
+          const ordersHtml = seasonOpen
+            ? `<div class="of-tree-orders">${season.orders.map((o) => {
+                const selected = Number(ofSavedOrdersState.selectedOrderId) === Number(o.id);
+                const orderMetrics = formatOrderDeskQtyValue(o.total_piece_qty, o.total_ex_mill_value);
+                const title = [o.category, o.source_filename].filter(Boolean).join(' · ') || `Order #${o.id}`;
+                const hint = [orderDeskSeasonLabel(o.season), (o.created_at || '').slice(0, 10), orderMetrics]
+                  .filter(Boolean)
+                  .join(' · ');
+                return `
+                  <button type="button"
+                    class="of-tree-order-btn ${selected ? 'is-active' : ''}"
+                    data-saved-order-id="${Number(o.id)}">
+                    <span class="of-rail-label">${foEscapeText(title)}</span>
+                    <span class="of-rail-hint">${foEscapeText(hint)}</span>
+                  </button>`;
+              }).join('')}</div>`
+            : '';
+          const seasonHint = [season.orders.length > 1 ? `${season.orders.length} orders` : '', seasonMetrics]
+            .filter(Boolean)
+            .join(' · ');
+          return `
+            <div class="of-tree-season ${seasonOpen ? 'is-open' : ''}">
+              <button type="button" class="of-tree-season-btn" data-saved-season-key="${encodeURIComponent(seasonKey)}">
+                <span class="of-tree-folder-ico">📁</span>
+                <span class="of-rail-text">
+                  <span class="of-rail-label">${foEscapeText(season.label)}</span>
+                  <span class="of-rail-hint">${foEscapeText(seasonHint)}</span>
+                </span>
+              </button>
+              ${ordersHtml}
+            </div>`;
+        }).join('')}</div>`
+      : '';
+    const distHint = [latestHint, group.orders.length > 1 ? `${group.orders.length} orders` : '', metrics]
+      .filter(Boolean)
+      .join(' · ');
     return `
-      <button type="button" class="of-rail-item of-saved-distributor-btn ${active ? 'is-active' : ''}" data-saved-distributor-key="${encodeURIComponent(group.key)}">
-        <span class="of-rail-text">
-          <span class="of-rail-label">${group.distributorName}</span>
-          <span class="of-rail-hint">${group.orders.length} order${group.orders.length === 1 ? '' : 's'}${latestDate ? ` · ${latestDate}` : ''}</span>
-        </span>
-      </button>
+      <div class="of-tree-dist ${expanded ? 'is-open' : ''} ${active ? 'is-active' : ''}">
+        <button type="button" class="of-rail-item of-saved-distributor-btn ${active ? 'is-active' : ''}" data-saved-distributor-key="${encodeURIComponent(group.key)}">
+          <span class="of-rail-text">
+            <span class="of-rail-label">${foEscapeText(group.distributorName)}</span>
+            <span class="of-rail-hint">${foEscapeText(distHint)}</span>
+          </span>
+        </button>
+        ${seasonHtml}
+      </div>
     `;
   }).join('');
   host.querySelectorAll('.of-saved-distributor-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const key = decodeURIComponent(btn.getAttribute('data-saved-distributor-key') || '');
-      if (key) selectOfSavedDistributor(key);
+      if (key) toggleOfSavedDistributor(key);
     });
   });
+  host.querySelectorAll('.of-tree-season-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = decodeURIComponent(btn.getAttribute('data-saved-season-key') || '');
+      if (!key) return;
+      ofSavedOrdersState.expandedSeasonKeys[key] = !ofSavedOrdersState.expandedSeasonKeys[key];
+      renderOfSavedDistributorRail();
+    });
+  });
+  host.querySelectorAll('.of-tree-order-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const orderId = Number(btn.getAttribute('data-saved-order-id') || 0);
+      if (orderId) selectOfSavedOrder(orderId);
+    });
+  });
+}
+
+async function toggleOfSavedDistributor(distributorKey) {
+  const wasOpen = !!ofSavedOrdersState.expandedDistributorKeys[distributorKey];
+  ofSavedOrdersState.expandedDistributorKeys[distributorKey] = !wasOpen;
+  if (!wasOpen) {
+    await selectOfSavedDistributor(distributorKey);
+  } else {
+    renderOfSavedDistributorRail();
+  }
+}
+
+async function selectOfSavedOrder(orderId) {
+  if (!_isOfSavedOrdersOpen()) {
+    setOfRailMode('saved');
+    showOfSection('saved-orders');
+  }
+  const group = ofSavedOrdersState.grouped.find((g) =>
+    (g.orders || []).some((o) => Number(o.id) === Number(orderId))
+  );
+  if (group) {
+    ofSavedOrdersState.selectedDistributorKey = group.key;
+    ofSavedOrdersState.expandedDistributorKeys[group.key] = true;
+    const order = (group.orders || []).find((o) => Number(o.id) === Number(orderId));
+    const seasonKey = `${group.key}||${orderDeskSeasonLabel(order && order.season)}`;
+    ofSavedOrdersState.expandedSeasonKeys[seasonKey] = true;
+  }
+  ofSavedOrdersState.selectedOrderId = Number(orderId);
+  renderOfSavedDistributorRail();
+  renderOfSavedOrderPicker();
+  await loadOfSavedOrderDetail(orderId);
 }
 
 function markOfSavedDistributorActive(distributorKey) {
@@ -12867,14 +13188,15 @@ async function selectOfSavedDistributor(distributorKey) {
     showOfSection('saved-orders');
   }
   ofSavedOrdersState.selectedDistributorKey = distributorKey;
+  ofSavedOrdersState.expandedDistributorKeys[distributorKey] = true;
   const group = ofSavedOrdersState.grouped.find((g) => g.key === distributorKey);
-  ofSavedOrdersState.selectedOrderId = group?.orders?.[0]?.id || null;
-
-  const listHost = document.getElementById('of-saved-distributor-list');
-  const hasButtons = listHost && listHost.querySelector('.of-saved-distributor-btn');
-  if (hasButtons) markOfSavedDistributorActive(distributorKey);
-  else renderOfSavedDistributorRail();
-
+  const latest = group?.latest || group?.orders?.[0] || null;
+  ofSavedOrdersState.selectedOrderId = latest?.id || null;
+  if (latest) {
+    const seasonKey = `${distributorKey}||${orderDeskSeasonLabel(latest.season)}`;
+    ofSavedOrdersState.expandedSeasonKeys[seasonKey] = true;
+  }
+  renderOfSavedDistributorRail();
   renderOfSavedOrderPicker();
   if (ofSavedOrdersState.selectedOrderId) {
     await loadOfSavedOrderDetail(ofSavedOrdersState.selectedOrderId);
