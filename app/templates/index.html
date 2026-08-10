@@ -2702,7 +2702,7 @@
                     <p class="bd-master-form-eyebrow">Customers</p>
                     <h2 id="master-distributor-form-title">Add Distributor</h2>
                 </div>
-                <button type="button" class="bd-master-form-close" onclick="closeModal('master-distributor-form-modal')" title="Close" aria-label="Close">&times;</button>
+                <button type="button" class="bd-master-form-close" onclick="safeCloseModal('master-distributor-form-modal')" title="Close" aria-label="Close">&times;</button>
             </div>
             <div class="bd-master-form-body">
                 <input type="hidden" id="master-distributor-id" />
@@ -2764,7 +2764,7 @@
                 </section>
             </div>
             <div class="bd-master-form-foot modal-actions">
-                <button type="button" onclick="closeModal('master-distributor-form-modal')" class="btn btn-secondary">Cancel</button>
+                <button type="button" onclick="safeCloseModal('master-distributor-form-modal')" class="btn btn-secondary">Cancel</button>
                 <button type="button" onclick="saveMasterDistributor(event)" class="btn btn-primary">Save</button>
             </div>
         </div>
@@ -2777,7 +2777,7 @@
                     <p class="bd-master-form-eyebrow">Customers</p>
                     <h2 id="master-retailer-form-title">Add Retailer</h2>
                 </div>
-                <button type="button" class="bd-master-form-close" onclick="closeModal('master-retailer-form-modal')" title="Close" aria-label="Close">&times;</button>
+                <button type="button" class="bd-master-form-close" onclick="safeCloseModal('master-retailer-form-modal')" title="Close" aria-label="Close">&times;</button>
             </div>
             <div class="bd-master-form-body">
                 <input type="hidden" id="master-retailer-id" />
@@ -2836,7 +2836,7 @@
                 </section>
             </div>
             <div class="bd-master-form-foot modal-actions">
-                <button type="button" onclick="closeModal('master-retailer-form-modal')" class="btn btn-secondary">Cancel</button>
+                <button type="button" onclick="safeCloseModal('master-retailer-form-modal')" class="btn btn-secondary">Cancel</button>
                 <button type="button" onclick="saveMasterRetailer(event)" class="btn btn-primary">Save</button>
             </div>
         </div>
@@ -2950,7 +2950,7 @@
             </div>
             <div class="modal-actions">
                 <button onclick="saveDistributor(event)" class="btn btn-primary">Save Distributor</button>
-                <button onclick="closeModal('distributor-form-modal')" class="btn btn-secondary">Cancel</button>
+                <button onclick="safeCloseModal('distributor-form-modal')" class="btn btn-secondary">Cancel</button>
             </div>
         </div>
     </div>

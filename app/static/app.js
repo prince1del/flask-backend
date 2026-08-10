@@ -2270,6 +2270,32 @@ function closeAllModals() {
   });
 }
 
+/** Distributor / retailer forms — protect against accidental backdrop dismiss. */
+const CUSTOMER_FORM_MODAL_IDS = new Set([
+  'master-distributor-form-modal',
+  'master-retailer-form-modal',
+  'distributor-form-modal',
+  'retailer-form-modal',
+]);
+
+let modalBackdropPointerDownEl = null;
+
+function isCustomerFormModal(modal) {
+  return Boolean(modal && CUSTOMER_FORM_MODAL_IDS.has(modal.id));
+}
+
+function isCustomerFormDirty(modal) {
+  if (!modal) return false;
+  const fields = modal.querySelectorAll(
+    'input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]), select, textarea',
+  );
+  for (const el of fields) {
+    if (el.disabled || el.readOnly) continue;
+    if (String(el.value || '').trim()) return true;
+  }
+  return false;
+}
+
 /** Close a standard `.modal` without saving (Cancel / Esc / backdrop). */
 function dismissStandardModal(modal) {
   if (!modal || modal.classList.contains('hidden')) return;
@@ -2279,6 +2305,30 @@ function dismissStandardModal(modal) {
   }
   if (modal.id) closeModal(modal.id);
   else modal.classList.add('hidden');
+}
+
+async function requestDismissModal(modal) {
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (isCustomerFormModal(modal) && isCustomerFormDirty(modal)) {
+    const ok = await nexoraConfirm(
+      'Form mein details bhari hain. Band karne se yeh save nahi hongi. Phir bhi band karein?',
+      {
+        title: 'Discard form?',
+        danger: true,
+        okText: 'Band karo',
+        cancelText: 'Wapas form pe',
+      },
+    );
+    if (!ok) return;
+  }
+  dismissStandardModal(modal);
+}
+
+/** Use from Cancel / ✕ on distributor & retailer forms. */
+function safeCloseModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  requestDismissModal(modal);
 }
 
 function getTopVisibleStandardModal() {
@@ -2293,17 +2343,32 @@ function isBlockingOverlayOpen() {
   return !!document.querySelector('body > div[style*="position: fixed"][style*="z-index: 9"]');
 }
 
-/** Esc + backdrop click closes open `.modal` dialogs without saving. */
+/**
+ * Esc + intentional backdrop click closes open `.modal` dialogs.
+ * Accidental: drag from inside form → release outside does NOT close.
+ * Dirty customer forms ask confirm before discard.
+ */
 function initStandardModalDismiss() {
   if (document.documentElement.dataset.modalDismissBound === '1') return;
   document.documentElement.dataset.modalDismissBound = '1';
+
+  document.addEventListener('pointerdown', (event) => {
+    const modal = event.target?.closest?.('.modal');
+    modalBackdropPointerDownEl = (modal && event.target === modal) ? modal : null;
+  }, true);
 
   document.addEventListener('click', (event) => {
     const modal = event.target?.closest?.('.modal');
     if (!modal || modal.classList.contains('hidden')) return;
     // Only the dimmed backdrop (the .modal itself), not .modal-content
     if (event.target !== modal) return;
-    dismissStandardModal(modal);
+    // Must press AND release on backdrop — stops accidental outside release.
+    if (modalBackdropPointerDownEl !== modal) {
+      modalBackdropPointerDownEl = null;
+      return;
+    }
+    modalBackdropPointerDownEl = null;
+    requestDismissModal(modal);
   });
 
   document.addEventListener('keydown', (event) => {
@@ -2313,7 +2378,7 @@ function initStandardModalDismiss() {
     const modal = getTopVisibleStandardModal();
     if (modal) {
       event.preventDefault();
-      dismissStandardModal(modal);
+      requestDismissModal(modal);
       return;
     }
     if (articleMasterState.selectionMode) {
