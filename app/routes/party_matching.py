@@ -292,6 +292,33 @@ def get_review_queue():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _merge_alias_snapshot(moved_alias_ids):
+    """JSON for party_merges.notes — which aliases were moved at merge time."""
+    return json.dumps(
+        {
+            "version": 1,
+            "moved_alias_ids": [int(x) for x in moved_alias_ids],
+        }
+    )
+
+
+def _parse_moved_alias_ids(notes):
+    """Return list of alias IDs from merge notes, or None if snapshot missing/legacy."""
+    if notes is None or str(notes).strip() == "":
+        return None
+    try:
+        data = json.loads(notes)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or "moved_alias_ids" not in data:
+        return None
+    ids = data.get("moved_alias_ids") or []
+    try:
+        return [int(x) for x in ids]
+    except (TypeError, ValueError):
+        return None
+
+
 @party_matching_bp.route('/approve-merge', methods=['POST'])
 @require_jwt_auth
 @require_admin
@@ -319,19 +346,34 @@ def approve_merge():
         # Create merge record
         merge_id = None
         try:
+            source_uuid = match['party1_uuid']
+            target_uuid = match['party2_uuid']
+
+            # Snapshot exact aliases that will move — reverse must restore only these.
+            cursor.execute(
+                '''
+                SELECT alias_id FROM party_aliases
+                WHERE party_uuid = ? AND workspace_id = ?
+                ''',
+                (source_uuid, workspace_id),
+            )
+            moved_alias_ids = [int(row[0]) for row in cursor.fetchall()]
+            notes = _merge_alias_snapshot(moved_alias_ids)
+
             cursor.execute('''
                 INSERT INTO party_merges 
-                (workspace_id, source_party_uuid, target_party_uuid, confidence_score, merge_reason, merged_by, merged_at, merge_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (workspace_id, source_party_uuid, target_party_uuid, confidence_score, merge_reason, merged_by, merged_at, merge_status, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 workspace_id,
-                match['party1_uuid'],
-                match['party2_uuid'],
+                source_uuid,
+                target_uuid,
                 match['final_confidence_score'],
                 merge_reason,
                 'admin',
                 datetime.now().isoformat(),
-                'approved'
+                'approved',
+                notes,
             ))
             merge_id = cursor.lastrowid
             
@@ -340,14 +382,14 @@ def approve_merge():
                 UPDATE party_aliases 
                 SET party_uuid = ?
                 WHERE party_uuid = ? AND workspace_id = ?
-            ''', (match['party2_uuid'], match['party1_uuid'], workspace_id))
+            ''', (target_uuid, source_uuid, workspace_id))
             
             # Mark source as merged
             cursor.execute('''
                 UPDATE master_parties 
                 SET status = 'merged'
                 WHERE party_uuid = ? AND workspace_id = ?
-            ''', (match['party1_uuid'], workspace_id))
+            ''', (source_uuid, workspace_id))
             
             conn.commit()
         except Exception as e:
@@ -362,7 +404,8 @@ def approve_merge():
                 'merge_id': merge_id,
                 'source_party_uuid': match['party1_uuid'],
                 'target_party_uuid': match['party2_uuid'],
-                'status': 'approved'
+                'status': 'approved',
+                'moved_alias_ids': moved_alias_ids,
             }
         }), 200
     except Exception as e:
@@ -394,14 +437,45 @@ def reverse_merge():
         
         if not merge.get('can_reverse'):
             return jsonify({'success': False, 'error': 'This merge cannot be reversed'}), 400
+
+        if str(merge.get('merge_status') or '').lower() == 'reversed':
+            return jsonify({'success': False, 'error': 'Merge already reversed'}), 400
+
+        moved_alias_ids = _parse_moved_alias_ids(merge.get('notes'))
+        aliases_restored = 0
+        aliases_warning = None
         
         try:
-            # Move aliases back
-            cursor.execute('''
-                UPDATE party_aliases 
-                SET party_uuid = ?
-                WHERE party_uuid = ? AND workspace_id = ?
-            ''', (merge['source_party_uuid'], merge['target_party_uuid'], workspace_id))
+            # Only move aliases that were transferred at merge time.
+            # Never bulk-move "all aliases currently on target" — that steals
+            # the target's pre-existing aliases and corrupts data.
+            if moved_alias_ids is None:
+                aliases_warning = (
+                    "Merge has no alias snapshot (legacy). Source party reactivated "
+                    "without moving aliases — review party_aliases manually if needed."
+                )
+                current_app.logger.warning(
+                    "reverse_merge id=%s: missing moved_alias_ids snapshot; skipping alias restore",
+                    merge_id,
+                )
+            elif moved_alias_ids:
+                placeholders = ",".join("?" * len(moved_alias_ids))
+                cursor.execute(
+                    f'''
+                    UPDATE party_aliases
+                    SET party_uuid = ?
+                    WHERE alias_id IN ({placeholders})
+                      AND party_uuid = ?
+                      AND workspace_id = ?
+                    ''',
+                    (
+                        merge['source_party_uuid'],
+                        *moved_alias_ids,
+                        merge['target_party_uuid'],
+                        workspace_id,
+                    ),
+                )
+                aliases_restored = int(cursor.rowcount or 0)
             
             # Mark source as active again
             cursor.execute('''
@@ -424,13 +498,14 @@ def reverse_merge():
         finally:
             conn.close()
         
-        return jsonify({
-            'success': True,
-            'data': {
-                'merge_id': merge_id,
-                'status': 'reversed',
-                'message': 'Merge reversed successfully'
-            }
-        }), 200
+        payload = {
+            'merge_id': merge_id,
+            'status': 'reversed',
+            'message': 'Merge reversed successfully',
+            'aliases_restored': aliases_restored,
+        }
+        if aliases_warning:
+            payload['warning'] = aliases_warning
+        return jsonify({'success': True, 'data': payload}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
