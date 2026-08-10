@@ -2296,9 +2296,20 @@ function isCustomerFormDirty(modal) {
   return false;
 }
 
+/** Never auto-dismiss these (login must stay until successful auth). */
+const NON_DISMISSIBLE_MODAL_IDS = new Set([
+  'loginModal',
+]);
+
+function canAutoDismissModal(modal) {
+  if (!modal || modal.classList.contains('hidden')) return false;
+  if (NON_DISMISSIBLE_MODAL_IDS.has(modal.id)) return false;
+  return true;
+}
+
 /** Close a standard `.modal` without saving (Cancel / Esc / backdrop). */
 function dismissStandardModal(modal) {
-  if (!modal || modal.classList.contains('hidden')) return;
+  if (!canAutoDismissModal(modal)) return;
   if (modal.id === 'global-search-modal') {
     closeGlobalSearchModal();
     return;
@@ -2308,7 +2319,7 @@ function dismissStandardModal(modal) {
 }
 
 async function requestDismissModal(modal) {
-  if (!modal || modal.classList.contains('hidden')) return;
+  if (!canAutoDismissModal(modal)) return;
   if (isCustomerFormModal(modal) && isCustomerFormDirty(modal)) {
     const ok = await nexoraConfirm(
       'Form mein details bhari hain. Band karne se yeh save nahi hongi. Phir bhi band karein?',
@@ -2332,7 +2343,9 @@ function safeCloseModal(id) {
 }
 
 function getTopVisibleStandardModal() {
-  const open = [...document.querySelectorAll('.modal:not(.hidden)')];
+  const open = [...document.querySelectorAll('.modal:not(.hidden)')].filter(
+    (modal) => !NON_DISMISSIBLE_MODAL_IDS.has(modal.id),
+  );
   return open.length ? open[open.length - 1] : null;
 }
 
