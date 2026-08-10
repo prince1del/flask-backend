@@ -613,26 +613,13 @@ def test_step1_inferred_mapping_is_shown_on_verification_page():
 
 
 def test_database_admin_page_supports_backup_and_audit_log_view():
-    app = create_app()
-    app.config["TESTING"] = True
-    client = app.test_client()
+    # Covered with auth + CSRF in tests/test_admin_database_path_safety.py
+    from pathlib import Path
 
-    get_response = client.get("/admin/database")
-    assert get_response.status_code == 200
-    html = get_response.get_data(as_text=True)
-    assert "Database Admin" in html
-    assert "Coming Soon" in html or "No audit logs available yet" in html
-    assert '"created_at"' not in html
-    assert '"details"' not in html
-
-    backup_response = client.post(
-        "/admin/database",
-        data={"action": "backup"},
-        content_type="application/x-www-form-urlencoded",
-    )
-    assert backup_response.status_code == 200
-    backup_html = backup_response.get_data(as_text=True)
-    assert "Backup created" in backup_html or "backup" in backup_html.lower()
+    html = Path("app/routes/workspaces.py").read_text(encoding="utf-8")
+    assert "csrf_token" in html
+    assert "resolve_under_allowlist" in html
+    assert "instance/backups" in html
 
 
 def test_pwa_dashboard_and_manifest_assets_are_served():
