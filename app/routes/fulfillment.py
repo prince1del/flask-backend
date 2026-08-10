@@ -45,9 +45,31 @@ def create_fulfillment():
 @require_jwt_auth
 def fulfill_item(fulfillment_id: int):
     payload = request.get_json(silent=True) or {}
-    increment = int(payload.get("increment") or 0)
-    if increment == 0:
-        return jsonify({"success": False, "error": {"message": "increment is required"}}), 400
+    raw_increment = payload.get("increment")
+    try:
+        increment = int(raw_increment)
+    except (TypeError, ValueError):
+        return jsonify(
+            {"success": False, "error": {"message": "increment must be an integer"}}
+        ), 400
+    if increment <= 0:
+        return jsonify(
+            {
+                "success": False,
+                "error": {"message": "increment must be greater than zero"},
+            }
+        ), 400
+
     db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
-    updated = db.update_fulfilled_quantity(fulfillment_id, fulfilled_increment=increment)
+    workspace_id = get_workspace_id()
+    try:
+        updated = db.update_fulfilled_quantity(
+            fulfillment_id,
+            fulfilled_increment=increment,
+            workspace_id=workspace_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        status = 404 if "not found" in message.lower() else 400
+        return jsonify({"success": False, "error": {"message": message}}), status
     return jsonify({"success": True, "data": updated}), 200

@@ -4343,20 +4343,48 @@ class CentralizedDB:
             return int(cursor.lastrowid)
 
     def update_fulfilled_quantity(
-        self, fulfillment_id: int, fulfilled_increment: int = 0
+        self,
+        fulfillment_id: int,
+        fulfilled_increment: int = 0,
+        workspace_id: str | None = None,
     ) -> dict[str, Any]:
-        """Increment the fulfilled_qty for a fulfillment item and return updated row."""
+        """Increment fulfilled_qty for a workspace-scoped fulfillment item."""
+        workspace_id = str(workspace_id or "").strip()
+        if not workspace_id:
+            raise ValueError("workspace_id is required")
+        try:
+            inc = int(fulfilled_increment)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("fulfilled_increment must be an integer") from exc
+        if inc <= 0:
+            raise ValueError("fulfilled_increment must be greater than zero")
+
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT id, order_lifecycle_id, product_code, brand, color, ordered_qty, fulfilled_qty, created_at, workspace_id FROM order_fulfillment_items WHERE id = ?",
-                (fulfillment_id,),
+                """
+                SELECT id, order_lifecycle_id, product_code, brand, color,
+                       ordered_qty, fulfilled_qty, created_at, workspace_id
+                FROM order_fulfillment_items
+                WHERE id = ? AND workspace_id = ?
+                """,
+                (fulfillment_id, workspace_id),
             ).fetchone()
             if row is None:
                 raise ValueError(f"Fulfillment item {fulfillment_id} not found")
-            new_fulfilled = int(row[6] or 0) + int(fulfilled_increment or 0)
+            ordered_qty = int(row[5] or 0)
+            current_fulfilled = int(row[6] or 0)
+            new_fulfilled = current_fulfilled + inc
+            if new_fulfilled > ordered_qty:
+                raise ValueError(
+                    f"Fulfillment would exceed ordered quantity ({ordered_qty})"
+                )
             conn.execute(
-                "UPDATE order_fulfillment_items SET fulfilled_qty = ? WHERE id = ?",
-                (new_fulfilled, fulfillment_id),
+                """
+                UPDATE order_fulfillment_items
+                SET fulfilled_qty = ?
+                WHERE id = ? AND workspace_id = ?
+                """,
+                (new_fulfilled, fulfillment_id, workspace_id),
             )
             conn.commit()
         return {
@@ -4365,7 +4393,7 @@ class CentralizedDB:
             "product_code": row[2],
             "brand": row[3],
             "color": row[4],
-            "ordered_qty": row[5],
+            "ordered_qty": ordered_qty,
             "fulfilled_qty": new_fulfilled,
             "created_at": row[7],
             "workspace_id": row[8],
