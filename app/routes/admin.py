@@ -19,6 +19,34 @@ from sqlalchemy import func, desc
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
+
+def _founder_username() -> str:
+    return (os.getenv('ADMIN_USERNAME') or 'admin').strip()
+
+
+def _requester() -> dict:
+    user = getattr(request, 'user', None)
+    return user if isinstance(user, dict) else {}
+
+
+def _forbidden(message: str):
+    return (
+        jsonify(
+            {
+                'success': False,
+                'error': {
+                    'code': 'FORBIDDEN',
+                    'message': message,
+                },
+            }
+        ),
+        403,
+    )
+
+
+def _is_founder_requester() -> bool:
+    return _requester().get('username') == _founder_username()
+
 # ========== ADMIN 1: LIST USERS ==========
 @admin_bp.route('/users', methods=['GET'])
 @require_jwt_auth
@@ -78,21 +106,8 @@ def create_user():
         return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
 
     if role == 'admin':
-        requester = getattr(request, 'user', {}) or {}
-        founder_username = os.getenv('ADMIN_USERNAME', 'admin')
-        if requester.get('username') != founder_username:
-            return (
-                jsonify(
-                    {
-                        'success': False,
-                        'error': {
-                            'code': 'FORBIDDEN',
-                            'message': 'Insufficient permissions to assign admin role',
-                        },
-                    }
-                ),
-                403,
-            )
+        if not _is_founder_requester():
+            return _forbidden('Insufficient permissions to assign admin role')
 
     try:
         # Check if user already exists
@@ -159,6 +174,11 @@ def update_user(user_id):
         user = db.session.get(User, user_id)
         if not user:
             return jsonify({'success': False, 'data': None, 'message': 'User not found'}), 404
+
+        founder_username = _founder_username()
+        # Non-founders must not demote/disable/repassword the founder account.
+        if user.username == founder_username and not _is_founder_requester():
+            return _forbidden('Insufficient permissions to modify the founder account')
         
         # Update allowed fields
         if 'email' in data:
@@ -166,26 +186,17 @@ def update_user(user_id):
         if 'role' in data:
             if data['role'] not in ['admin', 'sales_executive', 'distributor', 'retailer', 'unassigned']:
                 return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
-            if data['role'] == 'admin':
-                requester = getattr(request, 'user', {}) or {}
-                founder_username = os.getenv('ADMIN_USERNAME', 'admin')
-                if requester.get('username') != founder_username:
-                    return (
-                        jsonify(
-                            {
-                                'success': False,
-                                'error': {
-                                    'code': 'FORBIDDEN',
-                                    'message': 'Insufficient permissions to assign admin role',
-                                },
-                            }
-                        ),
-                        403,
-                    )
+            if data['role'] == 'admin' and not _is_founder_requester():
+                return _forbidden('Insufficient permissions to assign admin role')
+            # Founder must keep admin role — otherwise admin assignment locks out forever.
+            if user.username == founder_username and data['role'] != 'admin':
+                return _forbidden('Founder account must retain the admin role')
             user.role = data['role']
         if 'status' in data:
             if data['status'] not in ['active', 'inactive']:
                 return jsonify({'success': False, 'data': None, 'message': 'Invalid status'}), 400
+            if user.username == founder_username and data['status'] != 'active':
+                return _forbidden('Founder account cannot be deactivated')
             user.status = data['status']
         if 'password' in data and data['password']:
             user.set_password(data['password'])
@@ -230,6 +241,24 @@ def delete_user(user_id):
         user = db.session.get(User, user_id)
         if not user:
             return jsonify({'success': False, 'data': None, 'message': 'User not found'}), 404
+
+        requester = _requester()
+        founder_username = _founder_username()
+
+        # Never allow deleting the founder — that permanently locks out admin assignment.
+        if user.username == founder_username:
+            return _forbidden('Founder account cannot be deleted')
+
+        # Prevent accidental lockout / confused deputies deleting themselves.
+        requester_id = requester.get('user_id')
+        if requester_id is not None and int(requester_id) == int(user.id):
+            return _forbidden('You cannot delete your own account')
+        if requester.get('username') and requester.get('username') == user.username:
+            return _forbidden('You cannot delete your own account')
+
+        # Symmetric with create/update: only founder may remove other admin accounts.
+        if user.role == 'admin' and not _is_founder_requester():
+            return _forbidden('Insufficient permissions to delete an admin user')
         
         username = user.username
         
