@@ -664,9 +664,9 @@ def test_dashboard_config_api_returns_branding_details(tmp_path):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["brand_name"] == "NEXORA"
-    assert payload["app_name"] == "Jarvis Business Platform"
-    assert payload["dashboard_title"] == "Jarvis PWA Dashboard"
-    assert payload["short_name"] == "Jarvis"
+    assert payload["app_name"] == "NEXORA ENTERPRISE"
+    assert payload["dashboard_title"] == "Ask Nexora"
+    assert payload["short_name"] == "Ask Nexora"
     assert "dashboard_summary" in payload["api_endpoints"]
     assert "/manifest.json" == payload["api_endpoints"]["manifest"]
 
@@ -682,25 +682,25 @@ def test_dashboard_config_api_put_updates_runtime_config(tmp_path):
     config_before = before.get_json()
     assert "file_library" in config_before["enabled_modules"]
     assert "party_match" in config_before["enabled_modules"]
-    assert config_before["app_name"] == "Jarvis Business Platform"
+    assert config_before["app_name"] == "NEXORA ENTERPRISE"
 
     response = client.put(
         "/api/ui/dashboard-config",
         json={
             "enabled_modules": ["dashboard", "verification", "analytics"],
-            "app_name": "Jarvis Business Platform Updated",
+            "app_name": "Ask Nexora Updated",
         },
     )
     assert response.status_code == 200
     config_after = response.get_json()
     assert "file_library" not in config_after["enabled_modules"]
     assert "party_match" not in config_after["enabled_modules"]
-    assert config_after["app_name"] == "Jarvis Business Platform Updated"
+    assert config_after["app_name"] == "Ask Nexora Updated"
 
     manifest_response = client.get("/manifest.json")
     assert manifest_response.status_code == 200
     manifest = manifest_response.get_json()
-    assert manifest["name"] == "Jarvis Business Platform Updated"
+    assert manifest["name"] == "Ask Nexora Updated"
 
 
 def test_bulk_upload_endpoint_serves_upload_form_on_get():

@@ -1,4 +1,4 @@
-"""Jarvis / morning-suggestion workspace isolation."""
+"""Ask Nexora / morning-suggestion workspace isolation."""
 
 from centralized_db_system.db import CentralizedDB
 

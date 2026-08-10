@@ -109,9 +109,9 @@ def test_ai_assistant_query_handles_google_assistant_deep_link_payload(
     client = app.test_client()
 
     response = client.get(
-        "/api/v1/ai-assistant/query?queryText=ask%20Jarvis%20for%20today%27s%20mismatches"
+        "/api/v1/ai-assistant/query?queryText=ask%20Nexora%20for%20today%27s%20mismatches"
     )
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["intent"] == "alerts"
-    assert payload["answer"].startswith("Jarvis at your service, Boss")
+    assert payload["answer"].startswith("Ask Nexora:")

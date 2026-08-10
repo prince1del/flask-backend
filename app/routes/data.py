@@ -547,9 +547,9 @@ def _build_sales_order_link_summary(
 DASHBOARD_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "dashboard_config.json"
 DEFAULT_DASHBOARD_CONFIG = {
     "brand_name": "NEXORA",
-    "app_name": "Jarvis Business Platform",
-    "dashboard_title": "Jarvis PWA Dashboard",
-    "short_name": "Jarvis",
+    "app_name": "NEXORA ENTERPRISE",
+    "dashboard_title": "Ask Nexora",
+    "short_name": "Ask Nexora",
     "theme_color": "#020617",
     "background_color": "#020617",
     "enabled_modules": [
@@ -3984,10 +3984,16 @@ def ai_assistant_query() -> Response:
             mimetype="application/json",
         )
 
-    query = query.replace("ask jarvis", "").replace("talk to jarvis", "").strip()
+    # Strip wake phrases (Ask Nexora; keep legacy "jarvis" for old clients).
+    query = re.sub(
+        r"(?i)\b(ask|talk to)\s+(nexora|jarvis)\b",
+        "",
+        query,
+    ).strip()
     db = CentralizedDB(_db_path())
     intent = infer_ai_intent(query)
-    answer = "Jarvis at your service, Boss. No matching information found."
+    ask_prefix = "Ask Nexora:"
+    answer = f"{ask_prefix} No matching information found."
 
     if intent == "last_visit":
         entity = (
@@ -3998,15 +4004,18 @@ def ai_assistant_query() -> Response:
         )
         if distributor:
             last_visit = db.get_last_visit_date("distributor", distributor["id"])
-            answer = f"Jarvis at your service, Boss. Last visit to {distributor['name']} was on {last_visit or 'no recorded visit'}."
+            answer = (
+                f"{ask_prefix} Last visit to {distributor['name']} was on "
+                f"{last_visit or 'no recorded visit'}."
+            )
         else:
-            answer = f"Jarvis at your service, Boss. I could not find a distributor named {entity}."
+            answer = f"{ask_prefix} I could not find a distributor named {entity}."
     elif intent == "alerts":
         alerts = db.list_data_entry_alerts(workspace_id=get_workspace_id())
         answer = (
-            f"Jarvis at your service, Boss. You have {len(alerts)} active alerts."
+            f"{ask_prefix} You have {len(alerts)} active alerts."
             if alerts
-            else "Jarvis at your service, Boss. No active alerts found."
+            else f"{ask_prefix} No active alerts found."
         )
     elif intent == "pjp":
         today = datetime.now(timezone.utc).date().isoformat()
@@ -4014,9 +4023,9 @@ def ai_assistant_query() -> Response:
             today, workspace_id=get_workspace_id()
         )
         answer = (
-            f"Jarvis at your service, Boss. There are {len(suggestions)} retailer visits suggested today."
+            f"{ask_prefix} There are {len(suggestions)} retailer visits suggested today."
             if suggestions
-            else "Jarvis at your service, Boss. No PJP suggestions found."
+            else f"{ask_prefix} No PJP suggestions found."
         )
     elif intent == "purchase_trends":
         distributor = db.get_master_distributor_by_name(
@@ -4024,12 +4033,17 @@ def ai_assistant_query() -> Response:
         )
         if distributor:
             logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
-            answer = f"Jarvis at your service, Boss. Top behavior log for {distributor['name']}: {logs[0]['category_name'] if logs else 'no data'}."
+            answer = (
+                f"{ask_prefix} Top behavior log for {distributor['name']}: "
+                f"{logs[0]['category_name'] if logs else 'no data'}."
+            )
         else:
-            answer = "Jarvis at your service, Boss. I couldn't identify the distributor for purchase trend analysis."
+            answer = (
+                f"{ask_prefix} I couldn't identify the distributor for purchase trend analysis."
+            )
     else:
         search_results = db.global_search(query)
-        answer = f"Jarvis at your service, Boss. {json.dumps(search_results, ensure_ascii=False)}"
+        answer = f"{ask_prefix} {json.dumps(search_results, ensure_ascii=False)}"
 
     return Response(
         json.dumps(
@@ -4132,12 +4146,12 @@ def pwa_dashboard() -> Response:
         <html>
         <head>
           <meta charset=\"utf-8\"> 
-          <title>Jarvis PWA Dashboard</title>
+          <title>Ask Nexora</title>
           <link rel=\"manifest\" href=\"/manifest.json\">
           <meta name=\"theme-color\" content=\"#0f172a\">
         </head>
         <body style=\"font-family: system-ui, sans-serif; background: #020617; color: #eef2ff; margin: 2rem;\">
-          <h1>Jarvis PWA Dashboard</h1>
+          <h1>Ask Nexora</h1>
           <p>Progressive web app shell is available.</p>
           <p><a href=\"/manifest.json\" style=\"color: #facc15\">View manifest</a></p>
         </body>
@@ -4246,8 +4260,8 @@ def manifest() -> Response:
     return Response(
         json.dumps(
             {
-                "name": config.get("app_name", "Jarvis Business Platform"),
-                "short_name": config.get("short_name", "Jarvis"),
+                "name": config.get("app_name", "NEXORA ENTERPRISE"),
+                "short_name": config.get("short_name", "Ask Nexora"),
                 "start_url": "/pwa-dashboard",
                 "display": "standalone",
                 "background_color": config.get("background_color", "#020617"),
