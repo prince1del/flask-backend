@@ -1,6 +1,7 @@
 import calendar
 import difflib
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -153,6 +154,22 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "flag hua",
         "kya problem hai",
     ],
+    "target": [
+        "target",
+        "achievement",
+        "target vs achievement",
+        "kitna target hai",
+        "target kitna hai",
+        "target achieve",
+        "achieve kiya",
+        "kitna achieve",
+        "kitna target",
+        "financial year",
+        "kis financial year",
+        "konse financial year",
+        "konsi financial year",
+        "which financial year",
+    ],
     "purchase_trends": [
         "top-selling",
         "top selling",
@@ -185,7 +202,67 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "kitna baaki hai",
         "kitna baki hai",
     ],
+    "category_orders": [
+        "which category",
+        "konsi category",
+        "kis category",
+        "category wise",
+        "category ka order",
+        "category mein kitna",
+        "categories",
+    ],
+    "owner": [
+        "owner",
+        "malik",
+        "proprietor",
+        "owner ka naam",
+        "firm ka malik",
+        "kaun hai owner",
+        "kiska hai",
+        "mobile number",
+        "mobile no",
+        "phone number",
+        "phone no",
+        "contact number",
+        "contact no",
+        "mobile kya hai",
+        "number kya hai",
+    ],
 }
+
+# Filler/question words stripped when extracting a party (distributor) name
+# from a free-text query for intents that need an exact DB name match
+# (target, purchase trends) — e.g. "bernina ka target batao" -> "bernina".
+_PARTY_QUERY_STOPWORDS = {
+    "ka", "ki", "ke", "hai", "batao", "bata", "batado", "batayein",
+    "kitna", "kitni", "kya", "please", "tell", "me", "show", "what", "is",
+    "are", "the", "of", "for", "target", "targets", "achievement",
+    "achievements", "achieve", "achieved", "kiya", "vs", "versus",
+    "top-selling", "top", "selling", "best", "design", "trend", "trends",
+    "purchase", "purchases", "this", "month", "today", "last", "visit",
+    "visited", "to", "and", "how", "much", "give", "get", "hey", "nexora",
+    "konsi", "konse", "kis", "kaun", "kaunsa", "kaunsi", "mein", "main",
+    "category", "categories", "order", "orders", "wise", "distributor",
+    "distributors", "firm", "firms", "naam", "name", "kiska", "kiski",
+    "malik", "owner", "proprietor", "who", "which", "in",
+    "mobile", "phone", "contact", "number", "no",
+    "mrp", "exmill", "ex-mill", "ex", "mill", "price", "rate", "aur",
+    "product", "products", "article", "size", "batayein",
+    "financial", "year", "years", "fy", "kitne", "thi", "tha", "konse",
+    "konsi", "was", "were", "did", "have",
+}
+
+
+def extract_party_name_candidate(query: str) -> str:
+    """Best-effort extraction of a distributor/retailer name from a
+    free-text Ask Nexora query by stripping common filler/question words,
+    for intents that need an exact DB name match (target, purchase trends).
+    Falls back to the original query if nothing is left after stripping.
+    """
+    words = re.findall(r"[\w&.'-]+", query or "")
+    kept = [w for w in words if w.lower() not in _PARTY_QUERY_STOPWORDS]
+    candidate = " ".join(kept).strip()
+    return candidate or (query or "").strip()
 
 # Single-word anchors used only for typo-tolerant fallback matching —
 # kept separate from the phrase lists above so a near-miss on one word
@@ -205,6 +282,12 @@ _FUZZY_TERM_TO_INTENT: dict[str, str] = {
     "trending": "purchase_trends",
     "credit": "credit",
     "outstanding": "credit",
+    "target": "target",
+    "achievement": "target",
+    "category": "category_orders",
+    "owner": "owner",
+    "malik": "owner",
+    "proprietor": "owner",
 }
 
 

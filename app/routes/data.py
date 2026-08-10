@@ -45,6 +45,7 @@ from app.three_step_verification import (
 from app.utils import (
     detect_upload_file_type,
     expected_upload_format,
+    extract_party_name_candidate,
     infer_ai_intent,
     infer_distributor_name,
     stage_label_for_key,
@@ -4014,13 +4015,22 @@ def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
             brand = (a.get("brand") or "?").strip() or "?"
             size = (a.get("size") or "").strip()
             label = f"{brand} {size}".strip()
-            mrp = a.get("mrp")
-            try:
-                mrp_n = float(mrp) if mrp is not None else 0.0
-            except (TypeError, ValueError):
-                mrp_n = 0.0
+
+            def _as_float(value: Any) -> float:
+                try:
+                    return float(value) if value is not None else 0.0
+                except (TypeError, ValueError):
+                    return 0.0
+
+            mrp_n = _as_float(a.get("mrp"))
+            ex_mill_n = _as_float(a.get("ex_mill_price"))
+            price_bits = []
             if mrp_n > 0:
-                label = f"{label} (MRP ₹{int(round(mrp_n))})"
+                price_bits.append(f"MRP ₹{int(round(mrp_n))}")
+            if ex_mill_n > 0:
+                price_bits.append(f"Ex-mill ₹{int(round(ex_mill_n))}")
+            if price_bits:
+                label = f"{label} ({', '.join(price_bits)})"
             labels.append(label)
         extra = f" (+{len(arts) - 6} more)" if len(arts) > 6 else ""
         chunks.append(f"{len(arts)} article(s): {', '.join(labels)}{extra}")
@@ -4100,18 +4110,41 @@ def ai_assistant_query() -> Response:
             else f"{ask_prefix} No active alerts found."
         )
     elif intent == "pjp":
+        # Use the same monthly_pjp_days table that powers the app's real
+        # "This week's PJP" card (app/routes/pjp.py week_plan()) — this is
+        # the user's own planned visit for today, not a generic priority
+        # backlog across the whole workspace.
         today = datetime.now(timezone.utc).date().isoformat()
-        suggestions = db.get_morning_suggestion_list(
-            today, workspace_id=workspace_id
-        )
-        answer = (
-            f"{ask_prefix} There are {len(suggestions)} retailer visits suggested today."
-            if suggestions
-            else f"{ask_prefix} No PJP suggestions found."
-        )
+        pjp_row = None
+        try:
+            with sqlite3.connect(_db_path()) as conn:
+                conn.row_factory = sqlite3.Row
+                pjp_row = conn.execute(
+                    "SELECT place_to_visit, business_activity, particulars, "
+                    "day_type FROM monthly_pjp_days WHERE workspace_id = ? "
+                    "AND user_id = ? AND plan_date = ?",
+                    (workspace_id, user_id, today),
+                ).fetchone()
+        except sqlite3.OperationalError:
+            pjp_row = None
+
+        place = (pjp_row["place_to_visit"] if pjp_row else None) or ""
+        day_type = ((pjp_row["day_type"] if pjp_row else None) or "").lower()
+        if place.strip() and place.strip().lower() not in {"holiday", "leave"}:
+            activity = pjp_row["business_activity"] if pjp_row else None
+            extra = f" — {activity}" if activity else ""
+            answer = f"{ask_prefix} Today's planned visit: {place.strip()}{extra}."
+        elif day_type in {"holiday", "leave"}:
+            answer = f"{ask_prefix} Today is marked as {day_type} in your PJP."
+        else:
+            answer = f"{ask_prefix} No PJP entry planned for today yet."
     elif intent == "purchase_trends":
+        # get_master_distributor_by_name() requires an exact name match, so
+        # strip filler words ("what is the top-selling design for X this
+        # month?") down to the likely party name before looking it up.
+        entity = extract_party_name_candidate(query)
         distributor = db.get_master_distributor_by_name(
-            query, workspace_id=workspace_id
+            entity, workspace_id=workspace_id
         )
         if distributor:
             logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
@@ -4143,6 +4176,97 @@ def ai_assistant_query() -> Response:
                 )
         else:
             answer = f"{ask_prefix} No credit policy records found."
+    elif intent == "target":
+        # Use the same target_achievement_breakup source as the app's real
+        # "Target vs Achievement" card (app/routes/target_achievement.py
+        # get_breakup() -> list_target_distributor_breakup()), not the older
+        # standalone targets_achievements table.
+        entity = extract_party_name_candidate(query).strip().lower()
+        year_parts: list[str] = []
+        matched_name = None
+        if entity:
+            db.ensure_target_achievement_tables()
+            with sqlite3.connect(_db_path()) as conn:
+                fy_years = conn.execute(
+                    "SELECT id, financial_year FROM target_achievement_years "
+                    "WHERE workspace_id = ? ORDER BY financial_year",
+                    (workspace_id,),
+                ).fetchall()
+            for year_id, fy_label in fy_years:
+                breakup = db.list_target_distributor_breakup(workspace_id, year_id)
+                for row in breakup:
+                    name = str(row.get("distributor_name") or "")
+                    nick = str(row.get("nick") or "")
+                    if entity in name.lower() or (nick and entity in nick.lower()):
+                        matched_name = matched_name or name
+                        target_rs = float(row.get("target_lakhs") or 0) * 100_000
+                        achieved_rs = float(row.get("achievement_lakhs") or 0) * 100_000
+                        year_parts.append(
+                            f"FY{fy_label}: purchase Rs {achieved_rs:,.0f} "
+                            f"(target Rs {target_rs:,.0f})"
+                        )
+                        break
+        if year_parts:
+            answer = (
+                f"{ask_prefix} {matched_name} year-wise — "
+                + "; ".join(year_parts)
+                + "."
+            )
+        else:
+            answer = (
+                f"{ask_prefix} No target/achievement records found for that distributor."
+            )
+    elif intent == "category_orders":
+        entity = extract_party_name_candidate(query)
+        distributor = db.get_master_distributor_by_name(
+            entity, workspace_id=workspace_id
+        )
+        if distributor:
+            logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
+            if logs:
+                by_category: dict[str, float] = {}
+                for log in logs:
+                    cat = log.get("category_name") or "Uncategorized"
+                    by_category[cat] = by_category.get(cat, 0.0) + float(
+                        log.get("total_volume") or 0.0
+                    )
+                top_categories = sorted(
+                    by_category.items(), key=lambda item: item[1], reverse=True
+                )[:5]
+                breakdown = ", ".join(
+                    f"{name}: {volume:,.0f} units" for name, volume in top_categories
+                )
+                answer = (
+                    f"{ask_prefix} {distributor['name']} order volume by "
+                    f"category — {breakdown}."
+                )
+            else:
+                answer = (
+                    f"{ask_prefix} No order/category data found for "
+                    f"{distributor['name']}."
+                )
+        else:
+            answer = (
+                f"{ask_prefix} I couldn't identify the distributor for category breakdown."
+            )
+    elif intent == "owner":
+        entity = extract_party_name_candidate(query)
+        distributor = db.get_master_distributor_by_name(
+            entity, workspace_id=workspace_id
+        )
+        if distributor:
+            firm = distributor.get("firm_name") or distributor["name"]
+            answer = (
+                f"{ask_prefix} {firm} — owner/contact: {distributor['name']}"
+                + (
+                    f", phone {distributor['phone_number']}"
+                    if distributor.get("phone_number")
+                    else ""
+                )
+                + "."
+            )
+        else:
+            answer = f"{ask_prefix} I couldn't identify that distributor firm."
     else:
         search_results = db.global_search(
             query, workspace_id=workspace_id, user_id=user_id
