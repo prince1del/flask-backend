@@ -876,6 +876,33 @@ def save_monthly_distributor_data():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@target_achievement_bp.route('/years/<int:year_id>/achievement-excel', methods=['DELETE'])
+@require_jwt_auth
+def clear_fy_excel_achievement(year_id):
+    """Clear Excel-upload achievement only; keeps manual + CI + targets."""
+    try:
+        workspace_id = get_workspace_id()
+        year = _get_year_or_404(year_id, workspace_id)
+        if not year:
+            return jsonify({'success': False, 'error': 'Year not found'}), 404
+        result = _cdb().clear_fy_excel_achievement(workspace_id, year_id)
+        fy_label = year.get('display_year') or year.get('financial_year') or year.get('year') or ''
+        return jsonify(
+            {
+                'success': True,
+                'data': {
+                    'fy_label': fy_label,
+                    'achievement_lakhs': result.get('achievement_lakhs', 0),
+                    'manual_lakhs': result.get('manual_lakhs', 0),
+                    'ci_lakhs': result.get('ci_lakhs', 0),
+                    'excel_lakhs': 0,
+                },
+            }
+        ), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @target_achievement_bp.route('/years/<int:year_id>/achievement', methods=['DELETE'])
 @require_jwt_auth
 def clear_fy_achievement(year_id):

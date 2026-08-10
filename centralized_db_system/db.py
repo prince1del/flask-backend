@@ -11790,6 +11790,81 @@ class CentralizedDB:
             "file_kind": "budget",
         }
 
+    def clear_fy_excel_achievement(
+        self, workspace_id: str, financial_year_id: int
+    ) -> dict[str, Any]:
+        """Remove Excel-upload achievement only; keeps manual + CI + targets."""
+        self.ensure_target_achievement_tables()
+        self._invalidate_table_columns_cache(
+            "target_achievement_breakup", "target_achievement_category_breakup"
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            self._migrate_legacy_breakup_schema(conn)
+            cols = self._breakup_table_columns(conn)
+            params: list[Any] = [financial_year_id]
+            ws_clause = ""
+            if "workspace_id" in cols:
+                ws_clause = " AND workspace_id = ?"
+                params.append(workspace_id)
+            sets: list[str] = []
+            if "achievement_excel" in cols:
+                sets.append("achievement_excel = 0")
+            # Legacy single column was Excel before excel/ci/manual split.
+            if "achievement" in cols and "achievement_excel" in cols:
+                sets.append("achievement = 0")
+            elif "achievement_amount" in cols:
+                # attribute_type schema: only zero rows tagged as excel upload
+                pass
+            if sets:
+                where = f"financial_year_id = ?{ws_clause}"
+                if "attribute_type" in cols:
+                    where += " AND attribute_type = 'distributor'"
+                conn.execute(
+                    f"UPDATE target_achievement_breakup SET {', '.join(sets)} WHERE {where}",
+                    tuple(params),
+                )
+            if "achievement_amount" in cols and "source" in cols:
+                zero_params: list[Any] = [financial_year_id]
+                zero_sql = (
+                    "UPDATE target_achievement_breakup SET achievement_amount = 0 "
+                    "WHERE financial_year_id = ? AND LOWER(COALESCE(source, '')) IN "
+                    "('excel_upload', 'upload', 'excel')"
+                )
+                if "workspace_id" in cols:
+                    zero_sql += " AND workspace_id = ?"
+                    zero_params.append(workspace_id)
+                if "attribute_type" in cols:
+                    zero_sql += " AND attribute_type = 'distributor'"
+                conn.execute(zero_sql, tuple(zero_params))
+            cat_params: list[Any] = [financial_year_id]
+            cat_sql = "DELETE FROM target_achievement_category_breakup WHERE financial_year_id = ?"
+            if self._table_has_column("target_achievement_category_breakup", "workspace_id"):
+                cat_sql += " AND workspace_id = ?"
+                cat_params.append(workspace_id)
+            try:
+                conn.execute(cat_sql, tuple(cat_params))
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute(
+                    "DELETE FROM target_achievement_uploads WHERE financial_year_id = ?",
+                    (financial_year_id,),
+                )
+            except sqlite3.OperationalError:
+                pass
+            self._prune_empty_breakup_rows(conn, financial_year_id, workspace_id, cols)
+            conn.commit()
+        breakup = self.list_target_distributor_breakup(workspace_id, financial_year_id)
+        manual_total = sum(float(r.get("achievement_manual") or 0) for r in breakup)
+        ci_total = sum(float(r.get("achievement_ci") or 0) for r in breakup)
+        total = self.sync_financial_year_achievement_from_breakup(workspace_id, financial_year_id)
+        return {
+            "achievement_lakhs": total,
+            "manual_lakhs": manual_total,
+            "ci_lakhs": ci_total,
+            "excel_lakhs": 0.0,
+        }
+
     def clear_fy_achievement(self, workspace_id: str, financial_year_id: int) -> dict[str, Any]:
         """Remove all achievement data for a fiscal year; keeps targets."""
         self.ensure_target_achievement_tables()
@@ -12453,11 +12528,9 @@ class CentralizedDB:
             if row:
                 data = dict(row)
                 target_lakhs = float(data.get("target_amount") or data.get("target") or 0)
-                manual_fy = float(
-                    data.get("achievement_manual_fy")
-                    or data.get("achievement_amount")
-                    or 0
-                )
+                # Only the explicit FY-level manual override — never fall back to
+                # achievement_amount / achievement (those are rollups and often stale Excel).
+                manual_fy = float(data.get("achievement_manual_fy") or 0)
         excel_total = sum(float(r.get("achievement_excel") or 0) for r in breakup)
         ci_total = sum(float(r.get("achievement_ci") or 0) for r in breakup)
         manual_dist_total = sum(float(r.get("achievement_manual") or 0) for r in breakup)
@@ -12471,6 +12544,8 @@ class CentralizedDB:
             active_source, active_achievement = "manual_distributor", manual_dist_total
         else:
             active_source, active_achievement = "none", 0.0
+        # Keep year rollup aligned with the active channel (drops stale Excel totals).
+        self.sync_financial_year_achievement_from_breakup(workspace_id, financial_year_id)
         pct = round((active_achievement / target_lakhs) * 100, 2) if target_lakhs > 0 else 0.0
         return {
             "target_lakhs": target_lakhs,
