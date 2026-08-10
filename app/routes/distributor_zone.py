@@ -122,6 +122,17 @@ def _fy_bounds_from_label(fy_label: str) -> tuple[str, str] | None:
     return f"{start}-04-01", f"{end}-03-31"
 
 
+def _fy_start_year(label: str | None) -> int:
+    """Parse FY start year from labels like 2025-2026 / FY 2025-26."""
+    digits = [int(x) for x in re.findall(r"\d{2,4}", label or "")]
+    if not digits:
+        return 0
+    start = digits[0]
+    if start < 100:
+        start += 2000
+    return start
+
+
 def _pick_year(db: CentralizedDB, workspace_id: str, year_id: int | None) -> dict | None:
     db.ensure_target_achievement_tables()
     with sqlite3.connect(db.db_path) as conn:
@@ -131,15 +142,26 @@ def _pick_year(db: CentralizedDB, workspace_id: str, year_id: int | None) -> dic
                 "SELECT * FROM target_achievement_years WHERE id = ? AND workspace_id = ?",
                 (year_id, workspace_id),
             ).fetchone()
+            rows = [row] if row else []
         else:
-            row = conn.execute(
-                "SELECT * FROM target_achievement_years WHERE workspace_id = ? "
-                "ORDER BY id DESC LIMIT 1",
+            rows = conn.execute(
+                "SELECT * FROM target_achievement_years WHERE workspace_id = ?",
                 (workspace_id,),
-            ).fetchone()
-    if not row:
+            ).fetchall()
+    if not rows:
         return None
-    data = dict(row)
+    # Latest fiscal year by label (not DB id — creation order can differ).
+    best = max(
+        rows,
+        key=lambda r: (
+            _fy_start_year(
+                (r["financial_year"] if "financial_year" in r.keys() else None)
+                or (r["year"] if "year" in r.keys() else None)
+            ),
+            int(r["id"]),
+        ),
+    )
+    data = dict(best)
     raw = data.get("financial_year") or data.get("year") or ""
     label = normalize_fiscal_year(raw) or raw or ""
     data["fy_label"] = label
@@ -441,7 +463,7 @@ def distributor_zone():
             try:
                 yrows = conn.execute(
                     "SELECT id, financial_year, year FROM target_achievement_years "
-                    "WHERE workspace_id = ? ORDER BY id DESC",
+                    "WHERE workspace_id = ?",
                     (workspace_id,),
                 ).fetchall()
             except sqlite3.OperationalError:
@@ -454,6 +476,10 @@ def distributor_zone():
                     "fy_label": normalize_fiscal_year(raw) or raw,
                 }
             )
+        years_out.sort(
+            key=lambda y: (_fy_start_year(y.get("fy_label")), int(y.get("id") or 0)),
+            reverse=True,
+        )
 
         return jsonify(
             {
