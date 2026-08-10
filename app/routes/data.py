@@ -3966,6 +3966,68 @@ def articles() -> str:
     )
 
 
+def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
+    """Human-readable Ask Nexora summary (not raw JSON dump)."""
+    if not isinstance(search_payload, dict):
+        return "No matching information found."
+    results = search_payload.get("results")
+    if not isinstance(results, dict):
+        results = search_payload
+    chunks: list[str] = []
+
+    dists = results.get("distributors") or []
+    if dists:
+        names = [
+            (d.get("firm_name") or d.get("name") or "?").strip() or "?"
+            for d in dists[:5]
+            if isinstance(d, dict)
+        ]
+        extra = f" (+{len(dists) - 5} more)" if len(dists) > 5 else ""
+        chunks.append(f"{len(dists)} distributor(s): {', '.join(names)}{extra}")
+
+    rets = results.get("retailers") or []
+    if rets:
+        names = [
+            (r.get("name") or "?").strip() or "?"
+            for r in rets[:5]
+            if isinstance(r, dict)
+        ]
+        extra = f" (+{len(rets) - 5} more)" if len(rets) > 5 else ""
+        chunks.append(f"{len(rets)} retailer(s): {', '.join(names)}{extra}")
+
+    orders = results.get("orders") or []
+    if orders:
+        refs = [
+            (o.get("order_ref_no") or o.get("invoice_no") or "?").strip() or "?"
+            for o in orders[:5]
+            if isinstance(o, dict)
+        ]
+        extra = f" (+{len(orders) - 5} more)" if len(orders) > 5 else ""
+        chunks.append(f"{len(orders)} SO/CI: {', '.join(refs)}{extra}")
+
+    arts = results.get("article_master") or []
+    if arts:
+        labels: list[str] = []
+        for a in arts[:6]:
+            if not isinstance(a, dict):
+                continue
+            brand = (a.get("brand") or "?").strip() or "?"
+            size = (a.get("size") or "").strip()
+            label = f"{brand} {size}".strip()
+            mrp = a.get("mrp")
+            try:
+                mrp_n = float(mrp) if mrp is not None else 0.0
+            except (TypeError, ValueError):
+                mrp_n = 0.0
+            if mrp_n > 0:
+                label = f"{label} (MRP ₹{int(round(mrp_n))})"
+            labels.append(label)
+        extra = f" (+{len(arts) - 6} more)" if len(arts) > 6 else ""
+        chunks.append(f"{len(arts)} article(s): {', '.join(labels)}{extra}")
+
+    return "; ".join(chunks) if chunks else "No matching information found."
+
+
 @data_blueprint.route("/api/v1/ai-assistant/query", methods=["GET", "POST"])
 @require_jwt_auth
 def ai_assistant_query() -> Response:
@@ -3984,23 +4046,43 @@ def ai_assistant_query() -> Response:
             mimetype="application/json",
         )
 
-    # Strip wake phrases (Ask Nexora; keep legacy "jarvis" for old clients).
+    # Strip wake phrases: "hey nexora", "ask nexora" (legacy jarvis still ok).
     query = re.sub(
-        r"(?i)\b(ask|talk to)\s+(nexora|jarvis)\b",
+        r"(?i)\b((hey|hi|ok|okay)\s+nexora|(ask|talk to)\s+(nexora|jarvis))\b[,:!.]?",
         "",
         query,
     ).strip()
     db = CentralizedDB(_db_path())
     intent = infer_ai_intent(query)
     ask_prefix = "Ask Nexora:"
+    if not query:
+        return Response(
+            json.dumps(
+                {
+                    "intent": "wake",
+                    "query": "",
+                    "answer": f"{ask_prefix} Listening — ask about last visit, PJP, alerts, parties, or MRP 1000-2000.",
+                },
+                ensure_ascii=False,
+            ),
+            mimetype="application/json",
+        )
     answer = f"{ask_prefix} No matching information found."
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    workspace_id = get_workspace_id()
 
     if intent == "last_visit":
         entity = (
             query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
         )
         distributor = db.get_master_distributor_by_name(
-            entity, workspace_id=get_workspace_id()
+            entity, workspace_id=workspace_id
         )
         if distributor:
             last_visit = db.get_last_visit_date("distributor", distributor["id"])
@@ -4011,7 +4093,7 @@ def ai_assistant_query() -> Response:
         else:
             answer = f"{ask_prefix} I could not find a distributor named {entity}."
     elif intent == "alerts":
-        alerts = db.list_data_entry_alerts(workspace_id=get_workspace_id())
+        alerts = db.list_data_entry_alerts(workspace_id=workspace_id)
         answer = (
             f"{ask_prefix} You have {len(alerts)} active alerts."
             if alerts
@@ -4020,7 +4102,7 @@ def ai_assistant_query() -> Response:
     elif intent == "pjp":
         today = datetime.now(timezone.utc).date().isoformat()
         suggestions = db.get_morning_suggestion_list(
-            today, workspace_id=get_workspace_id()
+            today, workspace_id=workspace_id
         )
         answer = (
             f"{ask_prefix} There are {len(suggestions)} retailer visits suggested today."
@@ -4029,7 +4111,7 @@ def ai_assistant_query() -> Response:
         )
     elif intent == "purchase_trends":
         distributor = db.get_master_distributor_by_name(
-            query, workspace_id=get_workspace_id()
+            query, workspace_id=workspace_id
         )
         if distributor:
             logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
@@ -4042,8 +4124,10 @@ def ai_assistant_query() -> Response:
                 f"{ask_prefix} I couldn't identify the distributor for purchase trend analysis."
             )
     else:
-        search_results = db.global_search(query)
-        answer = f"{ask_prefix} {json.dumps(search_results, ensure_ascii=False)}"
+        search_results = db.global_search(
+            query, workspace_id=workspace_id, user_id=user_id
+        )
+        answer = f"{ask_prefix} {_summarize_ask_nexora_search(search_results)}"
 
     return Response(
         json.dumps(
