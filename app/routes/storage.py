@@ -9,6 +9,43 @@ from centralized_db_system.db import CentralizedDB
 # Create blueprint
 storage_bp = Blueprint('storage', __name__, url_prefix='/api/v1/storage')
 
+_DRIVE_CONNECTED_HTML = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Google Drive Connected</title>
+  <style>
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+           font-family: system-ui, sans-serif; background:#0b1220; color:#eaf0fb; }
+    .card { width:min(420px, 92vw); background:#121c30; border:1px solid rgba(37,224,255,.28);
+            border-radius:18px; padding:28px 24px; text-align:center; }
+    h1 { margin:0 0 8px; font-size:22px; letter-spacing:.08em; color:#7cf5ff; }
+    p { margin:8px 0; color:#c5d0e8; line-height:1.45; }
+    a.btn { display:inline-block; margin-top:16px; background:#25e0ff; color:#041018;
+            font-weight:700; text-decoration:none; padding:12px 18px; border-radius:12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>NEXORA</h1>
+    <p><strong>Google Drive connected.</strong></p>
+    <p>Tap below to return to the Nexora app.</p>
+    <a class="btn" href="nexora://storage/connected">Return to Nexora</a>
+  </div>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ type: "google_drive_connected" }, "*");
+      setTimeout(function() { window.close(); }, 1200);
+    } else {
+      setTimeout(function() { window.location.href = "nexora://storage/connected"; }, 700);
+    }
+  </script>
+</body>
+</html>
+"""
+
 
 # ==================== ROUTES ====================
 
@@ -158,21 +195,7 @@ def oauth_callback():
             sync_status='connected',
         )
 
-        return render_template_string(
-            '<!doctype html>'
-            '<html><head><meta charset="utf-8"><title>Google Drive Connected</title></head>'
-            '<body>'
-            '<h1>Google Drive Connected</h1>'
-            '<p>Your Google Drive account has been connected successfully.</p>'
-            '<p>You may now close this window and return to the application.</p>'
-            '<script>'
-            'if (window.opener) {'
-            '  window.opener.postMessage({ type: "google_drive_connected" }, "*");'
-            '  setTimeout(function() { window.close(); }, 1500);'
-            '}'
-            '</script>'
-            '</body></html>'
-        ), 200
+        return render_template_string(_DRIVE_CONNECTED_HTML), 200
     except Exception as e:
         return render_template_string(
             '<!doctype html>'
