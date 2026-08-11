@@ -499,24 +499,40 @@ def _looks_like_season_order_query(normalized: str) -> bool:
 _CALC_NUM_RE = r"\d[\d,]*\.?\d*"
 
 
+_CALC_OP_LABELS = {"+": "+", "-": "-", "*": "×", "/": "÷"}
+
+
+def _calc_op_between(segment: str) -> str | None:
+    if re.search(r"\+|\bplus\b|\bjod\b|\bjama\b|\badd\b", segment):
+        return "+"
+    if re.search(r"\bminus\b|\bghata\b|\bsubtract\b", segment):
+        return "-"
+    if re.search(r"[*x×]|\bmultiply\b|\bmultiplied\b|\bguna\b|\bgunaa\b|\btimes\b", segment):
+        return "*"
+    if re.search(r"[/÷]|\bdivide\b|\bdivided\b|\bbhag\b|\bbhaag\b", segment):
+        return "/"
+    return None
+
+
 def try_calculator(normalized: str) -> dict | None:
-    """Parse a two-number arithmetic/percentage expression out of free
-    text — "500 ka 10 percent kitna hoga", "25000 plus 15000", "36000
-    divided by 12". Deliberately does NOT treat a bare hyphen as
-    subtraction — that symbol is already used elsewhere in this app for
-    an MRP range query ("1000-2000"), so subtraction requires an
-    explicit word (minus/ghata/subtract). Returns a dict with the parsed
-    operands/operator/result, or None if no expression was found.
+    """Parse an arithmetic/percentage expression out of free text —
+    "500 ka 10 percent kitna hoga", "25000 plus 15000", "36000 divided by
+    12", or a full chain "5 + 2 + 3 + 4 + 5 + 6". Deliberately does NOT
+    treat a bare hyphen as subtraction — that symbol is already used
+    elsewhere in this app for an MRP range query ("1000-2000"), so
+    subtraction requires an explicit word (minus/ghata/subtract). Returns
+    a dict with the parsed operands/operators/result, or None if no
+    expression was found.
     """
     matches = list(re.finditer(_CALC_NUM_RE, normalized))
     if len(matches) < 2:
         return None
-    a_match, b_match = matches[0], matches[1]
-    a = float(a_match.group().replace(",", ""))
-    b = float(b_match.group().replace(",", ""))
 
     percent_hit = re.search(r"%|percent|pratishat", normalized)
     if percent_hit:
+        a_match, b_match = matches[0], matches[1]
+        a = float(a_match.group().replace(",", ""))
+        b = float(b_match.group().replace(",", ""))
         # Whichever of the two numbers sits closer to the %/percent token
         # is the percentage value; the other is the base — handles both
         # "10 percent of 500" and "500 ka 10 percent" orderings.
@@ -525,23 +541,32 @@ def try_calculator(normalized: str) -> dict | None:
             pct_val, base = a, b
         else:
             pct_val, base = b, a
-        return {"op": "percent", "a": pct_val, "b": base, "result": (pct_val / 100.0) * base}
+        return {"op": "percent", "operands": [pct_val, base], "ops": [], "result": (pct_val / 100.0) * base}
 
-    op = None
-    if re.search(r"\+|\bplus\b|\bjod\b|\bjama\b|\badd\b", normalized):
-        op = "+"
-    elif re.search(r"\bminus\b|\bghata\b|\bsubtract\b", normalized):
-        op = "-"
-    elif re.search(r"[*x×]|\bmultiply\b|\bmultiplied\b|\bguna\b|\bgunaa\b|\btimes\b", normalized):
-        op = "*"
-    elif re.search(r"[/÷]|\bdivide\b|\bdivided\b|\bbhag\b|\bbhaag\b", normalized):
-        op = "/"
-    if not op:
+    # Walk left to right, applying whatever operator sits between each
+    # consecutive pair of numbers to a running total — covers both the
+    # simple two-number case and a full chain ("5 + 2 + 3 + 4 + 5 + 6").
+    # Stops at the first gap with no recognizable operator, so trailing
+    # unrelated numbers in the sentence don't get pulled in.
+    operands = [float(matches[0].group().replace(",", ""))]
+    ops: list[str] = []
+    total = operands[0]
+    prev_end = matches[0].end()
+    for m in matches[1:]:
+        op = _calc_op_between(normalized[prev_end:m.start()])
+        if not op:
+            break
+        value = float(m.group().replace(",", ""))
+        if op == "/" and value == 0:
+            break
+        total = {"+": total + value, "-": total - value, "*": total * value, "/": total / value}[op]
+        operands.append(value)
+        ops.append(op)
+        prev_end = m.end()
+
+    if not ops:
         return None
-    if op == "/" and b == 0:
-        return None
-    result = {"+": a + b, "-": a - b, "*": a * b, "/": a / b if op == "/" else None}[op]
-    return {"op": op, "a": a, "b": b, "result": result}
+    return {"op": "arithmetic", "operands": operands, "ops": ops, "result": total}
 
 
 def _looks_like_calculator_query(normalized: str) -> bool:

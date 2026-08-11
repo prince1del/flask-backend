@@ -46,6 +46,7 @@ from app.three_step_verification import (
     run_full_verification,
 )
 from app.utils import (
+    _CALC_OP_LABELS,
     _PARTY_QUERY_STOPWORDS,
     _SEASON_TOKEN_RE,
     detect_upload_file_type,
@@ -4859,16 +4860,17 @@ def ai_assistant_query() -> Response:
                 f" ({number_to_words_indian(result)})" if abs(result) >= 1000 else ""
             )
             if calc["op"] == "percent":
+                pct_val, base = calc["operands"]
                 answer = (
-                    f"{ask_prefix} {_fmt_num(calc['a'])}% of {_fmt_num(calc['b'])} "
+                    f"{ask_prefix} {_fmt_num(pct_val)}% of {_fmt_num(base)} "
                     f"= {result_txt}{words_suffix}"
                 )
             else:
-                op_label = {"+": "+", "-": "-", "*": "×", "/": "÷"}[calc["op"]]
-                answer = (
-                    f"{ask_prefix} {_fmt_num(calc['a'])} {op_label} {_fmt_num(calc['b'])} "
-                    f"= {result_txt}{words_suffix}"
-                )
+                operands, ops = calc["operands"], calc["ops"]
+                expr = _fmt_num(operands[0])
+                for op, value in zip(ops, operands[1:]):
+                    expr += f" {_CALC_OP_LABELS[op]} {_fmt_num(value)}"
+                answer = f"{ask_prefix} {expr} = {result_txt}{words_suffix}"
     else:
         # Strip filler words so a sentence like "distributor kalra name" or
         # "aster ka mrp aur exmill kya hai" narrows to the actual search
