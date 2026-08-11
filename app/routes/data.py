@@ -34,7 +34,7 @@ from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
 from app.fiscal_year import normalize_fiscal_year
 from app.routes.auth import get_workspace_id, require_jwt_auth
-from app.routes.ask_nexora_troubleshoot import log_unresolved_query
+from app.routes.ask_nexora_troubleshoot import log_unresolved_query, resolve_query as resolve_unresolved_query
 from app.three_step_verification import (
     _extract_pdf_text,
     _parse_pdf_table_like_text,
@@ -46,6 +46,7 @@ from app.three_step_verification import (
     run_full_verification,
 )
 from app.utils import (
+    _SEASON_TOKEN_RE,
     detect_upload_file_type,
     expected_upload_format,
     extract_party_name_candidate,
@@ -4126,6 +4127,7 @@ _UNRESOLVED_ANSWER_MARKERS = (
     "i couldn't identify that distributor",
     "no target/achievement records found",
     "no target data found",
+    "i couldn't find any orders for that season",
 )
 
 
@@ -4293,6 +4295,67 @@ def _resolve_distributor_with_context(
         if context_entity:
             distributor = _find_distributor_fuzzy(db, context_entity, workspace_id)
     return distributor
+
+
+def _match_token_from_candidates(
+    text: str, candidates: list[str], min_ratio: float = 0.78
+) -> str | None:
+    """Find which of a user's own distinct category/brand values (from
+    their filled-order data — there's no fixed enum, categories and
+    brands are whatever each user's order sheets contain) the free-text
+    query is naming. Tries an exact multi-word substring first (handles
+    "floral fiesta"), then falls back to per-word edit-distance so voice
+    slips ("aster"/"astar") still resolve."""
+    text = text or ""
+    best: str | None = None
+    best_ratio = 0.0
+    for candidate in candidates:
+        candidate_lower = candidate.lower().strip()
+        if not candidate_lower:
+            continue
+        if candidate_lower in text:
+            return candidate
+        for cw in candidate_lower.split():
+            if len(cw) < 3:
+                continue
+            for qw in text.split():
+                if len(qw) < 3:
+                    continue
+                ratio = difflib.SequenceMatcher(None, qw, cw).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best = candidate
+    return best if best_ratio >= min_ratio else None
+
+
+# Natural-language phrases for the size codes filled-order items are
+# stored under (e.g. "KS BS" = King Size Bed Sheet) — voice queries say
+# "king size bedsheet", not the abbreviation, so map the phrase to the
+# fragment expected inside the stored code. Longer/more specific phrases
+# are listed first so "double bed large" wins over the bare "double".
+_SIZE_QUERY_ALIASES: list[tuple[str, str]] = [
+    ("double bed large", "DBL"),
+    ("dbl", "DBL"),
+    ("king size", "KS"),
+    ("king", "KS"),
+    ("single bed", "SB"),
+    ("single", "SB"),
+    ("double bed", "DB"),
+    ("double", "DB"),
+    ("kids", "KB"),
+    ("kid", "KB"),
+]
+
+
+def _match_size_from_query(text: str, sizes: list[str]) -> str | None:
+    text = text or ""
+    for phrase, code in _SIZE_QUERY_ALIASES:
+        if phrase not in text:
+            continue
+        for size in sizes:
+            if code in (size or "").upper().split():
+                return size
+    return None
 
 
 @data_blueprint.route("/api/v1/ai-assistant/query", methods=["GET", "POST"])
@@ -4599,9 +4662,10 @@ def ai_assistant_query() -> Response:
         if distributor:
             firm = distributor.get("firm_name") or distributor["name"]
             # Show only what was asked — "owner ka naam" -> name only,
-            # "mobile number" -> phone only; ask for both (or neither
-            # specifically) and both come back, same pattern as the
-            # article MRP/ex-mill and target/achievement field filters.
+            # "mobile number" -> phone only, "address"/"pata" -> address
+            # only; ask for none specifically and everything comes back,
+            # same pattern as the article MRP/ex-mill and target/
+            # achievement field filters.
             normalized_owner_query = query.lower()
             wants_name = any(
                 t in normalized_owner_query
@@ -4611,7 +4675,13 @@ def ai_assistant_query() -> Response:
                 t in normalized_owner_query
                 for t in ("mobile", "phone", "contact number", "contact no", "number")
             )
-            if not wants_name and not wants_phone:
+            wants_address = any(
+                t in normalized_owner_query for t in ("address", "pata", "location")
+            )
+            wants_gst = any(
+                t in normalized_owner_query for t in ("gst", "gstin")
+            )
+            if not wants_name and not wants_phone and not wants_address and not wants_gst:
                 wants_name = wants_phone = True
 
             bits = []
@@ -4621,10 +4691,113 @@ def ai_assistant_query() -> Response:
                 bits.append(f"phone {distributor['phone_number']}")
             elif wants_phone and not wants_name:
                 bits.append("no phone number on file")
+            if wants_address:
+                addr = (distributor.get("address") or "").strip() or (
+                    distributor.get("location") or ""
+                ).strip()
+                bits.append(f"address {addr}" if addr else "no address on file")
+            if wants_gst:
+                gst = (distributor.get("gst_no") or "").strip()
+                bits.append(f"GST {gst}" if gst else "no GST number on file")
 
             answer = f"{ask_prefix} {firm} — {', '.join(bits)}."
         else:
             answer = f"{ask_prefix} I couldn't identify that distributor firm."
+    elif intent == "season_order_value":
+        # "aw26 bed ka total order", "bernina ka aw26 aster order kitna
+        # tha", "bernina ka aw26 florentine king bedsheet order" — same
+        # underlying data as the "Total value of SO" home-screen card
+        # (filled_orders / filled_order_items), just filtered down to a
+        # single season/category/distributor/brand/size figure.
+        import filled_orders_db as fodb
+
+        normalized_season_query = query.lower()
+        season_match = _SEASON_TOKEN_RE.search(normalized_season_query)
+        season_prefix = season_match.group(0).upper() if season_match else None
+
+        with sqlite3.connect(_db_path()) as fo_conn:
+            fodb.ensure_schema(fo_conn)
+            seasons = (
+                fodb.list_seasons_matching_prefix(fo_conn, user_id, season_prefix)
+                if season_prefix
+                else []
+            )
+
+            if not season_prefix or not seasons:
+                answer = (
+                    f"{ask_prefix} I couldn't find any orders for that season."
+                )
+            else:
+                entity_query = normalized_season_query.replace(season_prefix.lower(), " ")
+                entity_query = re.sub(r"\b(aw|ss|fw)\d{2}\b", " ", entity_query)
+
+                categories = fodb.list_distinct_categories(fo_conn, user_id, seasons)
+                category = _match_token_from_candidates(entity_query, categories)
+
+                brands = fodb.list_distinct_brands(fo_conn, user_id, seasons)
+                brand = _match_token_from_candidates(entity_query, brands)
+
+                sizes = fodb.list_distinct_sizes(fo_conn, user_id, seasons)
+                size = _match_size_from_query(entity_query, sizes)
+
+                # Whatever's left after stripping season/category/brand words is
+                # the candidate distributor name, same follow-up-aware fallback
+                # as the other distributor-scoped intents.
+                residual = entity_query
+                for token in (category, brand, size):
+                    if token:
+                        residual = re.sub(re.escape(token.lower()), " ", residual)
+                distributor_entity = extract_party_name_candidate(residual)
+                distributor = (
+                    _find_distributor_fuzzy(db, distributor_entity, workspace_id)
+                    if distributor_entity
+                    else None
+                )
+                if not distributor and context_query:
+                    distributor = _resolve_distributor_with_context(
+                        db, "", context_query, workspace_id
+                    )
+
+                totals = fodb.query_order_value(
+                    fo_conn,
+                    user_id,
+                    seasons,
+                    category=category,
+                    distributor_id=distributor["id"] if distributor else None,
+                    brand=brand,
+                    size=size,
+                )
+
+                desc_bits = [season_prefix]
+                if brand:
+                    desc_bits.append(brand)
+                if size:
+                    desc_bits.append(size)
+                elif category:
+                    desc_bits.append(category)
+                desc = " ".join(desc_bits)
+                distributor_label = (
+                    (distributor.get("firm_name") or distributor["name"])
+                    if distributor
+                    else None
+                )
+
+                if totals["matched_orders"] == 0:
+                    who = distributor_label or "any distributor"
+                    answer = f"{ask_prefix} No {desc} order found for {who}."
+                else:
+                    value_txt = f"Rs {totals['total_ex_mill_value']:,.0f}"
+                    qty_txt = f"{totals['total_piece_qty']:,.0f} pcs"
+                    if distributor:
+                        answer = (
+                            f"{ask_prefix} {distributor_label} — {desc} order: "
+                            f"{value_txt} ({qty_txt})."
+                        )
+                    else:
+                        answer = (
+                            f"{ask_prefix} {desc} total order across all distributors: "
+                            f"{value_txt} ({qty_txt})."
+                        )
     else:
         # Strip filler words so a sentence like "distributor kalra name" or
         # "aster ka mrp aur exmill kya hai" narrows to the actual search
@@ -4664,6 +4837,11 @@ def ai_assistant_query() -> Response:
             f"{ask_prefix} I couldn't find an answer to that — please try "
             f"asking something else, or rephrase your question."
         )
+    else:
+        # This exact question may have failed before (and been logged for
+        # troubleshooting) but now resolves — e.g. after a keyword/entity
+        # fix was taught. Clear the stale entry automatically.
+        resolve_unresolved_query(workspace_id, query)
 
     return Response(
         json.dumps(

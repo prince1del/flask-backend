@@ -88,6 +88,28 @@ def log_unresolved_query(workspace_id: str, user_id: int | None, query_text: str
         pass
 
 
+def resolve_query(workspace_id: str, query_text: str) -> None:
+    """Called whenever Ask Nexora successfully answers a question — if
+    this exact question (case-insensitive) was previously logged as
+    unresolved, clear it. Covers the "we taught it, now it works" case:
+    re-asking the same question that used to fail quietly removes the
+    stale troubleshoot entry instead of leaving it for manual cleanup."""
+    query_text = (query_text or "").strip()
+    if not query_text or not workspace_id:
+        return
+    try:
+        with sqlite3.connect(_db_path()) as conn:
+            _ensure_table(conn)
+            conn.execute(
+                "DELETE FROM ask_nexora_unresolved_queries "
+                "WHERE workspace_id = ? AND LOWER(query_text) = LOWER(?)",
+                (workspace_id, query_text),
+            )
+            conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
 @ask_nexora_troubleshoot_bp.route("", methods=["GET"])
 @require_jwt_auth
 def list_unresolved():

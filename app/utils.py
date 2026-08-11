@@ -256,6 +256,12 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "contact no",
         "mobile kya hai",
         "number kya hai",
+        "address",
+        "pata",
+        "location kya hai",
+        "gst number",
+        "gst no",
+        "gstin",
     ],
 }
 
@@ -275,11 +281,13 @@ _PARTY_QUERY_STOPWORDS = {
     "distributors", "firm", "firms", "naam", "name", "kiska", "kiski",
     "malik", "owner", "proprietor", "who", "which", "in",
     "mobile", "phone", "contact", "number", "no",
+    "address", "pata", "location", "gst", "gstin",
     "mrp", "exmill", "ex-mill", "ex", "mill", "xmill", "x-mill", "x",
     "price", "rate", "aur",
     "product", "products", "article", "size", "batayein",
     "financial", "year", "years", "fy", "kitne", "thi", "tha", "konse",
     "konsi", "was", "were", "did", "have",
+    "total", "value", "season",
 }
 
 
@@ -420,6 +428,18 @@ def _looks_like_pjp_query(normalized: str) -> bool:
     return has_date and has_visit
 
 
+_SEASON_TOKEN_RE = re.compile(r"\b(aw|ss|fw)\d{2}\b")
+
+
+def _looks_like_season_order_query(normalized: str) -> bool:
+    """"aw26 bed ka total order", "bernina ka aw26 ka total bed ka order" —
+    a season code (AW26/SS25/...) plus an order/value word means the user
+    wants a season order-value figure, not a generic search."""
+    if not _SEASON_TOKEN_RE.search(normalized):
+        return False
+    return "order" in normalized or "value" in normalized
+
+
 def infer_ai_intent(query: str) -> str:
     normalized = normalize_voice_query(query or "").strip().lower()
     if not normalized:
@@ -429,6 +449,8 @@ def infer_ai_intent(query: str) -> str:
             return intent
     if _looks_like_pjp_query(normalized):
         return "pjp"
+    if _looks_like_season_order_query(normalized):
+        return "season_order_value"
     fuzzy_intent = _fuzzy_intent_from_words(normalized)
     if fuzzy_intent:
         return fuzzy_intent

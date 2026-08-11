@@ -386,6 +386,120 @@ def get_last_season(conn, user_id):
     return row[0] if row else None
 
 
+def list_seasons_matching_prefix(conn, user_id: int, prefix: str) -> list[str]:
+    """Distinct season strings for this user whose value starts with prefix
+    (case-insensitive) — the stored season is sometimes a bare code
+    ("AW26") and sometimes a fuller label ("AW26 Bedsheet"), so Ask Nexora
+    matches on the season-code prefix rather than an exact string."""
+    rows = conn.execute(
+        "SELECT DISTINCT season FROM filled_orders WHERE user_id = ? "
+        "AND UPPER(season) LIKE ? ORDER BY season",
+        (user_id, f"{prefix.upper()}%"),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_distinct_categories(conn, user_id: int, seasons: list[str] | None = None) -> list[str]:
+    if seasons:
+        placeholders = ",".join("?" for _ in seasons)
+        rows = conn.execute(
+            f"SELECT DISTINCT category FROM filled_orders WHERE user_id = ? "
+            f"AND season IN ({placeholders})",
+            (user_id, *seasons),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT DISTINCT category FROM filled_orders WHERE user_id = ?", (user_id,),
+        ).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
+def list_distinct_brands(conn, user_id: int, seasons: list[str] | None = None) -> list[str]:
+    if seasons:
+        placeholders = ",".join("?" for _ in seasons)
+        rows = conn.execute(
+            f"SELECT DISTINCT foi.brand FROM filled_order_items foi "
+            f"JOIN filled_orders fo ON fo.id = foi.filled_order_id "
+            f"WHERE fo.user_id = ? AND fo.season IN ({placeholders}) AND foi.brand IS NOT NULL",
+            (user_id, *seasons),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT DISTINCT foi.brand FROM filled_order_items foi "
+            "JOIN filled_orders fo ON fo.id = foi.filled_order_id "
+            "WHERE fo.user_id = ? AND foi.brand IS NOT NULL",
+            (user_id,),
+        ).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
+def list_distinct_sizes(conn, user_id: int, seasons: list[str] | None = None) -> list[str]:
+    if seasons:
+        placeholders = ",".join("?" for _ in seasons)
+        rows = conn.execute(
+            f"SELECT DISTINCT foi.size FROM filled_order_items foi "
+            f"JOIN filled_orders fo ON fo.id = foi.filled_order_id "
+            f"WHERE fo.user_id = ? AND fo.season IN ({placeholders}) AND foi.size IS NOT NULL",
+            (user_id, *seasons),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT DISTINCT foi.size FROM filled_order_items foi "
+            "JOIN filled_orders fo ON fo.id = foi.filled_order_id "
+            "WHERE fo.user_id = ? AND foi.size IS NOT NULL",
+            (user_id,),
+        ).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
+def query_order_value(
+    conn,
+    user_id: int,
+    seasons: list[str],
+    category: str | None = None,
+    distributor_id: int | None = None,
+    brand: str | None = None,
+    size: str | None = None,
+) -> dict:
+    """Sum piece qty + ex-mill value across filled_order_items for this
+    user, scoped to the given season strings and any of category/
+    distributor/brand/size the caller was able to resolve from the
+    question. Powers Ask Nexora's season order-value answers — same
+    underlying data as the "Total value of SO" home-screen card
+    (build_season_overview), just filtered down to a single figure."""
+    if not seasons:
+        return {"total_piece_qty": 0.0, "total_ex_mill_value": 0.0, "matched_orders": 0}
+    placeholders = ",".join("?" for _ in seasons)
+    sql = (
+        "SELECT COALESCE(SUM(foi.final_piece_qty), 0), "
+        "COALESCE(SUM(foi.final_piece_qty * COALESCE(foi.ex_mill_price, 0)), 0), "
+        "COUNT(DISTINCT fo.id) "
+        "FROM filled_order_items foi "
+        "JOIN filled_orders fo ON fo.id = foi.filled_order_id "
+        f"WHERE fo.user_id = ? AND fo.season IN ({placeholders})"
+    )
+    params: list = [user_id, *seasons]
+    if category:
+        sql += " AND fo.category = ? COLLATE NOCASE"
+        params.append(category)
+    if distributor_id:
+        sql += " AND fo.distributor_id = ?"
+        params.append(distributor_id)
+    if brand:
+        sql += " AND foi.brand = ? COLLATE NOCASE"
+        params.append(brand)
+    if size:
+        sql += " AND foi.size = ? COLLATE NOCASE"
+        params.append(size)
+    row = conn.execute(sql, params).fetchone()
+    qty, value, matched_orders = row if row else (0, 0, 0)
+    return {
+        "total_piece_qty": round(float(qty or 0), 2),
+        "total_ex_mill_value": round(float(value or 0), 2),
+        "matched_orders": int(matched_orders or 0),
+    }
+
+
 def get_qty_column_pref(conn, user_id, distributor_id, category):
     row = conn.execute(
         """SELECT confirmed_column_name FROM distributor_qty_column_prefs
