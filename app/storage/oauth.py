@@ -7,6 +7,33 @@ from typing import Any
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DOTENV_LOADED = False
+
+
+def _load_dotenv_once() -> None:
+    """Fill os.environ from repo .env without overwriting Render dashboard vars."""
+    global _DOTENV_LOADED
+    if _DOTENV_LOADED:
+        return
+    _DOTENV_LOADED = True
+    path = _REPO_ROOT / ".env"
+    if not path.is_file():
+        return
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = val
+
 
 class GoogleDriveOAuth:
     """Google OAuth 2.0 Flow for Google Drive."""
@@ -73,6 +100,23 @@ class GoogleDriveOAuth:
         return data
 
     @classmethod
+    def _env(cls, name: str) -> str:
+        _load_dotenv_once()
+        return (os.getenv(name) or "").strip()
+
+    @classmethod
+    def _client_id(cls) -> str:
+        return cls._env("GOOGLE_OAUTH_CLIENT_ID") or (cls.CLIENT_ID or "").strip()
+
+    @classmethod
+    def _client_secret(cls) -> str:
+        return cls._env("GOOGLE_OAUTH_CLIENT_SECRET") or (cls.CLIENT_SECRET or "").strip()
+
+    @classmethod
+    def _secrets_file(cls) -> str:
+        return cls._env("GOOGLE_OAUTH_CLIENT_SECRETS") or cls.CLIENT_SECRETS_FILE
+
+    @classmethod
     def _resolve_redirect_uri(
         cls,
         host_url: str | None = None,
@@ -80,11 +124,19 @@ class GoogleDriveOAuth:
     ) -> str:
         if redirect_uri:
             return redirect_uri.rstrip("/")
-        # Exact match with Google Cloud Console Authorized redirect URIs is required.
-        if cls.REDIRECT_URI:
-            return cls.REDIRECT_URI.strip()
-        if host_url:
-            return host_url.rstrip("/") + "/api/v1/storage/oauth-callback"
+        env_redirect = cls._env("GOOGLE_OAUTH_REDIRECT_URI") or (cls.REDIRECT_URI or "").strip()
+        # Never send Google back to localhost when the live request is on Render / public host.
+        host = (host_url or "").rstrip("/")
+        host_is_public = bool(host) and "localhost" not in host and "127.0.0.1" not in host
+        env_is_local = (
+            not env_redirect
+            or "localhost" in env_redirect
+            or "127.0.0.1" in env_redirect
+        )
+        if env_redirect and not (host_is_public and env_is_local):
+            return env_redirect.rstrip("/")
+        if host:
+            return host + "/api/v1/storage/oauth-callback"
         raise ValueError(
             "Google Drive OAuth redirect URI is not configured. "
             "Set GOOGLE_OAUTH_REDIRECT_URI to a URI registered in Google Cloud Console "
@@ -93,10 +145,13 @@ class GoogleDriveOAuth:
 
     @classmethod
     def _load_client_secrets_file(cls) -> dict[str, Any] | None:
-        if not cls.CLIENT_SECRETS_FILE:
-            return None
-        secrets_path = Path(cls.CLIENT_SECRETS_FILE)
-        if not secrets_path.exists():
+        candidates = [
+            Path(cls._secrets_file()) if cls._secrets_file() else None,
+            _REPO_ROOT / "client_secrets.json",
+            _REPO_ROOT / "instance" / "client_secrets.json",
+        ]
+        secrets_path = next((p for p in candidates if p and p.is_file()), None)
+        if secrets_path is None:
             return None
         try:
             return json.loads(secrets_path.read_text(encoding="utf-8"))
@@ -117,8 +172,8 @@ class GoogleDriveOAuth:
         missing = [
             name
             for name, value in {
-                "GOOGLE_OAUTH_CLIENT_ID": cls.CLIENT_ID,
-                "GOOGLE_OAUTH_CLIENT_SECRET": cls.CLIENT_SECRET,
+                "GOOGLE_OAUTH_CLIENT_ID": cls._client_id(),
+                "GOOGLE_OAUTH_CLIENT_SECRET": cls._client_secret(),
             }.items()
             if not value
         ]
@@ -131,8 +186,8 @@ class GoogleDriveOAuth:
 
         return {
             "web": {
-                "client_id": cls.CLIENT_ID,
-                "client_secret": cls.CLIENT_SECRET,
+                "client_id": cls._client_id(),
+                "client_secret": cls._client_secret(),
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [redirect_uri],
@@ -205,8 +260,8 @@ class GoogleDriveOAuth:
             token=None,
             refresh_token=refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
-            client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID"),
-            client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+            client_id=GoogleDriveOAuth._client_id(),
+            client_secret=GoogleDriveOAuth._client_secret(),
             scopes=["https://www.googleapis.com/auth/drive"],
         )
         credentials.refresh(Request())

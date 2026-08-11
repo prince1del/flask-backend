@@ -67,7 +67,7 @@ def connect_storage():
         host = request.host_url.rstrip('/')
         # Prefer env redirect URI, but never use localhost redirect when the
         # live request is already on a public host (mobile / Render).
-        env_redirect = (GoogleDriveOAuth.REDIRECT_URI or "").strip()
+        env_redirect = GoogleDriveOAuth._env("GOOGLE_OAUTH_REDIRECT_URI")
         if env_redirect and "localhost" not in env_redirect and "127.0.0.1" not in env_redirect:
             redirect_uri = env_redirect
         else:
@@ -163,7 +163,7 @@ def oauth_callback():
             ), 400
 
         host = request.host_url.rstrip('/')
-        env_redirect = (GoogleDriveOAuth.REDIRECT_URI or "").strip()
+        env_redirect = GoogleDriveOAuth._env("GOOGLE_OAUTH_REDIRECT_URI")
         if env_redirect and "localhost" not in env_redirect and "127.0.0.1" not in env_redirect:
             redirect_uri = env_redirect
         else:
