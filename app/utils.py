@@ -398,6 +398,28 @@ def normalize_voice_query(text: str) -> str:
     return text
 
 
+_PJP_DATE_WORDS = (
+    "kal", "aaj", "parso", "tomorrow", "today",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+)
+_PJP_VISIT_WORDS = (
+    "jana", "jaana", "visit", "plan", "program", "kaha", "kahan", "kahi",
+    "jagah", "schedule", "pjp", "route", "milna", "go", "going", "where",
+)
+
+
+def _looks_like_pjp_query(normalized: str) -> bool:
+    """Fixed keyphrases can't enumerate every natural word order/insertion
+    ("kal ka kya plan hai", "kal jana kaha hai mujhe", "jana kaha hai kal").
+    If the query names both a date and a visit-ish word, it's PJP —
+    checked only after the specific-intent phrase list finds no match, so
+    it never overrides a more specific signal (e.g. "last visit ... kal").
+    """
+    has_date = any(w in normalized for w in _PJP_DATE_WORDS)
+    has_visit = any(w in normalized for w in _PJP_VISIT_WORDS)
+    return has_date and has_visit
+
+
 def infer_ai_intent(query: str) -> str:
     normalized = normalize_voice_query(query or "").strip().lower()
     if not normalized:
@@ -405,6 +427,8 @@ def infer_ai_intent(query: str) -> str:
     for intent, phrases in _INTENT_KEYWORDS.items():
         if any(phrase in normalized for phrase in phrases):
             return intent
+    if _looks_like_pjp_query(normalized):
+        return "pjp"
     fuzzy_intent = _fuzzy_intent_from_words(normalized)
     if fuzzy_intent:
         return fuzzy_intent

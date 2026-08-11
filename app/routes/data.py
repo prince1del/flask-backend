@@ -34,6 +34,7 @@ from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
 from app.fiscal_year import normalize_fiscal_year
 from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.routes.ask_nexora_troubleshoot import log_unresolved_query
 from app.three_step_verification import (
     _extract_pdf_text,
     _parse_pdf_table_like_text,
@@ -4118,6 +4119,25 @@ def _summarize_ask_nexora_search(
     return "\n\n".join(chunks) if chunks else "No matching information found."
 
 
+_UNRESOLVED_ANSWER_MARKERS = (
+    "no matching information found",
+    "i could not find a distributor named",
+    "i couldn't identify the distributor",
+    "i couldn't identify that distributor",
+    "no target/achievement records found",
+    "no target data found",
+)
+
+
+def _is_unresolved_answer(answer: str) -> bool:
+    """True for answers that mean Nexora couldn't understand or find the
+    entity asked about — as opposed to a real, definitive business answer
+    like "no active alerts" or "no PJP entry planned" (those are correct
+    zero-result answers, not comprehension failures)."""
+    lowered = (answer or "").lower()
+    return any(marker in lowered for marker in _UNRESOLVED_ANSWER_MARKERS)
+
+
 _PJP_WEEKDAY_NAMES = {
     "monday": 0,
     "tuesday": 1,
@@ -4395,6 +4415,10 @@ def ai_assistant_query() -> Response:
             answer = f"{ask_prefix} {day_ref} planned visit: {place_label}{extra}."
         elif day_type in {"holiday", "leave"}:
             answer = f"{ask_prefix} {date_label.capitalize()} is marked as {day_type} in your PJP."
+        elif target_date.weekday() >= 5:
+            # No entry planned and it's a Saturday/Sunday — a weekly off,
+            # not a gap in the plan the user forgot to fill.
+            answer = f"{ask_prefix} {date_label.capitalize()} is a holiday (weekend)."
         else:
             answer = f"{ask_prefix} No PJP entry planned for {date_label} yet."
     elif intent == "purchase_trends":
@@ -4632,6 +4656,13 @@ def ai_assistant_query() -> Response:
             }
         answer = (
             f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
+        )
+
+    if _is_unresolved_answer(answer):
+        log_unresolved_query(workspace_id, user_id, query)
+        answer = (
+            f"{ask_prefix} I couldn't find an answer to that — please try "
+            f"asking something else, or rephrase your question."
         )
 
     return Response(
