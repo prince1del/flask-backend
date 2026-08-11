@@ -1401,13 +1401,14 @@ class CentralizedDB:
                 ("firm_name", "Firm Name", "text", 1),
                 ("firm_nick_name", "Nick Name", "text", 2),
                 ("name", "Contact Person", "text", 3),
-                ("phone_number", "Mobile Number", "text", 4),
-                ("email", "Email", "text", 5),
-                ("zone", "State", "text", 6),
-                ("region", "Area", "text", 7),
-                ("gst_no", "GST Number", "text", 8),
-                ("payment_terms", "Payment Terms", "text", 9),
-                ("credit_limit", "Credit Limit", "number", 10),
+                ("contact_person_role", "Contact Person Role", "text", 4),
+                ("phone_number", "Mobile Number", "text", 5),
+                ("email", "Email", "text", 6),
+                ("zone", "State", "text", 7),
+                ("region", "Area", "text", 8),
+                ("gst_no", "GST Number", "text", 9),
+                ("payment_terms", "Payment Terms", "text", 10),
+                ("credit_limit", "Credit Limit", "number", 11),
             ],
             "retailer": [
                 ("retailer_code", "Retailer Code", "text", 0),
@@ -2052,6 +2053,7 @@ class CentralizedDB:
                     firm_name TEXT,
                     firm_nick_name TEXT,
                     name TEXT NOT NULL,
+                    contact_person_role TEXT,
                     workspace_id TEXT NOT NULL DEFAULT 'default',
                     phone_number TEXT,
                     location TEXT,
@@ -2817,6 +2819,9 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "master_retailers", "anniversary", "TEXT")
             self._ensure_column_exists(conn, "master_retailers", "phone_number_2", "TEXT")
             self._ensure_column_exists(conn, "master_distributors", "phone_number_2", "TEXT")
+            self._ensure_column_exists(
+                conn, "master_distributors", "contact_person_role", "TEXT"
+            )
             self._ensure_column_exists(conn, "business_rules", "rule_key", "TEXT")
             self._ensure_column_exists(conn, "business_rules", "rule_value", "TEXT")
             self._ensure_column_exists(
@@ -6739,7 +6744,7 @@ class CentralizedDB:
             conn.row_factory = sqlite3.Row
             dist_sql = (
                 "SELECT id, distributor_id AS buyer_code, COALESCE(firm_name, name) AS firm_name, "
-                "firm_nick_name, name AS contact_person, phone_number, location AS city, "
+                "firm_nick_name, name AS contact_person, contact_person_role, phone_number, location AS city, "
                 "gst_no, zone, region, address FROM master_distributors"
             )
             dist_params: list[Any] = []
@@ -7059,7 +7064,7 @@ class CentralizedDB:
                 placeholders = ",".join("?" * len(ids_by_category["distributors"]))
                 dist_rows = conn.execute(
                     f"SELECT id, distributor_id AS buyer_code, COALESCE(firm_name, name) AS firm_name, "
-                    f"firm_nick_name, name AS contact_person, phone_number, "
+                    f"firm_nick_name, name AS contact_person, contact_person_role, phone_number, "
                     f"location AS city, gst_no, zone, region, address FROM master_distributors "
                     f"WHERE id IN ({placeholders})",
                     tuple(ids_by_category["distributors"]),
@@ -7238,7 +7243,7 @@ class CentralizedDB:
                 dist_rows = conn.execute(
                     dist_sql.replace(
                         "SELECT name, gst_no, zone, region, location, address, phone_number, id",
-                        "SELECT id, distributor_id AS buyer_code, COALESCE(firm_name, name) AS firm_name, firm_nick_name, name AS contact_person, phone_number, location AS city, gst_no, zone, region, address",
+                        "SELECT id, distributor_id AS buyer_code, COALESCE(firm_name, name) AS firm_name, firm_nick_name, name AS contact_person, contact_person_role, phone_number, location AS city, gst_no, zone, region, address",
                     ),
                     dist_params,
                 ).fetchall()
@@ -7290,7 +7295,7 @@ class CentralizedDB:
         if not results.get("distributors"):
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                dist_query = "SELECT id, distributor_id, firm_name, firm_nick_name, name, phone_number, location, gst_no, zone, region, address FROM master_distributors"
+                dist_query = "SELECT id, distributor_id, firm_name, firm_nick_name, name, contact_person_role, phone_number, location, gst_no, zone, region, address FROM master_distributors"
                 dist_params: list[Any] = []
                 if workspace_id:
                     dist_query += " WHERE workspace_id = ?"
@@ -7387,6 +7392,7 @@ class CentralizedDB:
                         "firm_name": d["firm_name"] or d["name"],
                         "firm_nick_name": d["firm_nick_name"],
                         "contact_person": d["name"],
+                        "contact_person_role": d["contact_person_role"],
                         "phone_number": d["phone_number"],
                         "city": d["location"],
                         "gst_no": d["gst_no"],
@@ -8005,6 +8011,12 @@ class CentralizedDB:
                 "Contact Person",
                 "Contact Name",
             ],
+            "contact_person_role": [
+                "Contact Person Role",
+                "Contact Role",
+                "Designation",
+                "Role",
+            ],
             "state": ["State"],
             "pincode": ["Pincode", "Pin Code", "PIN Code", "Zip Code"],
             "category": ["Category", "Store Type", "Shop Type", "Business Type"],
@@ -8188,6 +8200,7 @@ class CentralizedDB:
                     "firm_name",
                     "firm_nick_name",
                     "distributor_name",
+                    "contact_person_role",
                     "phone_number",
                     "location",
                     "address",
@@ -8219,6 +8232,7 @@ class CentralizedDB:
                     "firm_name": "Firm Name",
                     "firm_nick_name": "Firm nick name",
                     "distributor_name": "Distributor Name",
+                    "contact_person_role": "Contact Person Role",
                     "phone_number": "Mobile Number",
                     "location": "Location",
                     "address": "Address",
@@ -8582,6 +8596,14 @@ class CentralizedDB:
                                 row, "address", "Address", template_config
                             )
                         )
+                        contact_person_role = self._normalize_text(
+                            self._get_row_value(
+                                row,
+                                "contact_person_role",
+                                "Contact Person Role",
+                                template_config,
+                            )
+                        )
                         if gst_no and len(gst_no) < 10:
                             errors.append(f"Invalid GST for distributor {name}")
                             skipped += 1
@@ -8810,6 +8832,12 @@ class CentralizedDB:
                                 ),
                             )
                             updated += 1
+                            if contact_person_role:
+                                conn.execute(
+                                    "UPDATE master_distributors SET contact_person_role = ? "
+                                    "WHERE id = ? AND workspace_id = ?",
+                                    (contact_person_role, distributor_id, workspace_id),
+                                )
                             continue
 
                         self.add_master_distributor(
@@ -8845,6 +8873,7 @@ class CentralizedDB:
                             sales_executive_anniversary=sales_executive_anniversary
                             or None,
                             credit_limit=credit_limit,
+                            contact_person_role=contact_person_role or None,
                             status="active",
                             workspace_id=workspace_id,
                             conn=conn,
@@ -9587,6 +9616,7 @@ class CentralizedDB:
         latitude: float | None = None,
         longitude: float | None = None,
         phone_number_2: str | None = None,
+        contact_person_role: str | None = None,
         status: str = "active",
         workspace_id: str = "default",
         conn: sqlite3.Connection | None = None,
@@ -9667,9 +9697,10 @@ class CentralizedDB:
                     latitude,
                     longitude,
                     status,
-                    created_at
+                    created_at,
+                    contact_person_role
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     distributor_code or self._generate_unique_master_id("D"),
@@ -9705,6 +9736,7 @@ class CentralizedDB:
                     longitude,
                     status,
                     created_at,
+                    contact_person_role,
                 ),
             )
             new_id = int(cursor.lastrowid)
@@ -9901,7 +9933,7 @@ class CentralizedDB:
     def get_master_distributor(
         self, distributor_id: int, workspace_id: str | None = None
     ) -> dict[str, Any] | None:
-        query = "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, buyer_code, zone, territory, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at, phone_number_2 FROM master_distributors WHERE id = ?"
+        query = "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, buyer_code, zone, territory, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at, phone_number_2, contact_person_role FROM master_distributors WHERE id = ?"
         params: list[Any] = [distributor_id]
         if workspace_id:
             query += " AND workspace_id = ?"
@@ -9945,6 +9977,7 @@ class CentralizedDB:
             "status": row[31],
             "created_at": row[32],
             "phone_number_2": row[33],
+            "contact_person_role": row[34],
         }
 
     # Every column on master_distributors that's safe to update via the API -
@@ -9960,6 +9993,7 @@ class CentralizedDB:
         "sales_executive_name", "sales_executive_phone_number", "sales_executive_email",
         "sales_executive_birthday", "sales_executive_anniversary",
         "credit_limit", "latitude", "longitude", "status",
+        "contact_person_role",
     }
 
     def update_master_distributor(
@@ -10060,7 +10094,8 @@ class CentralizedDB:
                     status,
                     created_at,
                     phone_number_2,
-                    updated_at
+                    updated_at,
+                    contact_person_role
                 FROM master_distributors
                 """
         where_parts: list[str] = []
@@ -10123,6 +10158,7 @@ class CentralizedDB:
                 "created_at": row[30],
                 "phone_number_2": row[31],
                 "updated_at": row[32],
+                "contact_person_role": row[33],
             }
             for row in rows
         ]
@@ -10148,6 +10184,7 @@ class CentralizedDB:
                         + LENGTH(IFNULL(location, ''))
                         + LENGTH(IFNULL(gst_no, ''))
                         + LENGTH(IFNULL(status, ''))
+                        + LENGTH(IFNULL(contact_person_role, ''))
                     ), 0)
                 FROM master_distributors
                 WHERE IFNULL(status, 'active') != 'inactive'
@@ -11071,6 +11108,7 @@ class CentralizedDB:
                 "firm_name",
                 "firm_nick_name",
                 "name",
+                "contact_person_role",
                 "phone_number",
                 "location",
                 "address",
@@ -11104,6 +11142,7 @@ class CentralizedDB:
             "firm_name",
             "firm_nick_name",
             "name",
+            "contact_person_role",
             "phone_number",
             "location",
             "address",
@@ -11137,6 +11176,7 @@ class CentralizedDB:
     def export_master_distributors_csv(self, workspace_id: str | None = None) -> bytes:
         columns = [
             "id", "distributor_id", "firm_name", "firm_nick_name", "name",
+            "contact_person_role",
             "phone_number", "location", "address", "pincode", "email", "gst_no",
             "zone", "region", "payment_terms", "birthday", "anniversary",
             "secondary_distributor_name", "secondary_distributor_phone_number",

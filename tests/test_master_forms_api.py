@@ -50,11 +50,13 @@ def test_master_distributor_and_retailer_crud_via_api(client):
             "credit_limit": 50000,
             "birthday": "1990-01-01",
             "anniversary": "2010-01-01",
+            "contact_person_role": "Partner",
         },
     )
     assert create_resp.status_code == 201
     distributor = create_resp.get_json()["data"]
     assert distributor["firm_name"] == "Alpha Fabrics"
+    assert distributor["contact_person_role"] == "Partner"
 
     update_resp = client.put(
         f"/api/v1/masters/distributors/{distributor['id']}",

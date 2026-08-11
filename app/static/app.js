@@ -2705,6 +2705,7 @@ let partyDetailRecordsCache = [];
 const PARTY_DETAIL_LABELS = {
   name: 'Name', firm_name: 'Firm Name', firmNickName: 'Firm Nickname',
   contactPerson: 'Contact Person', contact_person: 'Contact Person',
+  contactPersonRole: 'Contact Person Role', contact_person_role: 'Contact Person Role',
   distributor: 'Distributor', distributor_name: 'Distributor',
   distributorCode: 'Distributor Code', distributor_code: 'Distributor Code',
   gst: 'GST Number', gst_no: 'GST Number', gst_number: 'GST Number',
@@ -3687,6 +3688,7 @@ const DISTRIBUTOR_TABLE_COLUMNS = [
   { key: 'name', label: 'Firm / Name', alwaysShow: true },
   { key: 'distributorCode', label: 'Distributor Code', alwaysShow: true },
   { key: 'contactPerson', label: 'Contact Person' },
+  { key: 'contactPersonRole', label: 'Contact Role' },
   { key: 'gst', label: 'GST Number' },
   { key: 'territory', label: 'Territory' },
   { key: 'zone', label: 'Zone' },
@@ -4018,6 +4020,7 @@ async function loadDistributors() {
         firmNickName: d.firm_nick_name || '',
         distributorCode: formatPartyFieldValue('distributorCode', d.distributor_code || d.distributor_id || ''),
         contactPerson: d.name,
+        contactPersonRole: d.contact_person_role || '',
         gst: d.gst_no,
         territory: d.territory || '',
         zone: d.zone || '',
@@ -7485,7 +7488,7 @@ function populateMasterRetailerDistributorOptions(records) {
 function resetMasterDistributorForm() {
   document.getElementById('master-distributor-id').value = '';
   document.getElementById('master-distributor-form-title').textContent = 'Add Distributor';
-  ['master-distributor-firm-name','master-distributor-firm-nick-name','master-distributor-name','master-distributor-code','master-distributor-phone','master-distributor-phone-2','master-distributor-email','master-distributor-address','master-distributor-location','master-distributor-region','master-distributor-pincode','master-distributor-gst','master-distributor-territory','master-distributor-payment-terms','master-distributor-credit-limit','master-distributor-birthday','master-distributor-anniversary','master-distributor-secondary-name','master-distributor-secondary-phone','master-distributor-secondary-birthday','master-distributor-secondary-anniversary','master-distributor-sales-name','master-distributor-sales-phone','master-distributor-sales-email','master-distributor-sales-birthday','master-distributor-sales-anniversary'].forEach((id) => {
+  ['master-distributor-firm-name','master-distributor-firm-nick-name','master-distributor-name','master-distributor-contact-role','master-distributor-code','master-distributor-phone','master-distributor-phone-2','master-distributor-email','master-distributor-address','master-distributor-location','master-distributor-region','master-distributor-pincode','master-distributor-gst','master-distributor-territory','master-distributor-payment-terms','master-distributor-credit-limit','master-distributor-birthday','master-distributor-anniversary','master-distributor-secondary-name','master-distributor-secondary-phone','master-distributor-secondary-birthday','master-distributor-secondary-anniversary','master-distributor-sales-name','master-distributor-sales-phone','master-distributor-sales-email','master-distributor-sales-birthday','master-distributor-sales-anniversary'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -7536,6 +7539,7 @@ async function saveMasterDistributor(event) {
   const territoryVal = document.getElementById('master-distributor-territory')?.value.trim() || undefined;
   const body = {
     name: document.getElementById('master-distributor-name').value.trim(),
+    contact_person_role: document.getElementById('master-distributor-contact-role')?.value.trim() || undefined,
     firm_name: document.getElementById('master-distributor-firm-name').value.trim() || undefined,
     firm_nick_name: document.getElementById('master-distributor-firm-nick-name').value.trim() || undefined,
     distributor_code: distCode,
@@ -7594,6 +7598,8 @@ async function editMasterDistributor(id) {
     document.getElementById('master-distributor-firm-name').value = record.firm_name || '';
     document.getElementById('master-distributor-firm-nick-name').value = record.firm_nick_name || '';
     document.getElementById('master-distributor-name').value = record.name || '';
+    const roleEl = document.getElementById('master-distributor-contact-role');
+    if (roleEl) roleEl.value = record.contact_person_role || '';
     document.getElementById('master-distributor-code').value =
       record.buyer_code || record.distributor_code || record.distributor_id || '';
     document.getElementById('master-distributor-phone').value = record.phone_number || '';
@@ -7797,6 +7803,7 @@ async function openMastersGrid(masterType) {
       ['firm_name', 'Firm Name'],
       ['firm_nick_name', 'Nickname'],
       ['name', 'Contact Person'],
+      ['contact_person_role', 'Contact Role'],
       ['phone_number', 'Phone'],
       ['phone_number_2', 'Phone 2'],
       ['email', 'Email'],
@@ -8184,6 +8191,7 @@ const GLOBAL_SEARCH_COLUMNS = {
     ['firm_name', 'Firm Name'],
     ['buyer_code', 'Distributor Code'],
     ['contact_person', 'Contact Person'],
+    ['contact_person_role', 'Contact Role'],
     ['phone_number', 'Phone'],
     ['city', 'City'],
     ['gst_no', 'GST No'],

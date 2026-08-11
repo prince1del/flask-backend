@@ -15,6 +15,26 @@ phone_number_2) that it was previously missing.
 from centralized_db_system.db import CentralizedDB
 
 
+def test_distributor_contact_person_role_roundtrip(tmp_path):
+    db_path = str(tmp_path / "dist_role.sqlite3")
+    db = CentralizedDB(db_path)
+    dist_id = db.add_master_distributor(
+        name="Ramesh Kumar",
+        firm_name="Choice Corner",
+        contact_person_role="Partner",
+        workspace_id="ws-1",
+    )
+    record = db.get_master_distributor(dist_id, workspace_id="ws-1")
+    assert record["contact_person_role"] == "Partner"
+    listed = db.list_master_distributors(workspace_id="ws-1")
+    assert listed[0]["contact_person_role"] == "Partner"
+    updated = db.update_master_distributor(
+        dist_id, "ws-1", contact_person_role="Managing Director"
+    )
+    assert updated["contact_person_role"] == "Managing Director"
+    assert updated["name"] == "Ramesh Kumar"
+
+
 def test_update_master_distributor_partial_update_and_workspace_safety(tmp_path):
     db_path = str(tmp_path / "update_dist.sqlite3")
     db = CentralizedDB(db_path)
