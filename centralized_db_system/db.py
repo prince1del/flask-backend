@@ -3183,6 +3183,10 @@ class CentralizedDB:
         text = re.sub(r"\bshree\b", "shri", text)
         text = re.sub(r"\bsree\b", "shri", text)
         text = re.sub(r"\bsri\b", "shri", text)
+        # Common surname spelling variants (Goyal/Goel/Goil are the same
+        # name transliterated differently).
+        text = re.sub(r"\bgoel\b", "goyal", text)
+        text = re.sub(r"\bgoil\b", "goyal", text)
         return self._normalize_text(text)
 
     def _party_name_compact(self, value: Any) -> str:

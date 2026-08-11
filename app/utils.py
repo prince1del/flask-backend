@@ -142,6 +142,14 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "friday visit",
         "saturday visit",
         "sunday visit",
+        "kal ka plan",
+        "aaj ka program",
+        "kal ka program",
+        "mera plan",
+        "mera program",
+        "my plan",
+        "my program",
+        "kal ka schedule",
     ],
     "last_visit": [
         "last visit",
@@ -329,14 +337,59 @@ def _fuzzy_intent_from_words(normalized: str) -> str | None:
     return None
 
 
+def collapse_spelled_out_letters(text: str) -> str:
+    """Voice STT sometimes spells short acronyms/nicknames out as separate
+    letters — "KAG" heard and transcribed as "k a g". Collapse runs of 2+
+    consecutive single-letter tokens back into one word so nickname
+    lookups (e.g. Kalra's "KAG") still resolve. Applied once to the whole
+    query so every downstream step (intent match, entity extraction)
+    benefits.
+    """
+    tokens = (text or "").split()
+    result: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if len(tokens[i]) == 1 and tokens[i].isalpha():
+            run = [tokens[i]]
+            j = i + 1
+            while j < len(tokens) and len(tokens[j]) == 1 and tokens[j].isalpha():
+                run.append(tokens[j])
+                j += 1
+            if len(run) >= 2:
+                collapsed = "".join(run)
+                # Absorb an immediately-following bare number — season
+                # codes like "AW26"/"SS25" get heard as "a w 26"/"s s 25".
+                if j < len(tokens) and tokens[j].isdigit():
+                    collapsed += tokens[j]
+                    j += 1
+                result.append(collapsed)
+                i = j
+                continue
+        result.append(tokens[i])
+        i += 1
+    return " ".join(result)
+
+
+def normalize_voice_query(text: str) -> str:
+    """Collapse known voice-transcription slips so every downstream step
+    (intent matching, date parsing, entity extraction) sees the corrected
+    text, not just the intent classifier. Safe to call multiple times —
+    idempotent.
+    """
+    text = collapse_spelled_out_letters(text or "")
+    # "PJP" heard as "BJP" (the political party dominates the recognizer's
+    # language model) — nobody is asking Ask Nexora about politics.
+    text = re.sub(r"(?i)\bbjp\b", "pjp", text)
+    # "kal" (tomorrow) sometimes heard as "cal" — not a real word in this
+    # app's context, safe to normalize unconditionally.
+    text = re.sub(r"(?i)\bcal\b", "kal", text)
+    return text
+
+
 def infer_ai_intent(query: str) -> str:
-    normalized = (query or "").strip().lower()
+    normalized = normalize_voice_query(query or "").strip().lower()
     if not normalized:
         return "search"
-    # Common voice-transcription slip in this app's context — "PJP" gets
-    # heard as "BJP" (the political party dominates the recognizer's
-    # language model). Nobody is asking Ask Nexora about politics.
-    normalized = re.sub(r"\bbjp\b", "pjp", normalized)
     for intent, phrases in _INTENT_KEYWORDS.items():
         if any(phrase in normalized for phrase in phrases):
             return intent

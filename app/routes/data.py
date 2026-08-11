@@ -50,6 +50,7 @@ from app.utils import (
     extract_party_name_candidate,
     infer_ai_intent,
     infer_distributor_name,
+    normalize_voice_query,
     stage_label_for_key,
 )
 from app.verification import (
@@ -4208,7 +4209,9 @@ def _find_distributor_fuzzy(
             (workspace_id,),
         ).fetchall()
     entity_lower = entity.lower()
+    entity_fold = db._party_name_fold(entity_lower)
     entity_words = [w for w in entity_lower.split() if len(w) >= 4]
+    entity_fold_words = [w for w in entity_fold.split() if len(w) >= 4]
     best_row = None
     best_ratio = 0.0
     for r in all_rows:
@@ -4216,8 +4219,10 @@ def _find_distributor_fuzzy(
             if not candidate:
                 continue
             candidate_lower = candidate.lower()
+            candidate_fold = db._party_name_fold(candidate_lower)
             ratio = difflib.SequenceMatcher(None, entity_lower, candidate_lower).ratio()
             candidate_words = [w for w in candidate_lower.split() if len(w) >= 3]
+            candidate_fold_words = [w for w in candidate_fold.split() if len(w) >= 3]
             for word in candidate_words:
                 ratio = max(
                     ratio, difflib.SequenceMatcher(None, entity_lower, word).ratio()
@@ -4234,12 +4239,35 @@ def _find_distributor_fuzzy(
                     word_ratio = difflib.SequenceMatcher(None, ew, cw).ratio()
                     if word_ratio >= 0.75:
                         ratio = max(ratio, word_ratio)
+            # Known surname/honorific spelling variants (Goyal/Goel/Goil,
+            # Shri/Shree/Sri) — compare the folded forms too so these
+            # count as an exact word match, not just a fuzzy-ratio one.
+            for ew in entity_fold_words:
+                for cw in candidate_fold_words:
+                    if ew == cw:
+                        ratio = max(ratio, 1.0)
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_row = r
     if best_row is not None and best_ratio >= 0.70:
         return dict(best_row)
     return None
+
+
+def _resolve_distributor_with_context(
+    db: CentralizedDB, query: str, context_query: str, workspace_id: str | None
+) -> dict[str, Any] | None:
+    """Resolve a distributor for the current query, falling back to the
+    previous turn's question when this one names no distributor of its
+    own — the simple follow-up case ("mobile number bhi batao" right
+    after "bernina ka naam batao")."""
+    entity = extract_party_name_candidate(query)
+    distributor = _find_distributor_fuzzy(db, entity, workspace_id)
+    if not distributor and context_query:
+        context_entity = extract_party_name_candidate(context_query)
+        if context_entity:
+            distributor = _find_distributor_fuzzy(db, context_entity, workspace_id)
+    return distributor
 
 
 @data_blueprint.route("/api/v1/ai-assistant/query", methods=["GET", "POST"])
@@ -4259,6 +4287,13 @@ def ai_assistant_query() -> Response:
             status=400,
             mimetype="application/json",
         )
+    # Previous user question in this chat session, for simple follow-ups
+    # ("mobile number bhi batao" after "bernina ka naam batao") — used as
+    # an entity-resolution fallback when the current query names no
+    # distributor of its own.
+    context_query = str(
+        payload.get("context") or request.args.get("context") or ""
+    ).strip()
 
     # Strip wake phrases: "hey nexora", "ask nexora" (legacy jarvis still ok).
     query = re.sub(
@@ -4266,6 +4301,12 @@ def ai_assistant_query() -> Response:
         "",
         query,
     ).strip()
+    # Correct known voice-transcription slips (spelled-out acronyms like
+    # "k a g" -> "kag", "bjp" -> "pjp", "cal" -> "kal") once, up front, so
+    # intent matching, date parsing, and entity extraction all see the
+    # corrected text consistently.
+    query = normalize_voice_query(query)
+    context_query = normalize_voice_query(context_query)
     db = CentralizedDB(_db_path())
     intent = infer_ai_intent(query)
     ask_prefix = "Nexora:"
@@ -4296,6 +4337,10 @@ def ai_assistant_query() -> Response:
             query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
         )
         distributor = _find_distributor_fuzzy(db, entity, workspace_id)
+        if not distributor and context_query:
+            context_entity = extract_party_name_candidate(context_query)
+            if context_entity:
+                distributor = _find_distributor_fuzzy(db, context_entity, workspace_id)
         if distributor:
             last_visit = db.get_last_visit_date("distributor", distributor["id"])
             answer = (
@@ -4348,8 +4393,9 @@ def ai_assistant_query() -> Response:
         else:
             answer = f"{ask_prefix} No PJP entry planned for {date_label} yet."
     elif intent == "purchase_trends":
-        entity = extract_party_name_candidate(query)
-        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
+        distributor = _resolve_distributor_with_context(
+            db, query, context_query, workspace_id
+        )
         if distributor:
             logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
             answer = (
@@ -4389,9 +4435,17 @@ def ai_assistant_query() -> Response:
         # A bare year in the query ("target of 2026") means the Indian
         # fiscal year STARTING that year — "2026" -> FY 2026-2027, "2025"
         # -> FY 2025-2026 — matching how the dashboard labels FYs.
-        year_match = re.search(r"\b(20\d{2})\b", query)
+        year_match = re.search(r"\b(20\d{2})\b", query) or re.search(
+            r"\b(20\d{2})\b", context_query
+        )
         requested_fy = f"{year_match.group(1)}-{int(year_match.group(1)) + 1}" if year_match else None
         entity = re.sub(r"\b20\d{2}\b", "", extract_party_name_candidate(query)).strip().lower()
+        if not entity and context_query:
+            # Follow-up ("achievement bhi batao" after "bernina ka target
+            # 2026 batao") — reuse the distributor named in the prior turn.
+            entity = re.sub(
+                r"\b20\d{2}\b", "", extract_party_name_candidate(context_query)
+            ).strip().lower()
 
         # Show only the field(s) actually asked about — "target" alone ->
         # target only, "achievement" alone -> achievement only, both (or
@@ -4478,8 +4532,9 @@ def ai_assistant_query() -> Response:
                     )
                 answer = f"{ask_prefix} " + "; ".join(fy_parts) + "."
     elif intent == "category_orders":
-        entity = extract_party_name_candidate(query)
-        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
+        distributor = _resolve_distributor_with_context(
+            db, query, context_query, workspace_id
+        )
         if distributor:
             logs = db.build_distributor_purchase_behavior_logs(distributor["id"])
             if logs:
@@ -4509,8 +4564,9 @@ def ai_assistant_query() -> Response:
                 f"{ask_prefix} I couldn't identify the distributor for category breakdown."
             )
     elif intent == "owner":
-        entity = extract_party_name_candidate(query)
-        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
+        distributor = _resolve_distributor_with_context(
+            db, query, context_query, workspace_id
+        )
         if distributor:
             firm = distributor.get("firm_name") or distributor["name"]
             # Show only what was asked — "owner ka naam" -> name only,
