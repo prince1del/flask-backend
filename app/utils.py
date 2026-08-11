@@ -288,6 +288,9 @@ _PARTY_QUERY_STOPWORDS = {
     "financial", "year", "years", "fy", "kitne", "thi", "tha", "konse",
     "konsi", "was", "were", "did", "have",
     "total", "value", "season",
+    "double", "single", "king", "bed", "bath", "sheet", "sheets",
+    "bedsheet", "bedsheets", "kids", "kid", "towel", "towels", "large",
+    "diya", "diya hai", "hoga", "dedo", "de", "do",
 }
 
 

@@ -46,6 +46,7 @@ from app.three_step_verification import (
     run_full_verification,
 )
 from app.utils import (
+    _PARTY_QUERY_STOPWORDS,
     _SEASON_TOKEN_RE,
     detect_upload_file_type,
     expected_upload_format,
@@ -4214,7 +4215,7 @@ def _find_distributor_fuzzy(
     try:
         fuzzy_results = db.global_search(entity, workspace_id=workspace_id, user_id=None)
         fuzzy_dists = (fuzzy_results.get("results") or {}).get("distributors") or []
-        if fuzzy_dists and isinstance(fuzzy_dists[0], dict):
+        if fuzzy_dists and isinstance(fuzzy_dists[0], dict) and fuzzy_dists[0].get("name"):
             return fuzzy_dists[0]
     except Exception:
         pass
@@ -4742,21 +4743,25 @@ def ai_assistant_query() -> Response:
 
                 # Whatever's left after stripping season/category/brand words is
                 # the candidate distributor name, same follow-up-aware fallback
-                # as the other distributor-scoped intents.
+                # as the other distributor-scoped intents. Unlike those,
+                # this intent has a valid distributor-less meaning (company-
+                # wide total) — so no distributor left after stripping
+                # filler words means "company-wide", not "look at the
+                # previous question's distributor". No context-query
+                # fallback here, and no fuzzy lookup on filler-word mush.
                 residual = entity_query
                 for token in (category, brand, size):
                     if token:
                         residual = re.sub(re.escape(token.lower()), " ", residual)
-                distributor_entity = extract_party_name_candidate(residual)
+                residual_words = re.findall(r"[\w&.'-]+", residual)
+                meaningful_words = [
+                    w for w in residual_words if w.lower() not in _PARTY_QUERY_STOPWORDS
+                ]
                 distributor = (
-                    _find_distributor_fuzzy(db, distributor_entity, workspace_id)
-                    if distributor_entity
+                    _find_distributor_fuzzy(db, " ".join(meaningful_words), workspace_id)
+                    if meaningful_words
                     else None
                 )
-                if not distributor and context_query:
-                    distributor = _resolve_distributor_with_context(
-                        db, "", context_query, workspace_id
-                    )
 
                 totals = fodb.query_order_value(
                     fo_conn,
