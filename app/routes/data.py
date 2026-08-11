@@ -4026,6 +4026,33 @@ def _summarize_ask_nexora_search(
             except (TypeError, ValueError):
                 return 0.0
 
+        _PHYSICAL_SIZE_KEYS = (
+            "bs size",
+            "size",
+            "bedset size (cms)",
+            "bedset size",
+            "pillow size",
+        )
+
+        def _physical_size(a: dict) -> str | None:
+            """Physical cm dimension (e.g. "274x274") from extra_attributes,
+            same field names the Android app's physicalSizeLabel() checks."""
+            raw = a.get("extra_attributes")
+            if not raw:
+                return None
+            try:
+                attrs = json.loads(raw) if isinstance(raw, str) else raw
+            except (TypeError, ValueError):
+                return None
+            if not isinstance(attrs, dict):
+                return None
+            lower_map = {str(k).lower(): v for k, v in attrs.items()}
+            for key in _PHYSICAL_SIZE_KEYS:
+                value = lower_map.get(key)
+                if value and str(value).strip():
+                    return str(value).strip()
+            return None
+
         def _price_bits(a: dict) -> list[str]:
             # Only show the field(s) actually asked about — "aster exmill"
             # shouldn't also print MRP the user never asked for. With no
@@ -4054,16 +4081,27 @@ def _summarize_ask_nexora_search(
         def _label(a: dict, include_size: bool) -> str:
             brand = (a.get("brand") or "?").strip() or "?"
             size = (a.get("size") or "").strip()
-            base = f"{brand} {size}".strip() if include_size and size else brand
+            if include_size and size:
+                physical = _physical_size(a)
+                size_part = f"{size} ({physical})" if physical else size
+                base = f"{brand} {size_part}"
+            else:
+                base = brand
             bits = _price_bits(a)
             if bits:
                 return f"{base} — {', '.join(bits)}"
             return base
 
+        # Show size whenever it was specifically asked about (or nothing
+        # specific was asked) — only a price-only ask on a single match
+        # skips it, matching "aster exmill" -> "Aster — Ex-mill ₹625"
+        # with no size needed to disambiguate a single row.
+        include_size_for_single = wants_size_only or not wants_specific_field
+
         if len(arts) == 1 and isinstance(arts[0], dict):
             # A single match doesn't need row numbering or a "found N"
             # header — just answer with the field(s) that were asked.
-            chunks.append(_label(arts[0], include_size=False))
+            chunks.append(_label(arts[0], include_size=include_size_for_single))
         else:
             lines = [f"Found {len(arts)} match(es):"]
             for idx, a in enumerate(arts[:10], start=1):
@@ -4289,6 +4327,25 @@ def ai_assistant_query() -> Response:
         requested_fy = f"{year_match.group(1)}-{int(year_match.group(1)) + 1}" if year_match else None
         entity = re.sub(r"\b20\d{2}\b", "", extract_party_name_candidate(query)).strip().lower()
 
+        # Show only the field(s) actually asked about — "target" alone ->
+        # target only, "achievement" alone -> achievement only, both (or
+        # neither) named -> show both, same as the article MRP/ex-mill fix.
+        normalized_target_query = query.lower()
+        wants_target_field = "target" in normalized_target_query
+        wants_achievement_field = (
+            "achiev" in normalized_target_query or "purchase" in normalized_target_query
+        )
+        if not wants_target_field and not wants_achievement_field:
+            wants_target_field = wants_achievement_field = True
+
+        def _target_ach_bits(target_rs: float, achieved_rs: float) -> str:
+            bits = []
+            if wants_target_field:
+                bits.append(f"target Rs {target_rs:,.0f}")
+            if wants_achievement_field:
+                bits.append(f"achievement Rs {achieved_rs:,.0f}")
+            return ", ".join(bits)
+
         db.ensure_target_achievement_tables()
         with sqlite3.connect(_db_path()) as conn:
             fy_years = conn.execute(
@@ -4318,8 +4375,7 @@ def ai_assistant_query() -> Response:
                         target_rs = float(row.get("target_lakhs") or 0) * 100_000
                         achieved_rs = float(row.get("achievement_lakhs") or 0) * 100_000
                         year_parts.append(
-                            f"FY{fy_label}: purchase Rs {achieved_rs:,.0f} "
-                            f"(target Rs {target_rs:,.0f})"
+                            f"FY{fy_label}: {_target_ach_bits(target_rs, achieved_rs)}"
                         )
                         break
             if year_parts:
@@ -4351,8 +4407,8 @@ def ai_assistant_query() -> Response:
                     )
                     ach_lakhs = float(summary.get("active_achievement") or 0)
                     fy_parts.append(
-                        f"FY{fy_label}: target Rs {target_lakhs * 100_000:,.0f}, "
-                        f"achieved Rs {ach_lakhs * 100_000:,.0f}"
+                        f"FY{fy_label}: "
+                        f"{_target_ach_bits(target_lakhs * 100_000, ach_lakhs * 100_000)}"
                     )
                 answer = f"{ask_prefix} " + "; ".join(fy_parts) + "."
     elif intent == "category_orders":

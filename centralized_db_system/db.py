@@ -7507,7 +7507,7 @@ class CentralizedDB:
                 try:
                     am_rows = conn.execute(
                         """
-                        SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key
+                        SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key, extra_attributes
                         FROM article_master
                         WHERE user_id = ? AND is_active = 1 AND (
                             LOWER(COALESCE(brand, '')) LIKE ?
