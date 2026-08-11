@@ -470,6 +470,22 @@ def query_order_value(
     if not seasons:
         return {"total_piece_qty": 0.0, "total_ex_mill_value": 0.0, "matched_orders": 0}
     placeholders = ",".join("?" for _ in seasons)
+    # build_season_overview() reaches its numbers via list_filled_orders(),
+    # which re-applies qty-column rules to every order before summing —
+    # fixes stale bale-count rows left over from before a rule change.
+    # Matching that here so this answer can't drift from the dashboard
+    # figure it's meant to mirror.
+    order_id_sql = f"SELECT id FROM filled_orders WHERE user_id = ? AND season IN ({placeholders})"
+    order_id_params: list = [user_id, *seasons]
+    if category:
+        order_id_sql += " AND category = ? COLLATE NOCASE"
+        order_id_params.append(category)
+    if distributor_id:
+        order_id_sql += " AND distributor_id = ?"
+        order_id_params.append(distributor_id)
+    for (order_id,) in conn.execute(order_id_sql, order_id_params).fetchall():
+        recompute_filled_order_quantities(conn, order_id)
+
     sql = (
         "SELECT COALESCE(SUM(foi.final_piece_qty), 0), "
         "COALESCE(SUM(foi.final_piece_qty * COALESCE(foi.ex_mill_price, 0)), 0), "
