@@ -4136,6 +4136,11 @@ def _resolve_pjp_query_date(query: str, today) -> tuple[Any, str]:
     nothing more specific is mentioned.
     """
     normalized = (query or "").lower()
+    # "parso" (day after tomorrow) is commonly misheard by voice STT as
+    # "person" or "parson" — real English words, so this substitution is
+    # scoped to PJP date-parsing only, not applied as a global normalization
+    # that could misfire on an unrelated "person"/"parson" mention.
+    normalized = re.sub(r"\b(person|parson)s?\b", "parso", normalized)
     if "day after tomorrow" in normalized or "parso" in normalized:
         return today + timedelta(days=2), "day after tomorrow"
     if "tomorrow" in normalized or "kal" in normalized:

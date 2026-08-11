@@ -365,6 +365,18 @@ def collapse_spelled_out_letters(text: str) -> str:
                 result.append(collapsed)
                 i = j
                 continue
+        # A season code that came through as one already-joined short
+        # token ("SS", "AW", "FW") still needs its trailing number folded
+        # in — "SS 26" -> "SS26" — not just the letter-by-letter case above.
+        if (
+            tokens[i].isalpha()
+            and 2 <= len(tokens[i]) <= 4
+            and i + 1 < len(tokens)
+            and tokens[i + 1].isdigit()
+        ):
+            result.append(tokens[i] + tokens[i + 1])
+            i += 2
+            continue
         result.append(tokens[i])
         i += 1
     return " ".join(result)
