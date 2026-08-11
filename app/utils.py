@@ -329,6 +329,7 @@ _FUZZY_TERM_TO_INTENT: dict[str, str] = {
     "owner": "owner",
     "malik": "owner",
     "proprietor": "owner",
+    "address": "owner",
 }
 
 
@@ -474,6 +475,10 @@ def normalize_voice_query(text: str) -> str:
     # "kal" (tomorrow) sometimes heard as "cal" — not a real word in this
     # app's context, safe to normalize unconditionally.
     text = re.sub(r"(?i)\bcal\b", "kal", text)
+    # Common single-typo misspelling that breaks the "address" keyword
+    # match outright (plain substring check, no typo tolerance) — not a
+    # real word in this app's context, safe to normalize unconditionally.
+    text = re.sub(r"(?i)\badress\b", "address", text)
     # A spoken number sequence that happens to sound like a clock time
     # ("five twenty five") gets heard as "5:25" — Ask Nexora has no
     # clock-time query anywhere, so any H:MM/HH:MM pattern here is really
