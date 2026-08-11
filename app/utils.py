@@ -496,6 +496,58 @@ def _looks_like_season_order_query(normalized: str) -> bool:
     return "order" in normalized or "value" in normalized
 
 
+_CALC_NUM_RE = r"\d[\d,]*\.?\d*"
+
+
+def try_calculator(normalized: str) -> dict | None:
+    """Parse a two-number arithmetic/percentage expression out of free
+    text — "500 ka 10 percent kitna hoga", "25000 plus 15000", "36000
+    divided by 12". Deliberately does NOT treat a bare hyphen as
+    subtraction — that symbol is already used elsewhere in this app for
+    an MRP range query ("1000-2000"), so subtraction requires an
+    explicit word (minus/ghata/subtract). Returns a dict with the parsed
+    operands/operator/result, or None if no expression was found.
+    """
+    matches = list(re.finditer(_CALC_NUM_RE, normalized))
+    if len(matches) < 2:
+        return None
+    a_match, b_match = matches[0], matches[1]
+    a = float(a_match.group().replace(",", ""))
+    b = float(b_match.group().replace(",", ""))
+
+    percent_hit = re.search(r"%|percent|pratishat", normalized)
+    if percent_hit:
+        # Whichever of the two numbers sits closer to the %/percent token
+        # is the percentage value; the other is the base — handles both
+        # "10 percent of 500" and "500 ka 10 percent" orderings.
+        pct_pos = percent_hit.start()
+        if abs(a_match.end() - pct_pos) <= abs(b_match.end() - pct_pos):
+            pct_val, base = a, b
+        else:
+            pct_val, base = b, a
+        return {"op": "percent", "a": pct_val, "b": base, "result": (pct_val / 100.0) * base}
+
+    op = None
+    if re.search(r"\+|\bplus\b|\bjod\b|\bjama\b|\badd\b", normalized):
+        op = "+"
+    elif re.search(r"\bminus\b|\bghata\b|\bsubtract\b", normalized):
+        op = "-"
+    elif re.search(r"[*x×]|\bmultiply\b|\bmultiplied\b|\bguna\b|\bgunaa\b|\btimes\b", normalized):
+        op = "*"
+    elif re.search(r"[/÷]|\bdivide\b|\bdivided\b|\bbhag\b|\bbhaag\b", normalized):
+        op = "/"
+    if not op:
+        return None
+    if op == "/" and b == 0:
+        return None
+    result = {"+": a + b, "-": a - b, "*": a * b, "/": a / b if op == "/" else None}[op]
+    return {"op": op, "a": a, "b": b, "result": result}
+
+
+def _looks_like_calculator_query(normalized: str) -> bool:
+    return try_calculator(normalized) is not None
+
+
 def infer_ai_intent(query: str) -> str:
     normalized = normalize_voice_query(query or "").strip().lower()
     if not normalized:
@@ -507,6 +559,8 @@ def infer_ai_intent(query: str) -> str:
         return "pjp"
     if _looks_like_season_order_query(normalized):
         return "season_order_value"
+    if _looks_like_calculator_query(normalized):
+        return "calculator"
     fuzzy_intent = _fuzzy_intent_from_words(normalized)
     if fuzzy_intent:
         return fuzzy_intent

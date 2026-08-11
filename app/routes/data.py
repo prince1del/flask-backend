@@ -56,6 +56,7 @@ from app.utils import (
     normalize_voice_query,
     number_to_words_indian,
     stage_label_for_key,
+    try_calculator,
 )
 from app.verification import (
     parse_distributor_fields_from_text,
@@ -4130,6 +4131,7 @@ _UNRESOLVED_ANSWER_MARKERS = (
     "no target/achievement records found",
     "no target data found",
     "i couldn't find any orders for that season",
+    "i couldn't work out that calculation",
 )
 
 
@@ -4841,6 +4843,32 @@ def ai_assistant_query() -> Response:
                             f"{ask_prefix} {desc} total order across all distributors: "
                             f"{value_txt} ({qty_txt})."
                         )
+    elif intent == "calculator":
+        calc = try_calculator(query.lower())
+        if not calc:
+            answer = f"{ask_prefix} I couldn't work out that calculation."
+        else:
+            def _fmt_num(n: float) -> str:
+                if n == int(n):
+                    return f"{int(n):,}"
+                return f"{n:,.2f}".rstrip("0").rstrip(".")
+
+            result = calc["result"]
+            result_txt = _fmt_num(result)
+            words_suffix = (
+                f" ({number_to_words_indian(result)})" if abs(result) >= 1000 else ""
+            )
+            if calc["op"] == "percent":
+                answer = (
+                    f"{ask_prefix} {_fmt_num(calc['a'])}% of {_fmt_num(calc['b'])} "
+                    f"= {result_txt}{words_suffix}"
+                )
+            else:
+                op_label = {"+": "+", "-": "-", "*": "×", "/": "÷"}[calc["op"]]
+                answer = (
+                    f"{ask_prefix} {_fmt_num(calc['a'])} {op_label} {_fmt_num(calc['b'])} "
+                    f"= {result_txt}{words_suffix}"
+                )
     else:
         # Strip filler words so a sentence like "distributor kalra name" or
         # "aster ka mrp aur exmill kya hai" narrows to the actual search
