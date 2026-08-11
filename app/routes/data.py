@@ -4008,19 +4008,22 @@ def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
 
     arts = results.get("article_master") or []
     if arts:
-        labels: list[str] = []
-        for a in arts[:6]:
+
+        def _as_float(value: Any) -> float:
+            try:
+                return float(value) if value is not None else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+
+        # Row-wise, numbered — a comma-joined single line reads as one
+        # jumbled blob once there are more than a couple of matches.
+        lines = [f"I found {len(arts)} match(es):"]
+        for idx, a in enumerate(arts[:10], start=1):
             if not isinstance(a, dict):
                 continue
             brand = (a.get("brand") or "?").strip() or "?"
             size = (a.get("size") or "").strip()
             label = f"{brand} {size}".strip()
-
-            def _as_float(value: Any) -> float:
-                try:
-                    return float(value) if value is not None else 0.0
-                except (TypeError, ValueError):
-                    return 0.0
 
             mrp_n = _as_float(a.get("mrp"))
             ex_mill_n = _as_float(a.get("ex_mill_price"))
@@ -4031,11 +4034,12 @@ def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
                 price_bits.append(f"Ex-mill ₹{int(round(ex_mill_n))}")
             if price_bits:
                 label = f"{label} ({', '.join(price_bits)})"
-            labels.append(label)
-        extra = f" (+{len(arts) - 6} more)" if len(arts) > 6 else ""
-        chunks.append(f"{len(arts)} article(s): {', '.join(labels)}{extra}")
+            lines.append(f"{idx}. {label}")
+        if len(arts) > 10:
+            lines.append(f"...and {len(arts) - 10} more")
+        chunks.append("\n".join(lines))
 
-    return "; ".join(chunks) if chunks else "No matching information found."
+    return "\n\n".join(chunks) if chunks else "No matching information found."
 
 
 _PJP_WEEKDAY_NAMES = {
