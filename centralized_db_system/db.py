@@ -352,6 +352,15 @@ class CentralizedDB:
                     (storage_account_id,),
                 ).fetchone()
                 owner_id = int(row[0]) if row else 0
+            if "sync_status" in cols:
+                conn.execute(
+                    """
+                    UPDATE file_index
+                    SET sync_status = 'stale'
+                    WHERE storage_account_id = ?
+                    """,
+                    (storage_account_id,),
+                )
             for item in items:
                 file_id = item.get("id")
                 if not file_id:
@@ -443,6 +452,14 @@ class CentralizedDB:
                         ),
                     )
                 count += 1
+            if "sync_status" in cols:
+                conn.execute(
+                    """
+                    DELETE FROM file_index
+                    WHERE storage_account_id = ? AND sync_status = 'stale'
+                    """,
+                    (storage_account_id,),
+                )
             conn.execute(
                 """
                 UPDATE storage_accounts

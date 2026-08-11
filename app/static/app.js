@@ -1571,7 +1571,7 @@ async function updateStorageStatus() {
         statusEl.textContent = 'Google Drive not connected';
       }
       if (infoEl) {
-        infoEl.textContent = 'Connect your Google Drive to upload and browse files from Cloud Hub.';
+        infoEl.textContent = 'Connect Google Drive. Nexora uses only the NEXORA folder (Downloads, Invoices, Reports, Backups).';
       }
       if (connectBtn) {
         connectBtn.disabled = false;
@@ -1589,7 +1589,7 @@ async function updateStorageStatus() {
     }
 
     if (statusEl) {
-      statusEl.textContent = 'Google Drive connected';
+      statusEl.textContent = 'Google Drive connected · NEXORA folder';
     }
     if (infoEl) {
       const stats = dashboardData.data.storage_info || {};
@@ -1808,7 +1808,7 @@ async function loadCloudHubFiles() {
     if (search) search.value = '';
     if (!cloudHubFilesCache.length) {
       tbody.innerHTML =
-        '<tr class="cloud-hub-empty-row"><td colspan="4">No indexed files yet. Click Sync after connecting Drive.</td></tr>';
+        '<tr class="cloud-hub-empty-row"><td colspan="4">NEXORA folder is empty. Put files in Drive → NEXORA, then Sync.</td></tr>';
       const countEl = document.getElementById('cloud-hub-file-count');
       if (countEl) countEl.textContent = '0 files indexed';
       return;

@@ -1588,7 +1588,7 @@
                         <button type="button" class="btn btn-secondary" id="cloud-hub-disconnect-btn" onclick="disconnectGoogleDrive()" disabled>Disconnect</button>
                         <button type="button" class="btn btn-secondary" onclick="loadCloudHubWorkspace()">Refresh</button>
                     </div>
-                    <p class="cloud-hub-hint">Click any file to download it in NEXORA (uses your connected Drive).</p>
+                    <p class="cloud-hub-hint">Only files inside your Drive <strong>NEXORA</strong> folder. Search and downloads stay in Nexora.</p>
                 </div>
             </aside>
 
@@ -1596,11 +1596,11 @@
                 <div class="cloud-hub-toolbar">
                     <div>
                         <h3>Your files</h3>
-                        <p id="cloud-hub-file-count">Indexed from connected Drive</p>
+                        <p id="cloud-hub-file-count">NEXORA folder only</p>
                     </div>
                     <label class="cloud-hub-search">
                         <span class="sr-only">Search files</span>
-                        <input type="search" id="cloud-hub-search-input" placeholder="Search files…" oninput="filterCloudHubFiles()" autocomplete="off">
+                        <input type="search" id="cloud-hub-search-input" placeholder="Search in NEXORA…" oninput="filterCloudHubFiles()" autocomplete="off">
                     </label>
                 </div>
                 <div class="cloud-hub-files-wrap">

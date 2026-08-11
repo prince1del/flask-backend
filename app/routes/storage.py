@@ -130,10 +130,22 @@ def get_account():
             and account.get("sync_status") == "connected"
             and account.get("oauth_token")
         )
+        safe_account = None
+        if connected and account:
+            safe_account = {
+                key: value
+                for key, value in account.items()
+                if key != "oauth_token"
+            }
+            safe_account["nexora_folder"] = "NEXORA"
         return jsonify(
             {
                 "success": True,
-                "data": {"connected": connected, "account": account if connected else None},
+                "data": {
+                    "connected": connected,
+                    "account": safe_account,
+                    "nexora_folder": "NEXORA" if connected else None,
+                },
             }
         ), 200
     except Exception as e:
@@ -194,6 +206,19 @@ def oauth_callback():
             oauth_token=token_data,
             sync_status='connected',
         )
+        try:
+            from app.storage.manager import StorageManager
+            from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+            manager = StorageManager()
+            manager.register_provider('google_drive', GoogleDriveProvider)
+            manager.sync_user_storage(
+                user_id=int(user_id),
+                workspace_id=str(workspace_id),
+                incremental=False,
+            )
+        except Exception:
+            pass
 
         return render_template_string(_DRIVE_CONNECTED_HTML), 200
     except Exception as e:
@@ -441,7 +466,7 @@ def search_files():
               AND (
                 LOWER(fi.file_name) LIKE ? OR
                 LOWER(fi.file_type) LIKE ? OR
-                LOWER(fi.tags) LIKE ?
+                LOWER(COALESCE(fi.search_tags, '')) LIKE ?
               )
             ORDER BY fi.created_at DESC
             LIMIT 50
