@@ -1,4 +1,5 @@
 import csv
+import difflib
 import hashlib
 import io
 import json
@@ -4014,7 +4015,8 @@ def _summarize_ask_nexora_search(
         normalized_raw = (raw_query or "").lower()
         wants_mrp = "mrp" in normalized_raw
         wants_exmill = any(
-            t in normalized_raw for t in ("exmill", "ex-mill", "ex mill")
+            t in normalized_raw
+            for t in ("exmill", "ex-mill", "ex mill", "x mill", "xmill", "x-mill")
         )
         wants_ptr = "ptr" in normalized_raw
         wants_specific_field = wants_mrp or wants_exmill or wants_ptr
@@ -4176,7 +4178,68 @@ def _find_distributor_fuzzy(
             "ORDER BY id LIMIT 1",
             (workspace_id, like_query, like_query, like_query),
         ).fetchone()
-    return dict(row) if row else None
+    if row:
+        return dict(row)
+    # Third tier: global_search()'s own phonetic/honorific-fold matching
+    # (handles spelling variants like Shri/Shree/Sri, "binina"-style vowel
+    # slips) — cheap to try since it's already there.
+    try:
+        fuzzy_results = db.global_search(entity, workspace_id=workspace_id, user_id=None)
+        fuzzy_dists = (fuzzy_results.get("results") or {}).get("distributors") or []
+        if fuzzy_dists and isinstance(fuzzy_dists[0], dict):
+            return fuzzy_dists[0]
+    except Exception:
+        pass
+    # Fourth tier: edit-distance fuzzy match against every distributor
+    # name/firm_name/nick in the workspace. Voice transcription reliably
+    # produces single-letter substitutions/transpositions the phonetic
+    # tier above doesn't cover — "bermina"->"Bernina" (n/m), "pranami"->
+    # "Parnami" (letter swap). Compare against whole-word tokens, not the
+    # full multi-word firm name, so a short spoken term still scores well
+    # against one word of a longer name.
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        all_rows = conn.execute(
+            "SELECT id, distributor_id, distributor_code, firm_name, "
+            "firm_nick_name, name, phone_number, location, address, "
+            "pincode, email, gst_no, buyer_code, zone, region, "
+            "payment_terms, credit_limit, status FROM master_distributors "
+            "WHERE workspace_id = ?",
+            (workspace_id,),
+        ).fetchall()
+    entity_lower = entity.lower()
+    entity_words = [w for w in entity_lower.split() if len(w) >= 4]
+    best_row = None
+    best_ratio = 0.0
+    for r in all_rows:
+        for candidate in (r["name"], r["firm_name"], r["firm_nick_name"]):
+            if not candidate:
+                continue
+            candidate_lower = candidate.lower()
+            ratio = difflib.SequenceMatcher(None, entity_lower, candidate_lower).ratio()
+            candidate_words = [w for w in candidate_lower.split() if len(w) >= 3]
+            for word in candidate_words:
+                ratio = max(
+                    ratio, difflib.SequenceMatcher(None, entity_lower, word).ratio()
+                )
+            # A multi-word spoken query ("savitri sticker" for "Savitri
+            # Steel...") rarely matches well as one long string against
+            # the candidate — the mangled second word drags the whole-
+            # string ratio down even when the distinctive first word is a
+            # near-perfect hit. Compare word-for-word too, with a higher
+            # bar (0.75) since a single short generic word (e.g. "traders")
+            # coincidentally matching isn't enough signal on its own.
+            for ew in entity_words:
+                for cw in candidate_words:
+                    word_ratio = difflib.SequenceMatcher(None, ew, cw).ratio()
+                    if word_ratio >= 0.75:
+                        ratio = max(ratio, word_ratio)
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_row = r
+    if best_row is not None and best_ratio >= 0.70:
+        return dict(best_row)
+    return None
 
 
 @data_blueprint.route("/api/v1/ai-assistant/query", methods=["GET", "POST"])
@@ -4276,7 +4339,10 @@ def ai_assistant_query() -> Response:
         if place.strip() and place.strip().lower() not in {"holiday", "leave"}:
             activity = pjp_row["business_activity"] if pjp_row else None
             extra = f" — {activity}" if activity else ""
-            answer = f"{ask_prefix} {day_ref} planned visit: {place.strip()}{extra}."
+            place_label = place.strip()
+            if "market" not in place_label.lower():
+                place_label = f"{place_label} Market"
+            answer = f"{ask_prefix} {day_ref} planned visit: {place_label}{extra}."
         elif day_type in {"holiday", "leave"}:
             answer = f"{ask_prefix} {date_label.capitalize()} is marked as {day_type} in your PJP."
         else:
@@ -4447,15 +4513,31 @@ def ai_assistant_query() -> Response:
         distributor = _find_distributor_fuzzy(db, entity, workspace_id)
         if distributor:
             firm = distributor.get("firm_name") or distributor["name"]
-            answer = (
-                f"{ask_prefix} {firm} — owner/contact: {distributor['name']}"
-                + (
-                    f", phone {distributor['phone_number']}"
-                    if distributor.get("phone_number")
-                    else ""
-                )
-                + "."
+            # Show only what was asked — "owner ka naam" -> name only,
+            # "mobile number" -> phone only; ask for both (or neither
+            # specifically) and both come back, same pattern as the
+            # article MRP/ex-mill and target/achievement field filters.
+            normalized_owner_query = query.lower()
+            wants_name = any(
+                t in normalized_owner_query
+                for t in ("naam", "name", "owner", "malik", "proprietor")
             )
+            wants_phone = any(
+                t in normalized_owner_query
+                for t in ("mobile", "phone", "contact number", "contact no", "number")
+            )
+            if not wants_name and not wants_phone:
+                wants_name = wants_phone = True
+
+            bits = []
+            if wants_name:
+                bits.append(distributor["name"])
+            if wants_phone and distributor.get("phone_number"):
+                bits.append(f"phone {distributor['phone_number']}")
+            elif wants_phone and not wants_name:
+                bits.append("no phone number on file")
+
+            answer = f"{ask_prefix} {firm} — {', '.join(bits)}."
         else:
             answer = f"{ask_prefix} I couldn't identify that distributor firm."
     else:
@@ -4478,6 +4560,14 @@ def ai_assistant_query() -> Response:
             search_results = {
                 **search_results,
                 "results": {"article_master": results_map["article_master"]},
+            }
+        elif results_map.get("distributors"):
+            # A distributor match takes priority over retailers/orders that
+            # only matched loosely — in most cases a name/number lookup
+            # means the distributor, not an unrelated retailer.
+            search_results = {
+                **search_results,
+                "results": {"distributors": results_map["distributors"]},
             }
         answer = (
             f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"

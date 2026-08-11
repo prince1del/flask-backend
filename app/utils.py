@@ -267,7 +267,8 @@ _PARTY_QUERY_STOPWORDS = {
     "distributors", "firm", "firms", "naam", "name", "kiska", "kiski",
     "malik", "owner", "proprietor", "who", "which", "in",
     "mobile", "phone", "contact", "number", "no",
-    "mrp", "exmill", "ex-mill", "ex", "mill", "price", "rate", "aur",
+    "mrp", "exmill", "ex-mill", "ex", "mill", "xmill", "x-mill", "x",
+    "price", "rate", "aur",
     "product", "products", "article", "size", "batayein",
     "financial", "year", "years", "fy", "kitne", "thi", "tha", "konse",
     "konsi", "was", "were", "did", "have",
@@ -332,6 +333,10 @@ def infer_ai_intent(query: str) -> str:
     normalized = (query or "").strip().lower()
     if not normalized:
         return "search"
+    # Common voice-transcription slip in this app's context — "PJP" gets
+    # heard as "BJP" (the political party dominates the recognizer's
+    # language model). Nobody is asking Ask Nexora about politics.
+    normalized = re.sub(r"\bbjp\b", "pjp", normalized)
     for intent, phrases in _INTENT_KEYWORDS.items():
         if any(phrase in normalized for phrase in phrases):
             return intent
