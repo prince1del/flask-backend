@@ -2734,8 +2734,10 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "master_distributors", "location", "TEXT")
             self._ensure_column_exists(conn, "order_lifecycle_tracking", "sales_order_file_reference", "TEXT")
             self._ensure_column_exists(conn, "order_lifecycle_tracking", "sales_order_parsed", "TEXT")
+            self._ensure_column_exists(conn, "order_lifecycle_tracking", "sales_order_drive_file_id", "TEXT")
             self._ensure_column_exists(conn, "order_lifecycle_tracking", "commercial_invoice_file_reference", "TEXT")
             self._ensure_column_exists(conn, "order_lifecycle_tracking", "commercial_invoice_parsed", "TEXT")
+            self._ensure_column_exists(conn, "order_lifecycle_tracking", "commercial_invoice_drive_file_id", "TEXT")
             self._ensure_column_exists(conn, "dispatch_pod_records", "pod_text", "TEXT")
             self._ensure_column_exists(conn, "dispatch_pod_records", "pod_attachment_reference", "TEXT")
             self._ensure_column_exists(conn, "invoices", "tracking_id", "INTEGER")
@@ -6336,6 +6338,26 @@ class CentralizedDB:
             pass
 
         return tracking_id
+
+    def set_order_lifecycle_drive_file_id(
+        self,
+        tracking_id: int,
+        kind: str,
+        drive_file_id: str,
+        workspace_id: str = "default",
+    ) -> None:
+        col = (
+            "sales_order_drive_file_id"
+            if str(kind).lower() in ("so", "sales_order")
+            else "commercial_invoice_drive_file_id"
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_column_exists(conn, "order_lifecycle_tracking", col, "TEXT")
+            conn.execute(
+                f"UPDATE order_lifecycle_tracking SET {col} = ? WHERE tracking_id = ? AND workspace_id = ?",
+                (drive_file_id, tracking_id, workspace_id),
+            )
+            conn.commit()
 
     def link_commercial_invoice_to_order_lifecycle(
         self,

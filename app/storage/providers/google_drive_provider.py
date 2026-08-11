@@ -11,7 +11,14 @@ class GoogleDriveProvider(StorageProvider):
 
     SCOPES = ["https://www.googleapis.com/auth/drive"]
     NEXORA_FOLDER_NAME = "NEXORA"
-    NEXORA_SUBFOLDERS = ("Downloads", "Invoices", "Reports", "Backups")
+    NEXORA_SUBFOLDERS = (
+        "Downloads",
+        "Sales Orders",
+        "Commercial Invoices",
+        "Invoices",
+        "Reports",
+        "Backups",
+    )
 
     def __init__(self, oauth_token: Any):
         self.service = self.authenticate(oauth_token)
@@ -40,9 +47,11 @@ class GoogleDriveProvider(StorageProvider):
 
         return build("drive", "v3", credentials=creds)
 
-    def upload(self, file_path: str, target_folder: str) -> dict[str, Any]:
+    def upload(
+        self, file_path: str, target_folder: str, display_name: str | None = None
+    ) -> dict[str, Any]:
         """Upload file to Google Drive."""
-        metadata = {"name": os.path.basename(file_path)}
+        metadata = {"name": display_name or os.path.basename(file_path)}
         parent = target_folder
         if not parent:
             workspace = self.ensure_nexora_workspace()

@@ -3043,6 +3043,39 @@ def order_match_delete_selected() -> Response:
         conn.close()
 
 
+def _archive_order_pdf_to_drive(
+    *,
+    db: CentralizedDB,
+    user_id: int | None,
+    workspace_id: str,
+    tracking_id: int | None,
+    kind: str,
+    local_path: str | Path | None,
+    display_name: str,
+) -> None:
+    """Best-effort: copy SO/CI PDF into Drive/NEXORA (does not fail the upload)."""
+    if not tracking_id or not local_path:
+        return
+    from app.storage.nexora_docs import push_pdf_to_nexora_drive
+
+    subfolder = "Sales Orders" if kind == "so" else "Commercial Invoices"
+    uploaded = push_pdf_to_nexora_drive(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        local_path=local_path,
+        subfolder=subfolder,
+        display_name=display_name,
+    )
+    file_id = (uploaded or {}).get("id")
+    if file_id:
+        try:
+            db.set_order_lifecycle_drive_file_id(
+                int(tracking_id), kind, str(file_id), workspace_id=workspace_id
+            )
+        except Exception:
+            pass
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/upload/sales-order", methods=["POST"])
 @require_jwt_auth
 def upload_sales_order_v2() -> Response:
@@ -3134,6 +3167,15 @@ def upload_sales_order_v2() -> Response:
                     sales_order_file_reference=str(target_path),
                     sales_order_parsed=parsed_sales_order,
                     workspace_id=workspace_id,
+                )
+                _archive_order_pdf_to_drive(
+                    db=db,
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    tracking_id=tracking_id,
+                    kind="so",
+                    local_path=target_path,
+                    display_name=f"{order_ref_no or 'SO'} {distributor_name_for_folder}.pdf",
                 )
 
                 # Apply Filled Order (Article Master module) as ordered_qty source.
@@ -3483,14 +3525,85 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
         "expected_delivery_date": tracking.get("expected_delivery_date"),
         "actual_delivery_date": tracking.get("actual_delivery_date"),
         "pod_number": tracking.get("pod_number"),
-        "has_sales_order": bool(tracking.get("sales_order_file_reference")),
-        "has_commercial_invoice": bool(tracking.get("commercial_invoice_file_reference")),
+        "has_sales_order": bool(
+            tracking.get("sales_order_file_reference")
+            or tracking.get("sales_order_drive_file_id")
+        ),
+        "has_commercial_invoice": bool(
+            tracking.get("commercial_invoice_file_reference")
+            or tracking.get("commercial_invoice_drive_file_id")
+        ),
+        "sales_order_drive_file_id": tracking.get("sales_order_drive_file_id"),
+        "commercial_invoice_drive_file_id": tracking.get("commercial_invoice_drive_file_id"),
         "order_sheet_name": tracking.get("order_sheet_name"),
         "created_at": tracking.get("created_at"),
         "items": items,
         "item_count": len(items),
     }
     return _json_response({"success": True, "data": payload})
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/tracking/<int:tracking_id>/file", methods=["GET"])
+@require_jwt_auth
+def download_order_fulfillment_tracking_file(tracking_id: int) -> Response:
+    """SO/CI PDF: Google Drive first (NEXORA folder), then local upload file."""
+    kind = (request.args.get("kind") or "so").strip().lower()
+    if kind not in ("so", "ci"):
+        return _json_response({"success": False, "error": {"message": "kind must be so or ci"}}, 400)
+
+    db = CentralizedDB(_db_path())
+    workspace_id = get_workspace_id()
+    tracking = db.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
+    if tracking is None:
+        return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
+
+    user = getattr(request, "user", None)
+    user_id = int(user["user_id"]) if isinstance(user, dict) and user.get("user_id") is not None else None
+    drive_col = "sales_order_drive_file_id" if kind == "so" else "commercial_invoice_drive_file_id"
+    local_col = "sales_order_file_reference" if kind == "so" else "commercial_invoice_file_reference"
+    drive_id = (tracking.get(drive_col) or "").strip()
+    download_name = f"{kind}_{tracking.get('order_ref_no') or tracking_id}.pdf"
+
+    if drive_id and user_id:
+        try:
+            from app.storage.manager import StorageManager
+            from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+            manager = StorageManager()
+            manager.register_provider("google_drive", GoogleDriveProvider)
+            payload = manager.download_file_bytes(
+                user_id=user_id, file_id=drive_id, workspace_id=workspace_id
+            )
+            content = payload.get("content") or b""
+            filename = payload.get("file_name") or download_name
+            mime = payload.get("mime_type") or "application/pdf"
+            return Response(
+                content,
+                mimetype=mime,
+                headers={
+                    "Content-Disposition": f'inline; filename="{filename}"',
+                    "Content-Length": str(len(content)),
+                    "Cache-Control": "private, max-age=86400",
+                },
+            )
+        except Exception:
+            pass
+
+    local_ref = tracking.get(local_col)
+    if local_ref:
+        candidate = Path(str(local_ref))
+        if candidate.is_file():
+            return send_file(candidate, as_attachment=False, download_name=candidate.name or download_name)
+
+    return _json_response(
+        {
+            "success": False,
+            "error": {
+                "message": "PDF not on Drive yet. Connect Google Drive and re-upload, or Sync Cloud Hub.",
+            },
+        },
+        404,
+    )
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/tracking/<int:tracking_id>", methods=["DELETE"])
@@ -3864,6 +3977,21 @@ def confirm_ci_so_link() -> Response:
             commercial_invoice_parsed=commercial_invoice_parsed,
             commercial_invoice_date=None,
             workspace_id=workspace_id,
+        )
+        ci_user = getattr(request, "user", None)
+        ci_user_id = (
+            int(ci_user["user_id"])
+            if isinstance(ci_user, dict) and ci_user.get("user_id") is not None
+            else None
+        )
+        _archive_order_pdf_to_drive(
+            db=db,
+            user_id=ci_user_id,
+            workspace_id=workspace_id,
+            tracking_id=tracking_id,
+            kind="ci",
+            local_path=commercial_invoice_file_reference,
+            display_name=f"{invoice_no or order_ref_no or 'CI'}.pdf",
         )
     except ValueError as exc:
         return Response(
