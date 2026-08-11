@@ -33,6 +33,7 @@ from centralized_db_system.bale_to_pieces import calculate_bale_to_pieces
 from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
 from app.fiscal_year import normalize_fiscal_year
+from app.routes.target_achievement import _narrate_inr_cr_lakh
 from app.routes.auth import get_workspace_id, require_jwt_auth
 from app.routes.ask_nexora_troubleshoot import log_unresolved_query, resolve_query as resolve_unresolved_query
 from app.three_step_verification import (
@@ -4242,6 +4243,7 @@ def _find_distributor_fuzzy(
     entity_fold_words = [w for w in entity_fold.split() if len(w) >= 4]
     best_row = None
     best_ratio = 0.0
+    best_match_count = 0
     for r in all_rows:
         for candidate in (r["name"], r["firm_name"], r["firm_nick_name"]):
             if not candidate:
@@ -4261,12 +4263,23 @@ def _find_distributor_fuzzy(
             # string ratio down even when the distinctive first word is a
             # near-perfect hit. Compare word-for-word too, with a higher
             # bar (0.75) since a single short generic word (e.g. "traders")
-            # coincidentally matching isn't enough signal on its own.
+            # coincidentally matching isn't enough signal on its own. Also
+            # count how many of the entity's own distinct words this
+            # candidate explains — a word shared by several distributors
+            # ("International", "Traders", ...) ties every one of them on
+            # raw ratio, so the tie-break below needs to know that
+            # "Sain International" matches both "sain" and "international"
+            # while "Bernina International" only matches one.
+            matched_entity_words = 0
             for ew in entity_words:
+                word_hit = False
                 for cw in candidate_words:
                     word_ratio = difflib.SequenceMatcher(None, ew, cw).ratio()
                     if word_ratio >= 0.75:
                         ratio = max(ratio, word_ratio)
+                        word_hit = True
+                if word_hit:
+                    matched_entity_words += 1
             # Known surname/honorific spelling variants (Goyal/Goel/Goil,
             # Shri/Shree/Sri) — compare the folded forms too so these
             # count as an exact word match, not just a fuzzy-ratio one.
@@ -4274,8 +4287,14 @@ def _find_distributor_fuzzy(
                 for cw in candidate_fold_words:
                     if ew == cw:
                         ratio = max(ratio, 1.0)
-            if ratio > best_ratio:
+            # Prefer whichever candidate explains more of the query's
+            # distinct words first, then fall back to the raw ratio —
+            # keeps "Kalra" -> "Kalra Agencies" working exactly as before
+            # (single matched word, decided by ratio) while fixing the
+            # multi-word shared-suffix collision above.
+            if (matched_entity_words, ratio) > (best_match_count, best_ratio):
                 best_ratio = ratio
+                best_match_count = matched_entity_words
                 best_row = r
     if best_row is not None and best_ratio >= 0.70:
         return dict(best_row)
@@ -4554,9 +4573,13 @@ def ai_assistant_query() -> Response:
         def _target_ach_bits(target_rs: float, achieved_rs: float) -> str:
             bits = []
             if wants_target_field:
-                bits.append(f"target Rs {target_rs:,.0f}")
+                bits.append(
+                    f"target Rs {target_rs:,.0f} ({_narrate_inr_cr_lakh(target_rs)})"
+                )
             if wants_achievement_field:
-                bits.append(f"achievement Rs {achieved_rs:,.0f}")
+                bits.append(
+                    f"achievement Rs {achieved_rs:,.0f} ({_narrate_inr_cr_lakh(achieved_rs)})"
+                )
             return ", ".join(bits)
 
         db.ensure_target_achievement_tables()
@@ -4791,7 +4814,10 @@ def ai_assistant_query() -> Response:
                     who = distributor_label or "any distributor"
                     answer = f"{ask_prefix} No {desc} order found for {who}."
                 else:
-                    value_txt = f"Rs {totals['total_ex_mill_value']:,.0f}"
+                    value_txt = (
+                        f"Rs {totals['total_ex_mill_value']:,.0f} "
+                        f"({_narrate_inr_cr_lakh(totals['total_ex_mill_value'])})"
+                    )
                     qty_txt = f"{totals['total_piece_qty']:,.0f} pcs"
                     if distributor:
                         answer = (
