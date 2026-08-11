@@ -31,6 +31,7 @@ from flask import (
 from centralized_db_system.bale_to_pieces import calculate_bale_to_pieces
 from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
+from app.fiscal_year import normalize_fiscal_year
 from app.routes.auth import get_workspace_id, require_jwt_auth
 from app.three_step_verification import (
     _extract_pdf_text,
@@ -4280,17 +4281,33 @@ def ai_assistant_query() -> Response:
         # "Target vs Achievement" card (app/routes/target_achievement.py
         # get_breakup() -> list_target_distributor_breakup()), not the older
         # standalone targets_achievements table.
-        entity = extract_party_name_candidate(query).strip().lower()
-        year_parts: list[str] = []
-        matched_name = None
+        #
+        # A bare year in the query ("target of 2026") means the Indian
+        # fiscal year STARTING that year — "2026" -> FY 2026-2027, "2025"
+        # -> FY 2025-2026 — matching how the dashboard labels FYs.
+        year_match = re.search(r"\b(20\d{2})\b", query)
+        requested_fy = f"{year_match.group(1)}-{int(year_match.group(1)) + 1}" if year_match else None
+        entity = re.sub(r"\b20\d{2}\b", "", extract_party_name_candidate(query)).strip().lower()
+
+        db.ensure_target_achievement_tables()
+        with sqlite3.connect(_db_path()) as conn:
+            fy_years = conn.execute(
+                "SELECT id, financial_year FROM target_achievement_years "
+                "WHERE workspace_id = ? ORDER BY financial_year",
+                (workspace_id,),
+            ).fetchall()
+        if requested_fy:
+            fy_years = [
+                (year_id, fy_label)
+                for year_id, fy_label in fy_years
+                if normalize_fiscal_year(fy_label) == requested_fy
+            ]
+
         if entity:
-            db.ensure_target_achievement_tables()
-            with sqlite3.connect(_db_path()) as conn:
-                fy_years = conn.execute(
-                    "SELECT id, financial_year FROM target_achievement_years "
-                    "WHERE workspace_id = ? ORDER BY financial_year",
-                    (workspace_id,),
-                ).fetchall()
+            # Distributor named — name + that distributor's target/purchase
+            # for the matched fiscal year(s).
+            year_parts: list[str] = []
+            matched_name = None
             for year_id, fy_label in fy_years:
                 breakup = db.list_target_distributor_breakup(workspace_id, year_id)
                 for row in breakup:
@@ -4305,16 +4322,39 @@ def ai_assistant_query() -> Response:
                             f"(target Rs {target_rs:,.0f})"
                         )
                         break
-        if year_parts:
-            answer = (
-                f"{ask_prefix} {matched_name} year-wise — "
-                + "; ".join(year_parts)
-                + "."
-            )
+            if year_parts:
+                answer = (
+                    f"{ask_prefix} {matched_name} — " + "; ".join(year_parts) + "."
+                )
+            else:
+                answer = (
+                    f"{ask_prefix} No target/achievement records found for that distributor"
+                    + (f" in FY{requested_fy}." if requested_fy else ".")
+                )
         else:
-            answer = (
-                f"{ask_prefix} No target/achievement records found for that distributor."
-            )
+            # No distributor named — overall company-wide target for the FY(s),
+            # same numbers as the "Target vs Achievement" dashboard card.
+            if not fy_years:
+                answer = (
+                    f"{ask_prefix} No target data found"
+                    + (f" for FY{requested_fy}." if requested_fy else ".")
+                )
+            else:
+                fy_parts = []
+                for year_id, fy_label in fy_years:
+                    meta = db.fy_target_meta(workspace_id, year_id)
+                    summary = db.build_fy_achievement_summary(
+                        workspace_id, year_id, fy_label
+                    )
+                    target_lakhs = float(
+                        meta.get("target_lakhs") or summary.get("target_lakhs") or 0
+                    )
+                    ach_lakhs = float(summary.get("active_achievement") or 0)
+                    fy_parts.append(
+                        f"FY{fy_label}: target Rs {target_lakhs * 100_000:,.0f}, "
+                        f"achieved Rs {ach_lakhs * 100_000:,.0f}"
+                    )
+                answer = f"{ask_prefix} " + "; ".join(fy_parts) + "."
     elif intent == "category_orders":
         entity = extract_party_name_candidate(query)
         distributor = _find_distributor_fuzzy(db, entity, workspace_id)
