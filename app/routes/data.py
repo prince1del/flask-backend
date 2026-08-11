@@ -8,7 +8,7 @@ import shutil
 import sqlite3
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -4038,6 +4038,35 @@ def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
     return "; ".join(chunks) if chunks else "No matching information found."
 
 
+_PJP_WEEKDAY_NAMES = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+
+
+def _resolve_pjp_query_date(query: str, today) -> tuple[Any, str]:
+    """Parse a relative date reference out of a PJP query (today/tomorrow/
+    day-after-tomorrow/a weekday name, English or Hindi) and return the
+    target date plus a human label for the answer. Defaults to today when
+    nothing more specific is mentioned.
+    """
+    normalized = (query or "").lower()
+    if "day after tomorrow" in normalized or "parso" in normalized:
+        return today + timedelta(days=2), "day after tomorrow"
+    if "tomorrow" in normalized or "kal" in normalized:
+        return today + timedelta(days=1), "tomorrow"
+    for name, weekday in _PJP_WEEKDAY_NAMES.items():
+        if name in normalized:
+            delta = (weekday - today.weekday()) % 7
+            return today + timedelta(days=delta), name.capitalize()
+    return today, "today"
+
+
 def _find_distributor_fuzzy(
     db: CentralizedDB, entity: str, workspace_id: str | None
 ) -> dict[str, Any] | None:
@@ -4145,9 +4174,12 @@ def ai_assistant_query() -> Response:
     elif intent == "pjp":
         # Use the same monthly_pjp_days table that powers the app's real
         # "This week's PJP" card (app/routes/pjp.py week_plan()) — this is
-        # the user's own planned visit for today, not a generic priority
-        # backlog across the whole workspace.
-        today = datetime.now(timezone.utc).date().isoformat()
+        # the user's own planned visit for the requested day, not a
+        # generic priority backlog across the whole workspace. Support
+        # relative-date queries ("tomorrow pjp", "Saturday", "day after
+        # tomorrow") instead of always answering for today.
+        today = datetime.now(timezone.utc).date()
+        target_date, date_label = _resolve_pjp_query_date(query, today)
         pjp_row = None
         try:
             with sqlite3.connect(_db_path()) as conn:
@@ -4156,21 +4188,22 @@ def ai_assistant_query() -> Response:
                     "SELECT place_to_visit, business_activity, particulars, "
                     "day_type FROM monthly_pjp_days WHERE workspace_id = ? "
                     "AND user_id = ? AND plan_date = ?",
-                    (workspace_id, user_id, today),
+                    (workspace_id, user_id, target_date.isoformat()),
                 ).fetchone()
         except sqlite3.OperationalError:
             pjp_row = None
 
         place = (pjp_row["place_to_visit"] if pjp_row else None) or ""
         day_type = ((pjp_row["day_type"] if pjp_row else None) or "").lower()
+        day_ref = "Today's" if date_label == "today" else f"{date_label.capitalize()}'s"
         if place.strip() and place.strip().lower() not in {"holiday", "leave"}:
             activity = pjp_row["business_activity"] if pjp_row else None
             extra = f" — {activity}" if activity else ""
-            answer = f"{ask_prefix} Today's planned visit: {place.strip()}{extra}."
+            answer = f"{ask_prefix} {day_ref} planned visit: {place.strip()}{extra}."
         elif day_type in {"holiday", "leave"}:
-            answer = f"{ask_prefix} Today is marked as {day_type} in your PJP."
+            answer = f"{ask_prefix} {date_label.capitalize()} is marked as {day_type} in your PJP."
         else:
-            answer = f"{ask_prefix} No PJP entry planned for today yet."
+            answer = f"{ask_prefix} No PJP entry planned for {date_label} yet."
     elif intent == "purchase_trends":
         entity = extract_party_name_candidate(query)
         distributor = _find_distributor_fuzzy(db, entity, workspace_id)
