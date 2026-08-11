@@ -397,6 +397,69 @@ def collapse_spelled_out_letters(text: str) -> str:
     return " ".join(result)
 
 
+_WORD_NUM_ONES = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+}
+_WORD_NUM_TENS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+_WORD_NUM_SCALES = {"thousand": 1_000, "lakh": 100_000, "lac": 100_000, "crore": 10_000_000}
+_WORD_NUM_VOCAB = set(_WORD_NUM_ONES) | set(_WORD_NUM_TENS) | set(_WORD_NUM_SCALES) | {"hundred", "and"}
+
+_NUM_WORD_RUN_RE = re.compile(
+    r"\b(?:" + "|".join(sorted(_WORD_NUM_VOCAB, key=len, reverse=True)) + r")\b"
+    r"(?:[\s-]+\b(?:" + "|".join(sorted(_WORD_NUM_VOCAB, key=len, reverse=True)) + r")\b)*",
+    re.IGNORECASE,
+)
+
+
+def _words_to_number(run_text: str) -> int | None:
+    """"one hundred fifty" -> 150, "two thousand five hundred" -> 2500.
+    Standard accumulate-and-scale parse: ones/tens add into the current
+    group, "hundred" multiplies it, thousand/lakh/crore flush the scaled
+    group into the running total. Returns None for a run that turns out
+    to be only filler ("and") with no actual number word."""
+    total = 0
+    current = 0
+    saw_number = False
+    for word in re.split(r"[\s-]+", run_text.lower()):
+        if word == "and":
+            continue
+        if word in _WORD_NUM_ONES:
+            current += _WORD_NUM_ONES[word]
+            saw_number = True
+        elif word in _WORD_NUM_TENS:
+            current += _WORD_NUM_TENS[word]
+            saw_number = True
+        elif word == "hundred":
+            current = (current or 1) * 100
+            saw_number = True
+        elif word in _WORD_NUM_SCALES:
+            current = (current or 1) * _WORD_NUM_SCALES[word]
+            total += current
+            current = 0
+            saw_number = True
+    total += current
+    return total if saw_number else None
+
+
+def convert_number_words_to_digits(text: str) -> str:
+    """Voice STT sometimes transcribes a spoken number as words ("one plus
+    one") instead of digits ("1 plus 1") — every downstream numeric parse
+    (calculator, target years, MRP amounts, ...) only understands digits,
+    so convert spelled-out number words to digit strings up front."""
+
+    def _replace(m: re.Match) -> str:
+        value = _words_to_number(m.group())
+        return str(value) if value is not None else m.group()
+
+    return _NUM_WORD_RUN_RE.sub(_replace, text or "")
+
+
 def normalize_voice_query(text: str) -> str:
     """Collapse known voice-transcription slips so every downstream step
     (intent matching, date parsing, entity extraction) sees the corrected
@@ -404,12 +467,19 @@ def normalize_voice_query(text: str) -> str:
     idempotent.
     """
     text = collapse_spelled_out_letters(text or "")
+    text = convert_number_words_to_digits(text)
     # "PJP" heard as "BJP" (the political party dominates the recognizer's
     # language model) — nobody is asking Ask Nexora about politics.
     text = re.sub(r"(?i)\bbjp\b", "pjp", text)
     # "kal" (tomorrow) sometimes heard as "cal" — not a real word in this
     # app's context, safe to normalize unconditionally.
     text = re.sub(r"(?i)\bcal\b", "kal", text)
+    # A spoken number sequence that happens to sound like a clock time
+    # ("five twenty five") gets heard as "5:25" — Ask Nexora has no
+    # clock-time query anywhere, so any H:MM/HH:MM pattern here is really
+    # one number that got split. Concatenate digits (keeping MM's leading
+    # zero) rather than dropping the colon, so "1:05" -> "105", not "15".
+    text = re.sub(r"\b(\d{1,2}):(\d{2})\b", r"\1\2", text)
     return text
 
 
