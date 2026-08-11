@@ -379,9 +379,13 @@ def collapse_spelled_out_letters(text: str) -> str:
         # A season code that came through as one already-joined short
         # token ("SS", "AW", "FW") still needs its trailing number folded
         # in — "SS 26" -> "SS26" — not just the letter-by-letter case above.
+        # Scoped to the actual known season prefixes only: a generic
+        # "2 <= len <= 4 letters" test also matched ordinary short words
+        # like "ka"/"of"/"FY" whenever a bare year happened to follow
+        # ("ka 2026 ka target" -> "ka2026 ka target"), which broke the
+        # year-detection regex and polluted distributor-name extraction.
         if (
-            tokens[i].isalpha()
-            and 2 <= len(tokens[i]) <= 4
+            tokens[i].lower() in ("aw", "ss", "fw")
             and i + 1 < len(tokens)
             and tokens[i + 1].isdigit()
         ):

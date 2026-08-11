@@ -4598,7 +4598,13 @@ def ai_assistant_query() -> Response:
 
         if entity:
             # Distributor named — name + that distributor's target/purchase
-            # for the matched fiscal year(s).
+            # for the matched fiscal year(s). Resolve through the same
+            # typo-tolerant fuzzy matcher every other distributor-scoped
+            # intent uses first (handles "sain internattinal" for "Sain
+            # International") — a plain substring check on the breakup
+            # row's name/nick text has zero typo tolerance and was the
+            # only path here before.
+            fuzzy_distributor = _find_distributor_fuzzy(db, entity, workspace_id)
             year_parts: list[str] = []
             matched_name = None
             for year_id, fy_label in fy_years:
@@ -4606,7 +4612,13 @@ def ai_assistant_query() -> Response:
                 for row in breakup:
                     name = str(row.get("distributor_name") or "")
                     nick = str(row.get("nick") or "")
-                    if entity in name.lower() or (nick and entity in nick.lower()):
+                    row_distributor_id = row.get("distributor_id")
+                    id_match = (
+                        fuzzy_distributor
+                        and row_distributor_id
+                        and row_distributor_id == fuzzy_distributor["id"]
+                    )
+                    if id_match or entity in name.lower() or (nick and entity in nick.lower()):
                         matched_name = matched_name or name
                         target_rs = float(row.get("target_lakhs") or 0) * 100_000
                         achieved_rs = float(row.get("achievement_lakhs") or 0) * 100_000
