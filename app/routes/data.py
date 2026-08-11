@@ -33,7 +33,6 @@ from centralized_db_system.bale_to_pieces import calculate_bale_to_pieces
 from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
 from app.fiscal_year import normalize_fiscal_year
-from app.routes.target_achievement import _narrate_inr_cr_lakh
 from app.routes.auth import get_workspace_id, require_jwt_auth
 from app.routes.ask_nexora_troubleshoot import log_unresolved_query, resolve_query as resolve_unresolved_query
 from app.three_step_verification import (
@@ -55,6 +54,7 @@ from app.utils import (
     infer_ai_intent,
     infer_distributor_name,
     normalize_voice_query,
+    number_to_words_indian,
     stage_label_for_key,
 )
 from app.verification import (
@@ -4574,11 +4574,11 @@ def ai_assistant_query() -> Response:
             bits = []
             if wants_target_field:
                 bits.append(
-                    f"target Rs {target_rs:,.0f} ({_narrate_inr_cr_lakh(target_rs)})"
+                    f"target Rs {target_rs:,.0f} ({number_to_words_indian(target_rs)})"
                 )
             if wants_achievement_field:
                 bits.append(
-                    f"achievement Rs {achieved_rs:,.0f} ({_narrate_inr_cr_lakh(achieved_rs)})"
+                    f"achievement Rs {achieved_rs:,.0f} ({number_to_words_indian(achieved_rs)})"
                 )
             return ", ".join(bits)
 
@@ -4816,7 +4816,7 @@ def ai_assistant_query() -> Response:
                 else:
                     value_txt = (
                         f"Rs {totals['total_ex_mill_value']:,.0f} "
-                        f"({_narrate_inr_cr_lakh(totals['total_ex_mill_value'])})"
+                        f"({number_to_words_indian(totals['total_ex_mill_value'])})"
                     )
                     qty_txt = f"{totals['total_piece_qty']:,.0f} pcs"
                     if distributor:

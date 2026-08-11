@@ -431,6 +431,55 @@ def _looks_like_pjp_query(normalized: str) -> bool:
     return has_date and has_visit
 
 
+_ONES_WORDS = [
+    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+    "Seventeen", "Eighteen", "Nineteen",
+]
+_TENS_WORDS = [
+    "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety",
+]
+
+
+def _two_digit_words(n: int) -> str:
+    if n < 20:
+        return _ONES_WORDS[n]
+    tens, ones = divmod(n, 10)
+    return f"{_TENS_WORDS[tens]} {_ONES_WORDS[ones]}".strip()
+
+
+def _three_digit_words(n: int) -> str:
+    if n < 100:
+        return _two_digit_words(n)
+    hundreds, rem = divmod(n, 100)
+    tail = f" {_two_digit_words(rem)}" if rem else ""
+    return f"{_ONES_WORDS[hundreds]} Hundred{tail}"
+
+
+def number_to_words_indian(amount) -> str:
+    """Full amount spelled out, Indian numbering (Crore/Lakh/Thousand) —
+    145001 -> "One Lakh Forty Five Thousand One", not just a rounded
+    "1 Lakh" magnitude label."""
+    n = int(round(float(amount or 0)))
+    if n == 0:
+        return "Zero"
+    negative = n < 0
+    n = abs(n)
+    crore, n = divmod(n, 10_000_000)
+    lakh, n = divmod(n, 100_000)
+    thousand, rest = divmod(n, 1_000)
+    parts = []
+    if crore:
+        parts.append(f"{_three_digit_words(crore)} Crore")
+    if lakh:
+        parts.append(f"{_three_digit_words(lakh)} Lakh")
+    if thousand:
+        parts.append(f"{_three_digit_words(thousand)} Thousand")
+    if rest:
+        parts.append(_three_digit_words(rest))
+    return ("Minus " if negative else "") + " ".join(parts)
+
+
 _SEASON_TOKEN_RE = re.compile(r"\b(aw|ss|fw)\d{2}\b")
 
 
