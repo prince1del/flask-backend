@@ -4300,6 +4300,18 @@ def ai_assistant_query() -> Response:
         search_results = db.global_search(
             search_query, workspace_id=workspace_id, user_id=user_id
         )
+        results_map = search_results.get("results") or {}
+        if results_map.get("article_master"):
+            # A product/article hit is a strong, specific signal (the term
+            # matched a brand/category directly). Lock the answer to just
+            # the article(s) instead of also surfacing unrelated party/order
+            # hits that only matched loosely elsewhere (e.g. a retailer's
+            # address happening to contain the same substring) — otherwise
+            # "aster" pulls in unrelated retailers alongside the real match.
+            search_results = {
+                **search_results,
+                "results": {"article_master": results_map["article_master"]},
+            }
         answer = f"{ask_prefix} {_summarize_ask_nexora_search(search_results)}"
 
     return Response(
