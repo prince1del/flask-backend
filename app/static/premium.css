@@ -2691,6 +2691,55 @@ body:not(:has(#dashboard:not(.hidden))) .back-btn {
   color: var(--dash-widget-text) !important;
 }
 
+.dashboard-fo-widget-layer .fo-season-cat-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dash-widget-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dash-widget-bg) 82%, #7cf5ff 8%);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.dashboard-fo-widget-layer .fo-season-cat-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dashboard-fo-widget-layer .fo-season-cat-toggle-copy em {
+  font-style: normal;
+  font-size: 0.62rem;
+  opacity: 0.62;
+}
+.dashboard-fo-widget-layer .fo-season-cat-toggle-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-weight: 650;
+}
+.dashboard-fo-widget-layer .fo-season-cat-chevron {
+  display: inline-block;
+  transition: transform 0.18s ease;
+}
+.dashboard-fo-widget-layer .fo-season-cat-block.is-open .fo-season-cat-chevron {
+  transform: rotate(180deg);
+}
+.dashboard-fo-widget-layer .fo-season-cat-body {
+  display: none;
+  padding-top: 6px;
+}
+.dashboard-fo-widget-layer .fo-season-cat-block.is-open .fo-season-cat-body {
+  display: block;
+}
+
 .dashboard-fo-widget-layer .fo-season-widget .ta-playing-card-header p {
   margin: 1px 0 0 !important;
   font-size: 0.58rem !important;

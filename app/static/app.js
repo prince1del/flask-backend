@@ -831,6 +831,8 @@ function initDashboardFoWidgetsDrag() {
     const onHandle = event.target.closest?.('.ta-widget-drag-handle');
     const onHeader = event.target.closest?.('.ta-widget-drag-surface');
     if (event.target.closest?.('.ta-widget-minimize-btn')) return;
+    if (event.target.closest?.('.fo-season-cat-toggle')) return;
+    if (event.target.closest?.('.fo-season-cat-body')) return;
     if (!onHandle && !onHeader) return;
 
     const season = widget.dataset.foSeason || '';
@@ -915,6 +917,13 @@ function renderFoSeasonOverviewRows(rows) {
     .join('');
 }
 
+function toggleFoSeasonCat(btn) {
+  const block = btn?.closest?.('.fo-season-cat-block');
+  if (!block) return;
+  const open = block.classList.toggle('is-open');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
 function buildFoSeasonWidgetCard(seasonData, index) {
   const season = seasonData.season || '—';
   const title = seasonData.label || season;
@@ -923,21 +932,33 @@ function buildFoSeasonWidgetCard(seasonData, index) {
   const flatRows = seasonData.rows || [];
   const catNames = categories.map((c) => c.category).filter(Boolean);
   const rowCount = flatRows.length || categories.reduce((n, c) => n + ((c.rows || []).length), 0);
-  const bodyHtml = categories.length
-    ? categories.map((block) => `
-        <div class="fo-season-cat-block" style="margin-bottom:10px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 4px;">
-            <strong>${foEscapeText(block.category || 'Other')}</strong>
-            <span>${formatFilledOrderAmount(block.total_ex_mill_value)}</span>
+  const nestByCategory = categories.length > 1 || catNames.some((n) => n && n !== '—');
+  const bodyHtml = nestByCategory
+    ? categories.map((block, catIndex) => {
+        const catLabel = block.category || 'Other';
+        const distN = (block.rows || []).length;
+        return `
+        <div class="fo-season-cat-block"${catIndex < categories.length - 1 ? ' style="margin-bottom:8px;"' : ''}>
+          <button type="button" class="fo-season-cat-toggle" aria-expanded="false" onclick="toggleFoSeasonCat(this)">
+            <span class="fo-season-cat-toggle-copy">
+              <strong>${foEscapeText(catLabel)}</strong>
+              <em>${distN} distributor${distN === 1 ? '' : 's'}</em>
+            </span>
+            <span class="fo-season-cat-toggle-meta">
+              <span>${formatFilledOrderAmount(block.total_ex_mill_value)}</span>
+              <span class="fo-season-cat-chevron" aria-hidden="true">▾</span>
+            </span>
+          </button>
+          <div class="fo-season-cat-body">
+            <table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
+              <thead>
+                <tr><th>Distributor</th><th>Qty</th><th>Amount</th></tr>
+              </thead>
+              <tbody>${renderFoSeasonOverviewRows(block.rows || [])}</tbody>
+            </table>
           </div>
-          <table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
-            <thead>
-              <tr><th>Distributor</th><th>Qty</th><th>Amount</th></tr>
-            </thead>
-            <tbody>${renderFoSeasonOverviewRows(block.rows || [])}</tbody>
-          </table>
-        </div>
-      `).join('')
+        </div>`;
+      }).join('')
     : `<table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
         <thead><tr><th>Distributor</th><th>Qty</th><th>Amount</th></tr></thead>
         <tbody>${renderFoSeasonOverviewRows(flatRows)}</tbody>
@@ -954,7 +975,7 @@ function buildFoSeasonWidgetCard(seasonData, index) {
       <div class="ta-playing-card-inner">
         <div class="ta-playing-card-header ta-widget-drag-surface">
           <h2>${foEscapeText(title)}</h2>
-          <p>${catNames.length ? foEscapeText(catNames.join(' · ')) + ' · ' : ''}${rowCount} distributor${rowCount === 1 ? '' : 's'} · pcs · ex-mill</p>
+          <p>${catNames.length ? foEscapeText(catNames.join(' · ')) + ' · ' : ''}${rowCount} distributor${rowCount === 1 ? '' : 's'} · tap a category</p>
         </div>
         <div class="ta-playing-card-table-wrap ta-excel-sheet ta-widget-sheet fo-season-table-wrap">
           ${bodyHtml}
