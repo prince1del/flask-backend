@@ -3967,7 +3967,9 @@ def articles() -> str:
     )
 
 
-def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
+def _summarize_ask_nexora_search(
+    search_payload: dict | None, raw_query: str = ""
+) -> str:
     """Human-readable Ask Nexora summary (not raw JSON dump)."""
     if not isinstance(search_payload, dict):
         return "No matching information found."
@@ -4008,6 +4010,14 @@ def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
 
     arts = results.get("article_master") or []
     if arts:
+        normalized_raw = (raw_query or "").lower()
+        wants_mrp = "mrp" in normalized_raw
+        wants_exmill = any(
+            t in normalized_raw for t in ("exmill", "ex-mill", "ex mill")
+        )
+        wants_ptr = "ptr" in normalized_raw
+        wants_specific_field = wants_mrp or wants_exmill or wants_ptr
+        wants_size_only = "size" in normalized_raw and not wants_specific_field
 
         def _as_float(value: Any) -> float:
             try:
@@ -4015,29 +4025,53 @@ def _summarize_ask_nexora_search(search_payload: dict | None) -> str:
             except (TypeError, ValueError):
                 return 0.0
 
-        # Row-wise, numbered — a comma-joined single line reads as one
-        # jumbled blob once there are more than a couple of matches.
-        lines = [f"I found {len(arts)} match(es):"]
-        for idx, a in enumerate(arts[:10], start=1):
-            if not isinstance(a, dict):
-                continue
-            brand = (a.get("brand") or "?").strip() or "?"
-            size = (a.get("size") or "").strip()
-            label = f"{brand} {size}".strip()
-
+        def _price_bits(a: dict) -> list[str]:
+            # Only show the field(s) actually asked about — "aster exmill"
+            # shouldn't also print MRP the user never asked for. With no
+            # specific field named, fall back to MRP + Ex-mill (the old
+            # always-show-everything behavior).
             mrp_n = _as_float(a.get("mrp"))
             ex_mill_n = _as_float(a.get("ex_mill_price"))
-            price_bits = []
-            if mrp_n > 0:
-                price_bits.append(f"MRP ₹{int(round(mrp_n))}")
-            if ex_mill_n > 0:
-                price_bits.append(f"Ex-mill ₹{int(round(ex_mill_n))}")
-            if price_bits:
-                label = f"{label} ({', '.join(price_bits)})"
-            lines.append(f"{idx}. {label}")
-        if len(arts) > 10:
-            lines.append(f"...and {len(arts) - 10} more")
-        chunks.append("\n".join(lines))
+            ptr_n = _as_float(a.get("ptr"))
+            bits: list[str] = []
+            if wants_size_only:
+                return bits
+            if wants_specific_field:
+                if wants_mrp and mrp_n > 0:
+                    bits.append(f"MRP ₹{int(round(mrp_n))}")
+                if wants_exmill:
+                    bits.append(f"Ex-mill ₹{int(round(ex_mill_n))}")
+                if wants_ptr and ptr_n > 0:
+                    bits.append(f"PTR ₹{int(round(ptr_n))}")
+            else:
+                if mrp_n > 0:
+                    bits.append(f"MRP ₹{int(round(mrp_n))}")
+                if ex_mill_n > 0:
+                    bits.append(f"Ex-mill ₹{int(round(ex_mill_n))}")
+            return bits
+
+        def _label(a: dict, include_size: bool) -> str:
+            brand = (a.get("brand") or "?").strip() or "?"
+            size = (a.get("size") or "").strip()
+            base = f"{brand} {size}".strip() if include_size and size else brand
+            bits = _price_bits(a)
+            if bits:
+                return f"{base} — {', '.join(bits)}"
+            return base
+
+        if len(arts) == 1 and isinstance(arts[0], dict):
+            # A single match doesn't need row numbering or a "found N"
+            # header — just answer with the field(s) that were asked.
+            chunks.append(_label(arts[0], include_size=False))
+        else:
+            lines = [f"Found {len(arts)} match(es):"]
+            for idx, a in enumerate(arts[:10], start=1):
+                if not isinstance(a, dict):
+                    continue
+                lines.append(f"{idx}. {_label(a, include_size=True)}")
+            if len(arts) > 10:
+                lines.append(f"...and {len(arts) - 10} more")
+            chunks.append("\n".join(lines))
 
     return "\n\n".join(chunks) if chunks else "No matching information found."
 
@@ -4132,7 +4166,7 @@ def ai_assistant_query() -> Response:
     ).strip()
     db = CentralizedDB(_db_path())
     intent = infer_ai_intent(query)
-    ask_prefix = "Ask Nexora:"
+    ask_prefix = "Nexora:"
     if not query:
         return Response(
             json.dumps(
@@ -4349,7 +4383,9 @@ def ai_assistant_query() -> Response:
                 **search_results,
                 "results": {"article_master": results_map["article_master"]},
             }
-        answer = f"{ask_prefix} {_summarize_ask_nexora_search(search_results)}"
+        answer = (
+            f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
+        )
 
     return Response(
         json.dumps(
