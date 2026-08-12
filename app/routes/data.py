@@ -2539,6 +2539,89 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
             ):
                 item["item_key"] = fallback_key
 
+    # Second repair: recover missing Design+Colour tokens that still
+    # exist in extract_text() but were dropped from a truncated table
+    # cell (Aster 7990BGE / Blumen 7984BLU page-break cases).
+    items = _repair_truncated_ci_design_colours(path, items)
+
+    return items
+
+
+_CI_DESIGN_COLOUR_TOKEN_RE = re.compile(r"\b(\d{3,4})([A-Z]{2,4})\b")
+_CI_DESIGN_COLOUR_EXCLUDE = frozenset({"TC", "CM", "MM", "IN", "KG", "PCS", "SET"})
+
+
+def _ci_design_colour_tokens(text: str) -> list[str]:
+    tokens: list[str] = []
+    for match in _CI_DESIGN_COLOUR_TOKEN_RE.finditer((text or "").upper()):
+        design, colour = match.group(1), match.group(2)
+        if colour in _CI_DESIGN_COLOUR_EXCLUDE:
+            continue
+        tokens.append(f"{design}{colour}")
+    return tokens
+
+
+def _repair_truncated_ci_design_colours(
+    path: str | Path,
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fill truncated CI descriptions using design/colour tokens from full PDF text."""
+    if not items:
+        return items
+    incomplete = [
+        item
+        for item in items
+        if item.get("item_name") and not _ci_design_colour_tokens(str(item.get("item_name") or ""))
+    ]
+    if not incomplete:
+        return items
+
+    try:
+        full_text = _extract_pdf_text(path) or ""
+    except Exception:
+        try:
+            import pdfplumber as _pdfplumber
+
+            chunks: list[str] = []
+            with _pdfplumber.open(path) as pdf:
+                for page in pdf.pages:
+                    chunks.append(page.extract_text() or "")
+            full_text = "\n".join(chunks)
+        except Exception:
+            return items
+
+    available = _ci_design_colour_tokens(full_text)
+    if not available:
+        return items
+
+    used: set[str] = set()
+    for item in items:
+        used.update(_ci_design_colour_tokens(str(item.get("item_name") or "")))
+    unused = [tok for tok in available if tok not in used]
+    if not unused:
+        return items
+
+    # Prefer a TC suffix from a complete sibling line.
+    tc_suffix = ""
+    for item in items:
+        name = str(item.get("item_name") or "").upper()
+        match = re.search(r"\b(\d{2,4}\s*TC)\b", name)
+        if match:
+            tc_suffix = match.group(1).replace(" ", "")
+            break
+
+    for item in incomplete:
+        if not unused:
+            break
+        token = unused.pop(0)
+        base = str(item.get("item_name") or "").rstrip()
+        repaired = f"{base} {token}"
+        if tc_suffix and tc_suffix not in repaired.upper():
+            repaired = f"{repaired} {tc_suffix}"
+        item["item_name"] = repaired
+        item["item_key"] = extract_order_sheet_item_key(repaired)
+        used.add(token)
+
     return items
 
 
@@ -4662,6 +4745,30 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
             payload["ci_totals"] = ci_parsed.get("totals")
         payload["ci_detail_level"] = ci_parsed.get("detail_level")
         ci_lines = list(ci_parsed.get("line_items") or [])
+        # Repair truncated Design+Colour on already-saved CIs (page-break cells).
+        ci_file = tracking.get("commercial_invoice_file_reference")
+        if ci_file and ci_lines and any(
+            isinstance(ln, dict)
+            and ln.get("item_name")
+            and not _ci_design_colour_tokens(str(ln.get("item_name") or ""))
+            for ln in ci_lines
+        ):
+            try:
+                repaired = _repair_truncated_ci_design_colours(ci_file, [dict(ln) for ln in ci_lines if isinstance(ln, dict)])
+                if repaired and repaired != ci_lines:
+                    ci_lines = repaired
+                    updated = dict(ci_parsed)
+                    updated["line_items"] = ci_lines
+                    with sqlite3.connect(db.db_path) as conn:
+                        conn.execute(
+                            "UPDATE order_lifecycle_tracking "
+                            "SET commercial_invoice_parsed = ? WHERE tracking_id = ?",
+                            (json.dumps(updated, default=str), tracking_id),
+                        )
+                        conn.commit()
+                    ci_parsed = updated
+            except Exception:
+                pass
         article_master_match = ci_parsed.get("article_master_match")
         needs_am = bool(ci_lines) and (
             not isinstance(article_master_match, dict)

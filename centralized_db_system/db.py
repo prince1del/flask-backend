@@ -6283,35 +6283,67 @@ class CentralizedDB:
         lower = text.lower()
         if lower.startswith("bath") or re.search(r"\bbath\b", lower):
             return "Bath"
-        if lower.startswith("bed") or re.search(r"\bbed\b", lower):
+        if lower.startswith("bed") or re.search(r"\bbed\b", lower) or "bedsheet" in lower:
             return "Bed"
         if lower.startswith("towel") or re.search(r"\btowel\b", lower):
-            return "Towel"
+            return "Bath"
         if lower.startswith("pillow") or re.search(r"\bpillow\b", lower):
             return "Pillow"
+        if (
+            lower in {"tob", "top of bed", "top-of-bed"}
+            or "comforter" in lower
+            or "dohar" in lower
+            or "blanket" in lower
+            or "quilt" in lower
+            or "duvet" in lower
+        ):
+            return "TOB"
         if lower in {"other", "others", "misc", "miscellaneous"}:
             return "Others"
         # Keep short readable labels (Bedsheet → Bed already handled; TOB etc.)
         clean = text.split(":")[0].split("·")[0].split(",")[0].strip()
         return clean[:24] if clean else "Others"
 
-    # Bed size tokens on CI lines: "FLORA DB", "FLORA SB", "FLORENTINE KS",
-    # "ASTER 1+2 DB SET", "DB BS", "KS BS", …
+    # Bed size tokens — including glued forms: "1+2KS", "1+1SB", "DBSET".
+    # Digit→letter is NOT a regex word boundary, so plain \bKS\b misses 1+2KS.
     _CI_BED_SIZE_RE = re.compile(
-        r"\b(?:SB|DB|DBL|KS|KB|KDB|QB)(?:\s*(?:BS|FS|SET|SETS|COMF|COMFORTER))?\b",
+        r"(?:(?<=\d\+\d)|(?<![A-Z0-9]))(?:SB|DB|DBL|KS|KB|KDB|QB)"
+        r"(?:SET|SETS|BS|FS)?(?:\s*(?:BS|FS|SET|SETS|COMF|COMFORTER))?(?![A-Z])",
         re.IGNORECASE,
     )
     _CI_BED_WORDS = (
         "BEDSHEET",
         "BED SHEET",
         "FITTED SHEET",
+        "SHEET SET",
+        "BED IN BAG",
+        "BINB",
+        "DBSET",
+        "SBSET",
+        "KSSET",
+    )
+    _CI_TOB_WORDS = (
+        "DOHAR",
         "COMFORTER",
         "BLANKET",
         "QUILT",
         "DUVET",
-        "SHEET SET",
-        "BED IN BAG",
-        "BINB",
+        "MINK",
+        "TOB",
+        "TOP OF BED",
+        "BED IN A BAG",
+        "FIDELIS",
+    )
+    _CI_BATH_WORDS = (
+        "TOWEL",
+        "BATH",
+        "FACE CLOTH",
+        "HAND TOWEL",
+        "BATHMAT",
+        "BATH MAT",
+        "ECOSOFT",
+        "ECOSTRIPE",
+        "R4 SET",
     )
 
     def _ci_line_category_label(self, line: dict[str, Any]) -> str:
@@ -6332,11 +6364,19 @@ class CentralizedDB:
             )
             if x
         ).upper()
-        # Bath before bed — "BATH TOWEL" must not fall through on size noise.
-        if any(tok in name for tok in ("TOWEL", "BATH", "FACE CLOTH", "HAND TOWEL")):
+        # Bath / towel before bed — "BATH TOWEL" and Ecosoft must not fall to Bed.
+        if any(tok in name for tok in self._CI_BATH_WORDS):
+            return "Bath"
+        # Physical towel sizes like "75cm x 1.5m" / "60cmX1.2m" with DYED/ASST.
+        if re.search(r"\d+\s*CM", name) and any(
+            tok in name for tok in ("DYED", "ASST", "WHITE", "SET", "PKG", "PRE")
+        ):
             return "Bath"
         if "PILLOW" in name:
             return "Pillow"
+        # TOB before Bed — blankets/dohar/comforter are not bedsheet folders.
+        if any(tok in name for tok in self._CI_TOB_WORDS):
+            return "TOB"
         if any(tok in name for tok in self._CI_BED_WORDS) or self._CI_BED_SIZE_RE.search(name):
             return "Bed"
         return "Others"
@@ -6364,7 +6404,7 @@ class CentralizedDB:
             bucket["amount"] = round(float(bucket["amount"]) + float(amount or 0), 2)
             bucket["qty"] = round(float(bucket["qty"]) + float(qty), 2)
             bucket["line_count"] = int(bucket["line_count"]) + 1
-        preferred = ("Bed", "Bath", "Towel", "Pillow", "Others")
+        preferred = ("Bed", "Bath", "Towel", "Pillow", "TOB", "Others")
         order_index = {name: i for i, name in enumerate(preferred)}
         return sorted(
             buckets.values(),
