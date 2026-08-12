@@ -51,3 +51,30 @@ def fiscal_year_date_bounds(label: str | None) -> tuple[str | None, str | None]:
     start_year = int(match.group(1))
     end_year = int(match.group(2))
     return f"{start_year}-04-01", f"{end_year}-03-31"
+
+
+def season_from_date(date_str: str | None) -> str | None:
+    """Map a date to this business's SS/AW season code ("SS26"/"AW26") —
+    confirmed rule: SS runs March-July, AW runs August-February. A
+    January/February date belongs to the AW that started the previous
+    August (e.g. Feb 2026 -> AW25, not AW26), since that AW season is
+    still open then; a March date always starts a fresh SS for that same
+    calendar year. This is a completely separate calendar from the
+    Apr-Mar fiscal year above — do not reuse fiscal_year_date_bounds for
+    season grouping, the boundaries don't line up.
+
+    Accepts "YYYY-MM-DD" (or any string with that prefix, e.g. an ISO
+    datetime) since that's the normalized form commercial_invoice_date
+    and similar fields are stored in. Returns None if unparseable.
+    """
+    if not date_str:
+        return None
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(date_str).strip())
+    if not match:
+        return None
+    year, month = int(match.group(1)), int(match.group(2))
+    if 3 <= month <= 7:
+        return f"SS{year % 100:02d}"
+    if month in (1, 2):
+        return f"AW{(year - 1) % 100:02d}"
+    return f"AW{year % 100:02d}"

@@ -6162,6 +6162,8 @@ class CentralizedDB:
         "where do my uploaded files show up" view in the Order
         Fulfillment UI.
         """
+        from app.fiscal_year import season_from_date as _season_from_date
+
         query = (
             "SELECT olt.tracking_id, olt.order_ref_no, olt.distributor_id, "
             "COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name, "
@@ -6217,6 +6219,7 @@ class CentralizedDB:
                 amount = None
 
             has_ci = bool(row[5]) or bool(row[11]) or bool(parsed)
+            ci_date = row[10] or header.get("invoice_date")
             results.append(
                 {
                     "tracking_id": row[0],
@@ -6232,7 +6235,12 @@ class CentralizedDB:
                     "buyer_name": buyer_name,
                     "buyer_gst": (header.get("buyer_gst") or "").strip() or None,
                     "ci_amount": amount,
-                    "commercial_invoice_date": row[10] or header.get("invoice_date"),
+                    "commercial_invoice_date": ci_date,
+                    # Derived from commercial_invoice_date (SS=Mar-Jul,
+                    # AW=Aug-Feb) — order_lifecycle_tracking has no season
+                    # column of its own, this was always the CI section's
+                    # single hard-coded "Others" bucket before.
+                    "ci_season": _season_from_date(ci_date) if has_ci else None,
                     "ci_detail_level": (parsed or {}).get("detail_level") if parsed else None,
                     "ci_line_count": len((parsed or {}).get("line_items") or []) if parsed else 0,
                 }
