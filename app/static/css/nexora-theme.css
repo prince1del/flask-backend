@@ -468,6 +468,77 @@
   color:var(--nxt-coral, #B91C1C);
 }
 
+.of-ci-dropzone{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  margin:0 0 0.85rem;
+  padding:1.15rem 1rem;
+  border:1.5px dashed color-mix(in srgb, var(--hop-c-accent, var(--nxt-accent, #C9A227)) 45%, var(--hop-c-border, #DED3BE));
+  border-radius:var(--nxt-radius-card, 12px);
+  background:color-mix(in srgb, var(--hop-c-bg, var(--nxt-bg-2, #F3EEE3)) 70%, #fff);
+  color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
+  cursor:pointer;
+  text-align:center;
+  transition:border-color .15s, background .15s, box-shadow .15s;
+}
+.of-ci-dropzone:hover,
+.of-ci-dropzone:focus-visible{
+  outline:none;
+  border-color:var(--hop-c-accent, var(--nxt-accent, #C9A227));
+  background:color-mix(in srgb, var(--hop-c-accent, var(--nxt-accent, #C9A227)) 10%, #fff);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--hop-c-accent, var(--nxt-accent, #C9A227)) 18%, transparent);
+}
+.of-ci-dropzone.is-dragover{
+  border-color:var(--hop-c-accent, var(--nxt-accent, #C9A227));
+  background:color-mix(in srgb, var(--hop-c-accent, var(--nxt-accent, #C9A227)) 16%, #fff);
+}
+.of-ci-dropzone.is-busy{
+  opacity:0.72;
+  pointer-events:none;
+}
+.of-ci-dropzone__title{
+  font-size:0.95rem;
+  font-weight:700;
+}
+.of-ci-dropzone__hint{
+  font-size:0.8rem;
+  color:var(--hop-c-muted, var(--nxt-text-dim, #6B6254));
+}
+.of-ci-dropzone__files{
+  margin-top:2px;
+  font-size:0.78rem;
+  color:var(--hop-c-muted, var(--nxt-text-dim, #6B6254));
+}
+.of-ci-dropzone__files.is-active{
+  color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
+  font-weight:600;
+}
+.of-ci-bulk-table{
+  width:100%;
+  margin-top:0.65rem;
+  border-collapse:collapse;
+  font-size:0.84rem;
+}
+.of-ci-bulk-table th,
+.of-ci-bulk-table td{
+  text-align:left;
+  padding:0.4rem 0.45rem;
+  border-bottom:1px solid var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
+  vertical-align:top;
+  color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
+}
+.of-ci-bulk-table th{
+  color:var(--hop-c-muted, var(--nxt-text-dim, #6B6254));
+  font-weight:650;
+}
+.of-ci-bulk-status.is-ok{color:var(--nxt-mint, #047857); font-weight:650;}
+.of-ci-bulk-status.is-warn{color:var(--nxt-amber, #92400E); font-weight:650;}
+.of-ci-bulk-status.is-bad{color:var(--nxt-coral, #B91C1C); font-weight:650;}
+.of-ci-bulk-status.is-run{color:var(--hop-c-muted, var(--nxt-text-dim, #6B6254));}
+
 .of-pane-card--fill .of-tracking-wrap{
   flex:1 1 auto;
   min-height:0;

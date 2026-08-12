@@ -9811,6 +9811,7 @@ function showOfSection(section) {
   }
 
   if (key === 'invoice-ci') {
+    bindCiInvoiceDropzone();
     loadOrderFulfillmentUploads();
   }
   if (key === 'so-pack' && ofSoPackLastPayload) {
@@ -10345,132 +10346,422 @@ function _ofQty(v) {
   return Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 }
 
-async function uploadInvoiceV2() {
-  const fileInput = document.getElementById('of-invoice-file');
+let ofCiBulkBusy = false;
+let ofCiBulkReviewQueue = [];
+let ofCiDropzoneBound = false;
 
-  if (!fileInput.files.length) {
-    _showOfInvoiceResult('Please choose a file first.');
+function _ciUpdateDropzoneLabel(files) {
+  const label = document.getElementById('of-ci-dropzone-files');
+  if (!label) return;
+  const list = files ? Array.from(files) : [];
+  if (!list.length) {
+    label.textContent = 'No files selected';
+    label.classList.remove('is-active');
+    return;
+  }
+  if (list.length === 1) {
+    label.textContent = list[0].name;
+  } else {
+    label.textContent = `${list.length} PDFs selected · ${list.slice(0, 3).map((f) => f.name).join(', ')}${list.length > 3 ? '…' : ''}`;
+  }
+  label.classList.add('is-active');
+}
+
+function bindCiInvoiceDropzone() {
+  if (ofCiDropzoneBound) return;
+  const zone = document.getElementById('of-ci-dropzone');
+  const fileInput = document.getElementById('of-invoice-file');
+  if (!zone || !fileInput) return;
+  ofCiDropzoneBound = true;
+
+  const takeFiles = (fileList) => {
+    const pdfs = Array.from(fileList || []).filter((f) => {
+      const name = (f.name || '').toLowerCase();
+      return f.type === 'application/pdf' || name.endsWith('.pdf');
+    });
+    if (!pdfs.length) {
+      _showOfInvoiceResult('<div class="of-ci-title is-bad">Only PDF commercial invoices are supported.</div>');
+      return;
+    }
+    try {
+      const dt = new DataTransfer();
+      pdfs.forEach((f) => dt.items.add(f));
+      fileInput.files = dt.files;
+    } catch (_e) {
+      // Some browsers block programmatic FileList assign — still upload from pdfs array
+    }
+    _ciUpdateDropzoneLabel(pdfs);
+    uploadInvoiceV2(pdfs);
+  };
+
+  zone.addEventListener('click', () => fileInput.click());
+  zone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+  zone.addEventListener('dragenter', (e) => { e.preventDefault(); zone.classList.add('is-dragover'); });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('is-dragover'); });
+  zone.addEventListener('dragleave', (e) => {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('is-dragover');
+  });
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('is-dragover');
+    takeFiles(e.dataTransfer && e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', () => {
+    _ciUpdateDropzoneLabel(fileInput.files);
+  });
+}
+
+async function _uploadInvoiceParse(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetchWithAuth('/api/v1/order-fulfillment/upload/invoice', {
+    method: 'POST',
+    body: formData,
+  });
+  const rawText = await response.text();
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch (parseErr) {
+    const snippet = (rawText || '').replace(/\s+/g, ' ').slice(0, 160);
+    throw new Error(
+      `Server returned HTML/non-JSON (HTTP ${response.status}). `
+      + (snippet ? `Start: ${snippet}` : 'Empty body — deploy may still be restarting; retry in 1–2 min.')
+    );
+  }
+  if (!response.ok || !data.success) {
+    throw new Error((data.error && data.error.message) || 'Upload failed');
+  }
+  return data.data;
+}
+
+function _setOfInvoicePendingFromUpload(d) {
+  ofInvoicePendingLink = {
+    order_ref_no: d.order_ref_no,
+    invoice_no: d.invoice_no,
+    buyer_name: d.buyer_name,
+    buyer_gst: d.buyer_gst || null,
+    commercial_invoice_file_reference: d.commercial_invoice_file_reference,
+    commercial_invoice_parsed: d.commercial_invoice_parsed,
+    suggested_distributor: d.suggested_distributor || null,
+    party_match: d.party_match || null,
+    mode: d.no_match_found ? 'ci_only' : 'linked',
+  };
+}
+
+async function _renderInvoiceConfirmUi(d) {
+  _setOfInvoicePendingFromUpload(d);
+
+  const amountValue = d.extracted_amount != null ? d.extracted_amount : '';
+  const amountNote = d.extracted_amount != null
+    ? '(auto-extracted from the invoice — adjust if needed)'
+    : '(could not auto-read the amount — please enter it)';
+  const partyHtml = _ofPartyMatchHtml(d.party_match, d.buyer_name, d.buyer_gst);
+
+  // Lane B: SO exists → show light compare + confirm link
+  if (!d.no_match_found && d.compare) {
+    const c = d.compare;
+    const qtyWarn = c.qty_mismatch
+      ? `<div class="of-ci-title is-warn" style="margin-top:6px;">Qty mismatch: SO ${_ofQty(c.so_total_qty)} vs CI ${_ofQty(c.ci_total_qty)}</div>`
+      : '';
+    const partyName = d.distributor_name || c.so_distributor || 'matched party';
+    const mismatch = (d.party_match && d.party_match.status === 'mismatch');
+    const mismatchGate = mismatch
+      ? `<label class="of-ci-ack">
+          <input type="checkbox" id="of-ci-party-mismatch-ack" />
+          <span>I confirm CI buyer and SO / Customers distributor are the same party despite the mismatch warning.</span>
+        </label>`
+      : '';
+    _showOfInvoiceResult(`
+      <div class="of-ci-title is-ok">SO found in Nexora — review compare, then confirm</div>
+      ${partyHtml}
+      <table class="data-table" style="margin:10px 0;max-width:36rem;">
+        <tbody>
+          <tr><td>SO / Order Ref</td><td><strong>${escapeHtml(c.order_ref_no || '—')}</strong></td></tr>
+          <tr><td>CI Invoice No</td><td>${escapeHtml(c.invoice_no || '—')}</td></tr>
+          <tr><td>SO party (Customers)</td><td>${escapeHtml(c.so_distributor || '—')}</td></tr>
+          <tr><td>CI buyer</td><td>${escapeHtml(c.ci_buyer_name || '—')}</td></tr>
+          <tr><td>CI buyer GST</td><td>${escapeHtml(c.ci_buyer_gst || '—')}</td></tr>
+          <tr><td>SO qty / value</td><td>${_ofQty(c.so_total_qty)} · ${_ofMoney(c.so_total_value)}</td></tr>
+          <tr><td>CI qty / value</td><td>${c.ci_total_qty == null ? 'on confirm' : _ofQty(c.ci_total_qty)} · ${_ofMoney(c.ci_total_value || c.ci_amount)}</td></tr>
+          <tr><td>SO lines / CI lines</td><td>${c.so_item_count ?? '—'} / ${c.ci_line_count == null ? 'on confirm' : (c.ci_line_count ?? '—')}</td></tr>
+        </tbody>
+      </table>
+      ${c.detail_note ? `<div class="of-ci-note">${escapeHtml(c.detail_note)}</div>` : ''}
+      ${qtyWarn}
+      ${mismatchGate}
+      <div class="form-group">
+        <label>Invoice Amount (₹) <span>${amountNote}</span></label>
+        <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
+      </div>
+      <button class="btn btn-primary" onclick="confirmCiLinkV2()">Confirm — link CI to ${escapeHtml(partyName)}</button>
+    `);
     return;
   }
 
-  const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
+  // Lane A: no SO → CI-only confirm with distributor pick
+  const suggestedId = (d.suggested_distributor && d.suggested_distributor.id) || '';
+  const suggestedName = (d.suggested_distributor && d.suggested_distributor.name) || '';
+  const buyerLabel = d.buyer_name || suggestedName || 'unknown party on PDF';
+  _showOfInvoiceResult(`
+    <div class="of-ci-title is-warn">No matching Sales Order in Nexora</div>
+    ${partyHtml}
+    <p style="margin:8px 0;">
+      SO / Order Ref on CI: <strong>${escapeHtml(d.order_ref_no || 'not found')}</strong><br/>
+      Invoice No: <strong>${escapeHtml(d.invoice_no || '—')}</strong><br/>
+      Buyer on CI: <strong>${escapeHtml(buyerLabel)}</strong><br/>
+      Buyer GST: <strong>${escapeHtml(d.buyer_gst || '—')}</strong>
+    </p>
+    <p class="of-ci-note">
+      Real sale is CI. Pick the <strong>Customers</strong> distributor that matches this CI buyer, then save as CI-only.
+      If the same SO number is uploaded later, it can merge into this tracking.
+    </p>
+    <div class="form-group">
+      <label>Distributor (Customers / Party Master) *</label>
+      <select id="of-ci-only-distributor" style="max-width:min(100%,28rem);"></select>
+    </div>
+    <div class="form-group">
+      <label>Invoice Amount (₹) <span>${amountNote}</span></label>
+      <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
+    </div>
+    <button class="btn btn-primary" onclick="confirmCiOnlyV2()">Confirm — save CI-only (no SO)</button>
+  `);
+  await _populateCiOnlyDistributorSelect(suggestedId, d.party_match);
+}
+
+async function _confirmCiLinkSilent(d) {
+  const amount = d.extracted_amount != null ? Number(d.extracted_amount) : null;
+  const response = await fetchWithAuth('/api/v1/order-fulfillment/confirm-ci-link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      order_ref_no: d.order_ref_no,
+      commercial_invoice_file_reference: d.commercial_invoice_file_reference,
+      commercial_invoice_parsed: d.commercial_invoice_parsed,
+      amount: Number.isNaN(amount) ? null : amount,
+    }),
+  });
+  const rawText = await response.text();
+  const data = _parseFetchJson(response, rawText);
+  if (!response.ok || !data.success) {
+    throw new Error((data.error && data.error.message) || 'Confirm link failed');
+  }
+  const out = data.data || {};
+  if (out.is_duplicate || out.link_error) {
+    throw new Error(out.link_error || 'Duplicate / link error');
+  }
+  return out;
+}
+
+async function _confirmCiOnlySilent(d) {
+  const distId = d.suggested_distributor && d.suggested_distributor.id;
+  if (!distId) throw new Error('No suggested distributor');
+  const amount = d.extracted_amount != null ? Number(d.extracted_amount) : null;
+  const response = await fetchWithAuth('/api/v1/order-fulfillment/confirm-ci-only', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      order_ref_no: d.order_ref_no,
+      invoice_no: d.invoice_no,
+      distributor_id: Number(distId),
+      commercial_invoice_file_reference: d.commercial_invoice_file_reference,
+      commercial_invoice_parsed: d.commercial_invoice_parsed,
+      amount: Number.isNaN(amount) ? null : amount,
+      acknowledge_party_mismatch: false,
+    }),
+  });
+  const rawText = await response.text();
+  const data = _parseFetchJson(response, rawText);
+  if (!response.ok || !data.success) {
+    throw new Error((data.error && data.error.message) || 'CI-only save failed');
+  }
+  const out = data.data || {};
+  if (out.is_duplicate || out.link_error) {
+    throw new Error(out.link_error || 'Duplicate / save error');
+  }
+  return out;
+}
+
+function _ciPartySafeForAuto(d) {
+  const st = d.party_match && d.party_match.status;
+  return st === 'matched' || !st;
+}
+
+function _renderCiBulkProgress(rows) {
+  const done = rows.filter((r) => r.state === 'ok' || r.state === 'dup' || r.state === 'bad' || r.state === 'review').length;
+  const ok = rows.filter((r) => r.state === 'ok').length;
+  const review = rows.filter((r) => r.state === 'review').length;
+  const bad = rows.filter((r) => r.state === 'bad' || r.state === 'dup').length;
+  const reviewBtn = review
+    ? `<div style="margin-top:10px;"><button type="button" class="btn btn-primary" onclick="reviewNextBulkCi()">Review next pending (${review})</button></div>`
+    : '';
+  const trs = rows.map((r) => {
+    const cls = r.state === 'ok' ? 'is-ok'
+      : r.state === 'review' ? 'is-warn'
+      : (r.state === 'bad' || r.state === 'dup') ? 'is-bad'
+      : 'is-run';
+    return `<tr>
+      <td>${escapeHtml(r.file)}</td>
+      <td>${escapeHtml(r.invoice || '—')}</td>
+      <td>${escapeHtml(r.ref || '—')}</td>
+      <td class="of-ci-bulk-status ${cls}">${escapeHtml(r.status)}</td>
+    </tr>`;
+  }).join('');
+  _showOfInvoiceResult(`
+    <div class="of-ci-title ${review || bad ? 'is-warn' : 'is-ok'}">
+      Bulk CI upload · ${done}/${rows.length} processed · saved ${ok} · review ${review} · skipped/failed ${bad}
+    </div>
+    <p class="of-ci-note">Auto-saved only when Customers ↔ CI is matched (SO link or suggested distributor). Others stay for manual confirm.</p>
+    <table class="of-ci-bulk-table">
+      <thead><tr><th>File</th><th>Invoice</th><th>Order Ref</th><th>Status</th></tr></thead>
+      <tbody>${trs}</tbody>
+    </table>
+    ${reviewBtn}
+  `);
+}
+
+async function uploadCiFilesBulk(files) {
+  if (ofCiBulkBusy) return;
+  ofCiBulkBusy = true;
+  ofCiBulkReviewQueue = [];
+  const zone = document.getElementById('of-ci-dropzone');
+  if (zone) zone.classList.add('is-busy');
+
+  const rows = files.map((f) => ({
+    file: f.name,
+    invoice: '',
+    ref: '',
+    state: 'run',
+    status: 'Queued…',
+    data: null,
+  }));
+  _renderCiBulkProgress(rows);
+
+  let anySaved = false;
+  try {
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i];
+      const row = rows[i];
+      row.status = `Uploading ${i + 1}/${files.length}…`;
+      row.state = 'run';
+      _renderCiBulkProgress(rows);
+      try {
+        const d = await _uploadInvoiceParse(file);
+        row.invoice = d.invoice_no || '';
+        row.ref = d.order_ref_no || '';
+        row.data = d;
+
+        if (d.is_duplicate) {
+          row.state = 'dup';
+          row.status = d.message || d.link_error || 'Duplicate — already processed';
+          continue;
+        }
+
+        const partyOk = _ciPartySafeForAuto(d);
+        if (!d.no_match_found && d.compare && partyOk && !(d.party_match && d.party_match.status === 'mismatch')) {
+          const out = await _confirmCiLinkSilent(d);
+          row.state = 'ok';
+          row.status = `Linked · tracking #${out.tracking_id || '—'}`;
+          anySaved = true;
+          continue;
+        }
+
+        if (
+          d.no_match_found
+          && partyOk
+          && d.party_match
+          && d.party_match.status === 'matched'
+          && d.suggested_distributor
+          && d.suggested_distributor.id
+        ) {
+          const out = await _confirmCiOnlySilent(d);
+          row.state = 'ok';
+          row.status = `CI-only saved · tracking #${out.tracking_id || '—'}`;
+          anySaved = true;
+          continue;
+        }
+
+        row.state = 'review';
+        row.status = d.no_match_found
+          ? 'Needs review — pick distributor / confirm CI-only'
+          : (d.party_match && d.party_match.status === 'mismatch'
+            ? 'Needs review — party mismatch'
+            : 'Needs review — confirm SO link');
+        ofCiBulkReviewQueue.push(d);
+      } catch (err) {
+        row.state = 'bad';
+        row.status = err.message || 'Failed';
+      }
+      _renderCiBulkProgress(rows);
+    }
+  } finally {
+    ofCiBulkBusy = false;
+    if (zone) zone.classList.remove('is-busy');
+    const fileInput = document.getElementById('of-invoice-file');
+    if (fileInput) fileInput.value = '';
+    _ciUpdateDropzoneLabel([]);
+    if (anySaved) loadOrderFulfillmentUploads();
+    _renderCiBulkProgress(rows);
+  }
+}
+
+async function reviewNextBulkCi() {
+  const next = ofCiBulkReviewQueue.shift();
+  if (!next) {
+    _showOfInvoiceResult('<div class="of-ci-title is-ok">No pending CI reviews left.</div>');
+    return;
+  }
+  await _renderInvoiceConfirmUi(next);
+  const left = ofCiBulkReviewQueue.length;
+  const box = document.getElementById('of-invoice-result');
+  if (box && left > 0) {
+    box.insertAdjacentHTML(
+      'afterbegin',
+      `<div class="of-ci-note" style="margin-bottom:8px;">Manual review · ${left} more waiting after you confirm this one.</div>`
+    );
+  }
+}
+
+async function uploadInvoiceV2(optionalFiles) {
+  const fileInput = document.getElementById('of-invoice-file');
+  const fromInput = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
+  const files = (optionalFiles && optionalFiles.length)
+    ? Array.from(optionalFiles)
+    : fromInput;
+
+  if (!files.length) {
+    _showOfInvoiceResult('<div class="of-ci-title is-warn">Please choose or drop PDF file(s) first.</div>');
+    return;
+  }
+
+  const pdfs = files.filter((f) => {
+    const name = (f.name || '').toLowerCase();
+    return f.type === 'application/pdf' || name.endsWith('.pdf');
+  });
+  if (!pdfs.length) {
+    _showOfInvoiceResult('<div class="of-ci-title is-bad">Only PDF commercial invoices are supported.</div>');
+    return;
+  }
+
+  if (pdfs.length > 1) {
+    await uploadCiFilesBulk(pdfs);
+    return;
+  }
 
   _showOfInvoiceResult('Uploading and parsing...');
   try {
-    const response = await fetchWithAuth('/api/v1/order-fulfillment/upload/invoice', {
-      method: 'POST',
-      body: formData,
-    });
-    const rawText = await response.text();
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch (parseErr) {
-      const snippet = (rawText || '').replace(/\s+/g, ' ').slice(0, 160);
-      throw new Error(
-        `Server returned HTML/non-JSON (HTTP ${response.status}). `
-        + (snippet ? `Start: ${snippet}` : 'Empty body — deploy may still be restarting; retry in 1–2 min.')
-      );
-    }
-    if (!response.ok || !data.success) {
-      throw new Error((data.error && data.error.message) || 'Upload failed');
-    }
-    const d = data.data;
-
+    const d = await _uploadInvoiceParse(pdfs[0]);
     if (d.is_duplicate) {
       _showOfInvoiceResult(`<div class="of-ci-title is-bad">${escapeHtml(d.message || d.link_error || 'Duplicate CI — already processed.')}</div>`);
       ofInvoicePendingLink = null;
       return;
     }
-
-    ofInvoicePendingLink = {
-      order_ref_no: d.order_ref_no,
-      invoice_no: d.invoice_no,
-      buyer_name: d.buyer_name,
-      buyer_gst: d.buyer_gst || null,
-      commercial_invoice_file_reference: d.commercial_invoice_file_reference,
-      commercial_invoice_parsed: d.commercial_invoice_parsed,
-      suggested_distributor: d.suggested_distributor || null,
-      party_match: d.party_match || null,
-      mode: d.no_match_found ? 'ci_only' : 'linked',
-    };
-
-    const amountValue = d.extracted_amount != null ? d.extracted_amount : '';
-    const amountNote = d.extracted_amount != null
-      ? '(auto-extracted from the invoice — adjust if needed)'
-      : '(could not auto-read the amount — please enter it)';
-    const partyHtml = _ofPartyMatchHtml(d.party_match, d.buyer_name, d.buyer_gst);
-
-    // Lane B: SO exists → show light compare + confirm link
-    if (!d.no_match_found && d.compare) {
-      const c = d.compare;
-      const qtyWarn = c.qty_mismatch
-        ? `<div class="of-ci-title is-warn" style="margin-top:6px;">Qty mismatch: SO ${_ofQty(c.so_total_qty)} vs CI ${_ofQty(c.ci_total_qty)}</div>`
-        : '';
-      const partyName = d.distributor_name || c.so_distributor || 'matched party';
-      const mismatch = (d.party_match && d.party_match.status === 'mismatch');
-      const mismatchGate = mismatch
-        ? `<label class="of-ci-ack">
-            <input type="checkbox" id="of-ci-party-mismatch-ack" />
-            <span>I confirm CI buyer and SO / Customers distributor are the same party despite the mismatch warning.</span>
-          </label>`
-        : '';
-      _showOfInvoiceResult(`
-        <div class="of-ci-title is-ok">SO found in Nexora — review compare, then confirm</div>
-        ${partyHtml}
-        <table class="data-table" style="margin:10px 0;max-width:36rem;">
-          <tbody>
-            <tr><td>SO / Order Ref</td><td><strong>${escapeHtml(c.order_ref_no || '—')}</strong></td></tr>
-            <tr><td>CI Invoice No</td><td>${escapeHtml(c.invoice_no || '—')}</td></tr>
-            <tr><td>SO party (Customers)</td><td>${escapeHtml(c.so_distributor || '—')}</td></tr>
-            <tr><td>CI buyer</td><td>${escapeHtml(c.ci_buyer_name || '—')}</td></tr>
-            <tr><td>CI buyer GST</td><td>${escapeHtml(c.ci_buyer_gst || '—')}</td></tr>
-            <tr><td>SO qty / value</td><td>${_ofQty(c.so_total_qty)} · ${_ofMoney(c.so_total_value)}</td></tr>
-            <tr><td>CI qty / value</td><td>${c.ci_total_qty == null ? 'on confirm' : _ofQty(c.ci_total_qty)} · ${_ofMoney(c.ci_total_value || c.ci_amount)}</td></tr>
-            <tr><td>SO lines / CI lines</td><td>${c.so_item_count ?? '—'} / ${c.ci_line_count == null ? 'on confirm' : (c.ci_line_count ?? '—')}</td></tr>
-          </tbody>
-        </table>
-        ${c.detail_note ? `<div class="of-ci-note">${escapeHtml(c.detail_note)}</div>` : ''}
-        ${qtyWarn}
-        ${mismatchGate}
-        <div class="form-group">
-          <label>Invoice Amount (₹) <span>${amountNote}</span></label>
-          <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
-        </div>
-        <button class="btn btn-primary" onclick="confirmCiLinkV2()">Confirm — link CI to ${escapeHtml(partyName)}</button>
-      `);
-      return;
-    }
-
-    // Lane A: no SO → CI-only confirm with distributor pick
-    const suggestedId = (d.suggested_distributor && d.suggested_distributor.id) || '';
-    const suggestedName = (d.suggested_distributor && d.suggested_distributor.name) || '';
-    const buyerLabel = d.buyer_name || suggestedName || 'unknown party on PDF';
-    _showOfInvoiceResult(`
-      <div class="of-ci-title is-warn">No matching Sales Order in Nexora</div>
-      ${partyHtml}
-      <p style="margin:8px 0;">
-        SO / Order Ref on CI: <strong>${escapeHtml(d.order_ref_no || 'not found')}</strong><br/>
-        Invoice No: <strong>${escapeHtml(d.invoice_no || '—')}</strong><br/>
-        Buyer on CI: <strong>${escapeHtml(buyerLabel)}</strong><br/>
-        Buyer GST: <strong>${escapeHtml(d.buyer_gst || '—')}</strong>
-      </p>
-      <p class="of-ci-note">
-        Real sale is CI. Pick the <strong>Customers</strong> distributor that matches this CI buyer, then save as CI-only.
-        If the same SO number is uploaded later, it can merge into this tracking.
-      </p>
-      <div class="form-group">
-        <label>Distributor (Customers / Party Master) *</label>
-        <select id="of-ci-only-distributor" style="max-width:min(100%,28rem);"></select>
-      </div>
-      <div class="form-group">
-        <label>Invoice Amount (₹) <span>${amountNote}</span></label>
-        <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
-      </div>
-      <button class="btn btn-primary" onclick="confirmCiOnlyV2()">Confirm — save CI-only (no SO)</button>
-    `);
-    await _populateCiOnlyDistributorSelect(suggestedId, d.party_match);
+    await _renderInvoiceConfirmUi(d);
   } catch (error) {
     _showOfInvoiceResult(`<div class="of-ci-title is-bad">Error: ${escapeHtml(error.message)}</div>`);
   }
@@ -10694,6 +10985,15 @@ async function _confirmCiOnlyV2Impl() {
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();
     if (d.tracking_id) openCiTrackingDetail(d.tracking_id);
+    if (ofCiBulkReviewQueue.length) {
+      const box = document.getElementById('of-invoice-result');
+      if (box) {
+        box.insertAdjacentHTML(
+          'beforeend',
+          `<div style="margin-top:10px;"><button type="button" class="btn btn-primary" onclick="reviewNextBulkCi()">Review next pending (${ofCiBulkReviewQueue.length})</button></div>`
+        );
+      }
+    }
   } catch (error) {
     _showOfInvoiceResult(`<div class="of-ci-title is-bad">Error: ${escapeHtml(error.message)}</div>`);
   }
@@ -10764,6 +11064,15 @@ async function _confirmCiLinkV2Impl() {
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();
     if (d.tracking_id) openCiTrackingDetail(d.tracking_id);
+    if (ofCiBulkReviewQueue.length) {
+      const box = document.getElementById('of-invoice-result');
+      if (box) {
+        box.insertAdjacentHTML(
+          'beforeend',
+          `<div style="margin-top:10px;"><button type="button" class="btn btn-primary" onclick="reviewNextBulkCi()">Review next pending (${ofCiBulkReviewQueue.length})</button></div>`
+        );
+      }
+    }
   } catch (error) {
     _showOfInvoiceResult(`<div class="of-ci-title is-bad">Error: ${escapeHtml(error.message)}</div>`);
   }
@@ -10848,6 +11157,7 @@ async function initOrderFulfillmentEmbeddedPanels() {
   await loadFilledOrdersDistributors(['fo', 'of-fo']);
   await loadOrderFulfillmentCatalogSummary();
   bindSoPackFileInput();
+  bindCiInvoiceDropzone();
   updateSoPackExcelButtonState();
   showOfSection(ofSoPackLastPayload ? 'so-pack' : 'filled-order');
 }
