@@ -6246,6 +6246,7 @@ class CentralizedDB:
 
             has_ci = bool(row[5]) or bool(row[11]) or bool(parsed)
             ci_date = row[10] or header.get("invoice_date")
+            ci_categories = self._ci_categories_summary(parsed) if has_ci else []
             results.append(
                 {
                     "tracking_id": row[0],
@@ -6269,9 +6270,86 @@ class CentralizedDB:
                     "ci_season": _season_from_date(ci_date) if has_ci else None,
                     "ci_detail_level": (parsed or {}).get("detail_level") if parsed else None,
                     "ci_line_count": len((parsed or {}).get("line_items") or []) if parsed else 0,
+                    "ci_categories": ci_categories,
                 }
             )
         return results
+
+    @staticmethod
+    def _normalize_ci_category_label(raw: Any) -> str:
+        text = str(raw or "").strip()
+        if not text:
+            return "Others"
+        lower = text.lower()
+        if lower.startswith("bath") or re.search(r"\bbath\b", lower):
+            return "Bath"
+        if lower.startswith("bed") or re.search(r"\bbed\b", lower):
+            return "Bed"
+        if lower.startswith("towel") or re.search(r"\btowel\b", lower):
+            return "Towel"
+        if lower.startswith("pillow") or re.search(r"\bpillow\b", lower):
+            return "Pillow"
+        if lower in {"other", "others", "misc", "miscellaneous"}:
+            return "Others"
+        # Keep short readable labels (Bedsheet → Bed already handled; TOB etc.)
+        clean = text.split(":")[0].split("·")[0].split(",")[0].strip()
+        return clean[:24] if clean else "Others"
+
+    def _ci_line_category_label(self, line: dict[str, Any]) -> str:
+        if not isinstance(line, dict):
+            return "Others"
+        am = line.get("article_match") if isinstance(line.get("article_match"), dict) else {}
+        for key in ("article", "closest_article"):
+            art = am.get(key) if isinstance(am.get(key), dict) else {}
+            cat = self._normalize_ci_category_label(art.get("category"))
+            if cat != "Others":
+                return cat
+        name = " ".join(
+            str(x)
+            for x in (
+                line.get("item_name"),
+                line.get("material_code"),
+                line.get("item_key"),
+            )
+            if x
+        ).upper()
+        if any(tok in name for tok in ("TOWEL", "BATH", "FACE CLOTH", "HAND TOWEL")):
+            return "Bath"
+        if any(tok in name for tok in ("BEDSHEET", "BED SHEET", "COMFORTER", "BLANKET", "QUILT", "DB BS", "KB FS", "QB FS")):
+            return "Bed"
+        if "PILLOW" in name:
+            return "Pillow"
+        return "Others"
+
+    def _ci_categories_summary(self, parsed: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if not isinstance(parsed, dict):
+            return []
+        lines = parsed.get("line_items") or []
+        if not isinstance(lines, list) or not lines:
+            return []
+        buckets: dict[str, dict[str, Any]] = {}
+        for line in lines:
+            if not isinstance(line, dict):
+                continue
+            cat = self._ci_line_category_label(line)
+            amount = None
+            for key in ("line_total", "amount", "value", "taxable"):
+                amount = self._parse_money(line.get(key))
+                if amount is not None:
+                    break
+            qty = self._parse_money(line.get("qty")) or 0.0
+            bucket = buckets.setdefault(
+                cat, {"name": cat, "amount": 0.0, "qty": 0.0, "line_count": 0}
+            )
+            bucket["amount"] = round(float(bucket["amount"]) + float(amount or 0), 2)
+            bucket["qty"] = round(float(bucket["qty"]) + float(qty), 2)
+            bucket["line_count"] = int(bucket["line_count"]) + 1
+        preferred = ("Bed", "Bath", "Towel", "Pillow", "Others")
+        order_index = {name: i for i, name in enumerate(preferred)}
+        return sorted(
+            buckets.values(),
+            key=lambda b: (order_index.get(str(b["name"]), 50), str(b["name"]).lower()),
+        )
 
     def delete_order_lifecycle_tracking(
         self, tracking_id: int, workspace_id: str | None = None
