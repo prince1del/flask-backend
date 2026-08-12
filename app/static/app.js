@@ -10582,6 +10582,18 @@ async function confirmCiOnlyV2() {
   }
 }
 
+function _parseFetchJson(response, rawText) {
+  try {
+    return JSON.parse(rawText);
+  } catch (parseErr) {
+    const snippet = (rawText || '').replace(/\s+/g, ' ').slice(0, 160);
+    throw new Error(
+      `Server returned HTML/non-JSON (HTTP ${response.status}). `
+      + (snippet ? `Start: ${snippet}` : 'Empty body — service may be restarting (OOM/deploy); retry in 1–2 min.')
+    );
+  }
+}
+
 async function _confirmCiOnlyV2Impl() {
   const resultBox = document.getElementById('of-invoice-result');
   if (!ofInvoicePendingLink) {
@@ -10607,6 +10619,7 @@ async function _confirmCiOnlyV2Impl() {
   const amount = amountInput ? parseFloat(amountInput.value) : null;
 
   try {
+    resultBox.insertAdjacentHTML('beforeend', '<div style="color:#aaa;margin-top:8px;">Saving…</div>');
     const response = await fetchWithAuth('/api/v1/order-fulfillment/confirm-ci-only', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -10620,7 +10633,8 @@ async function _confirmCiOnlyV2Impl() {
         acknowledge_party_mismatch: acknowledgePartyMismatch,
       }),
     });
-    const data = await response.json();
+    const rawText = await response.text();
+    let data = _parseFetchJson(response, rawText);
     if ((!response.ok || !data.success) && data.error && data.error.code === 'ci_customers_mismatch' && !acknowledgePartyMismatch) {
       const ok = window.confirm(`${data.error.message}\n\nSave anyway with the selected distributor?`);
       if (!ok) return;
@@ -10637,26 +10651,17 @@ async function _confirmCiOnlyV2Impl() {
           acknowledge_party_mismatch: true,
         }),
       });
-      const retryData = await retry.json();
+      const retryText = await retry.text();
+      const retryData = _parseFetchJson(retry, retryText);
       if (!retry.ok || !retryData.success) {
         throw new Error((retryData.error && retryData.error.message) || 'CI-only save failed');
       }
-      const d = retryData.data;
-      if (d.is_duplicate || d.link_error) {
-        resultBox.innerHTML = `<div style="color:#FF6B6B;font-weight:bold;">${d.link_error || 'Could not save CI.'}</div>`;
-        ofInvoicePendingLink = null;
-        return;
-      }
-      resultBox.innerHTML =
-        `Saved CI-only! Tracking #${d.tracking_id}` +
-        (d.achievement_id ? `, Achievement #${d.achievement_id} (sale from CI).` : '.') +
-        `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}. Full CI details (lines/taxes/dates) stored like SO. SO can merge later if uploaded.</div>`;
-      ofInvoicePendingLink = null;
-      document.getElementById('of-invoice-file').value = '';
-      loadOrderFulfillmentUploads();
-      return;
+      data = retryData;
     }
-    if (!response.ok || !data.success) {
+    if (!response.ok && !(data && data.success)) {
+      throw new Error((data.error && data.error.message) || 'CI-only save failed');
+    }
+    if (!data.success) {
       throw new Error((data.error && data.error.message) || 'CI-only save failed');
     }
     const d = data.data;
@@ -10665,10 +10670,13 @@ async function _confirmCiOnlyV2Impl() {
       ofInvoicePendingLink = null;
       return;
     }
+    const detailNote = d.detail_level === 'text_only_save'
+      ? ' Header/amount saved (line tables deferred on small RAM).'
+      : ' Full CI details stored.';
     resultBox.innerHTML =
       `Saved CI-only! Tracking #${d.tracking_id}` +
       (d.achievement_id ? `, Achievement #${d.achievement_id} (sale from CI).` : '.') +
-      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}. Full CI details (lines/taxes/dates) stored like SO. SO can merge later if uploaded.</div>`;
+      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}.${detailNote} SO can merge later if uploaded.</div>`;
     ofInvoicePendingLink = null;
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();
@@ -10710,7 +10718,8 @@ async function _confirmCiLinkV2Impl() {
         amount: isNaN(amount) ? null : amount,
       }),
     });
-    const data = await response.json();
+    const rawText = await response.text();
+    const data = _parseFetchJson(response, rawText);
     if (!response.ok || !data.success) {
       throw new Error((data.error && data.error.message) || 'Confirm failed');
     }
@@ -10725,9 +10734,12 @@ async function _confirmCiLinkV2Impl() {
     const discrepancyAlert = d.has_discrepancy
       ? `<div style="color: #FF6B6B; font-weight: bold; margin-top: 8px;">⚠ DISCREPANCY DETECTED — one or more items don't match across Ordered/SO/CI quantities or values. Check the reconciliation sheet for this distributor.</div>`
       : '';
+    const ramNote = d.detail_level === 'text_only_save'
+      ? `<div style="color:#aaa;margin-top:6px;">Saved with header/amount (line tables skipped on small RAM). Upgrade to Standard 2GB for full line parse.</div>`
+      : '';
     resultBox.innerHTML = `Linked! Tracking #${d.tracking_id}` +
       (d.achievement_id ? `, Achievement #${d.achievement_id} recorded.` : '.') +
-      discrepancyAlert;
+      discrepancyAlert + ramNote;
     ofInvoicePendingLink = null;
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();

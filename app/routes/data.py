@@ -2707,6 +2707,94 @@ def build_commercial_invoice_detail(path: str | Path) -> dict[str, Any]:
     }
 
 
+def _linux_mem_available_mb() -> float | None:
+    """Best-effort free RAM reading for Render/Linux; None if unavailable."""
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    parts = line.split()
+                    return float(parts[1]) / 1024.0  # kB → MB
+    except Exception:
+        return None
+    return None
+
+
+def _ci_table_parse_enabled() -> bool:
+    """
+    pdfplumber extract_tables OOMs on Render Starter (512MB) and kills the
+    worker → HTTP 502 HTML. Only enable table parse when explicitly forced
+    or when enough free RAM is available (~Standard 2GB).
+    """
+    flag = (os.environ.get("CI_ENABLE_TABLE_PARSE") or "").strip().lower()
+    if flag in ("1", "true", "yes", "on"):
+        return True
+    if flag in ("0", "false", "no", "off"):
+        return False
+    available = _linux_mem_available_mb()
+    if available is not None:
+        return available >= 800
+    return False
+
+
+def _prepare_ci_parsed_for_save(
+    path: str | Path | None,
+    client_parsed: dict | None = None,
+) -> dict[str, Any]:
+    """
+    Build a save-safe CI payload. Text/header only on small instances;
+    full table detail only when RAM allows (avoids 502 OOM on confirm).
+    """
+    client = client_parsed if isinstance(client_parsed, dict) else {}
+    text = ""
+    if path:
+        try:
+            text = _extract_pdf_text(path) or ""
+        except Exception:
+            text = ""
+    if not text:
+        text = str(client.get("text") or "")
+
+    base_header: dict[str, Any] = {}
+    if isinstance(client.get("header"), dict):
+        base_header.update(client["header"])
+    parsed_header = _parse_sales_order_header_fields(text)
+    for key, value in parsed_header.items():
+        if value not in (None, ""):
+            base_header[key] = value
+    header = _enrich_ci_header_from_text(text, base_header)
+
+    if path and _ci_table_parse_enabled():
+        try:
+            full = build_commercial_invoice_detail(path)
+            if isinstance(full, dict) and not full.get("error"):
+                return full
+        except Exception:
+            pass
+
+    totals_in = client.get("totals") if isinstance(client.get("totals"), dict) else {}
+    invoice_total = header.get("invoice_total")
+    if invoice_total is None:
+        invoice_total = totals_in.get("invoice_total")
+    return {
+        "source": "commercial_invoice",
+        "detail_level": "text_only_save",
+        "text": text,
+        "header": header,
+        "line_items": list(client.get("line_items") or []),
+        "totals": {
+            "invoice_total": invoice_total,
+            "taxable_amount": header.get("taxable_amount") or totals_in.get("taxable_amount"),
+            "total_igst": header.get("total_igst") or totals_in.get("total_igst"),
+            "line_count": len(client.get("line_items") or []),
+        },
+        "parse_note": (
+            "Line-item table parse skipped to avoid OOM on small instances; "
+            "header/amount saved. Set CI_ENABLE_TABLE_PARSE=1 on 2GB+ to enable."
+        ),
+    }
+
+
 def _parse_filled_order_items(file_path: Path) -> list[dict[str, Any]]:
     """
     Reads a distributor's Filled/Placed Order spreadsheet (xlsx/xls/
@@ -4195,10 +4283,17 @@ def _apply_ci_line_items_and_achievement(
 
     # Prefer the full structured line_items saved with the CI (SO-parity).
     parsed_line_items = list((commercial_invoice_parsed or {}).get("line_items") or [])
-    if not parsed_line_items and commercial_invoice_file_reference:
-        parsed_line_items = parse_bombay_dyeing_so_ci_line_items(
-            commercial_invoice_file_reference, "CI"
-        )
+    if (
+        not parsed_line_items
+        and commercial_invoice_file_reference
+        and _ci_table_parse_enabled()
+    ):
+        try:
+            parsed_line_items = parse_bombay_dyeing_so_ci_line_items(
+                commercial_invoice_file_reference, "CI"
+            )
+        except Exception:
+            parsed_line_items = []
     if not parsed_line_items:
         table_data = (commercial_invoice_parsed or {}).get("parsed") or {}
         for row in table_data.get("rows", []):
@@ -4779,6 +4874,19 @@ def confirm_ci_so_link() -> Response:
     genuinely confirmed the link is correct, not by silently guessing
     at upload time.
     """
+    try:
+        return _confirm_ci_so_link_impl()
+    except Exception as exc:
+        return _json_response(
+            {
+                "success": False,
+                "error": {"message": f"CI link save failed: {exc}", "code": "ci_link_failed"},
+            },
+            500,
+        )
+
+
+def _confirm_ci_so_link_impl() -> Response:
     payload = request.get_json(silent=True) or {}
     order_ref_no = (payload.get("order_ref_no") or "").strip()
     commercial_invoice_file_reference = payload.get("commercial_invoice_file_reference")
@@ -4796,11 +4904,12 @@ def confirm_ci_so_link() -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
 
-    # Always rebuild full CI detail from the PDF before save (SO-parity).
+    # Rebuild CI detail for save — text/header on 512MB; tables only if RAM allows.
     if commercial_invoice_file_reference:
-        rebuilt = build_commercial_invoice_detail(commercial_invoice_file_reference)
-        if not rebuilt.get("error"):
-            commercial_invoice_parsed = rebuilt
+        commercial_invoice_parsed = _prepare_ci_parsed_for_save(
+            commercial_invoice_file_reference,
+            commercial_invoice_parsed if isinstance(commercial_invoice_parsed, dict) else {},
+        )
 
     # Duplicate-detection: this CI's OWN Invoice No (NOT the Sales
     # Order Number it references) must be genuinely new. Re-uploading
@@ -4938,6 +5047,11 @@ def confirm_ci_so_link() -> Response:
                 "item_results": item_results,
                 "has_discrepancy": has_any_discrepancy,
                 "mode": "linked",
+                "detail_level": (
+                    commercial_invoice_parsed.get("detail_level")
+                    if isinstance(commercial_invoice_parsed, dict)
+                    else None
+                ),
             },
         }, default=str),
         mimetype="application/json",
@@ -4953,6 +5067,19 @@ def confirm_ci_only() -> Response:
     is recorded from the CI amount. order_ref_no prefers the SO number
     printed on the CI so a later SO upload can merge into the same row.
     """
+    try:
+        return _confirm_ci_only_impl()
+    except Exception as exc:
+        return _json_response(
+            {
+                "success": False,
+                "error": {"message": f"CI-only save failed: {exc}", "code": "ci_only_failed"},
+            },
+            500,
+        )
+
+
+def _confirm_ci_only_impl() -> Response:
     payload = request.get_json(silent=True) or {}
     commercial_invoice_file_reference = payload.get("commercial_invoice_file_reference")
     commercial_invoice_parsed = payload.get("commercial_invoice_parsed") or {}
@@ -4981,9 +5108,10 @@ def confirm_ci_only() -> Response:
     workspace_id = get_workspace_id()
 
     if commercial_invoice_file_reference:
-        rebuilt = build_commercial_invoice_detail(commercial_invoice_file_reference)
-        if not rebuilt.get("error"):
-            commercial_invoice_parsed = rebuilt
+        commercial_invoice_parsed = _prepare_ci_parsed_for_save(
+            commercial_invoice_file_reference,
+            commercial_invoice_parsed if isinstance(commercial_invoice_parsed, dict) else {},
+        )
 
     ci_raw_text = (commercial_invoice_parsed or {}).get("text") or ""
     ci_header = (commercial_invoice_parsed or {}).get("header") or _parse_sales_order_header_fields(ci_raw_text)
@@ -5057,6 +5185,7 @@ def confirm_ci_only() -> Response:
         buyer_name=ci_buyer_name,
         buyer_gst=ci_buyer_gst,
         workspace_id=workspace_id,
+        allow_fuzzy=not bool(ci_buyer_gst),
     )
     matched = ci_match.get("distributor") or {}
     selected_gst = (distributor.get("gst_no") or "").strip().upper()
@@ -5176,6 +5305,11 @@ def confirm_ci_only() -> Response:
             "order_ref_no": order_ref_no,
             "invoice_no": invoice_no,
             "distributor_name": distributor_name_for_folder,
+            "detail_level": (
+                commercial_invoice_parsed.get("detail_level")
+                if isinstance(commercial_invoice_parsed, dict)
+                else None
+            ),
         },
     })
 
