@@ -7639,8 +7639,14 @@ class CentralizedDB:
                         }
                         query_key = normalized_query.lower()
                         query_nospace = query_key.replace(" ", "")
-                        best_key = None
-                        best_ratio = 0.0
+                        # A generic design name ("Wonderland") can have several
+                        # active variants sharing that name ("Wonder Land- Glow",
+                        # "Wonder Land- Kid") that only differ by a trailing
+                        # word — collect every candidate that scores close
+                        # enough, not just the single nearest one, or asking
+                        # about the design as a whole silently drops the
+                        # other variant(s).
+                        matched: list[tuple[str, str]] = []
                         for key in candidates:
                             ratio = max(
                                 difflib.SequenceMatcher(None, query_key, key).ratio(),
@@ -7648,22 +7654,36 @@ class CentralizedDB:
                                     None, query_nospace, key.replace(" ", "")
                                 ).ratio(),
                             )
-                            if ratio > best_ratio:
-                                best_ratio = ratio
-                                best_key = key
-                        if best_key and best_ratio >= 0.75:
-                            corrected_name, field = candidates[best_key]
+                            if ratio >= 0.75:
+                                matched.append(candidates[key])
+                        if matched:
+                            by_field: dict[str, list[str]] = {}
+                            for name, field in matched:
+                                by_field.setdefault(field, []).append(name.lower())
+                            am_rows: list[Any] = []
                             with sqlite3.connect(self.db_path) as conn:
                                 conn.row_factory = sqlite3.Row
-                                am_rows = conn.execute(
-                                    f"SELECT id, category, brand, size, product_type, "
-                                    f"mrp, ptr, ex_mill_price, item_key, extra_attributes "
-                                    f"FROM article_master WHERE user_id = ? "
-                                    f"AND is_active = 1 AND LOWER(COALESCE({field}, '')) = ? "
-                                    f"ORDER BY LOWER(COALESCE(size, '')) LIMIT 50",
-                                    (user_id, corrected_name.lower()),
-                                ).fetchall()
-                            results["article_master"] = [dict(r) for r in am_rows]
+                                for field, names in by_field.items():
+                                    placeholders = ",".join("?" * len(names))
+                                    am_rows.extend(
+                                        conn.execute(
+                                            f"SELECT id, category, brand, size, product_type, "
+                                            f"mrp, ptr, ex_mill_price, item_key, extra_attributes "
+                                            f"FROM article_master WHERE user_id = ? "
+                                            f"AND is_active = 1 AND LOWER(COALESCE({field}, '')) "
+                                            f"IN ({placeholders}) "
+                                            f"ORDER BY LOWER(COALESCE(size, '')) LIMIT 50",
+                                            (user_id, *names),
+                                        ).fetchall()
+                                    )
+                            seen_ids: set[Any] = set()
+                            deduped = []
+                            for row in am_rows:
+                                if row["id"] in seen_ids:
+                                    continue
+                                seen_ids.add(row["id"])
+                                deduped.append(dict(row))
+                            results["article_master"] = deduped
                     except sqlite3.OperationalError:
                         pass
 
