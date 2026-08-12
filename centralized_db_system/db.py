@@ -13002,10 +13002,55 @@ class CentralizedDB:
             updated += 1
         return updated
 
+    def sum_so_value_for_fy(self, user_id: int | None, fy_label: str) -> float:
+        """Sum ex-mill value (in lakhs) of filled_order_items whose parent
+        filled_order was created within the financial year's date range
+        (Apr 1 - Mar 31, same bounds sync_ci_achievement_for_fy uses) — the
+        same underlying data as the home screen's "Total value of SO"
+        card, just date-scoped to one FY instead of by season code. Used
+        as a stand-in achievement figure until real CI data exists for
+        the year; see build_fy_achievement_summary."""
+        from app.fiscal_year import fiscal_year_date_bounds
+
+        if not user_id:
+            return 0.0
+        start, end = fiscal_year_date_bounds(fy_label)
+        if not start or not end:
+            return 0.0
+        import filled_orders_db as fodb
+
+        with sqlite3.connect(self.db_path) as conn:
+            fodb.ensure_schema(conn)
+            try:
+                row = conn.execute(
+                    "SELECT COALESCE(SUM(foi.final_piece_qty * COALESCE(foi.ex_mill_price, 0)), 0) "
+                    "FROM filled_order_items foi "
+                    "JOIN filled_orders fo ON fo.id = foi.filled_order_id "
+                    "WHERE fo.user_id = ? AND DATE(fo.created_at) BETWEEN ? AND ?",
+                    (user_id, start, end),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                return 0.0
+        return float(row[0] or 0.0) / 100000.0
+
     def build_fy_achievement_summary(
-        self, workspace_id: str, financial_year_id: int, fy_label: str
+        self,
+        workspace_id: str,
+        financial_year_id: int,
+        fy_label: str,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Summarize target and three achievement channels for one FY."""
+        """Summarize target and achievement channels for one FY.
+
+        Real achievement is always the CI (commercial invoice) total —
+        that's the actual, invoiced number. Until CI data exists for a
+        given year (e.g. the current FY, freshly started), the SO
+        (sales-order) total already tracked in filled_orders stands in
+        for it, so the card isn't stuck at 0% for months before the
+        first invoice lands. The moment any CI total exists, it always
+        wins back over SO — this is a temporary fill-in, never a
+        permanent substitute.
+        """
         self.sync_ci_achievement_for_fy(workspace_id, financial_year_id, fy_label)
         breakup = self.list_target_distributor_breakup(workspace_id, financial_year_id)
         target_lakhs = 0.0
@@ -13025,8 +13070,11 @@ class CentralizedDB:
         excel_total = sum(float(r.get("achievement_excel") or 0) for r in breakup)
         ci_total = sum(float(r.get("achievement_ci") or 0) for r in breakup)
         manual_dist_total = sum(float(r.get("achievement_manual") or 0) for r in breakup)
+        so_total = self.sum_so_value_for_fy(user_id, fy_label)
         if ci_total > 0:
             active_source, active_achievement = "ci", ci_total
+        elif so_total > 0:
+            active_source, active_achievement = "so", so_total
         elif excel_total > 0:
             active_source, active_achievement = "excel", excel_total
         elif manual_fy > 0:
@@ -13044,6 +13092,7 @@ class CentralizedDB:
             "achievement_excel_total": excel_total,
             "achievement_ci_total": ci_total,
             "achievement_manual_distributor_total": manual_dist_total,
+            "achievement_so_total": so_total,
             "active_source": active_source,
             "active_achievement": active_achievement,
             "percentage": pct,

@@ -182,6 +182,12 @@ def get_fy_overview():
     """All fiscal years with target, achievement, and % (lakhs) for dashboard cards."""
     try:
         workspace_id = get_workspace_id()
+        user = getattr(request, "user", None)
+        user_id = (
+            int(user["user_id"])
+            if isinstance(user, dict) and user.get("user_id") is not None
+            else None
+        )
         db = _cdb()
         db.merge_duplicate_fiscal_years(workspace_id)
         conn = get_db()
@@ -211,7 +217,7 @@ def get_fy_overview():
             fy_label = year.get("display_year") or year.get("financial_year") or year.get("year") or ""
             summary_error = False
             try:
-                summary = db.build_fy_achievement_summary(workspace_id, year_id, fy_label)
+                summary = db.build_fy_achievement_summary(workspace_id, year_id, fy_label, user_id)
             except Exception:
                 summary_error = True
                 current_app.logger.exception(
@@ -588,8 +594,14 @@ def get_breakup(year_id):
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         db = _cdb()
+        user = getattr(request, "user", None)
+        user_id = (
+            int(user["user_id"])
+            if isinstance(user, dict) and user.get("user_id") is not None
+            else None
+        )
         fy_label = year.get("display_year") or year.get("financial_year") or year.get("year") or ""
-        summary = db.build_fy_achievement_summary(workspace_id, year_id, fy_label)
+        summary = db.build_fy_achievement_summary(workspace_id, year_id, fy_label, user_id)
         breakup = db.list_target_distributor_breakup(workspace_id, year_id)
         category_matrix = db.get_category_breakup_matrix(workspace_id, year_id)
         return jsonify(

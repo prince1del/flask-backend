@@ -4798,7 +4798,7 @@ def ai_assistant_query() -> Response:
                 for year_id, fy_label in fy_years:
                     meta = db.fy_target_meta(workspace_id, year_id)
                     summary = db.build_fy_achievement_summary(
-                        workspace_id, year_id, fy_label
+                        workspace_id, year_id, fy_label, user_id
                     )
                     target_lakhs = float(
                         meta.get("target_lakhs") or summary.get("target_lakhs") or 0
