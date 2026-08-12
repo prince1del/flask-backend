@@ -10479,6 +10479,12 @@ function _ofPartyMatchHtml(partyMatch, buyerName, buyerGst) {
     : '#E6A23C';
   const ciName = (partyMatch.ci_distributor && partyMatch.ci_distributor.name) || '—';
   const soName = (partyMatch.so_distributor && partyMatch.so_distributor.name) || '—';
+  let candidates = '';
+  if (Array.isArray(partyMatch.candidates) && partyMatch.candidates.length) {
+    candidates = `<div style="margin-top:4px;font-size:0.9rem;">Candidates: ${
+      partyMatch.candidates.map((c) => escapeHtml(c.name || `#${c.id}`)).join(', ')
+    }</div>`;
+  }
   return `
     <div style="margin:8px 0;padding:8px 10px;border:1px solid ${color};border-radius:6px;">
       <div style="color:${color};font-weight:600;">Customers ↔ CI: ${escapeHtml(status.toUpperCase())}</div>
