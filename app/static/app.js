@@ -10549,7 +10549,7 @@ async function _confirmCiOnlyV2Impl() {
     resultBox.innerHTML =
       `Saved CI-only! Tracking #${d.tracking_id}` +
       (d.achievement_id ? `, Achievement #${d.achievement_id} (sale from CI).` : '.') +
-      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}. SO can be linked later if uploaded.</div>`;
+      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}. Full CI details (lines/taxes/dates) stored like SO. SO can merge later if uploaded.</div>`;
     ofInvoicePendingLink = null;
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();

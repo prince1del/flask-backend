@@ -2075,6 +2075,49 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                                 continue
                             code = None
                             description_cell, qty_cell, net_value_cell = row[1], row[4], row[8]
+                            hsn = _clean_pdf_cell_text(row[2]) if len(row) > 2 else None
+                            uom = _clean_pdf_cell_text(row[3]) if len(row) > 3 else None
+                            rate = _clean_pdf_cell_number(row[5]) if len(row) > 5 else None
+                            amount = _clean_pdf_cell_number(row[6]) if len(row) > 6 else None
+                            discount = _clean_pdf_cell_number(row[7]) if len(row) > 7 else None
+                            # Full BD CI tables: ... Taxable, CGST r/a, SGST r/a, IGST r/a, Total
+                            # Only accept tax/total cells when they pass a sanity check —
+                            # short/merged rows otherwise put IGST *rate* (e.g. 5.0) into Total.
+                            cgst_amt = None
+                            sgst_amt = None
+                            igst_rate = None
+                            igst_amt = None
+                            line_total = None
+                            if len(row) >= 16:
+                                cgst_amt = _clean_pdf_cell_number(row[10])
+                                sgst_amt = _clean_pdf_cell_number(row[12])
+                                igst_rate = _clean_pdf_cell_number(row[13])
+                                cand_igst = _clean_pdf_cell_number(row[14])
+                                cand_total = _clean_pdf_cell_number(row[15])
+                                taxable_for_check = _clean_pdf_cell_number(row[8])
+                                if (
+                                    cand_total is not None
+                                    and taxable_for_check is not None
+                                    and cand_total >= max(taxable_for_check * 0.9, taxable_for_check)
+                                ):
+                                    line_total = cand_total
+                                    # Prefer computed IGST when cell looks like a rate (e.g. 5.0)
+                                    if cand_igst is not None and taxable_for_check and cand_igst > 40:
+                                        igst_amt = cand_igst
+                                    elif taxable_for_check is not None and cand_total is not None:
+                                        igst_amt = round(cand_total - taxable_for_check, 2)
+                                    if igst_rate is None or (igst_rate is not None and igst_rate > 40):
+                                        if taxable_for_check and igst_amt is not None and taxable_for_check > 0:
+                                            igst_rate = round((igst_amt / taxable_for_check) * 100, 2)
+                                elif (
+                                    cand_igst is not None
+                                    and taxable_for_check is not None
+                                    and 0 < cand_igst <= 40
+                                ):
+                                    # Cell is IGST % rate, not amount
+                                    igst_rate = cand_igst
+                                    igst_amt = round(taxable_for_check * (cand_igst / 100.0), 2)
+                                    line_total = round(taxable_for_check + igst_amt, 2)
 
                         full_description = _clean_pdf_cell_text(description_cell)
                         qty = _clean_pdf_cell_number(qty_cell)
@@ -2082,13 +2125,28 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                         if not full_description or qty is None or net_value is None:
                             continue
 
-                        items.append({
+                        item: dict[str, Any] = {
                             "item_name": full_description,
                             "item_key": extract_order_sheet_item_key(full_description),
                             "material_code": code,
                             "qty": qty,
                             "value": net_value,
-                        })
+                        }
+                        if doc_type == "CI":
+                            item.update({
+                                "hsn": hsn,
+                                "uom": uom,
+                                "rate": rate,
+                                "amount": amount,
+                                "discount": discount,
+                                "taxable": net_value,
+                                "cgst_amt": cgst_amt,
+                                "sgst_amt": sgst_amt,
+                                "igst_rate": igst_rate,
+                                "igst_amt": igst_amt,
+                                "line_total": line_total,
+                            })
+                        items.append(item)
     except Exception:
         return []
 
@@ -2124,12 +2182,164 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
     return items
 
 
+def _normalize_doc_date(raw: str | None) -> str | None:
+    """Normalize DD.MM.YYYY / DD/MM/YYYY / YYYY-MM-DD → YYYY-MM-DD."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    for fmt in ("%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(text[:10], fmt).date().isoformat()
+        except ValueError:
+            continue
+    return text
+
+
+def _enrich_ci_header_from_text(text: str, base: dict[str, str] | None = None) -> dict[str, Any]:
+    """CI-specific header fields beyond the shared SO/CI label parser."""
+    header: dict[str, Any] = dict(base or {})
+    patterns = {
+        "invoice_date": r"(?:date\s*of\s*issue|invoice\s*date)\s*:?\s*([0-9]{1,2}[./\-][0-9]{1,2}[./\-][0-9]{2,4})",
+        "sales_order_date": r"sales\s*order\s*date\s*:?\s*([0-9]{1,2}[./\-][0-9]{1,2}[./\-][0-9]{2,4})",
+        "cust_po": r"cust[\-\s]*po\s*:?\s*([^\n]+)",
+        "place_of_supply": r"place\s*of\s*supply\s*:?\s*([^\n]+)",
+        "payment_due": r"payment\s*due\s*:?\s*([^\n]+)",
+        "delivery_no": r"delivery\s*no\.?\s*:?\s*([A-Za-z0-9\-/]+)",
+        "lr_no": r"l\.?r\.?\s*no\.?\s*:?\s*([A-Za-z0-9\-/]+)",
+        "transporter": r"transporter\s*:?\s*([^\n]+)",
+        "total_pieces": r"total\s*pieces\s*:?\s*([0-9]+)",
+    }
+    for key, pattern in patterns.items():
+        if header.get(key):
+            continue
+        match = re.search(pattern, text or "", re.I)
+        if match:
+            header[key] = match.group(1).strip().rstrip(":")
+
+    # Amount in words / invoice total from footer block
+    total_match = re.search(
+        r"invoice\s*total\s*:?\s*([\d,]+\.?\d*)",
+        text or "",
+        re.I,
+    )
+    if total_match:
+        try:
+            header["invoice_total"] = float(total_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    taxable_match = re.search(
+        r"total\s*taxable\s*amount\s*:?\s*([\d,]+\.?\d*)",
+        text or "",
+        re.I,
+    )
+    if taxable_match:
+        try:
+            header["taxable_amount"] = float(taxable_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    igst_match = re.search(
+        r"total\s*igst\s*:?\s*([\d,]+\.?\d*)",
+        text or "",
+        re.I,
+    )
+    if igst_match:
+        try:
+            header["total_igst"] = float(igst_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+
+    if header.get("invoice_date"):
+        header["invoice_date"] = _normalize_doc_date(str(header["invoice_date"])) or header["invoice_date"]
+    if header.get("sales_order_date"):
+        header["sales_order_date"] = (
+            _normalize_doc_date(str(header["sales_order_date"])) or header["sales_order_date"]
+        )
+    return header
+
+
+def build_commercial_invoice_detail(path: str | Path) -> dict[str, Any]:
+    """
+    Full CI record — same spirit as SO save: header + line items + totals
+    + raw text, not just invoice/SO numbers.
+    """
+    target = Path(path)
+    try:
+        text = _extract_pdf_text(target)
+    except Exception as exc:
+        return {"error": f"Unable to read PDF: {exc}", "source": "commercial_invoice"}
+
+    if not (text or "").strip():
+        return {"error": "Unreadable PDF text", "source": "commercial_invoice"}
+
+    base_header = _parse_sales_order_header_fields(text)
+    header = _enrich_ci_header_from_text(text, base_header)
+    line_items = parse_bombay_dyeing_so_ci_line_items(target, "CI")
+    for item in line_items:
+        item["item_key"] = size_code_only_item_key(item.get("item_key"))
+
+    # If footer shows IGST invoice but some line tax cells failed, fill ~5% IGST
+    # from taxable value (Bombay Dyeing interstate CI pattern).
+    header_igst = header.get("total_igst")
+    taxable_sum = sum(float(it.get("value") or 0) for it in line_items)
+    if header_igst is not None and taxable_sum > 0:
+        implied_rate = (float(header_igst) / taxable_sum) * 100.0
+        if 4.0 <= implied_rate <= 6.0:
+            for item in line_items:
+                if item.get("value") is None:
+                    continue
+                if item.get("igst_amt") is None:
+                    item["igst_rate"] = round(implied_rate, 2)
+                    item["igst_amt"] = round(float(item["value"]) * (implied_rate / 100.0), 2)
+                if item.get("line_total") is None and item.get("igst_amt") is not None:
+                    item["line_total"] = round(float(item["value"]) + float(item["igst_amt"]), 2)
+
+    def _sum(key: str) -> float:
+        total = 0.0
+        for item in line_items:
+            try:
+                total += float(item.get(key) or 0)
+            except (TypeError, ValueError):
+                continue
+        return total
+
+    totals = {
+        "qty": _sum("qty"),
+        "taxable": _sum("taxable") or _sum("value"),
+        "igst": _sum("igst_amt"),
+        "cgst": _sum("cgst_amt"),
+        "sgst": _sum("sgst_amt"),
+        "line_total": _sum("line_total"),
+        "invoice_total": header.get("invoice_total"),
+        "taxable_amount": header.get("taxable_amount"),
+        "total_igst": header.get("total_igst"),
+        "line_count": len(line_items),
+    }
+    # Prefer footer invoice totals when line tax columns were unreliable
+    if header.get("total_igst") is not None:
+        totals["igst"] = header.get("total_igst")
+    if totals["invoice_total"] is None and totals["line_total"]:
+        totals["invoice_total"] = totals["line_total"]
+    if totals.get("line_total") and totals.get("taxable") and totals["line_total"] < totals["taxable"] * 0.9:
+        totals["line_total"] = totals.get("invoice_total") or totals["taxable"]
+
+    legacy = _parse_pdf_table_like_text(text)
+    return {
+        "source": "commercial_invoice",
+        "detail_level": "full",
+        "text": text,
+        "header": header,
+        "line_items": line_items,
+        "totals": totals,
+        "parsed": legacy,
+    }
+
+
 def _parse_filled_order_items(file_path: Path) -> list[dict[str, Any]]:
     """
     Reads a distributor's Filled/Placed Order spreadsheet (xlsx/xls/
     csv) and extracts item/quantity/value rows at Brand+TC+Size
     granularity, using flexible column-name matching since different
-    distributors' sheets don't all use the exact same headers.
+    distributors' sheets don't all use the same headers.
 
     Supports TWO real-world formats, verified against actual Bombay
     Dyeing documents:
@@ -3391,8 +3601,35 @@ def upload_invoice_v2() -> Response:
     order_ref_no = (header.get("order_ref_no") or "").strip() or None
     invoice_no = (header.get("invoice_no") or "").strip() or None
     buyer_name = (header.get("buyer_name") or "").strip() or None
-    parsed_invoice = parse_step3_invoice_pdf(target_path)
-    extracted_amount = _extract_amount_from_parsed_invoice(parsed_invoice)
+    # Full CI record (header + lines + totals) — same depth as SO save
+    parsed_invoice = build_commercial_invoice_detail(target_path)
+    if parsed_invoice.get("error"):
+        # Fallback keeps upload usable even if table extract fails
+        parsed_invoice = parse_step3_invoice_pdf(target_path)
+        parsed_invoice = {
+            **(parsed_invoice if isinstance(parsed_invoice, dict) else {}),
+            "source": "commercial_invoice",
+            "detail_level": "legacy",
+            "header": _enrich_ci_header_from_text(extracted_text, header),
+            "line_items": [],
+            "totals": {},
+        }
+    else:
+        # Prefer enriched header from full builder
+        rich_header = parsed_invoice.get("header") or {}
+        order_ref_no = (rich_header.get("order_ref_no") or order_ref_no or "").strip() or None
+        invoice_no = (rich_header.get("invoice_no") or invoice_no or "").strip() or None
+        buyer_name = (rich_header.get("buyer_name") or buyer_name or "").strip() or None
+
+    extracted_amount = None
+    totals = parsed_invoice.get("totals") or {}
+    if totals.get("invoice_total") is not None:
+        try:
+            extracted_amount = float(totals["invoice_total"])
+        except (TypeError, ValueError):
+            extracted_amount = None
+    if extracted_amount is None:
+        extracted_amount = _extract_amount_from_parsed_invoice(parsed_invoice)
 
     if invoice_no and db.is_document_already_processed(workspace_id, "CI", invoice_no):
         return _json_response({
@@ -3408,7 +3645,9 @@ def upload_invoice_v2() -> Response:
             },
         })
 
-    ci_line_items = parse_bombay_dyeing_so_ci_line_items(target_path, "CI") if target_path else []
+    ci_line_items = list(parsed_invoice.get("line_items") or [])
+    if not ci_line_items:
+        ci_line_items = parse_bombay_dyeing_so_ci_line_items(target_path, "CI") if target_path else []
     ci_total_qty = sum(float(it.get("qty") or 0) for it in ci_line_items)
     ci_total_value = sum(float(it.get("value") or 0) for it in ci_line_items)
 
@@ -3484,6 +3723,9 @@ def upload_invoice_v2() -> Response:
             "extracted_amount": extracted_amount,
             "ci_line_count": len(ci_line_items),
             "ci_total_qty": ci_total_qty,
+            "ci_header": (parsed_invoice.get("header") if isinstance(parsed_invoice, dict) else None),
+            "ci_totals": (parsed_invoice.get("totals") if isinstance(parsed_invoice, dict) else None),
+            "detail_level": (parsed_invoice.get("detail_level") if isinstance(parsed_invoice, dict) else None),
             "compare": compare,
             "requires_confirmation": matching_so is not None,
             "requires_ci_only_confirmation": matching_so is None,
@@ -3503,13 +3745,16 @@ def _apply_ci_line_items_and_achievement(
     notes: str | None,
     workspace_id: str,
 ) -> tuple[list, bool, int | None, str | None]:
-    """Shared post-save: CI lines → reconciliation + optional achievement."""
+    """Shared post-save: full CI lines → reconciliation + optional achievement."""
     item_results = []
     has_any_discrepancy = False
-    parsed_line_items = (
-        parse_bombay_dyeing_so_ci_line_items(commercial_invoice_file_reference, "CI")
-        if commercial_invoice_file_reference else []
-    )
+
+    # Prefer the full structured line_items saved with the CI (SO-parity).
+    parsed_line_items = list((commercial_invoice_parsed or {}).get("line_items") or [])
+    if not parsed_line_items and commercial_invoice_file_reference:
+        parsed_line_items = parse_bombay_dyeing_so_ci_line_items(
+            commercial_invoice_file_reference, "CI"
+        )
     if not parsed_line_items:
         table_data = (commercial_invoice_parsed or {}).get("parsed") or {}
         for row in table_data.get("rows", []):
@@ -3526,9 +3771,11 @@ def _apply_ci_line_items_and_achievement(
                 "item_key": extract_order_sheet_item_key(item_name),
                 "qty": qty,
                 "value": qty * rate,
+                "rate": rate,
             })
 
     for line_item in parsed_line_items:
+        norm_key = size_code_only_item_key(line_item.get("item_key"))
         item_result = db.upsert_order_lifecycle_item(
             tracking_id=tracking_id,
             item_name=line_item["item_name"],
@@ -3536,7 +3783,7 @@ def _apply_ci_line_items_and_achievement(
             qty=line_item["qty"],
             value=line_item["value"],
             workspace_id=workspace_id,
-            item_key=line_item.get("item_key"),
+            item_key=norm_key,
         )
         item_results.append(item_result)
         if item_result.get("has_discrepancy"):
@@ -3546,8 +3793,33 @@ def _apply_ci_line_items_and_achievement(
     if invoice_no:
         db.mark_document_processed(workspace_id, "CI", invoice_no, tracking_id)
 
+    # Persist invoice date on tracking (SO also stores generated dates)
+    inv_date = None
+    header = (commercial_invoice_parsed or {}).get("header") or {}
+    if isinstance(header, dict):
+        inv_date = _normalize_doc_date(str(header.get("invoice_date") or "")) or None
+    if inv_date:
+        try:
+            with sqlite3.connect(db.db_path) as conn:
+                conn.execute(
+                    "UPDATE order_lifecycle_tracking SET commercial_invoice_date = ? WHERE tracking_id = ?",
+                    (inv_date, tracking_id),
+                )
+                conn.commit()
+        except Exception:
+            pass
+
     achievement_id = None
     achievement_error = None
+    if amount is None:
+        totals = (commercial_invoice_parsed or {}).get("totals") or {}
+        for key in ("invoice_total", "line_total", "taxable_amount"):
+            if totals.get(key) is not None:
+                try:
+                    amount = float(totals[key])
+                    break
+                except (TypeError, ValueError):
+                    continue
     if amount is not None:
         try:
             current_user = getattr(request, "user", None)
@@ -3691,6 +3963,32 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
         "items": items,
         "item_count": len(items),
     }
+    # Attach CI header/totals summary when a full CI detail was saved
+    ci_parsed = tracking.get("commercial_invoice_parsed")
+    if isinstance(ci_parsed, dict):
+        if isinstance(ci_parsed.get("header"), dict):
+            payload["ci_header"] = {
+                k: ci_parsed["header"].get(k)
+                for k in (
+                    "invoice_no",
+                    "invoice_date",
+                    "order_ref_no",
+                    "sales_order_date",
+                    "buyer_name",
+                    "cust_po",
+                    "place_of_supply",
+                    "payment_due",
+                    "delivery_no",
+                    "invoice_total",
+                    "taxable_amount",
+                    "total_igst",
+                )
+                if ci_parsed["header"].get(k) not in (None, "")
+            }
+        if isinstance(ci_parsed.get("totals"), dict):
+            payload["ci_totals"] = ci_parsed.get("totals")
+        payload["ci_detail_level"] = ci_parsed.get("detail_level")
+        payload["ci_line_count"] = len(ci_parsed.get("line_items") or [])
     return _json_response({"success": True, "data": payload})
 
 
@@ -4054,14 +4352,25 @@ def confirm_ci_so_link() -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
 
+    # Always rebuild full CI detail from the PDF before save (SO-parity).
+    if commercial_invoice_file_reference:
+        rebuilt = build_commercial_invoice_detail(commercial_invoice_file_reference)
+        if not rebuilt.get("error"):
+            commercial_invoice_parsed = rebuilt
+
     # Duplicate-detection: this CI's OWN Invoice No (NOT the Sales
     # Order Number it references) must be genuinely new. Re-uploading
     # the SAME invoice would silently double-count its qty/value —
     # reject rather than re-process. A DIFFERENT invoice for the same
     # order_ref_no (a legitimately separate CI) is always allowed.
     ci_raw_text = (commercial_invoice_parsed or {}).get("text") or ""
-    ci_header = _parse_sales_order_header_fields(ci_raw_text)
-    invoice_no = ci_header.get("invoice_no")
+    ci_header = (commercial_invoice_parsed or {}).get("header") or _parse_sales_order_header_fields(ci_raw_text)
+    invoice_no = (ci_header.get("invoice_no") if isinstance(ci_header, dict) else None) or None
+    if not invoice_no:
+        invoice_no = _parse_sales_order_header_fields(ci_raw_text).get("invoice_no")
+    ci_date = None
+    if isinstance(ci_header, dict):
+        ci_date = _normalize_doc_date(str(ci_header.get("invoice_date") or "")) or None
     if invoice_no and db.is_document_already_processed(workspace_id, "CI", invoice_no):
         return Response(
             json.dumps({
@@ -4126,7 +4435,7 @@ def confirm_ci_so_link() -> Response:
             order_ref_no=order_ref_no,
             commercial_invoice_file_reference=commercial_invoice_file_reference,
             commercial_invoice_parsed=commercial_invoice_parsed,
-            commercial_invoice_date=None,
+            commercial_invoice_date=ci_date,
             workspace_id=workspace_id,
         )
         ci_user = getattr(request, "user", None)
@@ -4227,12 +4536,21 @@ def confirm_ci_only() -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
 
+    if commercial_invoice_file_reference:
+        rebuilt = build_commercial_invoice_detail(commercial_invoice_file_reference)
+        if not rebuilt.get("error"):
+            commercial_invoice_parsed = rebuilt
+
     ci_raw_text = (commercial_invoice_parsed or {}).get("text") or ""
-    ci_header = _parse_sales_order_header_fields(ci_raw_text)
-    if not invoice_no:
+    ci_header = (commercial_invoice_parsed or {}).get("header") or _parse_sales_order_header_fields(ci_raw_text)
+    if not invoice_no and isinstance(ci_header, dict):
         invoice_no = (ci_header.get("invoice_no") or "").strip() or None
-    if not order_ref_no:
+    if not invoice_no:
+        invoice_no = (_parse_sales_order_header_fields(ci_raw_text).get("invoice_no") or "").strip() or None
+    if not order_ref_no and isinstance(ci_header, dict):
         order_ref_no = (ci_header.get("order_ref_no") or "").strip()
+    if not order_ref_no:
+        order_ref_no = (_parse_sales_order_header_fields(ci_raw_text).get("order_ref_no") or "").strip()
     if not order_ref_no:
         order_ref_no = f"CI-{invoice_no}" if invoice_no else ""
     if not order_ref_no:
@@ -4245,6 +4563,10 @@ def confirm_ci_only() -> Response:
             },
             400,
         )
+
+    ci_date = None
+    if isinstance(ci_header, dict):
+        ci_date = _normalize_doc_date(str(ci_header.get("invoice_date") or "")) or None
 
     if invoice_no and db.is_document_already_processed(workspace_id, "CI", invoice_no):
         return _json_response({
@@ -4306,7 +4628,7 @@ def confirm_ci_only() -> Response:
             distributor_id=distributor_id,
             commercial_invoice_file_reference=commercial_invoice_file_reference,
             commercial_invoice_parsed=commercial_invoice_parsed,
-            commercial_invoice_date=None,
+            commercial_invoice_date=ci_date,
             workspace_id=workspace_id,
         )
         with sqlite3.connect(db.db_path) as conn:
