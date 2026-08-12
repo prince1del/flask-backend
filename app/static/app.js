@@ -9742,6 +9742,10 @@ function showOfSection(section) {
       title: 'Invoice (CI)',
       sub: 'Upload commercial invoices and link them in the SO & CI tracking board.',
     },
+    'payment-collection': {
+      title: "Distributor's Payment Collection",
+      sub: 'Distributor-wise SO payment tracking — date-wise deposits vs outstanding.',
+    },
     'saved-orders': {
       title: 'Saved Orders',
       sub: '',
@@ -9813,6 +9817,9 @@ function showOfSection(section) {
   if (key === 'invoice-ci') {
     bindCiInvoiceDropzone();
     loadOrderFulfillmentUploads();
+  }
+  if (key === 'payment-collection') {
+    loadPaymentCollection();
   }
   if (key === 'so-pack' && ofSoPackLastPayload) {
     const preview = document.getElementById('of-so-pack-preview');
@@ -11375,6 +11382,147 @@ async function openOrderFulfillmentTrackingPdf(trackingId, kind) {
   } catch (error) {
     alert(error.message || 'PDF open failed');
   }
+}
+
+function _payInr(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return '₹' + Math.round(n).toLocaleString('en-IN');
+}
+
+function _payStatusClass(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'PAID') return 'is-paid';
+  if (s === 'PARTIAL') return 'is-partial';
+  if (s === 'DUE') return 'is-due';
+  return '';
+}
+
+let _payCollectionCache = null;
+
+async function loadPaymentCollection() {
+  const board = document.getElementById('of-pay-board');
+  const summaryEl = document.getElementById('of-pay-summary');
+  if (board) board.innerHTML = '<p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>';
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/payment-collection');
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to load payment collection');
+    }
+    _payCollectionCache = data;
+    const summary = data.summary || {};
+    if (summaryEl) {
+      summaryEl.textContent =
+        `Bill ${_payInr(summary.so_bill_total)} · Paid ${_payInr(summary.paid_total)} · Due ${_payInr(summary.outstanding_total)}`;
+    }
+    renderPaymentCollection(data.distributors || []);
+  } catch (error) {
+    if (board) {
+      board.innerHTML = `<p class="nx-text-dim" style="padding:0.75rem;">${foEscapeText(error.message || 'Load failed')}</p>`;
+    }
+    if (summaryEl) summaryEl.textContent = '';
+  }
+}
+
+function renderPaymentCollection(distributors) {
+  const board = document.getElementById('of-pay-board');
+  if (!board) return;
+  if (!distributors.length) {
+    board.innerHTML = '<p class="nx-text-dim" style="padding:0.75rem;">No sales orders yet. Upload SOs first, then add deposits here.</p>';
+    return;
+  }
+  board.innerHTML = distributors.map((dist) => {
+    const ordersHtml = (dist.orders || []).map((ord) => {
+      const pays = (ord.payments || []).map((p) => `
+        <tr>
+          <td>${foEscapeText(p.payment_date || '—')}</td>
+          <td class="of-pay-num">${_payInr(p.amount)}</td>
+          <td>${foEscapeText(p.note || '')}</td>
+          <td>
+            <button type="button" class="nx-btn nx-btn-danger of-pay-del" data-entry-id="${p.id}">Delete</button>
+          </td>
+        </tr>`).join('');
+      return `
+        <details class="of-pay-order" data-tracking-id="${ord.tracking_id}" data-distributor-id="${ord.distributor_id}">
+          <summary class="of-pay-order-sum">
+            <span class="of-pay-order-ref">${foEscapeText(ord.order_ref_no || 'SO')}</span>
+            <span class="of-pay-pill ${_payStatusClass(ord.payment_status)}">${foEscapeText(ord.payment_status || 'DUE')}</span>
+            <span class="of-pay-meta">Bill ${_payInr(ord.so_bill_amount)} · Paid ${_payInr(ord.paid_amount)} · Due ${_payInr(ord.outstanding)}</span>
+          </summary>
+          <div class="of-pay-order-body">
+            <table class="data-table of-pay-table">
+              <thead><tr><th>Date</th><th>Amount</th><th>Note</th><th></th></tr></thead>
+              <tbody>${pays || '<tr><td colspan="4">No deposits yet.</td></tr>'}</tbody>
+            </table>
+            <form class="of-pay-add-form" onsubmit="return submitPaymentEntry(event, ${ord.distributor_id}, ${ord.tracking_id})">
+              <label>Date <input type="date" name="payment_date" required /></label>
+              <label>Amount <input type="number" name="amount" min="1" step="0.01" placeholder="e.g. 300000" required /></label>
+              <label>Note <input type="text" name="note" placeholder="Optional" /></label>
+              <button type="submit" class="nx-btn nx-btn-primary">Add deposit</button>
+            </form>
+          </div>
+        </details>`;
+    }).join('');
+    return `
+      <section class="of-pay-dist">
+        <header class="of-pay-dist-head">
+          <strong>${foEscapeText(dist.distributor_name || 'Distributor')}</strong>
+          <span class="of-pay-meta">Bill ${_payInr(dist.so_bill_total)} · Paid ${_payInr(dist.paid_total)} · Due ${_payInr(dist.outstanding_total)}</span>
+        </header>
+        ${ordersHtml}
+      </section>`;
+  }).join('');
+
+  board.querySelectorAll('.of-pay-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-entry-id');
+      if (!id || !confirm('Delete this deposit entry?')) return;
+      try {
+        const response = await fetchWithAuth(`/api/v1/order-fulfillment/payment-collection/entries/${id}`, {
+          method: 'DELETE',
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Delete failed');
+        await loadPaymentCollection();
+      } catch (error) {
+        alert(error.message || 'Delete failed');
+      }
+    });
+  });
+}
+
+async function submitPaymentEntry(event, distributorId, trackingId) {
+  event.preventDefault();
+  const form = event.target;
+  const fd = new FormData(form);
+  const amount = Number(fd.get('amount'));
+  const payment_date = String(fd.get('payment_date') || '').trim();
+  const note = String(fd.get('note') || '').trim();
+  if (!(amount > 0) || !payment_date) {
+    alert('Date and amount are required');
+    return false;
+  }
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/payment-collection/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        distributor_id: distributorId,
+        tracking_id: trackingId,
+        amount,
+        payment_date,
+        note: note || null,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'Save failed');
+    form.reset();
+    await loadPaymentCollection();
+  } catch (error) {
+    alert(error.message || 'Save failed');
+  }
+  return false;
 }
 
 async function loadOrderFulfillmentUploads() {

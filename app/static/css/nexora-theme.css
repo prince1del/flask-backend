@@ -557,6 +557,92 @@
   font-weight:650;
   box-shadow:0 1px 0 var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
 }
+.of-pay-summary{
+  font-size:0.85rem;
+  color:var(--hop-c-muted, var(--nxt-text-dim, #6B6254));
+  margin-left:0.5rem;
+}
+.of-pay-board{
+  padding:0.5rem 0.75rem 1rem;
+  display:flex;
+  flex-direction:column;
+  gap:0.85rem;
+}
+.of-pay-dist{
+  border:1px solid var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
+  border-radius:10px;
+  overflow:hidden;
+  background:var(--hop-c-card, var(--nxt-panel, #fff));
+}
+.of-pay-dist-head{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  gap:0.4rem 1rem;
+  padding:0.7rem 0.85rem;
+  border-bottom:1px solid var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
+  background:var(--hop-c-soft, rgba(0,0,0,0.02));
+}
+.of-pay-meta{
+  font-size:0.82rem;
+  color:var(--hop-c-muted, var(--nxt-text-dim, #6B6254));
+}
+.of-pay-order{
+  border-top:1px solid var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
+}
+.of-pay-order:first-of-type{ border-top:none; }
+.of-pay-order-sum{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:0.45rem 0.75rem;
+  padding:0.65rem 0.85rem;
+  cursor:pointer;
+  list-style:none;
+}
+.of-pay-order-sum::-webkit-details-marker{ display:none; }
+.of-pay-order-ref{
+  font-weight:650;
+  color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
+}
+.of-pay-pill{
+  font-size:0.72rem;
+  font-weight:700;
+  letter-spacing:0.02em;
+  padding:0.15rem 0.45rem;
+  border-radius:999px;
+  background:#E8E4DC;
+  color:#5A5348;
+}
+.of-pay-pill.is-paid{ background:#D9F2E3; color:#1B6B3A; }
+.of-pay-pill.is-partial{ background:#FCECC8; color:#8A5A12; }
+.of-pay-pill.is-due{ background:#F8D9D6; color:#8B2E28; }
+.of-pay-order-body{
+  padding:0 0.85rem 0.85rem;
+}
+.of-pay-table{ width:100%; margin-bottom:0.65rem; }
+.of-pay-num{ font-variant-numeric:tabular-nums; white-space:nowrap; }
+.of-pay-add-form{
+  display:flex;
+  flex-wrap:wrap;
+  gap:0.5rem 0.75rem;
+  align-items:flex-end;
+}
+.of-pay-add-form label{
+  display:flex;
+  flex-direction:column;
+  gap:0.2rem;
+  font-size:0.78rem;
+  color:var(--hop-c-muted, var(--nxt-text-dim, #6B6254));
+}
+.of-pay-add-form input{
+  min-width:8.5rem;
+  padding:0.35rem 0.45rem;
+  border:1px solid var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
+  border-radius:6px;
+  background:#fff;
+  color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
+}
 .of-ci-bulk-status.is-ok{color:var(--nxt-mint, #047857); font-weight:650;}
 .of-ci-bulk-status.is-warn{color:var(--nxt-amber, #92400E); font-weight:650;}
 .of-ci-bulk-status.is-bad{color:var(--nxt-coral, #B91C1C); font-weight:650;}

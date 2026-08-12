@@ -7,6 +7,7 @@ import re
 import shutil
 import sqlite3
 import uuid
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -2582,6 +2583,31 @@ class CentralizedDB:
                     workspace_id TEXT NOT NULL DEFAULT 'default'
                 )
                 """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributor_payment_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workspace_id TEXT NOT NULL DEFAULT 'default',
+                    distributor_id INTEGER NOT NULL,
+                    tracking_id INTEGER,
+                    order_ref_no TEXT,
+                    amount REAL NOT NULL,
+                    payment_date TEXT NOT NULL,
+                    note TEXT,
+                    created_by INTEGER,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(tracking_id) REFERENCES order_lifecycle_tracking(tracking_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dpe_workspace_distributor "
+                "ON distributor_payment_entries(workspace_id, distributor_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dpe_tracking "
+                "ON distributor_payment_entries(tracking_id)"
             )
             conn.execute(
                 """
@@ -6265,6 +6291,10 @@ class CentralizedDB:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM order_fulfillment_items WHERE order_lifecycle_id = ?", (tracking_id,))
             conn.execute("DELETE FROM achievements WHERE order_lifecycle_tracking_id = ?", (tracking_id,))
+            conn.execute(
+                "DELETE FROM distributor_payment_entries WHERE tracking_id = ?",
+                (tracking_id,),
+            )
             # Also clear the duplicate-detection record(s) tied to this
             # tracking_id (one for the SO's order_ref_no, one for the
             # CI's own invoice_no if a CI was linked). Without this, a
@@ -6281,6 +6311,334 @@ class CentralizedDB:
             "sales_order_file_reference": tracking.get("sales_order_file_reference"),
             "commercial_invoice_file_reference": tracking.get("commercial_invoice_file_reference"),
         }
+
+    @staticmethod
+    def _parse_money(value: Any) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return float(str(value).replace(",", "").strip())
+        except (TypeError, ValueError):
+            return None
+
+    def _so_bill_amount_for_tracking(
+        self,
+        tracking: dict[str, Any],
+        *,
+        so_value_sum: float | None = None,
+        ci_value_sum: float | None = None,
+    ) -> float:
+        """Bill amount for payment tracking: SO lines → SO parse → CI lines → CI header."""
+        if so_value_sum is not None and so_value_sum > 0:
+            return round(float(so_value_sum), 2)
+
+        so_parsed = tracking.get("sales_order_parsed")
+        if isinstance(so_parsed, str) and so_parsed.strip():
+            try:
+                so_parsed = json.loads(so_parsed)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                so_parsed = None
+        if isinstance(so_parsed, dict):
+            header = so_parsed.get("header") if isinstance(so_parsed.get("header"), dict) else {}
+            totals = so_parsed.get("totals") if isinstance(so_parsed.get("totals"), dict) else {}
+            for key in ("invoice_total", "grand_total", "total_amount", "so_total", "line_total"):
+                amt = self._parse_money(header.get(key))
+                if amt is None:
+                    amt = self._parse_money(totals.get(key))
+                if amt is not None and amt > 0:
+                    return round(amt, 2)
+            rows = so_parsed.get("rows") or so_parsed.get("line_items") or []
+            if isinstance(rows, list) and rows:
+                row_sum = 0.0
+                found = False
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    for key in ("amount", "value", "total", "exmill", "so_value"):
+                        amt = self._parse_money(row.get(key))
+                        if amt is not None:
+                            row_sum += amt
+                            found = True
+                            break
+                if found and row_sum > 0:
+                    return round(row_sum, 2)
+
+        if ci_value_sum is not None and ci_value_sum > 0:
+            return round(float(ci_value_sum), 2)
+
+        ci_parsed = tracking.get("commercial_invoice_parsed")
+        if isinstance(ci_parsed, str) and ci_parsed.strip():
+            try:
+                ci_parsed = json.loads(ci_parsed)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                ci_parsed = None
+        if isinstance(ci_parsed, dict):
+            header = ci_parsed.get("header") if isinstance(ci_parsed.get("header"), dict) else {}
+            totals = ci_parsed.get("totals") if isinstance(ci_parsed.get("totals"), dict) else {}
+            for key in ("invoice_total", "line_total", "taxable_amount"):
+                amt = self._parse_money(header.get(key))
+                if amt is None:
+                    amt = self._parse_money(totals.get(key))
+                if amt is not None and amt > 0:
+                    return round(amt, 2)
+        return 0.0
+
+    @staticmethod
+    def _payment_status_from_amounts(bill: float, paid: float) -> str:
+        bill_n = float(bill or 0)
+        paid_n = float(paid or 0)
+        if bill_n <= 0 and paid_n <= 0:
+            return "UNTRACKED"
+        if paid_n <= 0:
+            return "DUE"
+        if paid_n + 0.5 >= bill_n:
+            return "PAID"
+        return "PARTIAL"
+
+    def list_distributor_payment_collection(
+        self, workspace_id: str, distributor_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Distributor-wise SO payment board: bill, deposits, outstanding."""
+        ws = (workspace_id or "default").strip() or "default"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            sql = (
+                "SELECT olt.tracking_id, olt.order_ref_no, olt.distributor_id, "
+                "COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name, "
+                "olt.sales_order_file_reference, olt.sales_order_parsed, "
+                "olt.commercial_invoice_file_reference, olt.commercial_invoice_parsed, "
+                "olt.payment_status, olt.created_at "
+                "FROM order_lifecycle_tracking olt "
+                "LEFT JOIN master_distributors md ON olt.distributor_id = md.id "
+                "WHERE olt.workspace_id = ? "
+                "AND ("
+                "  (olt.sales_order_file_reference IS NOT NULL AND TRIM(olt.sales_order_file_reference) != '') "
+                "  OR (olt.sales_order_parsed IS NOT NULL AND TRIM(olt.sales_order_parsed) != '') "
+                "  OR EXISTS ("
+                "    SELECT 1 FROM order_fulfillment_items ofi "
+                "    WHERE ofi.order_lifecycle_id = olt.tracking_id "
+                "      AND COALESCE(ofi.so_qty, 0) > 0"
+                "  )"
+                ") "
+            )
+            params: list[Any] = [ws]
+            if distributor_id is not None:
+                sql += "AND olt.distributor_id = ? "
+                params.append(int(distributor_id))
+            sql += "ORDER BY distributor_name COLLATE NOCASE, olt.tracking_id DESC"
+            tracking_rows = conn.execute(sql, tuple(params)).fetchall()
+
+            pay_sql = (
+                "SELECT id, distributor_id, tracking_id, order_ref_no, amount, "
+                "payment_date, note, created_by, created_at "
+                "FROM distributor_payment_entries WHERE workspace_id = ?"
+            )
+            pay_params: list[Any] = [ws]
+            if distributor_id is not None:
+                pay_sql += " AND distributor_id = ?"
+                pay_params.append(int(distributor_id))
+            pay_sql += " ORDER BY payment_date ASC, id ASC"
+            pay_rows = conn.execute(pay_sql, tuple(pay_params)).fetchall()
+
+            value_rows = conn.execute(
+                "SELECT order_lifecycle_id, "
+                "COALESCE(SUM(so_value), 0) AS so_sum, "
+                "COALESCE(SUM(ci_value), 0) AS ci_sum "
+                "FROM order_fulfillment_items WHERE workspace_id = ? "
+                "GROUP BY order_lifecycle_id",
+                (ws,),
+            ).fetchall()
+
+        value_by_tid = {
+            int(r["order_lifecycle_id"]): (float(r["so_sum"] or 0), float(r["ci_sum"] or 0))
+            for r in value_rows
+        }
+        pays_by_tid: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for row in pay_rows:
+            tid = row["tracking_id"]
+            if tid is None:
+                continue
+            pays_by_tid[int(tid)].append(
+                {
+                    "id": int(row["id"]),
+                    "distributor_id": int(row["distributor_id"]),
+                    "tracking_id": int(tid),
+                    "order_ref_no": row["order_ref_no"],
+                    "amount": round(float(row["amount"] or 0), 2),
+                    "payment_date": row["payment_date"],
+                    "note": row["note"] or "",
+                    "created_by": row["created_by"],
+                    "created_at": row["created_at"],
+                }
+            )
+
+        by_distributor: dict[int, dict[str, Any]] = {}
+        for row in tracking_rows:
+            tid = int(row["tracking_id"])
+            did = int(row["distributor_id"])
+            so_sum, ci_sum = value_by_tid.get(tid, (0.0, 0.0))
+            tracking = {
+                "sales_order_parsed": row["sales_order_parsed"],
+                "commercial_invoice_parsed": row["commercial_invoice_parsed"],
+            }
+            bill = self._so_bill_amount_for_tracking(
+                tracking, so_value_sum=so_sum, ci_value_sum=ci_sum
+            )
+            payments = pays_by_tid.get(tid, [])
+            paid = round(sum(p["amount"] for p in payments), 2)
+            outstanding = round(max(bill - paid, 0.0), 2)
+            status = self._payment_status_from_amounts(bill, paid)
+            order = {
+                "tracking_id": tid,
+                "order_ref_no": row["order_ref_no"],
+                "distributor_id": did,
+                "distributor_name": row["distributor_name"],
+                "so_bill_amount": bill,
+                "paid_amount": paid,
+                "outstanding": outstanding,
+                "payment_status": status,
+                "created_at": row["created_at"],
+                "payments": payments,
+            }
+            bucket = by_distributor.get(did)
+            if bucket is None:
+                bucket = {
+                    "distributor_id": did,
+                    "distributor_name": row["distributor_name"],
+                    "so_bill_total": 0.0,
+                    "paid_total": 0.0,
+                    "outstanding_total": 0.0,
+                    "orders": [],
+                }
+                by_distributor[did] = bucket
+            bucket["orders"].append(order)
+            bucket["so_bill_total"] = round(bucket["so_bill_total"] + bill, 2)
+            bucket["paid_total"] = round(bucket["paid_total"] + paid, 2)
+            bucket["outstanding_total"] = round(bucket["outstanding_total"] + outstanding, 2)
+
+        distributors = sorted(
+            by_distributor.values(),
+            key=lambda d: (d["distributor_name"] or "").lower(),
+        )
+        return distributors
+
+    def add_distributor_payment_entry(
+        self,
+        *,
+        workspace_id: str,
+        distributor_id: int,
+        tracking_id: int,
+        amount: float,
+        payment_date: str,
+        note: str | None = None,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        ws = (workspace_id or "default").strip() or "default"
+        tracking = self.get_order_lifecycle_tracking(int(tracking_id), workspace_id=ws)
+        if tracking is None:
+            raise ValueError("Sales order tracking not found")
+        if int(tracking.get("distributor_id") or 0) != int(distributor_id):
+            raise ValueError("Distributor does not match this sales order")
+        amt = float(amount)
+        if amt <= 0:
+            raise ValueError("Payment amount must be greater than zero")
+        date_s = (payment_date or "").strip()
+        if not date_s:
+            raise ValueError("payment_date is required (YYYY-MM-DD)")
+        created_at = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO distributor_payment_entries (
+                    workspace_id, distributor_id, tracking_id, order_ref_no,
+                    amount, payment_date, note, created_by, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ws,
+                    int(distributor_id),
+                    int(tracking_id),
+                    tracking.get("order_ref_no"),
+                    round(amt, 2),
+                    date_s,
+                    (note or "").strip() or None,
+                    created_by,
+                    created_at,
+                ),
+            )
+            entry_id = int(cur.lastrowid)
+            conn.commit()
+
+        self._sync_tracking_payment_status(int(tracking_id), workspace_id=ws)
+        return {
+            "id": entry_id,
+            "distributor_id": int(distributor_id),
+            "tracking_id": int(tracking_id),
+            "order_ref_no": tracking.get("order_ref_no"),
+            "amount": round(amt, 2),
+            "payment_date": date_s,
+            "note": (note or "").strip() or "",
+            "created_by": created_by,
+            "created_at": created_at,
+        }
+
+    def delete_distributor_payment_entry(
+        self, entry_id: int, workspace_id: str
+    ) -> dict[str, Any] | None:
+        ws = (workspace_id or "default").strip() or "default"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT id, tracking_id, distributor_id, amount, payment_date "
+                "FROM distributor_payment_entries WHERE id = ? AND workspace_id = ?",
+                (int(entry_id), ws),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                "DELETE FROM distributor_payment_entries WHERE id = ? AND workspace_id = ?",
+                (int(entry_id), ws),
+            )
+            conn.commit()
+        tracking_id = int(row["tracking_id"]) if row["tracking_id"] is not None else None
+        if tracking_id is not None:
+            self._sync_tracking_payment_status(tracking_id, workspace_id=ws)
+        return {
+            "id": int(row["id"]),
+            "tracking_id": tracking_id,
+            "distributor_id": int(row["distributor_id"]),
+            "amount": float(row["amount"] or 0),
+            "payment_date": row["payment_date"],
+        }
+
+    def _sync_tracking_payment_status(self, tracking_id: int, workspace_id: str) -> None:
+        ws = (workspace_id or "default").strip() or "default"
+        tracking = self.get_order_lifecycle_tracking(int(tracking_id), workspace_id=ws)
+        if tracking is None:
+            return
+        with sqlite3.connect(self.db_path) as conn:
+            sums = conn.execute(
+                "SELECT COALESCE(SUM(so_value), 0), COALESCE(SUM(ci_value), 0) "
+                "FROM order_fulfillment_items WHERE order_lifecycle_id = ? AND workspace_id = ?",
+                (int(tracking_id), ws),
+            ).fetchone()
+            paid_row = conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM distributor_payment_entries "
+                "WHERE tracking_id = ? AND workspace_id = ?",
+                (int(tracking_id), ws),
+            ).fetchone()
+        so_sum = float(sums[0] or 0) if sums else 0.0
+        ci_sum = float(sums[1] or 0) if sums else 0.0
+        bill = self._so_bill_amount_for_tracking(
+            tracking, so_value_sum=so_sum, ci_value_sum=ci_sum
+        )
+        paid = float(paid_row[0] or 0) if paid_row else 0.0
+        status = self._payment_status_from_amounts(bill, paid)
+        if status == "UNTRACKED":
+            status = tracking.get("payment_status") or "DUE"
+        self.update_order_lifecycle_stage(
+            int(tracking_id), payment_status=status, workspace_id=ws
+        )
 
     def get_latest_order_sheet(self, workspace_id: str = "default") -> dict[str, Any] | None:
         """

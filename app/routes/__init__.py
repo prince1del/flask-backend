@@ -29,6 +29,7 @@ from .distributor_zone import distributor_zone_bp
 from .personal_todos import personal_todos_bp
 from .pjp import pjp_bp
 from .ask_nexora_troubleshoot import ask_nexora_troubleshoot_bp
+from .payment_collection import payment_collection_bp
 
 __all__ = [
     'target_achievement_bp',
@@ -62,4 +63,5 @@ __all__ = [
     'personal_todos_bp',
     'pjp_bp',
     'ask_nexora_troubleshoot_bp',
+    'payment_collection_bp',
 ]

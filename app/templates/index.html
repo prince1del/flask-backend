@@ -2071,6 +2071,13 @@
                             <span class="of-rail-hint">Commercial invoice</span>
                         </span>
                     </button>
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="payment-collection" onclick="showOfSection('payment-collection')">
+                        <span class="of-rail-num">6</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">Distributor's Payment Collection</span>
+                            <span class="of-rail-hint">SO deposits &amp; dues</span>
+                        </span>
+                    </button>
                     <button type="button" class="back-btn of-rail-back" onclick="goBack()">← Back</button>
                 </nav>
                 <div class="of-rail-nav hidden" id="of-rail-saved-nav" aria-label="Saved order distributors">
@@ -2276,6 +2283,24 @@
                                     </thead>
                                     <tbody id="of-tracking-tbody-ci"><tr><td colspan="8">Tap Refresh after upload.</td></tr></tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="of-pane" data-of-pane="payment-collection" hidden>
+                    <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <button type="button" class="nx-btn" onclick="loadPaymentCollection()">Refresh</button>
+                        <span id="of-pay-summary" class="of-pay-summary" aria-live="polite"></span>
+                    </div>
+                    <div class="of-pane-body">
+                        <div class="nx-card nx-of-panel of-pane-card of-pane-card--fill">
+                            <div class="of-pane-card-head">
+                                <h3 class="of-pane-card-title">Distributor's Payment Collection</h3>
+                                <p class="of-pane-help">Track deposits against each Sales Order — paid vs outstanding, date-wise.</p>
+                            </div>
+                            <div id="of-pay-board" class="of-pay-board">
+                                <p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>
                             </div>
                         </div>
                     </div>
