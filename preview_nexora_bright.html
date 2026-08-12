@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NEXORA Bright Theme — Dummy Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --bg-panel: #ffffff;
+      --sidebar: #0f2744;
+      --sidebar-text: #c8d6e8;
+      --sidebar-active: #0d9488;
+      --sidebar-active-bg: rgba(13, 148, 136, 0.18);
+      --text: #0f172a;
+      --text-dim: #64748b;
+      --border: #e2e8f0;
+      --teal: #0d9488;
+      --teal-dark: #0f766e;
+      --paid: #15803d;
+      --paid-bg: #dcfce7;
+      --unpaid: #0369a1;
+      --unpaid-bg: #e0f2fe;
+      --overdue: #b91c1c;
+      --overdue-bg: #fee2e2;
+      --total: #334155;
+      --total-bg: #f1f5f9;
+      --row-hover: #f0fdfa;
+      --selected: #ccfbf1;
+      --shadow: 0 1px 2px rgba(15, 39, 68, 0.06), 0 8px 24px rgba(15, 39, 68, 0.04);
+      --font: "Sora", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .banner {
+      background: linear-gradient(90deg, #0f2744, #0d9488);
+      color: #fff;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 0.84rem;
+    }
+    .banner strong { font-weight: 600; }
+    .banner .hint { opacity: 0.85; }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tabs button {
+      border: 1px solid rgba(255,255,255,0.35);
+      background: transparent;
+      color: #fff;
+      border-radius: 999px;
+      padding: 6px 14px;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: #fff;
+      color: #0f2744;
+      border-color: #fff;
+    }
+    .app {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 0;
+    }
+    .chrome {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 18px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+    }
+    .chrome .ask {
+      background: var(--teal);
+      color: #fff;
+      border: 0;
+      border-radius: 9px;
+      padding: 8px 14px;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .dash-header {
+      padding: 22px 20px 8px;
+    }
+    .dash-header .eyebrow {
+      margin: 0;
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .dash-header h2 {
+      margin: 4px 0 6px;
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+    .dash-header p {
+      margin: 0;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      max-width: 42rem;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      padding: 12px 20px 20px;
+    }
+    .kpi {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: border-color .15s, transform .15s;
+    }
+    .kpi:hover {
+      border-color: #99f6e4;
+      transform: translateY(-1px);
+    }
+    .kpi .label {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .kpi .value {
+      margin-top: 8px;
+      font-size: 1.35rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    .kpi .sub {
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: var(--teal-dark);
+    }
+    .dash-meta {
+      padding: 0 20px 24px;
+      color: var(--text-dim);
+      font-size: 0.78rem;
+    }
+    @media (max-width: 1100px) {
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 700px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .kpi-grid { grid-template-columns: 1fr; }
+    }
+    .sidebar {
+      background: var(--sidebar);
+      color: var(--sidebar-text);
+      padding: 18px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      margin-bottom: 10px;
+    }
+    .brand-mark {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #5eead4, #0d9488 70%);
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      color: #fff;
+      font-weight: 700;
+    }
+    .brand p {
+      margin: 2px 0 0;
+      font-size: 0.62rem;
+      font-family: var(--mono);
+      color: #7f95b0;
+      letter-spacing: 0.1em;
+    }
+    .nav-group {
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #7f95b0;
+      padding: 12px 12px 4px;
+    }
+    .nav-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 0.86rem;
+      padding: 9px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .nav-item.active {
+      background: var(--sidebar-active-bg);
+      color: #5eead4;
+      font-weight: 600;
+    }
+    .nav-sub { padding-left: 22px; font-size: 0.82rem; }
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+    .topbar .back {
+      border: 0;
+      background: transparent;
+      color: var(--text-dim);
+      font: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    .body {
+      padding: 14px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      flex: 1;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .ctrl {
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 10px;
+      font: inherit;
+      font-size: 0.82rem;
+    }
+    .text-btn {
+      border: 0;
+      background: transparent;
+      color: var(--teal-dark);
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .spacer { flex: 1; }
+    .cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .card {
+      flex: 1 1 140px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+      min-width: 120px;
+    }
+    .card span {
+      display: block;
+      font-size: 0.68rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+    .card strong {
+      font-size: 1.15rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .card.paid { border-left: 3px solid var(--paid); }
+    .card.paid strong { color: var(--paid); }
+    .card.unpaid { border-left: 3px solid var(--unpaid); }
+    .card.unpaid strong { color: var(--unpaid); }
+    .card.overdue { border-left: 3px solid var(--overdue); }
+    .card.overdue strong { color: var(--overdue); }
+    .card.total { border-left: 3px solid var(--total); }
+    .op {
+      align-self: center;
+      color: var(--text-dim);
+      font-weight: 700;
+      padding: 0 2px;
+    }
+    .table-card {
+      flex: 1;
+      min-height: 280px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .table-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .table-head strong { font-size: 0.9rem; }
+    .count {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      background: var(--total-bg);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .search {
+      margin-left: auto;
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0 10px;
+      font: inherit;
+      font-size: 0.8rem;
+      width: min(220px, 40vw);
+    }
+    .table-wrap { overflow: auto; flex: 1; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+    }
+    th {
+      text-align: left;
+      padding: 10px 12px;
+      font-size: 0.68rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--teal-dark);
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      white-space: nowrap;
+    }
+    td {
+      padding: 11px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text);
+      vertical-align: middle;
+    }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--row-hover); }
+    tbody tr.selected { background: var(--selected); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .badge {
+      display: inline-flex;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .badge.paid { background: var(--paid-bg); color: var(--paid); }
+    .badge.unpaid { background: var(--unpaid-bg); color: var(--unpaid); }
+    .badge.open { background: #ecfeff; color: #0e7490; }
+    .comm-bar {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+      display: none;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+    .comm-bar.show { display: flex; }
+    .comm-title strong { font-size: 0.95rem; }
+    .comm-title .party { color: var(--text); margin-left: 8px; }
+    .comm-title .meta { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--text-dim); }
+    .comm-title .meta b { color: var(--teal-dark); }
+    .fields { display: flex; flex-wrap: wrap; gap: 10px; }
+    .fields label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+    }
+    .fields input {
+      height: 34px;
+      width: 5.5rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0 10px;
+      font: inherit;
+      font-size: 0.86rem;
+    }
+    .fields .notes input { width: min(220px, 50vw); }
+    .results {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .results div { min-width: 90px; }
+    .results span {
+      display: block;
+      font-size: 0.64rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+    }
+    .results strong { font-size: 1rem; font-variant-numeric: tabular-nums; }
+    .btn {
+      height: 36px;
+      padding: 0 16px;
+      border-radius: 9px;
+      border: 0;
+      font: inherit;
+      font-size: 0.84rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary { background: var(--teal); color: #fff; }
+    .btn-primary:hover { background: var(--teal-dark); }
+    .btn-ghost {
+      background: #fff;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <div>
+      <strong>DUMMY PREVIEW — Navy + Teal bright theme</strong>
+      <span class="hint"> · Real app change nahi hua · Decide ke baad apply karenge</span>
+    </div>
+    <div class="tabs">
+      <button type="button" class="active" data-view="dashboard" onclick="showView('dashboard')">Dashboard</button>
+      <button type="button" data-view="invoices" onclick="showView('invoices')">Sale Invoices</button>
+      <button type="button" data-view="commission" onclick="showView('commission')">Commission</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div>
+          <h1>PRIZM</h1>
+          <p>HOUSE OF PRIZM</p>
+        </div>
+      </div>
+      <button type="button" class="nav-item active" id="nav-dashboard" onclick="showView('dashboard')">Dashboard</button>
+      <button type="button" class="nav-item">Parties</button>
+      <div class="nav-group">Sale</div>
+      <button type="button" class="nav-item nav-sub" id="nav-invoices" onclick="showView('invoices')">Sale Invoices</button>
+      <button type="button" class="nav-item nav-sub" id="nav-commission" onclick="showView('commission')">Commission</button>
+      <button type="button" class="nav-item nav-sub">Estimate / Quotation</button>
+      <button type="button" class="nav-item nav-sub">Payment-In</button>
+    </aside>
+
+    <section class="main">
+      <div class="chrome">
+        <div style="color:var(--text-dim);font-size:0.82rem">Workspace · House of Prizm</div>
+        <button type="button" class="ask">Ask NEXORA</button>
+      </div>
+
+      <!-- DASHBOARD / MAIN -->
+      <div id="view-dashboard">
+        <div class="dash-header">
+          <p class="eyebrow">Executive</p>
+          <h2>Dashboard</h2>
+          <p>Business health in 30 seconds — click any card to drill in. Live data only.</p>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi" onclick="showView('invoices')"><div class="label">New Leads</div><div class="value">12</div><div class="sub">Open leads →</div></div>
+          <div class="kpi"><div class="label">Meetings Today</div><div class="value">3</div><div class="sub">Scheduled</div></div>
+          <div class="kpi"><div class="label">Pending Follow-ups</div><div class="value">7</div><div class="sub">Due this week</div></div>
+          <div class="kpi" onclick="showView('invoices')"><div class="label">Quotations Pending</div><div class="value">5</div><div class="sub">Estimates →</div></div>
+          <div class="kpi"><div class="label">Quotations Sent</div><div class="value">18</div><div class="sub">This month</div></div>
+          <div class="kpi"><div class="label">Orders Won</div><div class="value">9</div><div class="sub">Pipeline</div></div>
+          <div class="kpi"><div class="label">Orders Lost</div><div class="value">2</div><div class="sub">Review</div></div>
+          <div class="kpi"><div class="label">Production</div><div class="value">4</div><div class="sub">Active POs</div></div>
+          <div class="kpi"><div class="label">Dispatch Due</div><div class="value">6</div><div class="sub">This week</div></div>
+          <div class="kpi"><div class="label">Outstanding</div><div class="value">2,41,098</div><div class="sub">Receivables →</div></div>
+          <div class="kpi"><div class="label">Collections Today</div><div class="value">23,238</div><div class="sub">Payment-In</div></div>
+          <div class="kpi"><div class="label">Sales vs Target</div><div class="value">48.2L / 60L</div><div class="sub">80% of month</div></div>
+          <div class="kpi"><div class="label">Gross Profit %</div><div class="value">28.4%</div><div class="sub">Catalogue based</div></div>
+          <div class="kpi"><div class="label">Cash Available</div><div class="value">6.8L</div><div class="sub">Banks & cash</div></div>
+          <div class="kpi" onclick="showView('commission')"><div class="label">Commission (Net)</div><div class="value">2,426</div><div class="sub">Saved entries →</div></div>
+          <div class="kpi" onclick="showView('invoices')"><div class="label">Sale Invoices</div><div class="value">37</div><div class="sub">Tax invoices →</div></div>
+        </div>
+        <div class="dash-meta">Workspace house_of_prizm · as of 30 Jul 2026 · Dummy preview (not live data)</div>
+      </div>
+
+      <!-- INVOICES -->
+      <div id="view-invoices" class="hidden">
+        <div class="topbar">
+          <div><button class="back" type="button">← Back</button><h2 style="display:inline">Sale Invoices</h2></div>
+        </div>
+        <div class="body">
+          <div class="toolbar">
+            <select class="ctrl"><option>This Month</option><option selected>All Time</option></select>
+            <input class="ctrl" type="date" value="2026-04-01" />
+            <span style="color:var(--text-dim);font-size:0.8rem">to</span>
+            <input class="ctrl" type="date" value="2026-07-30" />
+            <select class="ctrl"><option>All Status</option></select>
+            <select class="ctrl"><option>All Parties</option></select>
+            <button class="text-btn" type="button">Reset</button>
+            <span class="spacer"></span>
+            <button class="text-btn" type="button">Excel</button>
+            <button class="text-btn" type="button">Print</button>
+          </div>
+          <div class="cards">
+            <div class="card paid"><span>Paid</span><strong>1,84,220</strong></div>
+            <div class="op">+</div>
+            <div class="card unpaid"><span>Unpaid</span><strong>2,41,098</strong></div>
+            <div class="op">+</div>
+            <div class="card overdue"><span>Overdue</span><strong>42,600</strong></div>
+            <div class="op">=</div>
+            <div class="card total"><span>Total</span><strong>4,67,918</strong></div>
+          </div>
+          <div class="table-card">
+            <div class="table-head">
+              <strong>Transactions</strong>
+              <span class="count">6 txns</span>
+              <input class="search" type="search" placeholder="Search…" />
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Invoice no</th><th>Party Name</th>
+                    <th class="num">Amount</th><th class="num">Balance</th>
+                    <th>Due date</th><th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>29-07-2026</td><td>110</td><td>Koncept</td>
+                    <td class="num">23,238</td><td class="num">0</td><td>—</td>
+                    <td><span class="badge paid">Paid</span></td>
+                  </tr>
+                  <tr>
+                    <td>14-07-2026</td><td>109</td><td>The Westin Kolkata Rajarhat</td>
+                    <td class="num">13,944</td><td class="num">13,944</td><td>28-07-2026</td>
+                    <td><span class="badge unpaid">Unpaid</span></td>
+                  </tr>
+                  <tr>
+                    <td>08-07-2026</td><td>108</td><td>Delta Electro Polymer Pvt.Ltd</td>
+                    <td class="num">69,289.60</td><td class="num">34,639.60</td><td>22-07-2026</td>
+                    <td><span class="badge unpaid">Partial</span></td>
+                  </tr>
+                  <tr>
+                    <td>02-07-2026</td><td>107</td><td>Delta Electro Polymer Pvt.Ltd</td>
+                    <td class="num">17,110</td><td class="num">17,110</td><td>16-07-2026</td>
+                    <td><span class="badge unpaid">Unpaid</span></td>
+                  </tr>
+                  <tr>
+                    <td>28-06-2026</td><td>106</td><td>AK Retail INC</td>
+                    <td class="num">92,120</td><td class="num">92,120</td><td>12-07-2026</td>
+                    <td><span class="badge unpaid">Unpaid</span></td>
+                  </tr>
+                  <tr>
+                    <td>18-06-2026</td><td>104</td><td>Park Prime Kolkata</td>
+                    <td class="num">26,192</td><td class="num">0</td><td>—</td>
+                    <td><span class="badge paid">Paid</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COMMISSION -->
+      <div id="view-commission" class="hidden">
+        <div class="topbar">
+          <div><button class="back" type="button">← Back</button><h2 style="display:inline">Commission</h2></div>
+        </div>
+        <div class="body">
+          <div class="toolbar">
+            <select class="ctrl"><option>All invoices</option><option>Commission saved</option><option>Not set yet</option></select>
+            <span class="spacer"></span>
+            <button class="text-btn" type="button" onclick="clearComm()">Clear selection</button>
+          </div>
+          <div class="cards">
+            <div class="card total"><span>Bills</span><strong>37</strong></div>
+            <div class="card paid"><span>Commission</span><strong>2,475.79</strong></div>
+            <div class="op">+</div>
+            <div class="card overdue"><span>TDS</span><strong>49.52</strong></div>
+            <div class="op">=</div>
+            <div class="card unpaid"><span>Net Payable</span><strong>2,426.27</strong></div>
+          </div>
+
+          <div class="comm-bar" id="comm-bar">
+            <div>
+              <div class="comm-title">
+                <strong>Invoice 110</strong><span class="party">Koncept</span>
+                <span class="meta">29-07-2026 · Before tax <b>20,631.60</b></span>
+              </div>
+              <div class="fields" style="margin-top:10px">
+                <label>Comm %<input id="c-pct" type="number" value="12" step="0.01" oninput="recalc()" /></label>
+                <label>TDS %<input id="t-pct" type="number" value="2" step="0.01" oninput="recalc()" /></label>
+                <label class="notes">Notes<input type="text" value="test" /></label>
+              </div>
+              <div class="results" style="margin-top:10px">
+                <div><span>Commission</span><strong id="c-amt">2,475.79</strong></div>
+                <div><span>TDS</span><strong id="t-amt">49.52</strong></div>
+                <div><span>Net</span><strong id="n-amt">2,426.27</strong></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary" type="button">Save</button>
+              <button class="btn btn-ghost" type="button">Preview</button>
+              <button class="text-btn" type="button" onclick="clearComm()">Close</button>
+            </div>
+          </div>
+
+          <div class="table-card">
+            <div class="table-head">
+              <strong>Transactions</strong>
+              <span class="count">5 txns</span>
+              <input class="search" type="search" placeholder="Search…" />
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Invoice no</th><th>Party Name</th>
+                    <th class="num">Amount</th><th class="num">Comm %</th><th class="num">TDS %</th>
+                    <th class="num">Commission</th><th class="num">TDS</th><th class="num">Net</th><th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="selected" onclick="openComm(this)">
+                    <td>29-07-2026</td><td>110</td><td>Koncept</td>
+                    <td class="num">23,238</td><td class="num">12%</td><td class="num">2%</td>
+                    <td class="num">2,475.79</td><td class="num">49.52</td><td class="num"><strong>2,426.27</strong></td>
+                    <td><span class="badge paid">Saved</span></td>
+                  </tr>
+                  <tr onclick="openComm(this)">
+                    <td>14-07-2026</td><td>109</td><td>The Westin Kolkata Rajarhat</td>
+                    <td class="num">13,944</td><td class="num">—</td><td class="num">—</td>
+                    <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                    <td><span class="badge open">Set</span></td>
+                  </tr>
+                  <tr onclick="openComm(this)">
+                    <td>08-07-2026</td><td>108</td><td>Delta Electro Polymer Pvt.Ltd</td>
+                    <td class="num">69,289.60</td><td class="num">—</td><td class="num">—</td>
+                    <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                    <td><span class="badge open">Set</span></td>
+                  </tr>
+                  <tr onclick="openComm(this)">
+                    <td>02-07-2026</td><td>107</td><td>Delta Electro Polymer Pvt.Ltd</td>
+                    <td class="num">17,110</td><td class="num">—</td><td class="num">—</td>
+                    <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                    <td><span class="badge open">Set</span></td>
+                  </tr>
+                  <tr onclick="openComm(this)">
+                    <td>28-06-2026</td><td>106</td><td>AK Retail INC</td>
+                    <td class="num">92,120</td><td class="num">—</td><td class="num">—</td>
+                    <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                    <td><span class="badge open">Set</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const BEFORE_TAX = 20631.6;
+    function money(n) {
+      return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    }
+    function showView(name) {
+      document.getElementById("view-dashboard").classList.toggle("hidden", name !== "dashboard");
+      document.getElementById("view-invoices").classList.toggle("hidden", name !== "invoices");
+      document.getElementById("view-commission").classList.toggle("hidden", name !== "commission");
+      document.querySelectorAll(".tabs button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.view === name);
+      });
+      document.getElementById("nav-dashboard").classList.toggle("active", name === "dashboard");
+      document.getElementById("nav-invoices").classList.toggle("active", name === "invoices");
+      document.getElementById("nav-commission").classList.toggle("active", name === "commission");
+    }
+    function openComm(tr) {
+      document.querySelectorAll("#view-commission tbody tr").forEach((r) => r.classList.remove("selected"));
+      tr.classList.add("selected");
+      document.getElementById("comm-bar").classList.add("show");
+    }
+    function clearComm() {
+      document.getElementById("comm-bar").classList.remove("show");
+      document.querySelectorAll("#view-commission tbody tr").forEach((r) => r.classList.remove("selected"));
+    }
+    function recalc() {
+      const c = Number(document.getElementById("c-pct").value || 0);
+      const t = Number(document.getElementById("t-pct").value || 0);
+      const commission = Math.round(BEFORE_TAX * c / 100 * 100) / 100;
+      const tds = Math.round(commission * t / 100 * 100) / 100;
+      const net = Math.round((commission - tds) * 100) / 100;
+      document.getElementById("c-amt").textContent = money(commission);
+      document.getElementById("t-amt").textContent = money(tds);
+      document.getElementById("n-amt").textContent = money(net);
+    }
+    showView("dashboard");
+  </script>
+</body>
+</html>

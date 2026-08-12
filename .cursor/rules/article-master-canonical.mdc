@@ -1,0 +1,123 @@
+---
+description: Article Master canonical format and booking-sheet teaching references
+globs: article_master*.py
+alwaysApply: false
+---
+
+# Article Master — frozen format + teaching refs
+
+## Do not change format unprompted
+
+**Never** invent / reorder / rename columns, season layout, or Excel grouping on your own
+when regenerating previews or shipping updates. Match the locked bedsheet FINAL style
+unless the user explicitly asks to change the format.
+
+Locked download / FINAL-merge layout:
+- Attrs in `CANONICAL_ARTICLE_MASTER_COLUMNS` order
+- Prices expand to `MRP (season)` / `Ex-Mill (season)` / `PTR (season)`
+- Older seasons Excel-grouped; **latest season stays visible**
+- Bed taught seasons: **SS-25, SS-26, AW-26**
+- Towel taught seasons so far: **AW-25, AW-26** (extra seasons only when a source sheet exists)
+
+## Canonical columns (fixed order — never invent others)
+
+Category, Product, Brand, Size, TC, Units, BS Size, Pillow Size, Color, Pillow Stitching Style, Print Style, Blend, Packing, Bale Pack Size, MRP, AWD Mark up on Exmill, Ex-Mill, Proposed Customer Discount, Retailer Margin, PTR
+
+**Dropped (Bed):** No of Design, Color (booking noise — excluded on Bed upload).
+
+**Bath / Towel:** keep **Color** (from Shade) after Pillow Size; White ≠ Assorted.
+
+**Alias:** Proposed Customer Discount ≡ Perceived (same field; display name is Proposed Customer Discount).
+
+Defined in `article_master_routes.py` as `CANONICAL_ARTICLE_MASTER_COLUMNS`.
+
+## Size codes (merge identity) → display names (UI / Excel col D)
+
+| Code | Display |
+|---|---|
+| SB BS | Single Bedsheet |
+| DB BS | Double Bedsheet |
+| KS BS | King Bedsheet |
+| DB FS | Double Fitted Sheet |
+| KB FS | King Fitted Sheet |
+| DB Comf | Double Comforter |
+| DB Reversible Comf | Double Reversible Comforter |
+| DB Duvet Cover | Double Duvet Cover |
+
+Aliases: DBL→DB, KDB BS→KS BS, `* Fitted Sheet`→`* FS`. Store short codes in DB; show full names in UI/download.
+
+## Brand locks
+
+- Bluemen/Bluman → **Blumen**
+- Cardinal KING / Epigram King → Brand=Cardinal|Epigram + Size=KS BS
+- Cotton Satin stripe variants → **Cotton Satin With 1 CM Stripe**
+- Celebrating India ≠ Celebrating India (BINB); Wonder Land Glow ≠ Kids
+- Product: Sheet Sets → **Bedsheet**; Packing: Envelop → **Envelope**
+
+## Separate SKUs (never merge)
+
+DB BS / DB FS / DB Reversible Comf / DB Duvet Cover
+
+## Teaching / reference booking sheets (Bed)
+
+| Source | Aligned output |
+|---|---|
+| `E:\test files\GT SS-25 Bedsheet Booking form.xlsx` | `E:\test files\GT_SS25_as_Article_Master_Canonical.xlsx` |
+| `E:\test files\BS SS-26 BOOKING SHEET FOR FEB & MARCH DELIVERY.xlsx` | `E:\test files\BS_SS26_as_Article_Master_Canonical.xlsx` |
+| `G:\My Drive\...\Bedsheet\Order sheet AW26.xlsx` | `E:\test files\AW26_Order_Sheet_as_Article_Master_Canonical.xlsx` |
+
+## Season prices (last 3)
+
+Upload with `season_tag` (SS-25 / SS-26 / AW-26…). Table `article_season_prices`.
+Profile: Rates by season. Download: season MRP/Ex-Mill/PTR columns; older seasons Excel-grouped.
+Latest season drives row MRP/PTR/Ex-Mill. Packing/sticky: latest non-blank wins; older season only gap-fills.
+
+Bed taught seasons: **SS-25, SS-26, AW-26**.
+Towel taught seasons: **AW-25, AW-26**.
+
+## Sticky schema attrs (gap-fill / never blank-wipe)
+
+Pillow Size, Pillow Stitching Style, Print Style, Blend, Packing, **Color** (Bath; Shade→Color)
+
+## Bath / Towel teaching
+
+- Category **Bath**; identity **Brand + Size + Color + Product**
+- Size codes → Hand Towel / Face Towel / Bath Towel / Ladies Towel / Pool Towel / Towel Set / Bath Mat / Gym Towel / 91x100 / Large / Extra Large / Double Extra Large; sets → Hand Towel Set of 2, Face Towel Set of 3
+- Shade → **Color**; Assorted/Asst → Assorted NN (zero-pad); Jacquarad→Jacquard; WHITE→White
+- PVC (Shade or Description) → Packing `PVC bag Pkg`; `(L)`/`Pkg` ignore — keep PVC/latest sibling
+- Product: Bathmat… → **Bathmat Antiskid**; Towelling Fabric / Terry Towel / … as-is
+- Brands: Bd White→BD White, Lepord→Leopard, Eco Stripe, Gym Towel, Huk A Buk; Flora Bathrobe / Tulip Bathrobe kept
+- Drop: Description, SL NO, Delivery Date, Colours/Total Colours, AWD order, Qty in Bales
+- Pack Sizes ≡ Bale Pack Size
+- Refs: `AW-25 Towel Booking Sheet.xlsx`, `AW-26 Towel Phase-2 Booking Sheet.xlsx`
+
+## TOB teaching
+
+- Category **TOB** (incl. Bed in a Bag / BIAB / `Bed in a Bga`→Bed in a Bag)
+- Identity **Brand + Size + Product + Color** (Color empty — option counts ignored)
+- Size as-is; Brand as-is (trim)
+- Quality + Ply + Weight → **Blend** (Polyster→Polyester; SNL-PLY→Single Ply; weight as-is)
+- Print/Dyed/Weave → Print Style
+- Retail Mark down → Retailer Margin; AWD MD → AWD Markup; Bale Pack Size → Pack Sizes
+- Drop: MOQ, Booking Qnty, Dyed/Printed Option, Print Colorways, Delivery Months
+- Ref: `AW-26 TOB Revised Booking Sheet_23.06.2026.xlsx`
+
+## Pillow teaching
+
+- Category **Pillow** (not TOB Pillow)
+- Identity **Brand + Size + Product**
+- Size as-is; Unit → Units; Print/Dyed/Weave → Print Style; Option drop
+- Quality + Weight → Blend (Polyster→Polyester; Alovera→Aloe Vera; weight as-is)
+- Brand: Comfot→Comfort; Product as-is (trim/spaces)
+- Margins / Pack / drops same pattern as TOB
+- Ref: `Pillow  Booking Sheet_05.05.2026.xlsx`
+
+## Display order within a brand
+
+Bed: Single → Double → King (`sort_articles_for_display`).
+Bath: Face → Hand → Ladies → Bath → Pool → sets → L/XL/XXL.
+
+## Perceived / margins
+
+**Proposed Customer Discount** ≡ Perceived (same field). Display as % (0.4 → 40%).
+Distributor Margin = AWD / Mark up on Exmill.

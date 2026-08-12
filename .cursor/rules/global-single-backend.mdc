@@ -1,0 +1,30 @@
+---
+description: All clients (Android, desktop, web) share one Flask API and one workspace DB — never invent parallel data stores.
+alwaysApply: true
+---
+
+# Global data — one backend for App / Desktop / Web
+
+NEXORA is **one product**. Mobile, desktop shell, and browser UI must all read/write the **same** Flask API and the **same** workspace database (local SQLite or Render).
+
+## Hard rules
+
+1. **No client-only business data.** Do not store DSR visits, parties, articles, Drive tokens, or orders only in Android SharedPreferences / local files as the source of truth.
+2. **Reuse existing `/api/v1/...` routes.** Before inventing `/api/v1/bd/...` or `/api/v1/mobile/...`, find the desktop path (`app/static/app.js`, `app/routes/`).
+3. **Same auth.** JWT `Authorization: Bearer` + workspace from login. Writes are scoped by `workspace_id` (and user where the API already filters).
+4. **New features = API first, then every client.** If Android gets a form, add/register the Flask route and expose the same screen (or at least the same endpoints) on desktop/web.
+5. **Deploy matters.** Render hosts the shared cloud DB. Local desktop DB ≠ Render until you sync/upload. Tell the user when data won’t appear cross-device because of environment.
+
+## Shared BD surface (keep aligned)
+
+| Capability | API |
+|------------|-----|
+| Customers (masters) | `GET/POST /api/v1/masters/distributors`, `.../retailers` |
+| Party 360 / visits | `GET /api/v1/executive/party/...`, `POST /api/v1/executive/visits` |
+| My Day | `GET /api/v1/executive/home`, `.../target-achievement/fy-overview`, `.../filled-orders/season-overview` |
+| Articles | `GET /api/v1/article-master/list` |
+| Order Desk / SO Pack | `POST /api/v1/order-fulfillment/so-pack/analyze`, FO list |
+| Market Visit DSR | `POST/GET /api/v1/dsr-market/visits`, `GET /api/v1/dsr-market/export`, `GET/POST /api/v1/dsr-market/competitor-brands` |
+| Google Drive | `POST/GET /api/v1/storage/connect|account|disconnect` |
+
+Android base URL must stay the same host as production desktop/web (`RetrofitClient.BASE_URL` → Render).

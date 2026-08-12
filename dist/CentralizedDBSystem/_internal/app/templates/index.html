@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bombay Dyeing - NEXORA v1.1 Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1>🏢 Bombay Dyeing - NEXORA v1.1 Dashboard</h1>
+            <div class="header-right">
+                <span id="user-info" class="user-info">Admin User</span>
+                <button onclick="logout()" class="btn-logout">Logout</button>
+            </div>
+        </div>
+    </header>
+    <p class="header-subtitle">Bombay Dyeing Limited | Enterprise Operations Platform</p>
+
+    <section class="premium-welcome card-highlight">
+        <div class="greeting-row">
+            <div>
+                <p class="eyebrow">Premium Operations</p>
+                <h2 id="greeting-text">Welcome to NEXORA Premium</h2>
+            </div>
+            <div class="stats-pill">Live status: Online</div>
+        </div>
+        <p class="subtitle">Unified distributor, retailer, order, sales order, and invoice management from a sleek premium console.</p>
+    </section>
+
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h2>NEXORA Login</h2>
+            <div class="form-group">
+                <label>Username:</label>
+                <input type="text" id="username" placeholder="mobile_test_admin" value="mobile_test_admin">
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input type="password" id="password" placeholder="Password" value="mobile_test_admin_123">
+            </div>
+            <button onclick="login()" class="btn btn-primary">Login</button>
+            <p id="loginError" class="error"></p>
+        </div>
+    </div>
+
+    <div id="dashboard" class="dashboard hidden">
+        <div class="container">
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <h3>Backend Status</h3>
+                    <p id="status" class="status-ok">✅ Online</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Modules</h3>
+                    <p>All features available</p>
+                </div>
+            </div>
+
+            <!-- MAIN NAVIGATION DASHBOARD -->
+            <div class="navigation-dashboard">
+                <div class="module-section">
+                    <h2>📦 Digital Warehouse</h2>
+                    <p class="module-description">Google Drive integration, file management, storage sync</p>
+                    <div class="card-description" id="storage-status">Storage status loading...</div>
+                    <div class="card-description" id="storage-info">Storage details will appear here after login.</div>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>🔗 Connect Google Drive</h3>
+                            <p>Link your Google Drive account</p>
+                            <button onclick="connectGoogleDrive()" class="btn btn-primary">Connect</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📤 Upload File</h3>
+                            <p>Upload documents to warehouse</p>
+                            <button onclick="showUploadModal()" class="btn btn-primary">Upload</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🔄 Sync Drive</h3>
+                            <p>Synchronize with Google Drive</p>
+                            <button onclick="syncGoogleDrive()" class="btn btn-secondary">Sync Now</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📁 File Library</h3>
+                            <p>View all indexed files</p>
+                            <button onclick="openFileLibrary()" class="btn btn-secondary">Open Library</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-section">
+                    <h2>🎯 Target vs Achievement</h2>
+                    <p class="module-description">Manage fiscal years, targets, and sales performance</p>
+                    <div class="module-status">
+                    <div id="target-summary" class="card-description">Loading fiscal year summary...</div>
+                    <div id="years-list" class="list-container"></div>
+                </div>
+                <div class="action-cards">
+                        <div class="action-card">
+                            <h3>📅 Add Financial Year</h3>
+                            <p>Create new fiscal year target</p>
+                            <button onclick="showAddYearModal()" class="btn btn-primary">Add Year</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>✏️ Manual Entry</h3>
+                            <p>Manually add achievement data</p>
+                            <button onclick="showManualEntryModal()" class="btn btn-primary">Enter Data</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📊 Upload Sales Report</h3>
+                            <p>Import Excel/CSV sales data</p>
+                            <button onclick="showReportUploadModal()" class="btn btn-secondary">Upload</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📈 View Summary</h3>
+                            <p>See year-wise analysis</p>
+                            <button onclick="openTargetSummary()" class="btn btn-secondary">View</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-section">
+                    <h2>👥 Smart Party Matching</h2>
+                    <p class="module-description">Duplicate detection, party consolidation, review queue</p>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>🔍 Scan Duplicates</h3>
+                            <p>Find duplicate party records</p>
+                            <button onclick="scanDuplicates()" class="btn btn-primary">Scan</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>💭 Review Suggestions</h3>
+                            <p>Review AI matching suggestions</p>
+                            <button onclick="openReviewQueue()" class="btn btn-primary">Review</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>✅ Approve / Reject</h3>
+                            <p>Approve or reject matches</p>
+                            <button onclick="openApprovalQueue()" class="btn btn-secondary">Manage</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🏷️ Alias Library</h3>
+                            <p>View party names & aliases</p>
+                            <button onclick="openAliasLibrary()" class="btn btn-secondary">View</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>👥 Party Master</h3>
+                            <p>Manage distributors and retailers</p>
+                            <button onclick="openPartyMasterSection()" class="btn btn-primary">Open Party Master</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-section">
+                    <h2>📊 Reports & Analytics</h2>
+                    <p class="module-description">Business intelligence and performance metrics</p>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>📉 View Reports</h3>
+                            <p>Sales, distribution, performance</p>
+                            <button onclick="openReports()" class="btn btn-primary">View</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>📊 View Dashboard</h3>
+                            <p>Real-time analytics dashboard</p>
+                            <button onclick="openAnalyticsDashboard()" class="btn btn-secondary">Open</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="module-section">
+                    <h2>⚙️ Settings & Administration</h2>
+                    <p class="module-description">User profile, workspace, connected services</p>
+                    <div class="action-cards">
+                        <div class="action-card">
+                            <h3>👤 Profile</h3>
+                            <p>View and edit profile</p>
+                            <button onclick="openProfileSettings()" class="btn btn-primary">Edit</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🏢 Workspace</h3>
+                            <p>Workspace settings and users</p>
+                            <button onclick="openWorkspaceSettings()" class="btn btn-primary">Manage</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>🔗 Connected Services</h3>
+                            <p>Manage API connections</p>
+                            <button onclick="openConnectedServices()" class="btn btn-secondary">View</button>
+                        </div>
+                        <div class="action-card">
+                            <h3>ℹ️ App Info</h3>
+                            <p>NEXORA v1.1 | Build info</p>
+                            <button onclick="showAppInfo()" class="btn btn-secondary">Info</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 6: DISTRIBUTOR DATA -->
+            <div class="module-section">
+                <h2>🏭 Distributor Data</h2>
+                <p class="module-description">Manage distributor profiles, performance, and relationships</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 Distributor List</h3>
+                        <p>View all registered distributors</p>
+                        <button onclick="loadDistributors()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>➕ Add Distributor</h3>
+                        <p>Register new distributor</p>
+                        <button onclick="showAddDistributorModal()" class="btn btn-primary">Add</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📊 Distributor Performance</h3>
+                        <p>Sales and achievement metrics</p>
+                        <button onclick="showDistributorAnalytics()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📞 Contact Details</h3>
+                        <p>Update contact information</p>
+                        <button onclick="showDistributorContacts()" class="btn btn-secondary">Manage</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 7: RETAILER DATA -->
+            <div class="module-section">
+                <h2>🛒 Retailer Data</h2>
+                <p class="module-description">Retail network management and point-of-sale tracking</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 Retailer List</h3>
+                        <p>View all registered retailers</p>
+                        <button onclick="loadRetailers()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>➕ Add Retailer</h3>
+                        <p>Register new retail outlet</p>
+                        <button onclick="showAddRetailerModal()" class="btn btn-primary">Add</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📊 Retailer Sales</h3>
+                        <p>Point-of-sale data and trends</p>
+                        <button onclick="showRetailerSales()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>🎯 Territory Assignment</h3>
+                        <p>Manage retail territories</p>
+                        <button onclick="showTerritoryMgmt()" class="btn btn-secondary">Manage</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 8: ORDER MANAGEMENT -->
+            <div class="module-section">
+                <h2>📦 Order Management</h2>
+                <p class="module-description">Order sheets, order placement, and fulfillment tracking</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📄 Order Sheets</h3>
+                        <p>Create and manage order sheets</p>
+                        <button onclick="loadOrderSheets()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>✏️ Create Order</h3>
+                        <p>Place new order</p>
+                        <button onclick="showCreateOrderModal()" class="btn btn-primary">Create</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📨 Orders Placed</h3>
+                        <p>Track placed and pending orders</p>
+                        <button onclick="loadOrdersPlaced()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>🚚 Order Fulfillment</h3>
+                        <p>Monitor delivery and fulfillment</p>
+                        <button onclick="showOrderFulfillment()" class="btn btn-secondary">Track</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 9: SALES ORDERS (SO) -->
+            <div class="module-section">
+                <h2>📝 Sales Orders (SO)</h2>
+                <p class="module-description">Generate, track, and manage sales orders</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 SO List</h3>
+                        <p>View all sales orders</p>
+                        <button onclick="loadSalesOrders()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>➕ Generate SO</h3>
+                        <p>Create new sales order</p>
+                        <button onclick="showGenerateSOModal()" class="btn btn-primary">Generate</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>✅ Approve SO</h3>
+                        <p>Approve pending sales orders</p>
+                        <button onclick="loadPendingSO()" class="btn btn-secondary">Approve</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📊 SO Analytics</h3>
+                        <p>Sales order trends and metrics</p>
+                        <button onclick="showSOAnalytics()" class="btn btn-secondary">View</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 10: COMMERCIAL INVOICES (CI) -->
+            <div class="module-section">
+                <h2>💳 Commercial Invoices (CI)</h2>
+                <p class="module-description">Invoice generation, tracking, and payment management</p>
+                <div class="action-cards">
+                    <div class="action-card">
+                        <h3>📋 Invoice List</h3>
+                        <p>View all invoices</p>
+                        <button onclick="loadInvoices()" class="btn btn-primary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📄 Generate Invoice</h3>
+                        <p>Create new commercial invoice</p>
+                        <button onclick="showGenerateInvoiceModal()" class="btn btn-primary">Generate</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>💰 Payment Status</h3>
+                        <p>Track payments and outstanding</p>
+                        <button onclick="loadPaymentStatus()" class="btn btn-secondary">View</button>
+                    </div>
+                    <div class="action-card">
+                        <h3>📧 Send Invoice</h3>
+                        <p>Email invoices to customers</p>
+                        <button onclick="showSendInvoiceModal()" class="btn btn-secondary">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <section id="party-master-section" class="card-highlight hidden">
+        <div class="container">
+            <div class="party-master-header">
+                <div>
+                    <p class="eyebrow">Party Master</p>
+                    <h2>Distributors & Retailers</h2>
+                    <p class="subtitle">Create, edit and manage distributors and retailers directly from the dashboard.</p>
+                </div>
+                <div class="party-master-actions">
+                    <button onclick="openDistributorForm()" class="btn btn-primary">+ Add Distributor</button>
+                    <button onclick="openRetailerForm()" class="btn btn-secondary">+ Add Retailer</button>
+                    <button onclick="closePartyMasterSection()" class="btn btn-secondary">Close</button>
+                </div>
+            </div>
+            <div class="party-master-tabs">
+                <button id="distributor-tab-button" class="tab-button active" onclick="openPartyMasterTab('distributor')">Distributors</button>
+                <button id="retailer-tab-button" class="tab-button" onclick="openPartyMasterTab('retailer')">Retailers</button>
+            </div>
+            <div id="distributor-panel" class="tab-panel">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>GST Number</th>
+                            <th>Territory</th>
+                            <th>City</th>
+                            <th>Phone</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="distributor-tbody"></tbody>
+                </table>
+            </div>
+            <div id="retailer-panel" class="tab-panel hidden">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Distributor</th>
+                            <th>GST Number</th>
+                            <th>Territory</th>
+                            <th>Phone</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="retailer-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <div id="distributor-form-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="distributor-form-title">Add Distributor</h2>
+            <input type="hidden" id="distributor-id" />
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="dist-name" placeholder="Distributor name" />
+            </div>
+            <div class="form-group">
+                <label>GST Number</label>
+                <input type="text" id="dist-gst" placeholder="GST number" />
+            </div>
+            <div class="form-group">
+                <label>Territory</label>
+                <input type="text" id="dist-territory" placeholder="Territory" />
+            </div>
+            <div class="form-group">
+                <label>City</label>
+                <input type="text" id="dist-city" placeholder="City" />
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="dist-phone" placeholder="Phone" />
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="dist-email" placeholder="Email" />
+            </div>
+            <div class="form-group">
+                <label>Address</label>
+                <input type="text" id="dist-address" placeholder="Address" />
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveDistributor(event)" class="btn btn-primary">Save Distributor</button>
+                <button onclick="closeModal('distributor-form-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="retailer-form-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="retailer-form-title">Add Retailer</h2>
+            <input type="hidden" id="retailer-id" />
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="retailer-name" placeholder="Retailer name" />
+            </div>
+            <div class="form-group">
+                <label>Distributor</label>
+                <select id="retailer-distributor"></select>
+            </div>
+            <div class="form-group">
+                <label>GST Number</label>
+                <input type="text" id="retailer-gst" placeholder="GST number" />
+            </div>
+            <div class="form-group">
+                <label>Territory</label>
+                <input type="text" id="retailer-territory" placeholder="Territory" />
+            </div>
+            <div class="form-group">
+                <label>City</label>
+                <input type="text" id="retailer-city" placeholder="City" />
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="retailer-phone" placeholder="Phone" />
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="retailer-email" placeholder="Email" />
+            </div>
+            <div class="form-group">
+                <label>Address</label>
+                <input type="text" id="retailer-address" placeholder="Address" />
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveRetailer(event)" class="btn btn-primary">Save Retailer</button>
+                <button onclick="closeModal('retailer-form-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN MODALS FOR ACTIONS -->
+    <div id="uploadModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Upload File to Digital Warehouse</h2>
+            <div class="form-group">
+                <label>Master Type</label>
+                <select id="uploadMasterType">
+                    <option value="distributors">Distributors</option>
+                    <option value="retailers">Retailers</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Select file</label>
+                <input type="file" id="fileInput" accept=".pdf,.xlsx,.xls,.csv,.docx" />
+            </div>
+            <div id="upload-status" class="upload-status"></div>
+            <button onclick="uploadFile()" class="btn btn-primary">Upload</button>
+            <button onclick="closeModal('uploadModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="addYearModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add Financial Year</h2>
+            <div class="form-group">
+                <label>Fiscal Year:</label>
+                <input type="text" id="fiscalYear" placeholder="2026-2027" />
+            </div>
+            <div class="form-group">
+                <label>Target Amount (₹):</label>
+                <input type="number" id="targetAmount" placeholder="1000000" />
+            </div>
+            <button onclick="submitAddYear()" class="btn btn-primary">Add</button>
+            <button onclick="closeModal('addYearModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="manualEntryModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Manual Achievement Entry</h2>
+            <div class="form-group">
+                <label>Fiscal Year:</label>
+                <select id="yearSelect"></select>
+            </div>
+            <div class="form-group">
+                <label>Distributor Name:</label>
+                <input type="text" id="distributorName" />
+            </div>
+            <div class="form-group">
+                <label>Achievement Amount (₹):</label>
+                <input type="number" id="achievementAmount" />
+            </div>
+            <button onclick="submitManualEntry()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('manualEntryModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="reportUploadModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Upload Sales Report</h2>
+            <div class="form-group">
+                <label>Choose file</label>
+                <input type="file" id="reportFile" accept=".xlsx,.xls,.csv" />
+            </div>
+            <div class="form-group">
+                <label>Select Fiscal Year:</label>
+                <select id="reportYear"></select>
+            </div>
+            <button onclick="uploadSalesReport()" class="btn btn-primary">Upload</button>
+            <button onclick="closeModal('reportUploadModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="scanModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Scanning for Duplicates...</h2>
+            <p id="scanStatus">Starting scan...</p>
+            <div class="progress-bar">
+                <div id="scanProgress" class="progress-fill"></div>
+            </div>
+            <button onclick="closeScan()" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>© 2026 Bombay Dyeing Limited. All rights reserved. NEXORA v1.1</p>
+        </div>
+    </footer>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

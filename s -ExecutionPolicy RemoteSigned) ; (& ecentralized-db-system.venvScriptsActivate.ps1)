@@ -1,0 +1,206 @@
+warning: in the working copy of 'app/static/app.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/static/premium.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/web_app.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'centralized_db_system/db.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/test_global_search.py', LF will be replaced by CRLF the next time Git touches it
+ .env                                               |   14 [32m+[m[31m-[m
+ NEXORA-v1.0-Documentation.md                       |    4 [32m+[m[31m-[m
+ README.md                                          |   32 [32m+[m
+ add_retailer_download.py                           |  163 [31m-[m
+ app/JWT_INTEGRATION_GUIDE.md                       |    2 [32m+[m[31m-[m
+ app/application.py                                 | 2796 [31m----------------[m
+ app/init_db.py                                     |  455 [32m++[m[31m-[m
+ .../filled_file_BND.xlsx                           |  Bin [31m20573[m -> [32m0[m bytes
+ .../order_file_Order_sheet_AW26.xlsx               |  Bin [31m17730[m -> [32m0[m bytes
+ .../filled_file_BND.xlsx                           |  Bin [31m20573[m -> [32m0[m bytes
+ .../filled_file_kag.xlsx                           |  Bin [31m18898[m -> [32m0[m bytes
+ .../invoice_file_102875959_ShriRam.pdf             |  482 [31m---[m
+ .../order_file_Order_sheet_AW26.xlsx               |  Bin [31m17730[m -> [32m0[m bytes
+ .../sales_order_file_102875959_ShriRam.pdf         |  482 [31m---[m
+ .../sales_order_file_102875959_ShriRam.pdf         |  482 [31m---[m
+ .../order_file_Order_sheet_AW26.xlsx               |  Bin [31m17730[m -> [32m0[m bytes
+ .../filled_file_kag.xlsx                           |  Bin [31m18898[m -> [32m0[m bytes
+ .../invoice_file_102876025_Balaji_Gurgaon.pdf      |  959 [31m------[m
+ .../order_file_Order_sheet_AW26.xlsx               |  Bin [31m17730[m -> [32m0[m bytes
+ .../sales_order_file_102875959_ShriRam.pdf         |  482 [31m---[m
+ app/jwt_service.py                                 |    2 [32m+[m
+ app/models.py                                      |  464 [32m++[m[31m-[m
+ app/platform/__init__.py                           |   29 [31m-[m
+ app/platform/ai_decision_framework.py              |   36 [31m-[m
+ app/platform/business_memory.py                    |   28 [31m-[m
+ app/platform/context_engine.py                     |   29 [31m-[m
+ app/platform/knowledge_graph.py                    |   44 [31m-[m
+ app/routes/__init__.py                             |   20 [32m+[m
+ app/routes/admin.py                                |   55 [32m+[m[31m-[m
+ app/routes/analytics.py                            |  452 [32m++[m[31m-[m
+ app/routes/auth.py                                 |  129 [32m+[m[31m-[m
+ app/routes/auth_routes.py                          |  238 [31m--[m
+ app/routes/data.py                                 | 2125 [32m+++++++++++[m[31m-[m
+ app/routes/intelligence.py                         |   76 [32m+[m[31m-[m
+ app/routes/inventory.py                            |   38 [32m+[m[31m-[m
+ app/routes/parties.py                              |  123 [32m+[m[31m-[m
+ app/routes/party_matching.py                       |  175 [32m+[m[31m-[m
+ app/routes/reports.py                              |  101 [32m+[m[31m-[m
+ app/routes/sales_orders.py                         |   94 [32m+[m[31m-[m
+ app/routes/schemas.py                              |   45 [32m+[m[31m-[m
+ app/routes/storage.py                              |  350 [32m+[m[31m-[m
+ app/routes/target_achievement.py                   |  219 [32m+[m[31m-[m
+ app/routes/workspaces.py                           |   23 [32m+[m[31m-[m
+ app/static/app.js                                  | 2915 [32m++++++++++++++[m[31m--[m
+ app/static/premium.css                             | 1604 [32m++++++++[m[31m-[m
+ app/static/style.css                               |  533 [32m++[m[31m-[m
+ app/storage/manager.py                             |   35 [32m+[m[31m-[m
+ app/storage/oauth.py                               |   81 [32m+[m[31m-[m
+ app/templates/index-premium.html                   |   31 [32m+[m
+ app/templates/index.html                           | 1210 [32m+++++[m[31m--[m
+ app/three_step_verification.py                     |  110 [32m+[m
+ app/utils.py                                       |    5 [32m+[m[31m-[m
+ app/verification.py                                |    2 [32m+[m
+ app/web_app.py                                     |  186 [32m+[m[31m-[m
+ app/web_app_backup.py                              | 2105 [31m------------[m
+ centralized_db_system/article_master.py            |   25 [32m+[m[31m-[m
+ centralized_db_system/db.py                        | 3519 [32m+++++++++++++++++[m[31m---[m
+ check_db_insert.py                                 |   14 [31m-[m
+ check_db_paths.py                                  |    9 [31m-[m
+ check_get_by_name.py                               |    5 [31m-[m
+ debug_endpoint.py                                  |   19 [31m-[m
+ debug_test.py                                      |   67 [31m-[m
+ debug_upload.py                                    |   42 [31m-[m
+ fix_dist.py                                        |   22 [31m-[m
+ inspect_verification.py                            |   22 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4927[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4927[m -> [32m0[m bytes
+ .../filled_file_alpha_traders_filled.xlsx          |  Bin [31m4910[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    4 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |    1 [31m-[m
+ .../order_file_order.xlsx                          |    1 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4880[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4926[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4926[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4927[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4927[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |    1 [31m-[m
+ .../order_file_order.xlsx                          |    1 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4880[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../filled_file_alpha_traders_filled.xlsx          |  Bin [31m4911[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    4 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |    1 [31m-[m
+ .../order_file_order.xlsx                          |    1 [31m-[m
+ .../filled_file_alpha_traders_filled.xlsx          |  Bin [31m4911[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    4 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4927[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4927[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4908[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4913[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4909[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |    1 [31m-[m
+ .../order_file_order.xlsx                          |    1 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4880[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4927[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4927[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |    1 [31m-[m
+ .../order_file_order.xlsx                          |    1 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |    1 [31m-[m
+ .../order_file_order.xlsx                          |    1 [31m-[m
+ .../filled_file_alpha_traders_filled.xlsx          |  Bin [31m4911[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    4 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4909[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4908[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4926[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4926[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4880[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4913[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4909[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4881[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4926[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4926[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4926[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4926[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4881[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4880[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4910[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    4 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4914[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4910[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4909[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4880[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../invoice_file_invoice.pdf                       |    7 [31m-[m
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../sales_order_file_sales_order.pdf               |    7 [31m-[m
+ .../filled_file_filled.xlsx                        |  Bin [31m4915[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4911[m -> [32m0[m bytes
+ .../filled_file_filled.xlsx                        |  Bin [31m4925[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m4925[m -> [32m0[m bytes
+ .../order_file_order.xlsx                          |  Bin [31m

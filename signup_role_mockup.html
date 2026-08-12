@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NEXORA — Sign up mockup</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --panel: #141a22;
+      --line: #243041;
+      --text: #e8eef6;
+      --muted: #8b9bb0;
+      --gold: #c9a227;
+      --gold-dim: #8a7018;
+      --ok: #3d9a6a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #1a2433 0%, var(--bg) 55%);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .shell {
+      width: min(440px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px 24px 22px;
+    }
+    .brand {
+      font-size: 1.55rem;
+      letter-spacing: 0.14em;
+      font-weight: 700;
+      color: var(--gold);
+      margin: 0 0 4px;
+    }
+    .sub {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .steps {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+    .step-dot {
+      flex: 1;
+      height: 4px;
+      border-radius: 99px;
+      background: var(--line);
+    }
+    .step-dot.on { background: var(--gold); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0 0 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    input {
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #0c1118;
+      color: var(--text);
+      margin-bottom: 14px;
+      font-size: 0.95rem;
+    }
+    input:focus {
+      outline: 1px solid var(--gold-dim);
+      border-color: var(--gold-dim);
+    }
+    .role-grid {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .role-card {
+      text-align: left;
+      padding: 14px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #0c1118;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .role-card:hover { border-color: #3a4d66; }
+    .role-card.selected {
+      border-color: var(--gold);
+      box-shadow: inset 0 0 0 1px var(--gold);
+    }
+    .role-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 1rem;
+    }
+    .role-card span {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+    .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 10px 0 18px;
+      line-height: 1.4;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    button {
+      flex: 1;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.92rem;
+    }
+    .btn-primary {
+      background: var(--gold);
+      color: #1a1405;
+    }
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+    .summary {
+      background: #0c1118;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+    .summary b { color: var(--gold); }
+    .badge {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(61, 154, 106, 0.15);
+      color: #7dcea0;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+    }
+    .lock-note {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .alt {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .alt a { color: var(--gold); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <p class="brand">NEXORA</p>
+    <p class="sub" id="subtitle">Create your account — Step 1 of 3</p>
+    <div class="steps" aria-hidden="true">
+      <div class="step-dot on" id="d1"></div>
+      <div class="step-dot" id="d2"></div>
+      <div class="step-dot" id="d3"></div>
+    </div>
+
+    <!-- Step 1: account -->
+    <div class="panel active" id="step1">
+      <label>Full name</label>
+      <input id="name" placeholder="e.g. Rahul Sharma" />
+      <label>Email or phone</label>
+      <input id="contact" placeholder="you@company.com" />
+      <label>Password</label>
+      <input id="password" type="password" placeholder="Min 8 characters" />
+      <label>Confirm password</label>
+      <input id="password2" type="password" placeholder="Re-enter password" />
+      <p class="hint" id="pwError" style="display:none;color:#e07a7a;margin-top:-6px;"></p>
+      <label>Company / firm name</label>
+      <input id="company" placeholder="Creates your private workspace" />
+      <div class="actions">
+        <button class="btn-primary" type="button" onclick="go(2)">Continue</button>
+      </div>
+      <p class="alt">Already have an account? <a href="#">Login</a></p>
+    </div>
+
+    <!-- Step 2: role -->
+    <div class="panel" id="step2">
+      <label>I am a…</label>
+      <div class="role-grid">
+        <button type="button" class="role-card" data-role="executive" onclick="pickRole(this)">
+          <strong>Sales Executive</strong>
+          <span>Full field ops — masters, orders, targets, distributors &amp; retailers under your workspace.</span>
+        </button>
+        <button type="button" class="role-card" data-role="distributor" onclick="pickRole(this)">
+          <strong>Distributor</strong>
+          <span>Fill orders, see your allocations &amp; invoices. Limited menu — not the executive dashboard.</span>
+        </button>
+        <button type="button" class="role-card" data-role="retailer" onclick="pickRole(this)">
+          <strong>Retailer</strong>
+          <span>Place / track your bookings only. Smallest UI — no master edits.</span>
+        </button>
+      </div>
+      <p class="hint">
+        Ye choice <b style="color:var(--text)">role</b> set karti hai → app usi UI ko dikhati hai.
+        Data alag cheez hai: company name se naya <b style="color:var(--text)">workspace</b> banta hai, isliye kisi aur ka data nahi dikhega.
+      </p>
+      <div class="actions">
+        <button class="btn-ghost" type="button" onclick="go(1)">Back</button>
+        <button class="btn-primary" type="button" id="nextRole" disabled onclick="go(3)">Continue</button>
+      </div>
+      <p class="lock-note">
+        <b style="color:var(--text)">Invite mode (recommended later):</b>
+        Executive distributor ko link bhejta hai → Sign up pe role pehle se <i>Distributor</i> lock —
+        galat UI choose nahi ho sakta.
+      </p>
+    </div>
+
+    <!-- Step 3: confirm + trial -->
+    <div class="panel" id="step3">
+      <div class="summary" id="summary"></div>
+      <div class="actions">
+        <button class="btn-ghost" type="button" onclick="go(2)">Back</button>
+        <button class="btn-primary" type="button" onclick="finish()">Start free trial</button>
+      </div>
+    </div>
+
+    <!-- Done -->
+    <div class="panel" id="step4">
+      <div class="summary">
+        Account ready (mock).<br />
+        Next login pe app <b id="finalRole"></b> UI kholegi.<br />
+        Data sirf aapke workspace mein rahega.
+        <div class="badge">7-DAY FREE TRIAL ACTIVE</div>
+      </div>
+      <button class="btn-primary" type="button" style="width:100%" onclick="location.reload()">Reset mockup</button>
+    </div>
+  </div>
+
+  <script>
+    let selectedRole = null;
+    const labels = {
+      executive: "Sales Executive",
+      distributor: "Distributor",
+      retailer: "Retailer",
+    };
+    const uis = {
+      executive: "Executive dashboard (full modules)",
+      distributor: "Distributor portal (orders / limited)",
+      retailer: "Retailer portal (bookings only)",
+    };
+
+    function pickRole(el) {
+      document.querySelectorAll(".role-card").forEach((c) => c.classList.remove("selected"));
+      el.classList.add("selected");
+      selectedRole = el.dataset.role;
+      document.getElementById("nextRole").disabled = false;
+    }
+
+    function go(n) {
+      if (n === 2) {
+        const pw = document.getElementById("password").value;
+        const pw2 = document.getElementById("password2").value;
+        const err = document.getElementById("pwError");
+        if (!pw || pw.length < 8) {
+          err.style.display = "block";
+          err.textContent = "Password must be at least 8 characters.";
+          return;
+        }
+        if (pw !== pw2) {
+          err.style.display = "block";
+          err.textContent = "Passwords do not match. Re-enter to confirm.";
+          return;
+        }
+        err.style.display = "none";
+        err.textContent = "";
+      }
+      if (n === 3 && !selectedRole) return;
+      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+      document.getElementById("step" + n).classList.add("active");
+      for (let i = 1; i <= 3; i++) {
+        document.getElementById("d" + i).classList.toggle("on", i <= Math.min(n, 3));
+      }
+      const sub = document.getElementById("subtitle");
+      if (n <= 3) sub.textContent = "Create your account — Step " + n + " of 3";
+      else sub.textContent = "You're in";
+
+      if (n === 3) {
+        const company = document.getElementById("company").value.trim() || "Your Company";
+        const name = document.getElementById("name").value.trim() || "You";
+        document.getElementById("summary").innerHTML =
+          "<div><b>" + name + "</b> · " + labels[selectedRole] + "</div>" +
+          "<div>Workspace: <b>" + company + "</b> (private)</div>" +
+          "<div>UI after login: <b>" + uis[selectedRole] + "</div>" +
+          "<div style='margin-top:8px;color:#8b9bb0;font-size:0.82rem'>Formula: UI = role · Data = workspace · Access = trial/subscription</div>";
+      }
+    }
+
+    function finish() {
+      document.getElementById("finalRole").textContent = labels[selectedRole];
+      go(4);
+      document.getElementById("d1").classList.add("on");
+      document.getElementById("d2").classList.add("on");
+      document.getElementById("d3").classList.add("on");
+      document.getElementById("subtitle").textContent = "Trial started (mock)";
+    }
+  </script>
+</body>
+</html>

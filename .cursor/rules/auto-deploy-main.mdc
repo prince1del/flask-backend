@@ -1,0 +1,23 @@
+---
+description: After desktop/Flask updates, commit and push to main for Render deploy
+alwaysApply: true
+---
+
+# Auto-deploy to Render
+
+When the user asks for UI/backend fixes or features in this Flask desktop project (`E:\centralized-db-system`):
+
+1. Implement the change.
+2. **Without waiting to be asked**, commit the relevant files and `git push origin main` so Render auto-deploys.
+3. Tell the user the commit hash and to hard-refresh after ~1–2 minutes.
+
+## Commit / push rules
+
+- Only stage files related to the change (no secrets, no `dist/`, build artifacts, or unrelated untracked junk).
+- Use a clear conventional commit message (`fix:`, `feat:`, etc.).
+- Do **not** force-push.
+- Android / `Nexora20` work stays in the Android chat/workspace — do not mix unless the user explicitly asks in this chat.
+
+## Exception
+
+If push fails (auth/network), report the error and the local commit hash so the user can push manually.

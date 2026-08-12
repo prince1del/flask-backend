@@ -1,0 +1,3002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#05070d" id="hop-theme-color-meta">
+    <script>
+      (function () {
+        try {
+          var core = { nexora: '#05070d', bright: '#f4f7fb', emerald: '#F8F4EA', custom: '#F8F4EA' };
+          var luxury = {
+            royal_navy:1, burgundy_antique:1, black_soft_gold:1, deep_teal_brass:1,
+            chocolate_gold:1, plum_rose:1, olive_brass:1, midnight_copper:1
+          };
+          function readStoredTheme() {
+            var legacy = localStorage.getItem('hop_theme_v1');
+            if (legacy) return legacy;
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (k && k.indexOf('hop_theme_v1__') === 0) {
+                var v = localStorage.getItem(k);
+                if (v) return v;
+              }
+            }
+            return 'nexora';
+          }
+          function readStoredCustom() {
+            var legacy = localStorage.getItem('hop_theme_custom_v1');
+            if (legacy) {
+              try { return JSON.parse(legacy); } catch (e) {}
+            }
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (k && k.indexOf('hop_theme_custom_v1__') === 0) {
+                try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e2) {}
+              }
+            }
+            return {};
+          }
+          var t = readStoredTheme() || 'nexora';
+          if (!core[t] && !luxury[t]) t = 'nexora';
+          var useCustomCss = (t === 'custom' || luxury[t]);
+          document.documentElement.setAttribute('data-hop-theme', useCustomCss ? 'custom' : t);
+          var meta = document.getElementById('hop-theme-color-meta');
+          var themeColor = core[t] || '#F8F4EA';
+          if (useCustomCss) {
+            try {
+              var c = readStoredCustom();
+              var root = document.documentElement.style;
+              function ok(h, fb) {
+                return /^#[0-9A-Fa-f]{6}$/.test(h || '') ? h : fb;
+              }
+              var sidebar = ok(c.sidebar, '#123C32');
+              var bg = ok(c.bg, '#F8F4EA');
+              var text = ok(c.text, '#1F1F1F');
+              var accent = ok(c.accent, '#C9A227');
+              var border = ok(c.border, '#DED3BE');
+              var card = ok(c.card, '#FFFFFF');
+              var muted = ok(c.muted, '#6B6254');
+              root.setProperty('--hop-c-sidebar', sidebar);
+              root.setProperty('--hop-c-bg', bg);
+              root.setProperty('--hop-c-text', text);
+              root.setProperty('--hop-c-accent', accent);
+              root.setProperty('--hop-c-border', border);
+              root.setProperty('--hop-c-card', card);
+              root.setProperty('--hop-c-muted', muted);
+              root.setProperty('--nx-gold', accent);
+              root.setProperty('--nx-gold-2', accent);
+              root.setProperty('--nxt-cyan', accent);
+              themeColor = bg;
+            } catch (e2) {}
+          }
+          if (meta) meta.setAttribute('content', themeColor);
+        } catch (e) {
+          document.documentElement.setAttribute('data-hop-theme', 'nexora');
+        }
+      })();
+    </script>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Business Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='design-system.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260802-header-logo-crop">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260802-logo-bolt">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260802-nexora-logo">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260802-nexora-logo">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260802-nexora-logo">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-studio.css') }}?v=20260801-theme-apply-btn">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bd-surfaces.css') }}?v=20260802-logo-bolt">
+    <style>
+        /* Excel-like bordered grid for all data tables (search results,
+           master data grids, party master lists) */
+        .data-table {
+            border-collapse: collapse;
+        }
+        .data-table th,
+        .data-table td {
+            border: 1px solid #444;
+            padding: 6px 10px;
+            white-space: nowrap;
+        }
+        .data-table th {
+            background: #1d1d1d;
+        }
+        .data-table tbody tr {
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .data-table tbody tr:hover {
+            background: rgba(255, 200, 87, 0.08);
+        }
+
+        html, body {
+            overflow-x: hidden !important;
+            max-width: 100vw !important;
+        }
+        /* Customers table layout — does NOT depend on body class or JS */
+        #party-master-section.customers-workspace:not(.hidden) {
+            position: fixed !important;
+            top: 64px !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            z-index: 200 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 8px 12px 10px !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            background: #080c14 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+        }
+        html[data-hop-theme="bright"] #party-master-section.customers-workspace:not(.hidden),
+        html[data-hop-theme="emerald"] #party-master-section.customers-workspace:not(.hidden),
+        html[data-hop-theme="custom"] #party-master-section.customers-workspace:not(.hidden) {
+            background: #F8F4EA !important;
+            color: #1F1F1F !important;
+        }
+        html[data-hop-theme="bright"] #party-master-section.customers-workspace:not(.hidden) {
+            background: #f4f7fb !important;
+            color: #0f172a !important;
+        }
+        html[data-hop-theme="custom"] #party-master-section.customers-workspace:not(.hidden) {
+            background: var(--hop-c-bg, #F8F4EA) !important;
+            color: var(--hop-c-text, #1F1F1F) !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .container {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-header,
+        #party-master-section.customers-workspace:not(.hidden) .party-master-tabs,
+        #party-master-section.customers-workspace:not(.hidden) .tab-panel:not(.hidden) .form-group,
+        #party-master-section.customers-workspace:not(.hidden) [id$="-pagination"] {
+            flex: 0 0 auto !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-header {
+            margin-bottom: 4px !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-tabs {
+            margin: 0 0 6px !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-scroll-wrapper {
+            flex: 1 1 0 !important;
+            height: 0 !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            width: 100% !important;
+            overflow: scroll !important;
+            overflow-x: scroll !important;
+            overflow-y: scroll !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
+            border-radius: 12px !important;
+            background: rgba(255,255,255,0.02) !important;
+            scrollbar-gutter: stable;
+            scrollbar-width: auto !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .party-master-scroll-wrapper::-webkit-scrollbar {
+            width: 12px !important;
+            height: 12px !important;
+            display: block !important;
+        }
+        #party-master-section .bd-customers-toolbar {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 8px !important;
+            margin: 0 0 6px !important;
+        }
+        #party-master-section .bd-customers-toolbar > .tab-button {
+            flex: 0 0 auto !important;
+        }
+        #party-master-section .bd-customers-filters {
+            display: flex !important;
+            flex: 1 1 100% !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 8px !important;
+            margin: 4px 0 0 !important;
+            width: 100% !important;
+            order: 3 !important;
+        }
+        #party-master-section .bd-customers-filters.hidden {
+            display: none !important;
+        }
+        #party-master-section .bd-customers-filter-inline {
+            display: inline-flex !important;
+            flex: 0 0 auto !important;
+            align-items: center !important;
+            gap: 6px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            width: auto !important;
+            max-width: none !important;
+            min-height: 28px !important;
+        }
+        #party-master-section .bd-customers-filter-inline.hidden {
+            display: none !important;
+        }
+        #party-master-section .bd-customers-filter-inline > span {
+            font-size: 0.68rem !important;
+            font-weight: 600 !important;
+            white-space: nowrap !important;
+            opacity: 0.8;
+            line-height: 1 !important;
+        }
+        #party-master-section .bd-customers-filter-inline select,
+        #party-master-section .bd-customers-filter-inline input,
+        #party-master-section #retailer-distributor-filter,
+        #party-master-section #retailer-city-filter,
+        #party-master-section #retailer-search-input,
+        #party-master-section #distributor-city-filter,
+        #party-master-section #distributor-search-input {
+            width: auto !important;
+            min-width: 120px !important;
+            max-width: 180px !important;
+            height: 28px !important;
+            min-height: 28px !important;
+            max-height: 28px !important;
+            padding: 0 8px !important;
+            margin: 0 !important;
+            border-radius: 8px !important;
+            font-size: 0.72rem !important;
+            line-height: 1.2 !important;
+            box-sizing: border-box !important;
+        }
+        #party-master-section #retailer-search-input,
+        #party-master-section #distributor-search-input {
+            min-width: 150px !important;
+            max-width: 200px !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .tab-panel:not(.hidden) {
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+            min-height: 0 !important;
+            flex: 1 1 0 !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) > .inv-shell,
+        #party-master-section.customers-workspace:not(.hidden) .bd-customers-shell {
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
+            min-height: 0 !important;
+            flex: 1 1 0 !important;
+            overflow: hidden !important;
+        }
+        #party-master-section.customers-workspace:not(.hidden) .bd-customers-body {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 0 !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+        }
+        #party-master-section [id$="-pagination"] {
+            flex: 0 0 auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        #party-master-section .party-master-pagination {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 8px !important;
+            flex-wrap: nowrap !important;
+            margin: 0 !important;
+            padding: 2px 6px !important;
+            min-height: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+        #party-master-section .party-master-pagination-meta,
+        #party-master-section .party-master-pagination-page {
+            font-size: 0.65rem !important;
+            line-height: 1.2 !important;
+            font-weight: 600 !important;
+            white-space: nowrap !important;
+        }
+        #party-master-section .party-master-pagination-page {
+            min-width: 64px !important;
+        }
+        #party-master-section .party-master-pagination-actions {
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+        }
+        #party-master-section .party-master-pagination .btn,
+        #party-master-section .party-master-pagination .btn-secondary {
+            min-height: 24px !important;
+            height: 24px !important;
+            max-height: 24px !important;
+            padding: 0 8px !important;
+            border-radius: 6px !important;
+            font-size: 0.65rem !important;
+            font-weight: 600 !important;
+            line-height: 1 !important;
+            box-shadow: none !important;
+        }
+        /* BD + HoP shell: big Customers table (original size) beside sticky nav — NOT cramped mount */
+        body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) {
+            position: fixed !important;
+            top: 64px !important;
+            left: 232px !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: calc(100vw - 232px) !important;
+            max-width: calc(100vw - 232px) !important;
+            z-index: 60 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            border: 0 !important;
+            border-left: 0.5px solid rgba(255,255,255,0.08) !important;
+            border-radius: 0 !important;
+            pointer-events: auto !important;
+            box-shadow: none !important;
+        }
+        @media (max-width: 900px) {
+            body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden),
+            #party-master-section.customers-workspace:not(.hidden) {
+                top: 56px !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 56px !important;
+                width: 100vw !important;
+                max-width: 100vw !important;
+                padding: 8px 10px 12px !important;
+                z-index: 80 !important;
+            }
+            body.bd-hop-ui #dashboard.bd-module-mode,
+            body.bd-hop-ui #dashboard[style*="width"] {
+                display: none !important;
+            }
+        }
+        body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) .container {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+            max-width: none !important;
+            width: 100% !important;
+        }
+        body.bd-hop-ui #party-master-section.customers-workspace:not(.hidden) .party-master-scroll-wrapper {
+            flex: 1 1 0 !important;
+            height: 0 !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            width: 100% !important;
+            overflow: scroll !important;
+            overflow-x: scroll !important;
+            overflow-y: scroll !important;
+            border: none !important;
+            background: transparent !important;
+            scrollbar-gutter: stable;
+        }
+        body.bd-hop-ui #party-master-section .party-master-table th,
+        body.bd-hop-ui #party-master-section .party-master-table td {
+            min-width: 72px !important;
+            max-width: none !important;
+            font-size: 0.68rem !important;
+            padding: 3px 6px !important;
+            line-height: 1.25 !important;
+        }
+        body.bd-hop-ui #party-master-section .party-master-header h2 {
+            font-size: 1.45rem !important;
+        }
+        #dashboard-honest-placeholder:not(.hidden) {
+            grid-column: 1 / -1 !important;
+            grid-row: 1 / -1 !important;
+            width: 100% !important;
+            min-height: 280px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            margin: 0 !important;
+        }
+        #party-master-section .party-master-table {
+            width: max-content !important;
+            min-width: 100% !important;
+            table-layout: auto !important;
+            border-collapse: collapse !important;
+        }
+        #party-master-section .party-master-table th,
+        #party-master-section .party-master-table td {
+            min-width: 72px !important;
+            max-width: none !important;
+            padding: 3px 6px !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            white-space: nowrap !important;
+            vertical-align: middle !important;
+            box-sizing: border-box !important;
+            font-size: 0.68rem !important;
+            line-height: 1.25 !important;
+        }
+        #party-master-section .party-master-table th:first-child,
+        #party-master-section .party-master-table td:first-child {
+            min-width: 120px !important;
+        }
+        #party-master-section .party-master-table th:last-child,
+        #party-master-section .party-master-table td:last-child,
+        #party-master-section .party-master-table td.pm-actions {
+            min-width: 72px !important;
+            max-width: none !important;
+            white-space: nowrap !important;
+        }
+        #party-master-section .party-master-table td.pm-actions .btn {
+            padding: 2px 6px !important;
+            font-size: 0.62rem !important;
+            min-height: 0 !important;
+            line-height: 1.2 !important;
+        }
+        #party-master-section .pm-action-btns,
+        #masters-grid-modal .pm-action-btns {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 4px !important;
+        }
+        #party-master-section .pm-icon-btn,
+        #masters-grid-modal .pm-icon-btn {
+            display: inline-grid !important;
+            place-items: center !important;
+            width: 24px !important;
+            height: 24px !important;
+            min-width: 24px !important;
+            min-height: 24px !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border-radius: 6px !important;
+            border: 1px solid rgba(255,255,255,0.14) !important;
+            background: rgba(255,255,255,0.06) !important;
+            color: inherit !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+            line-height: 0 !important;
+        }
+        #party-master-section .pm-icon-btn svg,
+        #masters-grid-modal .pm-icon-btn svg {
+            width: 13px !important;
+            height: 13px !important;
+            display: block !important;
+        }
+        #party-master-section .pm-icon-edit:hover,
+        #masters-grid-modal .pm-icon-edit:hover {
+            border-color: rgba(37,224,255,0.45) !important;
+            background: rgba(37,224,255,0.12) !important;
+            color: #7dd3fc !important;
+        }
+        #party-master-section .pm-icon-delete,
+        #masters-grid-modal .pm-icon-delete {
+            color: #f87171 !important;
+            border-color: rgba(248,113,113,0.28) !important;
+            background: rgba(248,113,113,0.08) !important;
+        }
+        #party-master-section .pm-icon-delete:hover,
+        #masters-grid-modal .pm-icon-delete:hover {
+            background: rgba(248,113,113,0.18) !important;
+            border-color: rgba(248,113,113,0.45) !important;
+        }
+        #masters-grid-modal .modal-content {
+            width: min(1100px, 96vw) !important;
+        }
+        #masters-grid-modal td.pm-actions {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+            background: inherit;
+            min-width: 72px !important;
+        }
+        .party-master-scroll-wrapper table {
+            table-layout: auto;
+        }
+
+        /* Article Master — Customers-style single-screen shell */
+        #article-master-workspace.am-workspace:not(.hidden) {
+            position: fixed !important;
+            top: 64px !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            z-index: 200 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            background: #080c14 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+        }
+        html[data-hop-theme="bright"] #article-master-workspace.am-workspace:not(.hidden),
+        html[data-hop-theme="emerald"] #article-master-workspace.am-workspace:not(.hidden),
+        html[data-hop-theme="custom"] #article-master-workspace.am-workspace:not(.hidden) {
+            background: #F8F4EA !important;
+            color: #1F1F1F !important;
+        }
+        html[data-hop-theme="bright"] #article-master-workspace.am-workspace:not(.hidden) {
+            background: #f4f7fb !important;
+            color: #0f172a !important;
+        }
+        html[data-hop-theme="custom"] #article-master-workspace.am-workspace:not(.hidden) {
+            background: var(--hop-c-bg, #F8F4EA) !important;
+            color: var(--hop-c-text, #1F1F1F) !important;
+        }
+        body.bd-hop-ui #article-master-workspace.am-workspace:not(.hidden) {
+            left: 232px !important;
+            width: calc(100vw - 232px) !important;
+            max-width: calc(100vw - 232px) !important;
+            z-index: 60 !important;
+            border-left: 0.5px solid rgba(255,255,255,0.08) !important;
+        }
+        @media (max-width: 900px) {
+            body.bd-hop-ui #article-master-workspace.am-workspace:not(.hidden),
+            #article-master-workspace.am-workspace:not(.hidden) {
+                top: 56px !important;
+                left: 0 !important;
+                width: 100vw !important;
+                max-width: 100vw !important;
+                bottom: 56px !important;
+                z-index: 80 !important;
+            }
+        }
+        #article-master-workspace.am-workspace:not(.hidden) > .inv-shell,
+        #article-master-workspace.am-workspace:not(.hidden) .bd-am-shell {
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
+            min-height: 0 !important;
+            flex: 1 1 0 !important;
+            overflow: hidden !important;
+        }
+        #article-master-workspace.am-workspace:not(.hidden) .bd-am-body {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 0 !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+        }
+        #article-master-workspace .bd-am-topbar--compact {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) auto !important;
+            grid-template-areas:
+                "ribbon actions"
+                "stats stats" !important;
+            align-items: center !important;
+            gap: 6px 10px !important;
+            min-height: 0 !important;
+            padding: 8px 10px !important;
+            overflow: visible !important;
+        }
+        #article-master-workspace .bd-am-ribbon {
+            grid-area: ribbon !important;
+            display: inline-flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 8px !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+            overflow: hidden !important;
+        }
+        #article-master-workspace .bd-am-topbar--compact .inv-title {
+            margin: 0 !important;
+            font-size: 0.95rem !important;
+            white-space: nowrap !important;
+        }
+        #article-master-workspace .bd-am-top-actions {
+            grid-area: actions !important;
+            display: inline-flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            gap: 6px !important;
+            flex: 0 0 auto !important;
+            position: relative !important;
+            z-index: 2 !important;
+            max-width: 100% !important;
+        }
+        #article-master-workspace .bd-am-top-actions .nx-btn,
+        #article-master-workspace .bd-am-top-actions .btn {
+            min-height: 28px !important;
+            height: 28px !important;
+            padding: 0 10px !important;
+            font-size: 0.7rem !important;
+            border-radius: 8px !important;
+            line-height: 1 !important;
+            white-space: nowrap !important;
+        }
+        #article-master-workspace .bd-am-file-input {
+            position: absolute !important;
+            width: 1px !important;
+            height: 1px !important;
+            padding: 0 !important;
+            margin: -1px !important;
+            overflow: hidden !important;
+            clip: rect(0, 0, 0, 0) !important;
+            white-space: nowrap !important;
+            border: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        #article-master-workspace .bd-am-stats {
+            grid-area: stats !important;
+            display: inline-flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 4px !important;
+            margin: 0 !important;
+            width: 100% !important;
+            min-width: 0 !important;
+        }
+        #article-master-workspace .bd-am-stat-chip {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 3px !important;
+            padding: 2px 7px !important;
+            border-radius: 999px !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
+            background: rgba(255,255,255,0.04) !important;
+            font-size: 0.62rem !important;
+            font-weight: 600 !important;
+            line-height: 1.2 !important;
+            white-space: nowrap !important;
+        }
+        #article-master-workspace .bd-am-stat-chip strong {
+            font-size: 0.68rem !important;
+            font-weight: 700 !important;
+        }
+        #article-master-workspace .bd-am-filter-inline {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 5px !important;
+            margin: 0 !important;
+            min-height: 28px !important;
+        }
+        #article-master-workspace .bd-am-filter-inline > span {
+            font-size: 0.65rem !important;
+            font-weight: 600 !important;
+            white-space: nowrap !important;
+            opacity: 0.8;
+            line-height: 1 !important;
+        }
+        #article-master-workspace #am-category-filter,
+        #article-master-workspace #am-search-filter {
+            width: auto !important;
+            min-width: 100px !important;
+            max-width: 150px !important;
+            height: 28px !important;
+            min-height: 28px !important;
+            max-height: 28px !important;
+            padding: 0 8px !important;
+            margin: 0 !important;
+            border-radius: 8px !important;
+            font-size: 0.7rem !important;
+            line-height: 1.2 !important;
+            box-sizing: border-box !important;
+        }
+        #article-master-workspace #am-search-filter {
+            min-width: 140px !important;
+            max-width: 180px !important;
+        }
+        #article-master-workspace #am-list-count {
+            font-size: 0.65rem !important;
+            font-weight: 600 !important;
+            opacity: 0.75;
+            white-space: nowrap !important;
+        }
+        #article-master-workspace .bd-am-upload-result {
+            flex: 0 0 auto !important;
+            margin: 0 !important;
+            padding: 0 10px !important;
+            font-size: 0.7rem !important;
+            min-height: 0 !important;
+        }
+        #article-master-workspace .bd-am-upload-result:empty {
+            display: none !important;
+            padding: 0 !important;
+        }
+        #article-master-workspace .bd-am-card {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 0 !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+        #article-master-workspace .am-scroll-wrapper {
+            flex: 1 1 0 !important;
+            height: 0 !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            width: 100% !important;
+            overflow: scroll !important;
+            overflow-x: scroll !important;
+            overflow-y: scroll !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
+            border-radius: 12px !important;
+            background: rgba(255,255,255,0.02) !important;
+            scrollbar-gutter: stable;
+        }
+        body.bd-hop-ui #article-master-workspace .am-scroll-wrapper {
+            border: none !important;
+            background: transparent !important;
+            border-radius: 0 !important;
+        }
+        #article-master-workspace .am-articles-table {
+            width: max-content !important;
+            min-width: 100% !important;
+            table-layout: auto !important;
+            border-collapse: collapse !important;
+        }
+        #article-master-workspace .am-articles-table th,
+        #article-master-workspace .am-articles-table td {
+            min-width: 64px !important;
+            max-width: none !important;
+            font-size: 0.68rem !important;
+            padding: 3px 6px !important;
+            line-height: 1.25 !important;
+            white-space: nowrap !important;
+        }
+        #article-master-workspace .am-articles-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 3;
+        }
+        #article-master-workspace .am-articles-table th:last-child {
+            z-index: 4;
+        }
+        #article-master-workspace .am-articles-table th:last-child,
+        #article-master-workspace .am-articles-table td.am-actions {
+            position: sticky;
+            right: 0;
+            left: auto;
+            z-index: 2;
+            background: #0a1018;
+            min-width: 88px !important;
+            box-shadow: -6px 0 10px rgba(0,0,0,0.25);
+        }
+        #article-master-workspace .am-articles-table th:last-child {
+            z-index: 5;
+            background: #0d1520;
+        }
+        #article-master-workspace .am-action-btns,
+        #article-master-workspace .pm-action-btns {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 4px !important;
+        }
+        #article-master-workspace .pm-icon-btn {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 26px !important;
+            height: 26px !important;
+            padding: 0 !important;
+            border-radius: 7px !important;
+            border: 1px solid rgba(255,255,255,0.14) !important;
+            background: rgba(255,255,255,0.04) !important;
+            color: inherit !important;
+            cursor: pointer !important;
+        }
+        #article-master-workspace .pm-icon-btn svg {
+            width: 13px !important;
+            height: 13px !important;
+        }
+        #article-master-workspace .pm-icon-edit:hover {
+            background: rgba(96,165,250,0.18) !important;
+            border-color: rgba(96,165,250,0.45) !important;
+        }
+        #article-master-workspace .pm-icon-delete {
+            color: #f87171 !important;
+        }
+        #article-master-workspace .pm-icon-delete:hover {
+            background: rgba(248,113,113,0.18) !important;
+            border-color: rgba(248,113,113,0.45) !important;
+        }
+        #article-master-workspace .pm-icon-history:hover {
+            background: rgba(52,211,153,0.16) !important;
+            border-color: rgba(52,211,153,0.4) !important;
+        }
+        body.bd-hop-ui #article-master-workspace .inv-title {
+            font-size: 1.45rem !important;
+        }
+    </style>
+</head>
+<body>
+    <header class="nexora-header">
+        <div class="header-left">
+            <button type="button" id="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Open menu" aria-controls="bd-left-nav" aria-expanded="false" onclick="toggleMobileNav()">Menu</button>
+            <button type="button" class="nexora-logo" onclick="goToHomePage()" title="Go to home" aria-label="NEXORA home">
+                <img class="nexora-logo-img" src="{{ url_for('static', filename='icons/nexora/nexora-horizontal-dark.png') }}" alt="NEXORA" decoding="async" />
+            </button>
+        </div>
+        <div class="header-center" id="global-search-shell">
+            <input class="global-search" id="global-search-input" type="search" placeholder="Search parties, articles, orders..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="scheduleGlobalSearch()" onkeydown="if(event.key==='Enter'){runGlobalSearch();}" />
+        </div>
+        <div class="header-right">
+            <div class="header-right-icons">
+                <button id="global-search-trigger" class="icon-btn header-search-icon" aria-label="Search" onclick="runGlobalSearch()">⌕</button>
+                <button class="icon-btn header-bell-btn" aria-label="Notifications" type="button" title="Notifications">🔔</button>
+            </div>
+            <div class="header-right-actions">
+                <button id="ask-nexora-btn" class="btn btn-primary btn-ask-compact hidden" type="button" onclick="openNexoraChat()" title="Ask NEXORA">Ask</button>
+                <button class="workspace-selector" type="button" title="Switch workspace">Workspace</button>
+                <div class="nx-profile-menu" id="nx-profile-menu">
+                    <button class="profile-btn profile-btn--avatar" id="user-info" type="button" title="Account" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false" aria-controls="nx-profile-dropdown" onclick="toggleUserProfileMenu(event)">U</button>
+                    <div class="nx-profile-dropdown hidden" id="nx-profile-dropdown" role="menu" aria-label="Account">
+                        <div class="nx-profile-dropdown-head">
+                            <div class="nx-profile-dropdown-avatar" id="nx-profile-dropdown-avatar" aria-hidden="true">U</div>
+                            <div class="nx-profile-dropdown-meta">
+                                <span class="nx-profile-dropdown-eyebrow">Signed in</span>
+                                <div class="nx-profile-dropdown-name" id="nx-profile-username">User</div>
+                                <div class="nx-profile-dropdown-role" id="nx-profile-role"></div>
+                            </div>
+                        </div>
+                        <div class="nx-profile-dropdown-divider" role="separator"></div>
+                        <button type="button" role="menuitem" class="nx-profile-dropdown-item nx-profile-dropdown-logout" onclick="closeUserProfileMenu(); logout();">
+                            <span class="nx-profile-dropdown-item-icon" aria-hidden="true">
+                                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/><path d="M13 14l4-4-4-4"/><path d="M7 10h10"/></svg>
+                            </span>
+                            <span class="nx-profile-dropdown-item-label">Logout</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    <div id="mobile-nav-backdrop" class="mobile-nav-backdrop" hidden onclick="closeMobileNav()" aria-hidden="true"></div>
+    <nav id="mobile-bottom-nav" class="mobile-bottom-nav" aria-label="Mobile quick navigation">
+        <button type="button" class="mobile-bottom-nav__btn" onclick="toggleMobileNav()">Menu</button>
+        <button type="button" class="mobile-bottom-nav__btn" onclick="mobileNavHome()">Home</button>
+    </nav>
+
+    <section class="premium-welcome card-highlight">
+        <div class="greeting-row">
+            <div>
+                <p class="eyebrow">Premium Operations</p>
+                <h2 id="greeting-text">Welcome to Nexora Premium</h2>
+            </div>
+            <div class="stats-pill">Live status: Online</div>
+        </div>
+        <p class="subtitle">Unified distributor, retailer, order, sales order, and invoice management from a sleek premium console.</p>
+    </section>
+
+    <div id="loginModal" class="modal">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Nexora Login</h2>
+            <p class="login-hint nx-text-dim" style="margin:0 0 12px;font-size:0.85rem;color:#94a3b8;">Sign in to continue</p>
+            <div class="form-group">
+                <label>Username:</label>
+                <input type="text" id="username" placeholder="Username">
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input type="password" id="password" placeholder="Password">
+            </div>
+            <button onclick="login()" class="btn btn-primary">Login</button>
+            <p id="loginError" class="error" role="status"></p>
+        </div>
+    </div>
+
+    <div id="updateModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Update Available</h2>
+            <p id="updatePromptText">A new version is ready to install.</p>
+            <p id="updateReleaseNotes" class="card-description"></p>
+            <div class="modal-actions">
+                <button onclick="restartToInstallUpdate()" class="btn btn-primary">Install & Restart</button>
+                <button onclick="deferUpdate()" class="btn btn-secondary">Later</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="dashboard" class="dashboard hidden">
+        <div class="nx-theme hop-shell bd-shell dashboard-grid">
+            <aside id="bd-left-nav" class="hop-nav left-nav" aria-label="NEXORA navigation">
+                <div class="hop-nav-brand sidebar-brand" role="button" tabindex="0" onclick="goToHomePage()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goToHomePage();}" title="Go to home" aria-label="Go to home">
+                    <div class="nx-core nx-core--logo" aria-hidden="true">
+                        <span class="nx-core-bolt nx-core-bolt--1"></span>
+                        <span class="nx-core-bolt nx-core-bolt--2"></span>
+                        <span class="nx-core-bolt nx-core-bolt--3"></span>
+                        <img src="{{ url_for('static', filename='icons/nexora/nexora-appicon.png') }}" alt="" width="32" height="32" decoding="async" />
+                    </div>
+                    <div class="bd-nav-brand-text">
+                        <div class="bd-nav-brand-company" id="bd-nav-brand-company" title="Company">NORTH HEAD OFFICE</div>
+                    </div>
+                </div>
+                <nav class="hop-nav-list nav-list">
+                    <button type="button" id="nav-my-day" class="nx-nav-item hop-nav-btn nav-item hidden" onclick="openModule('MyDay')"><span class="nav-label">My Day</span></button>
+                    <button type="button" id="nav-dashboard" class="nx-nav-item hop-nav-btn nav-item active" onclick="openModule('Dashboard')"><span class="nav-label">Dashboard</span></button>
+                    <div class="hop-nav-group bd-nav-group-crm">CRM</div>
+                    <button type="button" id="nav-customers" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Customers')"><span class="nav-label">Know your Customer</span></button>
+                    <div class="hop-nav-group bd-nav-group-sales">Sales</div>
+                    <button type="button" id="nav-order-desk" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('OrderDesk')"><span class="nav-label">Order Desk</span></button>
+                    <div class="hop-nav-group bd-nav-group-reports">Reports</div>
+                    <button type="button" id="nav-target-vs-achievement" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('TargetVsAchievement')"><span class="nav-label">Target vs Achievement</span></button>
+                    <div class="hop-nav-group bd-nav-group-ops">Ops</div>
+                    <button type="button" id="nav-cloudhub" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('CloudHub')"><span class="nav-label">Cloud Hub</span></button>
+                    <div class="hop-nav-fold is-collapsed bd-settings-fold" data-hop-fold="bd-settings" id="nav-settings-fold">
+                      <button type="button" id="nav-settings" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle nav-item" aria-expanded="false" onclick="bdToggleSettingsFold()">
+                        <span class="nav-label">Settings</span>
+                        <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
+                      </button>
+                      <div class="hop-nav-fold-items">
+                        <button type="button" id="nav-settings-company" class="nx-nav-item hop-nav-btn hop-nav-sub nav-item" onclick="openWorkspaceSettings('company')"><span class="nav-label">Company</span></button>
+                        <button type="button" id="nav-settings-theme" class="nx-nav-item hop-nav-btn hop-nav-sub nav-item" onclick="openWorkspaceSettings('theme')"><span class="nav-label">Theme</span></button>
+                      </div>
+                    </div>
+                    <button type="button" id="nav-purchase" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Purchase')"><span class="nav-label">Purchase</span></button>
+                    <button type="button" id="nav-inventory" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Inventory')"><span class="nav-label">Inventory</span></button>
+                    <button type="button" id="nav-finance" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Finance')"><span class="nav-label">Finance</span></button>
+                    <button type="button" id="nav-reports" class="nx-nav-item hop-nav-btn nav-item" onclick="openReports()"><span class="nav-label">Reports</span></button>
+                    <button type="button" id="nav-analytics" class="nx-nav-item hop-nav-btn nav-item" onclick="openAnalyticsDashboard()"><span class="nav-label">Analytics</span></button>
+                    <button type="button" id="nav-orders" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Orders')"><span class="nav-label">Orders</span></button>
+                    <button type="button" id="nav-approvals" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Approvals')"><span class="nav-label">Approvals</span></button>
+                    <button type="button" id="nav-banking" class="nx-nav-item hop-nav-btn nav-item" onclick="openModule('Banking')"><span class="nav-label">Banking</span></button>
+                </nav>
+                <!-- Logout moved to header account (B) menu -->
+                <div class="sidebar-footer hidden" aria-hidden="true">
+                    <p class="footer-title">GT Executive Pvt. Ltd.</p>
+                    <p class="footer-subtitle">North Head Office</p>
+                </div>
+            </aside>
+            <main class="hop-main main-content">
+                <div class="content-inner" id="bd-home-view">
+                    <header class="hop-view-header bd-home-header">
+                        <div>
+                            <p class="nx-text-faint hop-eyebrow">Executive</p>
+                            <h2 class="nx-display">Dashboard</h2>
+                            <p class="nx-text-dim">Live view of filled-order seasons and Target vs Achievement.</p>
+                        </div>
+                    </header>
+                    <div class="dashboard-topbar">
+                        <div>
+                            <div class="page-eyebrow">Executive dashboard</div>
+                            <h1>Business performance</h1>
+                        </div>
+                        <div class="topbar-actions">
+                            <button class="btn btn-primary" onclick="openModule('OrderDesk')">Order Desk</button>
+                            <button class="btn btn-secondary" onclick="openNexoraChat()">Ask NEXORA</button>
+                        </div>
+                    </div>
+
+                    <div class="overview-cards" id="dashboard-fake-overview-cards">
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Sales</div>
+                            <div class="overview-card-value">₹ 18.2 L</div>
+                            <div class="overview-card-meta positive">18.6% ↑</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Profit</div>
+                            <div class="overview-card-value">12.5%</div>
+                            <div class="overview-card-meta negative">2.1% ↓</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Collections</div>
+                            <div class="overview-card-value">₹ 3.1 L</div>
+                            <div class="overview-card-meta positive">5.2% ↑</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Cash</div>
+                            <div class="overview-card-value">₹ 9.4 L</div>
+                            <div class="overview-card-meta positive">8.3% ↑</div>
+                        </div>
+                        <div class="overview-card card-glow">
+                            <div class="overview-card-label">Outstanding</div>
+                            <div class="overview-card-value">₹ 2.3 L</div>
+                            <div class="overview-card-meta warning">3 bills</div>
+                        </div>
+                    </div>
+                    <div id="dashboard-honest-placeholder" class="card-highlight hidden" style="padding: 2rem; text-align: center;">
+                        <p class="subtitle">Live dashboard summary is not connected to real data yet — this section will show genuine figures once that integration is complete.</p>
+                    </div>
+
+                    <section id="dashboard-widget-dock" class="dashboard-widget-dock hidden" aria-label="Minimized widgets — click a chip to restore"></section>
+
+                    <section id="dashboard-ta-playing-card" class="dashboard-ta-widget-layer hidden" aria-label="Draggable Target vs Achievement widget">
+                        <article id="dashboard-ta-widget" class="ta-playing-card-compact card-highlight ta-draggable-widget fo-playing-card-compact">
+                            <button type="button" class="ta-widget-minimize-btn" onclick="minimizeTaWidget()" aria-label="Minimize widget" title="Minimize to dock bar (bottom-right)">─</button>
+                            <button type="button" class="ta-widget-drag-handle" aria-label="Hold and drag to move widget" title="Hold and drag to move">⠿</button>
+                            <div class="ta-playing-card-inner">
+                                <div class="ta-playing-card-corner" aria-hidden="true">
+                                    <span class="ta-playing-card-suit">🎯</span>
+                                    <span class="ta-playing-card-rank">TA</span>
+                                </div>
+                                <div class="ta-playing-card-header ta-widget-drag-surface">
+                                    <h2>Target vs Achievement</h2>
+                                    <p>Values in lakhs</p>
+                                </div>
+                                <div class="ta-playing-card-table-wrap ta-excel-sheet ta-widget-sheet">
+                                    <table class="ta-fy-overview-table ta-excel-table ta-excel-table-widget">
+                                        <thead>
+                                            <tr>
+                                                <th>FY</th>
+                                                <th>Target</th>
+                                                <th>Achievement</th>
+                                                <th>%</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dashboard-ta-overview-tbody">
+                                            <tr><td colspan="4">Loading…</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="ta-playing-card-footer">
+                                    <button type="button" class="ta-widget-details-btn" onclick="openModule('TargetVsAchievement')">Open details →</button>
+                                </div>
+                            </div>
+                        </article>
+                    </section>
+
+                    <section id="dashboard-fo-widgets-layer" class="dashboard-fo-widget-layer hidden" aria-label="Filled order season widgets"></section>
+
+                    <section class="ai-summary card-highlight" id="dashboard-fake-ai-summary">
+                        <div class="section-title-row">
+                            <h2>AI Greeting</h2>
+                            <p>Premium executive summary for your team.</p>
+                        </div>
+                        <div class="ai-summary-text">
+                            <p>Good morning, Kunwar.</p>
+                            <div class="summary-tags">
+                                <span class="summary-pill success">Sales up</span>
+                                <span class="summary-pill warning">GST due</span>
+                                <span class="summary-pill neutral">Inventory risk</span>
+                            </div>
+                            <ul>
+                                <li>Sales ₹18.2L — 8% higher than yesterday</li>
+                                <li>Collections ₹3.1L, ₹2.1L below weekly goal</li>
+                                <li>GST due in 2 days (₹2.3L)</li>
+                                <li>Punjab sales need attention, ABC Distributor inactive</li>
+                                <li>Cash position remains strong at ₹9.4L</li>
+                            </ul>
+                        </div>
+                        <div class="ai-summary-actions">
+                            <button class="btn btn-primary" onclick="openAnalyticsDashboard()">Prepare Action Plan</button>
+                            <button class="btn btn-secondary" onclick="openAnalyticsDashboard()">Open Ask NEXORA</button>
+                        </div>
+                    </section>
+
+                    <section class="business-health card-highlight" id="dashboard-fake-health">
+                        <div class="section-title-row">
+                            <h2>Business Health</h2>
+                            <p>Key health indicators at a glance.</p>
+                        </div>
+                        <div class="health-score-row">
+                            <div class="health-score"><span>8.4</span><small>/10</small></div>
+                            <div class="health-summary">Overall health is strong with stable cash and inventory.</div>
+                        </div>
+                        <div class="health-bar"><span></span></div>
+                        <div class="health-factors">
+                            <div><strong>9/10</strong><span>Cash Position</span></div>
+                            <div><strong>7/10</strong><span>Collections</span></div>
+                            <div><strong>8/10</strong><span>Inventory</span></div>
+                            <div><strong>8/10</strong><span>Growth</span></div>
+                            <div><strong>6/10</strong><span>Profitability</span></div>
+                        </div>
+                    </section>
+
+                    <section class="recent-activities card-highlight" id="dashboard-fake-activities">
+                        <div class="section-title-row">
+                            <h2>Recent Activities</h2>
+                            <p>Latest execution updates across operations.</p>
+                        </div>
+                        <div class="activity-table">
+                            <div class="activity-row header"><span>Time</span><span>User</span><span>Action</span><span>Reference</span></div>
+                            <div class="activity-row"><span>2 min</span><span>Kunwar</span><span>Created invoice</span><span>INV-001</span></div>
+                            <div class="activity-row"><span>18 min</span><span>Ayush</span><span>Updated customer</span><span>CUST-045</span></div>
+                            <div class="activity-row"><span>43 min</span><span>Shikhar</span><span>Payment received</span><span>PAY-556</span></div>
+                            <div class="activity-row"><span>1 hr</span><span>Sumit</span><span>Added distributor</span><span>DIST-020</span></div>
+                        </div>
+                    </section>
+
+                    <section class="priorities card-highlight" id="dashboard-fake-priorities">
+                        <div class="section-title-row">
+                            <h2>Today's Priorities</h2>
+                            <p>Focus areas for the next shift.</p>
+                        </div>
+                        <ol>
+                            <li><span>Collect outstanding follow-up</span><small>3 customers to contact</small></li>
+                            <li><span>Prepare GST return</span><small>Due in 23 hours</small></li>
+                            <li><span>Review profit drop</span><small>Compare with last week</small></li>
+                            <li><span>Reactivate ABC Distributor</span><small>Inactive for 5 days</small></li>
+                            <li><span>Approve pending invoices</span><small>Total ₹4.2L</small></li>
+                        </ol>
+                    </section>
+                </div>
+                <div id="bd-module-mount" class="bd-module-mount hidden" aria-live="polite"></div>
+            </main>
+            <aside class="right-sidebar hidden" id="dashboard-fake-rightbar" aria-hidden="true">
+                <section class="rightbar-card">
+                    <div class="rightbar-heading">
+                        <span>Cash Position</span>
+                        <span class="status-pill success">Healthy</span>
+                    </div>
+                    <div class="rightbar-body">
+                        <div class="rightbar-row"><span>Available Cash</span><strong>₹ 9.4 L</strong></div>
+                        <div class="rightbar-row"><span>Collections Due</span><strong>₹ 3.1 L</strong></div>
+                        <div class="rightbar-row"><span>Overdues</span><strong>3 bills</strong></div>
+                        <div class="rightbar-row"><span>Net Flow</span><strong>+₹ 1.2 L</strong></div>
+                    </div>
+                </section>
+                <section class="rightbar-card">
+                    <div class="rightbar-heading">
+                        <span>Alerts</span>
+                        <span class="status-pill warning">3</span>
+                    </div>
+                    <ul class="task-list">
+                        <li><span class="checkbox"></span>GST payment due tomorrow</li>
+                        <li><span class="checkbox"></span>ABC Distributor inactive 5 days</li>
+                        <li><span class="checkbox"></span>3 collections overdue</li>
+                    </ul>
+                </section>
+                <section class="rightbar-card">
+                    <div class="rightbar-heading">
+                        <span>Recommendations</span>
+                        <span class="status-pill success">2</span>
+                    </div>
+                    <ul class="approval-list">
+                        <li>Follow up on overdue accounts</li>
+                        <li>Improve profit margin on SKU X</li>
+                        <li>Review cash reserve for payroll</li>
+                    </ul>
+                </section>
+            </aside>
+        </div>
+    </div>
+
+    <section id="sales-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Sales</span></div>
+                <h2>Sales Workspace</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-subnav">
+            <button id="sales-tab-overview" class="workspace-subitem active">Overview</button>
+            <button id="sales-tab-invoices" class="workspace-subitem">Invoices</button>
+            <button id="sales-tab-orders" class="workspace-subitem">Orders</button>
+            <button id="sales-tab-reports" class="workspace-subitem">Reports</button>
+        </div>
+        <div class="workspace-panels" id="sales-fake-metrics">
+            <div class="metric-card"><span>Revenue</span><strong>₹ 18.4L</strong></div>
+            <div class="metric-card"><span>Orders</span><strong>184</strong></div>
+            <div class="metric-card"><span>Collections</span><strong>₹ 6.1L</strong></div>
+            <div class="metric-card"><span>Pending</span><strong>24</strong></div>
+        </div>
+    </section>
+
+    <section id="executive-home-workspace" class="workspace-shell hidden" hidden>
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Executive</span><span>›</span><span>My Day</span></div>
+                <h2>My Day</h2>
+                <p class="subtitle" id="executive-home-greeting">Your live field summary — parties, targets, orders, and follow-ups.</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div id="executive-home-loading" class="card-highlight executive-home-loading">Loading your day…</div>
+        <div id="executive-home-content" class="hidden">
+            <div class="executive-stats-grid" id="executive-stats-grid"></div>
+
+            <div class="executive-home-panels">
+                <div class="card-highlight executive-panel hidden" aria-hidden="true">
+                    <p class="subtitle">My Day is temporarily hidden.</p>
+                </div>
+
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>Pending Actions</h2>
+                        <p id="executive-pending-count">—</p>
+                    </div>
+                    <div id="executive-pending-list" class="executive-action-list"></div>
+                </div>
+
+                <div class="card-highlight executive-panel executive-panel-wide">
+                    <div class="section-title-row">
+                        <h2>Order Status Board</h2>
+                        <p>From Order Lifecycle tracking (real uploads)</p>
+                    </div>
+                    <div class="executive-table-wrap">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Distributor</th>
+                                    <th>Order Ref</th>
+                                    <th>SO</th>
+                                    <th>CI</th>
+                                    <th>Payment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="executive-order-status-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>Visit Log</h2>
+                        <p>Your field visits (saved to workspace)</p>
+                    </div>
+                    <div id="executive-visits-list" class="executive-action-list"></div>
+                    <button class="btn btn-primary" style="margin-top: 10px;" onclick="openExecutiveVisitModal()">Log visit</button>
+                </div>
+
+                <div class="card-highlight executive-panel">
+                    <div class="section-title-row">
+                        <h2>Quick links</h2>
+                        <p>Jump to working modules</p>
+                    </div>
+                    <div class="executive-quick-links">
+                        <button class="btn btn-secondary" onclick="openModule('Customers')">Customers / Party 360</button>
+                        <button class="btn btn-secondary" onclick="openModule('OrderDesk')">Order Desk</button>
+                        <button class="btn btn-secondary" onclick="openModule('OrderFulfillment')">Order Fulfillment</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- House of Prizm — isolated product shell (hop_admin only). Does not replace NEXORA executive My Day. -->
+    <section id="hop-executive-workspace" class="workspace-shell hidden">
+        <div class="nx-theme hop-shell">
+            <aside class="hop-nav" aria-label="House of Prizm navigation">
+                <div class="hop-nav-brand">
+                    <div class="nx-core" aria-hidden="true"></div>
+                    <div>
+                        <div class="nx-brand-word">PRIZM</div>
+                        <div class="nx-brand-sub">HOUSE OF PRIZM</div>
+                    </div>
+                </div>
+                <nav class="hop-nav-list">
+                    <button type="button" class="nx-nav-item hop-nav-btn active" data-hop-view="dashboard" onclick="openHopView('dashboard')">Dashboard</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="parties" onclick="openHopView('parties')">Parties</button>
+                    <div class="hop-nav-fold is-collapsed" data-hop-fold="sale">
+                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="false" onclick="hopToggleNavFold('sale')">
+                        <span class="nav-label">Sale</span>
+                        <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
+                      </button>
+                      <div class="hop-nav-fold-items">
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="invoices" onclick="openHopView('invoices')">Sale Invoices</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="commission" onclick="openHopView('commission')">Commission</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_estimates" onclick="openHopView('sale_estimates')">Estimate / Quotation</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_proforma" onclick="openHopView('sale_proforma')">Proforma Invoice</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="payments" onclick="openHopView('payments')">Payment-In</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_orders" onclick="openHopView('sale_orders')">Sale Order</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_challan" onclick="openHopView('sale_challan')">Delivery Challan</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_returns" onclick="openHopView('sale_returns')">Sale Return / Credit Note</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="sale_fa" onclick="openHopView('sale_fa')">Sale FA</button>
+                      </div>
+                    </div>
+                    <div class="hop-nav-fold is-collapsed" data-hop-fold="purchase">
+                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="false" onclick="hopToggleNavFold('purchase')">
+                        <span class="nav-label">Purchase &amp; Expense</span>
+                        <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
+                      </button>
+                      <div class="hop-nav-fold-items">
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="purchase_bills" onclick="openHopView('purchase_bills')">Purchase Bills</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="purchase_payment_out" onclick="openHopView('purchase_payment_out')">Payment-Out</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="purchase_expenses" onclick="openHopView('purchase_expenses')">Expenses</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="purchase_orders" onclick="openHopView('purchase_orders')">Purchase Order</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="purchase_returns" onclick="openHopView('purchase_returns')">Purchase Return / Dr. Note</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="purchase_fa" onclick="openHopView('purchase_fa')">Purchase FA</button>
+                      </div>
+                    </div>
+                    <div class="hop-nav-group">Products</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="products" onclick="openHopView('products')">Catalogue</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="samples" onclick="openHopView('samples')">Samples</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="fabric_preview" onclick="openHopView('fabric_preview')">Fabric Preview</button>
+                    <div class="hop-nav-group">Procurement</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="vendor_cmp" onclick="openHopView('vendor_cmp')">Vendor Compare</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="orders" onclick="openHopView('orders')">Orders / PO</button>
+                    <div class="hop-nav-group">Ops</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="dispatches" onclick="openHopView('dispatches')">Dispatch</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="complaints" onclick="openHopView('complaints')">Complaints</button>
+                    <div class="hop-nav-group">Reports</div>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="receivables" onclick="openHopView('receivables')">Receivables</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="customer_dash" onclick="openHopView('customer_dash')">Customer Dashboard</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="daily" onclick="openHopView('daily')">Daily Activity</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="profit" onclick="openHopView('profit')">Profitability</button>
+                    <button type="button" class="nx-nav-item hop-nav-btn" data-hop-view="targets" onclick="openHopView('targets')">Monthly Target</button>
+                    <div class="hop-nav-fold is-collapsed" data-hop-fold="settings">
+                      <button type="button" class="nx-nav-item hop-nav-btn hop-nav-fold-toggle" aria-expanded="false" onclick="hopToggleNavFold('settings')">
+                        <span class="nav-label">Settings</span>
+                        <span class="hop-nav-caret" aria-hidden="true"><svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"/></svg></span>
+                      </button>
+                      <div class="hop-nav-fold-items">
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="theme" onclick="openHopView('theme')">Theme</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="vyapar_import" onclick="openHopView('vyapar_import')">Import from Vyapar</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="wipe_data" onclick="openHopView('wipe_data')">Wipe all data</button>
+                      </div>
+                    </div>
+                </nav>
+                <!-- Logout: header account menu (same as BD) -->
+            </aside>
+
+            <main class="hop-main">
+                <div id="hop-view-dashboard" class="hop-view">
+                    <header class="hop-view-header">
+                        <div>
+                            <p class="nx-text-faint hop-eyebrow">Executive</p>
+                            <h2 class="nx-display">Dashboard</h2>
+                            <p class="nx-text-dim">Business health in 30 seconds — click any card to drill in. Live data only.</p>
+                        </div>
+                    </header>
+                    <div id="hop-exec-loading" class="nx-text-dim">Loading snapshot…</div>
+                    <div id="hop-exec-error" class="nx-oc-error hidden"></div>
+                    <div id="hop-exec-content" class="hidden">
+                        <div class="hop-kpi-grid" id="hop-kpi-grid"></div>
+                        <div class="hop-exec-meta nx-text-faint" id="hop-exec-meta"></div>
+                        <div class="hop-exec-notes nx-text-dim" id="hop-exec-notes"></div>
+                    </div>
+                </div>
+
+                <div id="hop-view-project-hub" class="hop-view hidden">
+                    <header class="hop-view-header hop-view-header-row">
+                        <div>
+                            <button type="button" class="nx-btn hop-back-btn hop-mobile-back" onclick="hopGoBack()">← Back</button>
+                            <p class="nx-text-faint hop-eyebrow">Project Hub</p>
+                            <h2 class="nx-display" id="hop-hub-title">Project</h2>
+                            <p class="nx-text-dim" id="hop-hub-sub"></p>
+                        </div>
+                        <div class="hop-hub-stage-wrap">
+                            <label>Funnel stage
+                                <select id="hop-hub-stage" onchange="hopChangeProjectStage()"></select>
+                            </label>
+                        </div>
+                    </header>
+                    <div class="hop-tabs" id="hop-hub-tabs"></div>
+                    <div id="hop-hub-body" class="hop-hub-body"></div>
+                </div>
+
+                <div id="hop-module-mount"></div>
+            </main>
+        </div>
+    </section>
+
+    <section id="target-vs-achievement-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Target vs Achievement</span></div>
+                <h2>Target vs Achievement</h2>
+                <p class="subtitle">Fiscal year targets and achievement at a glance (lakhs).</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="card-highlight ta-fy-overview-panel" style="margin-top: 12px;">
+            <div class="section-title-row">
+                <h2>FY overview</h2>
+                <p>Target · Achievement · Achievement % (lakhs)</p>
+            </div>
+            <div class="ta-fy-overview-full-wrap ta-excel-sheet">
+                <table class="ta-fy-overview-table ta-excel-table ta-excel-table-full data-table">
+                    <thead>
+                        <tr>
+                            <th>FY</th>
+                            <th>Target</th>
+                            <th>Achievement</th>
+                            <th>Achievement %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ta-ws-overview-tbody">
+                        <tr><td colspan="4">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-highlight ta-ws-fy-toolbar" style="margin-top: 12px;">
+            <div class="ta-ws-fy-toolbar-inner">
+                <span class="executive-ta-fy-label">Fiscal year</span>
+                <select id="ta-ws-year-select" class="executive-year-select" onchange="loadTaTargetWorkspace()"></select>
+                <span id="ta-ws-fy-label" class="subtitle"></span>
+            </div>
+        </div>
+
+        <div class="card-highlight executive-panel ta-achievement-panel" style="margin-top: 12px;">
+            <div class="section-title-row">
+                <h2>Achievement from Excel</h2>
+                <p id="ta-ws-ach-summary">Upload your Primary / pivot sales file — category-wise (Bed Sheet, Towels, etc.)</p>
+            </div>
+            <div class="workspace-actions" style="margin-top: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="openSalesExcelUploadModal()">Upload sales Excel</button>
+                <button type="button" id="ta-ws-category-btn" class="btn btn-secondary hidden" onclick="openTaCategoryDetailModal()">Category detail</button>
+                <button type="button" class="btn btn-danger" onclick="deleteTaFyAchievement()">Delete FY achievement</button>
+            </div>
+            <p class="ta-entry-hint">Same format as your <strong>Primary 2025-26</strong> file: NICK, CUSTOMER NAME, CATEGORY, month columns, Grand Total — values in <strong>lakhs</strong>.</p>
+            <div id="ta-ws-category-totals" class="ta-ws-category-totals hidden"></div>
+            <div class="executive-table-wrap" style="margin-top: 12px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Distributor</th>
+                            <th>Target (L)</th>
+                            <th>Excel (L)</th>
+                            <th>CI (L)</th>
+                            <th>Manual (L)</th>
+                            <th>Total (L)</th>
+                            <th>%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ta-ws-ach-tbody">
+                        <tr><td colspan="7">Upload sales Excel to import achievement.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-highlight executive-panel" style="margin-top: 12px;">
+            <div class="section-title-row">
+                <h2>Targets</h2>
+                <p class="subtitle">Distributor-wise FY targets (lakhs)</p>
+            </div>
+            <div class="executive-ta-fy-header">
+                <div class="executive-ta-fy-target">
+                    <span class="executive-ta-fy-label">FY target</span>
+                    <strong id="ta-ws-fy-target">—</strong>
+                </div>
+            </div>
+            <div class="workspace-actions" style="margin-top: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="openFyManualTargetModal()">FY target</button>
+                <button type="button" class="btn btn-secondary" onclick="openDistributorTargetModal()">Distributor target</button>
+                <button type="button" class="btn btn-danger" onclick="deleteTaFyTargets()">Delete FY targets</button>
+            </div>
+            <p class="ta-entry-hint">Manual entry: click <strong>FY target</strong> for the overall year target (lakhs), or <strong>Distributor target</strong> for each distributor name + target.</p>
+            <div class="executive-table-wrap" style="margin-top: 12px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Distributor</th>
+                            <th>Target (L)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ta-ws-target-tbody">
+                        <tr><td colspan="2">Select a fiscal year or add targets.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="cloud-hub-workspace" class="workspace-shell cloud-hub-shell hidden">
+        <div class="workspace-header cloud-hub-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Cloud Hub</span></div>
+                <h2>Cloud Hub</h2>
+                <p class="subtitle">Browse and open your Google Drive files from NEXORA.</p>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+
+        <div class="cloud-hub-layout">
+            <aside class="cloud-hub-side">
+                <div class="cloud-hub-drive-card">
+                    <div class="cloud-hub-drive-brand">
+                        <span class="cloud-hub-drive-icon" aria-hidden="true">☁</span>
+                        <div>
+                            <h3>Google Drive</h3>
+                            <p id="cloud-hub-status" class="cloud-hub-status">Checking connection…</p>
+                        </div>
+                    </div>
+                    <div class="cloud-hub-meter" aria-hidden="true">
+                        <div class="cloud-hub-meter-fill" id="cloud-hub-meter-fill"></div>
+                    </div>
+                    <p id="cloud-hub-info" class="cloud-hub-info">Loading storage details…</p>
+                    <div class="cloud-hub-actions">
+                        <button type="button" class="btn btn-primary" id="cloud-hub-connect-btn" onclick="connectGoogleDrive()">Connect Google Drive</button>
+                        <button type="button" class="btn btn-secondary" id="cloud-hub-sync-btn" onclick="syncGoogleDrive()" disabled>Sync files</button>
+                        <button type="button" class="btn btn-secondary" id="cloud-hub-disconnect-btn" onclick="disconnectGoogleDrive()" disabled>Disconnect</button>
+                        <button type="button" class="btn btn-secondary" onclick="loadCloudHubWorkspace()">Refresh</button>
+                    </div>
+                    <p class="cloud-hub-hint">Click any file to download it in NEXORA (uses your connected Drive).</p>
+                </div>
+            </aside>
+
+            <div class="cloud-hub-main">
+                <div class="cloud-hub-toolbar">
+                    <div>
+                        <h3>Your files</h3>
+                        <p id="cloud-hub-file-count">Indexed from connected Drive</p>
+                    </div>
+                    <label class="cloud-hub-search">
+                        <span class="sr-only">Search files</span>
+                        <input type="search" id="cloud-hub-search-input" placeholder="Search files…" oninput="filterCloudHubFiles()" autocomplete="off">
+                    </label>
+                </div>
+                <div class="cloud-hub-files-wrap">
+                    <table class="cloud-hub-files-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cloud-hub-files-tbody">
+                            <tr class="cloud-hub-empty-row"><td colspan="4">Connect Google Drive to see files.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="order-desk-workspace" class="workspace-shell hidden">
+        <div class="nx-theme nx-od-screen nx-od-hub">
+            <header class="nx-od-hero">
+                <div class="nx-od-hero-copy">
+                    <p class="nx-text-faint hop-eyebrow">Sales</p>
+                    <h2 class="nx-display">Order Desk</h2>
+                    <p class="nx-text-dim nx-od-lead">Run your full order pipeline from one place — upload masters, filled orders, sales orders, and commercial invoices with clear tracking.</p>
+                </div>
+                <button type="button" class="back-btn" onclick="goBack()">← Back</button>
+            </header>
+
+            <article class="nx-od-feature">
+                <div class="nx-od-feature-main">
+                    <span class="nx-od-feature-badge">Primary workflow</span>
+                    <h3 class="nx-display">Order Fulfillment</h3>
+                    <p class="nx-text-dim">Move documents through a clean sequence and keep every SO / CI linked to the right distributor and order reference.</p>
+                    <button type="button" class="nx-btn nx-btn-primary nx-od-feature-cta" onclick="openModule('OrderFulfillment')">Open Order Fulfillment</button>
+                </div>
+                <ol class="nx-od-pipeline" aria-label="Order fulfillment steps">
+                    <li><span>01</span><strong>Article Master</strong><em>Catalog base</em></li>
+                    <li><span>02</span><strong>Filled Order</strong><em>Sheet upload</em></li>
+                    <li><span>03</span><strong>Sales Order</strong><em>SO PDF</em></li>
+                    <li><span>04</span><strong>Invoice (CI)</strong><em>Commercial invoice</em></li>
+                </ol>
+            </article>
+
+            <div class="nx-od-highlights">
+                <div class="nx-od-highlight">
+                    <strong>Upload</strong>
+                    <span>Masters, filled orders, SO packs, and CI files in one screen.</span>
+                </div>
+                <div class="nx-od-highlight">
+                    <strong>Link</strong>
+                    <span>Connect documents to distributors and order references.</span>
+                </div>
+                <div class="nx-od-highlight">
+                    <strong>Track</strong>
+                    <span>Watch SO / CI status and payment or transit updates.</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="order-fulfillment-workspace" class="workspace-shell hidden">
+        <div class="nx-theme nx-of-screen">
+            <header class="nx-of-top">
+                <div class="nx-of-top-title">
+                    <p class="nx-text-faint hop-eyebrow">Order Desk</p>
+                    <h2 class="nx-display">Order Fulfillment</h2>
+                </div>
+                <button class="back-btn" onclick="goBack()">← Back</button>
+            </header>
+
+            <div class="of-upload-grid">
+                <article class="nx-card of-step-card">
+                    <div class="of-step-head"><span class="of-step-num">1</span><h3>Article Master</h3></div>
+                    <input type="file" id="of-am-upload-file" accept=".xlsx,.xls" />
+                    <div class="of-step-actions">
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadArticleMasterSheet(null, null, 'of-am')">Upload</button>
+                        <button type="button" class="nx-btn" onclick="openModule('ArticleMaster')">View</button>
+                    </div>
+                    <div id="of-am-upload-result" class="nx-of-msg"></div>
+                    <p id="of-am-summary" class="nx-text-faint nx-of-summary hidden">—</p>
+                </article>
+
+                <article class="nx-card of-step-card of-step-card--wide">
+                    <div class="of-step-head"><span class="of-step-num">2</span><h3>Filled Order</h3></div>
+                    <input type="file" id="of-fo-upload-file" accept=".xlsx,.xls" onchange="onFilledOrderFileSelected('of-fo')" />
+                    <div class="of-step-extra">
+                        <select id="of-fo-category-select" disabled title="Category">
+                            <option value="">Category</option>
+                            <option value="Bed">Bed</option>
+                            <option value="Bath">Bath</option>
+                            <option value="TOB">TOB</option>
+                            <option value="TOB Pillow">TOB Pillow</option>
+                        </select>
+                        <select id="of-fo-distributor-select" disabled title="Distributor"><option value="">Distributor</option></select>
+                    </div>
+                    <div class="of-step-actions">
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadFilledOrder({}, 'of-fo')">Upload</button>
+                    </div>
+                    <div id="of-fo-upload-result" class="nx-of-msg"></div>
+                    <p id="of-fo-summary" class="nx-text-faint nx-of-summary hidden">—</p>
+                </article>
+
+                <article class="nx-card of-step-card">
+                    <div class="of-step-head"><span class="of-step-num">3</span><h3>Sales Order</h3></div>
+                    <input type="file" id="of-sales-order-file" accept=".pdf" />
+                    <div class="of-step-actions">
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadSalesOrderV2()">Upload SO</button>
+                    </div>
+                    <div id="of-sales-order-result" class="nx-of-msg"></div>
+                </article>
+
+                <article class="nx-card of-step-card">
+                    <div class="of-step-head"><span class="of-step-num">4</span><h3>SO Pack</h3></div>
+                    <input type="file" id="of-so-pack-file" accept=".zip,.rar,application/zip,application/x-rar-compressed" />
+                    <div class="of-step-actions">
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="analyzeSoPack()">Analyze</button>
+                        <button type="button" class="nx-btn" id="of-so-pack-excel-btn" onclick="downloadSoPackExcel()" disabled title="Analyze first">Excel Download</button>
+                    </div>
+                    <div id="of-so-pack-result" class="nx-of-msg"></div>
+                </article>
+
+                <article class="nx-card of-step-card">
+                    <div class="of-step-head"><span class="of-step-num">5</span><h3>Invoice (CI)</h3></div>
+                    <input type="file" id="of-invoice-file" accept=".pdf" />
+                    <div class="of-step-actions">
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="uploadInvoiceV2()">Upload CI</button>
+                    </div>
+                    <div id="of-invoice-result" class="nx-of-msg"></div>
+                </article>
+            </div>
+
+            <div class="nx-of-bottom is-tracking">
+                <div class="nx-of-bottom-bar">
+                    <div class="nx-of-bottom-tabs" role="tablist">
+                        <button type="button" class="nx-btn" role="tab" id="of-bottom-tab-pack" data-of-bottom="pack" onclick="showOfBottomPanel('pack')">SO Pack Results</button>
+                        <button type="button" class="nx-btn nx-btn-primary" role="tab" id="of-bottom-tab-tracking" data-of-bottom="tracking" onclick="showOfBottomPanel('tracking')">SO &amp; CI Tracking</button>
+                    </div>
+                    <div class="nx-of-bottom-actions">
+                        <div class="nx-of-tabs" id="of-so-pack-sheet-tabs">
+                            <button type="button" class="nx-btn nx-btn-primary" data-so-pack-tab="consolidated" onclick="showSoPackTab('consolidated')">Consolidated</button>
+                            <button type="button" class="nx-btn" data-so-pack-tab="so_summary" onclick="showSoPackTab('so_summary')">SO Summary</button>
+                            <button type="button" class="nx-btn" data-so-pack-tab="line_detail" onclick="showSoPackTab('line_detail')">Line Detail</button>
+                        </div>
+                        <button type="button" class="nx-btn" id="of-tracking-refresh-btn" onclick="loadOrderFulfillmentUploads()">Refresh</button>
+                    </div>
+                </div>
+
+                <div id="of-so-pack-preview" class="nx-card nx-of-panel nx-of-preview hidden" role="tabpanel">
+                    <div class="of-pack-meta">
+                        <p id="of-so-pack-status" class="nx-of-panel-status nx-text-dim"></p>
+                        <div id="of-so-pack-kpis" class="of-kpi-strip"></div>
+                    </div>
+                    <div class="of-tracking-wrap">
+                        <table class="data-table of-pack-table" id="of-so-pack-table">
+                            <thead id="of-so-pack-thead"></thead>
+                            <tbody id="of-so-pack-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <section id="of-tracking-panel" class="nx-card nx-of-panel nx-of-tracking" role="tabpanel">
+                    <div class="of-tracking-wrap">
+                        <table class="data-table" id="of-tracking-table">
+                            <thead><tr><th>Order Ref No</th><th>Distributor</th><th>SO Uploaded</th><th>CI Uploaded</th><th>Payment Status</th><th>Transit Status</th><th>Actions</th></tr></thead>
+                            <tbody id="of-tracking-tbody"><tr><td colspan="7">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div id="of-so-pack-busy-modal" class="so-pack-modal hidden" aria-hidden="true">
+            <div class="so-pack-modal__backdrop"></div>
+            <div class="so-pack-modal__card" role="dialog" aria-modal="true" aria-labelledby="of-so-pack-busy-title">
+                <div class="so-pack-modal__glow" aria-hidden="true"></div>
+                <div class="so-pack-modal__orbit" aria-hidden="true">
+                    <span class="so-pack-modal__ring"></span>
+                    <span class="so-pack-modal__ring so-pack-modal__ring--2"></span>
+                    <span class="so-pack-modal__core"></span>
+                </div>
+                <p class="so-pack-modal__eyebrow" id="of-so-pack-busy-eyebrow">SO Pack</p>
+                <h3 class="so-pack-modal__title" id="of-so-pack-busy-title">Analyzing SO pack</h3>
+                <p class="so-pack-modal__tip" id="of-so-pack-busy-tip">Unpacking ZIP / RAR archive…</p>
+                <div class="so-pack-modal__bar" aria-hidden="true"><i></i></div>
+                <p class="so-pack-modal__hint">Please wait — this may take a moment for large packs</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Order Cycle UI temporarily removed — engine/API kept for rebuild -->
+
+    <section id="settings-workspace" class="workspace-shell hidden">
+        <div class="nx-theme nx-settings-screen">
+            <header class="nx-of-top nx-settings-top">
+                <div class="nx-of-top-title">
+                    <p class="nx-text-faint hop-eyebrow" id="bd-settings-eyebrow">Settings</p>
+                    <h2 class="nx-display" id="bd-settings-title">Theme</h2>
+                </div>
+                <button class="back-btn" onclick="goBack()">← Back</button>
+            </header>
+            <div class="nx-settings-main nx-settings-main--solo">
+                <div id="bd-settings-theme-panel" class="nx-settings-panel-block">
+                    <div id="bd-settings-theme-mount" class="nx-settings-panel"></div>
+                </div>
+                <div id="bd-settings-company-panel" class="nx-settings-panel-block bd-company-panel hidden">
+                    <div class="bd-company-hero">
+                        <p class="bd-company-kicker">Legal identity</p>
+                        <h3 class="bd-company-heading">Company profile</h3>
+                        <p class="bd-company-lead">Used on Sales Orders and Commercial Invoices across Order Fulfillment. Set once for this workspace.</p>
+                    </div>
+                    <div class="nx-card nx-settings-company-card bd-company-card">
+                        <label class="nx-settings-field bd-company-field" for="bd-company-name">
+                            <span class="bd-company-label">Company name</span>
+                            <input type="text" id="bd-company-name" placeholder="e.g. The Bombay Dyeing &amp; Manufacturing Co. Ltd." autocomplete="organization" />
+                        </label>
+                        <label class="nx-settings-field bd-company-field" for="bd-company-gst">
+                            <span class="bd-company-label">GSTIN</span>
+                            <input type="text" id="bd-company-gst" placeholder="15-character GST number" autocomplete="off" maxlength="15" spellcheck="false" />
+                        </label>
+                        <div class="nx-settings-company-actions bd-company-actions">
+                            <button type="button" class="nx-btn nx-btn-primary bd-company-save" id="bd-company-save-btn" onclick="saveCompanyProfileV2()">Save profile</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="purchase-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Purchase</span></div>
+                <h2>Purchase Workspace</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-subnav">
+            <button class="workspace-subitem active">Overview</button>
+            <button class="workspace-subitem">Suppliers</button>
+            <button class="workspace-subitem">POs</button>
+            <button class="workspace-subitem">Receipts</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="metric-card"><span>Open PO</span><strong>42</strong></div>
+            <div class="metric-card"><span>Pending GRN</span><strong>6</strong></div>
+            <div class="metric-card"><span>Supplier Credit</span><strong>₹ 2.8L</strong></div>
+        </div>
+    </section>
+
+    <section id="article-master-workspace" class="workspace-shell am-workspace hidden">
+        <div class="inv-shell bd-am-shell">
+            <div class="inv-topbar bd-am-topbar bd-am-topbar--compact" id="am-stats-row">
+                <div class="inv-topbar-left bd-am-ribbon">
+                    <button type="button" class="nx-btn hop-mobile-back bd-am-back" onclick="goBack()">← Back</button>
+                    <h2 class="inv-title">Article Master</h2>
+                    <label class="bd-am-filter-inline">
+                        <span>Category</span>
+                        <select id="am-category-filter" onchange="renderArticleMasterTable()">
+                            <option value="All">All</option>
+                        </select>
+                    </label>
+                    <label class="bd-am-filter-inline">
+                        <span>Search</span>
+                        <input type="search" id="am-search-filter" placeholder="Brand, size, item key…" autocomplete="off" oninput="renderArticleMasterTable()" />
+                    </label>
+                    <span id="am-list-count">0 articles</span>
+                </div>
+                <div class="inv-topbar-actions bd-am-top-actions">
+                    <input type="file" id="am-upload-file" class="bd-am-file-input" accept=".xlsx,.xls" tabindex="-1" aria-hidden="true" />
+                    <button type="button" class="nx-btn" onclick="document.getElementById('am-upload-file')?.click()" title="Choose Excel file">Browse</button>
+                    <button type="button" class="nx-btn nx-btn-primary" onclick="uploadArticleMasterSheet()">Upload</button>
+                    <button type="button" class="nx-btn" onclick="loadArticleMasterList()">Refresh</button>
+                    <button type="button" class="nx-btn" onclick="downloadArticleMasterExcel()">Download</button>
+                    <button type="button" class="nx-btn" onclick="scanArticleMasterDuplicates()">Merge</button>
+                    <button type="button" class="nx-btn" onclick="deleteAllArticleMaster()" title="Delete filtered category or all">Delete</button>
+                </div>
+                <div class="bd-am-stats" aria-label="Article counts">
+                    <span class="bd-am-stat-chip">Total <strong id="am-stat-total">0</strong></span>
+                    <span class="bd-am-stat-chip">Bed <strong id="am-stat-bed">0</strong></span>
+                    <span class="bd-am-stat-chip">Bath <strong id="am-stat-bath">0</strong></span>
+                    <span class="bd-am-stat-chip">TOB <strong id="am-stat-tob">0</strong></span>
+                    <span class="bd-am-stat-chip">Pillow <strong id="am-stat-pillow">0</strong></span>
+                </div>
+            </div>
+            <div id="am-upload-result" class="upload-result bd-am-upload-result"></div>
+            <div class="inv-body bd-am-body">
+                <div class="bd-am-card">
+                    <div class="am-scroll-wrapper" id="am-scroll-wrapper">
+                        <table class="data-table am-articles-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Brand</th>
+                                    <th>Size</th>
+                                    <th>Product</th>
+                                    <th>MRP</th>
+                                    <th>PTR</th>
+                                    <th>Ex-Mill</th>
+                                    <th>Bale Pack</th>
+                                    <th>Item Key</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="am-articles-tbody">
+                                <tr><td colspan="10">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Distributor Filled Orders UI temporarily removed — engine/API kept for rebuild -->
+
+    <section id="inventory-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Inventory</span></div>
+                <h2>Inventory Workspace</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-subnav">
+            <button class="workspace-subitem active">Overview</button>
+            <button class="workspace-subitem">Stock</button>
+            <button class="workspace-subitem">Movements</button>
+            <button class="workspace-subitem">Alerts</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="metric-card"><span>Available Units</span><strong>12.4K</strong></div>
+            <div class="metric-card"><span>Low Stock</span><strong>18 SKUs</strong></div>
+            <div class="metric-card"><span>Warehouse</span><strong>3</strong></div>
+        </div>
+    </section>
+
+    <section id="finance-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Finance</span></div>
+                <h2>Finance Workspace</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="metric-card"><span>Accounts</span><strong id="finance-accounts-count">0</strong></div>
+            <div class="metric-card"><span>GST Due</span><strong id="finance-gst-due">₹ 0.00</strong></div>
+            <div class="metric-card"><span>VAT Due</span><strong id="finance-vat-due">₹ 0.00</strong></div>
+        </div>
+        <div class="workspace-subnav">
+            <button class="workspace-subitem active" onclick="openFinanceWorkspace()">Overview</button>
+            <button class="workspace-subitem" onclick="openAccountModal()">Accounts</button>
+            <button class="workspace-subitem" onclick="openGSTModal()">GST</button>
+            <button class="workspace-subitem" onclick="openVATModal()">VAT</button>
+        </div>
+        <div class="workspace-panels" style="grid-template-columns:1fr 1fr; margin-top: 16px;">
+            <div class="card-highlight">
+                <h3>Accounts</h3>
+                <button class="btn btn-primary" onclick="openAccountModal()">+ Add Account</button>
+                <ul id="finance-accounts-list" class="approval-list" style="margin-top: 12px;"></ul>
+            </div>
+            <div class="card-highlight">
+                <h3>GST Returns</h3>
+                <button class="btn btn-secondary" onclick="openGSTModal()">+ Add GST Return</button>
+                <ul id="finance-gst-list" class="approval-list" style="margin-top: 12px;"></ul>
+            </div>
+        </div>
+        <div class="workspace-panels" style="grid-template-columns:1fr 1fr; margin-top: 16px;">
+            <div class="card-highlight">
+                <h3>VAT Returns</h3>
+                <button class="btn btn-secondary" onclick="openVATModal()">+ Add VAT Return</button>
+                <ul id="finance-vat-list" class="approval-list" style="margin-top: 12px;"></ul>
+            </div>
+        </div>
+    </section>
+
+    <section id="orders-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Orders</span></div>
+                <h2>Orders</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-actions" style="margin-bottom: 16px;">
+            <button class="btn btn-primary" onclick="openNewOrderModal()">+ New Order</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="card-highlight">
+                <h3>Orders</h3>
+                <div id="orders-list">Loading order list...</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="approvals-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Approvals</span></div>
+                <h2>Approvals</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="card-highlight">
+                <h3>Pending approvals</h3>
+                <div id="approvals-list">Loading approvals...</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="banking-workspace" class="workspace-shell hidden">
+        <div class="workspace-header">
+            <div>
+                <div class="workspace-breadcrumb"><span>Dashboard</span><span>›</span><span>Banking</span></div>
+                <h2>Banking</h2>
+            </div>
+            <button class="back-btn" onclick="goBack()">← Back</button>
+        </div>
+        <div class="workspace-actions" style="margin-bottom: 16px;">
+            <button class="btn btn-primary" onclick="openAccountModal()">+ Add Bank Account</button>
+        </div>
+        <div class="workspace-panels">
+            <div class="card-highlight">
+                <h3>Bank accounts</h3>
+                <div id="bank-accounts-list">Loading bank accounts...</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="party-master-section" class="customers-workspace hidden">
+        <div class="inv-shell bd-customers-shell">
+            <div class="inv-topbar bd-customers-topbar">
+                <div class="inv-topbar-left">
+                    <button type="button" class="nx-btn hop-mobile-back bd-customers-back" onclick="closePartyMasterSection()">← Back</button>
+                    <div class="bd-customers-title-wrap">
+                        <p class="eyebrow bd-customers-eyebrow">Know your Customer</p>
+                        <h2 class="inv-title">All contacts</h2>
+                        <p class="subtitle bd-customers-lead">One list. Matching copies stay merged; delete removes every twin.</p>
+                    </div>
+                </div>
+                <div class="inv-topbar-actions party-master-actions">
+                    <button type="button" onclick="openDistributorForm()" class="nx-btn nx-btn-primary">+ Add Distributor</button>
+                    <button type="button" onclick="openRetailerForm()" class="nx-btn">+ Add Retailer</button>
+                    <button type="button" onclick="openMastersBulkModal()" class="nx-btn">Bulk Import / Export</button>
+                </div>
+            </div>
+            <div class="inv-body bd-customers-body">
+                <div class="party-master-tabs bd-customers-toolbar">
+                    <button id="distributor-tab-button" class="tab-button active" onclick="openPartyMasterTab('distributor')">Distributors</button>
+                    <button id="retailer-tab-button" class="tab-button" onclick="openPartyMasterTab('retailer')">Retailers</button>
+                    <div id="distributor-filter-wrap" class="bd-customers-filters">
+                        <label class="bd-customers-filter-inline">
+                            <span>Search</span>
+                            <input id="distributor-search-input" type="search" placeholder="Name or contact…" autocomplete="off" oninput="applyDistributorFilters()">
+                        </label>
+                        <label class="bd-customers-filter-inline">
+                            <span>City</span>
+                            <select id="distributor-city-filter" onchange="applyDistributorFilters()">
+                                <option value="">All</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="retailer-filter-wrap" class="bd-customers-filters hidden">
+                        <label class="bd-customers-filter-inline">
+                            <span>Search</span>
+                            <input id="retailer-search-input" type="search" placeholder="Name or contact…" autocomplete="off" oninput="applyRetailerFilters()">
+                        </label>
+                        <label class="bd-customers-filter-inline">
+                            <span>Distributor</span>
+                            <select id="retailer-distributor-filter" onchange="applyRetailerFilters()">
+                                <option value="">All</option>
+                            </select>
+                        </label>
+                        <label class="bd-customers-filter-inline">
+                            <span>City</span>
+                            <select id="retailer-city-filter" onchange="applyRetailerFilters()">
+                                <option value="">All</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div id="distributor-panel" class="tab-panel inv-table-card bd-customers-card">
+                    <div class="party-master-scroll-wrapper">
+                        <table class="data-table party-master-table">
+                            <thead id="distributor-thead"></thead>
+                            <tbody id="distributor-tbody"></tbody>
+                        </table>
+                    </div>
+                    <div id="distributor-pagination"></div>
+                </div>
+                <div id="retailer-panel" class="tab-panel inv-table-card bd-customers-card hidden">
+                    <div class="party-master-scroll-wrapper">
+                        <table class="data-table party-master-table">
+                            <thead id="retailer-thead"></thead>
+                            <tbody id="retailer-tbody"></tbody>
+                        </table>
+                    </div>
+                    <div id="retailer-pagination"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div id="masters-bulk-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h2>Bulk Import / Export — Master Data</h2>
+                <button onclick="closeModal('masters-bulk-modal')" class="btn btn-secondary">Close</button>
+            </div>
+            <p class="subtitle">
+                This works with the fuller "Master Distributors / Retailers" dataset
+                (the one powering Analytics and Order Fulfillment matching) — a
+                separate, richer dataset from the simple list above.
+            </p>
+            <div class="party-master-tabs">
+                <button id="masters-bulk-dist-tab" class="tab-button active" onclick="openMastersBulkTab('distributors')">Distributors</button>
+                <button id="masters-bulk-retail-tab" class="tab-button" onclick="openMastersBulkTab('retailers')">Retailers</button>
+            </div>
+
+            <div id="masters-bulk-distributors-panel" class="tab-panel">
+                <h3>Upload</h3>
+                <div class="form-group">
+                    <input type="file" id="masters-dist-upload-file" accept=".xlsx,.xls,.csv" />
+                    <button onclick="bulkUploadMasters('distributors')" class="btn btn-primary">Upload Distributors</button>
+                </div>
+                <div id="masters-dist-upload-result" class="upload-result"></div>
+
+                <h3>Download</h3>
+                <div class="form-group">
+                    <label>Format</label>
+                    <select id="masters-dist-export-format">
+                        <option value="xlsx">Excel (.xlsx)</option>
+                        <option value="csv">CSV (.csv)</option>
+                    </select>
+                </div>
+                <button onclick="downloadMastersDistributors()" class="btn btn-secondary">Download Distributors</button>
+
+                <h3>View Data</h3>
+                <button onclick="openMastersGrid('distributors')" class="btn btn-secondary">View All Distributors</button>
+                <button onclick="openMasterDistributorForm()" class="btn btn-primary">+ Add New Distributor</button>
+            </div>
+
+            <div id="masters-bulk-retailers-panel" class="tab-panel hidden">
+                <h3>Upload</h3>
+                <div class="form-group">
+                    <input type="file" id="masters-retail-upload-file" accept=".xlsx,.xls,.csv" />
+                    <button onclick="bulkUploadMasters('retailers')" class="btn btn-primary">Upload Retailers</button>
+                </div>
+                <div id="masters-retail-upload-result" class="upload-result"></div>
+
+                <h3>Download</h3>
+                <div class="form-group">
+                    <label>Scope</label>
+                    <select id="masters-retail-export-scope" onchange="toggleMastersRetailDistributorFilter()">
+                        <option value="all">All Data</option>
+                        <option value="distributor">Distributor-wise</option>
+                    </select>
+                </div>
+                <div class="form-group hidden" id="masters-retail-distributor-filter-group">
+                    <label>Distributor</label>
+                    <select id="masters-retail-export-distributor"></select>
+                </div>
+                <div class="form-group">
+                    <label>Format</label>
+                    <select id="masters-retail-export-format">
+                        <option value="xlsx">Excel (.xlsx)</option>
+                        <option value="csv">CSV (.csv)</option>
+                    </select>
+                </div>
+                <button onclick="downloadMastersRetailers()" class="btn btn-secondary">Download Retailers</button>
+
+                <h3>View Data</h3>
+                <button onclick="openMastersGrid('retailers')" class="btn btn-secondary">View All Retailers</button>
+                <button onclick="openMasterRetailerForm()" class="btn btn-primary">+ Add New Retailer</button>
+            </div>
+
+            <div class="modal-actions">
+                <button onclick="closeModal('masters-bulk-modal')" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="masters-grid-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 90vh; max-width: 96vw; width: 96vw; overflow: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h2 id="masters-grid-title">Master Data</h2>
+                <button onclick="closeModal('masters-grid-modal')" class="btn btn-secondary">Close</button>
+            </div>
+            <div id="masters-grid-loading" class="subtitle">Loading...</div>
+            <div style="overflow-x: auto; overflow-y: auto; max-height: 70vh; border: 1px solid #333;">
+                <table class="data-table" id="masters-grid-table" style="width: max-content; min-width: 100%;">
+                    <thead id="masters-grid-thead"></thead>
+                    <tbody id="masters-grid-tbody"></tbody>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button onclick="closeModal('masters-grid-modal')" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="master-distributor-form-modal" class="modal bd-master-form-modal hidden">
+        <div class="modal-content bd-master-form-card">
+            <div class="bd-master-form-head">
+                <div>
+                    <p class="bd-master-form-eyebrow">Customers</p>
+                    <h2 id="master-distributor-form-title">Add Distributor</h2>
+                </div>
+                <button type="button" class="bd-master-form-close" onclick="closeModal('master-distributor-form-modal')" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="bd-master-form-body">
+                <input type="hidden" id="master-distributor-id" />
+                <section class="bd-master-form-section">
+                    <h3>Firm details</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Firm Name</label><input id="master-distributor-firm-name" type="text" /></div>
+                        <div class="form-group"><label>Firm Nickname</label><input id="master-distributor-firm-nick-name" type="text" /></div>
+                        <div class="form-group"><label>Contact Person</label><input id="master-distributor-name" type="text" /></div>
+                        <div class="form-group"><label>Distributor Code</label><input id="master-distributor-code" type="text" /></div>
+                        <div class="form-group"><label>Buyer Code</label><input id="master-distributor-buyer-code" type="text" /></div>
+                        <div class="form-group"><label>GST Number</label><input id="master-distributor-gst" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Contact</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Phone Number</label><input id="master-distributor-phone" type="text" /></div>
+                        <div class="form-group"><label>Phone Number 2</label><input id="master-distributor-phone-2" type="text" /></div>
+                        <div class="form-group bd-master-span-2"><label>Email</label><input id="master-distributor-email" type="email" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Location</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group bd-master-span-2"><label>Address</label><input id="master-distributor-address" type="text" /></div>
+                        <div class="form-group"><label>City</label><input id="master-distributor-location" type="text" /></div>
+                        <div class="form-group"><label>State/Region</label><input id="master-distributor-region" type="text" /></div>
+                        <div class="form-group"><label>Pincode</label><input id="master-distributor-pincode" type="text" /></div>
+                        <div class="form-group"><label>Zone</label><input id="master-distributor-zone" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Commercial</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Payment Terms</label><input id="master-distributor-payment-terms" type="text" /></div>
+                        <div class="form-group"><label>Credit Limit</label><input id="master-distributor-credit-limit" type="number" step="0.01" /></div>
+                        <div class="form-group"><label>Birthday</label><input id="master-distributor-birthday" type="text" /></div>
+                        <div class="form-group"><label>Anniversary</label><input id="master-distributor-anniversary" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Secondary contact</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Name</label><input id="master-distributor-secondary-name" type="text" /></div>
+                        <div class="form-group"><label>Phone</label><input id="master-distributor-secondary-phone" type="text" /></div>
+                        <div class="form-group"><label>Birthday</label><input id="master-distributor-secondary-birthday" type="text" /></div>
+                        <div class="form-group"><label>Anniversary</label><input id="master-distributor-secondary-anniversary" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Sales executive</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Name</label><input id="master-distributor-sales-name" type="text" /></div>
+                        <div class="form-group"><label>Phone</label><input id="master-distributor-sales-phone" type="text" /></div>
+                        <div class="form-group bd-master-span-2"><label>Email</label><input id="master-distributor-sales-email" type="email" /></div>
+                        <div class="form-group"><label>Birthday</label><input id="master-distributor-sales-birthday" type="text" /></div>
+                        <div class="form-group"><label>Anniversary</label><input id="master-distributor-sales-anniversary" type="text" /></div>
+                    </div>
+                </section>
+            </div>
+            <div class="bd-master-form-foot modal-actions">
+                <button type="button" onclick="closeModal('master-distributor-form-modal')" class="btn btn-secondary">Cancel</button>
+                <button type="button" onclick="saveMasterDistributor(event)" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="master-retailer-form-modal" class="modal bd-master-form-modal hidden">
+        <div class="modal-content bd-master-form-card">
+            <div class="bd-master-form-head">
+                <div>
+                    <p class="bd-master-form-eyebrow">Customers</p>
+                    <h2 id="master-retailer-form-title">Add Retailer</h2>
+                </div>
+                <button type="button" class="bd-master-form-close" onclick="closeModal('master-retailer-form-modal')" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="bd-master-form-body">
+                <input type="hidden" id="master-retailer-id" />
+                <section class="bd-master-form-section">
+                    <h3>Shop details</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group bd-master-span-2"><label>Shop Name</label><input id="master-retailer-name" type="text" /></div>
+                        <div class="form-group"><label>Contact Person</label><input id="master-retailer-contact-person" type="text" /></div>
+                        <div class="form-group"><label>Distributor</label><select id="master-retailer-distributor"></select></div>
+                        <div class="form-group"><label>GST Number</label><input id="master-retailer-gst" type="text" /></div>
+                        <div class="form-group"><label>Category/Store Type</label><input id="master-retailer-category" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Contact</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Phone Number</label><input id="master-retailer-phone" type="text" /></div>
+                        <div class="form-group"><label>Phone Number 2</label><input id="master-retailer-phone-2" type="text" /></div>
+                        <div class="form-group bd-master-span-2"><label>Email</label><input id="master-retailer-email" type="email" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Location</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group bd-master-span-2"><label>Address</label><input id="master-retailer-address" type="text" /></div>
+                        <div class="form-group"><label>City</label><input id="master-retailer-location" type="text" /></div>
+                        <div class="form-group"><label>State</label><input id="master-retailer-state" type="text" /></div>
+                        <div class="form-group"><label>Pincode</label><input id="master-retailer-pincode" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Dates</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Birthday</label><input id="master-retailer-birthday" type="text" /></div>
+                        <div class="form-group"><label>Anniversary</label><input id="master-retailer-anniversary" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Secondary retailer</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Name</label><input id="master-retailer-secondary-name" type="text" /></div>
+                        <div class="form-group"><label>Phone</label><input id="master-retailer-secondary-phone" type="text" /></div>
+                        <div class="form-group"><label>Birthday</label><input id="master-retailer-secondary-birthday" type="text" /></div>
+                        <div class="form-group"><label>Anniversary</label><input id="master-retailer-secondary-anniversary" type="text" /></div>
+                    </div>
+                </section>
+                <section class="bd-master-form-section">
+                    <h3>Sales executive</h3>
+                    <div class="bd-master-form-grid">
+                        <div class="form-group"><label>Name</label><input id="master-retailer-sales-name" type="text" /></div>
+                        <div class="form-group"><label>Phone</label><input id="master-retailer-sales-phone" type="text" /></div>
+                        <div class="form-group bd-master-span-2"><label>Email</label><input id="master-retailer-sales-email" type="email" /></div>
+                        <div class="form-group"><label>Birthday</label><input id="master-retailer-sales-birthday" type="text" /></div>
+                        <div class="form-group"><label>Anniversary</label><input id="master-retailer-sales-anniversary" type="text" /></div>
+                    </div>
+                </section>
+            </div>
+            <div class="bd-master-form-foot modal-actions">
+                <button type="button" onclick="closeModal('master-retailer-form-modal')" class="btn btn-secondary">Cancel</button>
+                <button type="button" onclick="saveMasterRetailer(event)" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="global-search-modal" class="modal hidden">
+        <div class="modal-content global-search-modal-content">
+            <div class="global-search-modal-head">
+                <h2>Search Results for "<span id="global-search-query-label"></span>"</h2>
+                <button type="button" class="bd-party-detail-close" onclick="closeModal('global-search-modal')" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="party-master-tabs" id="global-search-tabs"></div>
+            <div id="global-search-loading" class="subtitle">Searching...</div>
+            <div class="global-search-table-wrap" id="global-search-table-wrap">
+                <table class="data-table" id="global-search-table">
+                    <thead id="global-search-thead"></thead>
+                    <tbody id="global-search-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="party-detail-modal" class="modal bd-party-detail-modal hidden">
+        <div class="modal-content bd-party-detail-card">
+            <div class="bd-party-detail-head">
+                <div>
+                    <p class="bd-party-detail-eyebrow">Customer profile</p>
+                    <h2 id="party-detail-title">Details</h2>
+                </div>
+                <button type="button" class="bd-party-detail-close" onclick="closeModal('party-detail-modal')" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="bd-party-detail-body">
+                <div id="party-detail-body" class="bd-party-detail-fields"></div>
+                <div id="party-detail-actions" class="bd-party-detail-actions executive-contact-actions hidden"></div>
+                <div id="party-detail-360" class="bd-party-detail-360 party-detail-360 hidden"></div>
+            </div>
+            <div class="bd-party-detail-foot modal-actions">
+                <button type="button" onclick="closeModal('party-detail-modal')" class="btn btn-secondary">Close</button>
+                <button type="button" id="party-detail-edit-btn" class="btn btn-primary">Edit</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="article-detail-modal" class="modal bd-party-detail-modal hidden">
+        <div class="modal-content bd-party-detail-card">
+            <div class="bd-party-detail-head">
+                <div>
+                    <p class="bd-party-detail-eyebrow">Article profile</p>
+                    <h2 id="article-detail-title">Article</h2>
+                </div>
+                <button type="button" class="bd-party-detail-close" onclick="closeModal('article-detail-modal')" title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="bd-party-detail-body">
+                <div id="article-detail-body" class="bd-party-detail-fields"></div>
+            </div>
+            <div class="bd-party-detail-foot modal-actions">
+                <button type="button" onclick="closeModal('article-detail-modal')" class="btn btn-secondary">Close</button>
+                <button type="button" id="article-detail-history-btn" class="btn btn-secondary hidden">Price history</button>
+                <button type="button" id="article-detail-edit-btn" class="btn btn-primary">Edit</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="distributor-form-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2 id="distributor-form-title">Add Distributor</h2>
+            <input type="hidden" id="distributor-id" />
+            <div class="form-group">
+                <label>Firm Name</label>
+                <input type="text" id="dist-name" placeholder="Firm / company name" />
+            </div>
+            <div class="form-group">
+                <label>Contact Person (Authorized Person)</label>
+                <input type="text" id="dist-contact-person" placeholder="Concerned / authorized person name" />
+            </div>
+            <div class="form-group">
+                <label>GST Number</label>
+                <input type="text" id="dist-gst" placeholder="GST number" />
+            </div>
+            <div class="form-group">
+                <label>Territory</label>
+                <input type="text" id="dist-territory" placeholder="Territory" />
+            </div>
+            <div class="form-group">
+                <label>City</label>
+                <input type="text" id="dist-city" placeholder="City" />
+            </div>
+            <div class="form-group">
+                <label>State</label>
+                <input type="text" id="dist-state" placeholder="State" />
+            </div>
+            <div class="form-group">
+                <label>Pincode</label>
+                <input type="text" id="dist-pincode" placeholder="Pincode" />
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="dist-phone" placeholder="Phone" />
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="dist-email" placeholder="Email" />
+            </div>
+            <div class="form-group">
+                <label>Address</label>
+                <input type="text" id="dist-address" placeholder="Address" />
+            </div>
+            <div class="form-group">
+                <label>Credit Limit</label>
+                <input type="number" id="dist-credit-limit" placeholder="Credit limit (₹)" step="0.01" />
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveDistributor(event)" class="btn btn-primary">Save Distributor</button>
+                <button onclick="closeModal('distributor-form-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="retailer-form-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2 id="retailer-form-title">Add Retailer</h2>
+            <input type="hidden" id="retailer-id" />
+            <div class="form-group">
+                <label>Firm Name</label>
+                <input type="text" id="retailer-name" placeholder="Firm / shop name" />
+            </div>
+            <div class="form-group">
+                <label>Contact Person (Authorized Person)</label>
+                <input type="text" id="retailer-contact-person" placeholder="Concerned / authorized person name" />
+            </div>
+            <div class="form-group">
+                <label>Distributor</label>
+                <select id="retailer-distributor">
+                    <option value="">-- Unassigned --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>GST Number</label>
+                <input type="text" id="retailer-gst" placeholder="GST number" />
+            </div>
+            <div class="form-group">
+                <label>Store Type</label>
+                <input type="text" id="retailer-store-type" placeholder="e.g. General Store, Supermarket" />
+            </div>
+            <div class="form-group">
+                <label>Territory</label>
+                <input type="text" id="retailer-territory" placeholder="Territory" />
+            </div>
+            <div class="form-group">
+                <label>City</label>
+                <input type="text" id="retailer-city" placeholder="City" />
+            </div>
+            <div class="form-group">
+                <label>State</label>
+                <input type="text" id="retailer-state" placeholder="State" />
+            </div>
+            <div class="form-group">
+                <label>Pincode</label>
+                <input type="text" id="retailer-pincode" placeholder="Pincode" />
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="retailer-phone" placeholder="Phone" />
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="retailer-email" placeholder="Email" />
+            </div>
+            <div class="form-group">
+                <label>Address</label>
+                <input type="text" id="retailer-address" placeholder="Address" />
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveRetailer(event)" class="btn btn-primary">Save Retailer</button>
+                <button onclick="closeModal('retailer-form-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="finance-account-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add Account</h2>
+            <div class="form-group">
+                <label>Account Name</label>
+                <input type="text" id="finance-account-name" placeholder="Cash, Bank, Payables" />
+            </div>
+            <div class="form-group">
+                <label>Account Type</label>
+                <select id="finance-account-type">
+                    <option value="asset">Asset</option>
+                    <option value="liability">Liability</option>
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Opening Balance</label>
+                <input type="number" id="finance-account-opening-balance" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="finance-account-notes" rows="3" placeholder="Optional details"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveAccount(event)" class="btn btn-primary">Save Account</button>
+                <button onclick="closeModal('finance-account-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="finance-gst-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add GST Return</h2>
+            <div class="form-group">
+                <label>Period</label>
+                <input type="text" id="finance-gst-period" placeholder="2026-06" />
+            </div>
+            <div class="form-group">
+                <label>Sales Amount</label>
+                <input type="number" id="finance-gst-sales" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Purchase Amount</label>
+                <input type="number" id="finance-gst-purchase" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Tax Rate (%)</label>
+                <input type="number" id="finance-gst-rate" step="0.01" value="18" />
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="finance-gst-status">
+                    <option value="draft">Draft</option>
+                    <option value="pending">Pending</option>
+                    <option value="filed">Filed</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="finance-gst-notes" rows="3" placeholder="Optional notes"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveGSTReturn(event)" class="btn btn-primary">Save GST</button>
+                <button onclick="closeModal('finance-gst-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="finance-vat-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add VAT Return</h2>
+            <div class="form-group">
+                <label>Period</label>
+                <input type="text" id="finance-vat-period" placeholder="2026-06" />
+            </div>
+            <div class="form-group">
+                <label>Sales Amount</label>
+                <input type="number" id="finance-vat-sales" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Purchase Amount</label>
+                <input type="number" id="finance-vat-purchase" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Tax Rate (%)</label>
+                <input type="number" id="finance-vat-rate" step="0.01" value="12" />
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="finance-vat-status">
+                    <option value="draft">Draft</option>
+                    <option value="pending">Pending</option>
+                    <option value="filed">Filed</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="finance-vat-notes" rows="3" placeholder="Optional notes"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveVATReturn(event)" class="btn btn-primary">Save VAT</button>
+                <button onclick="closeModal('finance-vat-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="new-order-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>New Order</h2>
+            <div class="form-group">
+                <label>Distributor</label>
+                <select id="order-distributor"></select>
+            </div>
+            <div class="form-group">
+                <label>Retailer</label>
+                <select id="order-retailer"></select>
+            </div>
+            <div class="form-group">
+                <label>Order Date</label>
+                <input type="date" id="order-date" />
+            </div>
+            <div class="form-group">
+                <label>Order Amount</label>
+                <input type="number" id="order-amount" step="0.01" value="0" />
+            </div>
+            <div class="form-group">
+                <label>Tax Rate (%)</label>
+                <input type="number" id="order-tax-rate" step="0.01" value="0" />
+            </div>
+            <div class="modal-actions">
+                <button onclick="saveNewOrder(event)" class="btn btn-primary">Create Order</button>
+                <button onclick="closeModal('new-order-modal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN MODALS FOR ACTIONS -->
+    <div id="uploadModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Upload File to Digital Warehouse</h2>
+            <div class="form-group">
+                <label>Master Type</label>
+                <select id="uploadMasterType">
+                    <option value="distributors">Distributors</option>
+                    <option value="retailers">Retailers</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Select file</label>
+                <input type="file" id="fileInput" accept=".pdf,.xlsx,.xls,.csv,.docx" />
+            </div>
+            <div id="upload-status" class="upload-status"></div>
+            <button onclick="uploadFile()" class="btn btn-primary">Upload</button>
+            <button onclick="closeModal('uploadModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="executive-visit-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Log field visit</h2>
+            <div class="form-group">
+                <label>Party type</label>
+                <select id="executive-visit-party-type">
+                    <option value="distributor">Distributor</option>
+                    <option value="retailer">Retailer</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Party name</label>
+                <input type="text" id="executive-visit-party-name" placeholder="Firm / shop name" />
+            </div>
+            <div class="form-group">
+                <label>Party ID (optional — from master list)</label>
+                <input type="number" id="executive-visit-party-id" placeholder="Leave blank if unknown" />
+            </div>
+            <div class="form-group">
+                <label>Visit date</label>
+                <input type="date" id="executive-visit-date" />
+            </div>
+            <div class="form-group">
+                <label>Follow-up date (optional)</label>
+                <input type="date" id="executive-visit-follow-up" />
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="executive-visit-notes" rows="3" placeholder="Discussion points, order intent, issues…"></textarea>
+            </div>
+            <button onclick="submitExecutiveVisit()" class="btn btn-primary">Save visit</button>
+            <button onclick="closeModal('executive-visit-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="distributorTargetModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Distributor target (lakhs)</h2>
+            <div id="dist-target-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-group">
+                <label>Fiscal year</label>
+                <select id="dist-target-year-select"></select>
+            </div>
+            <div class="form-group">
+                <label>Nick name (optional)</label>
+                <input type="text" id="dist-target-nick" placeholder="e.g. BND" />
+            </div>
+            <div class="form-group">
+                <label>Distributor / customer name</label>
+                <input type="text" id="dist-target-name" placeholder="e.g. BERNINA INTERNATIONAL P LTD" />
+            </div>
+            <div class="form-group">
+                <label>Target (lakhs)</label>
+                <input type="number" id="dist-target-amount" step="0.01" placeholder="e.g. 300" />
+            </div>
+            <button onclick="submitDistributorTarget()" class="btn btn-primary">Save target</button>
+            <button onclick="closeModal('distributorTargetModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="fyManualTargetModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>FY Manual Target (Lakhs)</h2>
+            <p class="subtitle">Select an existing fiscal year to update its target, or create a new FY with a target.</p>
+            <div id="fy-manual-target-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-radio-row">
+                <label class="form-radio-label" for="fy-target-mode-existing">
+                    <input type="radio" name="fy-target-mode" id="fy-target-mode-existing" value="existing" checked onchange="toggleFyTargetMode()" />
+                    <span>Update existing FY target</span>
+                </label>
+            </div>
+            <div class="form-radio-row">
+                <label class="form-radio-label" for="fy-target-mode-new">
+                    <input type="radio" name="fy-target-mode" id="fy-target-mode-new" value="new" onchange="toggleFyTargetMode()" />
+                    <span>Create new FY</span>
+                </label>
+            </div>
+            <div id="fy-target-existing-fields">
+                <div class="form-group">
+                    <label for="fy-manual-year-select">Fiscal year</label>
+                    <select id="fy-manual-year-select" onchange="prefillFyManualTarget()"></select>
+                </div>
+            </div>
+            <div id="fy-target-new-fields" class="hidden">
+                <div class="form-group">
+                    <label for="fy-manual-new-year">New fiscal year</label>
+                    <input type="text" id="fy-manual-new-year" placeholder="2025-26" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="fy-manual-target-amount">Overall target (lakhs)</label>
+                <input type="number" id="fy-manual-target-amount" step="0.01" placeholder="e.g. 1000" />
+            </div>
+            <button onclick="submitFyManualTarget()" class="btn btn-primary">Save Target</button>
+            <button onclick="closeModal('fyManualTargetModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="addYearModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Add Financial Year</h2>
+            <p class="subtitle">All amounts in <strong>lakhs</strong> (same as your sales pivot sheet).</p>
+            <div class="form-group">
+                <label>Fiscal Year:</label>
+                <input type="text" id="fiscalYear" placeholder="2025-26" />
+            </div>
+            <div class="form-group">
+                <label>Overall target (lakhs):</label>
+                <input type="number" id="targetAmount" placeholder="1000" step="0.01" />
+            </div>
+            <button onclick="submitAddYear()" class="btn btn-primary">Add</button>
+            <button onclick="closeModal('addYearModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="manualEntryModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Distributor manual achievement</h2>
+            <p class="subtitle">Enter achievement for one distributor in <strong>lakhs</strong> (channel 2 supplement — per distributor).</p>
+            <div id="manual-entry-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-group">
+                <label>Fiscal Year:</label>
+                <select id="yearSelect" class="executive-year-select"></select>
+            </div>
+            <div class="form-group">
+                <label>Distributor Name:</label>
+                <input type="text" id="distributorName" />
+            </div>
+            <div class="form-group">
+                <label>Achievement (lakhs):</label>
+                <input type="number" id="achievementAmount" step="0.01" />
+            </div>
+            <button onclick="submitManualEntry()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('manualEntryModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="fyAchievementModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>FY manual achievement</h2>
+            <p class="subtitle">Overall achievement for the full fiscal year in <strong>lakhs</strong> (channel 1 — not split by distributor).</p>
+            <div id="fy-achievement-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-group">
+                <label>Fiscal year</label>
+                <select id="fy-achievement-year-select" class="executive-year-select"></select>
+            </div>
+            <div class="form-group">
+                <label>Overall achievement (lakhs)</label>
+                <input type="number" id="fy-achievement-amount" step="0.01" placeholder="e.g. 850" />
+            </div>
+            <button onclick="submitFyAchievement()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('fyAchievementModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="reportUploadModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Upload sales Excel (distributor achievement)</h2>
+            <p class="subtitle">Achievement: Primary pivot (NICK, CUSTOMER NAME, CATEGORY, months, Grand Total). Budget/target: CUSTOMER + CATEGORY + months + Budget column — values in <strong>lakhs</strong>.</p>
+            <div id="report-upload-status" class="form-inline-status hidden" role="status"></div>
+            <div class="form-group">
+                <label>Choose file</label>
+                <input type="file" id="reportFile" accept=".xlsx,.xls,.csv" />
+            </div>
+            <div class="form-group">
+                <label>Select Fiscal Year:</label>
+                <select id="reportYear" class="executive-year-select"></select>
+            </div>
+            <button onclick="uploadSalesReport()" class="btn btn-primary">Upload</button>
+            <button onclick="closeModal('reportUploadModal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="taCategoryDetailModal" class="modal hidden">
+        <div class="modal-content ta-category-modal" style="max-height: 90vh; overflow-y: auto;">
+            <h2 id="ta-category-modal-title">Category achievement detail</h2>
+            <p id="ta-category-modal-subtitle" class="subtitle">Distributor × category breakdown (lakhs) from sales Excel.</p>
+            <div id="ta-category-modal-status" class="form-inline-status hidden" role="status"></div>
+            <div class="executive-table-wrap ta-category-table-wrap">
+                <table class="data-table ta-category-matrix" id="ta-category-matrix-table">
+                    <thead id="ta-category-matrix-thead"></thead>
+                    <tbody id="ta-category-matrix-tbody"></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('taCategoryDetailModal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+        </div>
+    </div>
+
+    <div id="scanModal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Scanning for Duplicates...</h2>
+            <p id="scanStatus">Starting scan...</p>
+            <div class="progress-bar">
+                <div id="scanProgress" class="progress-fill"></div>
+            </div>
+            <button onclick="closeScan()" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="am-edit-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Edit Article Field</h2>
+            <p id="am-edit-label" class="subtitle"></p>
+            <div class="form-group">
+                <label id="am-edit-field-label">Value</label>
+                <input type="text" id="am-edit-value" />
+            </div>
+            <button onclick="saveArticleMasterEdit()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('am-edit-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="am-full-edit-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 520px; max-height: 90vh; overflow-y: auto;">
+            <h2>Edit Article</h2>
+            <p id="am-full-edit-label" class="subtitle"></p>
+            <div class="form-group">
+                <label>Brand</label>
+                <input type="text" id="am-full-edit-brand" />
+            </div>
+            <div class="form-group">
+                <label>Size</label>
+                <input type="text" id="am-full-edit-size" />
+            </div>
+            <div class="form-group">
+                <label>Product</label>
+                <input type="text" id="am-full-edit-product" />
+            </div>
+            <div class="form-group">
+                <label>MRP (₹)</label>
+                <input type="text" id="am-full-edit-mrp" />
+            </div>
+            <div class="form-group">
+                <label>PTR (₹)</label>
+                <input type="text" id="am-full-edit-ptr" />
+            </div>
+            <div class="form-group">
+                <label>Ex-Mill (₹)</label>
+                <input type="text" id="am-full-edit-exmill" />
+            </div>
+            <div class="form-group">
+                <label>Bale Pack Size</label>
+                <input type="text" id="am-full-edit-bale" />
+            </div>
+            <button onclick="saveArticleMasterFullEdit()" class="btn btn-primary">Save</button>
+            <button onclick="closeModal('am-full-edit-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="am-price-history-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 720px; max-height: 85vh; overflow-y: auto;">
+            <h2>Price History</h2>
+            <p id="am-price-history-label" class="subtitle"></p>
+            <div style="overflow-x: auto;">
+                <table class="data-table" style="width: 100%;">
+                    <thead>
+                        <tr><th>Field</th><th>Old</th><th>New</th><th>Changed By</th><th>When</th></tr>
+                    </thead>
+                    <tbody id="am-price-history-tbody"><tr><td colspan="5">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('am-price-history-modal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+        </div>
+    </div>
+
+    <div id="am-new-category-modal" class="modal hidden">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <h2>Confirm New Category</h2>
+            <p class="subtitle">A new category was detected in this file. Confirm the name and matching fields, then upload again.</p>
+            <div class="form-group">
+                <label>Category Name</label>
+                <input type="text" id="am-new-category-name" placeholder="e.g. Curtains" />
+            </div>
+            <div class="form-group">
+                <label>Key Fields (comma-separated)</label>
+                <input type="text" id="am-new-category-keys" value="brand, size" />
+            </div>
+            <button onclick="confirmArticleMasterNewCategory()" class="btn btn-primary">Confirm Category</button>
+            <button onclick="closeModal('am-new-category-modal')" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
+    <div id="fo-detail-modal" class="modal hidden">
+        <div class="modal-content fo-detail-modal-content">
+            <h2>Filled Order Detail</h2>
+            <p id="fo-detail-label" class="subtitle"></p>
+            <div style="display:flex; gap:12px; margin-bottom:10px;">
+                <button class="btn btn-secondary" onclick="downloadFilledOrder(filledOrdersState.activeOrderId)">Download Excel</button>
+            </div>
+            <div class="fo-detail-table-scroll">
+                <table class="data-table fo-detail-table">
+                    <thead>
+                        <tr>
+                            <th>Brand</th><th>Size</th><th>Product</th><th>MRP</th><th>PTR</th>
+                            <th>Ex-Mill</th><th>Bale Size</th><th>Raw Qty</th><th>Unit</th>
+                            <th>Final Pcs</th><th>Matched</th><th>Flag</th><th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fo-detail-tbody"><tr><td colspan="13">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('fo-detail-modal')" class="btn btn-secondary" style="margin-top: 12px;">Close</button>
+        </div>
+    </div>
+
+    <div id="nexora-chat-overlay" class="nexora-chat-overlay hidden" aria-hidden="true">
+        <div class="nexora-chat-panel" role="dialog" aria-label="Ask NEXORA">
+            <div class="nexora-chat-header">
+                <div class="nexora-chat-brand">
+                    <div class="nexora-chat-core" aria-hidden="true"></div>
+                    <div>
+                        <p class="nexora-chat-eyebrow">Workspace AI</p>
+                        <h2>Ask NEXORA</h2>
+                    </div>
+                </div>
+                <div class="nexora-chat-header-actions">
+                    <button type="button" class="nexora-chat-icon-btn" onclick="minimizeNexoraChat()" aria-label="Minimize" title="Minimize — also: tap outside or Esc">─</button>
+                    <button type="button" class="nexora-chat-icon-btn nexora-chat-icon-btn-close" onclick="closeNexoraChat()" aria-label="Close and clear chat" title="Close — clears chat">✕</button>
+                </div>
+            </div>
+            <div id="nexora-chat-messages" class="nexora-chat-messages">
+                <div class="nexora-chat-bubble nexora-chat-bubble-bot">
+                    Good evening — how may I help you?
+                </div>
+            </div>
+            <div class="nexora-chat-suggest-block">
+                <p class="nexora-chat-suggest-label">Try asking</p>
+                <div class="nexora-chat-examples" id="nexora-chat-examples"></div>
+            </div>
+            <div id="nexora-chat-teach-panel" class="nexora-chat-teach-panel hidden" aria-hidden="true">
+                <div class="nexora-chat-teach-header">
+                    <strong>Sikhhao</strong>
+                    <span class="nexora-chat-teach-sub">Galat jawab? Sahi sawal likho — NEXORA seekh lega</span>
+                    <button type="button" class="nexora-chat-icon-btn nexora-teach-close" onclick="closeNexoraTeachPanel()" aria-label="Close teach panel">✕</button>
+                </div>
+                <label class="nexora-teach-label">Aapka sawal</label>
+                <input id="nexora-teach-user-phrase" type="text" readonly class="nexora-teach-readonly" />
+                <label class="nexora-teach-label">Sahi sawal (canonical)</label>
+                <input
+                    id="nexora-teach-canonical"
+                    type="text"
+                    placeholder="jaise: jatin arora kon hai"
+                    maxlength="500"
+                    autocomplete="off"
+                />
+                <div class="nexora-chat-teach-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="nexora-teach-suggest-btn" onclick="suggestNexoraTeachCanonical()">Gemini suggest</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="nexora-teach-save-btn" onclick="submitNexoraTeach()">Save / Sikhhao</button>
+                </div>
+                <p id="nexora-teach-status" class="nexora-teach-status hidden"></p>
+            </div>
+            <form class="nexora-chat-form" onsubmit="submitNexoraQuestion(event)">
+                <div class="nexora-chat-composer">
+                    <input
+                        id="nexora-chat-input"
+                        type="text"
+                        placeholder="Apna sawal likho… Hindi ya English"
+                        autocomplete="off"
+                        maxlength="500"
+                    />
+                    <button type="submit" class="nexora-chat-send" id="nexora-chat-send-btn">Send</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="nx-toast-stack" class="nx-toast-stack" aria-live="polite" aria-relevant="additions"></div>
+
+    <div id="nx-confirm-modal" class="nx-confirm-modal hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="nx-confirm-title">
+        <div class="nx-confirm-backdrop" data-nx-confirm-cancel></div>
+        <div class="nx-confirm-card">
+            <div class="nx-confirm-icon" id="nx-confirm-icon" aria-hidden="true">?</div>
+            <h3 id="nx-confirm-title">Confirm</h3>
+            <p id="nx-confirm-message"></p>
+            <div class="nx-confirm-actions">
+                <button type="button" class="btn btn-secondary" id="nx-confirm-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="nx-confirm-ok">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>© 2026</p>
+        </div>
+    </footer>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260803-assort-colour-v4"></script>
+    <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260802-theme-accent"></script>
+</body>
+</html>

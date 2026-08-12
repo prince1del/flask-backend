@@ -1,0 +1,159 @@
+.dashboard {
+  padding: 24px;
+}
+
+.premium-shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.premium-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 30px;
+  padding: 22px 26px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.premium-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 2.6vw, 2.8rem);
+  letter-spacing: -0.04em;
+}
+
+.premium-welcome {
+  padding: 22px 26px;
+  border-radius: 28px;
+  background: rgba(11, 18, 46, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.premium-welcome h2 {
+  margin-top: 0;
+  font-size: 1.8rem;
+}
+
+.premium-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.module-panels,
+.activity-panels {
+  display: grid;
+  gap: 24px;
+}
+
+.panels-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.card-highlight {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.18);
+}
+
+.module-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.module-action h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.module-action p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.94rem;
+}
+
+.module-action button {
+  min-width: 150px;
+}
+
+.activity-card {
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+}
+
+.activity-card h3 {
+  margin-top: 0;
+}
+
+.activity-feed {
+  display: grid;
+  gap: 16px;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.activity-item div {
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-item span {
+  color: #cbd5e1;
+}
+
+.activity-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(250, 204, 21, 0.14);
+  font-size: 1.4rem;
+}
+
+.footer {
+  margin-top: 48px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+@media (max-width: 1024px) {
+  .premium-grid,
+  .panels-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .premium-header,
+  .premium-welcome,
+  .card-highlight,
+  .module-action,
+  .activity-item {
+    padding: 20px;
+  }
+}
