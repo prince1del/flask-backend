@@ -6402,6 +6402,70 @@ class CentralizedDB:
             conn.commit()
         return existing["tracking_id"]
 
+    def save_ci_only_order_lifecycle(
+        self,
+        order_ref_no: str,
+        distributor_id: int,
+        commercial_invoice_file_reference: str | None = None,
+        commercial_invoice_parsed: dict[str, Any] | None = None,
+        commercial_invoice_date: str | None = None,
+        workspace_id: str = "default",
+    ) -> int:
+        """
+        Persist a Commercial Invoice without a prior Sales Order upload.
+        Uses the CI's Sales Order Number as order_ref_no when present so a
+        later SO upload for the same ref can merge into this tracking row.
+        """
+        normalized_order_ref_no = (order_ref_no or "").strip()
+        if not self._normalize_text(normalized_order_ref_no):
+            raise ValueError("order_ref_no is required to save a CI-only tracking record")
+        if distributor_id is None:
+            raise ValueError("distributor_id is required to save a CI-only tracking record")
+
+        existing = self.get_order_lifecycle_by_order_ref_no(
+            normalized_order_ref_no, workspace_id=workspace_id
+        )
+        if existing is not None:
+            # SO (or another CI-only) already opened this ref — attach CI onto it.
+            return self.link_commercial_invoice_to_order_lifecycle(
+                order_ref_no=normalized_order_ref_no,
+                commercial_invoice_file_reference=commercial_invoice_file_reference,
+                commercial_invoice_parsed=commercial_invoice_parsed,
+                commercial_invoice_date=commercial_invoice_date,
+                workspace_id=workspace_id,
+            )
+
+        commercial_invoice_parsed_json = (
+            json.dumps(commercial_invoice_parsed, default=str)
+            if commercial_invoice_parsed is not None
+            else None
+        )
+        tracking_id = self.create_order_lifecycle_tracking(
+            order_ref_no=normalized_order_ref_no,
+            distributor_id=int(distributor_id),
+            commercial_invoice_date=commercial_invoice_date,
+            transit_status="INVOICED",
+            workspace_id=workspace_id,
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE order_lifecycle_tracking
+                SET commercial_invoice_file_reference = ?,
+                    commercial_invoice_parsed = ?,
+                    commercial_invoice_date = COALESCE(?, commercial_invoice_date)
+                WHERE tracking_id = ?
+                """,
+                (
+                    commercial_invoice_file_reference,
+                    commercial_invoice_parsed_json,
+                    commercial_invoice_date,
+                    tracking_id,
+                ),
+            )
+            conn.commit()
+        return tracking_id
+
     def save_pending_filled_order_items(
         self, distributor_id: int, workspace_id: str, items: list[dict[str, Any]]
     ) -> int:

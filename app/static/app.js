@@ -10335,6 +10335,16 @@ async function _uploadSalesOrderV2Impl(confirmedDistributorId, confirmedFilledOr
 
 let ofInvoicePendingLink = null;
 
+function _ofMoney(v) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) return '—';
+  return `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
+function _ofQty(v) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) return '—';
+  return Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
 async function uploadInvoiceV2() {
   const fileInput = document.getElementById('of-invoice-file');
   const resultBox = document.getElementById('of-invoice-result');
@@ -10359,36 +10369,118 @@ async function uploadInvoiceV2() {
     }
     const d = data.data;
 
-    if (d.no_match_found) {
-      resultBox.textContent = `No matching Sales Order found for Order Ref "${d.order_ref_no || 'not found'}". Please make sure the Sales Order was uploaded first.`;
+    if (d.is_duplicate) {
+      resultBox.innerHTML = `<div style="color:#FF6B6B;font-weight:bold;">${d.message || d.link_error || 'Duplicate CI — already processed.'}</div>`;
+      ofInvoicePendingLink = null;
       return;
     }
 
     ofInvoicePendingLink = {
       order_ref_no: d.order_ref_no,
+      invoice_no: d.invoice_no,
+      buyer_name: d.buyer_name,
       commercial_invoice_file_reference: d.commercial_invoice_file_reference,
       commercial_invoice_parsed: d.commercial_invoice_parsed,
+      suggested_distributor: d.suggested_distributor || null,
+      mode: d.no_match_found ? 'ci_only' : 'linked',
     };
 
-    const partyName = d.distributor_name || 'an unknown party';
     const amountValue = d.extracted_amount != null ? d.extracted_amount : '';
     const amountNote = d.extracted_amount != null
       ? '(auto-extracted from the invoice — adjust if needed)'
       : '(could not auto-read the amount — please enter it)';
 
+    // Lane B: SO exists → show light compare + confirm link
+    if (!d.no_match_found && d.compare) {
+      const c = d.compare;
+      const qtyWarn = c.qty_mismatch
+        ? `<div style="color:#E6A23C;margin-top:6px;">Qty mismatch: SO ${_ofQty(c.so_total_qty)} vs CI ${_ofQty(c.ci_total_qty)}</div>`
+        : '';
+      const partyName = d.distributor_name || c.so_distributor || 'matched party';
+      resultBox.innerHTML = `
+        <div style="color:#7CFC7C;font-weight:600;">SO found in Nexora — review compare, then confirm</div>
+        <table class="data-table" style="margin:10px 0;max-width:36rem;">
+          <tbody>
+            <tr><td>SO / Order Ref</td><td><strong>${escapeHtml(c.order_ref_no || '—')}</strong></td></tr>
+            <tr><td>CI Invoice No</td><td>${escapeHtml(c.invoice_no || '—')}</td></tr>
+            <tr><td>SO party</td><td>${escapeHtml(c.so_distributor || '—')}</td></tr>
+            <tr><td>CI buyer</td><td>${escapeHtml(c.ci_buyer_name || '—')}</td></tr>
+            <tr><td>SO qty / value</td><td>${_ofQty(c.so_total_qty)} · ${_ofMoney(c.so_total_value)}</td></tr>
+            <tr><td>CI qty / value</td><td>${_ofQty(c.ci_total_qty)} · ${_ofMoney(c.ci_total_value || c.ci_amount)}</td></tr>
+            <tr><td>SO lines / CI lines</td><td>${c.so_item_count ?? '—'} / ${c.ci_line_count ?? '—'}</td></tr>
+          </tbody>
+        </table>
+        ${qtyWarn}
+        <div class="form-group">
+          <label>Invoice Amount (₹) <span style="color:#888;font-weight:normal;">${amountNote}</span></label>
+          <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
+        </div>
+        <button class="btn btn-primary" onclick="confirmCiLinkV2()">Confirm — link CI to ${escapeHtml(partyName)}</button>
+      `;
+      return;
+    }
+
+    // Lane A: no SO → CI-only confirm with distributor pick
+    const suggestedId = (d.suggested_distributor && d.suggested_distributor.id) || '';
+    const suggestedName = (d.suggested_distributor && d.suggested_distributor.name) || '';
+    const buyerLabel = d.buyer_name || suggestedName || 'unknown party on PDF';
     resultBox.innerHTML = `
-      <div style="color: #7CFC7C;">
-        Is this Commercial Invoice for <strong>${partyName}</strong>?
+      <div style="color:#E6A23C;font-weight:600;">No matching Sales Order in Nexora</div>
+      <p style="margin:8px 0;">
+        SO / Order Ref on CI: <strong>${escapeHtml(d.order_ref_no || 'not found')}</strong><br/>
+        Invoice No: <strong>${escapeHtml(d.invoice_no || '—')}</strong><br/>
+        Buyer on CI: <strong>${escapeHtml(buyerLabel)}</strong>
+      </p>
+      <p style="color:#aaa;font-size:0.9rem;">
+        Real sale is CI. You can save this as <strong>CI-only</strong> now.
+        If the same SO number is uploaded later, it can merge into this tracking.
+      </p>
+      <div class="form-group">
+        <label>Distributor (Party Master) *</label>
+        <select id="of-ci-only-distributor" style="max-width:min(100%,28rem);"></select>
       </div>
       <div class="form-group">
-        <label>Invoice Amount (₹) <span style="color: #888; font-weight: normal;">${amountNote}</span></label>
+        <label>Invoice Amount (₹) <span style="color:#888;font-weight:normal;">${amountNote}</span></label>
         <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
       </div>
-      <button class="btn btn-primary" onclick="confirmCiLinkV2()">Confirm — Yes, ${partyName}</button>
+      <button class="btn btn-primary" onclick="confirmCiOnlyV2()">Confirm — save CI-only (no SO)</button>
     `;
+    await _populateCiOnlyDistributorSelect(suggestedId);
   } catch (error) {
     resultBox.textContent = `Error: ${error.message}`;
   }
+}
+
+async function _populateCiOnlyDistributorSelect(preferredId) {
+  const sel = document.getElementById('of-ci-only-distributor');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Loading distributors…</option>';
+  try {
+    const response = await fetchWithAuth('/api/v1/masters/distributors?limit=5000');
+    const data = await response.json();
+    const list = (data && data.data) || data.distributors || data || [];
+    const rows = Array.isArray(list) ? list : (list.items || list.results || []);
+    sel.innerHTML = '<option value="">— Select distributor —</option>';
+    rows.forEach((d) => {
+      const id = d.id;
+      const name = d.firm_name || d.name || `Distributor #${id}`;
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = name;
+      if (preferredId && String(id) === String(preferredId)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    sel.innerHTML = `<option value="">Failed to load distributors</option>`;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 let ofCiConfirmRequestInFlight = false;
@@ -10403,6 +10495,66 @@ async function confirmCiLinkV2() {
     await _confirmCiLinkV2Impl();
   } finally {
     ofCiConfirmRequestInFlight = false;
+  }
+}
+
+async function confirmCiOnlyV2() {
+  if (ofCiConfirmRequestInFlight) return;
+  ofCiConfirmRequestInFlight = true;
+  try {
+    await _confirmCiOnlyV2Impl();
+  } finally {
+    ofCiConfirmRequestInFlight = false;
+  }
+}
+
+async function _confirmCiOnlyV2Impl() {
+  const resultBox = document.getElementById('of-invoice-result');
+  if (!ofInvoicePendingLink) {
+    resultBox.textContent = 'Nothing pending to confirm.';
+    return;
+  }
+  const distSel = document.getElementById('of-ci-only-distributor');
+  const distributorId = distSel ? distSel.value : '';
+  if (!distributorId) {
+    resultBox.insertAdjacentHTML('beforeend', '<div style="color:#FF6B6B;margin-top:8px;">Select a distributor first.</div>');
+    return;
+  }
+  const amountInput = document.getElementById('of-invoice-amount');
+  const amount = amountInput ? parseFloat(amountInput.value) : null;
+
+  try {
+    const response = await fetchWithAuth('/api/v1/order-fulfillment/confirm-ci-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_ref_no: ofInvoicePendingLink.order_ref_no,
+        invoice_no: ofInvoicePendingLink.invoice_no,
+        distributor_id: Number(distributorId),
+        commercial_invoice_file_reference: ofInvoicePendingLink.commercial_invoice_file_reference,
+        commercial_invoice_parsed: ofInvoicePendingLink.commercial_invoice_parsed,
+        amount: isNaN(amount) ? null : amount,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'CI-only save failed');
+    }
+    const d = data.data;
+    if (d.is_duplicate || d.link_error) {
+      resultBox.innerHTML = `<div style="color:#FF6B6B;font-weight:bold;">${d.link_error || 'Could not save CI.'}</div>`;
+      ofInvoicePendingLink = null;
+      return;
+    }
+    resultBox.innerHTML =
+      `Saved CI-only! Tracking #${d.tracking_id}` +
+      (d.achievement_id ? `, Achievement #${d.achievement_id} (sale from CI).` : '.') +
+      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}. SO can be linked later if uploaded.</div>`;
+    ofInvoicePendingLink = null;
+    document.getElementById('of-invoice-file').value = '';
+    loadOrderFulfillmentUploads();
+  } catch (error) {
+    resultBox.textContent = `Error: ${error.message}`;
   }
 }
 

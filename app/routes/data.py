@@ -3368,13 +3368,11 @@ def _extract_amount_from_parsed_invoice(parsed_invoice: dict) -> float | None:
 @require_jwt_auth
 def upload_invoice_v2() -> Response:
     """
-    Commercial Invoice (CI) PDF upload. Extracts the Sales Order
-    Number and looks for a matching tracked Sales Order — but NEVER
-    auto-links. The frontend must call the separate
-    /confirm-ci-link endpoint after the person explicitly confirms.
-    Confirmation is about WHICH PARTY this invoice is for (the amount
-    is auto-extracted from the PDF, not something the person needs to
-    type in manually).
+    Commercial Invoice (CI) PDF upload. Extracts Sales Order Number /
+    Invoice No / amount. NEVER auto-links or auto-saves sale data —
+    frontend must confirm via:
+      - /confirm-ci-link   when SO already exists in Nexora
+      - /confirm-ci-only   when SO is missing (CI-first historical sale)
     """
     uploaded_file = request.files.get("file")
     if not uploaded_file or not uploaded_file.filename:
@@ -3390,12 +3388,33 @@ def upload_invoice_v2() -> Response:
         extracted_text = ""
 
     header = _parse_sales_order_header_fields(extracted_text)
-    order_ref_no = header.get("order_ref_no")
+    order_ref_no = (header.get("order_ref_no") or "").strip() or None
+    invoice_no = (header.get("invoice_no") or "").strip() or None
+    buyer_name = (header.get("buyer_name") or "").strip() or None
     parsed_invoice = parse_step3_invoice_pdf(target_path)
     extracted_amount = _extract_amount_from_parsed_invoice(parsed_invoice)
 
+    if invoice_no and db.is_document_already_processed(workspace_id, "CI", invoice_no):
+        return _json_response({
+            "success": True,
+            "data": {
+                "is_duplicate": True,
+                "invoice_no": invoice_no,
+                "order_ref_no": order_ref_no,
+                "message": (
+                    f"This Commercial Invoice (Invoice No \"{invoice_no}\") has already "
+                    f"been processed — rejecting to avoid double-counting."
+                ),
+            },
+        })
+
+    ci_line_items = parse_bombay_dyeing_so_ci_line_items(target_path, "CI") if target_path else []
+    ci_total_qty = sum(float(it.get("qty") or 0) for it in ci_line_items)
+    ci_total_value = sum(float(it.get("value") or 0) for it in ci_line_items)
+
     matching_so = None
     distributor_name = None
+    suggested_distributor = None
     if order_ref_no:
         matching_so = db.get_order_lifecycle_by_order_ref_no(order_ref_no, workspace_id=workspace_id)
         if matching_so and matching_so.get("distributor_id"):
@@ -3403,19 +3422,148 @@ def upload_invoice_v2() -> Response:
             if distributor:
                 distributor_name = distributor.get("firm_name") or distributor.get("name")
 
+    if buyer_name and not matching_so:
+        suggested_distributor = db._find_master_distributor_by_gst_or_name(
+            buyer_name, workspace_id=workspace_id
+        )
+        # Also try firm_name / partial: get_master_distributor_by_name
+        if not suggested_distributor:
+            suggested_distributor = db.get_master_distributor_by_name(
+                buyer_name, workspace_id=workspace_id
+            )
+
+    compare = None
+    if matching_so:
+        so_items = db.list_order_lifecycle_items_for_tracking(
+            matching_so["tracking_id"], workspace_id=workspace_id
+        )
+        so_total_qty = sum(
+            float(it.get("so_qty") or it.get("fulfilled_qty") or 0) for it in so_items
+        )
+        so_total_value = sum(float(it.get("so_value") or 0) for it in so_items)
+        compare = {
+            "order_ref_no": order_ref_no,
+            "invoice_no": invoice_no,
+            "so_distributor": distributor_name,
+            "ci_buyer_name": buyer_name,
+            "so_has_file": bool(matching_so.get("sales_order_file_reference")),
+            "so_tracking_id": matching_so.get("tracking_id"),
+            "so_item_count": len(so_items),
+            "ci_line_count": len(ci_line_items),
+            "so_total_qty": so_total_qty,
+            "ci_total_qty": ci_total_qty,
+            "so_total_value": so_total_value,
+            "ci_total_value": ci_total_value or extracted_amount,
+            "ci_amount": extracted_amount,
+            "qty_mismatch": (
+                abs(so_total_qty - ci_total_qty) > 0.01
+                if so_total_qty and ci_total_qty
+                else None
+            ),
+        }
+
     return _json_response({
         "success": True,
         "data": {
             "order_ref_no": order_ref_no,
+            "invoice_no": invoice_no,
+            "buyer_name": buyer_name,
             "commercial_invoice_file_reference": str(target_path),
             "commercial_invoice_parsed": parsed_invoice,
             "matching_sales_order": matching_so,
             "distributor_name": distributor_name,
+            "suggested_distributor": (
+                {
+                    "id": suggested_distributor.get("id"),
+                    "name": suggested_distributor.get("firm_name")
+                    or suggested_distributor.get("name"),
+                }
+                if suggested_distributor
+                else None
+            ),
             "extracted_amount": extracted_amount,
+            "ci_line_count": len(ci_line_items),
+            "ci_total_qty": ci_total_qty,
+            "compare": compare,
             "requires_confirmation": matching_so is not None,
+            "requires_ci_only_confirmation": matching_so is None,
             "no_match_found": matching_so is None,
         },
     })
+
+
+def _apply_ci_line_items_and_achievement(
+    db: CentralizedDB,
+    *,
+    tracking_id: int,
+    commercial_invoice_file_reference: str | None,
+    commercial_invoice_parsed: dict,
+    invoice_no: str | None,
+    amount: float | None,
+    notes: str | None,
+    workspace_id: str,
+) -> tuple[list, bool, int | None, str | None]:
+    """Shared post-save: CI lines → reconciliation + optional achievement."""
+    item_results = []
+    has_any_discrepancy = False
+    parsed_line_items = (
+        parse_bombay_dyeing_so_ci_line_items(commercial_invoice_file_reference, "CI")
+        if commercial_invoice_file_reference else []
+    )
+    if not parsed_line_items:
+        table_data = (commercial_invoice_parsed or {}).get("parsed") or {}
+        for row in table_data.get("rows", []):
+            item_name = (row.get("product") or "").strip()
+            if not item_name:
+                continue
+            try:
+                qty = float(str(row.get("quantity") or "0").replace(",", ""))
+                rate = float(str(row.get("rate") or "0").replace(",", ""))
+            except ValueError:
+                continue
+            parsed_line_items.append({
+                "item_name": item_name,
+                "item_key": extract_order_sheet_item_key(item_name),
+                "qty": qty,
+                "value": qty * rate,
+            })
+
+    for line_item in parsed_line_items:
+        item_result = db.upsert_order_lifecycle_item(
+            tracking_id=tracking_id,
+            item_name=line_item["item_name"],
+            source="ci",
+            qty=line_item["qty"],
+            value=line_item["value"],
+            workspace_id=workspace_id,
+            item_key=line_item.get("item_key"),
+        )
+        item_results.append(item_result)
+        if item_result.get("has_discrepancy"):
+            has_any_discrepancy = True
+    if item_results:
+        db.generate_distributor_reconciliation_excel(tracking_id, workspace_id=workspace_id)
+    if invoice_no:
+        db.mark_document_processed(workspace_id, "CI", invoice_no, tracking_id)
+
+    achievement_id = None
+    achievement_error = None
+    if amount is not None:
+        try:
+            current_user = getattr(request, "user", None)
+            created_by = current_user.get("user_id") if isinstance(current_user, dict) else None
+            achievement_id = db.create_achievement(
+                order_lifecycle_tracking_id=tracking_id,
+                amount=float(amount),
+                currency="INR",
+                source="ci",
+                created_by=created_by,
+                workspace_id=workspace_id,
+                notes=notes,
+            )
+        except Exception as exc:
+            achievement_error = str(exc)
+    return item_results, has_any_discrepancy, achievement_id, achievement_error
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/uploads", methods=["GET"])
@@ -4003,84 +4151,30 @@ def confirm_ci_so_link() -> Response:
             status=404,
         )
 
-    # Item-level reconciliation: parse each line item from the CI's
-    # actual table cells (see parse_bombay_dyeing_so_ci_line_items —
-    # the CI's flattened text runs the CGST/SGST/IGST numeric columns
-    # together with no separating whitespace at all, which is why CI
-    # items previously never showed up in the reconciliation sheet).
-    # Falls back to the generic text parser if nothing matches.
-    item_results = []
-    has_any_discrepancy = False
-    parsed_line_items = (
-        parse_bombay_dyeing_so_ci_line_items(commercial_invoice_file_reference, "CI")
-        if commercial_invoice_file_reference else []
-    )
-    if not parsed_line_items:
-        ci_full_text = (commercial_invoice_parsed or {}).get("text") or ""
-        table_data = (commercial_invoice_parsed or {}).get("parsed") or {}
-        for row in table_data.get("rows", []):
-            item_name = (row.get("product") or "").strip()
-            if not item_name:
-                continue
-            try:
-                qty = float(str(row.get("quantity") or "0").replace(",", ""))
-                rate = float(str(row.get("rate") or "0").replace(",", ""))
-            except ValueError:
-                continue
-            parsed_line_items.append({
-                "item_name": item_name,
-                "item_key": extract_order_sheet_item_key(item_name),
-                "qty": qty,
-                "value": qty * rate,
-            })
-
-    for line_item in parsed_line_items:
-        item_result = db.upsert_order_lifecycle_item(
+    item_results, has_any_discrepancy, achievement_id, achievement_error = (
+        _apply_ci_line_items_and_achievement(
+            db,
             tracking_id=tracking_id,
-            item_name=line_item["item_name"],
-            source="ci",
-            qty=line_item["qty"],
-            value=line_item["value"],
+            commercial_invoice_file_reference=commercial_invoice_file_reference,
+            commercial_invoice_parsed=commercial_invoice_parsed,
+            invoice_no=invoice_no,
+            amount=amount,
+            notes=notes,
             workspace_id=workspace_id,
-            item_key=line_item.get("item_key"),
         )
-        item_results.append(item_result)
-        if item_result.get("has_discrepancy"):
-            has_any_discrepancy = True
-    if item_results:
-        db.generate_distributor_reconciliation_excel(tracking_id, workspace_id=workspace_id)
-    if invoice_no:
-        db.mark_document_processed(workspace_id, "CI", invoice_no, tracking_id)
-
-    achievement_id = None
-    if amount is not None:
-        try:
-            current_user = getattr(request, "user", None)
-            created_by = current_user.get("user_id") if isinstance(current_user, dict) else None
-            achievement_id = db.create_achievement(
-                order_lifecycle_tracking_id=tracking_id,
-                amount=float(amount),
-                currency="INR",
-                source="ci",
-                created_by=created_by,
-                workspace_id=workspace_id,
-                notes=notes,
-            )
-        except Exception as exc:
-            # The link itself succeeded — achievement-creation failing
-            # (e.g. a bad amount value) should not roll that back, but
-            # must be visible to the caller.
-            return Response(
-                json.dumps({
-                    "success": True,
-                    "data": {
-                        "tracking_id": tracking_id,
-                        "achievement_id": None,
-                        "achievement_error": str(exc),
-                    },
-                }),
-                mimetype="application/json",
-            )
+    )
+    if achievement_error and achievement_id is None and amount is not None:
+        return Response(
+            json.dumps({
+                "success": True,
+                "data": {
+                    "tracking_id": tracking_id,
+                    "achievement_id": None,
+                    "achievement_error": achievement_error,
+                },
+            }),
+            mimetype="application/json",
+        )
 
     return Response(
         json.dumps({
@@ -4090,10 +4184,183 @@ def confirm_ci_so_link() -> Response:
                 "achievement_id": achievement_id,
                 "item_results": item_results,
                 "has_discrepancy": has_any_discrepancy,
+                "mode": "linked",
             },
         }, default=str),
         mimetype="application/json",
     )
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/confirm-ci-only", methods=["POST"])
+@require_jwt_auth
+def confirm_ci_only() -> Response:
+    """
+    Save a Commercial Invoice when no Sales Order exists in Nexora yet.
+    Requires explicit user confirmation + distributor_id. Sale/achievement
+    is recorded from the CI amount. order_ref_no prefers the SO number
+    printed on the CI so a later SO upload can merge into the same row.
+    """
+    payload = request.get_json(silent=True) or {}
+    commercial_invoice_file_reference = payload.get("commercial_invoice_file_reference")
+    commercial_invoice_parsed = payload.get("commercial_invoice_parsed") or {}
+    amount = payload.get("amount")
+    notes = payload.get("notes")
+    distributor_id = payload.get("distributor_id")
+    order_ref_no = (payload.get("order_ref_no") or "").strip()
+    invoice_no = (payload.get("invoice_no") or "").strip() or None
+
+    try:
+        distributor_id = int(distributor_id) if distributor_id not in (None, "") else None
+    except (TypeError, ValueError):
+        distributor_id = None
+    if distributor_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "distributor_id is required for CI-only save"}},
+            400,
+        )
+    if not commercial_invoice_file_reference:
+        return _json_response(
+            {"success": False, "error": {"message": "commercial_invoice_file_reference is required"}},
+            400,
+        )
+
+    db = CentralizedDB(_db_path())
+    workspace_id = get_workspace_id()
+
+    ci_raw_text = (commercial_invoice_parsed or {}).get("text") or ""
+    ci_header = _parse_sales_order_header_fields(ci_raw_text)
+    if not invoice_no:
+        invoice_no = (ci_header.get("invoice_no") or "").strip() or None
+    if not order_ref_no:
+        order_ref_no = (ci_header.get("order_ref_no") or "").strip()
+    if not order_ref_no:
+        order_ref_no = f"CI-{invoice_no}" if invoice_no else ""
+    if not order_ref_no:
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "message": "Could not determine order_ref_no or invoice_no from the CI"
+                },
+            },
+            400,
+        )
+
+    if invoice_no and db.is_document_already_processed(workspace_id, "CI", invoice_no):
+        return _json_response({
+            "success": True,
+            "data": {
+                "is_duplicate": True,
+                "tracking_id": None,
+                "achievement_id": None,
+                "link_error": (
+                    f"This Commercial Invoice (Invoice No \"{invoice_no}\") has ALREADY "
+                    f"been processed — rejecting to avoid double-counting."
+                ),
+                "mode": "ci_only",
+            },
+        })
+
+    distributor = db.get_master_distributor(distributor_id, workspace_id=workspace_id)
+    if not distributor:
+        return _json_response(
+            {"success": False, "error": {"message": f"Distributor id {distributor_id} not found"}},
+            404,
+        )
+
+    try:
+        commercial_invoice_file_reference = str(
+            _resolve_existing_order_fulfillment_source(commercial_invoice_file_reference)
+        )
+    except ValueError:
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "message": (
+                        "commercial_invoice_file_reference must point to a file "
+                        "previously uploaded under order fulfillment storage"
+                    )
+                },
+            },
+            400,
+        )
+
+    distributor_name_for_folder = (
+        distributor.get("firm_name") or distributor.get("name") or "Unassigned"
+    )
+    try:
+        moved_path = _move_into_distributor_order_cycle_folder(
+            Path(commercial_invoice_file_reference),
+            distributor_name_for_folder,
+            "CI",
+            order_sheet_name="CI Only (no SO yet)",
+        )
+        commercial_invoice_file_reference = str(moved_path)
+    except (FileNotFoundError, OSError, ValueError):
+        pass
+
+    try:
+        tracking_id = db.save_ci_only_order_lifecycle(
+            order_ref_no=order_ref_no,
+            distributor_id=distributor_id,
+            commercial_invoice_file_reference=commercial_invoice_file_reference,
+            commercial_invoice_parsed=commercial_invoice_parsed,
+            commercial_invoice_date=None,
+            workspace_id=workspace_id,
+        )
+        with sqlite3.connect(db.db_path) as conn:
+            conn.execute(
+                "UPDATE order_lifecycle_tracking SET order_sheet_name = ? WHERE tracking_id = ?",
+                ("CI Only (no SO yet)", tracking_id),
+            )
+            conn.commit()
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+
+    ci_user = getattr(request, "user", None)
+    ci_user_id = (
+        int(ci_user["user_id"])
+        if isinstance(ci_user, dict) and ci_user.get("user_id") is not None
+        else None
+    )
+    _archive_order_pdf_to_drive(
+        db=db,
+        user_id=ci_user_id,
+        workspace_id=workspace_id,
+        tracking_id=tracking_id,
+        kind="ci",
+        local_path=commercial_invoice_file_reference,
+        display_name=f"{invoice_no or order_ref_no or 'CI'}.pdf",
+    )
+
+    item_results, has_any_discrepancy, achievement_id, achievement_error = (
+        _apply_ci_line_items_and_achievement(
+            db,
+            tracking_id=tracking_id,
+            commercial_invoice_file_reference=commercial_invoice_file_reference,
+            commercial_invoice_parsed=commercial_invoice_parsed,
+            invoice_no=invoice_no,
+            amount=amount,
+            notes=notes or "CI-only save (SO not in Nexora at upload time)",
+            workspace_id=workspace_id,
+        )
+    )
+
+    return _json_response({
+        "success": True,
+        "data": {
+            "tracking_id": tracking_id,
+            "achievement_id": achievement_id,
+            "achievement_error": achievement_error,
+            "item_results": item_results,
+            "has_discrepancy": has_any_discrepancy,
+            "mode": "ci_only",
+            "order_ref_no": order_ref_no,
+            "invoice_no": invoice_no,
+            "distributor_name": distributor_name_for_folder,
+        },
+    })
 
 
 @data_blueprint.route("/articles")
