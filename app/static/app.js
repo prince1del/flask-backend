@@ -10428,10 +10428,11 @@ async function uploadInvoiceV2() {
             <tr><td>CI buyer</td><td>${escapeHtml(c.ci_buyer_name || '—')}</td></tr>
             <tr><td>CI buyer GST</td><td>${escapeHtml(c.ci_buyer_gst || '—')}</td></tr>
             <tr><td>SO qty / value</td><td>${_ofQty(c.so_total_qty)} · ${_ofMoney(c.so_total_value)}</td></tr>
-            <tr><td>CI qty / value</td><td>${_ofQty(c.ci_total_qty)} · ${_ofMoney(c.ci_total_value || c.ci_amount)}</td></tr>
-            <tr><td>SO lines / CI lines</td><td>${c.so_item_count ?? '—'} / ${c.ci_line_count ?? '—'}</td></tr>
+            <tr><td>CI qty / value</td><td>${c.ci_total_qty == null ? 'on confirm' : _ofQty(c.ci_total_qty)} · ${_ofMoney(c.ci_total_value || c.ci_amount)}</td></tr>
+            <tr><td>SO lines / CI lines</td><td>${c.so_item_count ?? '—'} / ${c.ci_line_count == null ? 'on confirm' : (c.ci_line_count ?? '—')}</td></tr>
           </tbody>
         </table>
+        ${c.detail_note ? `<div style="color:#aaa;font-size:0.9rem;margin-top:4px;">${escapeHtml(c.detail_note)}</div>` : ''}
         ${qtyWarn}
         ${mismatchGate}
         <div class="form-group">

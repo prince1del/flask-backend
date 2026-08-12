@@ -707,6 +707,7 @@ def _match_ci_buyer_to_customers(
     buyer_name: str | None,
     buyer_gst: str | None,
     workspace_id: str | None,
+    allow_fuzzy: bool = True,
 ) -> dict[str, Any]:
     """
     Map CI buyer (GST + printed name) onto Customers → master_distributors.
@@ -753,7 +754,7 @@ def _match_ci_buyer_to_customers(
                     match_method = "firm_name"
                     break
 
-    if not matched and buyer_name:
+    if not matched and buyer_name and allow_fuzzy:
         # One fuzzy pass on the best short variant — avoid scanning the whole
         # master list repeatedly (can time out on Render free tier).
         fuzzy_queries = _ci_buyer_name_lookup_variants(buyer_name) or [buyer_name]
@@ -3972,6 +3973,12 @@ def upload_invoice_v2() -> Response:
 
 
 def _upload_invoice_v2_impl() -> Response:
+    """
+    Fast CI upload preview for Render (avoid 502 from pdfplumber OOM/timeout).
+
+    Upload only does: save file + text extract + header/GST + Customers match.
+    Full line-item CI detail is rebuilt on confirm-ci-link / confirm-ci-only.
+    """
     uploaded_file = request.files.get("file")
     if not uploaded_file or not uploaded_file.filename:
         return _json_response({"success": False, "error": {"message": "file is required"}}, 400)
@@ -3985,45 +3992,26 @@ def _upload_invoice_v2_impl() -> Response:
     except Exception:
         extracted_text = ""
 
-    header = _parse_sales_order_header_fields(extracted_text)
+    header = _enrich_ci_header_from_text(
+        extracted_text, _parse_sales_order_header_fields(extracted_text)
+    )
     order_ref_no = (header.get("order_ref_no") or "").strip() or None
     invoice_no = (header.get("invoice_no") or "").strip() or None
     buyer_name = (header.get("buyer_name") or "").strip() or None
-    # Full CI record (header + lines + totals) — same depth as SO save
-    try:
-        parsed_invoice = build_commercial_invoice_detail(target_path)
-    except Exception as exc:
-        parsed_invoice = {"error": str(exc)}
-    if parsed_invoice.get("error"):
-        # Fallback keeps upload usable even if table extract fails
-        try:
-            legacy = parse_step3_invoice_pdf(target_path)
-        except Exception:
-            legacy = {}
-        parsed_invoice = {
-            **(legacy if isinstance(legacy, dict) else {}),
-            "source": "commercial_invoice",
-            "detail_level": "legacy",
-            "header": _enrich_ci_header_from_text(extracted_text, header),
-            "line_items": [],
-            "totals": {},
-        }
-    else:
-        # Prefer enriched header from full builder
-        rich_header = parsed_invoice.get("header") or {}
-        order_ref_no = (rich_header.get("order_ref_no") or order_ref_no or "").strip() or None
-        invoice_no = (rich_header.get("invoice_no") or invoice_no or "").strip() or None
-        buyer_name = (rich_header.get("buyer_name") or buyer_name or "").strip() or None
 
     extracted_amount = None
-    totals = parsed_invoice.get("totals") or {}
-    if totals.get("invoice_total") is not None:
+    if header.get("invoice_total") is not None:
         try:
-            extracted_amount = float(totals["invoice_total"])
+            extracted_amount = float(header["invoice_total"])
         except (TypeError, ValueError):
             extracted_amount = None
-    if extracted_amount is None:
-        extracted_amount = _extract_amount_from_parsed_invoice(parsed_invoice)
+    if extracted_amount is None and header.get("taxable_amount") is not None:
+        try:
+            taxable = float(header["taxable_amount"])
+            igst = float(header.get("total_igst") or 0)
+            extracted_amount = taxable + igst if taxable else None
+        except (TypeError, ValueError):
+            extracted_amount = None
 
     if invoice_no and db.is_document_already_processed(workspace_id, "CI", invoice_no):
         return _json_response({
@@ -4039,20 +4027,13 @@ def _upload_invoice_v2_impl() -> Response:
             },
         })
 
-    ci_line_items = list(parsed_invoice.get("line_items") or [])
-    if not ci_line_items:
-        try:
-            ci_line_items = parse_bombay_dyeing_so_ci_line_items(target_path, "CI") if target_path else []
-        except Exception:
-            ci_line_items = []
-    ci_total_qty = sum(float(it.get("qty") or 0) for it in ci_line_items)
-    ci_total_value = sum(float(it.get("value") or 0) for it in ci_line_items)
-
     matching_so = None
     so_distributor = None
     distributor_name = None
     if order_ref_no:
-        matching_so = db.get_order_lifecycle_by_order_ref_no(order_ref_no, workspace_id=workspace_id)
+        matching_so = db.get_order_lifecycle_by_order_ref_no(
+            order_ref_no, workspace_id=workspace_id
+        )
         if matching_so and matching_so.get("distributor_id"):
             so_distributor = db.get_master_distributor(
                 matching_so["distributor_id"], workspace_id=workspace_id
@@ -4062,7 +4043,6 @@ def _upload_invoice_v2_impl() -> Response:
                     so_distributor.get("firm_name") or so_distributor.get("name")
                 )
 
-    # Always map CI buyer → Customers (master_distributors) via GST / name / fuzzy
     own_company_gst = None
     try:
         own_company_profile = db.get_company_profile(workspace_id)
@@ -4071,17 +4051,31 @@ def _upload_invoice_v2_impl() -> Response:
         )
     except Exception:
         own_company_gst = None
+
     buyer_gst = _extract_ci_buyer_gst(extracted_text or "", own_company_gst)
-    if not buyer_gst and isinstance(parsed_invoice, dict):
-        header_gsts = (parsed_invoice.get("header") or {}).get("all_gst_numbers") or ""
+    if not buyer_gst:
+        header_gsts = header.get("all_gst_numbers") or ""
         if header_gsts:
             buyer_gst = _identify_buyer_gst(
                 [g for g in str(header_gsts).split(",") if g],
                 own_company_gst,
             )
-    if isinstance(parsed_invoice, dict) and isinstance(parsed_invoice.get("header"), dict):
-        if buyer_gst:
-            parsed_invoice["header"]["buyer_gst"] = buyer_gst
+    if buyer_gst:
+        header["buyer_gst"] = buyer_gst
+
+    # Light stub — confirm endpoints rebuild full CI detail from the PDF.
+    parsed_invoice = {
+        "source": "commercial_invoice",
+        "detail_level": "upload_preview",
+        "header": header,
+        "line_items": [],
+        "totals": {
+            "invoice_total": extracted_amount,
+            "taxable_amount": header.get("taxable_amount"),
+            "total_igst": header.get("total_igst"),
+            "line_count": 0,
+        },
+    }
 
     try:
         ci_customer_match = _match_ci_buyer_to_customers(
@@ -4089,6 +4083,7 @@ def _upload_invoice_v2_impl() -> Response:
             buyer_name=buyer_name,
             buyer_gst=buyer_gst,
             workspace_id=workspace_id,
+            allow_fuzzy=not bool(buyer_gst),  # GST hit is enough; skip slow fuzzy scan
         )
         party_match = _build_ci_party_match_summary(
             ci_match=ci_customer_match,
@@ -4132,21 +4127,17 @@ def _upload_invoice_v2_impl() -> Response:
             "so_has_file": bool(matching_so.get("sales_order_file_reference")),
             "so_tracking_id": matching_so.get("tracking_id"),
             "so_item_count": len(so_items),
-            "ci_line_count": len(ci_line_items),
+            "ci_line_count": None,
             "so_total_qty": so_total_qty,
-            "ci_total_qty": ci_total_qty,
+            "ci_total_qty": None,
             "so_total_value": so_total_value,
-            "ci_total_value": ci_total_value or extracted_amount,
+            "ci_total_value": extracted_amount,
             "ci_amount": extracted_amount,
-            "qty_mismatch": (
-                abs(so_total_qty - ci_total_qty) > 0.01
-                if so_total_qty and ci_total_qty
-                else None
-            ),
+            "qty_mismatch": None,
             "party_mismatch": party_match.get("status") == "mismatch",
+            "detail_note": "Full CI line qty/value compare runs when you confirm (keeps upload fast).",
         }
 
-    # Keep API payload light — full SO row can include huge parsed blobs.
     matching_so_summary = None
     if matching_so:
         matching_so_summary = {
@@ -4174,11 +4165,11 @@ def _upload_invoice_v2_impl() -> Response:
             "ci_customer_match": ci_customer_match,
             "party_match": party_match,
             "extracted_amount": extracted_amount,
-            "ci_line_count": len(ci_line_items),
-            "ci_total_qty": ci_total_qty,
-            "ci_header": (parsed_invoice.get("header") if isinstance(parsed_invoice, dict) else None),
-            "ci_totals": (parsed_invoice.get("totals") if isinstance(parsed_invoice, dict) else None),
-            "detail_level": (parsed_invoice.get("detail_level") if isinstance(parsed_invoice, dict) else None),
+            "ci_line_count": 0,
+            "ci_total_qty": None,
+            "ci_header": header,
+            "ci_totals": parsed_invoice.get("totals"),
+            "detail_level": "upload_preview",
             "compare": compare,
             "requires_confirmation": matching_so is not None,
             "requires_ci_only_confirmation": matching_so is None,
