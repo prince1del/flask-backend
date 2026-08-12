@@ -754,31 +754,32 @@ def _match_ci_buyer_to_customers(
                     break
 
     if not matched and buyer_name:
+        # One fuzzy pass on the best short variant — avoid scanning the whole
+        # master list repeatedly (can time out on Render free tier).
         fuzzy_queries = _ci_buyer_name_lookup_variants(buyer_name) or [buyer_name]
-        for query in fuzzy_queries:
+        query = fuzzy_queries[-1] if fuzzy_queries else buyer_name
+        try:
             fuzzy = db._fuzzy_match_distributor(query, workspace_id=workspace_id)
-            status = fuzzy.get("status")
-            if status == "matched" and fuzzy.get("distributor"):
-                matched = fuzzy["distributor"]
-                # Fuzzy returns a slim dict — reload full master row when possible
-                if matched.get("id") is not None:
-                    full = db.get_master_distributor(
-                        int(matched["id"]), workspace_id=workspace_id
-                    )
-                    if full:
-                        matched = full
-                match_method = "fuzzy"
-                break
-            if status == "ambiguous":
-                seen_ids = {c.get("id") for c in candidates if c.get("id") is not None}
-                for cand in fuzzy.get("candidates") or []:
-                    payload = _distributor_public_payload(cand)
-                    if not payload or payload.get("id") in seen_ids:
-                        continue
-                    candidates.append(payload)
-                    seen_ids.add(payload.get("id"))
-                if candidates:
-                    break
+        except Exception:
+            fuzzy = {"status": "none"}
+        status = fuzzy.get("status")
+        if status == "matched" and fuzzy.get("distributor"):
+            matched = fuzzy["distributor"]
+            if matched.get("id") is not None:
+                full = db.get_master_distributor(
+                    int(matched["id"]), workspace_id=workspace_id
+                )
+                if full:
+                    matched = full
+            match_method = "fuzzy"
+        elif status == "ambiguous":
+            seen_ids: set[Any] = set()
+            for cand in fuzzy.get("candidates") or []:
+                payload = _distributor_public_payload(cand)
+                if not payload or payload.get("id") in seen_ids:
+                    continue
+                candidates.append(payload)
+                seen_ids.add(payload.get("id"))
 
     status = "matched" if matched else ("ambiguous" if candidates else "none")
     return {
@@ -3955,6 +3956,22 @@ def upload_invoice_v2() -> Response:
       - /confirm-ci-link   when SO already exists in Nexora
       - /confirm-ci-only   when SO is missing (CI-first historical sale)
     """
+    try:
+        return _upload_invoice_v2_impl()
+    except Exception as exc:
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "message": f"CI upload failed: {exc}",
+                    "code": "ci_upload_failed",
+                },
+            },
+            500,
+        )
+
+
+def _upload_invoice_v2_impl() -> Response:
     uploaded_file = request.files.get("file")
     if not uploaded_file or not uploaded_file.filename:
         return _json_response({"success": False, "error": {"message": "file is required"}}, 400)
@@ -3973,12 +3990,18 @@ def upload_invoice_v2() -> Response:
     invoice_no = (header.get("invoice_no") or "").strip() or None
     buyer_name = (header.get("buyer_name") or "").strip() or None
     # Full CI record (header + lines + totals) — same depth as SO save
-    parsed_invoice = build_commercial_invoice_detail(target_path)
+    try:
+        parsed_invoice = build_commercial_invoice_detail(target_path)
+    except Exception as exc:
+        parsed_invoice = {"error": str(exc)}
     if parsed_invoice.get("error"):
         # Fallback keeps upload usable even if table extract fails
-        parsed_invoice = parse_step3_invoice_pdf(target_path)
+        try:
+            legacy = parse_step3_invoice_pdf(target_path)
+        except Exception:
+            legacy = {}
         parsed_invoice = {
-            **(parsed_invoice if isinstance(parsed_invoice, dict) else {}),
+            **(legacy if isinstance(legacy, dict) else {}),
             "source": "commercial_invoice",
             "detail_level": "legacy",
             "header": _enrich_ci_header_from_text(extracted_text, header),
@@ -4018,7 +4041,10 @@ def upload_invoice_v2() -> Response:
 
     ci_line_items = list(parsed_invoice.get("line_items") or [])
     if not ci_line_items:
-        ci_line_items = parse_bombay_dyeing_so_ci_line_items(target_path, "CI") if target_path else []
+        try:
+            ci_line_items = parse_bombay_dyeing_so_ci_line_items(target_path, "CI") if target_path else []
+        except Exception:
+            ci_line_items = []
     ci_total_qty = sum(float(it.get("qty") or 0) for it in ci_line_items)
     ci_total_value = sum(float(it.get("value") or 0) for it in ci_line_items)
 
@@ -4037,10 +4063,14 @@ def upload_invoice_v2() -> Response:
                 )
 
     # Always map CI buyer → Customers (master_distributors) via GST / name / fuzzy
-    own_company_profile = db.get_company_profile(workspace_id)
-    own_company_gst = (
-        own_company_profile.get("gst_number") if own_company_profile else None
-    )
+    own_company_gst = None
+    try:
+        own_company_profile = db.get_company_profile(workspace_id)
+        own_company_gst = (
+            own_company_profile.get("gst_number") if own_company_profile else None
+        )
+    except Exception:
+        own_company_gst = None
     buyer_gst = _extract_ci_buyer_gst(extracted_text or "", own_company_gst)
     if not buyer_gst and isinstance(parsed_invoice, dict):
         header_gsts = (parsed_invoice.get("header") or {}).get("all_gst_numbers") or ""
@@ -4053,16 +4083,33 @@ def upload_invoice_v2() -> Response:
         if buyer_gst:
             parsed_invoice["header"]["buyer_gst"] = buyer_gst
 
-    ci_customer_match = _match_ci_buyer_to_customers(
-        db,
-        buyer_name=buyer_name,
-        buyer_gst=buyer_gst,
-        workspace_id=workspace_id,
-    )
-    party_match = _build_ci_party_match_summary(
-        ci_match=ci_customer_match,
-        so_distributor=so_distributor,
-    )
+    try:
+        ci_customer_match = _match_ci_buyer_to_customers(
+            db,
+            buyer_name=buyer_name,
+            buyer_gst=buyer_gst,
+            workspace_id=workspace_id,
+        )
+        party_match = _build_ci_party_match_summary(
+            ci_match=ci_customer_match,
+            so_distributor=so_distributor,
+        )
+    except Exception as exc:
+        ci_customer_match = {
+            "status": "none",
+            "match_method": None,
+            "buyer_name": buyer_name,
+            "buyer_gst": buyer_gst,
+            "distributor": None,
+            "candidates": [],
+            "error": str(exc),
+        }
+        party_match = {
+            "status": "unmatched",
+            "message": f"Customers match failed ({exc}). Select distributor manually.",
+            "ci_distributor": None,
+            "so_distributor": _distributor_public_payload(so_distributor),
+        }
     suggested_distributor = ci_customer_match.get("distributor")
 
     compare = None
@@ -4099,6 +4146,19 @@ def upload_invoice_v2() -> Response:
             "party_mismatch": party_match.get("status") == "mismatch",
         }
 
+    # Keep API payload light — full SO row can include huge parsed blobs.
+    matching_so_summary = None
+    if matching_so:
+        matching_so_summary = {
+            "tracking_id": matching_so.get("tracking_id"),
+            "order_ref_no": matching_so.get("order_ref_no"),
+            "distributor_id": matching_so.get("distributor_id"),
+            "sales_order_file_reference": matching_so.get("sales_order_file_reference"),
+            "commercial_invoice_file_reference": matching_so.get(
+                "commercial_invoice_file_reference"
+            ),
+        }
+
     return _json_response({
         "success": True,
         "data": {
@@ -4108,7 +4168,7 @@ def upload_invoice_v2() -> Response:
             "buyer_gst": buyer_gst,
             "commercial_invoice_file_reference": str(target_path),
             "commercial_invoice_parsed": parsed_invoice,
-            "matching_sales_order": matching_so,
+            "matching_sales_order": matching_so_summary,
             "distributor_name": distributor_name,
             "suggested_distributor": suggested_distributor,
             "ci_customer_match": ci_customer_match,

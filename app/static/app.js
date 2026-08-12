@@ -10363,7 +10363,17 @@ async function uploadInvoiceV2() {
       method: 'POST',
       body: formData,
     });
-    const data = await response.json();
+    const rawText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      const snippet = (rawText || '').replace(/\s+/g, ' ').slice(0, 160);
+      throw new Error(
+        `Server returned HTML/non-JSON (HTTP ${response.status}). `
+        + (snippet ? `Start: ${snippet}` : 'Empty body — deploy may still be restarting; retry in 1–2 min.')
+      );
+    }
     if (!response.ok || !data.success) {
       throw new Error((data.error && data.error.message) || 'Upload failed');
     }
