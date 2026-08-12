@@ -13513,36 +13513,140 @@ class CentralizedDB:
                 )
             conn.commit()
 
+    def _zero_ci_achievement_for_fy(
+        self, workspace_id: str, financial_year_id: int
+    ) -> None:
+        """Clear CI channel on breakup so deleted invoices do not leave stale totals."""
+        with sqlite3.connect(self.db_path) as conn:
+            self._migrate_legacy_breakup_schema(conn)
+            cols = self._breakup_table_columns(conn)
+            params: list[Any] = [financial_year_id]
+            ws_clause = ""
+            if "workspace_id" in cols:
+                ws_clause = " AND workspace_id = ?"
+                params.append(workspace_id)
+            type_clause = ""
+            if "attribute_type" in cols:
+                type_clause = " AND attribute_type = 'distributor'"
+            if "achievement_ci" in cols:
+                conn.execute(
+                    f"UPDATE target_achievement_breakup SET achievement_ci = 0 "
+                    f"WHERE financial_year_id = ?{ws_clause}{type_clause}",
+                    tuple(params),
+                )
+            if "achievement_amount" in cols and "source" in cols:
+                conn.execute(
+                    f"UPDATE target_achievement_breakup SET achievement_amount = 0 "
+                    f"WHERE financial_year_id = ?{ws_clause}{type_clause} "
+                    f"AND LOWER(COALESCE(source, '')) = 'ci'",
+                    tuple(params),
+                )
+            conn.commit()
+
     def sync_ci_achievement_for_fy(
         self, workspace_id: str, financial_year_id: int, fy_label: str
     ) -> int:
-        """Pull CI totals from order fulfillment into distributor breakup (lakhs)."""
+        """Pull CI totals from order fulfillment into distributor breakup (lakhs).
+
+        Always rewrites the CI channel from live invoices: first zeroes
+        stored CI achievement for the FY, then re-applies current totals.
+        Deleting every CI therefore correctly drives achievement_ci to 0.
+        """
         from app.fiscal_year import fiscal_year_date_bounds
 
         self.ensure_target_achievement_tables()
         start, end = fiscal_year_date_bounds(fy_label)
         if not start or not end:
             return 0
+
+        # Drop stale CI figures left behind after invoice deletes.
+        self._zero_ci_achievement_for_fy(workspace_id, financial_year_id)
+
         updated = 0
         with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
             if not self._table_has_column("order_lifecycle_tracking", "commercial_invoice_file_reference"):
                 return 0
-            query = """
-                SELECT COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name,
-                       SUM(COALESCE(ofi.ci_value, 0)) AS ci_total
+            has_parsed = self._table_has_column(
+                "order_lifecycle_tracking", "commercial_invoice_parsed"
+            )
+            has_drive = self._table_has_column(
+                "order_lifecycle_tracking", "commercial_invoice_drive_file_id"
+            )
+            ci_present = (
+                "( "
+                "(olt.commercial_invoice_file_reference IS NOT NULL "
+                " AND TRIM(olt.commercial_invoice_file_reference) != '') "
+            )
+            if has_drive:
+                ci_present += (
+                    " OR (olt.commercial_invoice_drive_file_id IS NOT NULL "
+                    " AND TRIM(olt.commercial_invoice_drive_file_id) != '') "
+                )
+            if has_parsed:
+                ci_present += (
+                    " OR (olt.commercial_invoice_parsed IS NOT NULL "
+                    " AND TRIM(olt.commercial_invoice_parsed) != '') "
+                )
+            ci_present += ")"
+            parsed_sel = (
+                ", olt.commercial_invoice_parsed"
+                if has_parsed
+                else ", NULL AS commercial_invoice_parsed"
+            )
+            group_extra = (
+                ", olt.commercial_invoice_parsed" if has_parsed else ""
+            )
+            query = f"""
+                SELECT olt.tracking_id,
+                       COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name,
+                       COALESCE(SUM(ofi.ci_value), 0) AS ci_items_total
+                       {parsed_sel}
                 FROM order_lifecycle_tracking olt
                 JOIN master_distributors md ON md.id = olt.distributor_id
                 LEFT JOIN order_fulfillment_items ofi ON ofi.order_lifecycle_id = olt.tracking_id
                 WHERE olt.workspace_id = ?
-                  AND olt.commercial_invoice_file_reference IS NOT NULL
-                  AND olt.commercial_invoice_file_reference != ''
+                  AND {ci_present}
                   AND olt.commercial_invoice_date IS NOT NULL
                   AND olt.commercial_invoice_date >= ?
                   AND olt.commercial_invoice_date <= ?
-                GROUP BY COALESCE(md.firm_name, md.name, 'Unknown')
+                GROUP BY olt.tracking_id, COALESCE(md.firm_name, md.name, 'Unknown')
+                       {group_extra}
             """
             rows = conn.execute(query, (workspace_id, start, end)).fetchall()
-        for distributor_name, ci_total in rows:
+
+        by_distributor: dict[str, float] = {}
+        for row in rows:
+            name = str(row["distributor_name"] or "Unknown")
+            items_total = float(row["ci_items_total"] or 0)
+            amount = items_total
+            if amount <= 0:
+                parsed_raw = row["commercial_invoice_parsed"]
+                parsed: dict[str, Any] | None = None
+                if isinstance(parsed_raw, str) and parsed_raw.strip():
+                    try:
+                        loaded = json.loads(parsed_raw)
+                        if isinstance(loaded, dict):
+                            parsed = loaded
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        parsed = None
+                elif isinstance(parsed_raw, dict):
+                    parsed = parsed_raw
+                if isinstance(parsed, dict):
+                    header = parsed.get("header") if isinstance(parsed.get("header"), dict) else {}
+                    totals = parsed.get("totals") if isinstance(parsed.get("totals"), dict) else {}
+                    for key in ("invoice_total", "line_total", "taxable_amount"):
+                        amt = self._parse_money(header.get(key))
+                        if amt is None:
+                            amt = self._parse_money(totals.get(key))
+                        if amt is not None and amt > 0:
+                            amount = float(amt)
+                            break
+            if amount <= 0:
+                continue
+            by_distributor[name] = by_distributor.get(name, 0.0) + amount
+
+        for distributor_name, ci_total in by_distributor.items():
             lakhs = float(ci_total or 0) / 100000.0
             if lakhs <= 0:
                 continue
@@ -13596,14 +13700,14 @@ class CentralizedDB:
     ) -> dict[str, Any]:
         """Summarize target and achievement channels for one FY.
 
-        Real achievement is always the CI (commercial invoice) total —
-        that's the actual, invoiced number. Until CI data exists for a
-        given year (e.g. the current FY, freshly started), the SO
-        (sales-order) total already tracked in filled_orders stands in
-        for it, so the card isn't stuck at 0% for months before the
-        first invoice lands. The moment any CI total exists, it always
-        wins back over SO — this is a temporary fill-in, never a
-        permanent substitute.
+        Real achievement is the live Commercial Invoice (CI) total after
+        sync. When every CI is deleted, CI sync zeroes the channel and
+        active achievement becomes 0 — we do not fall back to FO/SO
+        filled-order totals (that used to leave a stale "67 Lakh" after
+        CI count went to 0).
+
+        Excel / manual overrides still apply only when CI is zero and
+        those channels have explicit values.
         """
         self.sync_ci_achievement_for_fy(workspace_id, financial_year_id, fy_label)
         breakup = self.list_target_distributor_breakup(workspace_id, financial_year_id)
@@ -13625,10 +13729,10 @@ class CentralizedDB:
         ci_total = sum(float(r.get("achievement_ci") or 0) for r in breakup)
         manual_dist_total = sum(float(r.get("achievement_manual") or 0) for r in breakup)
         so_total = self.sum_so_value_for_fy(user_id, fy_label)
+        # CI is always the primary achievement channel (including 0 after deletes).
+        # SO/FO totals remain in the payload for reference but do not drive the card.
         if ci_total > 0:
             active_source, active_achievement = "ci", ci_total
-        elif so_total > 0:
-            active_source, active_achievement = "so", so_total
         elif excel_total > 0:
             active_source, active_achievement = "excel", excel_total
         elif manual_fy > 0:
@@ -13636,7 +13740,8 @@ class CentralizedDB:
         elif manual_dist_total > 0:
             active_source, active_achievement = "manual_distributor", manual_dist_total
         else:
-            active_source, active_achievement = "none", 0.0
+            # CI channel empty and no excel/manual — show 0 (not FO/SO stand-in).
+            active_source, active_achievement = "ci", 0.0
         # Keep year rollup aligned with the active channel (drops stale Excel totals).
         self.sync_financial_year_achievement_from_breakup(workspace_id, financial_year_id)
         pct = round((active_achievement / target_lakhs) * 100, 2) if target_lakhs > 0 else 0.0
