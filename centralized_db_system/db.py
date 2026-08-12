@@ -7598,44 +7598,70 @@ class CentralizedDB:
                     # Party/order search above must still succeed.
                     results["article_master"] = []
 
-                # A single-typo brand name ("Ester" for "Aster") has zero
+                # A near-miss design/brand name ("Ester" for "Aster", or a
+                # missing space — "Wonderland" for "Wonder Land") has zero
                 # LIKE-substring overlap with the real name, so the exact
                 # match above finds nothing — unlike distributor search,
                 # which already has an edit-distance fallback tier, article
-                # search had none. Only kick in when the exact search found
-                # nothing at all here, and the query looks like one short
-                # brand-ish word (not a whole sentence), so this can't
-                # misfire on a query that's legitimately about something
-                # else entirely.
+                # search had none. Checked against brand AND product_type/
+                # category, since which column actually holds a given
+                # design's name varies per user's own upload. Only kicks in
+                # when the exact search found nothing at all here, and the
+                # query looks like one short name (not a whole sentence),
+                # so this can't misfire on a query that's legitimately
+                # about something else entirely.
                 if (
                     not results["article_master"]
-                    and re.fullmatch(r"[A-Za-z]{3,20}", normalized_query.strip())
+                    and re.fullmatch(r"[A-Za-z ]{3,20}", normalized_query.strip())
                 ):
                     try:
                         with sqlite3.connect(self.db_path) as conn:
-                            brand_rows = conn.execute(
-                                "SELECT DISTINCT brand FROM article_master "
-                                "WHERE user_id = ? AND is_active = 1 AND brand IS NOT NULL",
-                                (user_id,),
+                            name_rows = conn.execute(
+                                "SELECT DISTINCT brand, 'brand' FROM article_master "
+                                "WHERE user_id = ? AND is_active = 1 AND brand IS NOT NULL "
+                                "UNION "
+                                "SELECT DISTINCT product_type, 'product_type' FROM article_master "
+                                "WHERE user_id = ? AND is_active = 1 AND product_type IS NOT NULL "
+                                "UNION "
+                                "SELECT DISTINCT category, 'category' FROM article_master "
+                                "WHERE user_id = ? AND is_active = 1 AND category IS NOT NULL",
+                                (user_id, user_id, user_id),
                             ).fetchall()
-                        brands = [b[0] for b in brand_rows if b[0]]
-                        match = difflib.get_close_matches(
-                            normalized_query.lower(), [b.lower() for b in brands],
-                            n=1, cutoff=0.75,
-                        )
-                        if match:
-                            corrected_brand = next(
-                                b for b in brands if b.lower() == match[0]
+                        # A query's normalized (no-space) form also needs to line
+                        # up against a candidate's normalized form — "wonderland"
+                        # vs "wonder land" would otherwise score lower than a
+                        # coincidental shorter match with a space in the same
+                        # place as the query.
+                        candidates = {
+                            (name or "").lower(): (name, field)
+                            for name, field in name_rows
+                            if name
+                        }
+                        query_key = normalized_query.lower()
+                        query_nospace = query_key.replace(" ", "")
+                        best_key = None
+                        best_ratio = 0.0
+                        for key in candidates:
+                            ratio = max(
+                                difflib.SequenceMatcher(None, query_key, key).ratio(),
+                                difflib.SequenceMatcher(
+                                    None, query_nospace, key.replace(" ", "")
+                                ).ratio(),
                             )
+                            if ratio > best_ratio:
+                                best_ratio = ratio
+                                best_key = key
+                        if best_key and best_ratio >= 0.75:
+                            corrected_name, field = candidates[best_key]
                             with sqlite3.connect(self.db_path) as conn:
                                 conn.row_factory = sqlite3.Row
                                 am_rows = conn.execute(
-                                    "SELECT id, category, brand, size, product_type, "
-                                    "mrp, ptr, ex_mill_price, item_key, extra_attributes "
-                                    "FROM article_master WHERE user_id = ? "
-                                    "AND is_active = 1 AND LOWER(COALESCE(brand, '')) = ? "
-                                    "ORDER BY LOWER(COALESCE(size, '')) LIMIT 50",
-                                    (user_id, corrected_brand.lower()),
+                                    f"SELECT id, category, brand, size, product_type, "
+                                    f"mrp, ptr, ex_mill_price, item_key, extra_attributes "
+                                    f"FROM article_master WHERE user_id = ? "
+                                    f"AND is_active = 1 AND LOWER(COALESCE({field}, '')) = ? "
+                                    f"ORDER BY LOWER(COALESCE(size, '')) LIMIT 50",
+                                    (user_id, corrected_name.lower()),
                                 ).fetchall()
                             results["article_master"] = [dict(r) for r in am_rows]
                     except sqlite3.OperationalError:
