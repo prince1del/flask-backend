@@ -51,6 +51,7 @@ from app.utils import (
     _SEASON_TOKEN_RE,
     detect_upload_file_type,
     expected_upload_format,
+    _looks_like_past_tense_pjp_query,
     extract_party_name_candidate,
     find_absolute_date_in_query,
     find_price_range_in_query,
@@ -4317,7 +4318,9 @@ def _resolve_pjp_query_date(query: str, today) -> tuple[Any, str]:
         if name in normalized:
             delta = (weekday - today.weekday()) % 7
             return today + timedelta(days=delta), name.capitalize()
-    absolute_date = find_absolute_date_in_query(normalized, today)
+    absolute_date = find_absolute_date_in_query(
+        normalized, today, assume_future=not _looks_like_past_tense_pjp_query(normalized)
+    )
     if absolute_date:
         return absolute_date, absolute_date.strftime("%d %b")
     return today, "today"

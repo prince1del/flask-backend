@@ -300,6 +300,9 @@ _PARTY_QUERY_STOPWORDS = {
     "double", "single", "king", "bed", "bath", "sheet", "sheets",
     "bedsheet", "bedsheets", "kids", "kid", "towel", "towels", "large",
     "diya", "diya hai", "hoga", "dedo", "de", "do",
+    "ne", "kari", "kare", "kiye", "liya", "liye", "diye", "hua", "hui",
+    "hue", "becha", "beche", "bechi", "li", "le", "lo", "lena", "lene",
+    "kharida", "kharide", "kharidi", "khareed", "sold", "bought",
 }
 
 
@@ -539,11 +542,28 @@ _ABSOLUTE_DATE_RE = re.compile(
 )
 
 
-def find_absolute_date_in_query(query: str, today):
+_PAST_TENSE_PJP_WORDS = (
+    "tha", "thi", "gaya", "gayi", "gaye", "was", "were", "went", "did",
+)
+
+
+def _looks_like_past_tense_pjp_query(normalized: str) -> bool:
+    """"15 July ko kaha tha main" (where WAS I on 15 July) is asking about
+    a visit that already happened, not an upcoming one — the past-tense
+    marker ("tha"/"gaya"/"was"/"went") is the signal that distinguishes it
+    from "where do I have to go on 17th August"."""
+    return any(
+        re.search(rf"\b{re.escape(w)}\b", normalized) for w in _PAST_TENSE_PJP_WORDS
+    )
+
+
+def find_absolute_date_in_query(query: str, today, assume_future: bool = True):
     """Parse a spoken absolute date ("17th August", "August 17") out of a
-    PJP query into a concrete date. Rolls over to next year if the
-    day/month already passed more than a week ago — a PJP ask is almost
-    always about an upcoming visit, not one that's already gone by.
+    PJP query into a concrete date. When assume_future is True, rolls
+    over to next year if the day/month already passed more than a week
+    ago — a PJP ask about an upcoming visit almost always means that. Set
+    assume_future=False for a past-tense query ("kaha tha main") where
+    the date is meant literally, even if that's months ago this year.
     Returns None if no absolute date is present.
     """
     match = _ABSOLUTE_DATE_RE.search(query or "")
@@ -560,7 +580,7 @@ def find_absolute_date_in_query(query: str, today):
         candidate = date(today.year, month, day)
     except ValueError:
         return None
-    if (today - candidate).days > 7:
+    if assume_future and (today - candidate).days > 7:
         try:
             candidate = date(today.year + 1, month, day)
         except ValueError:
@@ -634,13 +654,26 @@ def number_to_words_indian(amount) -> str:
 _SEASON_TOKEN_RE = re.compile(r"\b(aw|ss|fw)\d{2}\b")
 
 
+_SEASON_ORDER_TRIGGER_WORDS = (
+    "order", "value", "li", "liya", "liye", "lena", "lene",
+    "kharida", "kharide", "kharidi", "khareed", "becha", "beche",
+    "bechi", "purchase", "bought", "sold", "diya", "diye",
+)
+
+
 def _looks_like_season_order_query(normalized: str) -> bool:
-    """"aw26 bed ka total order", "bernina ka aw26 ka total bed ka order" —
-    a season code (AW26/SS25/...) plus an order/value word means the user
-    wants a season order-value figure, not a generic search."""
+    """"aw26 bed ka total order", "bernina ka aw26 ka total bed ka order",
+    "choice corner ne kitni aster li hai aw26 main" — a season code
+    (AW26/SS25/...) plus any order/purchase-ish word means the user wants
+    a season order-value figure, not a generic search. Widened beyond
+    just "order"/"value" since "kitni X li hai" (how much X has been
+    taken/bought) is just as common a phrasing here."""
     if not _SEASON_TOKEN_RE.search(normalized):
         return False
-    return "order" in normalized or "value" in normalized
+    return any(
+        re.search(rf"\b{re.escape(w)}\b", normalized)
+        for w in _SEASON_ORDER_TRIGGER_WORDS
+    )
 
 
 _CONTEXT_FOLLOWUP_PHRASES = (
@@ -658,7 +691,10 @@ def _looks_like_context_order_query(normalized: str) -> bool:
     from context and treats a missing season as "across all seasons"."""
     if not any(phrase in normalized for phrase in _CONTEXT_FOLLOWUP_PHRASES):
         return False
-    return "order" in normalized or "value" in normalized
+    return any(
+        re.search(rf"\b{re.escape(w)}\b", normalized)
+        for w in _SEASON_ORDER_TRIGGER_WORDS
+    )
 
 
 # A DD-MM-YYYY/DD/MM/YYYY style date must never get read as a price range
