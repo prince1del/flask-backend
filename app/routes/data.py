@@ -4242,13 +4242,16 @@ def _summarize_ask_nexora_search(
             # header — just answer with the field(s) that were asked.
             chunks.append(_label(arts[0], include_size=include_size_for_single))
         else:
+            # The Ask Nexora sheet's answer bubble scrolls internally now
+            # (AskNexoraSheet.kt), so there's no longer a reason to cap the
+            # list at 10 and hide the rest behind a static "...and N more"
+            # — show every match up to the same 120-row ceiling the
+            # underlying DB query already applies.
             lines = [f"Found {len(arts)} match(es):"]
-            for idx, a in enumerate(arts[:10], start=1):
+            for idx, a in enumerate(arts, start=1):
                 if not isinstance(a, dict):
                     continue
                 lines.append(f"{idx}. {_label(a, include_size=True)}")
-            if len(arts) > 10:
-                lines.append(f"...and {len(arts) - 10} more")
             chunks.append("\n".join(lines))
 
     return "\n\n".join(chunks) if chunks else "No matching information found."
@@ -5036,8 +5039,13 @@ def ai_assistant_query() -> Response:
                     "visit_logs": [], "analytics": [],
                 }
             }
+            # Force MRP-only formatting (not the MRP+Ex-mill default) —
+            # a price-range browse listing shouldn't repeat Ex-mill on
+            # every single row; raw_query="mrp" is a formatting signal
+            # to _summarize_ask_nexora_search's field-detection, not an
+            # actual search term.
             answer = (
-                f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
+                f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query='mrp')}"
             )
     elif intent == "calculator":
         calc = try_calculator(query.lower())
