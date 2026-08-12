@@ -1,4 +1,5 @@
 import csv
+import difflib
 import hashlib
 import json
 import os
@@ -7596,6 +7597,49 @@ class CentralizedDB:
                     # Fresh / partial DBs may lack article_master or brand_aliases.
                     # Party/order search above must still succeed.
                     results["article_master"] = []
+
+                # A single-typo brand name ("Ester" for "Aster") has zero
+                # LIKE-substring overlap with the real name, so the exact
+                # match above finds nothing — unlike distributor search,
+                # which already has an edit-distance fallback tier, article
+                # search had none. Only kick in when the exact search found
+                # nothing at all here, and the query looks like one short
+                # brand-ish word (not a whole sentence), so this can't
+                # misfire on a query that's legitimately about something
+                # else entirely.
+                if (
+                    not results["article_master"]
+                    and re.fullmatch(r"[A-Za-z]{3,20}", normalized_query.strip())
+                ):
+                    try:
+                        with sqlite3.connect(self.db_path) as conn:
+                            brand_rows = conn.execute(
+                                "SELECT DISTINCT brand FROM article_master "
+                                "WHERE user_id = ? AND is_active = 1 AND brand IS NOT NULL",
+                                (user_id,),
+                            ).fetchall()
+                        brands = [b[0] for b in brand_rows if b[0]]
+                        match = difflib.get_close_matches(
+                            normalized_query.lower(), [b.lower() for b in brands],
+                            n=1, cutoff=0.75,
+                        )
+                        if match:
+                            corrected_brand = next(
+                                b for b in brands if b.lower() == match[0]
+                            )
+                            with sqlite3.connect(self.db_path) as conn:
+                                conn.row_factory = sqlite3.Row
+                                am_rows = conn.execute(
+                                    "SELECT id, category, brand, size, product_type, "
+                                    "mrp, ptr, ex_mill_price, item_key, extra_attributes "
+                                    "FROM article_master WHERE user_id = ? "
+                                    "AND is_active = 1 AND LOWER(COALESCE(brand, '')) = ? "
+                                    "ORDER BY LOWER(COALESCE(size, '')) LIMIT 50",
+                                    (user_id, corrected_brand.lower()),
+                                ).fetchall()
+                            results["article_master"] = [dict(r) for r in am_rows]
+                    except sqlite3.OperationalError:
+                        pass
 
         # Always merge party hits by folded honorific spellings (Shree/Sri/Shri Ram),
         # even when FTS already found some retailers — otherwise distributor fallback
