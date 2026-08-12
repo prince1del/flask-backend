@@ -4319,10 +4319,25 @@ def _apply_ci_line_items_and_achievement(
     amount: float | None,
     notes: str | None,
     workspace_id: str,
-) -> tuple[list, bool, int | None, str | None]:
-    """Shared post-save: full CI lines → reconciliation + optional achievement."""
+    user_id: int | None = None,
+) -> tuple[list, bool, int | None, str | None, dict]:
+    """Shared post-save: full CI lines → AM match → reconciliation + achievement.
+
+    Returns (item_results, has_discrepancy, achievement_id, achievement_error, article_master_match).
+    """
+    import article_master_db as amdb
+    from ci_article_match import annotate_ci_line_items_with_article_master
+
     item_results = []
     has_any_discrepancy = False
+    article_master_match: dict[str, Any] = {
+        "total": 0,
+        "matched": 0,
+        "unmatched": 0,
+        "no_key": 0,
+        "catalog_size": 0,
+        "unmatched_lines": [],
+    }
 
     # Prefer the full structured line_items saved with the CI (SO-parity).
     parsed_line_items = list((commercial_invoice_parsed or {}).get("line_items") or [])
@@ -4356,6 +4371,35 @@ def _apply_ci_line_items_and_achievement(
                 "rate": rate,
             })
 
+    # Article Master match (same catalog FO uses)
+    if user_id is not None and parsed_line_items:
+        try:
+            with sqlite3.connect(db.db_path) as am_conn:
+                amdb.ensure_schema(am_conn)
+                parsed_line_items, article_master_match = annotate_ci_line_items_with_article_master(
+                    am_conn, amdb, int(user_id), parsed_line_items,
+                )
+        except Exception as exc:
+            article_master_match = {
+                **article_master_match,
+                "error": str(exc),
+            }
+
+    # Persist annotated lines back onto the tracking CI payload
+    try:
+        if isinstance(commercial_invoice_parsed, dict):
+            commercial_invoice_parsed = dict(commercial_invoice_parsed)
+            commercial_invoice_parsed["line_items"] = parsed_line_items
+            commercial_invoice_parsed["article_master_match"] = article_master_match
+            with sqlite3.connect(db.db_path) as conn:
+                conn.execute(
+                    "UPDATE order_lifecycle_tracking SET commercial_invoice_parsed = ? WHERE tracking_id = ?",
+                    (json.dumps(commercial_invoice_parsed, default=str), tracking_id),
+                )
+                conn.commit()
+    except Exception:
+        pass
+
     for line_item in parsed_line_items:
         norm_key = size_code_only_item_key(line_item.get("item_key"))
         item_result = db.upsert_order_lifecycle_item(
@@ -4367,6 +4411,12 @@ def _apply_ci_line_items_and_achievement(
             workspace_id=workspace_id,
             item_key=norm_key,
         )
+        # Attach AM match onto reconciliation row payload (not a DB column yet)
+        am = line_item.get("article_match")
+        if isinstance(am, dict):
+            item_result = dict(item_result or {})
+            item_result["article_match"] = am
+            item_result["article_id"] = am.get("article_id")
         item_results.append(item_result)
         if item_result.get("has_discrepancy"):
             has_any_discrepancy = True
@@ -4417,7 +4467,7 @@ def _apply_ci_line_items_and_achievement(
             )
         except Exception as exc:
             achievement_error = str(exc)
-    return item_results, has_any_discrepancy, achievement_id, achievement_error
+    return item_results, has_any_discrepancy, achievement_id, achievement_error, article_master_match
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/uploads", methods=["GET"])
@@ -4579,8 +4629,56 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
         if isinstance(ci_parsed.get("totals"), dict):
             payload["ci_totals"] = ci_parsed.get("totals")
         payload["ci_detail_level"] = ci_parsed.get("detail_level")
-        payload["ci_line_items"] = list(ci_parsed.get("line_items") or [])
-        payload["ci_line_count"] = len(payload["ci_line_items"])
+        ci_lines = list(ci_parsed.get("line_items") or [])
+        article_master_match = ci_parsed.get("article_master_match")
+        needs_am = bool(ci_lines) and (
+            not isinstance(article_master_match, dict)
+            or any(not isinstance(ln.get("article_match"), dict) for ln in ci_lines if isinstance(ln, dict))
+        )
+        if needs_am:
+            user = getattr(request, "user", None)
+            user_id = (
+                int(user["user_id"])
+                if isinstance(user, dict) and user.get("user_id") is not None
+                else None
+            )
+            if user_id is not None:
+                try:
+                    import article_master_db as amdb
+                    from ci_article_match import annotate_ci_line_items_with_article_master
+
+                    with sqlite3.connect(db.db_path) as am_conn:
+                        amdb.ensure_schema(am_conn)
+                        ci_lines, article_master_match = annotate_ci_line_items_with_article_master(
+                            am_conn, amdb, user_id, ci_lines,
+                        )
+                    # Persist so next open is fast
+                    try:
+                        updated = dict(ci_parsed)
+                        updated["line_items"] = ci_lines
+                        updated["article_master_match"] = article_master_match
+                        with sqlite3.connect(db.db_path) as conn:
+                            conn.execute(
+                                "UPDATE order_lifecycle_tracking "
+                                "SET commercial_invoice_parsed = ? WHERE tracking_id = ?",
+                                (json.dumps(updated, default=str), tracking_id),
+                            )
+                            conn.commit()
+                    except Exception:
+                        pass
+                except Exception as exc:
+                    article_master_match = {
+                        "total": len(ci_lines),
+                        "matched": 0,
+                        "unmatched": 0,
+                        "no_key": 0,
+                        "error": str(exc),
+                        "unmatched_lines": [],
+                    }
+        payload["ci_line_items"] = ci_lines
+        payload["ci_line_count"] = len(ci_lines)
+        if isinstance(article_master_match, dict):
+            payload["article_master_match"] = article_master_match
         if ci_parsed.get("parse_note"):
             payload["ci_parse_note"] = ci_parsed.get("parse_note")
     return _json_response({"success": True, "data": payload})
@@ -5083,7 +5181,7 @@ def _confirm_ci_so_link_impl() -> Response:
             status=404,
         )
 
-    item_results, has_any_discrepancy, achievement_id, achievement_error = (
+    item_results, has_any_discrepancy, achievement_id, achievement_error, article_master_match = (
         _apply_ci_line_items_and_achievement(
             db,
             tracking_id=tracking_id,
@@ -5093,6 +5191,7 @@ def _confirm_ci_so_link_impl() -> Response:
             amount=amount,
             notes=notes,
             workspace_id=workspace_id,
+            user_id=ci_user_id,
         )
     )
     if achievement_error and achievement_id is None and amount is not None:
@@ -5103,6 +5202,7 @@ def _confirm_ci_so_link_impl() -> Response:
                     "tracking_id": tracking_id,
                     "achievement_id": None,
                     "achievement_error": achievement_error,
+                    "article_master_match": article_master_match,
                 },
             }),
             mimetype="application/json",
@@ -5116,6 +5216,7 @@ def _confirm_ci_so_link_impl() -> Response:
                 "achievement_id": achievement_id,
                 "item_results": item_results,
                 "has_discrepancy": has_any_discrepancy,
+                "article_master_match": article_master_match,
                 "mode": "linked",
                 "detail_level": (
                     commercial_invoice_parsed.get("detail_level")
@@ -5350,7 +5451,7 @@ def _confirm_ci_only_impl() -> Response:
         display_name=f"{invoice_no or order_ref_no or 'CI'}.pdf",
     )
 
-    item_results, has_any_discrepancy, achievement_id, achievement_error = (
+    item_results, has_any_discrepancy, achievement_id, achievement_error, article_master_match = (
         _apply_ci_line_items_and_achievement(
             db,
             tracking_id=tracking_id,
@@ -5360,6 +5461,7 @@ def _confirm_ci_only_impl() -> Response:
             amount=amount,
             notes=notes or "CI-only save (SO not in Nexora at upload time)",
             workspace_id=workspace_id,
+            user_id=ci_user_id,
         )
     )
 
@@ -5371,6 +5473,7 @@ def _confirm_ci_only_impl() -> Response:
             "achievement_error": achievement_error,
             "item_results": item_results,
             "has_discrepancy": has_any_discrepancy,
+            "article_master_match": article_master_match,
             "mode": "ci_only",
             "order_ref_no": order_ref_no,
             "invoice_no": invoice_no,

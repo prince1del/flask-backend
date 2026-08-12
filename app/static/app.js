@@ -11268,21 +11268,46 @@ function _renderCiTrackingDetailHtml(d) {
     : '';
 
   let linesHtml = '';
+  const amMatch = d.article_master_match || {};
+  const amBanner = (amMatch.total > 0 || amMatch.catalog_size != null)
+    ? `<div class="of-ci-party-match ${amMatch.unmatched || amMatch.no_key ? 'is-warn' : 'is-matched'}" style="margin:0.5rem 0 0.75rem;">
+        <div class="of-ci-party-match__status">Article Master ↔ CI:
+          ${escapeHtml(String(amMatch.matched || 0))} matched ·
+          ${escapeHtml(String(amMatch.unmatched || 0))} unmatched ·
+          ${escapeHtml(String(amMatch.no_key || 0))} no key
+          ${amMatch.catalog_size != null ? ` · catalog ${escapeHtml(String(amMatch.catalog_size))}` : ''}
+        </div>
+        ${amMatch.error ? `<p class="of-ci-party-match__msg">${escapeHtml(amMatch.error)}</p>` : ''}
+      </div>`
+    : '';
   if (ciLines.length) {
     linesHtml = `
       <h4 style="margin:0.75rem 0 0.35rem;">CI line items (${ciLines.length})</h4>
+      ${amBanner}
       <div class="of-tracking-wrap">
         <table class="data-table">
-          <thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Value</th><th>HSN</th></tr></thead>
+          <thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Value</th><th>Article Master</th></tr></thead>
           <tbody>
-            ${ciLines.map((it, i) => `<tr>
+            ${ciLines.map((it, i) => {
+              const am = it.article_match || {};
+              const st = am.status || '—';
+              const amLabel = st === 'matched'
+                ? `MATCH · ${am.article && (am.article.brand || am.article.item_key) || am.article_id || ''}`
+                : st === 'unmatched'
+                  ? `UNMATCHED${am.closest_article && am.closest_article.item_key ? ` · closest ${am.closest_article.item_key}` : ''}`
+                  : st === 'no_key' ? 'NO KEY'
+                  : st === 'no_catalog' ? 'NO CATALOG'
+                  : st;
+              const amClass = st === 'matched' ? 'is-ok' : (st === 'unmatched' || st === 'no_key' ? 'is-warn' : '');
+              return `<tr>
               <td>${i + 1}</td>
               <td>${escapeHtml(it.item_name || it.material_code || '—')}</td>
               <td>${_ofQty(it.qty)}</td>
               <td>${it.rate != null ? _ofMoney(it.rate) : '—'}</td>
               <td>${_ofMoney(it.value ?? it.taxable ?? it.line_total)}</td>
-              <td>${escapeHtml(it.hsn || '—')}</td>
-            </tr>`).join('')}
+              <td class="of-ci-bulk-status ${amClass}">${escapeHtml(amLabel)}</td>
+            </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>`;
