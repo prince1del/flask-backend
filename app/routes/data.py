@@ -53,6 +53,7 @@ from app.utils import (
     expected_upload_format,
     extract_party_name_candidate,
     find_absolute_date_in_query,
+    find_price_range_in_query,
     infer_ai_intent,
     infer_distributor_name,
     normalize_voice_query,
@@ -5006,6 +5007,38 @@ def ai_assistant_query() -> Response:
                             f"{ask_prefix} {desc} total order across all distributors: "
                             f"{value_txt} ({qty_txt})."
                         )
+    elif intent == "price_range_articles":
+        # "1000 se 2500 ke beech ki bedsheet dikhao", "towel 478 to 2500" —
+        # same MRP-band lookup as the home-screen "1000-2000" search bar
+        # (_search_articles_by_mrp_range), but reached from a full sentence
+        # (not just a bare range) and optionally narrowed to one category.
+        price_range = find_price_range_in_query(query)
+        if not price_range:
+            answer = f"{ask_prefix} I couldn't work out that price range."
+        else:
+            lo, hi = price_range
+            with sqlite3.connect(_db_path()) as am_conn:
+                am_conn.row_factory = sqlite3.Row
+                category_rows = am_conn.execute(
+                    "SELECT DISTINCT category FROM article_master "
+                    "WHERE user_id = ? AND is_active = 1 AND category IS NOT NULL",
+                    (user_id,),
+                ).fetchall()
+            categories = [r["category"] for r in category_rows if r["category"]]
+            category = _match_token_from_candidates(query.lower(), categories)
+            articles = db._search_articles_by_mrp_range(
+                lo, hi, user_id, category=category
+            )
+            search_results = {
+                "results": {
+                    "distributors": [], "retailers": [], "orders": [], "stock": [],
+                    "article_master": articles, "verifications": [],
+                    "visit_logs": [], "analytics": [],
+                }
+            }
+            answer = (
+                f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
+            )
     elif intent == "calculator":
         calc = try_calculator(query.lower())
         if not calc:

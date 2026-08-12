@@ -6971,28 +6971,32 @@ class CentralizedDB:
         lo: float,
         hi: float,
         user_id: int | None,
+        category: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return active Article Master SKUs whose MRP sits in [lo, hi]."""
+        """Return active Article Master SKUs whose MRP sits in [lo, hi],
+        optionally narrowed to one category ("bedsheet"/"towel"/...) —
+        Ask Nexora's "1000 se 2500 ke beech ki bedsheet dikhao"."""
         if user_id is None:
             return []
+        sql = (
+            "SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key "
+            "FROM article_master "
+            "WHERE user_id = ? AND is_active = 1 "
+            "AND CAST(COALESCE(mrp, 0) AS REAL) >= ? "
+            "AND CAST(COALESCE(mrp, 0) AS REAL) <= ?"
+        )
+        params: list[Any] = [user_id, float(lo), float(hi)]
+        if category:
+            sql += " AND LOWER(COALESCE(category, '')) = ?"
+            params.append(category.lower())
+        sql += (
+            " ORDER BY CAST(COALESCE(mrp, 0) AS REAL) ASC, "
+            "LOWER(COALESCE(brand, '')), LOWER(COALESCE(size, '')) LIMIT 120"
+        )
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             try:
-                rows = conn.execute(
-                    """
-                    SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key
-                    FROM article_master
-                    WHERE user_id = ?
-                      AND is_active = 1
-                      AND CAST(COALESCE(mrp, 0) AS REAL) >= ?
-                      AND CAST(COALESCE(mrp, 0) AS REAL) <= ?
-                    ORDER BY CAST(COALESCE(mrp, 0) AS REAL) ASC,
-                             LOWER(COALESCE(brand, '')),
-                             LOWER(COALESCE(size, ''))
-                    LIMIT 120
-                    """,
-                    (user_id, float(lo), float(hi)),
-                ).fetchall()
+                rows = conn.execute(sql, params).fetchall()
             except sqlite3.OperationalError:
                 return []
         return [dict(r) for r in rows]

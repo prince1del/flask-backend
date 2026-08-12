@@ -661,6 +661,52 @@ def _looks_like_context_order_query(normalized: str) -> bool:
     return "order" in normalized or "value" in normalized
 
 
+# A DD-MM-YYYY/DD/MM/YYYY style date must never get read as a price range
+# ("17-08-2026" -> lo=17, hi=8) — bail out of price-range detection
+# entirely whenever one of these is present in the query.
+_DATE_LIKE_RE = re.compile(r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b")
+
+_PRICE_RANGE_RE = re.compile(
+    r"(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*"
+    r"(?:-|to|se|aur|~|/)\s*"
+    r"(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)"
+    r"(?!\s*-\s*\d)",
+    re.IGNORECASE,
+)
+
+
+def find_price_range_in_query(query: str) -> tuple[float, float] | None:
+    """Detect an MRP/price-range mention anywhere in free text — not just
+    a query that IS the range (the older bare "1000-2000" fast path in
+    global_search's _parse_mrp_price_range is anchored to the whole
+    string, so it can't see "1000 se 2500 ke beech ki bedsheet dikhao").
+    Handles the hyphen/"to"/"/"/"~" forms plus Hindi "se"/"aur" ("1000 se
+    2500 ke beech", "1000 aur 2500 ke beech")."""
+    text = query or ""
+    if _DATE_LIKE_RE.search(text):
+        return None
+    for match in _PRICE_RANGE_RE.finditer(text):
+        try:
+            lo = float(match.group(1).replace(",", ""))
+            hi = float(match.group(2).replace(",", ""))
+        except ValueError:
+            continue
+        if lo < 0 or hi < 0 or hi > 1_000_000:
+            continue
+        if max(lo, hi) < 10:
+            # Too small to plausibly be an MRP figure in this business —
+            # likely an unrelated pair of small numbers in the sentence.
+            continue
+        if lo > hi:
+            lo, hi = hi, lo
+        return lo, hi
+    return None
+
+
+def _looks_like_price_range_query(normalized: str) -> bool:
+    return find_price_range_in_query(normalized) is not None
+
+
 _CALC_NUM_RE = r"\d[\d,]*\.?\d*"
 
 
@@ -751,6 +797,8 @@ def infer_ai_intent(query: str) -> str:
         return "season_order_value"
     if _looks_like_context_order_query(normalized):
         return "season_order_value"
+    if _looks_like_price_range_query(normalized):
+        return "price_range_articles"
     if _looks_like_calculator_query(normalized):
         return "calculator"
     fuzzy_intent = _fuzzy_intent_from_words(normalized)
