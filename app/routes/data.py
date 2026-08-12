@@ -3808,6 +3808,8 @@ def upload_sales_order_v2() -> Response:
     is_duplicate = False
     suggested_filled_order = None
     filled_order_linked = False
+    merged_from_ci_only = False
+    so_ci_rematch = None
     user = getattr(request, "user", None)
     user_id = int(user["user_id"]) if isinstance(user, dict) and user.get("user_id") is not None else None
     if confirmed_distributor_id and order_ref_no:
@@ -3835,6 +3837,18 @@ def upload_sales_order_v2() -> Response:
                 target_path = _move_into_distributor_order_cycle_folder(
                     target_path, distributor_name_for_folder, "SO", order_sheet_name=order_sheet_name
                 )
+                # Detect CI-first stub BEFORE linking SO, so we can rematch after.
+                prior_ci_only = db.find_mergeable_ci_only_tracking(
+                    order_ref_no, workspace_id=workspace_id
+                )
+                merged_from_ci_only = False
+                if prior_ci_only is not None:
+                    so_file_prior = str(prior_ci_only.get("sales_order_file_reference") or "").strip()
+                    ci_file_prior = str(
+                        prior_ci_only.get("commercial_invoice_file_reference") or ""
+                    ).strip()
+                    merged_from_ci_only = bool(ci_file_prior and not so_file_prior)
+
                 tracking_id = db.link_sales_order_to_order_lifecycle(
                     order_ref_no=order_ref_no,
                     distributor_id=confirmed_distributor_id,
@@ -3987,6 +4001,22 @@ def upload_sales_order_v2() -> Response:
 
                 if item_results:
                     db.generate_distributor_reconciliation_excel(tracking_id, workspace_id=workspace_id)
+
+                # CI was saved first → re-run SO vs CI discrepancy on every line
+                # and refresh reconciliation so Order Desk / Android show Linked.
+                if merged_from_ci_only:
+                    so_ci_rematch = db.recheck_all_order_lifecycle_discrepancies(
+                        tracking_id, workspace_id=workspace_id
+                    )
+                    if so_ci_rematch.get("has_discrepancy"):
+                        has_any_discrepancy = True
+                    try:
+                        db.generate_distributor_reconciliation_excel(
+                            tracking_id, workspace_id=workspace_id
+                        )
+                    except Exception:
+                        pass
+
                 db.mark_document_processed(workspace_id, "SO", order_ref_no, tracking_id)
             except Exception as exc:
                 link_error = str(exc)
@@ -4014,6 +4044,8 @@ def upload_sales_order_v2() -> Response:
             "filled_order_linked": filled_order_linked,
             "tracking_id": tracking_id,
             "link_error": link_error,
+            "merged_from_ci_only": merged_from_ci_only,
+            "so_ci_rematch": so_ci_rematch,
         },
     })
 

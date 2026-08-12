@@ -6772,24 +6772,51 @@ class CentralizedDB:
             if sales_order_parsed is not None
             else None
         )
-        existing = self.get_order_lifecycle_by_order_ref_no(
+        # Prefer exact ref; else adopt a CI-first stub that printed this SO#.
+        existing = self.find_mergeable_ci_only_tracking(
             normalized_order_ref_no, workspace_id=workspace_id
         )
+        latest_order_sheet = self.get_latest_order_sheet(workspace_id=workspace_id)
         if existing is not None:
             with sqlite3.connect(self.db_path) as conn:
+                # If CI was saved as CI-{invoice} but header had the real SO#,
+                # rename the stub onto the real order_ref so SO/CI share one row.
+                if (existing.get("order_ref_no") or "").strip() != normalized_order_ref_no:
+                    conn.execute(
+                        "UPDATE order_lifecycle_tracking SET order_ref_no = ? WHERE tracking_id = ?",
+                        (normalized_order_ref_no, existing["tracking_id"]),
+                    )
+                sheet_id = existing.get("order_sheet_id")
+                sheet_name = existing.get("order_sheet_name")
+                if latest_order_sheet is not None and (
+                    not sheet_id
+                    or not sheet_name
+                    or str(sheet_name).strip().upper().startswith("CI ONLY")
+                ):
+                    sheet_id = latest_order_sheet["id"]
+                    sheet_name = latest_order_sheet["name"]
                 conn.execute(
-                    "UPDATE order_lifecycle_tracking SET distributor_id = ?, sales_order_file_reference = ?, sales_order_parsed = ? WHERE tracking_id = ?",
+                    """
+                    UPDATE order_lifecycle_tracking
+                    SET distributor_id = ?,
+                        sales_order_file_reference = ?,
+                        sales_order_parsed = ?,
+                        order_sheet_id = COALESCE(?, order_sheet_id),
+                        order_sheet_name = COALESCE(?, order_sheet_name)
+                    WHERE tracking_id = ?
+                    """,
                     (
                         distributor_id,
                         sales_order_file_reference,
                         sales_order_parsed_json,
+                        sheet_id,
+                        sheet_name,
                         existing["tracking_id"],
                     ),
                 )
                 conn.commit()
             tracking_id = existing["tracking_id"]
         else:
-            latest_order_sheet = self.get_latest_order_sheet(workspace_id=workspace_id)
             tracking_id = self.create_order_lifecycle_tracking(
                 order_ref_no=normalized_order_ref_no,
                 distributor_id=distributor_id,
@@ -6849,6 +6876,127 @@ class CentralizedDB:
             pass
 
         return tracking_id
+
+    def find_mergeable_ci_only_tracking(
+        self,
+        order_ref_no: str,
+        workspace_id: str = "default",
+    ) -> dict[str, Any] | None:
+        """
+        Find a CI-first tracking row that should receive a later Sales Order.
+
+        1) Exact order_ref_no match (CI-only or already open stub).
+        2) Orphan CI-only rows saved as CI-{invoice} whose parsed header
+           still carries this Sales Order Number.
+        """
+        normalized = (order_ref_no or "").strip()
+        if not normalized:
+            return None
+
+        def _has_ci(row: dict[str, Any]) -> bool:
+            if str(row.get("commercial_invoice_file_reference") or "").strip():
+                return True
+            parsed = row.get("commercial_invoice_parsed")
+            if isinstance(parsed, str) and parsed.strip():
+                return True
+            if isinstance(parsed, dict) and parsed:
+                return True
+            return False
+
+        def _has_real_so(row: dict[str, Any]) -> bool:
+            if str(row.get("sales_order_file_reference") or "").strip():
+                return True
+            parsed = row.get("sales_order_parsed")
+            if isinstance(parsed, str) and parsed.strip():
+                try:
+                    parsed = json.loads(parsed)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed = None
+            if not isinstance(parsed, dict) or not parsed:
+                return False
+            return bool(parsed.get("header") or parsed.get("rows") or parsed.get("line_items"))
+
+        def _ci_header_order_ref(row: dict[str, Any]) -> str:
+            parsed = row.get("commercial_invoice_parsed")
+            if isinstance(parsed, str) and parsed.strip():
+                try:
+                    parsed = json.loads(parsed)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed = None
+            if not isinstance(parsed, dict):
+                return ""
+            header = parsed.get("header") if isinstance(parsed.get("header"), dict) else {}
+            for key in ("order_ref_no", "sales_order_number", "so_number", "order_no"):
+                val = str(header.get(key) or "").strip()
+                if val:
+                    return val
+            return ""
+
+        exact = self.get_order_lifecycle_by_order_ref_no(normalized, workspace_id=workspace_id)
+        if exact is not None:
+            # Fresh SO onto empty ref OR merge onto CI-only / incomplete SO stub.
+            if not _has_real_so(exact):
+                return exact
+            return exact  # already has SO — caller will update file (duplicate guard is elsewhere)
+
+        # CI saved before SO under fallback ref CI-{invoice_no}.
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM order_lifecycle_tracking
+                WHERE workspace_id = ?
+                  AND commercial_invoice_file_reference IS NOT NULL
+                  AND TRIM(commercial_invoice_file_reference) != ''
+                  AND (
+                        sales_order_file_reference IS NULL
+                        OR TRIM(sales_order_file_reference) = ''
+                      )
+                ORDER BY tracking_id DESC
+                LIMIT 200
+                """,
+                (workspace_id,),
+            ).fetchall()
+        for row in rows:
+            item = dict(row)
+            if _has_real_so(item):
+                continue
+            if not _has_ci(item):
+                continue
+            header_ref = _ci_header_order_ref(item)
+            if header_ref and header_ref.strip() == normalized:
+                return item
+            # Also accept when parsed JSON blob mentions the SO# next to order_ref keys.
+            blob = str(item.get("commercial_invoice_parsed") or "")
+            if f'"order_ref_no": "{normalized}"' in blob or f'"order_ref_no":"{normalized}"' in blob:
+                return item
+        return None
+
+    def recheck_all_order_lifecycle_discrepancies(
+        self,
+        tracking_id: int,
+        workspace_id: str = "default",
+    ) -> dict[str, Any]:
+        """Re-run SO vs CI (and Ordered) discrepancy flags for every item."""
+        items = self.list_order_lifecycle_items_for_tracking(
+            tracking_id, workspace_id=workspace_id
+        )
+        flagged = 0
+        for item in items:
+            item_id = item.get("id")
+            if item_id is None:
+                continue
+            self._recheck_item_discrepancy(int(item_id), workspace_id=workspace_id)
+            refreshed = self.get_order_lifecycle_item(int(item_id), workspace_id=workspace_id)
+            if refreshed and refreshed.get("has_discrepancy"):
+                flagged += 1
+        return {
+            "tracking_id": tracking_id,
+            "item_count": len(items),
+            "discrepancy_count": flagged,
+            "has_discrepancy": flagged > 0,
+        }
 
     def set_order_lifecycle_drive_file_id(
         self,

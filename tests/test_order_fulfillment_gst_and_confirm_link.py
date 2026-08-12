@@ -921,3 +921,93 @@ def test_get_order_lifecycle_by_order_ref_no_returns_correct_fields(tmp_path):
     # holding some other column's data.
     assert result["dispatch_date"] is None
     assert result["created_at"] is not None
+
+
+def test_ci_first_then_so_merges_and_rematches(tmp_path):
+    """CI saved before SO must land on the same tracking and rematch SO vs CI."""
+    db_path = str(tmp_path / "ci_first_so_later.sqlite3")
+    db = CentralizedDB(db_path)
+
+    tracking_id = db.save_ci_only_order_lifecycle(
+        order_ref_no="102875610",
+        distributor_id=7,
+        commercial_invoice_file_reference="/uploads/ci_first.pdf",
+        commercial_invoice_parsed={
+            "header": {"order_ref_no": "102875610", "invoice_no": "1400009328"},
+            "line_items": [
+                {"item_name": "ASTER DB BS", "item_key": "ASTER|100|DB", "qty": 216, "value": 131544},
+            ],
+        },
+        workspace_id="ws-1",
+    )
+    db.upsert_order_lifecycle_item(
+        tracking_id=tracking_id,
+        item_name="ASTER DB BS",
+        source="ci",
+        qty=216,
+        value=131544,
+        workspace_id="ws-1",
+        item_key="ASTER|100|DB",
+    )
+
+    mergeable = db.find_mergeable_ci_only_tracking("102875610", workspace_id="ws-1")
+    assert mergeable is not None
+    assert mergeable["tracking_id"] == tracking_id
+
+    linked_id = db.link_sales_order_to_order_lifecycle(
+        order_ref_no="102875610",
+        distributor_id=7,
+        sales_order_file_reference="/uploads/so_later.pdf",
+        sales_order_parsed={"header": {"order_ref_no": "102875610"}},
+        workspace_id="ws-1",
+    )
+    assert linked_id == tracking_id
+
+    db.upsert_order_lifecycle_item(
+        tracking_id=tracking_id,
+        item_name="ASTER DB BS",
+        source="so",
+        qty=216,
+        value=131544,
+        workspace_id="ws-1",
+        item_key="ASTER|100|DB",
+    )
+    rematch = db.recheck_all_order_lifecycle_discrepancies(tracking_id, workspace_id="ws-1")
+    assert rematch["has_discrepancy"] is False
+
+    after = db.get_order_lifecycle_tracking(tracking_id, workspace_id="ws-1")
+    assert after["sales_order_file_reference"] == "/uploads/so_later.pdf"
+    assert after["commercial_invoice_file_reference"] == "/uploads/ci_first.pdf"
+    assert after["order_ref_no"] == "102875610"
+
+
+def test_ci_invoice_fallback_ref_merges_when_so_arrives(tmp_path):
+    """CI saved as CI-{invoice} still merges when later SO matches header SO#."""
+    db_path = str(tmp_path / "ci_fallback_ref.sqlite3")
+    db = CentralizedDB(db_path)
+
+    tracking_id = db.save_ci_only_order_lifecycle(
+        order_ref_no="CI-1400009999",
+        distributor_id=9,
+        commercial_invoice_file_reference="/uploads/ci_fallback.pdf",
+        commercial_invoice_parsed={
+            "header": {"order_ref_no": "102899001", "invoice_no": "1400009999"},
+        },
+        workspace_id="ws-1",
+    )
+
+    mergeable = db.find_mergeable_ci_only_tracking("102899001", workspace_id="ws-1")
+    assert mergeable is not None
+    assert mergeable["tracking_id"] == tracking_id
+
+    linked_id = db.link_sales_order_to_order_lifecycle(
+        order_ref_no="102899001",
+        distributor_id=9,
+        sales_order_file_reference="/uploads/so_real.pdf",
+        sales_order_parsed={"header": {"order_ref_no": "102899001"}},
+        workspace_id="ws-1",
+    )
+    assert linked_id == tracking_id
+    after = db.get_order_lifecycle_tracking(tracking_id, workspace_id="ws-1")
+    assert after["order_ref_no"] == "102899001"
+    assert after["sales_order_file_reference"] == "/uploads/so_real.pdf"

@@ -10293,6 +10293,9 @@ async function _uploadSalesOrderV2Impl(confirmedDistributorId, confirmedFilledOr
       const discrepancyAlert = d.has_discrepancy
         ? `<div style="color: #FF6B6B; font-weight: bold; margin-top: 8px;">⚠ DISCREPANCY DETECTED — one or more items don't match across Ordered/SO/CI quantities or values. Check the reconciliation sheet for this distributor.</div>`
         : '';
+      const ciFirstMerge = d.merged_from_ci_only
+        ? `<div style="color: #2E7D32; font-weight: bold; margin-top: 8px;">✓ SO matched onto earlier CI (CI-first). Same tracking #${d.tracking_id} — SO vs CI rematch done${d.so_ci_rematch && d.so_ci_rematch.discrepancy_count ? ` · ${d.so_ci_rematch.discrepancy_count} item(s) flagged` : ''}.</div>`
+        : '';
       let filledOrderPrompt = '';
       if (d.requires_filled_order_confirmation && d.suggested_filled_order) {
         const fo = d.suggested_filled_order;
@@ -10306,7 +10309,7 @@ async function _uploadSalesOrderV2Impl(confirmedDistributorId, confirmedFilledOr
       } else {
         ofSalesOrderPendingFilledOrderId = null;
       }
-      resultBox.innerHTML = `Linked. Tracking #${d.tracking_id} for Order Ref "${d.order_ref_no}".${discrepancyAlert}${filledOrderPrompt}`;
+      resultBox.innerHTML = `Linked. Tracking #${d.tracking_id} for Order Ref "${d.order_ref_no}".${ciFirstMerge}${discrepancyAlert}${filledOrderPrompt}`;
       if (!d.requires_filled_order_confirmation) {
         ofSalesOrderPendingFile = null;
         fileInput.value = '';
