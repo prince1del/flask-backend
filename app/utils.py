@@ -3,6 +3,7 @@ import difflib
 import os
 import re
 import sqlite3
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -248,6 +249,10 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "firm ka malik",
         "kaun hai owner",
         "kiska hai",
+        "profile",
+        "profile of",
+        "ka profile",
+        "profile batao",
         "mobile number",
         "mobile no",
         "phone number",
@@ -256,6 +261,8 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "contact no",
         "mobile kya hai",
         "number kya hai",
+        "ka number",
+        "ka contact",
         "address",
         "pata",
         "location kya hai",
@@ -282,6 +289,8 @@ _PARTY_QUERY_STOPWORDS = {
     "malik", "owner", "proprietor", "who", "which", "in",
     "mobile", "phone", "contact", "number", "no",
     "address", "pata", "location", "gst", "gstin",
+    "profile", "mr", "mrs", "ms", "shri", "smt", "shree", "sri",
+    "out", "them", "that", "it", "many", "unme", "usme", "inme", "se", "un", "us",
     "mrp", "exmill", "ex-mill", "ex", "mill", "xmill", "x-mill", "x",
     "price", "rate", "aur",
     "product", "products", "article", "size", "batayein",
@@ -330,6 +339,9 @@ _FUZZY_TERM_TO_INTENT: dict[str, str] = {
     "malik": "owner",
     "proprietor": "owner",
     "address": "owner",
+    "profile": "owner",
+    "number": "owner",
+    "contact": "owner",
 }
 
 
@@ -485,6 +497,19 @@ def normalize_voice_query(text: str) -> str:
     # one number that got split. Concatenate digits (keeping MM's leading
     # zero) rather than dropping the colon, so "1:05" -> "105", not "15".
     text = re.sub(r"\b(\d{1,2}):(\d{2})\b", r"\1\2", text)
+    # STT sometimes glues a short filler word directly onto a following
+    # year with no space ("ka 2026" heard as "ka2026"), which breaks both
+    # the \b(20\d{2})\b year-detection regex used by the target intent and
+    # the stopword-based entity extraction — neither recognizes "ka2026"
+    # as "ka" + "2026" since there's no word boundary between the letter
+    # and the digit. Scoped to the handful of fillers that precede a year
+    # in these queries, not a blanket letter/digit split, so it doesn't
+    # touch intentionally-joined tokens like season codes ("aw26").
+    text = re.sub(r"(?i)\b(ka|ki|ke|of|is|fy)(20\d{2})\b", r"\1 \2", text)
+    # "ex-mill" (a supported price field) gets misheard as "x-meal" by
+    # voice STT often enough to need its own fix, same as the exmill/
+    # x-mill/xmill spelling variants already recognized downstream.
+    text = re.sub(r"(?i)\bx[\s-]?meals?\b", "ex mill", text)
     return text
 
 
@@ -498,6 +523,51 @@ _PJP_VISIT_WORDS = (
 )
 
 
+_MONTH_NAMES: dict[str, int] = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
+}
+# "17th August" or "August 17" — either order, an optional ordinal suffix
+# on the day number. Word boundaries keep "sep"/"mar" etc. from matching
+# inside an unrelated longer word.
+_ABSOLUTE_DATE_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + "|".join(_MONTH_NAMES) + r")\b"
+    r"|\b(" + "|".join(_MONTH_NAMES) + r")\s+(\d{1,2})(?:st|nd|rd|th)?\b",
+    re.IGNORECASE,
+)
+
+
+def find_absolute_date_in_query(query: str, today):
+    """Parse a spoken absolute date ("17th August", "August 17") out of a
+    PJP query into a concrete date. Rolls over to next year if the
+    day/month already passed more than a week ago — a PJP ask is almost
+    always about an upcoming visit, not one that's already gone by.
+    Returns None if no absolute date is present.
+    """
+    match = _ABSOLUTE_DATE_RE.search(query or "")
+    if not match:
+        return None
+    if match.group(1):
+        day, month_name = int(match.group(1)), match.group(2).lower()
+    else:
+        month_name, day = match.group(3).lower(), int(match.group(4))
+    month = _MONTH_NAMES.get(month_name)
+    if not month:
+        return None
+    try:
+        candidate = date(today.year, month, day)
+    except ValueError:
+        return None
+    if (today - candidate).days > 7:
+        try:
+            candidate = date(today.year + 1, month, day)
+        except ValueError:
+            pass
+    return candidate
+
+
 def _looks_like_pjp_query(normalized: str) -> bool:
     """Fixed keyphrases can't enumerate every natural word order/insertion
     ("kal ka kya plan hai", "kal jana kaha hai mujhe", "jana kaha hai kal").
@@ -505,7 +575,9 @@ def _looks_like_pjp_query(normalized: str) -> bool:
     checked only after the specific-intent phrase list finds no match, so
     it never overrides a more specific signal (e.g. "last visit ... kal").
     """
-    has_date = any(w in normalized for w in _PJP_DATE_WORDS)
+    has_date = any(w in normalized for w in _PJP_DATE_WORDS) or bool(
+        _ABSOLUTE_DATE_RE.search(normalized)
+    )
     has_visit = any(w in normalized for w in _PJP_VISIT_WORDS)
     return has_date and has_visit
 
@@ -567,6 +639,24 @@ def _looks_like_season_order_query(normalized: str) -> bool:
     a season code (AW26/SS25/...) plus an order/value word means the user
     wants a season order-value figure, not a generic search."""
     if not _SEASON_TOKEN_RE.search(normalized):
+        return False
+    return "order" in normalized or "value" in normalized
+
+
+_CONTEXT_FOLLOWUP_PHRASES = (
+    "out of them", "out of that", "out of it", "of them how", "in them",
+    "unme se", "un mein se", "inme se", "in mein se", "usme se", "us mein se",
+)
+
+
+def _looks_like_context_order_query(normalized: str) -> bool:
+    """"out of them how many aster order" — a follow-up naming no season
+    or distributor of its own, referring back to a previous answer's
+    distributor/order set ("out of them"/"unme se") and asking to narrow
+    it down by a product/design word. Routed to the same season_order_value
+    handler as a season-coded query, which resolves the missing distributor
+    from context and treats a missing season as "across all seasons"."""
+    if not any(phrase in normalized for phrase in _CONTEXT_FOLLOWUP_PHRASES):
         return False
     return "order" in normalized or "value" in normalized
 
@@ -658,6 +748,8 @@ def infer_ai_intent(query: str) -> str:
     if _looks_like_pjp_query(normalized):
         return "pjp"
     if _looks_like_season_order_query(normalized):
+        return "season_order_value"
+    if _looks_like_context_order_query(normalized):
         return "season_order_value"
     if _looks_like_calculator_query(normalized):
         return "calculator"

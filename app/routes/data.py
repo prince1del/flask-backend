@@ -52,6 +52,7 @@ from app.utils import (
     detect_upload_file_type,
     expected_upload_format,
     extract_party_name_candidate,
+    find_absolute_date_in_query,
     infer_ai_intent,
     infer_distributor_name,
     normalize_voice_query,
@@ -4284,6 +4285,14 @@ _PJP_WEEKDAY_NAMES = {
 }
 
 
+def _pjp_label_caps(label: str) -> str:
+    """str.capitalize() lowercases everything after the first letter —
+    fine for word labels ("today" -> "Today", "monday" -> "Monday") but
+    it would mangle an absolute-date label ("17 Aug" -> "17 aug"), which
+    is already correctly cased coming out of strftime."""
+    return label if label[:1].isdigit() else label.capitalize()
+
+
 def _resolve_pjp_query_date(query: str, today) -> tuple[Any, str]:
     """Parse a relative date reference out of a PJP query (today/tomorrow/
     day-after-tomorrow/a weekday name, English or Hindi) and return the
@@ -4304,6 +4313,9 @@ def _resolve_pjp_query_date(query: str, today) -> tuple[Any, str]:
         if name in normalized:
             delta = (weekday - today.weekday()) % 7
             return today + timedelta(days=delta), name.capitalize()
+    absolute_date = find_absolute_date_in_query(normalized, today)
+    if absolute_date:
+        return absolute_date, absolute_date.strftime("%d %b")
     return today, "today"
 
 
@@ -4619,7 +4631,7 @@ def ai_assistant_query() -> Response:
 
         place = (pjp_row["place_to_visit"] if pjp_row else None) or ""
         day_type = ((pjp_row["day_type"] if pjp_row else None) or "").lower()
-        day_ref = "Today's" if date_label == "today" else f"{date_label.capitalize()}'s"
+        day_ref = "Today's" if date_label == "today" else f"{_pjp_label_caps(date_label)}'s"
         if place.strip() and place.strip().lower() not in {"holiday", "leave"}:
             activity = pjp_row["business_activity"] if pjp_row else None
             extra = f" — {activity}" if activity else ""
@@ -4628,11 +4640,11 @@ def ai_assistant_query() -> Response:
                 place_label = f"{place_label} Market"
             answer = f"{ask_prefix} {day_ref} planned visit: {place_label}{extra}."
         elif day_type in {"holiday", "leave"}:
-            answer = f"{ask_prefix} {date_label.capitalize()} is marked as {day_type} in your PJP."
+            answer = f"{ask_prefix} {_pjp_label_caps(date_label)} is marked as {day_type} in your PJP."
         elif target_date.weekday() >= 5:
             # No entry planned and it's a Saturday/Sunday — a weekly off,
             # not a gap in the plan the user forgot to fill.
-            answer = f"{ask_prefix} {date_label.capitalize()} is a holiday (weekend)."
+            answer = f"{ask_prefix} {_pjp_label_caps(date_label)} is a holiday (weekend)."
         else:
             answer = f"{ask_prefix} No PJP entry planned for {date_label} yet."
     elif intent == "purchase_trends":
@@ -4834,18 +4846,21 @@ def ai_assistant_query() -> Response:
             # same pattern as the article MRP/ex-mill and target/
             # achievement field filters.
             normalized_owner_query = query.lower()
-            wants_name = any(
+            # "profile" means the full picture, not just name+phone (the
+            # no-field-named default below) — show everything on file.
+            wants_profile = "profile" in normalized_owner_query
+            wants_name = wants_profile or any(
                 t in normalized_owner_query
                 for t in ("naam", "name", "owner", "malik", "proprietor")
             )
-            wants_phone = any(
+            wants_phone = wants_profile or any(
                 t in normalized_owner_query
                 for t in ("mobile", "phone", "contact number", "contact no", "number")
             )
-            wants_address = any(
+            wants_address = wants_profile or any(
                 t in normalized_owner_query for t in ("address", "pata", "location")
             )
-            wants_gst = any(
+            wants_gst = wants_profile or any(
                 t in normalized_owner_query for t in ("gst", "gstin")
             )
             if not wants_name and not wants_phone and not wants_address and not wants_gst:
@@ -4881,21 +4896,31 @@ def ai_assistant_query() -> Response:
         normalized_season_query = query.lower()
         season_match = _SEASON_TOKEN_RE.search(normalized_season_query)
         season_prefix = season_match.group(0).upper() if season_match else None
+        # infer_ai_intent() only ever routes here without a season code via
+        # _looks_like_context_order_query — a follow-up ("out of them how
+        # many aster order") naming no season/distributor of its own,
+        # referring back to whatever the previous question was about. In
+        # that case "no season" means "across every season on file", not
+        # a failed lookup — and the distributor must come from context_query
+        # since this query never names one.
+        is_context_followup = season_prefix is None
 
         with sqlite3.connect(_db_path()) as fo_conn:
             fodb.ensure_schema(fo_conn)
-            seasons = (
-                fodb.list_seasons_matching_prefix(fo_conn, user_id, season_prefix)
-                if season_prefix
-                else []
+            seasons = fodb.list_seasons_matching_prefix(
+                fo_conn, user_id, season_prefix or ""
             )
 
-            if not season_prefix or not seasons:
+            if not seasons:
                 answer = (
                     f"{ask_prefix} I couldn't find any orders for that season."
                 )
             else:
-                entity_query = normalized_season_query.replace(season_prefix.lower(), " ")
+                entity_query = (
+                    normalized_season_query.replace(season_prefix.lower(), " ")
+                    if season_prefix
+                    else normalized_season_query
+                )
                 entity_query = re.sub(r"\b(aw|ss|fw)\d{2}\b", " ", entity_query)
 
                 categories = fodb.list_distinct_categories(fo_conn, user_id, seasons)
@@ -4911,10 +4936,13 @@ def ai_assistant_query() -> Response:
                 # the candidate distributor name, same follow-up-aware fallback
                 # as the other distributor-scoped intents. Unlike those,
                 # this intent has a valid distributor-less meaning (company-
-                # wide total) — so no distributor left after stripping
-                # filler words means "company-wide", not "look at the
-                # previous question's distributor". No context-query
-                # fallback here, and no fuzzy lookup on filler-word mush.
+                # wide total) — so on a season-coded query, no distributor
+                # left after stripping filler words means "company-wide",
+                # not "look at the previous question's distributor" — no
+                # context-query fallback in that case. A context-followup
+                # query ("out of them...") is the opposite: it never names
+                # its own distributor, so context_query is the only place
+                # one can come from.
                 residual = entity_query
                 for token in (category, brand, size):
                     if token:
@@ -4928,6 +4956,12 @@ def ai_assistant_query() -> Response:
                     if meaningful_words
                     else None
                 )
+                if not distributor and is_context_followup and context_query:
+                    context_entity = extract_party_name_candidate(context_query)
+                    if context_entity:
+                        distributor = _find_distributor_fuzzy(
+                            db, context_entity, workspace_id
+                        )
 
                 totals = fodb.query_order_value(
                     fo_conn,
@@ -4939,7 +4973,7 @@ def ai_assistant_query() -> Response:
                     size=size,
                 )
 
-                desc_bits = [season_prefix]
+                desc_bits = [season_prefix] if season_prefix else []
                 if brand:
                     desc_bits.append(brand)
                 if size:
