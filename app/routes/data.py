@@ -382,20 +382,40 @@ def _extract_all_gstins(text: str) -> list[str]:
 # order reference number and breaking distributor matching entirely.
 # This pattern finds where the NEXT label starts, so the value can be
 # truncated there.
+#
+# Also handles GLUED labels with no space (Bombay Dyeing CI buyer line):
+#   "KALRA AGENCIESGST No.: 09AGSPK… Date of Issue: 22.04.2026"
 _NEXT_LABEL_PATTERN = re.compile(
-    r"\s+(?:date|buyer\s*code|buyer\s*name|buyer\s*id|gst\s*no\.?|gstin|"
+    r"(?:\s+|(?<=[A-Za-z0-9]))(?:"
+    r"date(?:\s+of\s+issue)?|invoice\s*date|buyer\s*code|buyer\s*name|buyer\s*id|"
+    r"gst\s*no\.?|gstin|address|mobile(?:\s*no\.?)?|state(?:\s*code)?|"
+    r"place\s*of\s*supply|consignee|transporter|vehicle\s*no\.?|"
     r"order\s*date|contract\s*no\.?|order\s*ref(?:erence)?\s*no\.?|"
-    r"sales\s*order\s*(?:no\.?|number)?|so\s*(?:no\.?|number)?|"
-    r"customer\s*name|distributor\s*name|party\s*name|name\s*\(of)\s*:",
+    r"sales\s*order\s*(?:no\.?|number|date)?|so\s*(?:no\.?|number)?|"
+    r"customer\s*name|distributor\s*name|party\s*name|name\s*\(of|"
+    r"invoice\s*no\.?|cust[\-\s]*po"
+    r")\s*:",
     re.I,
 )
 
 
 def _truncate_at_next_label(value: str) -> str:
-    match = _NEXT_LABEL_PATTERN.search(value)
+    match = _NEXT_LABEL_PATTERN.search(value or "")
     if match:
-        return value[: match.start()].strip()
-    return value.strip()
+        return value[: match.start()].strip(" ,;-")
+    return (value or "").strip()
+
+
+def _clean_party_display_name(value: str | None) -> str | None:
+    """Strip trailing GST/date/address junk from buyer/consignee names."""
+    text = _truncate_at_next_label(value or "")
+    if not text:
+        return None
+    # Extra hard cuts if a GSTIN or date token still leaked in
+    text = re.split(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]", text, maxsplit=1)[0]
+    text = re.split(r"\b\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}\b", text, maxsplit=1)[0]
+    text = text.strip(" ,;-")
+    return text or None
 
 
 def _parse_sales_order_header_fields(text: str) -> dict[str, str]:
@@ -502,6 +522,24 @@ def _parse_sales_order_header_fields(text: str) -> dict[str, str]:
         if match:
             parsed["buyer_name"] = match.group(1).strip()
 
+    # Bombay Dyeing CI: "Name (of the customer): …" often sits on the SAME
+    # physical line as the buyer GSTIN with no newline/space
+    # ("…1ZQName (of the customer): KALRA AGENCIESGST No.: …").
+    # Dedicated search beats the generic key:value loop for this layout.
+    ci_name_match = re.search(
+        r"Name\s*\(\s*of\s*the\s*customer\s*\)\s*:\s*(.+?)"
+        r"(?=(?:GST\s*No\.?|GSTIN|Date\s*of\s*Issue|Invoice\s*Date|Address|"
+        r"Mobile|State\s*Code|Place\s*of\s*Supply|CONSIGNEE|\Z))",
+        normalized_text,
+        re.I | re.S,
+    )
+    if ci_name_match:
+        cleaned_ci_name = _clean_party_display_name(
+            re.sub(r"\s+", " ", ci_name_match.group(1)).strip()
+        )
+        if cleaned_ci_name:
+            parsed["buyer_name"] = cleaned_ci_name
+
     # GST numbers — ALL found in the document. The caller excludes
     # the workspace's own known company GST (via Company Profile) to
     # determine which remaining one is the buyer's. Deliberately does
@@ -510,6 +548,13 @@ def _parse_sales_order_header_fields(text: str) -> dict[str, str]:
     parsed_gst_list = _extract_all_gstins(text)
     if parsed_gst_list:
         parsed["all_gst_numbers"] = ",".join(parsed_gst_list)
+
+    if parsed.get("buyer_name"):
+        cleaned_buyer = _clean_party_display_name(parsed["buyer_name"])
+        if cleaned_buyer:
+            parsed["buyer_name"] = cleaned_buyer
+        else:
+            parsed.pop("buyer_name", None)
 
     return parsed
 
@@ -2254,6 +2299,12 @@ def _enrich_ci_header_from_text(text: str, base: dict[str, str] | None = None) -
         header["sales_order_date"] = (
             _normalize_doc_date(str(header["sales_order_date"])) or header["sales_order_date"]
         )
+    if header.get("buyer_name"):
+        cleaned_buyer = _clean_party_display_name(str(header["buyer_name"]))
+        if cleaned_buyer:
+            header["buyer_name"] = cleaned_buyer
+        else:
+            header.pop("buyer_name", None)
     return header
 
 
