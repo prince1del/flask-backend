@@ -704,11 +704,15 @@ _DATE_LIKE_RE = re.compile(r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b")
 
 _PRICE_RANGE_RE = re.compile(
     r"(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*"
-    r"(?:-|to|se|aur|~|/)\s*"
+    r"(?:-|to|se|aur|~)\s*"
     r"(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)"
     r"(?!\s*-\s*\d)",
     re.IGNORECASE,
 )
+# "/" is deliberately excluded as a connector here (unlike the older bare
+# "1000/2000"-only fast path in global_search's _parse_mrp_price_range) —
+# this detector runs on full sentences, not just a bare range, so it would
+# otherwise steal "10/2" away from the calculator's division operator.
 
 
 def find_price_range_in_query(query: str) -> tuple[float, float] | None:
@@ -806,7 +810,19 @@ def try_calculator(normalized: str) -> dict | None:
         value = float(m.group().replace(",", ""))
         if op == "/" and value == 0:
             break
-        total = {"+": total + value, "-": total - value, "*": total * value, "/": total / value}[op]
+        # A dict literal here (the old code) evaluates every value
+        # expression up front regardless of which key gets picked —
+        # including "/": total / value — so multiplying by 0 raised
+        # ZeroDivisionError from the unused division branch alone, well
+        # before the "*" branch was ever selected.
+        if op == "+":
+            total = total + value
+        elif op == "-":
+            total = total - value
+        elif op == "*":
+            total = total * value
+        else:
+            total = total / value
         operands.append(value)
         ops.append(op)
         prev_end = m.end()
