@@ -418,6 +418,49 @@ def _clean_party_display_name(value: str | None) -> str | None:
     return text or None
 
 
+def _extract_consignee_display_name(text: str) -> str | None:
+    """
+    Bombay Dyeing CI often truncates invoice-to 'Name (of the customer)'
+    mid-firm (e.g. 'Shri Ram &') while CONSIGNEE has the full name
+    ('Shri Ram & Co., Meerut').
+    """
+    block_match = re.search(
+        r"CONSIGNEE\s*\([^)]*\)(.*?)(?:Taxes\s+Payable|Description\s+of\s+Product|\bSN\b|\Z)",
+        text or "",
+        re.I | re.S,
+    )
+    block = block_match.group(1) if block_match else (text or "")
+    name_match = re.search(
+        r"\bName\s*:\s*(.+?)(?=\s*GST\s*No\.?|\s*GSTIN|\s*Address|\s*Transportation|\s*Vehicle|\n)",
+        block,
+        re.I,
+    )
+    if not name_match:
+        return None
+    return _clean_party_display_name(name_match.group(1))
+
+
+def _prefer_fuller_party_name(primary: str | None, alternate: str | None) -> str | None:
+    """Pick the more complete firm name when one field is truncated."""
+    a = (primary or "").strip()
+    b = (alternate or "").strip()
+    if not a:
+        return b or None
+    if not b:
+        return a or None
+    a_core = a.rstrip(" &-").lower()
+    b_low = b.lower()
+    # Primary cut off at trailing '&' / short prefix of consignee
+    if a.endswith("&") or a.endswith("-"):
+        if a_core and a_core in b_low:
+            return b
+    if a_core and b_low.startswith(a_core) and len(b) > len(a) + 1:
+        return b
+    if a.lower() in b_low and len(b) > len(a) + 2:
+        return b
+    return a
+
+
 def _parse_sales_order_header_fields(text: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     normalized_text = re.sub(r"\(cid:\d+\)", "\n", text or "")
@@ -555,6 +598,14 @@ def _parse_sales_order_header_fields(text: str) -> dict[str, str]:
             parsed["buyer_name"] = cleaned_buyer
         else:
             parsed.pop("buyer_name", None)
+
+    # Prefer fuller consignee firm name when invoice-to name is truncated
+    consignee_name = _extract_consignee_display_name(normalized_text)
+    if consignee_name:
+        parsed["consignee_name"] = consignee_name
+        parsed["buyer_name"] = _prefer_fuller_party_name(
+            parsed.get("buyer_name"), consignee_name
+        )
 
     return parsed
 
@@ -2305,6 +2356,13 @@ def _enrich_ci_header_from_text(text: str, base: dict[str, str] | None = None) -
             header["buyer_name"] = cleaned_buyer
         else:
             header.pop("buyer_name", None)
+
+    consignee_name = _extract_consignee_display_name(text or "")
+    if consignee_name:
+        header["consignee_name"] = consignee_name
+        header["buyer_name"] = _prefer_fuller_party_name(
+            header.get("buyer_name"), consignee_name
+        )
     return header
 
 
