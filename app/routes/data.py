@@ -2547,17 +2547,31 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
     return items
 
 
-_CI_DESIGN_COLOUR_TOKEN_RE = re.compile(r"\b(\d{3,4})([A-Z]{2,4})\b")
-_CI_DESIGN_COLOUR_EXCLUDE = frozenset({"TC", "CM", "MM", "IN", "KG", "PCS", "SET"})
+_CI_DESIGN_COLOUR_EXCLUDE = frozenset({"TC", "CM", "MM", "IN", "KG", "PCS", "SET", "ASST"})
+# Glued 7985BLU / 756SBL140TC, or spaced 7684 PUR.
+_CI_DESIGN_COLOUR_GLUED_RE = re.compile(
+    r"(?<![A-Z0-9])(\d{3,4})([A-Z]{2,4})(?=\d{0,4}TC\b|(?![A-Z0-9]))",
+    re.IGNORECASE,
+)
+_CI_DESIGN_COLOUR_SPACED_RE = re.compile(
+    r"(?<![A-Z0-9])(\d{3,4})\s+([A-Z]{2,4})(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 
 
 def _ci_design_colour_tokens(text: str) -> list[str]:
+    upper = (text or "").upper()
     tokens: list[str] = []
-    for match in _CI_DESIGN_COLOUR_TOKEN_RE.finditer((text or "").upper()):
-        design, colour = match.group(1), match.group(2)
-        if colour in _CI_DESIGN_COLOUR_EXCLUDE:
-            continue
-        tokens.append(f"{design}{colour}")
+    seen: set[str] = set()
+    for pattern in (_CI_DESIGN_COLOUR_GLUED_RE, _CI_DESIGN_COLOUR_SPACED_RE):
+        for match in pattern.finditer(upper):
+            design, colour = match.group(1), match.group(2).upper()
+            if colour in _CI_DESIGN_COLOUR_EXCLUDE:
+                continue
+            token = f"{design}{colour}"
+            if token not in seen:
+                seen.add(token)
+                tokens.append(token)
     return tokens
 
 
@@ -4745,18 +4759,37 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
             payload["ci_totals"] = ci_parsed.get("totals")
         payload["ci_detail_level"] = ci_parsed.get("detail_level")
         ci_lines = list(ci_parsed.get("line_items") or [])
-        # Repair truncated Design+Colour on already-saved CIs (page-break cells).
+        # Re-parse from CI PDF when any saved line is missing Design+Colour
+        # (page-break truncation → 17/18 colourways). Uses real PDF text only.
         ci_file = tracking.get("commercial_invoice_file_reference")
-        if ci_file and ci_lines and any(
+        needs_design_repair = bool(ci_file) and bool(ci_lines) and any(
             isinstance(ln, dict)
             and ln.get("item_name")
             and not _ci_design_colour_tokens(str(ln.get("item_name") or ""))
             for ln in ci_lines
-        ):
+        )
+        if needs_design_repair:
             try:
-                repaired = _repair_truncated_ci_design_colours(ci_file, [dict(ln) for ln in ci_lines if isinstance(ln, dict)])
-                if repaired and repaired != ci_lines:
-                    ci_lines = repaired
+                fresh = parse_bombay_dyeing_so_ci_line_items(ci_file, "CI")
+                if fresh and len(fresh) >= len(
+                    [ln for ln in ci_lines if isinstance(ln, dict)]
+                ):
+                    # Keep AM annotations when item_name still matches.
+                    by_name = {
+                        str(ln.get("item_name") or "").strip().upper(): ln
+                        for ln in ci_lines
+                        if isinstance(ln, dict)
+                    }
+                    merged: list[dict[str, Any]] = []
+                    for ln in fresh:
+                        row = dict(ln)
+                        old = by_name.get(str(row.get("item_name") or "").strip().upper())
+                        if isinstance(old, dict) and isinstance(old.get("article_match"), dict):
+                            row["article_match"] = old["article_match"]
+                            if old.get("article_id") is not None:
+                                row["article_id"] = old.get("article_id")
+                        merged.append(row)
+                    ci_lines = merged
                     updated = dict(ci_parsed)
                     updated["line_items"] = ci_lines
                     with sqlite3.connect(db.db_path) as conn:
@@ -4767,6 +4800,23 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
                         )
                         conn.commit()
                     ci_parsed = updated
+                else:
+                    repaired = _repair_truncated_ci_design_colours(
+                        ci_file,
+                        [dict(ln) for ln in ci_lines if isinstance(ln, dict)],
+                    )
+                    if repaired:
+                        ci_lines = repaired
+                        updated = dict(ci_parsed)
+                        updated["line_items"] = ci_lines
+                        with sqlite3.connect(db.db_path) as conn:
+                            conn.execute(
+                                "UPDATE order_lifecycle_tracking "
+                                "SET commercial_invoice_parsed = ? WHERE tracking_id = ?",
+                                (json.dumps(updated, default=str), tracking_id),
+                            )
+                            conn.commit()
+                        ci_parsed = updated
             except Exception:
                 pass
         article_master_match = ci_parsed.get("article_master_match")
