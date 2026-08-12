@@ -4388,10 +4388,14 @@ def list_order_fulfillment_uploads() -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
     order_sheets = db.list_order_sheets(workspace_id=workspace_id)
-    tracking_records = db.list_order_lifecycle_tracking(workspace_id=workspace_id)
+    tracking_records = db.list_order_lifecycle_tracking(workspace_id=workspace_id, limit=500)
     return _json_response({
         "success": True,
-        "data": {"order_sheets": order_sheets, "tracking_records": tracking_records},
+        "data": {
+            "order_sheets": order_sheets,
+            "tracking_records": tracking_records,
+            "ci_count": sum(1 for t in tracking_records if t.get("has_commercial_invoice")),
+        },
     })
 
 

@@ -11036,16 +11036,16 @@ async function loadOrderFulfillmentUploads() {
     }
 
     const tracking = (data.data.tracking_records || []).slice();
-    const ciOnly = tracking.filter((t) => t.has_commercial_invoice);
+    const ciRows = tracking.filter((t) => t.has_commercial_invoice);
     const byDist = new Map();
-    ciOnly.forEach((t) => {
+    ciRows.forEach((t) => {
       const key = t.distributor_id != null
         ? `id:${t.distributor_id}`
         : `name:${String(t.distributor_name || t.order_ref_no || 'Unknown').trim().toLowerCase()}`;
       if (!byDist.has(key)) {
         byDist.set(key, {
           key,
-          name: t.distributor_name || t.order_ref_no || 'Unknown distributor',
+          name: t.distributor_name || t.buyer_name || t.order_ref_no || 'Unknown distributor',
           rows: [],
         });
       }
@@ -11057,26 +11057,36 @@ async function loadOrderFulfillmentUploads() {
         rows: g.rows.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+    const formatCiDate = (v) => {
+      if (!v) return '—';
+      const s = String(v);
+      return s.length >= 10 ? s.slice(0, 10) : s;
+    };
+
     const rowsHtml = distGroups.length
       ? distGroups.map((g) => {
-          const latest = g.rows[0] || {};
-          const header = `<tr class="of-tree-ci-dist"><td colspan="7"><strong>${foEscapeText(g.name)}</strong> · ${g.rows.length} CI · latest ${foEscapeText(latest.order_ref_no || '—')}</td></tr>
-            <tr class="of-tree-ci-season"><td colspan="7">📁 Others (${g.rows.length})</td></tr>`;
-          const body = g.rows.map((t) => `<tr>
-              <td>${escapeHtml(t.order_ref_no || '-')}</td>
-              <td>${escapeHtml(t.distributor_name || '-')}</td>
+          const header = `<tr class="of-tree-ci-dist"><td colspan="8"><strong>${foEscapeText(g.name)}</strong> · ${g.rows.length} CI saved</td></tr>`;
+          const body = g.rows.map((t) => {
+            const inv = t.invoice_no || '—';
+            const amt = t.ci_amount != null && t.ci_amount !== '' ? _ofMoney(t.ci_amount) : '—';
+            return `<tr class="of-ci-row" style="cursor:pointer;" onclick="if(!event.target.closest('button')) openCiTrackingDetail(${t.tracking_id})">
+              <td><strong>${escapeHtml(inv)}</strong></td>
+              <td>${escapeHtml(t.order_ref_no || '—')}</td>
+              <td>${escapeHtml(t.distributor_name || '—')}</td>
+              <td>${escapeHtml(t.buyer_name || '—')}</td>
+              <td>${amt}</td>
+              <td>${escapeHtml(formatCiDate(t.commercial_invoice_date || t.created_at))}</td>
               <td>${t.has_sales_order ? 'Yes' : 'No'}</td>
-              <td>${t.has_commercial_invoice ? 'Yes' : 'No'}</td>
-              <td>${escapeHtml(t.payment_status || '-')}</td>
-              <td>${escapeHtml(t.transit_status || '-')}</td>
-              <td style="white-space:nowrap;">
+              <td style="white-space:nowrap;" onclick="event.stopPropagation();">
                 <button type="button" class="btn btn-secondary" style="padding:2px 10px;font-size:0.85rem;" onclick="openCiTrackingDetail(${t.tracking_id})">View</button>
                 <button type="button" onclick="deleteOrderFulfillmentTracking(${t.tracking_id}, '${(t.order_ref_no || '').replace(/'/g, "\\'")}')" class="btn btn-danger" style="padding: 2px 10px; font-size: 0.85rem;">Delete</button>
               </td>
-            </tr>`).join('');
+            </tr>`;
+          }).join('');
           return header + body;
         }).join('')
-      : '<tr><td colspan="7">No Sales Orders/Invoices tracked yet.</td></tr>';
+      : '<tr><td colspan="8">No commercial invoices saved yet. Upload a CI above, then Confirm.</td></tr>';
     // Keep SO tracking table alphabetical flat for uploads pane.
     const soRowsHtml = tracking.length
       ? tracking
@@ -11090,23 +11100,27 @@ async function loadOrderFulfillmentUploads() {
           )
           .map(
             (t) => `<tr>
-              <td>${t.order_ref_no || '-'}</td>
-              <td>${t.distributor_name || '-'}</td>
+              <td>${escapeHtml(t.order_ref_no || '-')}</td>
+              <td>${escapeHtml(t.distributor_name || '-')}</td>
               <td>${t.has_sales_order ? 'Yes' : 'No'}</td>
               <td>${t.has_commercial_invoice ? 'Yes' : 'No'}</td>
-              <td>${t.payment_status || '-'}</td>
-              <td>${t.transit_status || '-'}</td>
-              <td><button onclick="deleteOrderFulfillmentTracking(${t.tracking_id}, '${(t.order_ref_no || '').replace(/'/g, "\\'")}')" class="btn btn-danger" style="padding: 2px 10px; font-size: 0.85rem;">Delete</button></td>
+              <td>${escapeHtml(t.payment_status || '-')}</td>
+              <td>${escapeHtml(t.transit_status || '-')}</td>
+              <td style="white-space:nowrap;">
+                ${t.has_commercial_invoice ? `<button type="button" class="btn btn-secondary" style="padding:2px 10px;font-size:0.85rem;" onclick="openCiTrackingDetail(${t.tracking_id})">View CI</button>` : ''}
+                <button type="button" onclick="deleteOrderFulfillmentTracking(${t.tracking_id}, '${(t.order_ref_no || '').replace(/'/g, "\\'")}')" class="btn btn-danger" style="padding: 2px 10px; font-size: 0.85rem;">Delete</button>
+              </td>
             </tr>`
           )
           .join('')
       : '<tr><td colspan="7">No Sales Orders/Invoices tracked yet.</td></tr>';
-if (trackingBody) trackingBody.innerHTML = soRowsHtml;
+    if (trackingBody) trackingBody.innerHTML = soRowsHtml;
     if (trackingBodyCi) trackingBodyCi.innerHTML = rowsHtml;
   } catch (error) {
-    const errHtml = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
+    const errHtmlCi = `<tr><td colspan="8">Error: ${escapeHtml(error.message)}</td></tr>`;
+    const errHtml = `<tr><td colspan="7">Error: ${escapeHtml(error.message)}</td></tr>`;
     if (trackingBody) trackingBody.innerHTML = errHtml;
-    if (trackingBodyCi) trackingBodyCi.innerHTML = errHtml;
+    if (trackingBodyCi) trackingBodyCi.innerHTML = errHtmlCi;
   }
 }
 

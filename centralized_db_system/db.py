@@ -6166,7 +6166,9 @@ class CentralizedDB:
             "SELECT olt.tracking_id, olt.order_ref_no, olt.distributor_id, "
             "COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name, "
             "olt.sales_order_file_reference, olt.commercial_invoice_file_reference, "
-            "olt.payment_status, olt.transit_status, olt.created_at "
+            "olt.payment_status, olt.transit_status, olt.created_at, "
+            "olt.commercial_invoice_parsed, olt.commercial_invoice_date, "
+            "olt.commercial_invoice_drive_file_id "
             "FROM order_lifecycle_tracking olt "
             "LEFT JOIN master_distributors md ON olt.distributor_id = md.id"
         )
@@ -6178,20 +6180,64 @@ class CentralizedDB:
         params.append(max(1, int(limit)))
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(query, tuple(params)).fetchall()
-        return [
-            {
-                "tracking_id": row[0],
-                "order_ref_no": row[1],
-                "distributor_id": row[2],
-                "distributor_name": row[3],
-                "has_sales_order": bool(row[4]),
-                "has_commercial_invoice": bool(row[5]),
-                "payment_status": row[6],
-                "transit_status": row[7],
-                "created_at": row[8],
-            }
-            for row in rows
-        ]
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            parsed_raw = row[9]
+            parsed: dict[str, Any] | None = None
+            if isinstance(parsed_raw, str) and parsed_raw.strip():
+                try:
+                    loaded = json.loads(parsed_raw)
+                    if isinstance(loaded, dict):
+                        parsed = loaded
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed = None
+            elif isinstance(parsed_raw, dict):
+                parsed = parsed_raw
+
+            header = (parsed or {}).get("header") if isinstance(parsed, dict) else {}
+            if not isinstance(header, dict):
+                header = {}
+            totals = (parsed or {}).get("totals") if isinstance(parsed, dict) else {}
+            if not isinstance(totals, dict):
+                totals = {}
+
+            invoice_no = self._extract_ci_invoice_no(parsed) if parsed else None
+            buyer_name = (
+                (header.get("buyer_name") or header.get("consignee_name") or "")
+                .strip()
+                or None
+            )
+            amount = header.get("invoice_total")
+            if amount is None:
+                amount = totals.get("invoice_total")
+            try:
+                amount = float(amount) if amount is not None and amount != "" else None
+            except (TypeError, ValueError):
+                amount = None
+
+            has_ci = bool(row[5]) or bool(row[11]) or bool(parsed)
+            results.append(
+                {
+                    "tracking_id": row[0],
+                    "order_ref_no": row[1],
+                    "distributor_id": row[2],
+                    "distributor_name": row[3],
+                    "has_sales_order": bool(row[4]),
+                    "has_commercial_invoice": has_ci,
+                    "payment_status": row[6],
+                    "transit_status": row[7],
+                    "created_at": row[8],
+                    "invoice_no": invoice_no,
+                    "buyer_name": buyer_name,
+                    "buyer_gst": (header.get("buyer_gst") or "").strip() or None,
+                    "ci_amount": amount,
+                    "commercial_invoice_date": row[10] or header.get("invoice_date"),
+                    "ci_detail_level": (parsed or {}).get("detail_level") if parsed else None,
+                    "ci_line_count": len((parsed or {}).get("line_items") or []) if parsed else 0,
+                }
+            )
+        return results
 
     def delete_order_lifecycle_tracking(
         self, tracking_id: int, workspace_id: str | None = None
