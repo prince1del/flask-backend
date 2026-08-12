@@ -10617,10 +10617,18 @@ function _renderCiBulkProgress(rows) {
       Bulk CI upload · ${done}/${rows.length} processed · saved ${ok} · review ${review} · skipped/failed ${bad}
     </div>
     <p class="of-ci-note">Auto-saved only when Customers ↔ CI is matched (SO link or suggested distributor). Others stay for manual confirm.</p>
-    <table class="of-ci-bulk-table">
-      <thead><tr><th>File</th><th>Invoice</th><th>Order Ref</th><th>Status</th></tr></thead>
-      <tbody>${trs}</tbody>
-    </table>
+    <p class="of-ci-muted" style="margin:0.35rem 0 0;font-size:0.78rem;">
+      <strong>Linked</strong> = SO pehle se Nexora mein tha, CI usse jud gaya.
+      · <strong>CI-only saved</strong> = SO nahi mila, sale CI se Customers distributor pe save hui (SO baad mein merge ho sakta hai).
+      · <strong>Needs review</strong> = party mismatch / distributor unclear — manually confirm.
+      · <strong>Duplicate</strong> = yeh CI pehle process ho chuki hai.
+    </p>
+    <div class="of-ci-bulk-wrap">
+      <table class="of-ci-bulk-table">
+        <thead><tr><th>File</th><th>Invoice</th><th>Order Ref</th><th>Status</th></tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>
     ${reviewBtn}
   `);
 }
