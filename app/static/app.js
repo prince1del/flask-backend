@@ -10347,17 +10347,16 @@ function _ofQty(v) {
 
 async function uploadInvoiceV2() {
   const fileInput = document.getElementById('of-invoice-file');
-  const resultBox = document.getElementById('of-invoice-result');
 
   if (!fileInput.files.length) {
-    resultBox.textContent = 'Please choose a file first.';
+    _showOfInvoiceResult('Please choose a file first.');
     return;
   }
 
   const formData = new FormData();
   formData.append('file', fileInput.files[0]);
 
-  resultBox.textContent = 'Uploading and parsing...';
+  _showOfInvoiceResult('Uploading and parsing...');
   try {
     const response = await fetchWithAuth('/api/v1/order-fulfillment/upload/invoice', {
       method: 'POST',
@@ -10380,7 +10379,7 @@ async function uploadInvoiceV2() {
     const d = data.data;
 
     if (d.is_duplicate) {
-      resultBox.innerHTML = `<div style="color:#FF6B6B;font-weight:bold;">${d.message || d.link_error || 'Duplicate CI — already processed.'}</div>`;
+      _showOfInvoiceResult(`<div class="of-ci-title is-bad">${escapeHtml(d.message || d.link_error || 'Duplicate CI — already processed.')}</div>`);
       ofInvoicePendingLink = null;
       return;
     }
@@ -10407,18 +10406,18 @@ async function uploadInvoiceV2() {
     if (!d.no_match_found && d.compare) {
       const c = d.compare;
       const qtyWarn = c.qty_mismatch
-        ? `<div style="color:#E6A23C;margin-top:6px;">Qty mismatch: SO ${_ofQty(c.so_total_qty)} vs CI ${_ofQty(c.ci_total_qty)}</div>`
+        ? `<div class="of-ci-title is-warn" style="margin-top:6px;">Qty mismatch: SO ${_ofQty(c.so_total_qty)} vs CI ${_ofQty(c.ci_total_qty)}</div>`
         : '';
       const partyName = d.distributor_name || c.so_distributor || 'matched party';
       const mismatch = (d.party_match && d.party_match.status === 'mismatch');
       const mismatchGate = mismatch
-        ? `<label style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;color:#FFB4B4;">
+        ? `<label class="of-ci-ack">
             <input type="checkbox" id="of-ci-party-mismatch-ack" />
             <span>I confirm CI buyer and SO / Customers distributor are the same party despite the mismatch warning.</span>
           </label>`
         : '';
-      resultBox.innerHTML = `
-        <div style="color:#7CFC7C;font-weight:600;">SO found in Nexora — review compare, then confirm</div>
+      _showOfInvoiceResult(`
+        <div class="of-ci-title is-ok">SO found in Nexora — review compare, then confirm</div>
         ${partyHtml}
         <table class="data-table" style="margin:10px 0;max-width:36rem;">
           <tbody>
@@ -10432,15 +10431,15 @@ async function uploadInvoiceV2() {
             <tr><td>SO lines / CI lines</td><td>${c.so_item_count ?? '—'} / ${c.ci_line_count == null ? 'on confirm' : (c.ci_line_count ?? '—')}</td></tr>
           </tbody>
         </table>
-        ${c.detail_note ? `<div style="color:#aaa;font-size:0.9rem;margin-top:4px;">${escapeHtml(c.detail_note)}</div>` : ''}
+        ${c.detail_note ? `<div class="of-ci-note">${escapeHtml(c.detail_note)}</div>` : ''}
         ${qtyWarn}
         ${mismatchGate}
         <div class="form-group">
-          <label>Invoice Amount (₹) <span style="color:#888;font-weight:normal;">${amountNote}</span></label>
+          <label>Invoice Amount (₹) <span>${amountNote}</span></label>
           <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
         </div>
         <button class="btn btn-primary" onclick="confirmCiLinkV2()">Confirm — link CI to ${escapeHtml(partyName)}</button>
-      `;
+      `);
       return;
     }
 
@@ -10448,8 +10447,8 @@ async function uploadInvoiceV2() {
     const suggestedId = (d.suggested_distributor && d.suggested_distributor.id) || '';
     const suggestedName = (d.suggested_distributor && d.suggested_distributor.name) || '';
     const buyerLabel = d.buyer_name || suggestedName || 'unknown party on PDF';
-    resultBox.innerHTML = `
-      <div style="color:#E6A23C;font-weight:600;">No matching Sales Order in Nexora</div>
+    _showOfInvoiceResult(`
+      <div class="of-ci-title is-warn">No matching Sales Order in Nexora</div>
       ${partyHtml}
       <p style="margin:8px 0;">
         SO / Order Ref on CI: <strong>${escapeHtml(d.order_ref_no || 'not found')}</strong><br/>
@@ -10457,7 +10456,7 @@ async function uploadInvoiceV2() {
         Buyer on CI: <strong>${escapeHtml(buyerLabel)}</strong><br/>
         Buyer GST: <strong>${escapeHtml(d.buyer_gst || '—')}</strong>
       </p>
-      <p style="color:#aaa;font-size:0.9rem;">
+      <p class="of-ci-note">
         Real sale is CI. Pick the <strong>Customers</strong> distributor that matches this CI buyer, then save as CI-only.
         If the same SO number is uploaded later, it can merge into this tracking.
       </p>
@@ -10466,46 +10465,54 @@ async function uploadInvoiceV2() {
         <select id="of-ci-only-distributor" style="max-width:min(100%,28rem);"></select>
       </div>
       <div class="form-group">
-        <label>Invoice Amount (₹) <span style="color:#888;font-weight:normal;">${amountNote}</span></label>
+        <label>Invoice Amount (₹) <span>${amountNote}</span></label>
         <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
       </div>
       <button class="btn btn-primary" onclick="confirmCiOnlyV2()">Confirm — save CI-only (no SO)</button>
-    `;
+    `);
     await _populateCiOnlyDistributorSelect(suggestedId, d.party_match);
   } catch (error) {
-    resultBox.textContent = `Error: ${error.message}`;
+    _showOfInvoiceResult(`<div class="of-ci-title is-bad">Error: ${escapeHtml(error.message)}</div>`);
   }
+}
+
+function _showOfInvoiceResult(html) {
+  const resultBox = document.getElementById('of-invoice-result');
+  if (!resultBox) return;
+  resultBox.hidden = false;
+  resultBox.innerHTML = html || '';
+  if (!html) resultBox.hidden = true;
 }
 
 function _ofPartyMatchHtml(partyMatch, buyerName, buyerGst) {
   if (!partyMatch) {
-    return `<div style="margin:8px 0;padding:8px 10px;border:1px solid #444;border-radius:6px;color:#ccc;">
-      Customers match: not evaluated
+    return `<div class="of-ci-party-match is-warn">
+      <div class="of-ci-party-match__status">Customers ↔ CI: NOT EVALUATED</div>
     </div>`;
   }
   const status = partyMatch.status || 'unmatched';
-  const color = status === 'matched' ? '#7CFC7C'
-    : status === 'mismatch' ? '#FF6B6B'
-    : status === 'ambiguous' ? '#E6A23C'
-    : '#E6A23C';
+  const statusClass = status === 'matched' ? 'is-matched'
+    : status === 'mismatch' ? 'is-mismatch'
+    : (status === 'ambiguous' || status === 'unmatched') ? 'is-warn'
+    : 'is-warn';
   const ciName = (partyMatch.ci_distributor && partyMatch.ci_distributor.name) || '—';
   const soName = (partyMatch.so_distributor && partyMatch.so_distributor.name) || '—';
   let candidates = '';
   if (Array.isArray(partyMatch.candidates) && partyMatch.candidates.length) {
-    candidates = `<div style="margin-top:4px;font-size:0.9rem;">Candidates: ${
+    candidates = `<div class="of-ci-party-match__candidates">Candidates: ${
       partyMatch.candidates.map((c) => escapeHtml(c.name || `#${c.id}`)).join(', ')
     }</div>`;
   }
   return `
-    <div style="margin:8px 0;padding:8px 10px;border:1px solid ${color};border-radius:6px;">
-      <div style="color:${color};font-weight:600;">Customers ↔ CI: ${escapeHtml(status.toUpperCase())}</div>
-      <div style="margin-top:4px;color:#ddd;font-size:0.92rem;">${escapeHtml(partyMatch.message || '')}</div>
-      <div style="margin-top:6px;font-size:0.9rem;color:#bbb;">
-        CI buyer: <strong style="color:#eee;">${escapeHtml(buyerName || '—')}</strong>
-        · GST: <strong style="color:#eee;">${escapeHtml(buyerGst || '—')}</strong><br/>
-        Customers match: <strong style="color:#eee;">${escapeHtml(ciName)}</strong>
-        · SO party: <strong style="color:#eee;">${escapeHtml(soName)}</strong>
-      </div>
+    <div class="of-ci-party-match ${statusClass}">
+      <div class="of-ci-party-match__status">Customers ↔ CI: ${escapeHtml(status.toUpperCase())}</div>
+      <p class="of-ci-party-match__msg">${escapeHtml(partyMatch.message || '')}</p>
+      <p class="of-ci-party-match__meta">
+        CI buyer: <strong>${escapeHtml(buyerName || '—')}</strong>
+        · GST: <strong>${escapeHtml(buyerGst || '—')}</strong><br/>
+        Customers match: <strong>${escapeHtml(ciName)}</strong>
+        · SO party: <strong>${escapeHtml(soName)}</strong>
+      </p>
       ${candidates}
     </div>
   `;
@@ -10595,15 +10602,17 @@ function _parseFetchJson(response, rawText) {
 }
 
 async function _confirmCiOnlyV2Impl() {
-  const resultBox = document.getElementById('of-invoice-result');
   if (!ofInvoicePendingLink) {
-    resultBox.textContent = 'Nothing pending to confirm.';
+    _showOfInvoiceResult('<div class="of-ci-title is-warn">Nothing pending to confirm.</div>');
     return;
   }
   const distSel = document.getElementById('of-ci-only-distributor');
   const distributorId = distSel ? distSel.value : '';
   if (!distributorId) {
-    resultBox.insertAdjacentHTML('beforeend', '<div style="color:#FF6B6B;margin-top:8px;">Select a distributor first.</div>');
+    const box = document.getElementById('of-invoice-result');
+    if (box) {
+      box.insertAdjacentHTML('beforeend', '<div class="of-ci-title is-bad" style="margin-top:8px;">Select a distributor first.</div>');
+    }
     return;
   }
   const suggestedId = ofInvoicePendingLink.suggested_distributor
@@ -10619,7 +10628,8 @@ async function _confirmCiOnlyV2Impl() {
   const amount = amountInput ? parseFloat(amountInput.value) : null;
 
   try {
-    resultBox.insertAdjacentHTML('beforeend', '<div style="color:#aaa;margin-top:8px;">Saving…</div>');
+    const box = document.getElementById('of-invoice-result');
+    if (box) box.insertAdjacentHTML('beforeend', '<div class="of-ci-note" style="margin-top:8px;">Saving…</div>');
     const response = await fetchWithAuth('/api/v1/order-fulfillment/confirm-ci-only', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -10666,31 +10676,32 @@ async function _confirmCiOnlyV2Impl() {
     }
     const d = data.data;
     if (d.is_duplicate || d.link_error) {
-      resultBox.innerHTML = `<div style="color:#FF6B6B;font-weight:bold;">${d.link_error || 'Could not save CI.'}</div>`;
+      _showOfInvoiceResult(`<div class="of-ci-title is-bad">${escapeHtml(d.link_error || 'Could not save CI.')}</div>`);
       ofInvoicePendingLink = null;
       return;
     }
     const detailNote = d.detail_level === 'text_only_save'
       ? ' Header/amount saved (line tables deferred on small RAM).'
       : ' Full CI details stored.';
-    resultBox.innerHTML =
-      `Saved CI-only! Tracking #${d.tracking_id}` +
-      (d.achievement_id ? `, Achievement #${d.achievement_id} (sale from CI).` : '.') +
-      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}.${detailNote} SO can merge later if uploaded.</div>` +
-      `<div style="margin-top:8px;"><button type="button" class="nx-btn nx-btn-primary" onclick="openCiTrackingDetail(${Number(d.tracking_id)})">View CI detail</button></div>`;
+    _showOfInvoiceResult(
+      `<div class="of-ci-title is-ok">Saved CI-only! Tracking #${escapeHtml(d.tracking_id)}` +
+      (d.achievement_id ? `, Achievement #${escapeHtml(d.achievement_id)} (sale from CI).` : '.') +
+      `</div>` +
+      `<div class="of-ci-note" style="margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}.${detailNote} SO can merge later if uploaded.</div>` +
+      `<div style="margin-top:8px;"><button type="button" class="nx-btn nx-btn-primary" onclick="openCiTrackingDetail(${Number(d.tracking_id)})">View CI detail</button></div>`
+    );
     ofInvoicePendingLink = null;
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();
     if (d.tracking_id) openCiTrackingDetail(d.tracking_id);
   } catch (error) {
-    resultBox.textContent = `Error: ${error.message}`;
+    _showOfInvoiceResult(`<div class="of-ci-title is-bad">Error: ${escapeHtml(error.message)}</div>`);
   }
 }
 
 async function _confirmCiLinkV2Impl() {
-  const resultBox = document.getElementById('of-invoice-result');
   if (!ofInvoicePendingLink) {
-    resultBox.textContent = 'Nothing pending to confirm.';
+    _showOfInvoiceResult('<div class="of-ci-title is-warn">Nothing pending to confirm.</div>');
     return;
   }
   const mismatchAck = document.getElementById('of-ci-party-mismatch-ack');
@@ -10700,10 +10711,13 @@ async function _confirmCiLinkV2Impl() {
     && mismatchAck
     && !mismatchAck.checked
   ) {
-    resultBox.insertAdjacentHTML(
-      'beforeend',
-      '<div style="color:#FF6B6B;margin-top:8px;">CI buyer and SO / Customers distributor do not match. Tick the confirmation box to proceed, or fix Customers master GST/name.</div>'
-    );
+    const box = document.getElementById('of-invoice-result');
+    if (box) {
+      box.insertAdjacentHTML(
+        'beforeend',
+        '<div class="of-ci-title is-bad" style="margin-top:8px;">CI buyer and SO / Customers distributor do not match. Tick the confirmation box to proceed, or fix Customers master GST/name.</div>'
+      );
+    }
     return;
   }
   const amountInput = document.getElementById('of-invoice-amount');
@@ -10728,27 +10742,30 @@ async function _confirmCiLinkV2Impl() {
     const d = data.data;
 
     if (d.is_duplicate || d.link_error) {
-      resultBox.innerHTML = `<div style="color: #FF6B6B; font-weight: bold;">${d.link_error || 'This Commercial Invoice could not be linked.'}</div>`;
+      _showOfInvoiceResult(`<div class="of-ci-title is-bad">${escapeHtml(d.link_error || 'This Commercial Invoice could not be linked.')}</div>`);
       ofInvoicePendingLink = null;
       return;
     }
 
     const discrepancyAlert = d.has_discrepancy
-      ? `<div style="color: #FF6B6B; font-weight: bold; margin-top: 8px;">⚠ DISCREPANCY DETECTED — one or more items don't match across Ordered/SO/CI quantities or values. Check the reconciliation sheet for this distributor.</div>`
+      ? `<div class="of-ci-title is-bad" style="margin-top:8px;">⚠ DISCREPANCY DETECTED — one or more items don't match across Ordered/SO/CI quantities or values. Check the reconciliation sheet for this distributor.</div>`
       : '';
     const ramNote = d.detail_level === 'text_only_save'
-      ? `<div style="color:#aaa;margin-top:6px;">Saved with header/amount (line tables skipped on small RAM). Upgrade to Standard 2GB for full line parse.</div>`
+      ? `<div class="of-ci-note" style="margin-top:6px;">Saved with header/amount (line tables skipped on small RAM).</div>`
       : '';
-    resultBox.innerHTML = `Linked! Tracking #${d.tracking_id}` +
-      (d.achievement_id ? `, Achievement #${d.achievement_id} recorded.` : '.') +
+    _showOfInvoiceResult(
+      `<div class="of-ci-title is-ok">Linked! Tracking #${escapeHtml(d.tracking_id)}` +
+      (d.achievement_id ? `, Achievement #${escapeHtml(d.achievement_id)} recorded.` : '.') +
+      `</div>` +
       discrepancyAlert + ramNote +
-      `<div style="margin-top:8px;"><button type="button" class="nx-btn nx-btn-primary" onclick="openCiTrackingDetail(${Number(d.tracking_id)})">View CI detail</button></div>`;
+      `<div style="margin-top:8px;"><button type="button" class="nx-btn nx-btn-primary" onclick="openCiTrackingDetail(${Number(d.tracking_id)})">View CI detail</button></div>`
+    );
     ofInvoicePendingLink = null;
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();
     if (d.tracking_id) openCiTrackingDetail(d.tracking_id);
   } catch (error) {
-    resultBox.textContent = `Error: ${error.message}`;
+    _showOfInvoiceResult(`<div class="of-ci-title is-bad">Error: ${escapeHtml(error.message)}</div>`);
   }
 }
 
