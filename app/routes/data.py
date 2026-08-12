@@ -629,6 +629,268 @@ def _identify_buyer_gst(all_gst_numbers: list[str], own_company_gst: str | None)
     return None
 
 
+def _extract_ci_buyer_gst(text: str, own_company_gst: str | None = None) -> str | None:
+    """
+    Prefer GST printed on the buyer / consignee block of a Bombay Dyeing CI,
+    then fall back to 'all GSTINs minus company GST'.
+    """
+    own = (own_company_gst or "").strip().upper()
+    gst_token = r"(\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z][A-Z0-9])"
+    section_patterns = (
+        rf"Name\s*\(\s*of\s*the\s*customer\s*\)\s*:.*?GST\s*No\.?\s*:?\s*{gst_token}",
+        rf"CONSIGNEE\s*\([^)]*\).*?GST\s*No\.?\s*:?\s*{gst_token}",
+        rf"INVOICE\s*TO\s*\([^)]*\).*?GST\s*No\.?\s*:?\s*{gst_token}",
+        # Glued buyer line: "KALRA AGENCIESGST No.: 09AGSPK…"
+        rf"Name\s*\(\s*of\s*the\s*customer\s*\)\s*:[^\n]{{0,120}}?GST\s*No\.?\s*:?\s*{gst_token}",
+    )
+    for pattern in section_patterns:
+        match = re.search(pattern, text or "", re.I | re.S)
+        if not match:
+            continue
+        gst = match.group(1).upper()
+        if gst and gst != own:
+            return gst
+    return _identify_buyer_gst(_extract_all_gstins(text), own_company_gst)
+
+
+def _ci_buyer_name_lookup_variants(buyer_name: str | None) -> list[str]:
+    """Variants that help map CI print names onto Customers master rows."""
+    raw = (buyer_name or "").strip()
+    if not raw:
+        return []
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: str | None) -> None:
+        text = (value or "").strip(" ,;-")
+        if not text:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        variants.append(text)
+
+    _add(raw)
+    # "Shri Ram & Co., Meerut" → "Shri Ram & Co."
+    if "," in raw:
+        _add(raw.split(",", 1)[0])
+    # Drop trailing legal suffix noise for looser exact lookups
+    trimmed = re.sub(
+        r"\b(pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|llp)\s*$",
+        "",
+        raw,
+        flags=re.I,
+    ).strip(" ,;-")
+    _add(trimmed)
+    if "," in trimmed:
+        _add(trimmed.split(",", 1)[0])
+    return variants
+
+
+def _distributor_public_payload(distributor: dict | None) -> dict | None:
+    if not distributor:
+        return None
+    return {
+        "id": distributor.get("id"),
+        "name": distributor.get("firm_name") or distributor.get("name"),
+        "firm_name": distributor.get("firm_name"),
+        "firm_nick_name": distributor.get("firm_nick_name"),
+        "gst_no": distributor.get("gst_no"),
+        "buyer_code": distributor.get("buyer_code") or distributor.get("distributor_id"),
+    }
+
+
+def _match_ci_buyer_to_customers(
+    db: CentralizedDB,
+    *,
+    buyer_name: str | None,
+    buyer_gst: str | None,
+    workspace_id: str | None,
+) -> dict[str, Any]:
+    """
+    Map CI buyer (GST + printed name) onto Customers → master_distributors.
+    Prefer GST, then exact name/firm/nick, then fuzzy. Never invent a party.
+    """
+    matched: dict[str, Any] | None = None
+    match_method: str | None = None
+    candidates: list[dict[str, Any]] = []
+
+    if buyer_gst:
+        matched = db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
+        if matched:
+            match_method = "gst"
+
+    if not matched:
+        for variant in _ci_buyer_name_lookup_variants(buyer_name):
+            hit = (
+                db.get_master_distributor_by_name(variant, workspace_id=workspace_id)
+                or db._find_master_distributor_by_gst_or_name(
+                    variant, workspace_id=workspace_id
+                )
+            )
+            if hit:
+                matched = hit
+                match_method = "name"
+                break
+            # firm_name / nick exact (get_master_distributor_by_name only hits `name`)
+            with sqlite3.connect(db.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                sql = (
+                    "SELECT id FROM master_distributors WHERE "
+                    "(LOWER(COALESCE(firm_name,'')) = ? OR LOWER(COALESCE(firm_nick_name,'')) = ? "
+                    "OR LOWER(COALESCE(name,'')) = ?)"
+                )
+                params: list[Any] = [variant.lower(), variant.lower(), variant.lower()]
+                if workspace_id:
+                    sql += " AND workspace_id = ?"
+                    params.append(workspace_id)
+                sql += " LIMIT 1"
+                row = conn.execute(sql, params).fetchone()
+            if row:
+                matched = db.get_master_distributor(int(row["id"]), workspace_id=workspace_id)
+                if matched:
+                    match_method = "firm_name"
+                    break
+
+    if not matched and buyer_name:
+        fuzzy_queries = _ci_buyer_name_lookup_variants(buyer_name) or [buyer_name]
+        for query in fuzzy_queries:
+            fuzzy = db._fuzzy_match_distributor(query, workspace_id=workspace_id)
+            status = fuzzy.get("status")
+            if status == "matched" and fuzzy.get("distributor"):
+                matched = fuzzy["distributor"]
+                # Fuzzy returns a slim dict — reload full master row when possible
+                if matched.get("id") is not None:
+                    full = db.get_master_distributor(
+                        int(matched["id"]), workspace_id=workspace_id
+                    )
+                    if full:
+                        matched = full
+                match_method = "fuzzy"
+                break
+            if status == "ambiguous":
+                seen_ids = {c.get("id") for c in candidates if c.get("id") is not None}
+                for cand in fuzzy.get("candidates") or []:
+                    payload = _distributor_public_payload(cand)
+                    if not payload or payload.get("id") in seen_ids:
+                        continue
+                    candidates.append(payload)
+                    seen_ids.add(payload.get("id"))
+                if candidates:
+                    break
+
+    status = "matched" if matched else ("ambiguous" if candidates else "none")
+    return {
+        "status": status,
+        "match_method": match_method,
+        "buyer_name": buyer_name,
+        "buyer_gst": buyer_gst,
+        "distributor": _distributor_public_payload(matched),
+        "candidates": candidates,
+    }
+
+
+def _build_ci_party_match_summary(
+    *,
+    ci_match: dict[str, Any],
+    so_distributor: dict | None,
+) -> dict[str, Any]:
+    """
+    Compare CI→Customers match with the SO's linked Customers distributor.
+    """
+    ci_dist = ci_match.get("distributor")
+    so_payload = _distributor_public_payload(so_distributor)
+    so_id = so_payload.get("id") if so_payload else None
+    ci_id = ci_dist.get("id") if ci_dist else None
+    buyer_name = ci_match.get("buyer_name")
+    so_name = (so_payload or {}).get("name") if so_payload else None
+
+    if so_id is not None and ci_id is not None:
+        if int(so_id) == int(ci_id):
+            return {
+                "status": "matched",
+                "message": (
+                    f"CI buyer matches Customers distributor "
+                    f"\"{(ci_dist or {}).get('name')}\" "
+                    f"(via {ci_match.get('match_method') or 'lookup'}) "
+                    f"and the SO party."
+                ),
+                "ci_distributor": ci_dist,
+                "so_distributor": so_payload,
+            }
+        return {
+            "status": "mismatch",
+            "message": (
+                f"CI buyer maps to Customers \"{(ci_dist or {}).get('name')}\", "
+                f"but SO is linked to \"{so_name}\". Confirm before linking."
+            ),
+            "ci_distributor": ci_dist,
+            "so_distributor": so_payload,
+        }
+
+    if so_id is not None and ci_id is None:
+        if buyer_name and so_name and _names_match(buyer_name, so_name):
+            return {
+                "status": "matched",
+                "message": (
+                    f"CI buyer name matches SO party \"{so_name}\" "
+                    f"(no exact Customers GST/name hit for CI alone)."
+                ),
+                "ci_distributor": None,
+                "so_distributor": so_payload,
+            }
+        if ci_match.get("status") == "ambiguous":
+            return {
+                "status": "ambiguous",
+                "message": (
+                    f"CI buyer could match multiple Customers rows; "
+                    f"SO party is \"{so_name}\". Confirm manually."
+                ),
+                "ci_distributor": None,
+                "so_distributor": so_payload,
+                "candidates": ci_match.get("candidates") or [],
+            }
+        return {
+            "status": "unmatched",
+            "message": (
+                f"CI buyer \"{buyer_name or '—'}\" did not match Customers master; "
+                f"SO party is \"{so_name}\". Confirm this is the same distributor."
+            ),
+            "ci_distributor": None,
+            "so_distributor": so_payload,
+        }
+
+    # No SO — CI-only lane
+    if ci_id is not None:
+        return {
+            "status": "matched",
+            "message": (
+                f"CI buyer matched Customers \"{(ci_dist or {}).get('name')}\" "
+                f"via {ci_match.get('match_method') or 'lookup'}."
+            ),
+            "ci_distributor": ci_dist,
+            "so_distributor": None,
+        }
+    if ci_match.get("status") == "ambiguous":
+        return {
+            "status": "ambiguous",
+            "message": "CI buyer matches multiple Customers distributors — pick one.",
+            "ci_distributor": None,
+            "so_distributor": None,
+            "candidates": ci_match.get("candidates") or [],
+        }
+    return {
+        "status": "unmatched",
+        "message": (
+            f"CI buyer \"{buyer_name or '—'}\" not found in Customers. "
+            f"Select the correct distributor before saving."
+        ),
+        "ci_distributor": None,
+        "so_distributor": None,
+    }
+
+
 def _build_sales_order_link_summary(
     selected_name: str | None,
     matched_name: str | None,
@@ -3761,24 +4023,47 @@ def upload_invoice_v2() -> Response:
     ci_total_value = sum(float(it.get("value") or 0) for it in ci_line_items)
 
     matching_so = None
+    so_distributor = None
     distributor_name = None
-    suggested_distributor = None
     if order_ref_no:
         matching_so = db.get_order_lifecycle_by_order_ref_no(order_ref_no, workspace_id=workspace_id)
         if matching_so and matching_so.get("distributor_id"):
-            distributor = db.get_master_distributor(matching_so["distributor_id"], workspace_id=workspace_id)
-            if distributor:
-                distributor_name = distributor.get("firm_name") or distributor.get("name")
-
-    if buyer_name and not matching_so:
-        suggested_distributor = db._find_master_distributor_by_gst_or_name(
-            buyer_name, workspace_id=workspace_id
-        )
-        # Also try firm_name / partial: get_master_distributor_by_name
-        if not suggested_distributor:
-            suggested_distributor = db.get_master_distributor_by_name(
-                buyer_name, workspace_id=workspace_id
+            so_distributor = db.get_master_distributor(
+                matching_so["distributor_id"], workspace_id=workspace_id
             )
+            if so_distributor:
+                distributor_name = (
+                    so_distributor.get("firm_name") or so_distributor.get("name")
+                )
+
+    # Always map CI buyer → Customers (master_distributors) via GST / name / fuzzy
+    own_company_profile = db.get_company_profile(workspace_id)
+    own_company_gst = (
+        own_company_profile.get("gst_number") if own_company_profile else None
+    )
+    buyer_gst = _extract_ci_buyer_gst(extracted_text or "", own_company_gst)
+    if not buyer_gst and isinstance(parsed_invoice, dict):
+        header_gsts = (parsed_invoice.get("header") or {}).get("all_gst_numbers") or ""
+        if header_gsts:
+            buyer_gst = _identify_buyer_gst(
+                [g for g in str(header_gsts).split(",") if g],
+                own_company_gst,
+            )
+    if isinstance(parsed_invoice, dict) and isinstance(parsed_invoice.get("header"), dict):
+        if buyer_gst:
+            parsed_invoice["header"]["buyer_gst"] = buyer_gst
+
+    ci_customer_match = _match_ci_buyer_to_customers(
+        db,
+        buyer_name=buyer_name,
+        buyer_gst=buyer_gst,
+        workspace_id=workspace_id,
+    )
+    party_match = _build_ci_party_match_summary(
+        ci_match=ci_customer_match,
+        so_distributor=so_distributor,
+    )
+    suggested_distributor = ci_customer_match.get("distributor")
 
     compare = None
     if matching_so:
@@ -3793,7 +4078,10 @@ def upload_invoice_v2() -> Response:
             "order_ref_no": order_ref_no,
             "invoice_no": invoice_no,
             "so_distributor": distributor_name,
+            "so_distributor_id": (so_distributor or {}).get("id") if so_distributor else None,
             "ci_buyer_name": buyer_name,
+            "ci_buyer_gst": buyer_gst,
+            "customers_match": party_match,
             "so_has_file": bool(matching_so.get("sales_order_file_reference")),
             "so_tracking_id": matching_so.get("tracking_id"),
             "so_item_count": len(so_items),
@@ -3808,6 +4096,7 @@ def upload_invoice_v2() -> Response:
                 if so_total_qty and ci_total_qty
                 else None
             ),
+            "party_mismatch": party_match.get("status") == "mismatch",
         }
 
     return _json_response({
@@ -3816,19 +4105,14 @@ def upload_invoice_v2() -> Response:
             "order_ref_no": order_ref_no,
             "invoice_no": invoice_no,
             "buyer_name": buyer_name,
+            "buyer_gst": buyer_gst,
             "commercial_invoice_file_reference": str(target_path),
             "commercial_invoice_parsed": parsed_invoice,
             "matching_sales_order": matching_so,
             "distributor_name": distributor_name,
-            "suggested_distributor": (
-                {
-                    "id": suggested_distributor.get("id"),
-                    "name": suggested_distributor.get("firm_name")
-                    or suggested_distributor.get("name"),
-                }
-                if suggested_distributor
-                else None
-            ),
+            "suggested_distributor": suggested_distributor,
+            "ci_customer_match": ci_customer_match,
+            "party_match": party_match,
             "extracted_amount": extracted_amount,
             "ci_line_count": len(ci_line_items),
             "ci_total_qty": ci_total_qty,
@@ -4697,6 +4981,57 @@ def confirm_ci_only() -> Response:
         return _json_response(
             {"success": False, "error": {"message": f"Distributor id {distributor_id} not found"}},
             404,
+        )
+
+    # Ensure selected Customers row matches CI buyer (GST preferred, else name).
+    acknowledge_party_mismatch = bool(payload.get("acknowledge_party_mismatch"))
+    ci_text_for_match = ci_raw_text
+    if not ci_text_for_match and commercial_invoice_file_reference:
+        try:
+            ci_text_for_match = _extract_pdf_text(commercial_invoice_file_reference) or ""
+        except Exception:
+            ci_text_for_match = ""
+    own_profile = db.get_company_profile(workspace_id)
+    own_gst = own_profile.get("gst_number") if own_profile else None
+    ci_buyer_gst = _extract_ci_buyer_gst(ci_text_for_match, own_gst)
+    ci_buyer_name = None
+    if isinstance(ci_header, dict):
+        ci_buyer_name = (ci_header.get("buyer_name") or "").strip() or None
+    if not ci_buyer_name:
+        ci_buyer_name = (
+            _parse_sales_order_header_fields(ci_text_for_match).get("buyer_name") or ""
+        ).strip() or None
+    ci_match = _match_ci_buyer_to_customers(
+        db,
+        buyer_name=ci_buyer_name,
+        buyer_gst=ci_buyer_gst,
+        workspace_id=workspace_id,
+    )
+    matched = ci_match.get("distributor") or {}
+    selected_gst = (distributor.get("gst_no") or "").strip().upper()
+    mismatch_reason = None
+    if matched.get("id") is not None and int(matched["id"]) != int(distributor_id):
+        mismatch_reason = (
+            f"CI buyer maps to Customers \"{matched.get('name')}\" "
+            f"(id {matched.get('id')}), but you selected "
+            f"\"{distributor.get('firm_name') or distributor.get('name')}\" "
+            f"(id {distributor_id})."
+        )
+    elif ci_buyer_gst and selected_gst and ci_buyer_gst != selected_gst:
+        mismatch_reason = (
+            f"CI buyer GST {ci_buyer_gst} does not match selected Customers GST {selected_gst}."
+        )
+    if mismatch_reason and not acknowledge_party_mismatch:
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "message": mismatch_reason + " Select the matched distributor, or confirm mismatch.",
+                    "code": "ci_customers_mismatch",
+                    "ci_customer_match": ci_match,
+                },
+            },
+            409,
         )
 
     try:

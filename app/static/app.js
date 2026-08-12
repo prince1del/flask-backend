@@ -10379,9 +10379,11 @@ async function uploadInvoiceV2() {
       order_ref_no: d.order_ref_no,
       invoice_no: d.invoice_no,
       buyer_name: d.buyer_name,
+      buyer_gst: d.buyer_gst || null,
       commercial_invoice_file_reference: d.commercial_invoice_file_reference,
       commercial_invoice_parsed: d.commercial_invoice_parsed,
       suggested_distributor: d.suggested_distributor || null,
+      party_match: d.party_match || null,
       mode: d.no_match_found ? 'ci_only' : 'linked',
     };
 
@@ -10389,6 +10391,7 @@ async function uploadInvoiceV2() {
     const amountNote = d.extracted_amount != null
       ? '(auto-extracted from the invoice — adjust if needed)'
       : '(could not auto-read the amount — please enter it)';
+    const partyHtml = _ofPartyMatchHtml(d.party_match, d.buyer_name, d.buyer_gst);
 
     // Lane B: SO exists → show light compare + confirm link
     if (!d.no_match_found && d.compare) {
@@ -10397,20 +10400,30 @@ async function uploadInvoiceV2() {
         ? `<div style="color:#E6A23C;margin-top:6px;">Qty mismatch: SO ${_ofQty(c.so_total_qty)} vs CI ${_ofQty(c.ci_total_qty)}</div>`
         : '';
       const partyName = d.distributor_name || c.so_distributor || 'matched party';
+      const mismatch = (d.party_match && d.party_match.status === 'mismatch');
+      const mismatchGate = mismatch
+        ? `<label style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;color:#FFB4B4;">
+            <input type="checkbox" id="of-ci-party-mismatch-ack" />
+            <span>I confirm CI buyer and SO / Customers distributor are the same party despite the mismatch warning.</span>
+          </label>`
+        : '';
       resultBox.innerHTML = `
         <div style="color:#7CFC7C;font-weight:600;">SO found in Nexora — review compare, then confirm</div>
+        ${partyHtml}
         <table class="data-table" style="margin:10px 0;max-width:36rem;">
           <tbody>
             <tr><td>SO / Order Ref</td><td><strong>${escapeHtml(c.order_ref_no || '—')}</strong></td></tr>
             <tr><td>CI Invoice No</td><td>${escapeHtml(c.invoice_no || '—')}</td></tr>
-            <tr><td>SO party</td><td>${escapeHtml(c.so_distributor || '—')}</td></tr>
+            <tr><td>SO party (Customers)</td><td>${escapeHtml(c.so_distributor || '—')}</td></tr>
             <tr><td>CI buyer</td><td>${escapeHtml(c.ci_buyer_name || '—')}</td></tr>
+            <tr><td>CI buyer GST</td><td>${escapeHtml(c.ci_buyer_gst || '—')}</td></tr>
             <tr><td>SO qty / value</td><td>${_ofQty(c.so_total_qty)} · ${_ofMoney(c.so_total_value)}</td></tr>
             <tr><td>CI qty / value</td><td>${_ofQty(c.ci_total_qty)} · ${_ofMoney(c.ci_total_value || c.ci_amount)}</td></tr>
             <tr><td>SO lines / CI lines</td><td>${c.so_item_count ?? '—'} / ${c.ci_line_count ?? '—'}</td></tr>
           </tbody>
         </table>
         ${qtyWarn}
+        ${mismatchGate}
         <div class="form-group">
           <label>Invoice Amount (₹) <span style="color:#888;font-weight:normal;">${amountNote}</span></label>
           <input type="number" id="of-invoice-amount" step="0.01" value="${amountValue}" />
@@ -10426,17 +10439,19 @@ async function uploadInvoiceV2() {
     const buyerLabel = d.buyer_name || suggestedName || 'unknown party on PDF';
     resultBox.innerHTML = `
       <div style="color:#E6A23C;font-weight:600;">No matching Sales Order in Nexora</div>
+      ${partyHtml}
       <p style="margin:8px 0;">
         SO / Order Ref on CI: <strong>${escapeHtml(d.order_ref_no || 'not found')}</strong><br/>
         Invoice No: <strong>${escapeHtml(d.invoice_no || '—')}</strong><br/>
-        Buyer on CI: <strong>${escapeHtml(buyerLabel)}</strong>
+        Buyer on CI: <strong>${escapeHtml(buyerLabel)}</strong><br/>
+        Buyer GST: <strong>${escapeHtml(d.buyer_gst || '—')}</strong>
       </p>
       <p style="color:#aaa;font-size:0.9rem;">
-        Real sale is CI. You can save this as <strong>CI-only</strong> now.
+        Real sale is CI. Pick the <strong>Customers</strong> distributor that matches this CI buyer, then save as CI-only.
         If the same SO number is uploaded later, it can merge into this tracking.
       </p>
       <div class="form-group">
-        <label>Distributor (Party Master) *</label>
+        <label>Distributor (Customers / Party Master) *</label>
         <select id="of-ci-only-distributor" style="max-width:min(100%,28rem);"></select>
       </div>
       <div class="form-group">
@@ -10445,13 +10460,41 @@ async function uploadInvoiceV2() {
       </div>
       <button class="btn btn-primary" onclick="confirmCiOnlyV2()">Confirm — save CI-only (no SO)</button>
     `;
-    await _populateCiOnlyDistributorSelect(suggestedId);
+    await _populateCiOnlyDistributorSelect(suggestedId, d.party_match);
   } catch (error) {
     resultBox.textContent = `Error: ${error.message}`;
   }
 }
 
-async function _populateCiOnlyDistributorSelect(preferredId) {
+function _ofPartyMatchHtml(partyMatch, buyerName, buyerGst) {
+  if (!partyMatch) {
+    return `<div style="margin:8px 0;padding:8px 10px;border:1px solid #444;border-radius:6px;color:#ccc;">
+      Customers match: not evaluated
+    </div>`;
+  }
+  const status = partyMatch.status || 'unmatched';
+  const color = status === 'matched' ? '#7CFC7C'
+    : status === 'mismatch' ? '#FF6B6B'
+    : status === 'ambiguous' ? '#E6A23C'
+    : '#E6A23C';
+  const ciName = (partyMatch.ci_distributor && partyMatch.ci_distributor.name) || '—';
+  const soName = (partyMatch.so_distributor && partyMatch.so_distributor.name) || '—';
+  return `
+    <div style="margin:8px 0;padding:8px 10px;border:1px solid ${color};border-radius:6px;">
+      <div style="color:${color};font-weight:600;">Customers ↔ CI: ${escapeHtml(status.toUpperCase())}</div>
+      <div style="margin-top:4px;color:#ddd;font-size:0.92rem;">${escapeHtml(partyMatch.message || '')}</div>
+      <div style="margin-top:6px;font-size:0.9rem;color:#bbb;">
+        CI buyer: <strong style="color:#eee;">${escapeHtml(buyerName || '—')}</strong>
+        · GST: <strong style="color:#eee;">${escapeHtml(buyerGst || '—')}</strong><br/>
+        Customers match: <strong style="color:#eee;">${escapeHtml(ciName)}</strong>
+        · SO party: <strong style="color:#eee;">${escapeHtml(soName)}</strong>
+      </div>
+      ${candidates}
+    </div>
+  `;
+}
+
+async function _populateCiOnlyDistributorSelect(preferredId, partyMatch) {
   const sel = document.getElementById('of-ci-only-distributor');
   if (!sel) return;
   sel.innerHTML = '<option value="">Loading distributors…</option>';
@@ -10461,12 +10504,26 @@ async function _populateCiOnlyDistributorSelect(preferredId) {
     const list = (data && data.data) || data.distributors || data || [];
     const rows = Array.isArray(list) ? list : (list.items || list.results || []);
     sel.innerHTML = '<option value="">— Select distributor —</option>';
-    rows.forEach((d) => {
+    const preferIds = new Set();
+    if (preferredId) preferIds.add(String(preferredId));
+    if (partyMatch && Array.isArray(partyMatch.candidates)) {
+      partyMatch.candidates.forEach((c) => {
+        if (c && c.id != null) preferIds.add(String(c.id));
+      });
+    }
+    // Put suggested / candidate rows first
+    const ranked = [...rows].sort((a, b) => {
+      const aPref = preferIds.has(String(a.id)) ? 0 : 1;
+      const bPref = preferIds.has(String(b.id)) ? 0 : 1;
+      return aPref - bPref;
+    });
+    ranked.forEach((d) => {
       const id = d.id;
       const name = d.firm_name || d.name || `Distributor #${id}`;
+      const gst = d.gst_no ? ` · ${d.gst_no}` : '';
       const opt = document.createElement('option');
       opt.value = id;
-      opt.textContent = name;
+      opt.textContent = preferIds.has(String(id)) ? `★ ${name}${gst}` : `${name}${gst}`;
       if (preferredId && String(id) === String(preferredId)) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -10520,6 +10577,15 @@ async function _confirmCiOnlyV2Impl() {
     resultBox.insertAdjacentHTML('beforeend', '<div style="color:#FF6B6B;margin-top:8px;">Select a distributor first.</div>');
     return;
   }
+  const suggestedId = ofInvoicePendingLink.suggested_distributor
+    && ofInvoicePendingLink.suggested_distributor.id;
+  let acknowledgePartyMismatch = false;
+  if (suggestedId && String(suggestedId) !== String(distributorId)) {
+    acknowledgePartyMismatch = window.confirm(
+      'Selected Customers distributor differs from the CI auto-match. Save anyway?'
+    );
+    if (!acknowledgePartyMismatch) return;
+  }
   const amountInput = document.getElementById('of-invoice-amount');
   const amount = amountInput ? parseFloat(amountInput.value) : null;
 
@@ -10534,9 +10600,45 @@ async function _confirmCiOnlyV2Impl() {
         commercial_invoice_file_reference: ofInvoicePendingLink.commercial_invoice_file_reference,
         commercial_invoice_parsed: ofInvoicePendingLink.commercial_invoice_parsed,
         amount: isNaN(amount) ? null : amount,
+        acknowledge_party_mismatch: acknowledgePartyMismatch,
       }),
     });
     const data = await response.json();
+    if ((!response.ok || !data.success) && data.error && data.error.code === 'ci_customers_mismatch' && !acknowledgePartyMismatch) {
+      const ok = window.confirm(`${data.error.message}\n\nSave anyway with the selected distributor?`);
+      if (!ok) return;
+      const retry = await fetchWithAuth('/api/v1/order-fulfillment/confirm-ci-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_ref_no: ofInvoicePendingLink.order_ref_no,
+          invoice_no: ofInvoicePendingLink.invoice_no,
+          distributor_id: Number(distributorId),
+          commercial_invoice_file_reference: ofInvoicePendingLink.commercial_invoice_file_reference,
+          commercial_invoice_parsed: ofInvoicePendingLink.commercial_invoice_parsed,
+          amount: isNaN(amount) ? null : amount,
+          acknowledge_party_mismatch: true,
+        }),
+      });
+      const retryData = await retry.json();
+      if (!retry.ok || !retryData.success) {
+        throw new Error((retryData.error && retryData.error.message) || 'CI-only save failed');
+      }
+      const d = retryData.data;
+      if (d.is_duplicate || d.link_error) {
+        resultBox.innerHTML = `<div style="color:#FF6B6B;font-weight:bold;">${d.link_error || 'Could not save CI.'}</div>`;
+        ofInvoicePendingLink = null;
+        return;
+      }
+      resultBox.innerHTML =
+        `Saved CI-only! Tracking #${d.tracking_id}` +
+        (d.achievement_id ? `, Achievement #${d.achievement_id} (sale from CI).` : '.') +
+        `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}. Full CI details (lines/taxes/dates) stored like SO. SO can merge later if uploaded.</div>`;
+      ofInvoicePendingLink = null;
+      document.getElementById('of-invoice-file').value = '';
+      loadOrderFulfillmentUploads();
+      return;
+    }
     if (!response.ok || !data.success) {
       throw new Error((data.error && data.error.message) || 'CI-only save failed');
     }
@@ -10562,6 +10664,19 @@ async function _confirmCiLinkV2Impl() {
   const resultBox = document.getElementById('of-invoice-result');
   if (!ofInvoicePendingLink) {
     resultBox.textContent = 'Nothing pending to confirm.';
+    return;
+  }
+  const mismatchAck = document.getElementById('of-ci-party-mismatch-ack');
+  if (
+    ofInvoicePendingLink.party_match
+    && ofInvoicePendingLink.party_match.status === 'mismatch'
+    && mismatchAck
+    && !mismatchAck.checked
+  ) {
+    resultBox.insertAdjacentHTML(
+      'beforeend',
+      '<div style="color:#FF6B6B;margin-top:8px;">CI buyer and SO / Customers distributor do not match. Tick the confirmation box to proceed, or fix Customers master GST/name.</div>'
+    );
     return;
   }
   const amountInput = document.getElementById('of-invoice-amount');
