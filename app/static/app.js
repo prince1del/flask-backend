@@ -10676,10 +10676,12 @@ async function _confirmCiOnlyV2Impl() {
     resultBox.innerHTML =
       `Saved CI-only! Tracking #${d.tracking_id}` +
       (d.achievement_id ? `, Achievement #${d.achievement_id} (sale from CI).` : '.') +
-      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}.${detailNote} SO can merge later if uploaded.</div>`;
+      `<div style="color:#aaa;margin-top:6px;">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> · ${escapeHtml(d.distributor_name || '')}.${detailNote} SO can merge later if uploaded.</div>` +
+      `<div style="margin-top:8px;"><button type="button" class="nx-btn nx-btn-primary" onclick="openCiTrackingDetail(${Number(d.tracking_id)})">View CI detail</button></div>`;
     ofInvoicePendingLink = null;
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();
+    if (d.tracking_id) openCiTrackingDetail(d.tracking_id);
   } catch (error) {
     resultBox.textContent = `Error: ${error.message}`;
   }
@@ -10739,10 +10741,12 @@ async function _confirmCiLinkV2Impl() {
       : '';
     resultBox.innerHTML = `Linked! Tracking #${d.tracking_id}` +
       (d.achievement_id ? `, Achievement #${d.achievement_id} recorded.` : '.') +
-      discrepancyAlert + ramNote;
+      discrepancyAlert + ramNote +
+      `<div style="margin-top:8px;"><button type="button" class="nx-btn nx-btn-primary" onclick="openCiTrackingDetail(${Number(d.tracking_id)})">View CI detail</button></div>`;
     ofInvoicePendingLink = null;
     document.getElementById('of-invoice-file').value = '';
     loadOrderFulfillmentUploads();
+    if (d.tracking_id) openCiTrackingDetail(d.tracking_id);
   } catch (error) {
     resultBox.textContent = `Error: ${error.message}`;
   }
@@ -10831,6 +10835,179 @@ async function initOrderFulfillmentEmbeddedPanels() {
   showOfSection(ofSoPackLastPayload ? 'so-pack' : 'filled-order');
 }
 
+function closeCiTrackingDetail() {
+  const panel = document.getElementById('of-ci-detail-panel');
+  if (panel) panel.hidden = true;
+  const body = document.getElementById('of-ci-detail-body');
+  if (body) body.innerHTML = '';
+}
+
+async function openCiTrackingDetail(trackingId) {
+  const panel = document.getElementById('of-ci-detail-panel');
+  const body = document.getElementById('of-ci-detail-body');
+  const titleEl = document.getElementById('of-ci-detail-title');
+  const subEl = document.getElementById('of-ci-detail-sub');
+  if (!panel || !body) return;
+
+  panel.hidden = false;
+  body.innerHTML = '<p class="nx-text-dim">Loading CI detail…</p>';
+  if (titleEl) titleEl.textContent = `CI Detail #${trackingId}`;
+  if (subEl) subEl.textContent = 'Fetching saved commercial invoice…';
+
+  try {
+    const response = await fetchWithAuth(`/api/v1/order-fulfillment/tracking/${trackingId}`);
+    const rawText = await response.text();
+    const data = typeof _parseFetchJson === 'function'
+      ? _parseFetchJson(response, rawText)
+      : JSON.parse(rawText);
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'Failed to load CI detail');
+    }
+    const d = data.data || {};
+    body.innerHTML = _renderCiTrackingDetailHtml(d);
+    if (titleEl) {
+      titleEl.textContent = `CI ${d.invoice_no || d.order_ref_no || `#${trackingId}`}`;
+    }
+    if (subEl) {
+      const level = d.ci_detail_level || 'saved';
+      subEl.textContent = `${d.distributor_name || '—'} · ${level}${d.has_sales_order ? ' · SO linked' : ' · CI-only'}`;
+    }
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (error) {
+    body.innerHTML = `<p style="color:#FF6B6B;">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function _renderCiTrackingDetailHtml(d) {
+  const header = d.ci_header || {};
+  const totals = d.ci_totals || {};
+  const ciLines = Array.isArray(d.ci_line_items) ? d.ci_line_items : [];
+  const reconItems = Array.isArray(d.items) ? d.items : [];
+
+  const headerRows = [
+    ['Invoice No', d.invoice_no || header.invoice_no],
+    ['Invoice Date', d.commercial_invoice_date || header.invoice_date],
+    ['Order Ref / SO', d.order_ref_no || header.order_ref_no],
+    ['Distributor', d.distributor_name],
+    ['Buyer (CI)', header.buyer_name],
+    ['Buyer GST', header.buyer_gst],
+    ['Consignee', header.consignee_name],
+    ['Place of supply', header.place_of_supply],
+    ['Cust PO', header.cust_po],
+    ['Delivery No', header.delivery_no],
+    ['Transporter / LR', [header.transporter, header.lr_no].filter(Boolean).join(' · ') || null],
+    ['Payment / Transit', [d.payment_status, d.transit_status].filter(Boolean).join(' · ') || null],
+  ].filter(([, v]) => v != null && String(v).trim() !== '');
+
+  const amountRows = [
+    ['Taxable', header.taxable_amount ?? totals.taxable_amount ?? totals.taxable],
+    ['IGST', header.total_igst ?? totals.total_igst ?? totals.igst],
+    ['Invoice total', header.invoice_total ?? totals.invoice_total ?? totals.line_total],
+    ['Pieces', header.total_pieces ?? totals.qty],
+  ].filter(([, v]) => v != null && v !== '');
+
+  const headerTable = headerRows.length
+    ? `<table class="data-table" style="max-width:40rem;margin:0 0 0.75rem;"><tbody>${
+        headerRows.map(([k, v]) => `<tr><td style="width:11rem;">${escapeHtml(k)}</td><td><strong>${escapeHtml(v)}</strong></td></tr>`).join('')
+      }</tbody></table>`
+    : '<p class="nx-text-dim">No CI header fields saved.</p>';
+
+  const amountTable = amountRows.length
+    ? `<table class="data-table" style="max-width:28rem;margin:0 0 0.75rem;"><tbody>${
+        amountRows.map(([k, v]) => {
+          const shown = typeof v === 'number' || (v !== '' && !Number.isNaN(Number(v)))
+            ? _ofMoney(v)
+            : escapeHtml(v);
+          return `<tr><td style="width:11rem;">${escapeHtml(k)}</td><td><strong>${shown}</strong></td></tr>`;
+        }).join('')
+      }</tbody></table>`
+    : '';
+
+  let linesHtml = '';
+  if (ciLines.length) {
+    linesHtml = `
+      <h4 style="margin:0.75rem 0 0.35rem;">CI line items (${ciLines.length})</h4>
+      <div class="of-tracking-wrap">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Value</th><th>HSN</th></tr></thead>
+          <tbody>
+            ${ciLines.map((it, i) => `<tr>
+              <td>${i + 1}</td>
+              <td>${escapeHtml(it.item_name || it.material_code || '—')}</td>
+              <td>${_ofQty(it.qty)}</td>
+              <td>${it.rate != null ? _ofMoney(it.rate) : '—'}</td>
+              <td>${_ofMoney(it.value ?? it.taxable ?? it.line_total)}</td>
+              <td>${escapeHtml(it.hsn || '—')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } else if (reconItems.some((it) => Number(it.ci_qty) > 0)) {
+    linesHtml = `
+      <h4 style="margin:0.75rem 0 0.35rem;">Reconciliation items (CI qty)</h4>
+      <div class="of-tracking-wrap">
+        <table class="data-table">
+          <thead><tr><th>Item</th><th>Ordered</th><th>SO</th><th>CI</th><th>CI value</th></tr></thead>
+          <tbody>
+            ${reconItems.map((it) => `<tr>
+              <td>${escapeHtml(it.item_name || it.item_key || '—')}</td>
+              <td>${_ofQty(it.ordered_qty)}</td>
+              <td>${_ofQty(it.so_qty)}</td>
+              <td>${_ofQty(it.ci_qty)}</td>
+              <td>${_ofMoney(it.ci_value)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } else {
+    const note = d.ci_parse_note
+      || (d.ci_detail_level === 'text_only_save' || d.ci_detail_level === 'upload_preview'
+        ? 'Line tables were skipped on small RAM (Starter 512MB). Header/amount are saved. Upgrade to Standard 2GB for full line parse.'
+        : 'No CI line items stored yet.');
+    linesHtml = `<p class="nx-text-dim" style="margin-top:0.75rem;">${escapeHtml(note)}</p>`;
+  }
+
+  const pdfBtn = d.has_commercial_invoice
+    ? `<button type="button" class="nx-btn nx-btn-primary" onclick="openOrderFulfillmentTrackingPdf(${Number(d.tracking_id)}, 'ci')">Open CI PDF</button>`
+    : '';
+  const soPdfBtn = d.has_sales_order
+    ? `<button type="button" class="nx-btn" onclick="openOrderFulfillmentTrackingPdf(${Number(d.tracking_id)}, 'so')">Open SO PDF</button>`
+    : '';
+
+  return `
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;">
+      ${pdfBtn}${soPdfBtn}
+    </div>
+    <h4 style="margin:0 0 0.35rem;">Header</h4>
+    ${headerTable}
+    ${amountTable ? `<h4 style="margin:0.5rem 0 0.35rem;">Amounts</h4>${amountTable}` : ''}
+    ${linesHtml}
+  `;
+}
+
+async function openOrderFulfillmentTrackingPdf(trackingId, kind) {
+  try {
+    const response = await fetchWithAuth(
+      `/api/v1/order-fulfillment/tracking/${trackingId}/file?kind=${encodeURIComponent(kind || 'ci')}`
+    );
+    if (!response.ok) {
+      const raw = await response.text();
+      let msg = `Could not open ${kind || 'ci'} PDF (HTTP ${response.status})`;
+      try {
+        const data = JSON.parse(raw);
+        if (data.error && data.error.message) msg = data.error.message;
+      } catch (_) { /* ignore */ }
+      throw new Error(msg);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    alert(error.message || 'PDF open failed');
+  }
+}
+
 async function loadOrderFulfillmentUploads() {
   const trackingBody = document.getElementById('of-tracking-tbody');
   const trackingBodyCi = document.getElementById('of-tracking-tbody-ci');
@@ -10869,13 +11046,16 @@ async function loadOrderFulfillmentUploads() {
           const header = `<tr class="of-tree-ci-dist"><td colspan="7"><strong>${foEscapeText(g.name)}</strong> · ${g.rows.length} CI · latest ${foEscapeText(latest.order_ref_no || '—')}</td></tr>
             <tr class="of-tree-ci-season"><td colspan="7">📁 Others (${g.rows.length})</td></tr>`;
           const body = g.rows.map((t) => `<tr>
-              <td>${t.order_ref_no || '-'}</td>
-              <td>${t.distributor_name || '-'}</td>
+              <td>${escapeHtml(t.order_ref_no || '-')}</td>
+              <td>${escapeHtml(t.distributor_name || '-')}</td>
               <td>${t.has_sales_order ? 'Yes' : 'No'}</td>
               <td>${t.has_commercial_invoice ? 'Yes' : 'No'}</td>
-              <td>${t.payment_status || '-'}</td>
-              <td>${t.transit_status || '-'}</td>
-              <td><button onclick="deleteOrderFulfillmentTracking(${t.tracking_id}, '${(t.order_ref_no || '').replace(/'/g, "\\'")}')" class="btn btn-danger" style="padding: 2px 10px; font-size: 0.85rem;">Delete</button></td>
+              <td>${escapeHtml(t.payment_status || '-')}</td>
+              <td>${escapeHtml(t.transit_status || '-')}</td>
+              <td style="white-space:nowrap;">
+                <button type="button" class="btn btn-secondary" style="padding:2px 10px;font-size:0.85rem;" onclick="openCiTrackingDetail(${t.tracking_id})">View</button>
+                <button type="button" onclick="deleteOrderFulfillmentTracking(${t.tracking_id}, '${(t.order_ref_no || '').replace(/'/g, "\\'")}')" class="btn btn-danger" style="padding: 2px 10px; font-size: 0.85rem;">Delete</button>
+              </td>
             </tr>`).join('');
           return header + body;
         }).join('')

@@ -4514,6 +4514,8 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
                     "order_ref_no",
                     "sales_order_date",
                     "buyer_name",
+                    "buyer_gst",
+                    "consignee_name",
                     "cust_po",
                     "place_of_supply",
                     "payment_due",
@@ -4521,13 +4523,19 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
                     "invoice_total",
                     "taxable_amount",
                     "total_igst",
+                    "total_pieces",
+                    "transporter",
+                    "lr_no",
                 )
                 if ci_parsed["header"].get(k) not in (None, "")
             }
         if isinstance(ci_parsed.get("totals"), dict):
             payload["ci_totals"] = ci_parsed.get("totals")
         payload["ci_detail_level"] = ci_parsed.get("detail_level")
-        payload["ci_line_count"] = len(ci_parsed.get("line_items") or [])
+        payload["ci_line_items"] = list(ci_parsed.get("line_items") or [])
+        payload["ci_line_count"] = len(payload["ci_line_items"])
+        if ci_parsed.get("parse_note"):
+            payload["ci_parse_note"] = ci_parsed.get("parse_note")
     return _json_response({"success": True, "data": payload})
 
 
