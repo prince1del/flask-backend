@@ -6295,6 +6295,25 @@ class CentralizedDB:
         clean = text.split(":")[0].split("·")[0].split(",")[0].strip()
         return clean[:24] if clean else "Others"
 
+    # Bed size tokens on CI lines: "FLORA DB", "FLORA SB", "FLORENTINE KS",
+    # "ASTER 1+2 DB SET", "DB BS", "KS BS", …
+    _CI_BED_SIZE_RE = re.compile(
+        r"\b(?:SB|DB|DBL|KS|KB|KDB|QB)(?:\s*(?:BS|FS|SET|SETS|COMF|COMFORTER))?\b",
+        re.IGNORECASE,
+    )
+    _CI_BED_WORDS = (
+        "BEDSHEET",
+        "BED SHEET",
+        "FITTED SHEET",
+        "COMFORTER",
+        "BLANKET",
+        "QUILT",
+        "DUVET",
+        "SHEET SET",
+        "BED IN BAG",
+        "BINB",
+    )
+
     def _ci_line_category_label(self, line: dict[str, Any]) -> str:
         if not isinstance(line, dict):
             return "Others"
@@ -6313,12 +6332,13 @@ class CentralizedDB:
             )
             if x
         ).upper()
+        # Bath before bed — "BATH TOWEL" must not fall through on size noise.
         if any(tok in name for tok in ("TOWEL", "BATH", "FACE CLOTH", "HAND TOWEL")):
             return "Bath"
-        if any(tok in name for tok in ("BEDSHEET", "BED SHEET", "COMFORTER", "BLANKET", "QUILT", "DB BS", "KB FS", "QB FS")):
-            return "Bed"
         if "PILLOW" in name:
             return "Pillow"
+        if any(tok in name for tok in self._CI_BED_WORDS) or self._CI_BED_SIZE_RE.search(name):
+            return "Bed"
         return "Others"
 
     def _ci_categories_summary(self, parsed: dict[str, Any] | None) -> list[dict[str, Any]]:
