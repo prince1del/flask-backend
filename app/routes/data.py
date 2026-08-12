@@ -4035,6 +4035,31 @@ def _extract_amount_from_parsed_invoice(parsed_invoice: dict) -> float | None:
         return None
 
 
+def _lifecycle_has_real_sales_order(tracking: dict | None) -> bool:
+    """
+    True only when a Sales Order PDF (or parsed SO payload) exists.
+
+    A CI-only tracking row reuses order_ref_no from the invoice so a later
+    SO can merge — that stub must NOT count as \"SO found / Linked\".
+    """
+    if not tracking:
+        return False
+    so_file = str(tracking.get("sales_order_file_reference") or "").strip()
+    if so_file:
+        return True
+    parsed = tracking.get("sales_order_parsed")
+    if isinstance(parsed, str) and parsed.strip():
+        try:
+            parsed = json.loads(parsed)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            parsed = None
+    if not isinstance(parsed, dict) or not parsed:
+        return False
+    if parsed.get("header") or parsed.get("rows") or parsed.get("line_items"):
+        return True
+    return False
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/upload/invoice", methods=["POST"])
 @require_jwt_auth
 def upload_invoice_v2() -> Response:
@@ -4118,18 +4143,32 @@ def _upload_invoice_v2_impl() -> Response:
     matching_so = None
     so_distributor = None
     distributor_name = None
+    existing_ci_only_tracking = None
     if order_ref_no:
-        matching_so = db.get_order_lifecycle_by_order_ref_no(
+        existing_tracking = db.get_order_lifecycle_by_order_ref_no(
             order_ref_no, workspace_id=workspace_id
         )
-        if matching_so and matching_so.get("distributor_id"):
-            so_distributor = db.get_master_distributor(
-                matching_so["distributor_id"], workspace_id=workspace_id
-            )
-            if so_distributor:
-                distributor_name = (
-                    so_distributor.get("firm_name") or so_distributor.get("name")
+        if existing_tracking and _lifecycle_has_real_sales_order(existing_tracking):
+            matching_so = existing_tracking
+            if matching_so.get("distributor_id"):
+                so_distributor = db.get_master_distributor(
+                    matching_so["distributor_id"], workspace_id=workspace_id
                 )
+                if so_distributor:
+                    distributor_name = (
+                        so_distributor.get("firm_name") or so_distributor.get("name")
+                    )
+        elif existing_tracking:
+            # Same order_ref already has CI-only (no SO PDF) — not a linkable SO.
+            existing_ci_only_tracking = existing_tracking
+            if existing_tracking.get("distributor_id"):
+                so_distributor = db.get_master_distributor(
+                    existing_tracking["distributor_id"], workspace_id=workspace_id
+                )
+                if so_distributor:
+                    distributor_name = (
+                        so_distributor.get("firm_name") or so_distributor.get("name")
+                    )
 
     own_company_gst = None
     try:
@@ -4262,6 +4301,10 @@ def _upload_invoice_v2_impl() -> Response:
             "requires_confirmation": matching_so is not None,
             "requires_ci_only_confirmation": matching_so is None,
             "no_match_found": matching_so is None,
+            "existing_ci_only_tracking_id": (
+                (existing_ci_only_tracking or {}).get("tracking_id")
+                if matching_so is None else None
+            ),
         },
     })
 
@@ -4958,6 +5001,21 @@ def _confirm_ci_so_link_impl() -> Response:
     # founder's requested navigable structure — uses the SAME Order
     # Sheet the matched Sales Order was already filed under.
     matching_so_for_move = db.get_order_lifecycle_by_order_ref_no(order_ref_no, workspace_id=workspace_id)
+    if not matching_so_for_move or not _lifecycle_has_real_sales_order(matching_so_for_move):
+        return Response(
+            json.dumps({
+                "success": False,
+                "error": {
+                    "message": (
+                        f"No Sales Order PDF found in Nexora for order ref \"{order_ref_no}\". "
+                        "Use Confirm — save CI-only (no SO), or upload the SO first."
+                    ),
+                    "code": "so_not_found",
+                },
+            }),
+            mimetype="application/json",
+            status=404,
+        )
     if matching_so_for_move and matching_so_for_move.get("distributor_id") and commercial_invoice_file_reference:
         try:
             commercial_invoice_file_reference = str(

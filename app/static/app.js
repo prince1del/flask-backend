@@ -10463,8 +10463,9 @@ async function _renderInvoiceConfirmUi(d) {
     : '(could not auto-read the amount — please enter it)';
   const partyHtml = _ofPartyMatchHtml(d.party_match, d.buyer_name, d.buyer_gst);
 
-  // Lane B: SO exists → show light compare + confirm link
-  if (!d.no_match_found && d.compare) {
+  // Lane B: real SO PDF exists → show light compare + confirm link
+  if (!d.no_match_found && d.compare && (d.compare.so_has_file
+      || (d.matching_sales_order && d.matching_sales_order.sales_order_file_reference))) {
     const c = d.compare;
     const qtyWarn = c.qty_mismatch
       ? `<div class="of-ci-title is-warn" style="margin-top:6px;">Qty mismatch: SO ${_ofQty(c.so_total_qty)} vs CI ${_ofQty(c.ci_total_qty)}</div>`
@@ -10508,9 +10509,13 @@ async function _renderInvoiceConfirmUi(d) {
   const suggestedId = (d.suggested_distributor && d.suggested_distributor.id) || '';
   const suggestedName = (d.suggested_distributor && d.suggested_distributor.name) || '';
   const buyerLabel = d.buyer_name || suggestedName || 'unknown party on PDF';
+  const priorCiOnly = d.existing_ci_only_tracking_id
+    ? `<p class="of-ci-note">Order ref <strong>${escapeHtml(d.order_ref_no || '')}</strong> pe pehle se CI-only tracking #${escapeHtml(d.existing_ci_only_tracking_id)} hai — Sales Order PDF Nexora mein nahi hai. Yeh Linked nahi hai.</p>`
+    : '';
   _showOfInvoiceResult(`
-    <div class="of-ci-title is-warn">No matching Sales Order in Nexora</div>
+    <div class="of-ci-title is-warn">No Sales Order PDF in Nexora for this order ref</div>
     ${partyHtml}
+    ${priorCiOnly}
     <p style="margin:8px 0;">
       SO / Order Ref on CI: <strong>${escapeHtml(d.order_ref_no || 'not found')}</strong><br/>
       Invoice No: <strong>${escapeHtml(d.invoice_no || '—')}</strong><br/>
@@ -10618,10 +10623,10 @@ function _renderCiBulkProgress(rows) {
     </div>
     <p class="of-ci-note">Auto-saved only when Customers ↔ CI is matched (SO link or suggested distributor). Others stay for manual confirm.</p>
     <p class="of-ci-muted" style="margin:0.35rem 0 0;font-size:0.78rem;">
-      <strong>Linked</strong> = SO pehle se Nexora mein tha, CI usse jud gaya.
-      · <strong>CI-only saved</strong> = SO nahi mila, sale CI se Customers distributor pe save hui (SO baad mein merge ho sakta hai).
-      · <strong>Needs review</strong> = party mismatch / distributor unclear — manually confirm.
-      · <strong>Duplicate</strong> = yeh CI pehle process ho chuki hai.
+      <strong>Linked to SO</strong> = Nexora mein is order-ref ka <em>Sales Order PDF</em> maujood hai, CI usse judi.
+      · <strong>CI-only saved</strong> = SO PDF nahi hai (sirf CI pe order-ref number likha hai) — sale Customers pe CI se save hui.
+      · <strong>Needs review</strong> = party mismatch / distributor unclear.
+      · <strong>Duplicate</strong> = yeh invoice pehle process ho chuki hai.
     </p>
     <div class="of-ci-bulk-wrap">
       <table class="of-ci-bulk-table">
@@ -10671,10 +10676,14 @@ async function uploadCiFilesBulk(files) {
         }
 
         const partyOk = _ciPartySafeForAuto(d);
-        if (!d.no_match_found && d.compare && partyOk && !(d.party_match && d.party_match.status === 'mismatch')) {
+        const hasRealSo = !d.no_match_found
+          && d.compare
+          && (d.compare.so_has_file
+            || (d.matching_sales_order && d.matching_sales_order.sales_order_file_reference));
+        if (hasRealSo && partyOk && !(d.party_match && d.party_match.status === 'mismatch')) {
           const out = await _confirmCiLinkSilent(d);
           row.state = 'ok';
-          row.status = `Linked · tracking #${out.tracking_id || '—'}`;
+          row.status = `Linked to SO · tracking #${out.tracking_id || '—'}`;
           anySaved = true;
           continue;
         }
