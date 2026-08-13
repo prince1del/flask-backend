@@ -2431,10 +2431,27 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                             if len(row) < 9:
                                 continue
                             serial_no = (row[0] or "").strip()
+                            description_cell = row[1]
+                            # Page-break continuation: SN 16 ends as
+                            # "ASTER 1+2 DB SET 224X244" and the next page's
+                            # first table row is SN-empty "7990BGE\n100TC".
+                            # Stitch that remainder onto the last incomplete line.
                             if not serial_no.isdigit():
+                                continuation = _clean_pdf_cell_text(description_cell)
+                                if (
+                                    items
+                                    and continuation
+                                    and _ci_design_colour_tokens(continuation)
+                                    and not _ci_design_colour_tokens(
+                                        str(items[-1].get("item_name") or "")
+                                    )
+                                ):
+                                    merged = f"{items[-1]['item_name']} {continuation}".strip()
+                                    items[-1]["item_name"] = merged
+                                    items[-1]["item_key"] = extract_order_sheet_item_key(merged)
                                 continue
                             code = None
-                            description_cell, qty_cell, net_value_cell = row[1], row[4], row[8]
+                            qty_cell, net_value_cell = row[4], row[8]
                             hsn = _clean_pdf_cell_text(row[2]) if len(row) > 2 else None
                             uom = _clean_pdf_cell_text(row[3]) if len(row) > 3 else None
                             rate = _clean_pdf_cell_number(row[5]) if len(row) > 5 else None

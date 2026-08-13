@@ -52,3 +52,14 @@ def test_truncated_design_colour_recovered_from_pdf_text():
             if tok.startswith("7984"):
                 colours.add(tok)
     assert colours == {"7984BLU", "7984BRW", "7984PUR"}
+
+
+def test_ci_line_16_page_break_stitches_next_page_remainder():
+    """SN 16 description splits: page 2 has 224X244, page 3 has 7990BGE 100TC."""
+    path = r"G:\My Drive\2026-2027\CI\April 2026\CI\RDS CI -No. 1400009328.PDF"
+    if not Path(path).exists():
+        return
+    items = parse_bombay_dyeing_so_ci_line_items(path, "CI")
+    assert len(items) == 18
+    assert items[15]["item_name"] == "ASTER 1+2 DB SET 224X244 7990BGE 100TC"
+    assert _ci_design_colour_tokens(items[15]["item_name"]) == ["7990BGE"]
