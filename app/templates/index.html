@@ -2240,15 +2240,15 @@
 
                 <div class="of-pane" data-of-pane="invoice-ci" hidden>
                     <div class="of-pane-toolbar of-pane-toolbar--wrap">
-                        <input type="file" id="of-invoice-file" accept=".pdf,application/pdf" multiple hidden />
-                        <button type="button" class="nx-btn" onclick="document.getElementById('of-invoice-file').click()">Choose PDFs</button>
+                        <input type="file" id="of-invoice-file" accept=".pdf,.zip,.rar,application/pdf,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed" multiple hidden />
+                        <button type="button" class="nx-btn" onclick="document.getElementById('of-invoice-file').click()">Choose PDF / ZIP / RAR</button>
                         <button type="button" class="nx-btn nx-btn-primary" onclick="uploadInvoiceV2()">Upload selected</button>
                         <button type="button" class="nx-btn" onclick="loadOrderFulfillmentUploads()">Refresh</button>
                     </div>
                     <div class="of-pane-body">
-                        <div id="of-ci-dropzone" class="of-ci-dropzone" tabindex="0" role="button" aria-label="Drop CI PDF files here">
-                            <strong class="of-ci-dropzone__title">Drag &amp; drop CI PDFs here</strong>
-                            <span class="of-ci-dropzone__hint">Bulk upload supported · PDF only · click to browse</span>
+                        <div id="of-ci-dropzone" class="of-ci-dropzone" tabindex="0" role="button" aria-label="Drop CI PDF, ZIP, or RAR files here">
+                            <strong class="of-ci-dropzone__title">Drag &amp; drop CI PDFs, ZIP, or RAR here</strong>
+                            <span class="of-ci-dropzone__hint">Bulk upload · PDF / ZIP / RAR · click to browse</span>
                             <span id="of-ci-dropzone-files" class="of-ci-dropzone__files">No files selected</span>
                         </div>
                         <div id="of-invoice-result" class="of-ci-result" hidden></div>

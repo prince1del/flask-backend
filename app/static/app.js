@@ -10360,6 +10360,20 @@ let ofCiBulkBusy = false;
 let ofCiBulkReviewQueue = [];
 let ofCiDropzoneBound = false;
 
+function _isCiArchiveFile(file) {
+  const name = ((file && file.name) || '').toLowerCase();
+  return name.endsWith('.zip') || name.endsWith('.rar');
+}
+
+function _isCiPdfFile(file) {
+  const name = ((file && file.name) || '').toLowerCase();
+  return (file && file.type === 'application/pdf') || name.endsWith('.pdf');
+}
+
+function _isCiUploadFile(file) {
+  return _isCiPdfFile(file) || _isCiArchiveFile(file);
+}
+
 function _ciUpdateDropzoneLabel(files) {
   const label = document.getElementById('of-ci-dropzone-files');
   if (!label) return;
@@ -10372,7 +10386,7 @@ function _ciUpdateDropzoneLabel(files) {
   if (list.length === 1) {
     label.textContent = list[0].name;
   } else {
-    label.textContent = `${list.length} PDFs selected · ${list.slice(0, 3).map((f) => f.name).join(', ')}${list.length > 3 ? '…' : ''}`;
+    label.textContent = `${list.length} files selected · ${list.slice(0, 3).map((f) => f.name).join(', ')}${list.length > 3 ? '…' : ''}`;
   }
   label.classList.add('is-active');
 }
@@ -10385,23 +10399,20 @@ function bindCiInvoiceDropzone() {
   ofCiDropzoneBound = true;
 
   const takeFiles = (fileList) => {
-    const pdfs = Array.from(fileList || []).filter((f) => {
-      const name = (f.name || '').toLowerCase();
-      return f.type === 'application/pdf' || name.endsWith('.pdf');
-    });
-    if (!pdfs.length) {
-      _showOfInvoiceResult('<div class="of-ci-title is-bad">Only PDF commercial invoices are supported.</div>');
+    const picked = Array.from(fileList || []).filter(_isCiUploadFile);
+    if (!picked.length) {
+      _showOfInvoiceResult('<div class="of-ci-title is-bad">Upload PDF, ZIP, or RAR commercial invoices.</div>');
       return;
     }
     try {
       const dt = new DataTransfer();
-      pdfs.forEach((f) => dt.items.add(f));
+      picked.forEach((f) => dt.items.add(f));
       fileInput.files = dt.files;
     } catch (_e) {
-      // Some browsers block programmatic FileList assign — still upload from pdfs array
+      // Some browsers block programmatic FileList assign — still upload from picked array
     }
-    _ciUpdateDropzoneLabel(pdfs);
-    uploadInvoiceV2(pdfs);
+    _ciUpdateDropzoneLabel(picked);
+    uploadInvoiceV2(picked);
   };
 
   zone.addEventListener('click', () => fileInput.click());
@@ -10648,6 +10659,21 @@ function _renderCiBulkProgress(rows) {
   `);
 }
 
+async function _uploadCiBulkOnServer(files) {
+  const formData = new FormData();
+  files.forEach((f) => formData.append('file', f));
+  const response = await fetchWithAuth('/api/v1/order-fulfillment/upload/invoices-bulk', {
+    method: 'POST',
+    body: formData,
+  });
+  const rawText = await response.text();
+  const data = _parseFetchJson(response, rawText);
+  if (!response.ok || !data.success) {
+    throw new Error((data.error && data.error.message) || 'CI bulk upload failed');
+  }
+  return data.data || {};
+}
+
 async function uploadCiFilesBulk(files) {
   if (ofCiBulkBusy) return;
   ofCiBulkBusy = true;
@@ -10655,22 +10681,53 @@ async function uploadCiFilesBulk(files) {
   const zone = document.getElementById('of-ci-dropzone');
   if (zone) zone.classList.add('is-busy');
 
-  const rows = files.map((f) => ({
+  const list = Array.from(files || []);
+  const hasArchive = list.some(_isCiArchiveFile);
+  const rows = list.map((f) => ({
     file: f.name,
     invoice: '',
     ref: '',
     state: 'run',
-    status: 'Queued…',
+    status: hasArchive ? 'Unpacking ZIP/RAR on server…' : 'Queued…',
     data: null,
   }));
   _renderCiBulkProgress(rows);
 
   let anySaved = false;
   try {
-    for (let i = 0; i < files.length; i += 1) {
-      const file = files[i];
+    if (hasArchive) {
+      const out = await _uploadCiBulkOnServer(list);
+      const serverRows = Array.isArray(out.results) ? out.results : [];
+      rows.length = 0;
+      serverRows.forEach((r) => {
+        const state = r.state || 'bad';
+        rows.push({
+          file: r.file || '',
+          invoice: r.invoice_no || '',
+          ref: r.order_ref_no || '',
+          state,
+          status: r.status || '',
+          data: null,
+        });
+        if (state === 'ok') anySaved = true;
+      });
+      if (!rows.length) {
+        rows.push({
+          file: list.map((f) => f.name).join(', '),
+          invoice: '',
+          ref: '',
+          state: 'bad',
+          status: 'No commercial invoice PDFs found in the archive',
+          data: null,
+        });
+      }
+      return;
+    }
+
+    for (let i = 0; i < list.length; i += 1) {
+      const file = list[i];
       const row = rows[i];
-      row.status = `Uploading ${i + 1}/${files.length}…`;
+      row.status = `Uploading ${i + 1}/${list.length}…`;
       row.state = 'run';
       _renderCiBulkProgress(rows);
       try {
@@ -10762,27 +10819,24 @@ async function uploadInvoiceV2(optionalFiles) {
     : fromInput;
 
   if (!files.length) {
-    _showOfInvoiceResult('<div class="of-ci-title is-warn">Please choose or drop PDF file(s) first.</div>');
+    _showOfInvoiceResult('<div class="of-ci-title is-warn">Please choose or drop PDF, ZIP, or RAR file(s) first.</div>');
     return;
   }
 
-  const pdfs = files.filter((f) => {
-    const name = (f.name || '').toLowerCase();
-    return f.type === 'application/pdf' || name.endsWith('.pdf');
-  });
-  if (!pdfs.length) {
-    _showOfInvoiceResult('<div class="of-ci-title is-bad">Only PDF commercial invoices are supported.</div>');
+  const picked = files.filter(_isCiUploadFile);
+  if (!picked.length) {
+    _showOfInvoiceResult('<div class="of-ci-title is-bad">Upload PDF, ZIP, or RAR commercial invoices.</div>');
     return;
   }
 
-  if (pdfs.length > 1) {
-    await uploadCiFilesBulk(pdfs);
+  if (picked.length > 1 || picked.some(_isCiArchiveFile)) {
+    await uploadCiFilesBulk(picked);
     return;
   }
 
   _showOfInvoiceResult('Uploading and parsing...');
   try {
-    const d = await _uploadInvoiceParse(pdfs[0]);
+    const d = await _uploadInvoiceParse(picked[0]);
     if (d.is_duplicate) {
       _showOfInvoiceResult(`<div class="of-ci-title is-bad">${escapeHtml(d.message || d.link_error || 'Duplicate CI — already processed.')}</div>`);
       ofInvoicePendingLink = null;

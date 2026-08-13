@@ -13,7 +13,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
 
-from order_item_keys import item_keys_match, size_code_only_item_key
+from order_item_keys import item_keys_match, line_brands_match, size_code_only_item_key
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -4777,6 +4777,12 @@ class CentralizedDB:
         always allowed — only re-uploading the EXACT SAME document
         number gets rejected, since re-processing it would silently
         double-count that item's qty/value.
+
+        For CI: the stamp in processed_documents is not enough. One SO
+        used to hold a single CI slot, so 9346 could overwrite 9337
+        while 9337 stayed marked processed — then 9337 could not
+        return. A CI is a duplicate only if a live tracking row still
+        carries that invoice number.
         """
         if document_type not in ("SO", "CI"):
             raise ValueError("document_type must be 'SO' or 'CI'")
@@ -4785,10 +4791,28 @@ class CentralizedDB:
             return False
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT 1 FROM processed_documents WHERE workspace_id = ? AND document_type = ? AND document_number = ?",
+                "SELECT tracking_id FROM processed_documents "
+                "WHERE workspace_id = ? AND document_type = ? AND document_number = ?",
                 (workspace_id, document_type, normalized_number),
             ).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        if document_type != "CI":
+            return True
+        tracking_id = row[0]
+        if tracking_id is None:
+            return True
+        tracking = self.get_order_lifecycle_tracking(int(tracking_id), workspace_id=workspace_id)
+        if tracking is None:
+            tracking = self.get_order_lifecycle_tracking(int(tracking_id))
+        if tracking is None:
+            # Tracking was deleted or the stamp is orphaned — allow re-upload.
+            return False
+        live = (self._extract_ci_invoice_no(tracking.get("commercial_invoice_parsed")) or "").strip()
+        if live:
+            return live == normalized_number
+        # Header missing (text-only save): still treat as present if a CI file is linked.
+        return self._lifecycle_has_ci(tracking)
 
     def mark_document_processed(
         self, workspace_id: str, document_type: str, document_number: str, tracking_id: int | None = None
@@ -4798,9 +4822,12 @@ class CentralizedDB:
             return
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO processed_documents "
+                "INSERT INTO processed_documents "
                 "(workspace_id, document_type, document_number, tracking_id, processed_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(workspace_id, document_type, document_number) DO UPDATE SET "
+                "tracking_id = excluded.tracking_id, "
+                "processed_at = excluded.processed_at",
                 (workspace_id, document_type, normalized_number, tracking_id, datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()
@@ -4946,6 +4973,10 @@ class CentralizedDB:
                     # no key (or a different key) — that would risk
                     # merging two genuinely different items.
                     if row["item_key"]:
+                        continue
+                    # Shared pack/size/TC ("DB 1+2 180TC") scores 88+ even
+                    # when brands and rupee values differ. Flora ≠ Cotton Comfort.
+                    if not line_brands_match(item_name, row["item_name"] or ""):
                         continue
                     existing_name = self._normalize_text(row["item_name"] or "").lower()
                     if not existing_name:
@@ -6144,40 +6175,58 @@ class CentralizedDB:
             self._refresh_global_search_index(conn)
             return int(cursor.lastrowid)
 
-    def get_order_lifecycle_by_order_ref_no(
+    _ORDER_LIFECYCLE_LOOKUP_COLUMNS = [
+        "tracking_id", "order_ref_no", "distributor_id", "order_received_date",
+        "order_filled_date", "sales_order_generated_date", "sales_order_file_reference",
+        "sales_order_parsed", "payment_status", "commercial_invoice_date",
+        "commercial_invoice_file_reference", "commercial_invoice_parsed",
+        "dispatch_date", "expected_delivery_date", "actual_delivery_date",
+        "pod_number", "transit_status", "receiving_status", "receiving_condition",
+        "created_at", "order_sheet_id", "order_sheet_name",
+    ]
+
+    @staticmethod
+    def _lifecycle_has_ci(row: dict[str, Any] | None) -> bool:
+        if not row:
+            return False
+        if str(row.get("commercial_invoice_file_reference") or "").strip():
+            return True
+        parsed = row.get("commercial_invoice_parsed")
+        if isinstance(parsed, str) and parsed.strip():
+            return True
+        return bool(isinstance(parsed, dict) and parsed)
+
+    def _invoice_no_from_lifecycle_row(self, row: dict[str, Any] | None) -> str:
+        if not row:
+            return ""
+        return (self._extract_ci_invoice_no(row.get("commercial_invoice_parsed")) or "").strip()
+
+    def list_order_lifecycle_by_order_ref_no(
         self, order_ref_no: str, workspace_id: str | None = None
-    ) -> dict[str, Any] | None:
+    ) -> list[dict[str, Any]]:
         if not self._normalize_text(order_ref_no):
-            return None
-        columns = [
-            "tracking_id", "order_ref_no", "distributor_id", "order_received_date",
-            "order_filled_date", "sales_order_generated_date", "sales_order_file_reference",
-            "sales_order_parsed", "payment_status", "commercial_invoice_date",
-            "commercial_invoice_file_reference", "commercial_invoice_parsed",
-            "dispatch_date", "expected_delivery_date", "actual_delivery_date",
-            "pod_number", "transit_status", "receiving_status", "receiving_condition",
-            "created_at", "order_sheet_id", "order_sheet_name",
-        ]
-        query = f"SELECT {', '.join(columns)} FROM order_lifecycle_tracking WHERE LOWER(order_ref_no) = ?"
+            return []
+        columns = self._ORDER_LIFECYCLE_LOOKUP_COLUMNS
+        query = (
+            f"SELECT {', '.join(columns)} FROM order_lifecycle_tracking "
+            "WHERE LOWER(order_ref_no) = ?"
+        )
         params: list[Any] = [str(order_ref_no).lower()]
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
-        query += " LIMIT 1"
+        query += " ORDER BY tracking_id ASC"
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(query, tuple(params)).fetchone()
-        if row is None:
-            return None
-        # Built by zipping the same `columns` list used in the SELECT
-        # above, so the two can never drift out of sync again — the
-        # previous version of this function hand-listed both
-        # independently, and a column added to one but not the other
-        # silently shifted every field after it by one position (see
-        # the diagnosis in conversation history: this was why
-        # order_sheet_name always came back None, sending every CI
-        # into an "Unassigned Order Sheet" folder instead of the
-        # correct one).
-        return dict(zip(columns, row))
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [dict(zip(columns, row)) for row in rows]
+
+    def get_order_lifecycle_by_order_ref_no(
+        self, order_ref_no: str, workspace_id: str | None = None
+    ) -> dict[str, Any] | None:
+        rows = self.list_order_lifecycle_by_order_ref_no(
+            order_ref_no, workspace_id=workspace_id
+        )
+        return rows[0] if rows else None
 
     def list_order_lifecycle_tracking(
         self, workspace_id: str | None = None, limit: int = 200
@@ -6321,10 +6370,13 @@ class CentralizedDB:
         "DBSET",
         "SBSET",
         "KSSET",
+        "TROUSSEAU",
     )
     _CI_TOB_WORDS = (
         "DOHAR",
         "COMFORTER",
+        "COMFERTOR",
+        "COMFORTOR",
         "BLANKET",
         "QUILT",
         "DUVET",
@@ -6350,8 +6402,11 @@ class CentralizedDB:
         if not isinstance(line, dict):
             return "Others"
         am = line.get("article_match") if isinstance(line.get("article_match"), dict) else {}
-        for key in ("article", "closest_article"):
-            art = am.get(key) if isinstance(am.get(key), dict) else {}
+        art = am.get("article") if isinstance(am.get("article"), dict) else {}
+        am_brand = str(art.get("brand") or "").strip().upper()
+        pdf_name = str(line.get("item_name") or line.get("item_key") or "").upper()
+        # Never use closest_article — that mapped Flora CIs into Aster folders.
+        if am_brand and pdf_name.startswith(am_brand.split()[0]):
             cat = self._normalize_ci_category_label(art.get("category"))
             if cat != "Others":
                 return cat
@@ -7058,6 +7113,73 @@ class CentralizedDB:
             )
             conn.commit()
 
+    def _write_ci_onto_tracking(
+        self,
+        tracking_id: int,
+        commercial_invoice_file_reference: str | None,
+        commercial_invoice_parsed_json: str | None,
+        commercial_invoice_date: str | None,
+        *,
+        fallback_date: str | None = None,
+        order_sheet_id: Any = None,
+        order_sheet_name: str | None = None,
+    ) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE order_lifecycle_tracking
+                SET commercial_invoice_file_reference = ?,
+                    commercial_invoice_parsed = ?,
+                    commercial_invoice_date = COALESCE(?, commercial_invoice_date, ?)
+                WHERE tracking_id = ?
+                """,
+                (
+                    commercial_invoice_file_reference,
+                    commercial_invoice_parsed_json,
+                    commercial_invoice_date,
+                    fallback_date,
+                    tracking_id,
+                ),
+            )
+            if order_sheet_id is not None or order_sheet_name:
+                conn.execute(
+                    """
+                    UPDATE order_lifecycle_tracking
+                    SET order_sheet_id = COALESCE(?, order_sheet_id),
+                        order_sheet_name = COALESCE(?, order_sheet_name)
+                    WHERE tracking_id = ?
+                    """,
+                    (order_sheet_id, order_sheet_name, tracking_id),
+                )
+            conn.commit()
+
+    def _spawn_ci_sibling_tracking(
+        self,
+        template: dict[str, Any],
+        *,
+        commercial_invoice_file_reference: str | None,
+        commercial_invoice_parsed_json: str | None,
+        commercial_invoice_date: str | None,
+        workspace_id: str,
+    ) -> int:
+        """New tracking for a second CI on the same SO — never overwrite the first invoice."""
+        tracking_id = self.create_order_lifecycle_tracking(
+            order_ref_no=str(template.get("order_ref_no") or ""),
+            distributor_id=int(template["distributor_id"]),
+            commercial_invoice_date=commercial_invoice_date,
+            transit_status="INVOICED",
+            workspace_id=workspace_id,
+        )
+        self._write_ci_onto_tracking(
+            tracking_id,
+            commercial_invoice_file_reference,
+            commercial_invoice_parsed_json,
+            commercial_invoice_date,
+            order_sheet_id=template.get("order_sheet_id"),
+            order_sheet_name=template.get("order_sheet_name"),
+        )
+        return tracking_id
+
     def link_commercial_invoice_to_order_lifecycle(
         self,
         order_ref_no: str,
@@ -7075,30 +7197,44 @@ class CentralizedDB:
             if commercial_invoice_parsed is not None
             else None
         )
-        existing = self.get_order_lifecycle_by_order_ref_no(
+        incoming_invoice = (self._extract_ci_invoice_no(commercial_invoice_parsed) or "").strip()
+        rows = self.list_order_lifecycle_by_order_ref_no(
             normalized_order_ref_no, workspace_id=workspace_id
         )
-        if existing is None:
+        if not rows:
             raise ValueError(
                 f"No existing order lifecycle record found for order_ref_no '{normalized_order_ref_no}'"
             )
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                UPDATE order_lifecycle_tracking
-                SET commercial_invoice_file_reference = ?, commercial_invoice_parsed = ?, commercial_invoice_date = ?
-                WHERE tracking_id = ?
-                """,
-                (
-                    commercial_invoice_file_reference,
-                    commercial_invoice_parsed_json,
-                    commercial_invoice_date if commercial_invoice_date is not None else existing.get("commercial_invoice_date"),
-                    existing["tracking_id"],
-                ),
+        target: dict[str, Any] | None = None
+        if incoming_invoice:
+            for row in rows:
+                if self._invoice_no_from_lifecycle_row(row) == incoming_invoice:
+                    target = row
+                    break
+        if target is None:
+            for row in rows:
+                if not self._lifecycle_has_ci(row):
+                    target = row
+                    break
+        if target is None:
+            # Same SO, different invoice (e.g. 9337 DBSET vs 9346 SBSET) — keep both.
+            return self._spawn_ci_sibling_tracking(
+                rows[0],
+                commercial_invoice_file_reference=commercial_invoice_file_reference,
+                commercial_invoice_parsed_json=commercial_invoice_parsed_json,
+                commercial_invoice_date=commercial_invoice_date,
+                workspace_id=workspace_id,
             )
-            conn.commit()
-        return existing["tracking_id"]
+
+        self._write_ci_onto_tracking(
+            int(target["tracking_id"]),
+            commercial_invoice_file_reference,
+            commercial_invoice_parsed_json,
+            commercial_invoice_date,
+            fallback_date=target.get("commercial_invoice_date"),
+        )
+        return int(target["tracking_id"])
 
     def save_ci_only_order_lifecycle(
         self,
@@ -7124,7 +7260,8 @@ class CentralizedDB:
             normalized_order_ref_no, workspace_id=workspace_id
         )
         if existing is not None:
-            # SO (or another CI-only) already opened this ref — attach CI onto it.
+            # Same SO: attach onto an empty row, or spawn a sibling when
+            # this invoice_no is a different CI (never overwrite 9337 with 9346).
             return self.link_commercial_invoice_to_order_lifecycle(
                 order_ref_no=normalized_order_ref_no,
                 commercial_invoice_file_reference=commercial_invoice_file_reference,

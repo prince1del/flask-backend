@@ -78,3 +78,36 @@ def test_match_ci_item_exact_and_unmatched():
     assert summary["matched"] == 1
     assert summary["no_key"] == 1
     assert lines[0]["article_match"]["status"] == "matched"
+
+
+def test_closest_does_not_substring_flora_into_floral():
+    conn = _mem_conn()
+    user_id = 1
+    amdb.ensure_default_categories(conn, user_id)
+    amdb.ensure_default_brand_aliases(conn, user_id)
+    amdb.upsert_article(
+        conn,
+        user_id,
+        {
+            "category": "Bed",
+            "brand": "Floral Fiesta",
+            "size": "DB BS",
+            "product_type": "Bedsheet",
+            "mrp": 1000,
+            "ptr": 800,
+            "ex_mill_price": 500,
+            "bale_pack_size": 36,
+            "item_key": "Floral Fiesta|100|DB BS",
+            "extra_attributes": {"TC": "100"},
+            "is_active": 1,
+            "source_filename": "test.xlsx",
+            "workspace_id": "default",
+        },
+        source_filename="test.xlsx",
+        workspace_id="default",
+    )
+    hit = match_ci_item_to_article(
+        conn, amdb, user_id, item_key="FLORA|120|SB", item_name="FLORA SB 2+2 150 X 224 BLD 120TC"
+    )
+    assert hit["status"] == "unmatched"
+    assert hit.get("closest_article") is None

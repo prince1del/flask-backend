@@ -743,9 +743,18 @@ def test_duplicate_document_detection_roundtrip(tmp_path):
     assert db.is_document_already_processed("ws-1", "SO", "102875607") is False
 
     # CI duplicate-detection is tracked SEPARATELY by its own invoice
-    # number (not the same namespace as SO's order_ref_no)
+    # number (not the same namespace as SO's order_ref_no). The stamp
+    # only counts while that invoice still lives on the tracking row.
     assert db.is_document_already_processed("ws-1", "CI", "1400009285") is False
-    db.mark_document_processed("ws-1", "CI", "1400009285", tracking_id=1)
+    dist_id = db.add_master_distributor(name="Dup Test", workspace_id="ws-1")
+    ci_tid = db.save_ci_only_order_lifecycle(
+        order_ref_no="102875999",
+        distributor_id=dist_id,
+        commercial_invoice_file_reference="/uploads/ci_9285.pdf",
+        commercial_invoice_parsed={"header": {"invoice_no": "1400009285", "order_ref_no": "102875999"}},
+        workspace_id="ws-1",
+    )
+    db.mark_document_processed("ws-1", "CI", "1400009285", tracking_id=ci_tid)
     assert db.is_document_already_processed("ws-1", "CI", "1400009285") is True
 
     # Workspace isolation

@@ -156,7 +156,9 @@ def match_ci_item_to_article(
         if am_brand and ci_brand and am_brand.strip().upper() == ci_brand.strip().upper():
             closest = article
             break
-        if brand and brand in str(article.get("item_key") or "").upper():
+        am_key_brand = str(article.get("item_key") or "").split("|")[0].strip().upper()
+        am_key_brand = amdb.canonicalize_brand_name(am_key_brand, alias_map)
+        if ci_brand and am_key_brand and ci_brand.strip().upper() == am_key_brand.strip().upper():
             closest = article
             break
 

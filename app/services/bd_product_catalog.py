@@ -80,6 +80,8 @@ BD_COLLECTION_BY_CODE: dict[str, str] = {
     "ETHNCTY": "Ethnicity",
     "RGL LVNG": "Rigel Living",
     "CTNCOMFRT": "Cotton Comforts",
+    "COTTON COMFORT": "Cotton Comforts",
+    "COTTON COMFORTS": "Cotton Comforts",
     "FLORA": "Flora",
     "TOLDJOY": "Toiel",
 }
@@ -89,9 +91,13 @@ BD_COLLECTION_BY_CODE: dict[str, str] = {
 BD_SET_TYPE_LABELS: list[tuple[str, str, str]] = [
     # (regex end-anchor pattern, canonical set key, display label)
     (r"1\s*\+\s*2\s+KS\s+FST", "1+2 KS FST", "King Fitted Sheet"),
+    (r"1\s*\+\s*2\s*DBSET", "1+2 DB SET", "Double Bedsheet"),
     (r"1\s*\+\s*2\s+DB\s+SET", "1+2 DB SET", "Double Bedsheet"),
+    (r"1\s*\+\s*1\s*SBSET", "1+1 SB SET", "Single Bedsheet"),
     (r"1\s*\+\s*1\s+SB\s+SET", "1+1 SB SET", "Single Bedsheet"),
+    (r"1\s*\+\s*2\s*KSSET", "1+2 KS SET", "King Bedsheet"),
     (r"1\s*\+\s*2\s+KS\s+SET", "1+2 KS SET", "King Bedsheet"),
+    (r"2\s*\+\s*2\s*SBSET", "2+2 SB SET", "Single Bedsheet"),
     (r"2\s*\+\s*2\s+SB\s+SET", "2+2 SB SET", "Single Bedsheet"),
     (r"1\s*\+\s*4\s+KS\s+SET", "1+4 KS SET", "King Bedsheet"),
 ]

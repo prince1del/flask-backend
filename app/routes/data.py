@@ -2282,23 +2282,151 @@ def extract_order_sheet_item_key(material_description: str) -> str | None:
     if not text:
         return None
 
-    tc_match = re.search(r"(\d+)\s*TC\s*$", text)
+    # "100TC", "144TC", or page-split "144T C"
+    tc_match = re.search(r"(\d+)\s*T\s*C\s*$", text)
     if not tc_match:
         return None
     tc = tc_match.group(1)
     remainder = text[: tc_match.start()].strip()
 
-    size_match = re.search(r"\b(DB|SB|KS|KB)\b", remainder)
+    # Glued packs 1+2DB and glued forms DBSET/SBSET — `\b` right after DB
+    # misses DBSET (D-B-S are all word chars).
+    size_match = re.search(
+        r"(?:(?<=\d\+\d)|(?<![A-Z0-9]))(SB|DB|DBL|KS|KB|KDB|QB)(?:SET|SETS|BS|FS)?\b",
+        remainder,
+    )
     size = size_match.group(1) if size_match else None
+    if size == "DBL":
+        size = "DB"
+    elif size in {"KDB", "QB"}:
+        size = "KS"
+    elif not size:
+        if re.search(r"\bDUVET\b", remainder):
+            size = "DUVET"
+        elif re.search(r"\bCOMF(?:ORT(?:ER|OR)|ERTOR)\b", remainder):
+            size = "COMF"
+        elif re.search(r"\bTROUSSEAU\b", remainder):
+            size = "TRS"
 
     units_match = re.search(r"\b\d\+\d\b", remainder)
     brand = remainder[: units_match.start()].strip() if units_match else (
         remainder.split()[0] if remainder else None
     )
+    # "FLORA SB 2+2 …" — SB is size, not part of the brand.
+    if brand:
+        brand = re.sub(
+            r"(?:\s+(?:SB|DB|DBL|KS|KB|KDB|QB)(?:SET|SETS|BS|FS)?)+$",
+            "",
+            brand,
+            flags=re.I,
+        ).strip()
 
     if not brand or not tc or not size:
         return None
     return f"{brand}|{tc}|{size}"
+
+
+_CI_BRAND_STOP_TOKENS = frozenset({
+    "SB", "DB", "DBL", "KS", "KB", "KDB", "QB",
+    "SET", "BS", "FS", "SBSET", "DBSET", "KSSET",
+})
+
+
+def _ci_line_brand_token(item_name: str | None) -> str:
+    """First brand words of a CI description — 'COTTON COMFORT DB 1+2…' → COTTON COMFORT."""
+    tokens = [t for t in re.split(r"\s+", str(item_name or "").upper()) if t]
+    brand: list[str] = []
+    for tok in tokens:
+        if tok in _CI_BRAND_STOP_TOKENS or re.match(r"\d+\+\d", tok):
+            break
+        if tok.isdigit() or re.fullmatch(r"\d+CM", tok):
+            continue
+        brand.append(tok)
+        if len(brand) >= 2:
+            break
+    return " ".join(brand)
+
+
+def _ci_am_brand_agrees_with_line(line: dict[str, Any] | None) -> bool:
+    """True when Article Master brand is the same family as the PDF description."""
+    if not isinstance(line, dict):
+        return True
+    am = line.get("article_match") if isinstance(line.get("article_match"), dict) else {}
+    art = am.get("article") if isinstance(am.get("article"), dict) else {}
+    brand = str(art.get("brand") or "").strip().upper()
+    if not brand:
+        return True
+    pdf_brand = _ci_line_brand_token(str(line.get("item_name") or line.get("item_key") or ""))
+    if not pdf_brand:
+        return True
+    first = brand.split()[0]
+    pdf_first = pdf_brand.split()[0]
+    return bool(first) and first == pdf_first
+
+
+def _ci_line_pack_signature(item_name: str | None) -> str:
+    """'BLUMEN 1+2 DBSET …' → '1+2DB'. Distinguishes double vs single of the same brand."""
+    text = str(item_name or "").upper()
+    text = re.sub(r"(\d\+\d)(SB|DB|DBL|KS|KB)(SET|SETS|BS|FS)?", r"\1 \2 \3", text)
+    text = re.sub(r"\b(SB|DB|DBL|KS|KB)(SET|SETS|BS|FS)\b", r"\1 \2", text)
+    match = re.search(r"(\d\+\d)\s*(SB|DB|DBL|KS|KB)", text)
+    if not match:
+        return ""
+    size = match.group(2)
+    if size == "DBL":
+        size = "DB"
+    return f"{match.group(1)}{size}"
+
+
+def _ci_lines_contradict_pdf_text(lines: list | None, text: str | None) -> bool:
+    """True when saved line brands/packs are not printed on this invoice PDF."""
+    upper = str(text or "").upper()
+    if not upper or not isinstance(lines, list):
+        return False
+    compact = re.sub(r"\s+", "", upper)
+    for ln in lines:
+        if not isinstance(ln, dict):
+            continue
+        brand = _ci_line_brand_token(ln.get("item_name"))
+        first = brand.split()[0] if brand else ""
+        if len(first) >= 4 and first not in upper:
+            return True
+        pack = _ci_line_pack_signature(ln.get("item_name"))
+        if pack and pack not in compact:
+            return True
+    return False
+
+
+def _refresh_saved_ci_lines(
+    lines: list | None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """
+    Re-key every saved CI/SO line from its PDF item_name and drop AM hits
+    whose brand is not in that name (Flora must not stay matched to Aster).
+
+    Runs for every invoice on GET/save — not a per-CI special case.
+    """
+    if not isinstance(lines, list):
+        return [], False
+    changed = False
+    out: list[dict[str, Any]] = []
+    for raw in lines:
+        if not isinstance(raw, dict):
+            continue
+        line = dict(raw)
+        name = str(line.get("item_name") or "").strip()
+        if name:
+            fresh_key = size_code_only_item_key(extract_order_sheet_item_key(name))
+            old_key = size_code_only_item_key(line.get("item_key"))
+            if fresh_key and fresh_key != old_key:
+                line["item_key"] = fresh_key
+                changed = True
+        if not _ci_am_brand_agrees_with_line(line):
+            line.pop("article_match", None)
+            line.pop("article_id", None)
+            changed = True
+        out.append(line)
+    return out, changed
 
 
 def make_order_sheet_item_key(brand: str, tc: Any, size: str) -> str | None:
@@ -2355,9 +2483,14 @@ def _clean_pdf_cell_number(cell: str | None) -> float | None:
     """
     if cell is None:
         return None
-    cleaned = re.sub(r"[^\d.]", "", str(cell).replace("\n", ""))
+    text = re.sub(r"\d{2,4}\s*TC\b", " ", str(cell), flags=re.I)
+    cleaned = re.sub(r"[^\d.]", "", text.replace("\n", ""))
     if not cleaned:
         return None
+    # Wrapped "3,767.\n40" → 3767.40; reject "4.00897.0" mash-ups.
+    if cleaned.count(".") > 1:
+        cleaned = cleaned[: cleaned.find(".", cleaned.find(".") + 1)]
+        cleaned = cleaned.rstrip(".")
     try:
         return float(cleaned)
     except ValueError:
@@ -2576,6 +2709,35 @@ _CI_DESIGN_COLOUR_SPACED_RE = re.compile(
     r"(?<![A-Z0-9])(\d{3,4})\s+([A-Z]{2,4})(?![A-Z0-9])",
     re.IGNORECASE,
 )
+def _ci_as_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _ci_lines_disagree_with_header(header: dict | None, lines: list | None) -> bool:
+    """True when saved line qty/amount drifted from the CI footer (Total Pieces / Invoice Total)."""
+    if not isinstance(header, dict) or not lines:
+        return False
+    pieces = _ci_as_float(header.get("total_pieces"))
+    invoice = _ci_as_float(header.get("invoice_total"))
+    qty = 0.0
+    amt = 0.0
+    for ln in lines:
+        if not isinstance(ln, dict):
+            continue
+        qty += _ci_as_float(ln.get("qty")) or 0.0
+        amt += _ci_as_float(ln.get("line_total") or ln.get("value") or ln.get("taxable")) or 0.0
+    if pieces is not None and pieces > 0 and qty > 0 and abs(qty - pieces) > max(0.51, pieces * 0.05):
+        return True
+    if invoice is not None and invoice > 0 and amt > 0 and abs(amt - invoice) > max(2.0, invoice * 0.08):
+        return True
+    return False
+
+
 _CI_FOOTER_MARKERS = (
     "BOMBAY DYEING",
     "AUTHORIZED SIGNATORY",
@@ -2734,14 +2896,22 @@ def _enrich_ci_header_from_text(text: str, base: dict[str, str] | None = None) -
         "delivery_no": r"delivery\s*no\.?\s*:?\s*([A-Za-z0-9\-/]+)",
         "lr_no": r"l\.?r\.?\s*no\.?\s*:?\s*([A-Za-z0-9\-/]+)",
         "transporter": r"transporter\s*:?\s*([^\n]+)",
-        "total_pieces": r"total\s*pieces\s*:?\s*([0-9]+)",
+        "total_pieces": r"total\s*pieces\s*:?\s*([\d,]+)",
     }
     for key, pattern in patterns.items():
-        if header.get(key):
+        # Always re-read Total Pieces from text — "1,188" used to save as 1.
+        if header.get(key) and key != "total_pieces":
             continue
         match = re.search(pattern, text or "", re.I)
         if match:
-            header[key] = match.group(1).strip().rstrip(":")
+            raw = match.group(1).strip().rstrip(":")
+            if key == "total_pieces":
+                try:
+                    header[key] = int(float(raw.replace(",", "")))
+                except ValueError:
+                    header[key] = raw
+            else:
+                header[key] = raw
 
     # Amount in words / invoice total from footer block
     total_match = re.search(
@@ -2943,12 +3113,13 @@ def _prepare_ci_parsed_for_save(
     invoice_total = header.get("invoice_total")
     if invoice_total is None:
         invoice_total = totals_in.get("invoice_total")
+    saved_lines, _ = _refresh_saved_ci_lines(list(client.get("line_items") or []))
     return {
         "source": "commercial_invoice",
         "detail_level": "text_only_save",
         "text": text,
         "header": header,
-        "line_items": list(client.get("line_items") or []),
+        "line_items": saved_lines,
         "totals": {
             "invoice_total": invoice_total,
             "taxable_amount": header.get("taxable_amount") or totals_in.get("taxable_amount"),
@@ -4284,16 +4455,42 @@ def upload_invoice_v2() -> Response:
         )
 
 
-def _upload_invoice_v2_impl() -> Response:
+def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
     """
     Fast CI upload preview for Render (avoid 502 from pdfplumber OOM/timeout).
 
     Upload only does: save file + text extract + header/GST + Customers match.
     Full line-item CI detail is rebuilt on confirm-ci-link / confirm-ci-only.
     """
-    uploaded_file = request.files.get("file")
+    uploaded_file = uploaded_file or request.files.get("file")
     if not uploaded_file or not uploaded_file.filename:
         return _json_response({"success": False, "error": {"message": "file is required"}}, 400)
+
+    raw = uploaded_file.read()
+    if not raw:
+        return _json_response({"success": False, "error": {"message": "Empty file"}}, 400)
+    kind = _so_pack_sniff_kind(raw, uploaded_file.filename)
+    from werkzeug.datastructures import FileStorage
+
+    if kind in ("zip", "rar"):
+        try:
+            pdfs = _expand_ci_upload_items([(uploaded_file.filename or f"ci.{kind}", raw)])
+        except ValueError as exc:
+            return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+        if len(pdfs) != 1:
+            return _json_response({"success": True, "data": _ingest_ci_pdfs(pdfs)})
+        raw = pdfs[0][1]
+        uploaded_file = FileStorage(
+            stream=io.BytesIO(raw),
+            filename=pdfs[0][0],
+            content_type="application/pdf",
+        )
+    else:
+        uploaded_file = FileStorage(
+            stream=io.BytesIO(raw),
+            filename=_so_pack_safe_filename(uploaded_file.filename, kind or "pdf"),
+            content_type="application/pdf",
+        )
 
     target_path = _save_order_fulfillment_upload_organized(uploaded_file, "CI", "CI Received")
     db = CentralizedDB(_db_path())
@@ -4539,7 +4736,9 @@ def _apply_ci_line_items_and_achievement(
     }
 
     # Prefer the full structured line_items saved with the CI (SO-parity).
-    parsed_line_items = list((commercial_invoice_parsed or {}).get("line_items") or [])
+    parsed_line_items, _ = _refresh_saved_ci_lines(
+        list((commercial_invoice_parsed or {}).get("line_items") or [])
+    )
     if (
         not parsed_line_items
         and commercial_invoice_file_reference
@@ -4720,21 +4919,24 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
         except Exception:
             pass
 
-    invoice_no = None
-    try:
-        with sqlite3.connect(_db_path()) as conn:
-            conn.row_factory = sqlite3.Row
-            ci_row = conn.execute(
-                "SELECT document_number FROM processed_documents "
-                "WHERE tracking_id = ? AND document_type = 'CI' LIMIT 1",
-                (tracking_id,),
-            ).fetchone()
-            if ci_row:
-                invoice_no = ci_row["document_number"]
-    except Exception:
-        pass
+    # Invoice number from THIS tracking's PDF payload — never from
+    # processed_documents. That table can hold two CI numbers on the
+    # same tracking_id after an overwrite (9337 stamp + 9346 lines).
+    invoice_no = db._extract_ci_invoice_no(tracking.get("commercial_invoice_parsed"))
     if not invoice_no:
-        invoice_no = db._extract_ci_invoice_no(tracking.get("commercial_invoice_parsed"))
+        try:
+            with sqlite3.connect(_db_path()) as conn:
+                conn.row_factory = sqlite3.Row
+                ci_row = conn.execute(
+                    "SELECT document_number FROM processed_documents "
+                    "WHERE tracking_id = ? AND document_type = 'CI' "
+                    "ORDER BY processed_at DESC LIMIT 1",
+                    (tracking_id,),
+                ).fetchone()
+                if ci_row:
+                    invoice_no = ci_row["document_number"]
+        except Exception:
+            pass
 
     # Line-level FO/SO/CI reconciliation (match results).
     items = []
@@ -4829,6 +5031,21 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
             payload["ci_totals"] = ci_parsed.get("totals")
         payload["ci_detail_level"] = ci_parsed.get("detail_level")
         ci_lines = list(ci_parsed.get("line_items") or [])
+        ci_lines, keys_changed = _refresh_saved_ci_lines(ci_lines)
+        if keys_changed:
+            updated = dict(ci_parsed)
+            updated["line_items"] = ci_lines
+            ci_parsed = updated
+            try:
+                with sqlite3.connect(db.db_path) as conn:
+                    conn.execute(
+                        "UPDATE order_lifecycle_tracking "
+                        "SET commercial_invoice_parsed = ? WHERE tracking_id = ?",
+                        (json.dumps(updated, default=str), tracking_id),
+                    )
+                    conn.commit()
+            except Exception:
+                pass
         # Re-parse from CI PDF when any saved line is missing Design+Colour
         # (page-break truncation → 17/18 colourways). Uses real PDF text only.
         ci_file = tracking.get("commercial_invoice_file_reference")
@@ -4838,12 +5055,33 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
             and not _ci_design_colour_tokens(str(ln.get("item_name") or ""))
             for ln in ci_lines
         )
-        if needs_design_repair:
+        needs_qty_repair = bool(ci_file) and _ci_lines_disagree_with_header(
+            payload.get("ci_header") or ci_parsed.get("header"),
+            ci_lines,
+        )
+        source_text = str(ci_parsed.get("text") or "")
+        if not source_text and ci_file:
             try:
-                fresh = parse_bombay_dyeing_so_ci_line_items(ci_file, "CI")
-                if fresh and len(fresh) >= len(
-                    [ln for ln in ci_lines if isinstance(ln, dict)]
-                ):
+                source_text = _extract_pdf_text(ci_file) or ""
+            except Exception:
+                source_text = ""
+        needs_brand_repair = bool(ci_file) and _ci_lines_contradict_pdf_text(
+            ci_lines, source_text
+        )
+        if needs_design_repair or needs_qty_repair or needs_brand_repair:
+            try:
+                fresh = None
+                rebuilt_detail = None
+                if needs_qty_repair or needs_brand_repair:
+                    rebuilt_detail = build_commercial_invoice_detail(ci_file)
+                    if isinstance(rebuilt_detail, dict) and not rebuilt_detail.get("error"):
+                        fresh = rebuilt_detail.get("line_items")
+                if not fresh:
+                    fresh = parse_bombay_dyeing_so_ci_line_items(ci_file, "CI")
+                existing_n = len([ln for ln in ci_lines if isinstance(ln, dict)])
+                # Brand repair must replace a longer wrong payload (Flora 18)
+                # with this invoice's real lines (Cotton Comfort 3).
+                if fresh and (needs_brand_repair or len(fresh) >= existing_n):
                     # Keep AM annotations when item_name still matches.
                     by_name = {
                         str(ln.get("item_name") or "").strip().upper(): ln
@@ -4854,14 +5092,48 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
                     for ln in fresh:
                         row = dict(ln)
                         old = by_name.get(str(row.get("item_name") or "").strip().upper())
-                        if isinstance(old, dict) and isinstance(old.get("article_match"), dict):
+                        if (
+                            not needs_brand_repair
+                            and isinstance(old, dict)
+                            and isinstance(old.get("article_match"), dict)
+                            and _ci_am_brand_agrees_with_line(old)
+                        ):
                             row["article_match"] = old["article_match"]
                             if old.get("article_id") is not None:
                                 row["article_id"] = old.get("article_id")
                         merged.append(row)
-                    ci_lines = merged
+                    ci_lines, _ = _refresh_saved_ci_lines(merged)
                     updated = dict(ci_parsed)
                     updated["line_items"] = ci_lines
+                    if isinstance(rebuilt_detail, dict) and not rebuilt_detail.get("error"):
+                        if isinstance(rebuilt_detail.get("header"), dict):
+                            updated["header"] = rebuilt_detail["header"]
+                            payload["ci_header"] = {
+                                k: rebuilt_detail["header"].get(k)
+                                for k in (
+                                    "invoice_no",
+                                    "invoice_date",
+                                    "order_ref_no",
+                                    "sales_order_date",
+                                    "buyer_name",
+                                    "buyer_gst",
+                                    "consignee_name",
+                                    "cust_po",
+                                    "place_of_supply",
+                                    "payment_due",
+                                    "delivery_no",
+                                    "invoice_total",
+                                    "taxable_amount",
+                                    "total_igst",
+                                    "total_pieces",
+                                    "transporter",
+                                    "lr_no",
+                                )
+                                if rebuilt_detail["header"].get(k) not in (None, "")
+                            }
+                        if isinstance(rebuilt_detail.get("totals"), dict):
+                            updated["totals"] = rebuilt_detail["totals"]
+                            payload["ci_totals"] = rebuilt_detail["totals"]
                     with sqlite3.connect(db.db_path) as conn:
                         conn.execute(
                             "UPDATE order_lifecycle_tracking "
@@ -4891,7 +5163,9 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
                 pass
         article_master_match = ci_parsed.get("article_master_match")
         needs_am = bool(ci_lines) and (
-            not isinstance(article_master_match, dict)
+            keys_changed
+            or needs_brand_repair
+            or not isinstance(article_master_match, dict)
             or any(not isinstance(ln.get("article_match"), dict) for ln in ci_lines if isinstance(ln, dict))
         )
         if needs_am:
@@ -5298,8 +5572,8 @@ def confirm_ci_so_link() -> Response:
         )
 
 
-def _confirm_ci_so_link_impl() -> Response:
-    payload = request.get_json(silent=True) or {}
+def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
+    payload = payload if payload is not None else (request.get_json(silent=True) or {})
     order_ref_no = (payload.get("order_ref_no") or "").strip()
     commercial_invoice_file_reference = payload.get("commercial_invoice_file_reference")
     commercial_invoice_parsed = payload.get("commercial_invoice_parsed") or {}
@@ -5509,8 +5783,8 @@ def confirm_ci_only() -> Response:
         )
 
 
-def _confirm_ci_only_impl() -> Response:
-    payload = request.get_json(silent=True) or {}
+def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
+    payload = payload if payload is not None else (request.get_json(silent=True) or {})
     commercial_invoice_file_reference = payload.get("commercial_invoice_file_reference")
     commercial_invoice_parsed = payload.get("commercial_invoice_parsed") or {}
     amount = payload.get("amount")
@@ -5744,6 +6018,296 @@ def _confirm_ci_only_impl() -> Response:
             ),
         },
     })
+
+
+def _flask_response_payload(resp: Response) -> tuple[int, dict]:
+    try:
+        body = json.loads(resp.get_data(as_text=True) or "{}")
+    except Exception:
+        body = {}
+    return resp.status_code, body if isinstance(body, dict) else {}
+
+
+def _expand_ci_upload_items(items: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
+    """PDF / ZIP / RAR → ordered list of (filename, pdf_bytes). Same unpack as SO Pack."""
+    from app.services.so_pack_consolidate import _load_pack_pdfs
+
+    pdfs: list[tuple[str, bytes]] = []
+    for name, raw in items:
+        kind = _so_pack_sniff_kind(raw, name)
+        if kind == "pdf":
+            pdfs.append((_so_pack_safe_filename(name, "pdf"), raw))
+        elif kind in ("zip", "rar"):
+            unpacked = _load_pack_pdfs(raw, _so_pack_safe_filename(name, kind))
+            if not unpacked:
+                raise ValueError(f"No PDFs inside {name}")
+            pdfs.extend(unpacked)
+        else:
+            raise ValueError(f"Unsupported CI upload: {name}. Use PDF, ZIP, or RAR.")
+    if not pdfs:
+        raise ValueError("No commercial invoice PDFs found")
+    return pdfs
+
+
+def _collect_ci_pdfs_from_request() -> list[tuple[str, bytes]]:
+    uploads = [f for f in request.files.getlist("file") if f and f.filename]
+    uploads += [f for f in request.files.getlist("files") if f and f.filename]
+    seen: set[int] = set()
+    unique = []
+    for f in uploads:
+        key = id(f)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(f)
+    if not unique:
+        raise ValueError("file is required")
+    items: list[tuple[str, bytes]] = []
+    for f in unique:
+        raw = f.read()
+        if not raw:
+            raise ValueError(f"Empty file: {f.filename}")
+        items.append((f.filename or "ci.pdf", raw))
+    return _expand_ci_upload_items(items)
+
+
+def _ci_party_safe_for_auto(preview: dict) -> bool:
+    status = ((preview.get("party_match") or {}) if isinstance(preview.get("party_match"), dict) else {}).get(
+        "status"
+    )
+    return status == "matched" or not status
+
+
+def _auto_confirm_ci_preview(preview: dict) -> dict:
+    """Desktop bulk rules: auto-link when real SO + party OK; CI-only when no SO + Customers matched."""
+    invoice_no = preview.get("invoice_no") or ""
+    order_ref_no = preview.get("order_ref_no") or ""
+    if preview.get("is_duplicate"):
+        return {
+            "state": "dup",
+            "status": preview.get("message") or preview.get("link_error") or "Duplicate — already processed",
+            "invoice_no": invoice_no,
+            "order_ref_no": order_ref_no,
+            "tracking_id": None,
+        }
+
+    party_ok = _ci_party_safe_for_auto(preview)
+    party_match = preview.get("party_match") if isinstance(preview.get("party_match"), dict) else {}
+    compare = preview.get("compare") if isinstance(preview.get("compare"), dict) else {}
+    matching_so = (
+        preview.get("matching_sales_order")
+        if isinstance(preview.get("matching_sales_order"), dict)
+        else {}
+    )
+    has_real_so = (
+        not preview.get("no_match_found")
+        and compare
+        and (compare.get("so_has_file") or matching_so.get("sales_order_file_reference"))
+    )
+    amount = preview.get("extracted_amount")
+    try:
+        amount = float(amount) if amount is not None else None
+    except (TypeError, ValueError):
+        amount = None
+
+    if has_real_so and party_ok and party_match.get("status") != "mismatch":
+        resp = _confirm_ci_so_link_impl(
+            {
+                "order_ref_no": preview.get("order_ref_no"),
+                "commercial_invoice_file_reference": preview.get("commercial_invoice_file_reference"),
+                "commercial_invoice_parsed": preview.get("commercial_invoice_parsed"),
+                "amount": amount,
+            }
+        )
+        _code, body = _flask_response_payload(resp)
+        out = body.get("data") if isinstance(body.get("data"), dict) else {}
+        if body.get("success") and not out.get("is_duplicate") and not out.get("link_error"):
+            return {
+                "state": "ok",
+                "status": f"Linked to SO · tracking #{out.get('tracking_id') or '—'}",
+                "invoice_no": invoice_no,
+                "order_ref_no": order_ref_no,
+                "tracking_id": out.get("tracking_id"),
+            }
+        return {
+            "state": "bad",
+            "status": out.get("link_error")
+            or ((body.get("error") or {}).get("message") if isinstance(body.get("error"), dict) else None)
+            or "Link failed",
+            "invoice_no": invoice_no,
+            "order_ref_no": order_ref_no,
+            "tracking_id": None,
+        }
+
+    suggested = preview.get("suggested_distributor") if isinstance(preview.get("suggested_distributor"), dict) else {}
+    if (
+        preview.get("no_match_found")
+        and party_ok
+        and party_match.get("status") == "matched"
+        and suggested.get("id")
+    ):
+        resp = _confirm_ci_only_impl(
+            {
+                "order_ref_no": preview.get("order_ref_no"),
+                "invoice_no": preview.get("invoice_no"),
+                "distributor_id": suggested.get("id"),
+                "commercial_invoice_file_reference": preview.get("commercial_invoice_file_reference"),
+                "commercial_invoice_parsed": preview.get("commercial_invoice_parsed"),
+                "amount": amount,
+                "acknowledge_party_mismatch": False,
+            }
+        )
+        _code, body = _flask_response_payload(resp)
+        out = body.get("data") if isinstance(body.get("data"), dict) else {}
+        if body.get("success") and not out.get("is_duplicate") and not out.get("link_error"):
+            return {
+                "state": "ok",
+                "status": f"CI-only saved · tracking #{out.get('tracking_id') or '—'}",
+                "invoice_no": invoice_no,
+                "order_ref_no": order_ref_no,
+                "tracking_id": out.get("tracking_id"),
+            }
+        return {
+            "state": "bad",
+            "status": out.get("link_error")
+            or ((body.get("error") or {}).get("message") if isinstance(body.get("error"), dict) else None)
+            or "CI-only save failed",
+            "invoice_no": invoice_no,
+            "order_ref_no": order_ref_no,
+            "tracking_id": None,
+        }
+
+    if preview.get("no_match_found"):
+        status = "Needs review — pick distributor / confirm CI-only"
+    elif party_match.get("status") == "mismatch":
+        status = "Needs review — party mismatch"
+    else:
+        status = "Needs review"
+    return {
+        "state": "review",
+        "status": status,
+        "invoice_no": invoice_no,
+        "order_ref_no": order_ref_no,
+        "tracking_id": None,
+    }
+
+
+def _ingest_one_ci_pdf(filename: str, data: bytes) -> dict:
+    from werkzeug.datastructures import FileStorage
+
+    fs = FileStorage(stream=io.BytesIO(data), filename=filename, content_type="application/pdf")
+    preview_resp = _upload_invoice_v2_impl(uploaded_file=fs)
+    _code, body = _flask_response_payload(preview_resp)
+    if not body.get("success"):
+        err = body.get("error") if isinstance(body.get("error"), dict) else {}
+        return {
+            "file": filename,
+            "state": "bad",
+            "status": err.get("message") or f"Upload failed (HTTP {_code})",
+            "invoice_no": "",
+            "order_ref_no": "",
+            "tracking_id": None,
+        }
+    preview = body.get("data") if isinstance(body.get("data"), dict) else {}
+    row = _auto_confirm_ci_preview(preview)
+    row["file"] = filename
+    return row
+
+
+def _ci_bulk_summary(results: list[dict]) -> dict:
+    return {
+        "saved": sum(1 for r in results if r.get("state") == "ok"),
+        "duplicates": sum(1 for r in results if r.get("state") == "dup"),
+        "review": sum(1 for r in results if r.get("state") == "review"),
+        "failed": sum(1 for r in results if r.get("state") == "bad"),
+        "total": len(results),
+        "results": results,
+    }
+
+
+def _ingest_ci_pdfs(pdfs: list[tuple[str, bytes]], on_progress=None) -> dict:
+    results: list[dict] = []
+    total = len(pdfs)
+    for i, (name, raw) in enumerate(pdfs, 1):
+        if on_progress:
+            on_progress(f"Reading {i}/{total} — {name}")
+        try:
+            results.append(_ingest_one_ci_pdf(name, raw))
+        except Exception as exc:
+            results.append(
+                {
+                    "file": name,
+                    "state": "bad",
+                    "status": str(exc),
+                    "invoice_no": "",
+                    "order_ref_no": "",
+                    "tracking_id": None,
+                }
+            )
+    return _ci_bulk_summary(results)
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/upload/invoices-bulk", methods=["POST"])
+@require_jwt_auth
+def upload_invoices_bulk() -> Response:
+    """Unpack PDF/ZIP/RAR commercial invoices, preview each, auto-confirm like desktop bulk."""
+    try:
+        pdfs = _collect_ci_pdfs_from_request()
+        data = _ingest_ci_pdfs(pdfs)
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"CI bulk upload failed: {exc}"}},
+            500,
+        )
+    return _json_response({"success": True, "data": data})
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/upload/invoices-bulk-stream", methods=["POST"])
+@require_jwt_auth
+def upload_invoices_bulk_stream() -> Response:
+    """Same as invoices-bulk, with NDJSON progress lines (Android SO Pack overlay)."""
+    try:
+        pdfs = _collect_ci_pdfs_from_request()
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+
+    @stream_with_context
+    def generate():
+        try:
+            total = len(pdfs)
+            yield json.dumps(
+                {"type": "progress", "message": f"Found {total} commercial invoice PDF(s)…"}
+            ) + "\n"
+            results: list[dict] = []
+            for i, (name, raw) in enumerate(pdfs, 1):
+                yield json.dumps(
+                    {"type": "progress", "message": f"Reading {i}/{total} — {name}"}
+                ) + "\n"
+                try:
+                    results.append(_ingest_one_ci_pdf(name, raw))
+                except Exception as exc:
+                    results.append(
+                        {
+                            "file": name,
+                            "state": "bad",
+                            "status": str(exc),
+                            "invoice_no": "",
+                            "order_ref_no": "",
+                            "tracking_id": None,
+                        }
+                    )
+            yield json.dumps(
+                {"type": "done", "data": _ci_bulk_summary(results)}, default=str
+            ) + "\n"
+        except Exception as exc:
+            yield json.dumps({"type": "error", "message": f"CI bulk upload failed: {exc}"}) + "\n"
+
+    resp = Response(generate(), mimetype="application/x-ndjson")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
 
 
 @data_blueprint.route("/articles")
