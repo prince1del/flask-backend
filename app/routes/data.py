@@ -2425,6 +2425,14 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                                 continue
                             code = (row[0] or "").strip()
                             if not code or not _MATERIAL_CODE_ONLY_RE.match(code) or code.upper() == "TOTAL":
+                                continuation = _clean_pdf_cell_text(row[1] if len(row) > 1 else "")
+                                if items and _ci_should_stitch_page_break(
+                                    str(items[-1].get("item_name") or ""),
+                                    continuation,
+                                ):
+                                    merged = f"{items[-1]['item_name']} {continuation}".strip()
+                                    items[-1]["item_name"] = merged
+                                    items[-1]["item_key"] = extract_order_sheet_item_key(merged)
                                 continue
                             description_cell, qty_cell, net_value_cell = row[1], row[3], row[7]
                         else:
@@ -2432,19 +2440,13 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                                 continue
                             serial_no = (row[0] or "").strip()
                             description_cell = row[1]
-                            # Page-break continuation: SN 16 ends as
-                            # "ASTER 1+2 DB SET 224X244" and the next page's
-                            # first table row is SN-empty "7990BGE\n100TC".
-                            # Stitch that remainder onto the last incomplete line.
+                            # Any SN can split across a page: last row of page N is
+                            # truncated, first leftover row of page N+1 has no SN.
                             if not serial_no.isdigit():
                                 continuation = _clean_pdf_cell_text(description_cell)
-                                if (
-                                    items
-                                    and continuation
-                                    and _ci_design_colour_tokens(continuation)
-                                    and not _ci_design_colour_tokens(
-                                        str(items[-1].get("item_name") or "")
-                                    )
+                                if items and _ci_should_stitch_page_break(
+                                    str(items[-1].get("item_name") or ""),
+                                    continuation,
                                 ):
                                     merged = f"{items[-1]['item_name']} {continuation}".strip()
                                     items[-1]["item_name"] = merged
@@ -2565,14 +2567,25 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
 
 
 _CI_DESIGN_COLOUR_EXCLUDE = frozenset({"TC", "CM", "MM", "IN", "KG", "PCS", "SET", "ASST"})
-# Glued 7985BLU / 756SBL140TC, or spaced 7684 PUR.
+# Glued 7985BLU / 756SBL140TC / 7695BLU144T, or spaced 7684 PUR.
 _CI_DESIGN_COLOUR_GLUED_RE = re.compile(
-    r"(?<![A-Z0-9])(\d{3,4})([A-Z]{2,4})(?=\d{0,4}TC\b|(?![A-Z0-9]))",
+    r"(?<![A-Z0-9])(\d{3,4})([A-Z]{2,4})(?=\d{0,4}T?C?\b|(?![A-Z0-9]))",
     re.IGNORECASE,
 )
 _CI_DESIGN_COLOUR_SPACED_RE = re.compile(
     r"(?<![A-Z0-9])(\d{3,4})\s+([A-Z]{2,4})(?![A-Z0-9])",
     re.IGNORECASE,
+)
+_CI_FOOTER_MARKERS = (
+    "BOMBAY DYEING",
+    "AUTHORIZED SIGNATORY",
+    "INVOICE TOTAL",
+    "PAYMENT DUE",
+    "WE HEREBY CERTIFY",
+    "TOTAL TAXABLE",
+    "TOTAL PIECES",
+    "PRO FORMA",
+    "ORIGINAL FOR RECIPIENT",
 )
 
 
@@ -2590,6 +2603,46 @@ def _ci_design_colour_tokens(text: str) -> list[str]:
                 seen.add(token)
                 tokens.append(token)
     return tokens
+
+
+def _ci_is_footer_text(text: str) -> bool:
+    upper = (text or "").upper()
+    return any(marker in upper for marker in _CI_FOOTER_MARKERS)
+
+
+def _ci_line_needs_page_continuation(name: str) -> bool:
+    """True when a parsed line is missing the design/colour/TC tail."""
+    upper = (name or "").strip().upper()
+    if not upper or _ci_is_footer_text(upper):
+        return False
+    if not _ci_design_colour_tokens(upper):
+        return True
+    # TC split across the page: "...7695BLU144T" + next page "C"
+    if re.search(r"\d{2,4}T$", upper) and not re.search(r"\d{2,4}\s*TC\b", upper):
+        return True
+    return False
+
+
+def _ci_text_is_page_continuation(text: str) -> bool:
+    """True when an SN-empty leftover row is the rest of the previous line."""
+    upper = _clean_pdf_cell_text(text).upper()
+    if not upper or _ci_is_footer_text(upper) or len(upper) > 80:
+        return False
+    if _ci_design_colour_tokens(upper):
+        return True
+    if re.fullmatch(r"\d{2,4}\s*TC", upper):
+        return True
+    if upper in {"C", "TC", "T C", "T"}:
+        return True
+    if re.match(r"^\d{3,4}[A-Z]{2,4}", upper):
+        return True
+    return False
+
+
+def _ci_should_stitch_page_break(current_name: str, continuation: str) -> bool:
+    return _ci_line_needs_page_continuation(current_name) and _ci_text_is_page_continuation(
+        continuation
+    )
 
 
 def _repair_truncated_ci_design_colours(

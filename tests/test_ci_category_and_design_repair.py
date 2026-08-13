@@ -1,4 +1,5 @@
-﻿import sys
+﻿import re
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -52,6 +53,35 @@ def test_truncated_design_colour_recovered_from_pdf_text():
             if tok.startswith("7984"):
                 colours.add(tok)
     assert colours == {"7984BLU", "7984BRW", "7984PUR"}
+
+
+def test_ci_page_break_stitches_any_serial_on_april_invoices():
+    """Any SN can split; leftover next-page cells must join that line, not be dropped."""
+    from pathlib import Path as P
+
+    root = P(r"G:\My Drive\2026-2027\CI\April 2026\CI")
+    if not root.exists():
+        return
+    truncated = []
+    for path in sorted(set(root.rglob("*.PDF")) | set(root.rglob("*.pdf"))):
+        items = parse_bombay_dyeing_so_ci_line_items(str(path), "CI")
+        for idx, item in enumerate(items, 1):
+            name = item.get("item_name") or ""
+            upper = name.upper()
+            # Page-splits look like "ASTER 1+2 DB SET 224X244" / "ALLURE DUVET CVR 245X270"
+            # — size is the last token, design/colour is on the next page.
+            ends_on_size = bool(re.search(r"\d{2,4}\s*[Xx×]\s*\d{2,4}\s*$", upper))
+            looks_split_family = any(
+                tok in upper
+                for tok in ("1+2", "1+1", "DBSET", "SBSET", "DB SET", "DUVET")
+            )
+            if (
+                ends_on_size
+                and looks_split_family
+                and not _ci_design_colour_tokens(name)
+            ):
+                truncated.append(f"{path.name} SN{idx} {name}")
+    assert not truncated, "page-split lines still missing design/colour:\n" + "\n".join(truncated)
 
 
 def test_ci_line_16_page_break_stitches_next_page_remainder():
