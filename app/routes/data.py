@@ -4868,6 +4868,81 @@ def _apply_ci_line_items_and_achievement(
     return item_results, has_any_discrepancy, achievement_id, achievement_error, article_master_match
 
 
+def _current_user_id() -> int | None:
+    user = getattr(request, "user", None)
+    return (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+
+
+@data_blueprint.route("/api/v1/distributor-payments/status", methods=["GET"])
+@require_jwt_auth
+def get_distributor_payment_status() -> Response:
+    """Drawer-only "Distributors Payment Status" tree: distributor -> season
+    -> category, each carrying its SO total (from this user's own
+    filled_orders — same source as the "Total value of SO" home card) and
+    whatever deposits have been recorded against it."""
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    distributors = db.list_distributor_category_payment_status(user_id)
+    return _json_response({"success": True, "data": {"distributors": distributors}})
+
+
+@data_blueprint.route("/api/v1/distributor-payments/deposits", methods=["POST"])
+@require_jwt_auth
+def add_distributor_payment_deposit() -> Response:
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Not signed in"}}, 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        distributor_id = int(payload.get("distributor_id"))
+        season = str(payload.get("season") or "").strip()
+        category = str(payload.get("category") or "").strip()
+        amount = float(payload.get("amount"))
+    except (TypeError, ValueError):
+        return _json_response(
+            {"success": False, "error": {"message": "distributor_id, season, category, amount are required"}},
+            400,
+        )
+    if not season or not category or amount <= 0:
+        return _json_response(
+            {"success": False, "error": {"message": "season, category are required and amount must be > 0"}},
+            400,
+        )
+    payment_date = str(payload.get("payment_date") or "").strip()
+    if not payment_date:
+        return _json_response(
+            {"success": False, "error": {"message": "payment_date is required"}}, 400
+        )
+    note = payload.get("note")
+    entry = db.add_distributor_category_payment(
+        user_id, distributor_id, season, category, amount, payment_date,
+        note=str(note).strip() if note else None,
+    )
+    return _json_response({"success": True, "data": {"entry": entry}})
+
+
+@data_blueprint.route(
+    "/api/v1/distributor-payments/deposits/<int:deposit_id>", methods=["DELETE"]
+)
+@require_jwt_auth
+def delete_distributor_payment_deposit(deposit_id: int) -> Response:
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Not signed in"}}, 401)
+    ok = db.delete_distributor_category_payment(user_id, deposit_id)
+    if not ok:
+        return _json_response(
+            {"success": False, "error": {"message": "Deposit not found"}}, 404
+        )
+    return _json_response({"success": True})
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/uploads", methods=["GET"])
 @require_jwt_auth
 def list_order_fulfillment_uploads() -> Response:

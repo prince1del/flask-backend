@@ -14005,6 +14005,166 @@ class CentralizedDB:
             updated += 1
         return updated
 
+    def ensure_distributor_category_payments_table(self) -> None:
+        """Deposits tracked per (user, distributor, season, category) —
+        deliberately NOT tied to a single SO/tracking_id like the older,
+        now-backlogged PaymentCollection feature. Scoped by user_id, same
+        as filled_orders/article_master, since the SO total each deposit
+        is measured against is itself that user's own uploaded order data."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributor_category_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    distributor_id INTEGER NOT NULL,
+                    season TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    payment_date TEXT NOT NULL,
+                    note TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dcp_lookup "
+                "ON distributor_category_payments(user_id, distributor_id, season, category)"
+            )
+
+    def list_distributor_category_payment_status(self, user_id: int | None) -> list[dict[str, Any]]:
+        """Distributor -> season -> category tree: each category carries its
+        SO total (same filled_orders data as the "Total value of SO" home
+        card), the deposits recorded against it, and running paid/outstanding
+        totals. Only (distributor, season, category) combinations that
+        actually have filled-order data are included — nothing invented."""
+        import filled_orders_db as fodb
+
+        if not user_id:
+            return []
+        self.ensure_distributor_category_payments_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            fodb.ensure_schema(conn)
+            combos = conn.execute(
+                "SELECT DISTINCT distributor_id, season, category FROM filled_orders "
+                "WHERE user_id = ? AND distributor_id IS NOT NULL "
+                "AND season IS NOT NULL AND category IS NOT NULL",
+                (user_id,),
+            ).fetchall()
+            deposit_rows = conn.execute(
+                "SELECT id, distributor_id, season, category, amount, payment_date, note, created_at "
+                "FROM distributor_category_payments WHERE user_id = ? "
+                "ORDER BY payment_date, id",
+                (user_id,),
+            ).fetchall()
+            dist_name_rows = conn.execute(
+                "SELECT id, COALESCE(firm_name, name, 'Unknown') AS distributor_name "
+                "FROM master_distributors"
+            ).fetchall()
+            dist_names = {r["id"]: r["distributor_name"] for r in dist_name_rows}
+
+            deposits_by_key: dict[tuple, list[dict]] = {}
+            for r in deposit_rows:
+                key = (r["distributor_id"], r["season"], r["category"])
+                deposits_by_key.setdefault(key, []).append(
+                    {
+                        "id": r["id"],
+                        "amount": float(r["amount"] or 0),
+                        "payment_date": r["payment_date"],
+                        "note": r["note"],
+                        "created_at": r["created_at"],
+                    }
+                )
+
+            by_distributor: dict[int, dict[str, Any]] = {}
+            for combo in combos:
+                dist_id = combo["distributor_id"]
+                season = combo["season"]
+                category = combo["category"]
+                totals = fodb.query_order_value(
+                    conn, user_id, [season], category=category, distributor_id=dist_id
+                )
+                so_total = float(totals.get("total_ex_mill_value") or 0)
+                deposits = deposits_by_key.get((dist_id, season, category), [])
+                paid_total = sum(d["amount"] for d in deposits)
+                dist_entry = by_distributor.setdefault(
+                    dist_id,
+                    {
+                        "distributor_id": dist_id,
+                        "distributor_name": dist_names.get(dist_id, "Unknown"),
+                        "seasons": {},
+                    },
+                )
+                season_entry = dist_entry["seasons"].setdefault(
+                    season, {"season": season, "categories": []}
+                )
+                season_entry["categories"].append(
+                    {
+                        "category": category,
+                        "so_total": so_total,
+                        "paid_total": paid_total,
+                        "outstanding": so_total - paid_total,
+                        "deposits": deposits,
+                    }
+                )
+
+        result = []
+        for dist_entry in by_distributor.values():
+            dist_entry["seasons"] = sorted(
+                dist_entry["seasons"].values(), key=lambda s: s["season"], reverse=True
+            )
+            for season_entry in dist_entry["seasons"]:
+                season_entry["categories"].sort(key=lambda c: c["category"])
+            result.append(dist_entry)
+        result.sort(key=lambda d: (d["distributor_name"] or "").lower())
+        return result
+
+    def add_distributor_category_payment(
+        self,
+        user_id: int,
+        distributor_id: int,
+        season: str,
+        category: str,
+        amount: float,
+        payment_date: str,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        self.ensure_distributor_category_payments_table()
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                "INSERT INTO distributor_category_payments "
+                "(user_id, distributor_id, season, category, amount, payment_date, note) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, distributor_id, season, category, amount, payment_date, note),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, distributor_id, season, category, amount, payment_date, note, created_at "
+                "FROM distributor_category_payments WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+        return {
+            "id": row[0],
+            "distributor_id": row[1],
+            "season": row[2],
+            "category": row[3],
+            "amount": float(row[4] or 0),
+            "payment_date": row[5],
+            "note": row[6],
+            "created_at": row[7],
+        }
+
+    def delete_distributor_category_payment(self, user_id: int, deposit_id: int) -> bool:
+        self.ensure_distributor_category_payments_table()
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM distributor_category_payments WHERE id = ? AND user_id = ?",
+                (deposit_id, user_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
     def sum_so_value_for_fy(self, user_id: int | None, fy_label: str) -> float:
         """Sum ex-mill value (in lakhs) of filled_order_items whose parent
         filled_order was created within the financial year's date range
