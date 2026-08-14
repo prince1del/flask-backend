@@ -14049,12 +14049,17 @@ class CentralizedDB:
         self.ensure_distributor_category_payments_table()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            # match_count = 0 means none of the SO's lines actually matched
+            # the chosen Filled Order — category/season here are copied from
+            # that FO (not derived from the SO itself), so a 0-match run's
+            # category is unreliable and excluded rather than trusted.
             so_totals = conn.execute(
                 "SELECT distributor_id, season, category, "
                 "SUM(COALESCE(so_net_amount, 0)) AS so_total "
                 "FROM fo_so_match_runs "
                 "WHERE user_id = ? AND distributor_id IS NOT NULL "
                 "AND season IS NOT NULL AND category IS NOT NULL "
+                "AND match_count > 0 "
                 "GROUP BY distributor_id, season, category",
                 (user_id,),
             ).fetchall()
