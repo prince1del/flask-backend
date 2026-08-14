@@ -14043,23 +14043,26 @@ class CentralizedDB:
         NOT SOs uploaded but not yet matched (those don't have a reliable
         season/category/amount anywhere else in the app either, so nothing
         is invented for them here). Only (distributor, season, category)
-        combinations that actually have a matched SO are included."""
+        combinations that actually have a matched SO are included.
+
+        Note: category/season on a match run are copied from the Filled
+        Order it was matched against, not derived from the SO itself — a
+        run with match_count = 0 (no lines reconciled) can carry the wrong
+        category if it was matched against the wrong FO. That's a data
+        problem to fix by re-matching against the right FO in Order Desk,
+        not a reason to hide the payment obligation, so it's still counted
+        here under whatever category the run currently has."""
         if not user_id:
             return []
         self.ensure_distributor_category_payments_table()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            # match_count = 0 means none of the SO's lines actually matched
-            # the chosen Filled Order — category/season here are copied from
-            # that FO (not derived from the SO itself), so a 0-match run's
-            # category is unreliable and excluded rather than trusted.
             so_totals = conn.execute(
                 "SELECT distributor_id, season, category, "
                 "SUM(COALESCE(so_net_amount, 0)) AS so_total "
                 "FROM fo_so_match_runs "
                 "WHERE user_id = ? AND distributor_id IS NOT NULL "
                 "AND season IS NOT NULL AND category IS NOT NULL "
-                "AND match_count > 0 "
                 "GROUP BY distributor_id, season, category",
                 (user_id,),
             ).fetchall()
