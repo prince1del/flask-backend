@@ -3918,6 +3918,7 @@ def so_pack_match_filled_order() -> Response:
             match_payload=result,
             so_buyer_label=so_buyer_label,
             so_source_filename=so_source_filename,
+            so_line_detail=so_pack.get("line_detail") if isinstance(so_pack.get("line_detail"), list) else None,
         )
         result["run"] = {k: v for k, v in run.items() if k != "rows"}
         result["run_id"] = run.get("id")
@@ -5289,6 +5290,24 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
             payload["article_master_match"] = article_master_match
         if ci_parsed.get("parse_note"):
             payload["ci_parse_note"] = ci_parsed.get("parse_note")
+    # SO PDF lines (design/colour per SKU) — from saved reconciliation items.
+    so_lines: list[dict[str, Any]] = []
+    for it in items:
+        name = (it.get("item_name") or "").strip()
+        qty = it.get("so_qty")
+        if not name or qty is None or float(qty or 0) <= 0:
+            continue
+        so_lines.append(
+            {
+                "item_name": name,
+                "item_key": it.get("item_key"),
+                "qty": float(qty),
+                "value": it.get("so_value"),
+            }
+        )
+    if so_lines:
+        payload["so_line_items"] = so_lines
+        payload["so_line_count"] = len(so_lines)
     return _json_response({"success": True, "data": payload})
 
 

@@ -51,10 +51,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     if _schema_ensured:
         try:
             conn.execute("SELECT 1 FROM fo_so_match_runs LIMIT 1")
+            conn.execute("SELECT so_line_detail_json FROM fo_so_match_runs LIMIT 1")
             return
         except sqlite3.OperationalError:
             _schema_ensured = False
     conn.executescript(SCHEMA_SQL)
+    try:
+        conn.execute(
+            "ALTER TABLE fo_so_match_runs ADD COLUMN so_line_detail_json TEXT"
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     _schema_ensured = True
 
@@ -74,7 +82,7 @@ RUN_COLUMNS = [
     "category", "season", "fo_source_filename", "so_buyer_label", "so_source_filename",
     "fo_qty", "so_qty", "delta_qty", "fo_exmill_value", "so_net_amount", "delta_value",
     "match_count", "fuzzy_count", "mismatch_count", "missing_count", "extra_count",
-    "rows_json", "created_at",
+    "rows_json", "so_line_detail_json", "created_at",
 ]
 
 
@@ -85,6 +93,7 @@ def save_match_run(
     match_payload: dict[str, Any],
     so_buyer_label: str | None = None,
     so_source_filename: str | None = None,
+    so_line_detail: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Insert a match run from run_match_saved_fo_vs_so_pack result."""
     ensure_schema(conn)
@@ -93,6 +102,11 @@ def save_match_run(
     totals = match.get("totals") or {}
     counts = match.get("counts") or {}
     rows = match.get("rows") or []
+    line_detail_json = (
+        json.dumps(so_line_detail, default=str)
+        if so_line_detail
+        else None
+    )
 
     mismatch = int(counts.get("QTY_MISMATCH") or 0) + int(counts.get("VALUE_MISMATCH") or 0)
     conn.execute(
@@ -101,8 +115,8 @@ def save_match_run(
             category, season, fo_source_filename, so_buyer_label, so_source_filename,
             fo_qty, so_qty, delta_qty, fo_exmill_value, so_net_amount, delta_value,
             match_count, fuzzy_count, mismatch_count, missing_count, extra_count,
-            rows_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows_json, so_line_detail_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             user_id,
             fo.get("id"),
@@ -125,6 +139,7 @@ def save_match_run(
             int(counts.get("MISSING_ON_SO") or 0),
             int(counts.get("EXTRA_ON_SO") or 0),
             json.dumps(rows, default=str),
+            line_detail_json,
             _now(),
         ),
     )
@@ -161,6 +176,16 @@ def get_match_run(
     except json.JSONDecodeError:
         rows = []
         data.pop("rows_json", None)
+    so_line_detail_raw = data.pop("so_line_detail_json", None)
+    so_line_detail: list[Any] = []
+    if isinstance(so_line_detail_raw, str) and so_line_detail_raw.strip():
+        try:
+            loaded = json.loads(so_line_detail_raw)
+            if isinstance(loaded, list):
+                so_line_detail = loaded
+        except (TypeError, ValueError, json.JSONDecodeError):
+            so_line_detail = []
+    data["so_line_detail"] = so_line_detail
     # Normalize so_numbers to strings so mobile can show "which SO" per line.
     if isinstance(rows, list):
         for r in rows:
@@ -262,7 +287,9 @@ def list_match_runs(
 ) -> list[dict[str, Any]]:
     """List match runs. user_id=None → all runs (shared with BD app / team)."""
     ensure_schema(conn)
-    cols = ", ".join(c for c in RUN_COLUMNS if c != "rows_json")
+    cols = ", ".join(
+        c for c in RUN_COLUMNS if c not in ("rows_json", "so_line_detail_json")
+    )
     if user_id is None:
         rows = conn.execute(
             f"""SELECT {cols} FROM fo_so_match_runs
@@ -278,7 +305,7 @@ def list_match_runs(
                 LIMIT ?""",
             (user_id, limit),
         ).fetchall()
-    keys = [c for c in RUN_COLUMNS if c != "rows_json"]
+    keys = [c for c in RUN_COLUMNS if c not in ("rows_json", "so_line_detail_json")]
     return [_row_to_dict(r, keys) for r in rows]
 
 
