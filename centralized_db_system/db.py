@@ -14034,22 +14034,28 @@ class CentralizedDB:
 
     def list_distributor_category_payment_status(self, user_id: int | None) -> list[dict[str, Any]]:
         """Distributor -> season -> category tree: each category carries its
-        SO total (same filled_orders data as the "Total value of SO" home
-        card), the deposits recorded against it, and running paid/outstanding
-        totals. Only (distributor, season, category) combinations that
-        actually have filled-order data are included — nothing invented."""
-        import filled_orders_db as fodb
+        SO total, the deposits recorded against it, and running paid/
+        outstanding totals.
 
+        SO total is the actual Sales Order value (fo_so_match_runs.so_net_amount)
+        for SOs that have been run through Order Desk's FO<->SO matching —
+        deliberately NOT filled_orders / FO ex-mill value, and deliberately
+        NOT SOs uploaded but not yet matched (those don't have a reliable
+        season/category/amount anywhere else in the app either, so nothing
+        is invented for them here). Only (distributor, season, category)
+        combinations that actually have a matched SO are included."""
         if not user_id:
             return []
         self.ensure_distributor_category_payments_table()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            fodb.ensure_schema(conn)
-            combos = conn.execute(
-                "SELECT DISTINCT distributor_id, season, category FROM filled_orders "
+            so_totals = conn.execute(
+                "SELECT distributor_id, season, category, "
+                "SUM(COALESCE(so_net_amount, 0)) AS so_total "
+                "FROM fo_so_match_runs "
                 "WHERE user_id = ? AND distributor_id IS NOT NULL "
-                "AND season IS NOT NULL AND category IS NOT NULL",
+                "AND season IS NOT NULL AND category IS NOT NULL "
+                "GROUP BY distributor_id, season, category",
                 (user_id,),
             ).fetchall()
             deposit_rows = conn.execute(
@@ -14078,14 +14084,11 @@ class CentralizedDB:
                 )
 
             by_distributor: dict[int, dict[str, Any]] = {}
-            for combo in combos:
+            for combo in so_totals:
                 dist_id = combo["distributor_id"]
                 season = combo["season"]
                 category = combo["category"]
-                totals = fodb.query_order_value(
-                    conn, user_id, [season], category=category, distributor_id=dist_id
-                )
-                so_total = float(totals.get("total_ex_mill_value") or 0)
+                so_total = float(combo["so_total"] or 0)
                 deposits = deposits_by_key.get((dist_id, season, category), [])
                 paid_total = sum(d["amount"] for d in deposits)
                 dist_entry = by_distributor.setdefault(
