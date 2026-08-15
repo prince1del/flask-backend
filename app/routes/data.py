@@ -4892,6 +4892,64 @@ def _current_user_id() -> int | None:
     )
 
 
+@data_blueprint.route("/api/v1/statement-of-account/from-ledger", methods=["POST"])
+@require_jwt_auth
+def statement_of_account_from_ledger() -> Response:
+    """BD drawer: upload SAP party GL (.xls/.xlsx) → Statement of Account Excel.
+
+    Multipart field: file
+    Returns .xlsx download (same layout as Choice Corner SOA template).
+    """
+    from app.services.statement_of_account import generate_statement_of_account_xlsx
+
+    uploaded = request.files.get("file")
+    if uploaded is None or not (uploaded.filename or "").strip():
+        return _json_response(
+            {"success": False, "error": {"message": "Upload a ledger .xls / .xlsx file"}},
+            400,
+        )
+    filename = uploaded.filename or "ledger.xls"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".xls", ".xlsx", ".xlsm"}:
+        return _json_response(
+            {
+                "success": False,
+                "error": {"message": "Only Excel ledger files (.xls / .xlsx) are supported"},
+            },
+            400,
+        )
+    try:
+        raw = uploaded.read()
+        if not raw:
+            return _json_response(
+                {"success": False, "error": {"message": "File is empty"}},
+                400,
+            )
+        xlsx_bytes, meta = generate_statement_of_account_xlsx(raw, filename)
+    except ValueError as exc:
+        return _json_response(
+            {"success": False, "error": {"message": str(exc)}},
+            400,
+        )
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"Could not build statement: {exc}"}},
+            500,
+        )
+
+    download_name = meta.get("filename") or "Statement_of_Account.xlsx"
+    resp = send_file(
+        io.BytesIO(xlsx_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=download_name,
+    )
+    resp.headers["X-SOA-Party"] = str(meta.get("party_name") or "")
+    resp.headers["X-SOA-Closing"] = str(meta.get("closing_balance") or "")
+    resp.headers["X-SOA-Lines"] = str(meta.get("line_count") or 0)
+    return resp
+
+
 @data_blueprint.route("/api/v1/distributor-payments/status", methods=["GET"])
 @require_jwt_auth
 def get_distributor_payment_status() -> Response:
