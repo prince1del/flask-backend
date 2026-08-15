@@ -194,6 +194,9 @@ def build_statement_rows(
                 "debit": debit,
                 "credit": credit,
                 "signed": round(amt, 2),
+                "reference": ref,
+                "assignment": assign,
+                "text": text,
             }
         )
 
@@ -351,6 +354,9 @@ def statement_as_api_data(statement: dict[str, Any]) -> dict[str, Any]:
                 "credit": line.get("credit"),
                 "balance": line.get("balance"),
                 "signed": line.get("signed"),
+                "reference": line.get("reference") or "",
+                "assignment": line.get("assignment") or "",
+                "text": line.get("text") or "",
             }
         )
     pf = statement.get("period_from")
