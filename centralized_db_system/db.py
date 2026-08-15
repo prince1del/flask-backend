@@ -14202,6 +14202,177 @@ class CentralizedDB:
             conn.commit()
             return cur.rowcount > 0
 
+    def ensure_distributor_secondary_sales_table(self) -> None:
+        """BD Distributor Zone: monthly secondary sales per distributor (₹),
+        scoped by user_id. Grouped into Indian FY (Apr–Mar) on the client."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributor_secondary_sales (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    distributor_id INTEGER NOT NULL,
+                    year INTEGER NOT NULL,
+                    month INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    note TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(user_id, distributor_id, year, month)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dss_lookup "
+                "ON distributor_secondary_sales(user_id, distributor_id)"
+            )
+
+    @staticmethod
+    def _fy_label_for_month(year: int, month: int) -> str:
+        start = year if month >= 4 else year - 1
+        return f"{start}-{start + 1}"
+
+    def list_distributor_secondary_sales(self, user_id: int | None) -> list[dict[str, Any]]:
+        """All master distributors + this user's monthly secondary entries,
+        grouped by FY under each distributor."""
+        if not user_id:
+            return []
+        self.ensure_distributor_secondary_sales_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            dist_rows = conn.execute(
+                """
+                SELECT id, COALESCE(firm_name, name, 'Unknown') AS distributor_name
+                FROM master_distributors
+                ORDER BY LOWER(COALESCE(firm_name, name, ''))
+                """
+            ).fetchall()
+            entry_rows = conn.execute(
+                """
+                SELECT id, distributor_id, year, month, amount, note, created_at, updated_at
+                FROM distributor_secondary_sales
+                WHERE user_id = ?
+                ORDER BY year DESC, month DESC, id DESC
+                """,
+                (user_id,),
+            ).fetchall()
+
+        entries_by_dist: dict[int, list[dict[str, Any]]] = {}
+        for r in entry_rows:
+            dist_id = int(r["distributor_id"])
+            year = int(r["year"])
+            month = int(r["month"])
+            entries_by_dist.setdefault(dist_id, []).append(
+                {
+                    "id": r["id"],
+                    "year": year,
+                    "month": month,
+                    "amount": float(r["amount"] or 0),
+                    "note": r["note"],
+                    "fy_label": self._fy_label_for_month(year, month),
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"],
+                }
+            )
+
+        result: list[dict[str, Any]] = []
+        for d in dist_rows:
+            dist_id = int(d["id"])
+            months = entries_by_dist.get(dist_id, [])
+            fy_map: dict[str, dict[str, Any]] = {}
+            for m in months:
+                fy = m["fy_label"]
+                bucket = fy_map.setdefault(
+                    fy, {"fy_label": fy, "total": 0.0, "months": []}
+                )
+                bucket["months"].append(m)
+                bucket["total"] = round(bucket["total"] + float(m["amount"]), 2)
+            fiscal_years = sorted(
+                fy_map.values(),
+                key=lambda x: x["fy_label"],
+                reverse=True,
+            )
+            for fy in fiscal_years:
+                fy["months"].sort(key=lambda x: (x["year"], x["month"]), reverse=True)
+            total = round(sum(float(m["amount"]) for m in months), 2)
+            result.append(
+                {
+                    "distributor_id": dist_id,
+                    "distributor_name": d["distributor_name"],
+                    "total_amount": total,
+                    "fiscal_years": fiscal_years,
+                    "months": months,
+                }
+            )
+        # Prefer distributors that already have entries, then A–Z
+        result.sort(
+            key=lambda x: (
+                0 if (x["total_amount"] or 0) > 0 else 1,
+                (x["distributor_name"] or "").lower(),
+            )
+        )
+        return result
+
+    def upsert_distributor_secondary_sale(
+        self,
+        user_id: int,
+        distributor_id: int,
+        year: int,
+        month: int,
+        amount: float,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        if month < 1 or month > 12:
+            raise ValueError("month must be 1–12")
+        if year < 2000 or year > 2100:
+            raise ValueError("year out of range")
+        if amount < 0:
+            raise ValueError("amount must be ≥ 0")
+        self.ensure_distributor_secondary_sales_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO distributor_secondary_sales
+                    (user_id, distributor_id, year, month, amount, note, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(user_id, distributor_id, year, month) DO UPDATE SET
+                    amount = excluded.amount,
+                    note = excluded.note,
+                    updated_at = datetime('now')
+                """,
+                (user_id, distributor_id, year, month, amount, note),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT id, distributor_id, year, month, amount, note, created_at, updated_at
+                FROM distributor_secondary_sales
+                WHERE user_id = ? AND distributor_id = ? AND year = ? AND month = ?
+                """,
+                (user_id, distributor_id, year, month),
+            ).fetchone()
+        return {
+            "id": row[0],
+            "distributor_id": row[1],
+            "year": row[2],
+            "month": row[3],
+            "amount": float(row[4] or 0),
+            "note": row[5],
+            "fy_label": self._fy_label_for_month(int(row[2]), int(row[3])),
+            "created_at": row[6],
+            "updated_at": row[7],
+        }
+
+    def delete_distributor_secondary_sale(self, user_id: int, entry_id: int) -> bool:
+        self.ensure_distributor_secondary_sales_table()
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM distributor_secondary_sales WHERE id = ? AND user_id = ?",
+                (entry_id, user_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
     def sum_so_value_for_fy(self, user_id: int | None, fy_label: str) -> float:
         """Sum ex-mill value (in lakhs) of filled_order_items whose parent
         filled_order was created within the financial year's date range

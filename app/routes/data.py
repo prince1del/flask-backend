@@ -5027,6 +5027,70 @@ def delete_distributor_payment_deposit(deposit_id: int) -> Response:
     return _json_response({"success": True})
 
 
+@data_blueprint.route("/api/v1/distributor-secondary-sales/status", methods=["GET"])
+@require_jwt_auth
+def get_distributor_secondary_sales_status() -> Response:
+    """Distributor Zone → Secondary Sale: per-distributor monthly entries
+    grouped by Indian FY (Apr–Mar)."""
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    distributors = db.list_distributor_secondary_sales(user_id)
+    return _json_response({"success": True, "data": {"distributors": distributors}})
+
+
+@data_blueprint.route("/api/v1/distributor-secondary-sales/entries", methods=["POST"])
+@require_jwt_auth
+def upsert_distributor_secondary_sale() -> Response:
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Not signed in"}}, 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        distributor_id = int(payload.get("distributor_id"))
+        year = int(payload.get("year"))
+        month = int(payload.get("month"))
+        amount = float(payload.get("amount"))
+    except (TypeError, ValueError):
+        return _json_response(
+            {
+                "success": False,
+                "error": {"message": "distributor_id, year, month, amount are required"},
+            },
+            400,
+        )
+    note = payload.get("note")
+    try:
+        entry = db.upsert_distributor_secondary_sale(
+            user_id,
+            distributor_id,
+            year,
+            month,
+            amount,
+            note=str(note).strip() if note else None,
+        )
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    return _json_response({"success": True, "data": {"entry": entry}})
+
+
+@data_blueprint.route(
+    "/api/v1/distributor-secondary-sales/entries/<int:entry_id>", methods=["DELETE"]
+)
+@require_jwt_auth
+def delete_distributor_secondary_sale(entry_id: int) -> Response:
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Not signed in"}}, 401)
+    ok = db.delete_distributor_secondary_sale(user_id, entry_id)
+    if not ok:
+        return _json_response(
+            {"success": False, "error": {"message": "Entry not found"}}, 404
+        )
+    return _json_response({"success": True})
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/uploads", methods=["GET"])
 @require_jwt_auth
 def list_order_fulfillment_uploads() -> Response:
