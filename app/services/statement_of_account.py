@@ -331,25 +331,57 @@ def statement_to_xlsx_bytes(statement: dict[str, Any]) -> bytes:
     return out.getvalue()
 
 
+def parse_statement_of_account(file_bytes: bytes, filename: str) -> dict[str, Any]:
+    headers, data_rows, datemode = _read_sheet_rows(file_bytes, filename)
+    return build_statement_rows(headers, data_rows, xl_datemode=datemode)
+
+
+def statement_as_api_data(statement: dict[str, Any]) -> dict[str, Any]:
+    """JSON-safe payload for mobile preview (full line detail)."""
+    lines_out: list[dict[str, Any]] = []
+    for line in statement.get("lines") or []:
+        d = line.get("date")
+        lines_out.append(
+            {
+                "date": d.isoformat() if isinstance(d, date) else (str(d) if d else None),
+                "date_display": _fmt_date(d if isinstance(d, date) else None),
+                "particulars": line.get("particulars") or "",
+                "type": line.get("type") or "",
+                "debit": line.get("debit"),
+                "credit": line.get("credit"),
+                "balance": line.get("balance"),
+                "signed": line.get("signed"),
+            }
+        )
+    pf = statement.get("period_from")
+    pt = statement.get("period_to")
+    return {
+        "party_name": statement.get("party_name") or "Party",
+        "account_no": statement.get("account_no") or "",
+        "period_from": pf.isoformat() if isinstance(pf, date) else None,
+        "period_to": pt.isoformat() if isinstance(pt, date) else None,
+        "period_label": (
+            f"{_fmt_date(pf if isinstance(pf, date) else None)} to "
+            f"{_fmt_date(pt if isinstance(pt, date) else None)}"
+        ),
+        "total_sales": statement.get("total_sales"),
+        "total_payments": statement.get("total_payments"),
+        "total_credit_notes": statement.get("total_credit_notes"),
+        "closing_balance": statement.get("closing_balance"),
+        "line_count": len(lines_out),
+        "filename": _safe_soa_filename(str(statement.get("party_name") or "Party")),
+        "lines": lines_out,
+    }
+
+
 def generate_statement_of_account_xlsx(
     file_bytes: bytes,
     filename: str,
 ) -> tuple[bytes, dict[str, Any]]:
-    headers, data_rows, datemode = _read_sheet_rows(file_bytes, filename)
-    statement = build_statement_rows(headers, data_rows, xl_datemode=datemode)
+    statement = parse_statement_of_account(file_bytes, filename)
     xlsx = statement_to_xlsx_bytes(statement)
-    meta = {
-        "party_name": statement["party_name"],
-        "account_no": statement["account_no"],
-        "period_from": statement["period_from"].isoformat() if statement["period_from"] else None,
-        "period_to": statement["period_to"].isoformat() if statement["period_to"] else None,
-        "total_sales": statement["total_sales"],
-        "total_payments": statement["total_payments"],
-        "total_credit_notes": statement["total_credit_notes"],
-        "closing_balance": statement["closing_balance"],
-        "line_count": len(statement["lines"]),
-        "filename": _safe_soa_filename(statement["party_name"]),
-    }
+    data = statement_as_api_data(statement)
+    meta = {k: v for k, v in data.items() if k != "lines"}
     return xlsx, meta
 
 

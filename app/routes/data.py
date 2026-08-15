@@ -4895,12 +4895,17 @@ def _current_user_id() -> int | None:
 @data_blueprint.route("/api/v1/statement-of-account/from-ledger", methods=["POST"])
 @require_jwt_auth
 def statement_of_account_from_ledger() -> Response:
-    """BD drawer: upload SAP party GL (.xls/.xlsx) → Statement of Account Excel.
+    """BD drawer: upload SAP party GL (.xls/.xlsx) → Statement of Account.
 
     Multipart field: file
-    Returns .xlsx download (same layout as Choice Corner SOA template).
+    Query: format=json (preview with full lines) | format=xlsx (Excel download).
+    Default: xlsx (backward compatible).
     """
-    from app.services.statement_of_account import generate_statement_of_account_xlsx
+    from app.services.statement_of_account import (
+        parse_statement_of_account,
+        statement_as_api_data,
+        statement_to_xlsx_bytes,
+    )
 
     uploaded = request.files.get("file")
     if uploaded is None or not (uploaded.filename or "").strip():
@@ -4925,7 +4930,8 @@ def statement_of_account_from_ledger() -> Response:
                 {"success": False, "error": {"message": "File is empty"}},
                 400,
             )
-        xlsx_bytes, meta = generate_statement_of_account_xlsx(raw, filename)
+        statement = parse_statement_of_account(raw, filename)
+        data = statement_as_api_data(statement)
     except ValueError as exc:
         return _json_response(
             {"success": False, "error": {"message": str(exc)}},
@@ -4937,16 +4943,21 @@ def statement_of_account_from_ledger() -> Response:
             500,
         )
 
-    download_name = meta.get("filename") or "Statement_of_Account.xlsx"
+    fmt = (request.args.get("format") or "xlsx").strip().lower()
+    if fmt in {"json", "preview"}:
+        return _json_response({"success": True, "data": data})
+
+    xlsx_bytes = statement_to_xlsx_bytes(statement)
+    download_name = data.get("filename") or "Statement_of_Account.xlsx"
     resp = send_file(
         io.BytesIO(xlsx_bytes),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=download_name,
     )
-    resp.headers["X-SOA-Party"] = str(meta.get("party_name") or "")
-    resp.headers["X-SOA-Closing"] = str(meta.get("closing_balance") or "")
-    resp.headers["X-SOA-Lines"] = str(meta.get("line_count") or 0)
+    resp.headers["X-SOA-Party"] = str(data.get("party_name") or "")
+    resp.headers["X-SOA-Closing"] = str(data.get("closing_balance") or "")
+    resp.headers["X-SOA-Lines"] = str(data.get("line_count") or 0)
     return resp
 
 
