@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import tempfile
 import unittest
 
 from centralized_db_system.db import CentralizedDB
+from app.services import fo_so_match_db as matchdb
 
 
 class PaymentCollectionTests(unittest.TestCase):
@@ -53,6 +55,31 @@ class PaymentCollectionTests(unittest.TestCase):
         self.assertEqual(order["paid_amount"], 300_000)
         self.assertEqual(order["outstanding"], 150_000)
         self.assertEqual(order["payment_status"], "PARTIAL")
+
+    def test_category_payment_dedupes_reuploaded_so_match_runs(self) -> None:
+        """Same FO rematched twice must not double SO total / recovery."""
+        user_id = 42
+        dist_id = 7
+        with sqlite3.connect(self.path) as conn:
+            matchdb.ensure_schema(conn)
+            for so_net in (1_000_000.0, 1_000_000.0, 1_050_000.0):
+                conn.execute(
+                    """
+                    INSERT INTO fo_so_match_runs (
+                        user_id, filled_order_id, distributor_id, distributor_name,
+                        category, season, so_net_amount, rows_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', datetime('now'))
+                    """,
+                    (user_id, 99, dist_id, "Bernina", "Bed", "AW26", so_net),
+                )
+            conn.commit()
+
+        board = self.db.list_distributor_category_payment_status(user_id)
+        self.assertEqual(len(board), 1)
+        cat = board[0]["seasons"][0]["categories"][0]
+        # Latest run only (1_050_000) — not 3_050_000 from summing all three.
+        self.assertEqual(cat["so_total"], 1_050_000.0)
+        self.assertEqual(cat["outstanding"], 1_050_000.0)
 
 
 if __name__ == "__main__":

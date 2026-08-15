@@ -3912,14 +3912,28 @@ def so_pack_match_filled_order() -> Response:
         result = run_match_saved_fo_vs_so_pack(
             fo_meta=fo, fo_items=items, so_pack_payload=so_pack,
         )
-        run = matchdb.save_match_run(
-            conn,
-            user_id=user_id,
-            match_payload=result,
-            so_buyer_label=so_buyer_label,
-            so_source_filename=so_source_filename,
-            so_line_detail=so_pack.get("line_detail") if isinstance(so_pack.get("line_detail"), list) else None,
-        )
+        try:
+            run = matchdb.save_match_run(
+                conn,
+                user_id=user_id,
+                match_payload=result,
+                so_buyer_label=so_buyer_label,
+                so_source_filename=so_source_filename,
+                so_line_detail=so_pack.get("line_detail") if isinstance(so_pack.get("line_detail"), list) else None,
+                so_pack=so_pack,
+            )
+        except matchdb.DuplicateSalesOrderError as dup:
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "duplicate_sales_order",
+                        "message": str(dup),
+                        "conflicts": dup.conflicts,
+                    },
+                },
+                409,
+            )
         result["run"] = {k: v for k, v in run.items() if k != "rows"}
         result["run_id"] = run.get("id")
         return _json_response({"success": True, "data": result})

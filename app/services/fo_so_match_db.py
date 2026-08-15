@@ -41,9 +41,36 @@ CREATE INDEX IF NOT EXISTS idx_fo_so_match_dist
     ON fo_so_match_runs(user_id, distributor_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_fo_so_match_fo
     ON fo_so_match_runs(user_id, filled_order_id, id DESC);
+
+-- One Sales Order number may appear in at most one saved match run.
+CREATE TABLE IF NOT EXISTS fo_so_match_so_index (
+    so_number TEXT NOT NULL PRIMARY KEY,
+    run_id INTEGER NOT NULL,
+    user_id INTEGER,
+    filled_order_id INTEGER,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fo_so_match_so_run
+    ON fo_so_match_so_index(run_id);
 """
 
 _schema_ensured = False
+
+
+class DuplicateSalesOrderError(ValueError):
+    """Raised when an SO number is already saved in another match run."""
+
+    def __init__(self, conflicts: list[dict[str, Any]]):
+        self.conflicts = conflicts
+        samples = ", ".join(
+            str(c.get("so_number") or "") for c in conflicts[:5] if c.get("so_number")
+        )
+        extra = f" (+{len(conflicts) - 5} more)" if len(conflicts) > 5 else ""
+        super().__init__(
+            f"Sales Order already uploaded: {samples}{extra}. "
+            "Each SO is allowed only once — delete it from Order Desk → Sales Orders first, "
+            "then upload again."
+        )
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -52,6 +79,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         try:
             conn.execute("SELECT 1 FROM fo_so_match_runs LIMIT 1")
             conn.execute("SELECT so_line_detail_json FROM fo_so_match_runs LIMIT 1")
+            conn.execute("SELECT 1 FROM fo_so_match_so_index LIMIT 1")
             return
         except sqlite3.OperationalError:
             _schema_ensured = False
@@ -64,6 +92,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass
     conn.commit()
+    deleted = _cleanup_duplicate_runs_by_filled_order(conn)
+    if deleted:
+        try:
+            conn.execute("DELETE FROM fo_so_match_so_index")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    _rebuild_so_index_if_empty(conn)
     _schema_ensured = True
 
 
@@ -86,6 +122,217 @@ RUN_COLUMNS = [
 ]
 
 
+def normalize_so_number(raw: Any) -> str | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    # Strip common "SO " / "SO#" prefixes for stable uniqueness.
+    upper = text.upper()
+    if upper.startswith("SO#"):
+        text = text[3:].strip()
+    elif upper.startswith("SO ") or upper.startswith("SO-"):
+        text = text[3:].strip()
+    return text or None
+
+
+def extract_so_numbers_from_pack(so_pack: dict[str, Any] | None) -> list[str]:
+    """Unique SO contract numbers from analyze payload."""
+    if not isinstance(so_pack, dict):
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: Any) -> None:
+        n = normalize_so_number(raw)
+        if not n:
+            return
+        key = n.upper()
+        if key in seen:
+            return
+        seen.add(key)
+        found.append(n)
+
+    for row in so_pack.get("line_detail") or []:
+        if isinstance(row, dict):
+            add(row.get("so_number"))
+    for row in so_pack.get("consolidated") or []:
+        if isinstance(row, dict):
+            add(row.get("so_number"))
+    for row in so_pack.get("so_summary") or []:
+        if isinstance(row, dict):
+            add(row.get("so_number"))
+    return found
+
+
+def extract_so_numbers_from_run_row(run: dict[str, Any]) -> list[str]:
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: Any) -> None:
+        n = normalize_so_number(raw)
+        if not n:
+            return
+        key = n.upper()
+        if key in seen:
+            return
+        seen.add(key)
+        found.append(n)
+
+    detail = run.get("so_line_detail")
+    if isinstance(detail, str) and detail.strip():
+        try:
+            detail = json.loads(detail)
+        except Exception:
+            detail = []
+    if isinstance(detail, list):
+        for row in detail:
+            if isinstance(row, dict):
+                add(row.get("so_number"))
+
+    rows = run.get("rows")
+    if rows is None and isinstance(run.get("rows_json"), str):
+        try:
+            rows = json.loads(run["rows_json"])
+        except Exception:
+            rows = []
+    if isinstance(rows, list):
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            for n in r.get("so_numbers") or []:
+                add(n)
+            for cell in r.get("so_breakdown") or []:
+                if isinstance(cell, dict):
+                    add(cell.get("so_number"))
+    return found
+
+
+def find_so_number_conflicts(
+    conn: sqlite3.Connection,
+    so_numbers: list[str],
+    *,
+    exclude_run_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return index rows that already claim any of these SO numbers."""
+    ensure_schema(conn)
+    conflicts: list[dict[str, Any]] = []
+    for so_n in so_numbers:
+        key = normalize_so_number(so_n)
+        if not key:
+            continue
+        row = conn.execute(
+            "SELECT so_number, run_id, user_id, filled_order_id, created_at "
+            "FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
+            (key,),
+        ).fetchone()
+        if not row:
+            continue
+        run_id = int(row[1])
+        if exclude_run_id is not None and run_id == int(exclude_run_id):
+            continue
+        conflicts.append(
+            {
+                "so_number": row[0],
+                "run_id": run_id,
+                "user_id": row[2],
+                "filled_order_id": row[3],
+                "created_at": row[4],
+            }
+        )
+    return conflicts
+
+
+def _clear_so_index_for_run(conn: sqlite3.Connection, run_id: int) -> None:
+    conn.execute("DELETE FROM fo_so_match_so_index WHERE run_id = ?", (int(run_id),))
+
+
+def _insert_so_index_for_run(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    user_id: int,
+    filled_order_id: Any,
+    so_numbers: list[str],
+) -> None:
+    now = _now()
+    for so_n in so_numbers:
+        key = normalize_so_number(so_n)
+        if not key:
+            continue
+        conn.execute(
+            """
+            INSERT INTO fo_so_match_so_index
+                (so_number, run_id, user_id, filled_order_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (key, int(run_id), int(user_id), filled_order_id, now),
+        )
+
+
+def _cleanup_duplicate_runs_by_filled_order(conn: sqlite3.Connection) -> int:
+    """Keep only the latest match run per filled_order_id (team-wide)."""
+    try:
+        stale = conn.execute(
+            """
+            SELECT id FROM fo_so_match_runs
+            WHERE filled_order_id IS NOT NULL
+              AND id NOT IN (
+                SELECT MAX(id) FROM fo_so_match_runs
+                WHERE filled_order_id IS NOT NULL
+                GROUP BY filled_order_id
+              )
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return 0
+    deleted = 0
+    for (run_id,) in stale:
+        _clear_so_index_for_run(conn, int(run_id))
+        conn.execute("DELETE FROM fo_so_match_runs WHERE id = ?", (int(run_id),))
+        deleted += 1
+    if deleted:
+        conn.commit()
+    return deleted
+
+
+def _rebuild_so_index_if_empty(conn: sqlite3.Connection) -> None:
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM fo_so_match_so_index").fetchone()[0]
+    except sqlite3.OperationalError:
+        return
+    if int(count or 0) > 0:
+        return
+    # Prefer newest run when the same SO appears in multiple historical rows.
+    rows = conn.execute(
+        "SELECT id, user_id, filled_order_id, rows_json, so_line_detail_json "
+        "FROM fo_so_match_runs ORDER BY id DESC"
+    ).fetchall()
+    claimed: set[str] = set()
+    now = _now()
+    for row in rows:
+        run = {
+            "id": row[0],
+            "user_id": row[1],
+            "filled_order_id": row[2],
+            "rows_json": row[3],
+            "so_line_detail": row[4],
+        }
+        for so_n in extract_so_numbers_from_run_row(run):
+            key = (normalize_so_number(so_n) or "").upper()
+            if not key or key in claimed:
+                continue
+            claimed.add(key)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO fo_so_match_so_index
+                    (so_number, run_id, user_id, filled_order_id, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (normalize_so_number(so_n), int(row[0]), row[1], row[2], now),
+            )
+    conn.commit()
+
+
 def save_match_run(
     conn: sqlite3.Connection,
     *,
@@ -94,8 +341,13 @@ def save_match_run(
     so_buyer_label: str | None = None,
     so_source_filename: str | None = None,
     so_line_detail: list[Any] | None = None,
+    so_pack: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Insert a match run from run_match_saved_fo_vs_so_pack result."""
+    """Insert a match run from run_match_saved_fo_vs_so_pack result.
+
+    Each Sales Order number may exist in only one saved run. Re-uploading the
+    same SO Pack raises DuplicateSalesOrderError (HTTP 409 from the route).
+    """
     ensure_schema(conn)
     fo = match_payload.get("fo") or {}
     match = match_payload.get("match") or {}
@@ -107,6 +359,17 @@ def save_match_run(
         if so_line_detail
         else None
     )
+
+    so_numbers = extract_so_numbers_from_pack(so_pack) if so_pack else []
+    if not so_numbers and so_line_detail:
+        so_numbers = extract_so_numbers_from_pack({"line_detail": so_line_detail})
+    if not so_numbers:
+        # Fall back to match row SO lists (still unique per pack).
+        so_numbers = extract_so_numbers_from_run_row({"rows": rows})
+
+    conflicts = find_so_number_conflicts(conn, so_numbers)
+    if conflicts:
+        raise DuplicateSalesOrderError(conflicts)
 
     mismatch = int(counts.get("QTY_MISMATCH") or 0) + int(counts.get("VALUE_MISMATCH") or 0)
     conn.execute(
@@ -143,8 +406,22 @@ def save_match_run(
             _now(),
         ),
     )
-    conn.commit()
     run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    try:
+        _insert_so_index_for_run(
+            conn,
+            run_id=run_id,
+            user_id=user_id,
+            filled_order_id=fo.get("id"),
+            so_numbers=so_numbers,
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        # Race: another save claimed an SO between check and insert.
+        raise DuplicateSalesOrderError(
+            find_so_number_conflicts(conn, so_numbers) or [{"so_number": "unknown"}]
+        ) from exc
     return get_match_run(conn, run_id, user_id=user_id)
 
 
@@ -172,9 +449,9 @@ def get_match_run(
         return None
     data = _row_to_dict(row, RUN_COLUMNS)
     try:
-        rows = json.loads(data.pop("rows_json") or "[]")
-    except json.JSONDecodeError:
-        rows = []
+        data["rows"] = json.loads(data.pop("rows_json") or "[]")
+    except Exception:
+        data["rows"] = []
         data.pop("rows_json", None)
     so_line_detail_raw = data.pop("so_line_detail_json", None)
     so_line_detail: list[Any] = []
@@ -183,18 +460,18 @@ def get_match_run(
             loaded = json.loads(so_line_detail_raw)
             if isinstance(loaded, list):
                 so_line_detail = loaded
-        except (TypeError, ValueError, json.JSONDecodeError):
+        except Exception:
             so_line_detail = []
     data["so_line_detail"] = so_line_detail
-    # Normalize so_numbers to strings so mobile can show "which SO" per line.
+
+    # Normalize SO number lists on each row for mobile / desktop clients.
+    rows = data.get("rows") or []
     if isinstance(rows, list):
         for r in rows:
             if not isinstance(r, dict):
                 continue
             nums = r.get("so_numbers")
-            if nums is not None:
-                if not isinstance(nums, list):
-                    nums = [nums]
+            if isinstance(nums, list):
                 r["so_numbers"] = [
                     str(n).strip()
                     for n in nums
@@ -315,5 +592,9 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
         "DELETE FROM fo_so_match_runs WHERE id = ? AND user_id = ?",
         (run_id, user_id),
     )
+    if cur.rowcount > 0:
+        _clear_so_index_for_run(conn, run_id)
+        conn.commit()
+        return True
     conn.commit()
-    return cur.rowcount > 0
+    return False

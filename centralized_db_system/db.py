@@ -14045,6 +14045,11 @@ class CentralizedDB:
         is invented for them here). Only (distributor, season, category)
         combinations that actually have a matched SO are included.
 
+        Re-uploading the same SO Pack creates another fo_so_match_runs row;
+        Order Desk's Sales Orders tab keeps only the latest run per FO
+        (filled_order_id) / party+season+category. Payment totals must use
+        the same dedupe — otherwise recovery/SO bill doubles on every upload.
+
         Note: category/season on a match run are copied from the Filled
         Order it was matched against, not derived from the SO itself — a
         run with match_count = 0 (no lines reconciled) can carry the wrong
@@ -14057,14 +14062,35 @@ class CentralizedDB:
         self.ensure_distributor_category_payments_table()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            # Same key as Android OrderMatchRunSummary.dedupeKey():
+            # fo:<filled_order_id> else party:<dist>|<season>|<category>
             so_totals = conn.execute(
-                "SELECT distributor_id, season, category, "
-                "SUM(COALESCE(so_net_amount, 0)) AS so_total "
-                "FROM fo_so_match_runs "
-                "WHERE user_id = ? AND distributor_id IS NOT NULL "
-                "AND season IS NOT NULL AND category IS NOT NULL "
-                "GROUP BY distributor_id, season, category",
-                (user_id,),
+                """
+                SELECT distributor_id, season, category,
+                       SUM(COALESCE(so_net_amount, 0)) AS so_total
+                FROM fo_so_match_runs
+                WHERE user_id = ?
+                  AND distributor_id IS NOT NULL
+                  AND season IS NOT NULL AND TRIM(season) != ''
+                  AND category IS NOT NULL AND TRIM(category) != ''
+                  AND id IN (
+                    SELECT MAX(id)
+                    FROM fo_so_match_runs
+                    WHERE user_id = ?
+                      AND distributor_id IS NOT NULL
+                      AND season IS NOT NULL AND TRIM(season) != ''
+                      AND category IS NOT NULL AND TRIM(category) != ''
+                    GROUP BY CASE
+                      WHEN filled_order_id IS NOT NULL
+                        THEN 'fo:' || CAST(filled_order_id AS TEXT)
+                      ELSE 'party:' || CAST(distributor_id AS TEXT)
+                           || '|' || COALESCE(season, '')
+                           || '|' || COALESCE(category, '')
+                    END
+                  )
+                GROUP BY distributor_id, season, category
+                """,
+                (user_id, user_id),
             ).fetchall()
             deposit_rows = conn.execute(
                 "SELECT id, distributor_id, season, category, amount, payment_date, note, created_at "
