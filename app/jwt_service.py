@@ -16,7 +16,9 @@ class JWTService:
         self.access_token_expiry = 3600  # 1 hour
         self.refresh_token_expiry = 86400 * 7  # 7 days
 
-    def create_tokens(self, user_id, username, role, workspace_id):
+    def create_tokens(
+        self, user_id, username, role, workspace_id, is_workspace_owner: bool = False
+    ):
         """Create access token + refresh token"""
         now = datetime.now(timezone.utc)
 
@@ -26,6 +28,7 @@ class JWTService:
             "username": username,
             "role": role,
             "workspace_id": workspace_id,
+            "is_workspace_owner": bool(is_workspace_owner),
             "iat": now,
             "exp": now + timedelta(seconds=self.access_token_expiry),
             "type": "access",
@@ -37,6 +40,7 @@ class JWTService:
             "username": username,
             "role": role,
             "workspace_id": workspace_id,
+            "is_workspace_owner": bool(is_workspace_owner),
             "iat": now,
             "exp": now + timedelta(seconds=self.refresh_token_expiry),
             "type": "refresh",
@@ -119,6 +123,20 @@ class JWTService:
 
             # Attach user to request context
             request.user = payload
+            # Enrich owner flag from DB so older JWTs still get supreme powers
+            # after promote_workspace_owner runs on deploy.
+            if not payload.get("is_workspace_owner"):
+                try:
+                    from centralized_db_system.db import CentralizedDB
+                    from flask import current_app
+
+                    db_path = current_app.config.get("DATABASE_PATH")
+                    db = CentralizedDB(str(db_path)) if db_path else CentralizedDB()
+                    if db.is_workspace_owner_user(payload.get("user_id")):
+                        payload["is_workspace_owner"] = True
+                        request.user = payload
+                except Exception:
+                    pass
             return f(*args, **kwargs)
 
         return decorated_function

@@ -218,6 +218,15 @@ def create_app() -> Flask:
             app.logger.info("BD owner login migrate: %s", result)
         except Exception as exc:
             app.logger.warning("BD owner login migrate skipped: %s", exc)
+        try:
+            import os
+
+            cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+            owner_user = os.getenv("WORKSPACE_OWNER_USERNAME", "kunwar1del").strip() or "kunwar1del"
+            promote = cdb.promote_workspace_owner(owner_user)
+            app.logger.info("Workspace supreme owner promote: %s", promote)
+        except Exception as exc:
+            app.logger.warning("Workspace owner promote skipped: %s", exc)
 
     @app.route("/", methods=["GET", "POST"])
     @app.route("/dashboard")

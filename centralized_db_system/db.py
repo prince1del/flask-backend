@@ -1869,6 +1869,164 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "users", "phone", "TEXT")
             self._ensure_column_exists(conn, "users", "employee_id", "TEXT")
             self._ensure_column_exists(conn, "users", "updated_at", "TEXT")
+            self._ensure_column_exists(
+                conn, "users", "is_workspace_owner", "INTEGER NOT NULL DEFAULT 0"
+            )
+
+    def is_workspace_owner_user(self, user_id: int | None) -> bool:
+        if user_id is None:
+            return False
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "is_workspace_owner" not in cols:
+                return False
+            row = conn.execute(
+                "SELECT is_workspace_owner FROM users WHERE id = ?",
+                (int(user_id),),
+            ).fetchone()
+        return bool(row and int(row[0] or 0) == 1)
+
+    def promote_workspace_owner(
+        self,
+        username: str = "kunwar1del",
+        *,
+        keep_bd_role: bool = True,
+        takeover_workspace_data: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Promote a login to supreme workspace owner:
+        - is_workspace_owner = 1 (admin powers + claim rights)
+        - role stays sales_executive so Android BD shell still works
+        - optionally reassign all workspace business rows to this user_id
+        """
+        self.ensure_user_profile_columns()
+        # Target / masters user_id columns exist after normal init; claim helpers need them.
+        try:
+            self.ensure_target_achievement_tables()
+        except Exception:
+            pass
+        uname = (username or "").strip()
+        if not uname:
+            return {"action": "noop", "reason": "username required"}
+
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            row = conn.execute(
+                "SELECT id, role, workspace_id FROM users WHERE lower(username) = lower(?)",
+                (uname,),
+            ).fetchone()
+            if row is None:
+                return {"action": "noop", "reason": f"user {uname!r} not found"}
+
+            uid = int(row[0])
+            role = (row[1] or "unassigned").strip()
+            workspace_id = (row[2] or "default").strip() or "default"
+
+            # Only one supreme owner per workspace.
+            if "is_workspace_owner" in cols:
+                conn.execute(
+                    """
+                    UPDATE users SET is_workspace_owner = 0
+                    WHERE workspace_id = ? AND id != ?
+                    """,
+                    (workspace_id, uid),
+                )
+                conn.execute(
+                    "UPDATE users SET is_workspace_owner = 1 WHERE id = ?",
+                    (uid,),
+                )
+
+            # Keep BD mobile shell; owner powers come from the flag + require_role bypass.
+            if keep_bd_role and role not in {"sales_executive", "admin", "hop_admin"}:
+                conn.execute(
+                    "UPDATE users SET role = ? WHERE id = ?",
+                    ("sales_executive", uid),
+                )
+                role = "sales_executive"
+            elif keep_bd_role and role == "admin":
+                # Prefer BD shell on Android over bare admin unsupported screen.
+                conn.execute(
+                    "UPDATE users SET role = ? WHERE id = ?",
+                    ("sales_executive", uid),
+                )
+                role = "sales_executive"
+
+            takeover: dict[str, int] = {}
+            if takeover_workspace_data:
+                tables = {
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                peer_ids = [
+                    int(r[0])
+                    for r in conn.execute(
+                        "SELECT id FROM users WHERE workspace_id = ?",
+                        (workspace_id,),
+                    ).fetchall()
+                ]
+                if uid not in peer_ids:
+                    peer_ids.append(uid)
+                peer_placeholders = ",".join("?" for _ in peer_ids) or "?"
+
+                # Business tables — owner takes the company silo for this workspace.
+                candidates = [
+                    ("master_distributors", "workspace_id"),
+                    ("master_retailers", "workspace_id"),
+                    ("target_achievement_years", "workspace_id"),
+                    ("order_sheets", "workspace_id"),
+                    ("distributor_secondary_sales", "workspace_id"),
+                    ("distributor_category_payments", "workspace_id"),
+                    ("executive_visits", "workspace_id"),
+                    ("dsr_market_visits", "workspace_id"),
+                    ("approach_distributors", "workspace_id"),
+                    ("article_master", "workspace_id"),
+                    ("filled_orders", None),
+                    ("fo_so_match_runs", None),
+                ]
+                for table, ws_col in candidates:
+                    if table not in tables:
+                        continue
+                    tcols = {
+                        r[1]
+                        for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
+                    }
+                    if "user_id" not in tcols:
+                        continue
+                    if ws_col and ws_col in tcols:
+                        cur = conn.execute(
+                            f"UPDATE {table} SET user_id = ? WHERE {ws_col} = ?",
+                            (uid, workspace_id),
+                        )
+                    else:
+                        # No workspace column: only reassign rows owned by users in
+                        # this workspace (or still unowned). Never touch other companies.
+                        cur = conn.execute(
+                            f"""
+                            UPDATE {table}
+                            SET user_id = ?
+                            WHERE user_id IS NULL OR user_id IN ({peer_placeholders})
+                            """,
+                            (uid, *peer_ids),
+                        )
+                    takeover[table] = int(cur.rowcount or 0)
+
+            conn.commit()
+
+        # Claim helper also covers any NULL leftovers after schema drift.
+        claim = self.claim_unowned_masters(workspace_id=workspace_id, user_id=uid)
+        return {
+            "action": "promoted",
+            "user_id": uid,
+            "username": uname,
+            "role": role,
+            "workspace_id": workspace_id,
+            "is_workspace_owner": True,
+            "takeover": takeover,
+            "claim": claim,
+        }
 
     def get_user_profile(self, user_id: int) -> dict[str, Any] | None:
         self.ensure_user_profile_columns()
@@ -1885,6 +2043,7 @@ class CentralizedDB:
                 "role",
                 "workspace_id",
                 "status",
+                "is_workspace_owner",
             ]
             select_cols = [c for c in wanted if c in cols]
             if "id" not in select_cols or "username" not in select_cols:
@@ -1895,7 +2054,10 @@ class CentralizedDB:
             ).fetchone()
         if row is None:
             return None
-        return dict(row)
+        data = dict(row)
+        if "is_workspace_owner" in data:
+            data["is_workspace_owner"] = bool(int(data.get("is_workspace_owner") or 0))
+        return data
 
     def update_user_profile(
         self,

@@ -93,11 +93,19 @@ def require_jwt_auth(fn):
         # real browser user, while all our JWT-based automated tests
         # kept passing.
         if session.get("authenticated"):
+            uid = session.get("user_id")
+            is_owner = bool(session.get("is_workspace_owner"))
+            if not is_owner and uid is not None:
+                try:
+                    is_owner = _get_auth_db().is_workspace_owner_user(uid)
+                except Exception:
+                    is_owner = False
             request.user = {
-                "user_id": session.get("user_id"),
+                "user_id": uid,
                 "username": session.get("username"),
                 "role": session.get("role", "unassigned"),
                 "workspace_id": session.get("workspace_id", "default"),
+                "is_workspace_owner": is_owner,
             }
             return fn(*args, **kwargs)
 
@@ -134,7 +142,7 @@ def require_role(*allowed_roles):
         @wraps(fn)
         def wrapped(*args, **kwargs):
             user = getattr(request, "user", None)
-            if not isinstance(user, dict) or user.get("role") not in allowed_roles:
+            if not isinstance(user, dict):
                 return (
                     jsonify(
                         {
@@ -147,11 +155,43 @@ def require_role(*allowed_roles):
                     ),
                     403,
                 )
-            return fn(*args, **kwargs)
+            role = user.get("role")
+            if role in allowed_roles:
+                return fn(*args, **kwargs)
+            # Supreme workspace owner may use admin-gated APIs while keeping BD role.
+            if user.get("is_workspace_owner") and (
+                "admin" in allowed_roles or "hop_admin" in allowed_roles
+            ):
+                return fn(*args, **kwargs)
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "FORBIDDEN",
+                            "message": "Insufficient permissions",
+                        },
+                    }
+                ),
+                403,
+            )
 
         return wrapped
 
     return decorator
+
+
+def is_request_workspace_owner() -> bool:
+    user = getattr(request, "user", None)
+    if isinstance(user, dict) and user.get("is_workspace_owner"):
+        return True
+    uid = get_request_user_id()
+    if uid is None:
+        return False
+    try:
+        return _get_auth_db().is_workspace_owner_user(uid)
+    except Exception:
+        return False
 
 
 def enforce_auth() -> Response | None:
@@ -234,7 +274,7 @@ def get_user_row(username: str) -> dict[str, object] | None:
             row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()
         }
         select_columns = ["id", "username", "password_hash"]
-        for col in ("role", "workspace_id", "email", "full_name", "phone", "status"):
+        for col in ("role", "workspace_id", "email", "full_name", "phone", "status", "is_workspace_owner"):
             if col in columns:
                 select_columns.append(col)
         if "email" in columns:
@@ -251,6 +291,8 @@ def get_user_row(username: str) -> dict[str, object] | None:
             data["role"] = "unassigned"
         if data is not None and "workspace_id" not in data:
             data["workspace_id"] = "default"
+        if data is not None:
+            data["is_workspace_owner"] = bool(int(data.get("is_workspace_owner") or 0))
         return data
     finally:
         conn.close()
@@ -293,11 +335,13 @@ def api_login() -> tuple[Response, int]:
         )
 
     service = get_jwt_service()
+    is_owner = bool(user_row.get("is_workspace_owner"))
     access_token, refresh_token = service.create_tokens(
         user_id=user_row.get("id", 1),
         username=user_row.get("username", username),
         role=user_row.get("role", "unassigned"),
         workspace_id=user_row.get("workspace_id", "default"),
+        is_workspace_owner=is_owner,
     )
     ui_theme = db.get_user_ui_theme(user_row.get("id"))
     return (
@@ -317,6 +361,7 @@ def api_login() -> tuple[Response, int]:
                         "phone": user_row.get("phone"),
                         "role": user_row.get("role", "unassigned"),
                         "workspace_id": user_row.get("workspace_id", "default"),
+                        "is_workspace_owner": is_owner,
                         "ui_theme": ui_theme,
                     },
                 },
@@ -449,6 +494,10 @@ def api_refresh() -> tuple[Response, int]:
         username=payload.get("username", "admin"),
         role=payload.get("role", "unassigned"),
         workspace_id=payload.get("workspace_id", "default"),
+        is_workspace_owner=bool(
+            payload.get("is_workspace_owner")
+            or _get_auth_db().is_workspace_owner_user(payload.get("user_id"))
+        ),
     )
     return (
         jsonify(
@@ -503,6 +552,9 @@ def login() -> str | Response:
             session["user_id"] = user_row.get("id") if user_row else None
             session["role"] = user_row.get("role", "unassigned") if user_row else "unassigned"
             session["workspace_id"] = user_row.get("workspace_id", "default") if user_row else "default"
+            session["is_workspace_owner"] = bool(
+                user_row.get("is_workspace_owner") if user_row else False
+            )
             return redirect(request.args.get("next") or "/")
         error = "Invalid username or password"
 
