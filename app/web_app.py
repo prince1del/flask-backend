@@ -220,8 +220,6 @@ def create_app() -> Flask:
         except Exception as exc:
             app.logger.warning("BD owner login migrate skipped: %s", exc)
         try:
-            import os
-
             cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
             owner_user = os.getenv("WORKSPACE_OWNER_USERNAME", "kunwar1del").strip() or "kunwar1del"
             promote = cdb.promote_workspace_owner(owner_user)
