@@ -30,6 +30,7 @@ from .personal_todos import personal_todos_bp
 from .pjp import pjp_bp
 from .ask_nexora_troubleshoot import ask_nexora_troubleshoot_bp
 from .payment_collection import payment_collection_bp
+from .call_lists import call_lists_bp
 
 __all__ = [
     'target_achievement_bp',
@@ -64,4 +65,5 @@ __all__ = [
     'pjp_bp',
     'ask_nexora_troubleshoot_bp',
     'payment_collection_bp',
+    'call_lists_bp',
 ]
