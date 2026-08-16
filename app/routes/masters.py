@@ -191,13 +191,13 @@ def party_master_sync():
 @require_jwt_auth
 def claim_unowned_masters():
     """
-    Claim legacy Party Master rows that have no owner (user_id IS NULL)
-    in the caller's workspace and assign them to the current JWT user.
+    Claim legacy rows with no owner (user_id IS NULL) in the caller's workspace:
+    Party Master distributors/retailers, Target Achievement years, and order sheets.
 
     Intended for the historical workspace owner (e.g. kunwar1del) after
-    hard per-user isolation: call once so existing distributors/retailers
-    appear in that user's Party Master. New users who never claim keep
-    empty lists. Rows already owned by another user_id are never moved.
+    hard per-user isolation. Target/My Day APIs also lazy-claim on read so
+    opening Target vs Achievement restores FY data automatically.
+    Rows already owned by another user_id are never moved.
     """
     user_id, err = _require_user_id()
     if err:

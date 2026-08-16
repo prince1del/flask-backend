@@ -169,6 +169,9 @@ def get_years():
     try:
         workspace_id = get_workspace_id()
         uid = _jwt_user_id()
+        # Isolation deploy left legacy years with user_id NULL — reclaim for current user.
+        if uid is not None:
+            _cdb().claim_unowned_masters(workspace_id=workspace_id, user_id=uid)
         _cdb().merge_duplicate_fiscal_years(workspace_id, user_id=uid)
         conn = get_db()
         cursor = conn.cursor()
@@ -205,6 +208,8 @@ def get_fy_overview():
         workspace_id = get_workspace_id()
         user_id = _jwt_user_id()
         db = _cdb()
+        if user_id is not None:
+            db.claim_unowned_masters(workspace_id=workspace_id, user_id=user_id)
         db.merge_duplicate_fiscal_years(workspace_id, user_id=user_id)
         conn = get_db()
         cursor = conn.cursor()

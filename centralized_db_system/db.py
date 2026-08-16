@@ -12793,10 +12793,12 @@ class CentralizedDB:
         self, workspace_id: str, user_id: int
     ) -> dict[str, int]:
         """
-        Assign legacy Party Master rows (user_id IS NULL) in this workspace
-        to the given user. Safe to call once for the historical owner
-        (e.g. kunwar1del); new users who never claim keep empty lists.
-        Does not steal rows already owned by another user_id.
+        Assign legacy unowned rows (user_id IS NULL) in this workspace to the
+        given user: Party Master, Target Achievement years, and order sheets.
+
+        Safe for the historical owner (e.g. kunwar1del) after hard per-user
+        isolation. New users who never claim (and never hit lazy-claim paths)
+        keep empty lists. Rows already owned by another user_id are never moved.
         """
         if not user_id:
             raise ValueError("user_id is required")
@@ -12818,10 +12820,53 @@ class CentralizedDB:
                 """,
                 (user_id, ws),
             )
+            target_claimed = 0
+            years_cols = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(target_achievement_years)"
+                ).fetchall()
+            }
+            if "user_id" in years_cols and "workspace_id" in years_cols:
+                tgt_cur = conn.execute(
+                    """
+                    UPDATE target_achievement_years
+                    SET user_id = ?
+                    WHERE workspace_id = ? AND user_id IS NULL
+                    """,
+                    (user_id, ws),
+                )
+                target_claimed = int(tgt_cur.rowcount or 0)
+
+            sheets_claimed = 0
+            sheets_tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "order_sheets" in sheets_tables:
+                sheet_cols = {
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(order_sheets)").fetchall()
+                }
+                if "user_id" in sheet_cols and "workspace_id" in sheet_cols:
+                    sheet_cur = conn.execute(
+                        """
+                        UPDATE order_sheets
+                        SET user_id = ?
+                        WHERE workspace_id = ? AND user_id IS NULL
+                        """,
+                        (user_id, ws),
+                    )
+                    sheets_claimed = int(sheet_cur.rowcount or 0)
+
             conn.commit()
         return {
             "distributors_claimed": int(dist_cur.rowcount or 0),
             "retailers_claimed": int(ret_cur.rowcount or 0),
+            "target_years_claimed": target_claimed,
+            "order_sheets_claimed": sheets_claimed,
         }
 
     def export_targets_achievements(self) -> str:

@@ -44,6 +44,9 @@ def _target_achievement_summary(workspace_id: str, user_id: int | None = None) -
     db_path = current_app.config["DATABASE_PATH"]
     db = CentralizedDB(db_path)
     try:
+        if user_id is not None:
+            # Reclaim legacy NULL-owned FY rows so My Day card is not empty after isolation.
+            db.claim_unowned_masters(workspace_id=workspace_id, user_id=user_id)
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             sql = "SELECT * FROM target_achievement_years WHERE workspace_id = ?"
