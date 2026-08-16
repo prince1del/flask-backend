@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime
 import json
 
-from app.routes.auth import require_jwt_auth, get_workspace_id
+from app.routes.auth import require_jwt_auth, get_workspace_id, get_request_user_id
 from app.services.sales_achievement_parser import parse_sales_achievement_excel
 from app.fiscal_year import fiscal_year_sort_key, normalize_fiscal_year
 from centralized_db_system.db import CentralizedDB
@@ -15,6 +15,10 @@ target_achievement_bp = Blueprint('target_achievement', __name__, url_prefix='/a
 # Clients enter full INR (e.g. 30000000 = 3 Crore) via target_rupees.
 LAKH_RUPEES = 100_000.0
 OTHERS_DISTRIBUTOR_NAME = "Others"
+
+
+def _jwt_user_id() -> int | None:
+    return get_request_user_id()
 
 
 def _lakhs_to_rupees(lakhs) -> float:
@@ -90,17 +94,26 @@ def _year_row_to_dict(row: sqlite3.Row) -> dict:
     )
     return data
 
-def _find_year_by_normalized(conn: sqlite3.Connection, workspace_id: str, normalized_year: str) -> dict | None:
+def _find_year_by_normalized(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    normalized_year: str,
+    user_id: int | None = None,
+) -> dict | None:
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM target_achievement_years WHERE workspace_id = ?",
-        (workspace_id,),
-    )
+    sql = "SELECT * FROM target_achievement_years WHERE workspace_id = ?"
+    params: list = [workspace_id]
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(target_achievement_years)").fetchall()}
+    if user_id is not None and "user_id" in cols:
+        sql += " AND user_id = ?"
+        params.append(user_id)
+    cursor.execute(sql, tuple(params))
     for row in cursor.fetchall():
         data = _year_row_to_dict(row)
         if data.get("display_year") == normalized_year:
             return data
     return None
+
 
 def _year_rank_for_dedupe(year: dict, child_counts: dict[int, int] | None = None) -> tuple:
     """Prefer FY row with linked breakup/upload data, then target, then canonical label, then lower id."""
@@ -131,13 +144,18 @@ def _dedupe_years_by_display(
     deduped.sort(key=lambda y: fiscal_year_sort_key(y.get("display_year")))
     return deduped
 
-def _get_year_or_404(year_id: int, workspace_id: str) -> dict | None:
+def _get_year_or_404(
+    year_id: int, workspace_id: str, user_id: int | None = None
+) -> dict | None:
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        'SELECT * FROM target_achievement_years WHERE id = ? AND workspace_id = ?',
-        (year_id, workspace_id),
-    )
+    sql = "SELECT * FROM target_achievement_years WHERE id = ? AND workspace_id = ?"
+    params: list = [year_id, workspace_id]
+    cols = {r[1] for r in cursor.execute("PRAGMA table_info(target_achievement_years)").fetchall()}
+    if user_id is not None and "user_id" in cols:
+        sql += " AND user_id = ?"
+        params.append(user_id)
+    cursor.execute(sql, tuple(params))
     row = cursor.fetchone()
     conn.close()
     return _year_row_to_dict(row) if row else None
@@ -150,13 +168,16 @@ def get_years():
     """Get all fiscal years for the current workspace"""
     try:
         workspace_id = get_workspace_id()
-        _cdb().merge_duplicate_fiscal_years(workspace_id)
+        uid = _jwt_user_id()
+        _cdb().merge_duplicate_fiscal_years(workspace_id, user_id=uid)
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute(
-            'SELECT * FROM target_achievement_years WHERE workspace_id = ?',
-            (workspace_id,),
-        )
+        year_sql = "SELECT * FROM target_achievement_years WHERE workspace_id = ?"
+        year_params: list = [workspace_id]
+        if uid is not None:
+            year_sql += " AND user_id = ?"
+            year_params.append(uid)
+        cursor.execute(year_sql, tuple(year_params))
         years = [_year_row_to_dict(row) for row in cursor.fetchall()]
         child_counts: dict[int, int] = {}
         try:
@@ -182,20 +203,17 @@ def get_fy_overview():
     """All fiscal years with target, achievement, and % (lakhs) for dashboard cards."""
     try:
         workspace_id = get_workspace_id()
-        user = getattr(request, "user", None)
-        user_id = (
-            int(user["user_id"])
-            if isinstance(user, dict) and user.get("user_id") is not None
-            else None
-        )
+        user_id = _jwt_user_id()
         db = _cdb()
-        db.merge_duplicate_fiscal_years(workspace_id)
+        db.merge_duplicate_fiscal_years(workspace_id, user_id=user_id)
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute(
-            'SELECT * FROM target_achievement_years WHERE workspace_id = ?',
-            (workspace_id,),
-        )
+        year_sql = "SELECT * FROM target_achievement_years WHERE workspace_id = ?"
+        year_params: list = [workspace_id]
+        if user_id is not None:
+            year_sql += " AND user_id = ?"
+            year_params.append(user_id)
+        cursor.execute(year_sql, tuple(year_params))
         years = [_year_row_to_dict(row) for row in cursor.fetchall()]
         child_counts: dict[int, int] = {}
         try:
@@ -286,10 +304,11 @@ def create_year():
 
         target = float(target or 0)
         workspace_id = get_workspace_id()
-        _cdb().merge_duplicate_fiscal_years(workspace_id)
+        uid = _jwt_user_id()
+        _cdb().merge_duplicate_fiscal_years(workspace_id, user_id=uid)
         conn = get_db()
         cursor = conn.cursor()
-        existing = _find_year_by_normalized(conn, workspace_id, year)
+        existing = _find_year_by_normalized(conn, workspace_id, year, user_id=uid)
         cols = {r[1] for r in cursor.execute('PRAGMA table_info(target_achievement_years)').fetchall()}
         now = datetime.now().isoformat()
 
@@ -365,6 +384,9 @@ def create_year():
         if 'created_at' in cols:
             insert_cols.append('created_at')
             insert_vals.append(now)
+        if 'user_id' in cols and uid is not None:
+            insert_cols.append('user_id')
+            insert_vals.append(uid)
 
         placeholders = ', '.join('?' for _ in insert_cols)
         cursor.execute(
@@ -400,7 +422,7 @@ def update_year(year_id):
             or data.get('keep_both')
         )
         workspace_id = get_workspace_id()
-        if not _get_year_or_404(year_id, workspace_id):
+        if not _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id()):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
 
         result = _cdb().set_fy_manual_target(
@@ -501,7 +523,7 @@ def get_distributor_targets(year_id):
     """Distributor target list only — no achievement sync (targets workspace)."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         # Keep FY target in sync with distributor sum (includes Others),
@@ -590,7 +612,7 @@ def get_breakup(year_id):
     """Get distributor-wise breakup with targets (workspace-scoped, lakhs)."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         db = _cdb()
@@ -626,7 +648,7 @@ def get_category_breakup(year_id):
     """Distributor × category achievement matrix for detail modal."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         matrix = _cdb().get_category_breakup_matrix(workspace_id, year_id)
@@ -650,7 +672,7 @@ def set_manual_fy_achievement(year_id):
         if amount is None:
             return jsonify({'success': False, 'error': 'achievement_lakhs required'}), 400
         workspace_id = get_workspace_id()
-        if not _get_year_or_404(year_id, workspace_id):
+        if not _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id()):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         _cdb().set_fy_manual_achievement(workspace_id, year_id, float(amount))
         return jsonify({'success': True, 'data': {'achievement_lakhs': float(amount)}}), 200
@@ -664,7 +686,7 @@ def get_others_lines(year_id):
     """List named parties under Others (online / ex-distributors) for a FY."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         rows = _cdb().list_others_lines(workspace_id, year_id)
@@ -723,7 +745,7 @@ def save_others_lines(year_id):
         if not isinstance(lines, list):
             return jsonify({'success': False, 'error': 'lines array required'}), 400
         workspace_id = get_workspace_id()
-        if not _get_year_or_404(year_id, workspace_id):
+        if not _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id()):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         target_lakhs = None
         if data.get('target_rupees') is not None or data.get('target_lakhs') is not None:
@@ -785,7 +807,7 @@ def set_distributor_target(year_id):
             return jsonify({'success': False, 'error': 'target must be >= 0'}), 400
 
         workspace_id = get_workspace_id()
-        if not _get_year_or_404(year_id, workspace_id):
+        if not _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id()):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
 
         meta_before = _cdb().fy_target_meta(workspace_id, year_id)
@@ -841,7 +863,7 @@ def delete_distributor_target(year_id):
         if not distributor_name:
             return jsonify({'success': False, 'error': 'distributor_name required'}), 400
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         result = _cdb().delete_target_distributor_target(
@@ -870,7 +892,7 @@ def delete_year(year_id):
     """Permanently delete a fiscal year and its target/achievement breakup."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         fy_label = year.get('display_year') or year.get('financial_year') or year.get('year') or ''
@@ -967,7 +989,7 @@ def clear_fy_excel_achievement(year_id):
     """Clear Excel-upload achievement only; keeps manual + CI + targets."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         result = _cdb().clear_fy_excel_achievement(workspace_id, year_id)
@@ -994,7 +1016,7 @@ def clear_fy_achievement(year_id):
     """Clear all achievement for a fiscal year (Excel, CI, manual, category breakup)."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         result = _cdb().clear_fy_achievement(workspace_id, year_id)
@@ -1017,7 +1039,7 @@ def clear_fy_targets(year_id):
     """Clear FY and distributor targets for a fiscal year; keeps achievement."""
     try:
         workspace_id = get_workspace_id()
-        year = _get_year_or_404(year_id, workspace_id)
+        year = _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id())
         if not year:
             return jsonify({'success': False, 'error': 'Year not found'}), 404
         _cdb().clear_fy_targets(workspace_id, year_id)
@@ -1032,7 +1054,7 @@ def upload_sales_excel(year_id):
     """Upload pivot sales Excel — imports distributor achievement in lakhs."""
     try:
         workspace_id = get_workspace_id()
-        if not _get_year_or_404(year_id, workspace_id):
+        if not _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id()):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
 
         upload = request.files.get('file')
@@ -1101,7 +1123,7 @@ def upload_achievement(year_id):
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
 
         workspace_id = get_workspace_id()
-        if not _get_year_or_404(year_id, workspace_id):
+        if not _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id()):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
 
         db = _cdb()

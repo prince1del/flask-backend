@@ -36,7 +36,7 @@ import article_master_parser as amparser
 import filled_orders_db as fodb
 import filled_orders_distributor as fodist
 import filled_orders_parser as foparser
-from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.routes.auth import get_workspace_id, require_jwt_auth, get_request_user_id
 
 filled_orders_bp = Blueprint("filled_orders", __name__, url_prefix="/api/v1/filled-orders")
 
@@ -128,7 +128,12 @@ def preview_filled_order():
     db_path = current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
     filename = file.filename or "upload.xlsx"
 
-    suggestion = fodist.suggest_distributor_from_filename(filename, workspace_id, db_path=db_path)
+    suggestion = fodist.suggest_distributor_from_filename(
+        filename,
+        workspace_id,
+        db_path=db_path,
+        user_id=get_request_user_id(),
+    )
 
     detected_category = None
     preview_warning = None
@@ -190,7 +195,10 @@ def upload_filled_order():
     if not distributor_id:
         db_path = current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
         suggestion = fodist.suggest_distributor_from_filename(
-            file.filename or "upload.xlsx", workspace_id, db_path=db_path,
+            file.filename or "upload.xlsx",
+            workspace_id,
+            db_path=db_path,
+            user_id=get_request_user_id(),
         )
         return jsonify({
             "status": "distributor_confirmation_required",

@@ -33,7 +33,7 @@ from centralized_db_system.bale_to_pieces import calculate_bale_to_pieces
 from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
 from app.fiscal_year import normalize_fiscal_year
-from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.routes.auth import get_workspace_id, require_jwt_auth, get_request_user_id
 from app.routes.ask_nexora_troubleshoot import log_unresolved_query, resolve_query as resolve_unresolved_query
 from app.three_step_verification import (
     _extract_pdf_text,
@@ -339,7 +339,9 @@ def _suggest_filled_order_distributor(
         return None
 
     db = CentralizedDB(_db_path())
-    distributors = db.list_master_distributors(limit=200, workspace_id=workspace_id)
+    distributors = db.list_master_distributors(
+        limit=200, workspace_id=workspace_id, user_id=get_request_user_id()
+    )
     for distributor in distributors:
         nick = (distributor.get("firm_nick_name") or "").strip().lower()
         if nick and nick in stem:
@@ -1107,6 +1109,7 @@ def bulk_upload() -> tuple[Response, int] | str:
                             )
                             else None,
                             workspace_id=workspace_id,
+                            user_id=get_request_user_id(),
                         )
                         connection = sqlite3.connect(db.db_path)
                         try:
@@ -1170,6 +1173,7 @@ def bulk_upload() -> tuple[Response, int] | str:
                                 distributor_id=distributor["id"],
                                 location=retailer_fields.get("location"),
                                 workspace_id=workspace_id,
+                                user_id=get_request_user_id(),
                                 conn=None,
                             )
                             connection = sqlite3.connect(db.db_path)
@@ -1468,7 +1472,7 @@ def index() -> str:
         db.list_business_rules(locked_only=True), indent=2
     )
     distributor_options = db.list_master_distributors(
-        limit=200, workspace_id=get_workspace_id()
+        limit=200, workspace_id=get_workspace_id(), user_id=get_request_user_id()
     )
     suggested_filled_distributor_name = None
     selected_filled_distributor_name = None
@@ -1819,6 +1823,7 @@ def index() -> str:
                         workspace_id=get_workspace_id(),
                         is_active=order_sheet_is_active,
                         content_fingerprint=order_sheet_fingerprint,
+                        user_id=get_request_user_id(),
                     )
                     stored_metadata[key]["order_sheet_id"] = order_sheet_id
                     session["verification_order_sheet_id"] = order_sheet_id
@@ -3356,8 +3361,11 @@ def upload_order_sheet_v2() -> Response:
         file_reference=str(target_path),
         workspace_id=workspace_id,
         content_fingerprint=fingerprint,
+        user_id=_current_user_id(),
     )
-    sheet = db.get_order_sheet(sheet_id, workspace_id=workspace_id)
+    sheet = db.get_order_sheet(
+        sheet_id, workspace_id=workspace_id, user_id=_current_user_id()
+    )
     return _json_response({"success": True, "data": sheet})
 
 
@@ -3951,8 +3959,8 @@ def so_pack_match_filled_order() -> Response:
 def order_match_list() -> Response:
     """
     FO ↔ SO Pack match runs (Order Match page + BD app SO tab).
-    Shared across team by default so a match saved on desktop is
-    visible in the mobile app. Pass ?mine=1 to restrict to current user.
+    Hard-isolated by JWT user_id — each user only sees their own runs.
+    The legacy ?mine= query param is ignored (always mine).
     """
     from app.services import fo_so_match_db as matchdb
 
@@ -3967,12 +3975,9 @@ def order_match_list() -> Response:
             {"success": False, "error": {"message": "Authentication required"}},
             401,
         )
-    mine_only = str(request.args.get("mine") or "").strip().lower() in ("1", "true", "yes")
     conn = sqlite3.connect(_db_path())
     try:
-        runs = matchdb.list_match_runs(
-            conn, user_id=user_id if mine_only else None
-        )
+        runs = matchdb.list_match_runs(conn, user_id=user_id)
         return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
     finally:
         conn.close()
@@ -3981,18 +3986,23 @@ def order_match_list() -> Response:
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["GET"])
 @require_jwt_auth
 def order_match_get(run_id: int) -> Response:
-    """Match run detail with line rows — shared read for desktop + BD app."""
+    """Match run detail with line rows — owner-only (JWT user_id)."""
     from app.services import fo_so_match_db as matchdb
 
     user = getattr(request, "user", None)
-    if not (isinstance(user, dict) and user.get("user_id") is not None):
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
         return _json_response(
             {"success": False, "error": {"message": "Authentication required"}},
             401,
         )
     conn = sqlite3.connect(_db_path())
     try:
-        run = matchdb.get_match_run(conn, run_id, user_id=None)
+        run = matchdb.get_match_run(conn, run_id, user_id=user_id)
         if not run:
             return _json_response(
                 {"success": False, "error": {"message": "Match run not found"}},
@@ -5101,8 +5111,13 @@ def list_order_fulfillment_uploads() -> Response:
     """
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
-    order_sheets = db.list_order_sheets(workspace_id=workspace_id)
-    tracking_records = db.list_order_lifecycle_tracking(workspace_id=workspace_id, limit=500)
+    user_id = _current_user_id()
+    order_sheets = db.list_order_sheets(
+        workspace_id=workspace_id, user_id=user_id
+    )
+    tracking_records = db.list_order_lifecycle_tracking(
+        workspace_id=workspace_id, limit=500, user_id=user_id
+    )
     return _json_response({
         "success": True,
         "data": {
@@ -5119,7 +5134,9 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
     """Single SO/CI lifecycle record — mobile global-search detail."""
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
-    tracking = db.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
+    tracking = db.get_order_lifecycle_tracking(
+        tracking_id, workspace_id=workspace_id, user_id=_current_user_id()
+    )
     if tracking is None:
         return _json_response(
             {"success": False, "error": {"message": "Tracking record not found"}},
@@ -5468,7 +5485,9 @@ def download_order_fulfillment_tracking_file(tracking_id: int) -> Response:
 
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
-    tracking = db.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
+    tracking = db.get_order_lifecycle_tracking(
+        tracking_id, workspace_id=workspace_id, user_id=_current_user_id()
+    )
     if tracking is None:
         return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
 
@@ -5533,7 +5552,10 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
     """
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
-    file_references = db.delete_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
+    user_id = _current_user_id()
+    file_references = db.delete_order_lifecycle_tracking(
+        tracking_id, workspace_id=workspace_id, user_id=user_id
+    )
     if file_references is None:
         return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
 
@@ -5554,6 +5576,7 @@ def delete_selected_order_fulfillment_tracking() -> Response:
         )
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
+    user_id = _current_user_id()
     deleted = 0
     for raw in raw_ids:
         try:
@@ -5561,7 +5584,7 @@ def delete_selected_order_fulfillment_tracking() -> Response:
         except (TypeError, ValueError):
             continue
         file_references = db.delete_order_lifecycle_tracking(
-            tracking_id, workspace_id=workspace_id
+            tracking_id, workspace_id=workspace_id, user_id=user_id
         )
         if file_references is None:
             continue

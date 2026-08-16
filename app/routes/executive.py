@@ -31,7 +31,7 @@ def _user_id() -> int | None:
         return None
 
 
-def _target_achievement_summary(workspace_id: str) -> dict:
+def _target_achievement_summary(workspace_id: str, user_id: int | None = None) -> dict:
     """Read target data using whatever column names exist in this workspace DB."""
     empty = {
         "has_target": False,
@@ -46,11 +46,14 @@ def _target_achievement_summary(workspace_id: str) -> dict:
     try:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM target_achievement_years WHERE workspace_id = ? "
-                "ORDER BY id DESC LIMIT 1",
-                (workspace_id,),
-            ).fetchone()
+            sql = "SELECT * FROM target_achievement_years WHERE workspace_id = ?"
+            params: list = [workspace_id]
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(target_achievement_years)").fetchall()}
+            if user_id is not None and "user_id" in cols:
+                sql += " AND user_id = ?"
+                params.append(user_id)
+            sql += " ORDER BY id DESC LIMIT 1"
+            row = conn.execute(sql, tuple(params)).fetchone()
             if not row:
                 return empty
             data = dict(row)
@@ -89,10 +92,14 @@ def executive_home():
         user = _current_user()
         db = _db()
         counts = db.count_master_parties(workspace_id)
-        tracking = db.list_order_lifecycle_tracking(workspace_id=workspace_id, limit=200)
+        tracking = db.list_order_lifecycle_tracking(
+            workspace_id=workspace_id, limit=200, user_id=_user_id()
+        )
         pending = db.build_executive_pending_actions(workspace_id, user_id=_user_id())
-        visits = db.list_executive_visits(workspace_id=workspace_id, limit=10)
-        target = _target_achievement_summary(workspace_id)
+        visits = db.list_executive_visits(
+            workspace_id=workspace_id, limit=10, user_id=_user_id()
+        )
+        target = _target_achievement_summary(workspace_id, user_id=_user_id())
 
         article_count = 0
         with sqlite3.connect(db.db_path) as conn:
@@ -192,7 +199,9 @@ def party_360(party_type: str, party_id: int):
     if party_type == "distributor":
         tracking = [
             t
-            for t in db.list_order_lifecycle_tracking(workspace_id=workspace_id, limit=200)
+            for t in db.list_order_lifecycle_tracking(
+                workspace_id=workspace_id, limit=200, user_id=_user_id()
+            )
             if t.get("distributor_id") == party_id
         ]
         uid = _user_id()
@@ -214,7 +223,11 @@ def party_360(party_type: str, party_id: int):
                     filled_orders = []
 
     visits = db.list_executive_visits(
-        workspace_id=workspace_id, party_type=party_type, party_id=party_id, limit=20
+        workspace_id=workspace_id,
+        party_type=party_type,
+        party_id=party_id,
+        limit=20,
+        user_id=_user_id(),
     )
 
     outstanding = None
@@ -259,6 +272,7 @@ def list_visits():
         limit=limit,
         party_type=party_type,
         party_id=party_id,
+        user_id=_user_id(),
     )
     return jsonify({"success": True, "data": {"visits": visits}})
 

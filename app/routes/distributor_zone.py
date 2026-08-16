@@ -14,7 +14,7 @@ from typing import Any
 from flask import Blueprint, current_app, jsonify, request
 
 from app.fiscal_year import normalize_fiscal_year
-from app.routes.auth import get_workspace_id, require_jwt_auth, require_role
+from app.routes.auth import get_workspace_id, require_jwt_auth, require_role, get_request_user_id
 from centralized_db_system.db import CentralizedDB
 
 distributor_zone_bp = Blueprint(
@@ -364,6 +364,7 @@ def distributor_zone():
             workspace_id=workspace_id,
             offset=0,
             include_inactive=True,
+            user_id=get_request_user_id(),
         )
 
         breakup: list[dict] = []

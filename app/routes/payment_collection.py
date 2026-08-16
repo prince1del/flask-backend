@@ -38,7 +38,7 @@ def list_payment_collection():
     workspace_id = get_workspace_id()
     distributor_id = request.args.get("distributor_id", type=int)
     distributors = _db().list_distributor_payment_collection(
-        workspace_id, distributor_id=distributor_id
+        workspace_id, distributor_id=distributor_id, user_id=_user_id()
     )
     so_bill_total = round(sum(d.get("so_bill_total") or 0 for d in distributors), 2)
     paid_total = round(sum(d.get("paid_total") or 0 for d in distributors), 2)

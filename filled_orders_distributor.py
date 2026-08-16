@@ -47,6 +47,7 @@ def suggest_distributor_from_filename(
     filename: str,
     workspace_id: str,
     db_path: str | None = None,
+    user_id: int | None = None,
 ) -> dict[str, Any] | None:
     """
     Best-effort distributor guess from upload filename only.
@@ -57,7 +58,9 @@ def suggest_distributor_from_filename(
         return None
 
     db = CentralizedDB(db_path) if db_path else CentralizedDB()
-    distributors = db.list_master_distributors(limit=5000, workspace_id=workspace_id)
+    distributors = db.list_master_distributors(
+        limit=5000, workspace_id=workspace_id, user_id=user_id
+    )
 
     # 1) firm_nick_name token in filename (BND, KAG, …)
     for distributor in distributors:

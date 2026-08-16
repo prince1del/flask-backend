@@ -6,11 +6,16 @@ called them) CentralizedDB.bulk_upload_masters() /
 export_master_distributors_excel() / export_master_retailers_excel()
 functions, plus their newly-added CSV variants.
 
+Party Master is HARD-isolated by JWT user_id: each sales executive only
+sees/creates/updates their own distributors and retailers. Legacy rows
+with user_id IS NULL can be claimed once via POST /claim-unowned.
+
 Endpoints:
 - POST /api/v1/masters/distributors/bulk-upload
 - POST /api/v1/masters/retailers/bulk-upload
 - GET  /api/v1/masters/distributors/export?format=xlsx|csv
 - GET  /api/v1/masters/retailers/export?format=xlsx|csv&distributor_id=<id>
+- POST /api/v1/masters/claim-unowned
 """
 
 import tempfile
@@ -21,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, request, jsonify, current_app, send_file
-from app.routes.auth import require_jwt_auth, get_workspace_id
+from app.routes.auth import require_jwt_auth, get_workspace_id, get_request_user_id
 from centralized_db_system.db import CentralizedDB
 
 masters_bp = Blueprint("masters", __name__, url_prefix="/api/v1/masters")
@@ -81,16 +86,32 @@ def _save_upload_to_temp(file_storage) -> Path:
     file_storage.save(tmp.name)
     return Path(tmp.name)
 
+
+def _require_user_id():
+    user_id = get_request_user_id()
+    if user_id is None:
+        return None, (
+            jsonify({"success": False, "error": {"message": "Authentication required"}}),
+            401,
+        )
+    return user_id, None
+
+
 @masters_bp.route("/distributors/bulk-upload", methods=["POST"])
 @require_jwt_auth
 def bulk_upload_distributors():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     if "file" not in request.files:
         return jsonify({"success": False, "error": {"message": "file is required"}}), 400
     workspace_id = get_workspace_id()
     temp_path = _save_upload_to_temp(request.files["file"])
     try:
         db = _get_db()
-        result = db.bulk_upload_masters("distributors", temp_path, workspace_id=workspace_id)
+        result = db.bulk_upload_masters(
+            "distributors", temp_path, workspace_id=workspace_id, user_id=user_id
+        )
         return jsonify({"success": True, "data": result}), 200
     except Exception as exc:
         return jsonify({"success": False, "error": {"message": str(exc)}}), 500
@@ -101,13 +122,18 @@ def bulk_upload_distributors():
 @masters_bp.route("/retailers/bulk-upload", methods=["POST"])
 @require_jwt_auth
 def bulk_upload_retailers():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     if "file" not in request.files:
         return jsonify({"success": False, "error": {"message": "file is required"}}), 400
     workspace_id = get_workspace_id()
     temp_path = _save_upload_to_temp(request.files["file"])
     try:
         db = _get_db()
-        result = db.bulk_upload_masters("retailers", temp_path, workspace_id=workspace_id)
+        result = db.bulk_upload_masters(
+            "retailers", temp_path, workspace_id=workspace_id, user_id=user_id
+        )
         return jsonify({"success": True, "data": result}), 200
     except Exception as exc:
         return jsonify({"success": False, "error": {"message": str(exc)}}), 500
@@ -118,6 +144,9 @@ def bulk_upload_retailers():
 @masters_bp.route("/distributors", methods=["GET"])
 @require_jwt_auth
 def list_distributors():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     if not _throttle_identical_list():
         return jsonify({
             "success": False,
@@ -140,6 +169,7 @@ def list_distributors():
         workspace_id=workspace_id,
         include_inactive=include_inactive,
         since=since,
+        user_id=user_id,
     )
     return jsonify({"success": True, "data": distributors, "delta": bool(since)}), 200
 
@@ -148,15 +178,42 @@ def list_distributors():
 @require_jwt_auth
 def party_master_sync():
     """Lightweight fingerprint for multi-device Party Master auto-sync (Android)."""
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     db = _get_db()
-    data = db.get_party_master_fingerprint(workspace_id)
+    data = db.get_party_master_fingerprint(workspace_id, user_id=user_id)
     return jsonify({"success": True, "data": data}), 200
+
+
+@masters_bp.route("/claim-unowned", methods=["POST"])
+@require_jwt_auth
+def claim_unowned_masters():
+    """
+    Claim legacy Party Master rows that have no owner (user_id IS NULL)
+    in the caller's workspace and assign them to the current JWT user.
+
+    Intended for the historical workspace owner (e.g. kunwar1del) after
+    hard per-user isolation: call once so existing distributors/retailers
+    appear in that user's Party Master. New users who never claim keep
+    empty lists. Rows already owned by another user_id are never moved.
+    """
+    user_id, err = _require_user_id()
+    if err:
+        return err
+    workspace_id = get_workspace_id()
+    db = _get_db()
+    result = db.claim_unowned_masters(workspace_id=workspace_id, user_id=user_id)
+    return jsonify({"success": True, "data": result}), 200
 
 
 @masters_bp.route("/distributors", methods=["POST"])
 @require_jwt_auth
 def create_distributor():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     payload = request.get_json(silent=True) or {}
     db = _get_db()
@@ -191,8 +248,11 @@ def create_distributor():
         phone_number_2=payload.get("phone_number_2"),
         contact_person_role=payload.get("contact_person_role"),
         workspace_id=workspace_id,
+        user_id=user_id,
     )
-    record = db.get_master_distributor(distributor_id, workspace_id=workspace_id)
+    record = db.get_master_distributor(
+        distributor_id, workspace_id=workspace_id, user_id=user_id
+    )
     if not record:
         return jsonify({"success": False, "error": {"message": "Distributor could not be created"}}), 500
     return jsonify({"success": True, "data": record, "message": "Distributor created successfully"}), 201
@@ -201,9 +261,14 @@ def create_distributor():
 @masters_bp.route("/distributors/<int:distributor_id>", methods=["GET"])
 @require_jwt_auth
 def get_distributor(distributor_id):
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     db = _get_db()
-    record = db.get_master_distributor(distributor_id, workspace_id=workspace_id)
+    record = db.get_master_distributor(
+        distributor_id, workspace_id=workspace_id, user_id=user_id
+    )
     if not record:
         return jsonify({"success": False, "error": {"message": "Distributor not found"}}), 404
     return jsonify({"success": True, "data": record}), 200
@@ -212,10 +277,18 @@ def get_distributor(distributor_id):
 @masters_bp.route("/distributors/<int:distributor_id>", methods=["PUT"])
 @require_jwt_auth
 def update_distributor(distributor_id):
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
-    payload = request.get_json(silent=True) or {}
+    payload = dict(request.get_json(silent=True) or {})
+    payload.pop("user_id", None)
+    payload.pop("workspace_id", None)
+    payload.pop("id", None)
     db = _get_db()
-    record = db.update_master_distributor(distributor_id, workspace_id, **payload)
+    record = db.update_master_distributor(
+        distributor_id, workspace_id, user_id=user_id, **payload
+    )
     if not record:
         return jsonify({"success": False, "error": {"message": "Distributor not found"}}), 404
     return jsonify({"success": True, "data": record, "message": "Distributor updated successfully"}), 200
@@ -224,9 +297,14 @@ def update_distributor(distributor_id):
 @masters_bp.route("/distributors/<int:distributor_id>", methods=["DELETE"])
 @require_jwt_auth
 def delete_distributor(distributor_id):
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     db = _get_db()
-    deleted = db.delete_master_distributor(distributor_id, workspace_id)
+    deleted = db.delete_master_distributor(
+        distributor_id, workspace_id, user_id=user_id
+    )
     if not deleted:
         return jsonify({"success": False, "error": {"message": "Distributor not found"}}), 404
     return jsonify({"success": True, "data": None, "message": "Distributor deleted successfully"}), 200
@@ -235,6 +313,9 @@ def delete_distributor(distributor_id):
 @masters_bp.route("/retailers", methods=["GET"])
 @require_jwt_auth
 def list_retailers():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     if not _throttle_identical_list():
         return jsonify({
             "success": False,
@@ -247,7 +328,11 @@ def list_retailers():
     since = _normalize_since(request.args.get("since"))
     db = _get_db()
     retailers = db.list_master_retailers(
-        limit=limit, offset=offset, workspace_id=workspace_id, since=since
+        limit=limit,
+        offset=offset,
+        workspace_id=workspace_id,
+        since=since,
+        user_id=user_id,
     )
     return jsonify({"success": True, "data": retailers, "delta": bool(since)}), 200
 
@@ -255,6 +340,9 @@ def list_retailers():
 @masters_bp.route("/retailers", methods=["POST"])
 @require_jwt_auth
 def create_retailer():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     payload = request.get_json(silent=True) or {}
     db = _get_db()
@@ -283,8 +371,11 @@ def create_retailer():
         birthday=payload.get("birthday"),
         anniversary=payload.get("anniversary"),
         workspace_id=workspace_id,
+        user_id=user_id,
     )
-    record = db.get_master_retailer(retailer_id, workspace_id=workspace_id)
+    record = db.get_master_retailer(
+        retailer_id, workspace_id=workspace_id, user_id=user_id
+    )
     if not record:
         return jsonify({"success": False, "error": {"message": "Retailer could not be created"}}), 500
     return jsonify({"success": True, "data": record, "message": "Retailer created successfully"}), 201
@@ -293,9 +384,14 @@ def create_retailer():
 @masters_bp.route("/retailers/<int:retailer_id>", methods=["GET"])
 @require_jwt_auth
 def get_retailer(retailer_id):
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     db = _get_db()
-    record = db.get_master_retailer(retailer_id, workspace_id=workspace_id)
+    record = db.get_master_retailer(
+        retailer_id, workspace_id=workspace_id, user_id=user_id
+    )
     if not record:
         return jsonify({"success": False, "error": {"message": "Retailer not found"}}), 404
     return jsonify({"success": True, "data": record}), 200
@@ -304,10 +400,18 @@ def get_retailer(retailer_id):
 @masters_bp.route("/retailers/<int:retailer_id>", methods=["PUT"])
 @require_jwt_auth
 def update_retailer(retailer_id):
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
-    payload = request.get_json(silent=True) or {}
+    payload = dict(request.get_json(silent=True) or {})
+    payload.pop("user_id", None)
+    payload.pop("workspace_id", None)
+    payload.pop("id", None)
     db = _get_db()
-    record = db.update_master_retailer(retailer_id, workspace_id, **payload)
+    record = db.update_master_retailer(
+        retailer_id, workspace_id, user_id=user_id, **payload
+    )
     if not record:
         return jsonify({"success": False, "error": {"message": "Retailer not found"}}), 404
     return jsonify({"success": True, "data": record, "message": "Retailer updated successfully"}), 200
@@ -316,9 +420,12 @@ def update_retailer(retailer_id):
 @masters_bp.route("/retailers/<int:retailer_id>", methods=["DELETE"])
 @require_jwt_auth
 def delete_retailer(retailer_id):
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     db = _get_db()
-    deleted = db.delete_master_retailer(retailer_id, workspace_id)
+    deleted = db.delete_master_retailer(retailer_id, workspace_id, user_id=user_id)
     if not deleted:
         return jsonify({"success": False, "error": {"message": "Retailer not found"}}), 404
     return jsonify({"success": True, "data": None, "message": "Retailer deleted successfully"}), 200
@@ -327,16 +434,23 @@ def delete_retailer(retailer_id):
 @masters_bp.route("/distributors/export", methods=["GET"])
 @require_jwt_auth
 def export_distributors():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     fmt = (request.args.get("format") or "xlsx").strip().lower()
     db = _get_db()
 
     if fmt == "csv":
-        content = db.export_master_distributors_csv(workspace_id=workspace_id)
+        content = db.export_master_distributors_csv(
+            workspace_id=workspace_id, user_id=user_id
+        )
         mimetype = "text/csv"
         filename = "distributors.csv"
     else:
-        content = db.export_master_distributors_excel(workspace_id=workspace_id)
+        content = db.export_master_distributors_excel(
+            workspace_id=workspace_id, user_id=user_id
+        )
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         filename = "distributors.xlsx"
 
@@ -351,17 +465,28 @@ def export_distributors():
 @masters_bp.route("/retailers/export", methods=["GET"])
 @require_jwt_auth
 def export_retailers():
+    user_id, err = _require_user_id()
+    if err:
+        return err
     workspace_id = get_workspace_id()
     fmt = (request.args.get("format") or "xlsx").strip().lower()
     distributor_id = request.args.get("distributor_id", type=int)
     db = _get_db()
 
     if fmt == "csv":
-        content = db.export_master_retailers_csv(workspace_id=workspace_id, distributor_id=distributor_id)
+        content = db.export_master_retailers_csv(
+            workspace_id=workspace_id,
+            distributor_id=distributor_id,
+            user_id=user_id,
+        )
         mimetype = "text/csv"
         filename = "retailers.csv"
     else:
-        content = db.export_master_retailers_excel(workspace_id=workspace_id, distributor_id=distributor_id)
+        content = db.export_master_retailers_excel(
+            workspace_id=workspace_id,
+            distributor_id=distributor_id,
+            user_id=user_id,
+        )
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         filename = "retailers.xlsx"
 

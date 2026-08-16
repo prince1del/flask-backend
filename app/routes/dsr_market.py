@@ -298,12 +298,16 @@ def _brand_key(name: str) -> str:
     return " ".join((name or "").strip().lower().split())
 
 
-def _merged_competitor_brands(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
-    rows = conn.execute(
-        "SELECT brand_name FROM dsr_competitor_brands WHERE workspace_id = ? "
-        "ORDER BY brand_name COLLATE NOCASE ASC",
-        (workspace_id,),
-    ).fetchall()
+def _merged_competitor_brands(
+    conn: sqlite3.Connection, workspace_id: str, user_id: int | None = None
+) -> list[str]:
+    sql = "SELECT brand_name FROM dsr_competitor_brands WHERE workspace_id = ?"
+    params: list = [workspace_id]
+    if user_id is not None:
+        sql += " AND created_by = ?"
+        params.append(user_id)
+    sql += " ORDER BY brand_name COLLATE NOCASE ASC"
+    rows = conn.execute(sql, tuple(params)).fetchall()
     custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
     by_key: dict[str, str] = {}
     for name in DEFAULT_COMPETITOR_BRANDS + custom:
@@ -313,12 +317,16 @@ def _merged_competitor_brands(conn: sqlite3.Connection, workspace_id: str) -> li
     return sorted(by_key.values(), key=lambda s: s.lower())
 
 
-def _merged_main_categories(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
-    rows = conn.execute(
-        "SELECT category_name FROM dsr_main_categories WHERE workspace_id = ? "
-        "ORDER BY category_name COLLATE NOCASE ASC",
-        (workspace_id,),
-    ).fetchall()
+def _merged_main_categories(
+    conn: sqlite3.Connection, workspace_id: str, user_id: int | None = None
+) -> list[str]:
+    sql = "SELECT category_name FROM dsr_main_categories WHERE workspace_id = ?"
+    params: list = [workspace_id]
+    if user_id is not None:
+        sql += " AND created_by = ?"
+        params.append(user_id)
+    sql += " ORDER BY category_name COLLATE NOCASE ASC"
+    rows = conn.execute(sql, tuple(params)).fetchall()
     custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
     by_key: dict[str, str] = {}
     # Keep defaults first, then extras alphabetically among customs only —
@@ -338,12 +346,16 @@ def _merged_main_categories(conn: sqlite3.Connection, workspace_id: str) -> list
     return default_ordered + extras
 
 
-def _merged_low_stock_reasons(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
-    rows = conn.execute(
-        "SELECT reason_name FROM dsr_low_stock_reasons WHERE workspace_id = ? "
-        "ORDER BY reason_name COLLATE NOCASE ASC",
-        (workspace_id,),
-    ).fetchall()
+def _merged_low_stock_reasons(
+    conn: sqlite3.Connection, workspace_id: str, user_id: int | None = None
+) -> list[str]:
+    sql = "SELECT reason_name FROM dsr_low_stock_reasons WHERE workspace_id = ?"
+    params: list = [workspace_id]
+    if user_id is not None:
+        sql += " AND created_by = ?"
+        params.append(user_id)
+    sql += " ORDER BY reason_name COLLATE NOCASE ASC"
+    rows = conn.execute(sql, tuple(params)).fetchall()
     custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
     by_key: dict[str, str] = {}
     for name in DEFAULT_LOW_STOCK_REASONS + custom:
@@ -368,12 +380,16 @@ def _merged_low_stock_reasons(conn: sqlite3.Connection, workspace_id: str) -> li
     return without_other
 
 
-def _merged_visit_issues(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
-    rows = conn.execute(
-        "SELECT issue_name FROM dsr_visit_issues WHERE workspace_id = ? "
-        "ORDER BY issue_name COLLATE NOCASE ASC",
-        (workspace_id,),
-    ).fetchall()
+def _merged_visit_issues(
+    conn: sqlite3.Connection, workspace_id: str, user_id: int | None = None
+) -> list[str]:
+    sql = "SELECT issue_name FROM dsr_visit_issues WHERE workspace_id = ?"
+    params: list = [workspace_id]
+    if user_id is not None:
+        sql += " AND created_by = ?"
+        params.append(user_id)
+    sql += " ORDER BY issue_name COLLATE NOCASE ASC"
+    rows = conn.execute(sql, tuple(params)).fetchall()
     custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
     by_key: dict[str, str] = {}
     for name in DEFAULT_VISIT_ISSUES + custom:
@@ -397,12 +413,16 @@ def _merged_visit_issues(conn: sqlite3.Connection, workspace_id: str) -> list[st
     return without_other
 
 
-def _merged_placement_categories(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
-    rows = conn.execute(
-        "SELECT category_name FROM dsr_placement_categories WHERE workspace_id = ? "
-        "ORDER BY category_name COLLATE NOCASE ASC",
-        (workspace_id,),
-    ).fetchall()
+def _merged_placement_categories(
+    conn: sqlite3.Connection, workspace_id: str, user_id: int | None = None
+) -> list[str]:
+    sql = "SELECT category_name FROM dsr_placement_categories WHERE workspace_id = ?"
+    params: list = [workspace_id]
+    if user_id is not None:
+        sql += " AND created_by = ?"
+        params.append(user_id)
+    sql += " ORDER BY category_name COLLATE NOCASE ASC"
+    rows = conn.execute(sql, tuple(params)).fetchall()
     custom = [str(r[0]).strip() for r in rows if r and r[0] and str(r[0]).strip()]
     by_key: dict[str, str] = {}
     for name in DEFAULT_PLACEMENT_CATEGORIES + custom:
@@ -1444,7 +1464,7 @@ def list_competitor_brands():
     workspace_id = get_workspace_id()
     with sqlite3.connect(_db_path()) as conn:
         _ensure_table(conn)
-        brands = _merged_competitor_brands(conn, workspace_id)
+        brands = _merged_competitor_brands(conn, workspace_id, _user_id())
     return jsonify(
         {
             "success": True,
@@ -1473,8 +1493,9 @@ def add_competitor_brand():
         _ensure_table(conn)
         existing = conn.execute(
             "SELECT brand_name FROM dsr_competitor_brands "
-            "WHERE workspace_id = ? AND brand_key = ?",
-            (workspace_id, key),
+            "WHERE workspace_id = ? AND brand_key = ?"
+            + (" AND created_by = ?" if _user_id() is not None else ""),
+            (workspace_id, key, _user_id()) if _user_id() is not None else (workspace_id, key),
         ).fetchone()
         if existing is None and key not in {_brand_key(b) for b in DEFAULT_COMPETITOR_BRANDS}:
             conn.execute(
@@ -1486,7 +1507,7 @@ def add_competitor_brand():
                 (workspace_id, name, key, _user_id(), created_at),
             )
             conn.commit()
-        brands = _merged_competitor_brands(conn, workspace_id)
+        brands = _merged_competitor_brands(conn, workspace_id, _user_id())
 
     return jsonify({"success": True, "data": brands, "count": len(brands)}), 201
 
@@ -1498,7 +1519,7 @@ def list_main_categories():
     workspace_id = get_workspace_id()
     with sqlite3.connect(_db_path()) as conn:
         _ensure_table(conn)
-        categories = _merged_main_categories(conn, workspace_id)
+        categories = _merged_main_categories(conn, workspace_id, _user_id())
     return jsonify(
         {
             "success": True,
@@ -1527,8 +1548,9 @@ def add_main_category():
         _ensure_table(conn)
         existing = conn.execute(
             "SELECT category_name FROM dsr_main_categories "
-            "WHERE workspace_id = ? AND category_key = ?",
-            (workspace_id, key),
+            "WHERE workspace_id = ? AND category_key = ?"
+            + (" AND created_by = ?" if _user_id() is not None else ""),
+            (workspace_id, key, _user_id()) if _user_id() is not None else (workspace_id, key),
         ).fetchone()
         if existing is None and key not in {_brand_key(b) for b in DEFAULT_MAIN_CATEGORIES}:
             conn.execute(
@@ -1540,7 +1562,7 @@ def add_main_category():
                 (workspace_id, name, key, _user_id(), created_at),
             )
             conn.commit()
-        categories = _merged_main_categories(conn, workspace_id)
+        categories = _merged_main_categories(conn, workspace_id, _user_id())
 
     return jsonify({"success": True, "data": categories, "count": len(categories)}), 201
 
@@ -1552,7 +1574,7 @@ def list_low_stock_reasons():
     workspace_id = get_workspace_id()
     with sqlite3.connect(_db_path()) as conn:
         _ensure_table(conn)
-        reasons = _merged_low_stock_reasons(conn, workspace_id)
+        reasons = _merged_low_stock_reasons(conn, workspace_id, _user_id())
     return jsonify(
         {
             "success": True,
@@ -1585,8 +1607,9 @@ def add_low_stock_reason():
         _ensure_table(conn)
         existing = conn.execute(
             "SELECT reason_name FROM dsr_low_stock_reasons "
-            "WHERE workspace_id = ? AND reason_key = ?",
-            (workspace_id, key),
+            "WHERE workspace_id = ? AND reason_key = ?"
+            + (" AND created_by = ?" if _user_id() is not None else ""),
+            (workspace_id, key, _user_id()) if _user_id() is not None else (workspace_id, key),
         ).fetchone()
         if existing is None and key not in {_brand_key(b) for b in DEFAULT_LOW_STOCK_REASONS}:
             conn.execute(
@@ -1598,7 +1621,7 @@ def add_low_stock_reason():
                 (workspace_id, name, key, _user_id(), created_at),
             )
             conn.commit()
-        reasons = _merged_low_stock_reasons(conn, workspace_id)
+        reasons = _merged_low_stock_reasons(conn, workspace_id, _user_id())
 
     return jsonify({"success": True, "data": reasons, "count": len(reasons)}), 201
 
@@ -1610,7 +1633,7 @@ def list_visit_issues():
     workspace_id = get_workspace_id()
     with sqlite3.connect(_db_path()) as conn:
         _ensure_table(conn)
-        issues = _merged_visit_issues(conn, workspace_id)
+        issues = _merged_visit_issues(conn, workspace_id, _user_id())
     return jsonify(
         {
             "success": True,
@@ -1643,8 +1666,9 @@ def add_visit_issue():
         _ensure_table(conn)
         existing = conn.execute(
             "SELECT issue_name FROM dsr_visit_issues "
-            "WHERE workspace_id = ? AND issue_key = ?",
-            (workspace_id, key),
+            "WHERE workspace_id = ? AND issue_key = ?"
+            + (" AND created_by = ?" if _user_id() is not None else ""),
+            (workspace_id, key, _user_id()) if _user_id() is not None else (workspace_id, key),
         ).fetchone()
         if existing is None and key not in {_brand_key(b) for b in DEFAULT_VISIT_ISSUES}:
             conn.execute(
@@ -1656,7 +1680,7 @@ def add_visit_issue():
                 (workspace_id, name, key, _user_id(), created_at),
             )
             conn.commit()
-        issues = _merged_visit_issues(conn, workspace_id)
+        issues = _merged_visit_issues(conn, workspace_id, _user_id())
 
     return jsonify({"success": True, "data": issues, "count": len(issues)}), 201
 
@@ -1668,7 +1692,7 @@ def list_placement_categories():
     workspace_id = get_workspace_id()
     with sqlite3.connect(_db_path()) as conn:
         _ensure_table(conn)
-        categories = _merged_placement_categories(conn, workspace_id)
+        categories = _merged_placement_categories(conn, workspace_id, _user_id())
     return jsonify(
         {
             "success": True,
@@ -1701,8 +1725,9 @@ def add_placement_category():
         _ensure_table(conn)
         existing = conn.execute(
             "SELECT category_name FROM dsr_placement_categories "
-            "WHERE workspace_id = ? AND category_key = ?",
-            (workspace_id, key),
+            "WHERE workspace_id = ? AND category_key = ?"
+            + (" AND created_by = ?" if _user_id() is not None else ""),
+            (workspace_id, key, _user_id()) if _user_id() is not None else (workspace_id, key),
         ).fetchone()
         if existing is None and key not in {
             _brand_key(b) for b in DEFAULT_PLACEMENT_CATEGORIES
@@ -1716,7 +1741,7 @@ def add_placement_category():
                 (workspace_id, name, key, _user_id(), created_at),
             )
             conn.commit()
-        categories = _merged_placement_categories(conn, workspace_id)
+        categories = _merged_placement_categories(conn, workspace_id, _user_id())
 
     return jsonify({"success": True, "data": categories, "count": len(categories)}), 201
 
@@ -1835,10 +1860,15 @@ def party_match():
         return jsonify({"success": False, "error": {"message": "kind must be retailer or distributor"}}), 400
 
     db = _master_db()
+    uid = _user_id()
     if kind == "retailer":
-        parties = db.list_master_retailers(limit=800, workspace_id=workspace_id) or []
+        parties = db.list_master_retailers(
+            limit=800, workspace_id=workspace_id, user_id=uid
+        ) or []
     else:
-        parties = db.list_master_distributors(limit=800, workspace_id=workspace_id) or []
+        parties = db.list_master_distributors(
+            limit=800, workspace_id=workspace_id, user_id=uid
+        ) or []
 
     scored = []
     for party in parties:
@@ -1941,11 +1971,16 @@ def resolve_draft(visit_id: int):
         }
 
         db = _master_db()
+        uid = _user_id()
         if link_party_id is None and not force_create:
             if kind == "retailer":
-                parties = db.list_master_retailers(limit=800, workspace_id=workspace_id) or []
+                parties = db.list_master_retailers(
+                    limit=800, workspace_id=workspace_id, user_id=uid
+                ) or []
             else:
-                parties = db.list_master_distributors(limit=800, workspace_id=workspace_id) or []
+                parties = db.list_master_distributors(
+                    limit=800, workspace_id=workspace_id, user_id=uid
+                ) or []
             scored = []
             for party in parties:
                 score, reasons = _score_party_candidate(match_payload, party, kind)
@@ -1988,6 +2023,7 @@ def resolve_draft(visit_id: int):
                     address=address,
                     contact_person=owner,
                     workspace_id=workspace_id,
+                    user_id=uid,
                 )
             else:
                 party_id = db.add_master_distributor(
@@ -1997,6 +2033,7 @@ def resolve_draft(visit_id: int):
                     address=address,
                     phone_number=phone,
                     workspace_id=workspace_id,
+                    user_id=uid,
                 )
 
         linked_retailer_id = party_id if kind == "retailer" else visit.get("linked_retailer_id")
@@ -2200,14 +2237,16 @@ def _upsert_approach_from_visit(
     customer_type = (data.get("customer_type") or "").strip() or None
     now = datetime.now(timezone.utc).isoformat()
 
-    existing = conn.execute(
-        """
+    existing_sql = """
         SELECT id FROM dsr_approach_distributors
         WHERE workspace_id = ? AND lower(firm_name) = lower(?)
-        ORDER BY id DESC LIMIT 1
-        """,
-        (workspace_id, firm),
-    ).fetchone()
+    """
+    existing_params: list = [workspace_id, firm]
+    if uid is not None:
+        existing_sql += " AND (user_id = ? OR user_id IS NULL)"
+        existing_params.append(uid)
+    existing_sql += " ORDER BY id DESC LIMIT 1"
+    existing = conn.execute(existing_sql, tuple(existing_params)).fetchone()
 
     if existing:
         conn.execute(
@@ -2287,18 +2326,21 @@ def _upsert_approach_from_visit(
 @require_role("admin", "sales_executive")
 def list_approach_distributors():
     workspace_id = get_workspace_id()
+    uid = _user_id()
     q = (request.args.get("q") or "").strip().lower()
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
-        rows = conn.execute(
-            """
+        sql = """
             SELECT * FROM dsr_approach_distributors
             WHERE workspace_id = ?
-            ORDER BY updated_at DESC, id DESC
-            """,
-            (workspace_id,),
-        ).fetchall()
+        """
+        params: list = [workspace_id]
+        if uid is not None:
+            sql += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        sql += " ORDER BY updated_at DESC, id DESC"
+        rows = conn.execute(sql, tuple(params)).fetchall()
     items = [_approach_row_to_dict(r) for r in rows]
     if q:
         items = [
@@ -2334,14 +2376,18 @@ def create_approach_distributor():
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
         # Upsert by firm name so Customers form + Market Visit stay one record.
-        existing = conn.execute(
-            """
+        # Scoped to this user (plus legacy NULL owner) so BD peers cannot collide.
+        existing_sql = """
             SELECT id FROM dsr_approach_distributors
             WHERE workspace_id = ? AND lower(firm_name) = lower(?)
-            ORDER BY id DESC LIMIT 1
-            """,
-            (workspace_id, firm),
-        ).fetchone()
+        """
+        existing_params: list = [workspace_id, firm]
+        uid = _user_id()
+        if uid is not None:
+            existing_sql += " AND (user_id = ? OR user_id IS NULL)"
+            existing_params.append(uid)
+        existing_sql += " ORDER BY id DESC LIMIT 1"
+        existing = conn.execute(existing_sql, tuple(existing_params)).fetchone()
         fields = (
             (data.get("owner_name") or "").strip() or None,
             (data.get("contact_nos") or data.get("phone") or "").strip() or None,
@@ -2409,13 +2455,16 @@ def create_approach_distributor():
 @require_role("admin", "sales_executive")
 def get_approach_distributor(approach_id: int):
     workspace_id = get_workspace_id()
+    uid = _user_id()
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
-        row = conn.execute(
-            "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?",
-            (approach_id, workspace_id),
-        ).fetchone()
+        sql = "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?"
+        params: list = [approach_id, workspace_id]
+        if uid is not None:
+            sql += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        row = conn.execute(sql, tuple(params)).fetchone()
     if not row:
         return jsonify({"success": False, "error": {"message": "Not found"}}), 404
     return jsonify({"success": True, "data": _approach_row_to_dict(row)})
@@ -2437,10 +2486,13 @@ def add_approach_distributor_note(approach_id: int):
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
-        row = conn.execute(
-            "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?",
-            (approach_id, workspace_id),
-        ).fetchone()
+        uid = _user_id()
+        sql = "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?"
+        params: list = [approach_id, workspace_id]
+        if uid is not None:
+            sql += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        row = conn.execute(sql, tuple(params)).fetchone()
         if not row:
             return jsonify({"success": False, "error": {"message": "Not found"}}), 404
         notes = _parse_notes(row["notes_json"])
@@ -2450,7 +2502,7 @@ def add_approach_distributor_note(approach_id: int):
                 "text": text,
                 "created_at": now,
                 "username": user.get("username"),
-                "user_id": _user_id(),
+                "user_id": uid,
                 # link_type / link_id reserved for later
             }
         )

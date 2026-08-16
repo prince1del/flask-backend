@@ -536,7 +536,8 @@ class CentralizedDB:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     created_by TEXT,
-                    UNIQUE(workspace_id, financial_year)
+                    user_id INTEGER,
+                    UNIQUE(workspace_id, financial_year, user_id)
                 )
             """
             )
@@ -696,6 +697,7 @@ class CentralizedDB:
         self._ensure_column_exists(
             conn, "target_achievement_years", "achievement_manual_fy", "REAL DEFAULT 0"
         )
+        self._migrate_target_years_user_isolation(conn)
         breakup_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(target_achievement_breakup)").fetchall()
         }
@@ -711,7 +713,78 @@ class CentralizedDB:
             "target_achievement_breakup", "target_achievement_years"
         )
 
-    def merge_duplicate_fiscal_years(self, workspace_id: str) -> int:
+    def _migrate_target_years_user_isolation(self, conn: sqlite3.Connection) -> None:
+        """Add user_id and replace workspace-only UNIQUE so peers can share FY labels."""
+        self._ensure_column_exists(conn, "target_achievement_years", "user_id", "INTEGER")
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_target_years_ws_user_fy'"
+        ).fetchone():
+            return
+
+        table_sql_row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='target_achievement_years'"
+        ).fetchone()
+        table_sql = (table_sql_row[0] or "") if table_sql_row else ""
+        compact = table_sql.replace(" ", "").replace("\n", "")
+        has_old_unique = (
+            "UNIQUE(workspace_id,financial_year)" in compact
+            and "UNIQUE(workspace_id,financial_year,user_id)" not in compact
+        )
+
+        if has_old_unique:
+            conn.execute(
+                "ALTER TABLE target_achievement_years "
+                "RENAME TO target_achievement_years__pre_user"
+            )
+            old_info = conn.execute(
+                "PRAGMA table_info(target_achievement_years__pre_user)"
+            ).fetchall()
+            def_parts: list[str] = []
+            select_names: list[str] = []
+            for _cid, name, ctype, notnull, dflt, pk in old_info:
+                select_names.append(name)
+                if name == "user_id":
+                    continue
+                piece = f'"{name}" {ctype or "TEXT"}'
+                if pk:
+                    piece += " PRIMARY KEY"
+                elif notnull and dflt is None:
+                    piece += " NOT NULL"
+                if dflt is not None:
+                    piece += f" DEFAULT {dflt}"
+                def_parts.append(piece)
+            if "user_id" not in {r[1] for r in old_info}:
+                def_parts.append("user_id INTEGER")
+            else:
+                def_parts.append("user_id INTEGER")
+            conn.execute(
+                f"CREATE TABLE target_achievement_years ({', '.join(def_parts)})"
+            )
+            quoted = ", ".join(f'"{n}"' for n in select_names)
+            if "user_id" in select_names:
+                conn.execute(
+                    f"INSERT INTO target_achievement_years ({quoted}) "
+                    f"SELECT {quoted} FROM target_achievement_years__pre_user"
+                )
+            else:
+                conn.execute(
+                    f"INSERT INTO target_achievement_years ({quoted}, user_id) "
+                    f"SELECT {quoted}, NULL FROM target_achievement_years__pre_user"
+                )
+            conn.execute("DROP TABLE target_achievement_years__pre_user")
+
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_target_years_ws_user_fy "
+            "ON target_achievement_years(workspace_id, IFNULL(user_id, -1), financial_year)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_target_years_user "
+            "ON target_achievement_years(workspace_id, user_id)"
+        )
+
+    def merge_duplicate_fiscal_years(
+        self, workspace_id: str, user_id: int | None = None
+    ) -> int:
         """Collapse duplicate FY rows (e.g. 2025-26 vs 2025-2026). Returns rows removed."""
         from app.fiscal_year import normalize_fiscal_year
 
@@ -722,10 +795,13 @@ class CentralizedDB:
             year_cols = {
                 row[1] for row in conn.execute("PRAGMA table_info(target_achievement_years)").fetchall()
             }
-            rows = conn.execute(
-                "SELECT * FROM target_achievement_years WHERE workspace_id = ? ORDER BY id",
-                (workspace_id,),
-            ).fetchall()
+            year_sql = "SELECT * FROM target_achievement_years WHERE workspace_id = ?"
+            year_params: list[Any] = [workspace_id]
+            if user_id is not None and "user_id" in year_cols:
+                year_sql += " AND user_id = ?"
+                year_params.append(user_id)
+            year_sql += " ORDER BY id"
+            rows = conn.execute(year_sql, tuple(year_params)).fetchall()
             groups: dict[str, list[sqlite3.Row]] = {}
             for row in rows:
                 raw = row["financial_year"] if "financial_year" in row.keys() else None
@@ -2714,9 +2790,15 @@ class CentralizedDB:
                     workspace_id TEXT NOT NULL DEFAULT 'default',
                     file_reference TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    user_id INTEGER
                 )
                 """
+            )
+            self._ensure_column_exists(conn, "order_sheet_master", "user_id", "INTEGER")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_order_sheet_master_user "
+                "ON order_sheet_master(workspace_id, user_id)"
             )
             conn.execute(
                 """
@@ -2868,6 +2950,9 @@ class CentralizedDB:
             self._ensure_column_exists(
                 conn, "master_distributors", "contact_person_role", "TEXT"
             )
+            # Hard per-user Party Master isolation (JWT user_id).
+            self._ensure_column_exists(conn, "master_distributors", "user_id", "INTEGER")
+            self._ensure_column_exists(conn, "master_retailers", "user_id", "INTEGER")
             self._ensure_column_exists(conn, "business_rules", "rule_key", "TEXT")
             self._ensure_column_exists(conn, "business_rules", "rule_value", "TEXT")
             self._ensure_column_exists(
@@ -2881,10 +2966,18 @@ class CentralizedDB:
                 "CREATE INDEX IF NOT EXISTS idx_master_distributors_gst_no ON master_distributors(gst_no)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_master_distributors_user_workspace "
+                "ON master_distributors(user_id, workspace_id)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_master_retailers_name ON master_retailers(name)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_master_retailers_distributor_id ON master_retailers(distributor_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_master_retailers_user_workspace "
+                "ON master_retailers(user_id, workspace_id)"
             )
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_business_rules_rule_key ON business_rules(rule_key)"
@@ -3766,6 +3859,13 @@ class CentralizedDB:
             conn.commit()
         return {"matched": matched, "unmatched": unmatched}
 
+    @staticmethod
+    def _user_id_sql(column: str, user_id: int | None) -> tuple[str, list[Any]]:
+        """Equality clause that treats NULL correctly (SQLite `= NULL` never matches)."""
+        if user_id is None:
+            return f"{column} IS NULL", []
+        return f"{column} = ?", [user_id]
+
     def _find_similar_master_entry(
         self,
         conn: sqlite3.Connection | None,
@@ -3787,8 +3887,13 @@ class CentralizedDB:
             clauses: list[str] = []
             if extra_filters:
                 for key, value in extra_filters.items():
-                    clauses.append(f"{key} = ?")
-                    params.append(value)
+                    if key == "user_id":
+                        clause, clause_params = self._user_id_sql("user_id", value)
+                        clauses.append(clause)
+                        params.extend(clause_params)
+                    else:
+                        clauses.append(f"{key} = ?")
+                        params.append(value)
 
             if clauses:
                 query += " WHERE " + " AND ".join(clauses)
@@ -4311,7 +4416,10 @@ class CentralizedDB:
         return tracking_id
 
     def get_order_lifecycle_tracking(
-        self, tracking_id: int, workspace_id: str | None = None
+        self,
+        tracking_id: int,
+        workspace_id: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any] | None:
         # order_sheet_id/order_sheet_name were missing from this
         # SELECT entirely (silently returning None for both, always,
@@ -4338,9 +4446,18 @@ class CentralizedDB:
             params.append(workspace_id)
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
-        if row is None:
-            return None
-        result = dict(zip(columns, row))
+            if row is None:
+                return None
+            result = dict(zip(columns, row))
+            # Hard-isolate reads by Party Master ownership when JWT user_id given.
+            if user_id is not None:
+                dist_id = result.get("distributor_id")
+                owned = conn.execute(
+                    "SELECT 1 FROM master_distributors WHERE id = ? AND user_id = ?",
+                    (dist_id, user_id),
+                ).fetchone()
+                if owned is None:
+                    return None
         result["sales_order_parsed"] = json.loads(result["sales_order_parsed"]) if result["sales_order_parsed"] else None
         result["commercial_invoice_parsed"] = json.loads(result["commercial_invoice_parsed"]) if result["commercial_invoice_parsed"] else None
         return result
@@ -6229,13 +6346,20 @@ class CentralizedDB:
         return rows[0] if rows else None
 
     def list_order_lifecycle_tracking(
-        self, workspace_id: str | None = None, limit: int = 200
+        self,
+        workspace_id: str | None = None,
+        limit: int = 200,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Returns tracked Sales Orders/Commercial Invoices with a
         readable distributor name attached — this is what powers the
         "where do my uploaded files show up" view in the Order
         Fulfillment UI.
+
+        When user_id is set, only rows whose distributor is owned by
+        that user (master_distributors.user_id) are returned — tracking
+        itself has no user_id column yet.
         """
         from app.fiscal_year import season_from_date as _season_from_date
 
@@ -6250,9 +6374,15 @@ class CentralizedDB:
             "LEFT JOIN master_distributors md ON olt.distributor_id = md.id"
         )
         params: list[Any] = []
+        clauses: list[str] = []
         if workspace_id:
-            query += " WHERE olt.workspace_id = ?"
+            clauses.append("olt.workspace_id = ?")
             params.append(workspace_id)
+        if user_id is not None:
+            clauses.append("md.user_id = ?")
+            params.append(user_id)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY olt.tracking_id DESC LIMIT ?"
         params.append(max(1, int(limit)))
         with sqlite3.connect(self.db_path) as conn:
@@ -6467,7 +6597,10 @@ class CentralizedDB:
         )
 
     def delete_order_lifecycle_tracking(
-        self, tracking_id: int, workspace_id: str | None = None
+        self,
+        tracking_id: int,
+        workspace_id: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any] | None:
         """
         Deletes a tracked Sales Order/Commercial Invoice record — used
@@ -6477,7 +6610,9 @@ class CentralizedDB:
         Returns the file references (so the caller can also delete
         the physical files from disk) or None if not found.
         """
-        tracking = self.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
+        tracking = self.get_order_lifecycle_tracking(
+            tracking_id, workspace_id=workspace_id, user_id=user_id
+        )
         if tracking is None:
             return None
 
@@ -6589,7 +6724,10 @@ class CentralizedDB:
         return "PARTIAL"
 
     def list_distributor_payment_collection(
-        self, workspace_id: str, distributor_id: int | None = None
+        self,
+        workspace_id: str,
+        distributor_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """Distributor-wise SO payment board: bill, deposits, outstanding."""
         ws = (workspace_id or "default").strip() or "default"
@@ -6615,6 +6753,9 @@ class CentralizedDB:
                 ") "
             )
             params: list[Any] = [ws]
+            if user_id is not None:
+                sql += "AND md.user_id = ? "
+                params.append(int(user_id))
             if distributor_id is not None:
                 sql += "AND olt.distributor_id = ? "
                 params.append(int(distributor_id))
@@ -6630,6 +6771,16 @@ class CentralizedDB:
             if distributor_id is not None:
                 pay_sql += " AND distributor_id = ?"
                 pay_params.append(int(distributor_id))
+            if user_id is not None:
+                # Only deposits on tracking rows the caller can see (owned distributors).
+                pay_sql += (
+                    " AND tracking_id IN ("
+                    "SELECT olt2.tracking_id FROM order_lifecycle_tracking olt2 "
+                    "JOIN master_distributors md2 ON olt2.distributor_id = md2.id "
+                    "WHERE olt2.workspace_id = ? AND md2.user_id = ?"
+                    ")"
+                )
+                pay_params.extend([ws, int(user_id)])
             pay_sql += " ORDER BY payment_date ASC, id ASC"
             pay_rows = conn.execute(pay_sql, tuple(pay_params)).fetchall()
 
@@ -8009,46 +8160,63 @@ class CentralizedDB:
 
             if ids_by_category.get("distributors"):
                 placeholders = ",".join("?" * len(ids_by_category["distributors"]))
-                dist_rows = conn.execute(
+                dist_sql = (
                     f"SELECT id, distributor_id AS buyer_code, COALESCE(firm_name, name) AS firm_name, "
                     f"firm_nick_name, name AS contact_person, contact_person_role, phone_number, "
                     f"location AS city, gst_no, zone, region, address FROM master_distributors "
-                    f"WHERE id IN ({placeholders})",
-                    tuple(ids_by_category["distributors"]),
-                ).fetchall()
+                    f"WHERE id IN ({placeholders})"
+                )
+                dist_params: list[Any] = list(ids_by_category["distributors"])
+                if user_id is not None:
+                    dist_sql += " AND user_id = ?"
+                    dist_params.append(user_id)
+                dist_rows = conn.execute(dist_sql, tuple(dist_params)).fetchall()
                 results["distributors"] = [dict(r) for r in dist_rows]
 
                 # Also surface retailers linked to matched distributors
                 # (e.g. search "bernina" / "bnd" should list Bernina's retailers).
-                linked_retail_rows = conn.execute(
-                    f"SELECT mr.id, mr.name, mr.contact_person, "
-                    f"COALESCE(md.firm_name, md.name, 'Unassigned') AS distributor_name, "
-                    f"COALESCE(md.firm_nick_name, '') AS distributor_nick_name, "
-                    f"mr.phone_number, mr.location AS city, mr.gst_no, mr.address "
-                    f"FROM master_retailers mr "
-                    f"LEFT JOIN master_distributors md ON mr.distributor_id = md.id "
-                    f"WHERE mr.distributor_id IN ({placeholders})",
-                    tuple(ids_by_category["distributors"]),
-                ).fetchall()
-                for row in linked_retail_rows:
-                    ids_by_category.setdefault("retailers", set()).add(int(row["id"]))
+                owned_dist_ids = [int(r["id"]) for r in dist_rows if r["id"] is not None]
+                if owned_dist_ids:
+                    placeholders = ",".join("?" * len(owned_dist_ids))
+                    linked_sql = (
+                        f"SELECT mr.id, mr.name, mr.contact_person, "
+                        f"COALESCE(md.firm_name, md.name, 'Unassigned') AS distributor_name, "
+                        f"COALESCE(md.firm_nick_name, '') AS distributor_nick_name, "
+                        f"mr.phone_number, mr.location AS city, mr.gst_no, mr.address "
+                        f"FROM master_retailers mr "
+                        f"LEFT JOIN master_distributors md ON mr.distributor_id = md.id "
+                        f"WHERE mr.distributor_id IN ({placeholders})"
+                    )
+                    linked_params: list[Any] = list(owned_dist_ids)
+                    if user_id is not None:
+                        linked_sql += " AND mr.user_id = ?"
+                        linked_params.append(user_id)
+                    linked_retail_rows = conn.execute(
+                        linked_sql, tuple(linked_params)
+                    ).fetchall()
+                    for row in linked_retail_rows:
+                        ids_by_category.setdefault("retailers", set()).add(int(row["id"]))
 
             if ids_by_category.get("retailers"):
                 placeholders = ",".join("?" * len(ids_by_category["retailers"]))
-                retail_rows = conn.execute(
+                retail_sql = (
                     f"SELECT mr.id, mr.name, mr.contact_person, "
                     f"COALESCE(md.firm_name, md.name, 'Unassigned') AS distributor_name, "
                     f"COALESCE(md.firm_nick_name, '') AS distributor_nick_name, "
                     f"mr.phone_number, mr.location AS city, mr.gst_no, mr.address "
                     f"FROM master_retailers mr LEFT JOIN master_distributors md ON mr.distributor_id = md.id "
-                    f"WHERE mr.id IN ({placeholders})",
-                    tuple(ids_by_category["retailers"]),
-                ).fetchall()
+                    f"WHERE mr.id IN ({placeholders})"
+                )
+                retail_params: list[Any] = list(ids_by_category["retailers"])
+                if user_id is not None:
+                    retail_sql += " AND mr.user_id = ?"
+                    retail_params.append(user_id)
+                retail_rows = conn.execute(retail_sql, tuple(retail_params)).fetchall()
                 results["retailers"] = [dict(r) for r in retail_rows]
 
             if so_ci_query and ids_by_category.get("orders"):
                 placeholders = ",".join("?" * len(ids_by_category["orders"]))
-                order_rows = conn.execute(
+                order_sql = (
                     f"SELECT olt.tracking_id, olt.order_ref_no, "
                     f"COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name, "
                     f"olt.transit_status, olt.payment_status, "
@@ -8064,9 +8232,13 @@ class CentralizedDB:
                     f") AS invoice_no "
                     f"FROM order_lifecycle_tracking olt "
                     f"LEFT JOIN master_distributors md ON olt.distributor_id = md.id "
-                    f"WHERE olt.tracking_id IN ({placeholders})",
-                    tuple(ids_by_category["orders"]),
-                ).fetchall()
+                    f"WHERE olt.tracking_id IN ({placeholders})"
+                )
+                order_params: list[Any] = list(ids_by_category["orders"])
+                if user_id is not None:
+                    order_sql += " AND md.user_id = ?"
+                    order_params.append(user_id)
+                order_rows = conn.execute(order_sql, tuple(order_params)).fetchall()
                 enriched_orders = []
                 for r in order_rows:
                     item = dict(r)
@@ -8108,6 +8280,9 @@ class CentralizedDB:
                 if workspace_id:
                     order_like_sql += " AND olt.workspace_id = ?"
                     order_like_params.append(workspace_id)
+                if user_id is not None:
+                    order_like_sql += " AND md.user_id = ?"
+                    order_like_params.append(user_id)
                 order_like_sql += " LIMIT 50"
                 order_like_rows = conn.execute(order_like_sql, tuple(order_like_params)).fetchall()
                 if order_like_rows:
@@ -8166,6 +8341,9 @@ class CentralizedDB:
             if workspace_id:
                 dist_sql += " AND workspace_id = ?"
                 dist_params.append(workspace_id)
+            if user_id is not None:
+                dist_sql += " AND user_id = ?"
+                dist_params.append(user_id)
 
             retail_sql = (
                 "SELECT mr.id, mr.name, mr.contact_person, mr.distributor_id, mr.phone_number, "
@@ -8184,6 +8362,9 @@ class CentralizedDB:
             if workspace_id:
                 retail_sql += " AND mr.workspace_id = ?"
                 retail_params.append(workspace_id)
+            if user_id is not None:
+                retail_sql += " AND mr.user_id = ?"
+                retail_params.append(user_id)
 
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -8204,8 +8385,9 @@ class CentralizedDB:
                         linked = conn.execute(
                             f"SELECT mr.id, mr.name, mr.contact_person, mr.distributor_id, mr.phone_number, "
                             f"mr.location AS city, mr.gst_no, mr.address "
-                            f"FROM master_retailers mr WHERE mr.distributor_id IN ({placeholders})",
-                            tuple(dist_ids),
+                            f"FROM master_retailers mr WHERE mr.distributor_id IN ({placeholders})"
+                            + (" AND mr.user_id = ?" if user_id is not None else ""),
+                            tuple(dist_ids) + ((user_id,) if user_id is not None else ()),
                         ).fetchall()
                         seen = {int(r["id"]) for r in retail_rows_raw}
                         for row in linked:
@@ -8244,9 +8426,15 @@ class CentralizedDB:
                 conn.row_factory = sqlite3.Row
                 dist_query = "SELECT id, distributor_id, firm_name, firm_nick_name, name, contact_person_role, phone_number, location, gst_no, zone, region, address FROM master_distributors"
                 dist_params: list[Any] = []
+                dist_clauses: list[str] = []
                 if workspace_id:
-                    dist_query += " WHERE workspace_id = ?"
+                    dist_clauses.append("workspace_id = ?")
                     dist_params.append(workspace_id)
+                if user_id is not None:
+                    dist_clauses.append("user_id = ?")
+                    dist_params.append(user_id)
+                if dist_clauses:
+                    dist_query += " WHERE " + " AND ".join(dist_clauses)
                 all_distributors = conn.execute(dist_query, dist_params).fetchall()
 
                 retail_query = (
@@ -8254,9 +8442,15 @@ class CentralizedDB:
                     "FROM master_retailers mr"
                 )
                 retail_params: list[Any] = []
+                retail_clauses: list[str] = []
                 if workspace_id:
-                    retail_query += " WHERE mr.workspace_id = ?"
+                    retail_clauses.append("mr.workspace_id = ?")
                     retail_params.append(workspace_id)
+                if user_id is not None:
+                    retail_clauses.append("mr.user_id = ?")
+                    retail_params.append(user_id)
+                if retail_clauses:
+                    retail_query += " WHERE " + " AND ".join(retail_clauses)
                 all_retailers = conn.execute(retail_query, retail_params).fetchall()
 
             normalized_lower = self._party_name_fold(normalized_query)
@@ -9400,6 +9594,7 @@ class CentralizedDB:
         path: str | Path,
         template_config: dict[str, Any] | None = None,
         workspace_id: str = "default",
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         if master_type not in {"distributors", "retailers"}:
             raise ValueError("Unsupported master type")
@@ -9411,6 +9606,7 @@ class CentralizedDB:
         unassigned = 0
         ambiguous_distributor_refs: list[dict[str, Any]] = []
         errors: list[str] = []
+        user_clause, user_params = self._user_id_sql("user_id", user_id)
 
         with sqlite3.connect(self.db_path) as conn:
             if master_type == "distributors":
@@ -9646,8 +9842,9 @@ class CentralizedDB:
                             continue
 
                         existing_by_name_rows = conn.execute(
-                            "SELECT id, distributor_id, name, gst_no, buyer_code, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(name) = ? AND workspace_id = ?",
-                            (name_key, workspace_id),
+                            "SELECT id, distributor_id, name, gst_no, buyer_code, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(name) = ? AND workspace_id = ? AND "
+                            + user_clause,
+                            (name_key, workspace_id, *user_params),
                         ).fetchall()
                         existing_by_name = (
                             existing_by_name_rows[0] if existing_by_name_rows else None
@@ -9662,8 +9859,9 @@ class CentralizedDB:
                         existing_by_gst_rows: list[tuple[Any, ...]] = []
                         if gst_no:
                             existing_by_gst_rows = conn.execute(
-                                "SELECT id, distributor_id, name, gst_no, buyer_code, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(COALESCE(gst_no, '')) = ? AND workspace_id = ?",
-                                (gst_no.lower(), workspace_id),
+                                "SELECT id, distributor_id, name, gst_no, buyer_code, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(COALESCE(gst_no, '')) = ? AND workspace_id = ? AND "
+                                + user_clause,
+                                (gst_no.lower(), workspace_id, *user_params),
                             ).fetchall()
                         existing_by_gst = (
                             existing_by_gst_rows[0] if existing_by_gst_rows else None
@@ -9678,8 +9876,9 @@ class CentralizedDB:
                         existing_by_code_rows: list[tuple[Any, ...]] = []
                         if distributor_code:
                             existing_by_code_rows = conn.execute(
-                                "SELECT id, distributor_id, name, gst_no, buyer_code, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(COALESCE(distributor_id, '')) = ? AND workspace_id = ?",
-                                (distributor_code.lower(), workspace_id),
+                                "SELECT id, distributor_id, name, gst_no, buyer_code, firm_name, firm_nick_name, zone, region, location, address, pincode, phone_number, email, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, status FROM master_distributors WHERE LOWER(COALESCE(distributor_id, '')) = ? AND workspace_id = ? AND "
+                                + user_clause,
+                                (distributor_code.lower(), workspace_id, *user_params),
                             ).fetchall()
                         existing_by_code = (
                             existing_by_code_rows[0] if existing_by_code_rows else None
@@ -9912,6 +10111,7 @@ class CentralizedDB:
                             contact_person_role=contact_person_role or None,
                             status="active",
                             workspace_id=workspace_id,
+                            user_id=user_id,
                             conn=conn,
                             allow_fuzzy=False,
                             refresh_search_index=False,
@@ -9931,8 +10131,9 @@ class CentralizedDB:
                 # effectively hang. Matching now happens in-memory
                 # against this pre-fetched list instead.
                 distributor_rows = conn.execute(
-                    "SELECT id, distributor_id, name, firm_name, firm_nick_name, gst_no FROM master_distributors WHERE workspace_id = ?",
-                    (workspace_id,),
+                    "SELECT id, distributor_id, name, firm_name, firm_nick_name, gst_no FROM master_distributors WHERE workspace_id = ? AND "
+                    + user_clause,
+                    (workspace_id, *user_params),
                 ).fetchall()
                 distributors_by_exact_key: dict[str, dict[str, Any]] = {}
                 distributor_cache: dict[int, dict[str, Any]] = {}
@@ -10183,6 +10384,7 @@ class CentralizedDB:
                             extra_filters={
                                 "distributor_id": distributor_id_value,
                                 "workspace_id": workspace_id,
+                                "user_id": user_id,
                             },
                         )
                         if existing_retailer_id is not None:
@@ -10273,6 +10475,7 @@ class CentralizedDB:
                             anniversary=anniversary or None,
                             phone_number_2=phone_number_2 or None,
                             workspace_id=workspace_id,
+                            user_id=user_id,
                             conn=conn,
                             refresh_search_index=False,
                         )
@@ -10655,6 +10858,7 @@ class CentralizedDB:
         contact_person_role: str | None = None,
         status: str = "active",
         workspace_id: str = "default",
+        user_id: int | None = None,
         conn: sqlite3.Connection | None = None,
         allow_fuzzy: bool = True,
         refresh_search_index: bool = True,
@@ -10668,21 +10872,22 @@ class CentralizedDB:
         )
         connection = conn or sqlite3.connect(self.db_path)
         should_close = conn is None
+        user_clause, user_params = self._user_id_sql("user_id", user_id)
         try:
             # Prefer exact GST match when GST number is provided
             if gst_no:
                 gst_row = connection.execute(
                     "SELECT id FROM master_distributors WHERE LOWER(COALESCE(gst_no, '')) = ?"
-                    " AND workspace_id = ? LIMIT 1",
-                    (str(gst_no).lower(), workspace_id),
+                    f" AND workspace_id = ? AND {user_clause} LIMIT 1",
+                    (str(gst_no).lower(), workspace_id, *user_params),
                 ).fetchone()
                 if gst_row:
                     return int(gst_row[0])
             if buyer_code:
                 buyer_row = connection.execute(
                     "SELECT id FROM master_distributors WHERE LOWER(COALESCE(buyer_code, '')) = ?"
-                    " AND workspace_id = ? LIMIT 1",
-                    (str(buyer_code).lower(), workspace_id),
+                    f" AND workspace_id = ? AND {user_clause} LIMIT 1",
+                    (str(buyer_code).lower(), workspace_id, *user_params),
                 ).fetchone()
                 if buyer_row:
                     return int(buyer_row[0])
@@ -10693,7 +10898,7 @@ class CentralizedDB:
                     "master_distributors",
                     "name",
                     canonical_name,
-                    extra_filters={"workspace_id": workspace_id},
+                    extra_filters={"workspace_id": workspace_id, "user_id": user_id},
                 )
             if existing_id is not None:
                 return existing_id
@@ -10707,6 +10912,7 @@ class CentralizedDB:
                     firm_nick_name,
                     name,
                     workspace_id,
+                    user_id,
                     phone_number,
                     location,
                     address,
@@ -10736,7 +10942,7 @@ class CentralizedDB:
                     created_at,
                     contact_person_role
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     distributor_code or self._generate_unique_master_id("D"),
@@ -10745,6 +10951,7 @@ class CentralizedDB:
                     firm_nick_name,
                     canonical_name,
                     workspace_id,
+                    user_id,
                     phone_number,
                     location,
                     address,
@@ -10805,7 +11012,7 @@ class CentralizedDB:
                 connection.close()
 
     def get_master_distributor_by_name(
-        self, name: str, workspace_id: str | None = None
+        self, name: str, workspace_id: str | None = None, user_id: int | None = None
     ) -> dict[str, Any] | None:
         canonical_name = self._canonicalize_known_master_name(name)
         lookup_values = [self._normalize_text(canonical_name)]
@@ -10819,6 +11026,9 @@ class CentralizedDB:
             if workspace_id:
                 where_clauses = f"({where_clauses}) AND workspace_id = ?"
                 params.append(workspace_id)
+            user_clause, user_params = self._user_id_sql("user_id", user_id)
+            where_clauses = f"({where_clauses}) AND {user_clause}"
+            params.extend(user_params)
             query = (
                 "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, buyer_code, zone, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at FROM master_distributors WHERE "
                 + where_clauses
@@ -10863,7 +11073,7 @@ class CentralizedDB:
         }
 
     def get_master_distributor_by_gst(
-        self, gst_no: str, workspace_id: str | None = None
+        self, gst_no: str, workspace_id: str | None = None, user_id: int | None = None
     ) -> dict[str, Any] | None:
         if not self._normalize_text(gst_no):
             return None
@@ -10874,6 +11084,9 @@ class CentralizedDB:
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
+        user_clause, user_params = self._user_id_sql("user_id", user_id)
+        query += f" AND {user_clause}"
+        params.extend(user_params)
         query += " LIMIT 1"
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
@@ -10915,7 +11128,7 @@ class CentralizedDB:
         }
 
     def get_master_distributor_by_buyer_code(
-        self, buyer_code: str, workspace_id: str | None = None
+        self, buyer_code: str, workspace_id: str | None = None, user_id: int | None = None
     ) -> dict[str, Any] | None:
         if not self._normalize_text(buyer_code):
             return None
@@ -10926,6 +11139,9 @@ class CentralizedDB:
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
+        user_clause, user_params = self._user_id_sql("user_id", user_id)
+        query += f" AND {user_clause}"
+        params.extend(user_params)
         query += " LIMIT 1"
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
@@ -10967,13 +11183,19 @@ class CentralizedDB:
         }
 
     def get_master_distributor(
-        self, distributor_id: int, workspace_id: str | None = None
+        self,
+        distributor_id: int,
+        workspace_id: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any] | None:
         query = "SELECT id, distributor_id, distributor_code, firm_name, firm_nick_name, name, phone_number, location, address, pincode, email, gst_no, buyer_code, zone, territory, region, payment_terms, birthday, anniversary, secondary_distributor_name, secondary_distributor_phone_number, secondary_distributor_birthday, secondary_distributor_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, credit_limit, latitude, longitude, status, created_at, phone_number_2, contact_person_role FROM master_distributors WHERE id = ?"
         params: list[Any] = [distributor_id]
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params.append(user_id)
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
         if row is None:
@@ -11033,7 +11255,11 @@ class CentralizedDB:
     }
 
     def update_master_distributor(
-        self, distributor_id: int, workspace_id: str, **fields: Any
+        self,
+        distributor_id: int,
+        workspace_id: str,
+        user_id: int | None = None,
+        **fields: Any,
     ) -> dict[str, Any] | None:
         """
         Partial update - only the fields actually passed are changed, every
@@ -11044,6 +11270,8 @@ class CentralizedDB:
         distinguish "wrong workspace" from "doesn't exist" - which is the
         correct behavior for a cross-tenant safety boundary).
 
+        When user_id is provided, ownership is also enforced.
+
         Returns the updated record (same shape as get_master_distributor()),
         or None if no matching row was found in this workspace.
         """
@@ -11051,7 +11279,9 @@ class CentralizedDB:
         if unknown:
             raise ValueError(f"Cannot update unknown/protected field(s): {sorted(unknown)}")
         if not fields:
-            return self.get_master_distributor(distributor_id, workspace_id=workspace_id)
+            return self.get_master_distributor(
+                distributor_id, workspace_id=workspace_id, user_id=user_id
+            )
 
         # Always bump updated_at for delta sync clients.
         fields = dict(fields)
@@ -11059,40 +11289,63 @@ class CentralizedDB:
 
         set_clause = ", ".join(f"{col} = ?" for col in fields)
         params = list(fields.values()) + [distributor_id, workspace_id]
+        where = "WHERE id = ? AND workspace_id = ?"
+        if user_id is not None:
+            where += " AND user_id = ?"
+            params.append(user_id)
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
-                f"UPDATE master_distributors SET {set_clause} WHERE id = ? AND workspace_id = ?",
+                f"UPDATE master_distributors SET {set_clause} {where}",
                 params,
             )
             if cursor.rowcount == 0:
                 return None
 
-        return self.get_master_distributor(distributor_id, workspace_id=workspace_id)
+        return self.get_master_distributor(
+            distributor_id, workspace_id=workspace_id, user_id=user_id
+        )
 
-    def delete_master_distributor(self, distributor_id: int, workspace_id: str) -> bool:
+    def delete_master_distributor(
+        self, distributor_id: int, workspace_id: str, user_id: int | None = None
+    ) -> bool:
         """
         Hard-delete a master distributor from this workspace.
         Linked master retailers keep their rows; distributor_id is cleared.
         Returns True if a row was deleted, False otherwise.
         """
         with sqlite3.connect(self.db_path) as conn:
+            retailer_where = "WHERE distributor_id = ? AND workspace_id = ?"
+            retailer_params: list[Any] = [distributor_id, workspace_id]
+            if user_id is not None:
+                retailer_where += " AND user_id = ?"
+                retailer_params.append(user_id)
             conn.execute(
-                "UPDATE master_retailers SET distributor_id = NULL "
-                "WHERE distributor_id = ? AND workspace_id = ?",
-                (distributor_id, workspace_id),
+                f"UPDATE master_retailers SET distributor_id = NULL {retailer_where}",
+                retailer_params,
             )
+            dist_where = "WHERE id = ? AND workspace_id = ?"
+            dist_params: list[Any] = [distributor_id, workspace_id]
+            if user_id is not None:
+                dist_where += " AND user_id = ?"
+                dist_params.append(user_id)
             cursor = conn.execute(
-                "DELETE FROM master_distributors WHERE id = ? AND workspace_id = ?",
-                (distributor_id, workspace_id),
+                f"DELETE FROM master_distributors {dist_where}",
+                dist_params,
             )
             return cursor.rowcount > 0
 
     def list_master_distributors(
-        self, limit: int = 50, workspace_id: str | None = None, offset: int = 0,
+        self,
+        limit: int = 50,
+        workspace_id: str | None = None,
+        offset: int = 0,
         include_inactive: bool = True,
         since: str | None = None,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
+        if user_id is None:
+            return []
         safe_limit = max(1, int(limit))
         safe_offset = max(0, int(offset))
         params: list[Any] = []
@@ -11134,7 +11387,8 @@ class CentralizedDB:
                     contact_person_role
                 FROM master_distributors
                 """
-        where_parts: list[str] = []
+        where_parts: list[str] = ["user_id = ?"]
+        params.append(user_id)
         if workspace_id:
             where_parts.append("workspace_id = ?")
             params.append(workspace_id)
@@ -11199,11 +11453,24 @@ class CentralizedDB:
             for row in rows
         ]
 
-    def get_party_master_fingerprint(self, workspace_id: str | None = None) -> dict[str, Any]:
+    def get_party_master_fingerprint(
+        self, workspace_id: str | None = None, user_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Tiny sync stamp for mobile multi-device Party Master.
         Create / edit / delete changes the stamp so clients pull only when stale.
+        Fingerprint is scoped to the JWT user's rows only.
         """
+        if user_id is None:
+            return {
+                "fingerprint": "d:0:0:0|r:0:0:0",
+                "distributor_count": 0,
+                "retailer_count": 0,
+                "distributor_max_id": 0,
+                "retailer_max_id": 0,
+                "distributor_stamp": 0,
+                "retailer_stamp": 0,
+            }
         ws = (workspace_id or "").strip() or None
 
         def _stamp_distributors() -> tuple[int, int, int]:
@@ -11224,8 +11491,9 @@ class CentralizedDB:
                     ), 0)
                 FROM master_distributors
                 WHERE IFNULL(status, 'active') != 'inactive'
+                  AND user_id = ?
             """
-            params: list[Any] = []
+            params: list[Any] = [user_id]
             if ws:
                 q += " AND workspace_id = ?"
                 params.append(ws)
@@ -11249,8 +11517,9 @@ class CentralizedDB:
                     ), 0)
                 FROM master_retailers
                 WHERE IFNULL(status, 'active') != 'inactive'
+                  AND user_id = ?
             """
-            params: list[Any] = []
+            params: list[Any] = [user_id]
             if ws:
                 q += " AND workspace_id = ?"
                 params.append(ws)
@@ -11272,13 +11541,16 @@ class CentralizedDB:
         }
 
     def get_master_retailer_by_name(
-        self, name: str, workspace_id: str | None = None
+        self, name: str, workspace_id: str | None = None, user_id: int | None = None
     ) -> dict[str, Any] | None:
         query = "SELECT id, retailer_id, retailer_code, name, distributor_id, location, latitude, longitude, status, created_at, phone_number, email, address, gst_no, secondary_retailer_name, secondary_retailer_phone_number, secondary_retailer_birthday, secondary_retailer_anniversary, sales_executive_name, sales_executive_phone_number, sales_executive_email, sales_executive_birthday, sales_executive_anniversary, owner_name FROM master_retailers WHERE LOWER(name) = ?"
         params: list[Any] = [str(name or "").strip().lower()]
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
+        user_clause, user_params = self._user_id_sql("user_id", user_id)
+        query += f" AND {user_clause}"
+        params.extend(user_params)
         query += " LIMIT 1"
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
@@ -11317,7 +11589,10 @@ class CentralizedDB:
         workspace_id: str | None = None,
         offset: int = 0,
         since: str | None = None,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
+        if user_id is None:
+            return []
         safe_limit = max(1, int(limit))
         safe_offset = max(0, int(offset))
         params: list[Any] = []
@@ -11341,7 +11616,8 @@ class CentralizedDB:
                     ON md.id = mr.distributor_id
                     AND (mr.workspace_id IS NULL OR md.workspace_id = mr.workspace_id)
                 """
-        where_parts: list[str] = []
+        where_parts: list[str] = ["mr.user_id = ?"]
+        params.append(user_id)
         if workspace_id:
             where_parts.append("mr.workspace_id = ?")
             params.append(workspace_id)
@@ -11425,6 +11701,7 @@ class CentralizedDB:
         anniversary: str | None = None,
         phone_number_2: str | None = None,
         workspace_id: str = "default",
+        user_id: int | None = None,
         conn: sqlite3.Connection | None = None,
         refresh_search_index: bool = True,
     ) -> int:
@@ -11440,6 +11717,7 @@ class CentralizedDB:
                 extra_filters={
                     "distributor_id": distributor_id,
                     "workspace_id": workspace_id,
+                    "user_id": user_id,
                 },
             )
             if existing_id is not None:
@@ -11453,6 +11731,7 @@ class CentralizedDB:
                     name,
                     distributor_id,
                     workspace_id,
+                    user_id,
                     location,
                     latitude,
                     longitude,
@@ -11480,7 +11759,7 @@ class CentralizedDB:
                     anniversary,
                     phone_number_2
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self._generate_unique_master_id("R"),
@@ -11488,6 +11767,7 @@ class CentralizedDB:
                     name,
                     distributor_id,
                     workspace_id,
+                    user_id,
                     location,
                     latitude,
                     longitude,
@@ -11544,7 +11824,11 @@ class CentralizedDB:
     }
 
     def update_master_retailer(
-        self, retailer_id: int, workspace_id: str, **fields: Any
+        self,
+        retailer_id: int,
+        workspace_id: str,
+        user_id: int | None = None,
+        **fields: Any,
     ) -> dict[str, Any] | None:
         """
         Same partial-update, workspace-scoped pattern as
@@ -11560,7 +11844,7 @@ class CentralizedDB:
 
         if "distributor_id" in fields and fields["distributor_id"] is not None:
             distributor = self.get_master_distributor(
-                fields["distributor_id"], workspace_id=workspace_id
+                fields["distributor_id"], workspace_id=workspace_id, user_id=user_id
             )
             if distributor is None:
                 raise ValueError(
@@ -11569,30 +11853,45 @@ class CentralizedDB:
                 )
 
         if not fields:
-            return self.get_master_retailer(retailer_id, workspace_id=workspace_id)
+            return self.get_master_retailer(
+                retailer_id, workspace_id=workspace_id, user_id=user_id
+            )
 
         fields = dict(fields)
         fields["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         set_clause = ", ".join(f"{col} = ?" for col in fields)
         params = list(fields.values()) + [retailer_id, workspace_id]
+        where = "WHERE id = ? AND workspace_id = ?"
+        if user_id is not None:
+            where += " AND user_id = ?"
+            params.append(user_id)
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
-                f"UPDATE master_retailers SET {set_clause} WHERE id = ? AND workspace_id = ?",
+                f"UPDATE master_retailers SET {set_clause} {where}",
                 params,
             )
             if cursor.rowcount == 0:
                 return None
 
-        return self.get_master_retailer(retailer_id, workspace_id=workspace_id)
+        return self.get_master_retailer(
+            retailer_id, workspace_id=workspace_id, user_id=user_id
+        )
 
-    def delete_master_retailer(self, retailer_id: int, workspace_id: str) -> bool:
+    def delete_master_retailer(
+        self, retailer_id: int, workspace_id: str, user_id: int | None = None
+    ) -> bool:
         """Hard-delete a master retailer from this workspace."""
         with sqlite3.connect(self.db_path) as conn:
+            where = "WHERE id = ? AND workspace_id = ?"
+            params: list[Any] = [retailer_id, workspace_id]
+            if user_id is not None:
+                where += " AND user_id = ?"
+                params.append(user_id)
             cursor = conn.execute(
-                "DELETE FROM master_retailers WHERE id = ? AND workspace_id = ?",
-                (retailer_id, workspace_id),
+                f"DELETE FROM master_retailers {where}",
+                params,
             )
             return cursor.rowcount > 0
 
@@ -11615,7 +11914,10 @@ class CentralizedDB:
     ]
 
     def get_master_retailer(
-        self, retailer_id: int, workspace_id: str | None = None
+        self,
+        retailer_id: int,
+        workspace_id: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any] | None:
         cols = ", ".join(self._RETAILER_COLUMNS)
         query = f"SELECT {cols} FROM master_retailers WHERE id = ?"
@@ -11623,6 +11925,9 @@ class CentralizedDB:
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params.append(user_id)
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
         if row is None:
@@ -11823,6 +12128,7 @@ class CentralizedDB:
         workspace_id: str = "default",
         is_active: int = 1,
         content_fingerprint: str | None = None,
+        user_id: int | None = None,
     ) -> int:
         """Add a new order sheet to master. Returns the id of the inserted record."""
         created_at = datetime.now(timezone.utc).isoformat()
@@ -11832,16 +12138,19 @@ class CentralizedDB:
             content_fingerprint = self._hash_file_reference(file_reference)
 
         with sqlite3.connect(self.db_path) as conn:
+            self._ensure_column_exists(conn, "order_sheet_master", "user_id", "INTEGER")
             if content_fingerprint:
-                existing_rows = conn.execute(
-                    """
+                existing_sql = """
                     SELECT id, file_reference
                     FROM order_sheet_master
                     WHERE workspace_id = ? AND category = ?
-                    ORDER BY uploaded_at DESC
-                    """,
-                    (workspace_id, category),
-                ).fetchall()
+                """
+                existing_params: list[Any] = [workspace_id, category]
+                if user_id is not None:
+                    existing_sql += " AND user_id = ?"
+                    existing_params.append(user_id)
+                existing_sql += " ORDER BY uploaded_at DESC"
+                existing_rows = conn.execute(existing_sql, tuple(existing_params)).fetchall()
                 for existing_id, existing_file_reference in existing_rows:
                     if not existing_file_reference:
                         continue
@@ -11851,25 +12160,46 @@ class CentralizedDB:
 
             cursor = conn.execute(
                 """
-                INSERT INTO order_sheet_master (name, category, uploaded_at, workspace_id, file_reference, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO order_sheet_master (
+                    name, category, uploaded_at, workspace_id, file_reference,
+                    is_active, created_at, user_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, category, uploaded_at, workspace_id, file_reference, is_active, created_at),
+                (
+                    name,
+                    category,
+                    uploaded_at,
+                    workspace_id,
+                    file_reference,
+                    is_active,
+                    created_at,
+                    user_id,
+                ),
             )
             conn.commit()
             return cursor.lastrowid
 
-    def get_order_sheet(self, id: int, workspace_id: str = "default") -> dict[str, Any] | None:
+    def get_order_sheet(
+        self,
+        id: int,
+        workspace_id: str = "default",
+        user_id: int | None = None,
+    ) -> dict[str, Any] | None:
         """Retrieve a single order sheet by id. Returns None if not found or workspace mismatch."""
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT id, name, category, uploaded_at, workspace_id, file_reference, is_active, created_at
+            self._ensure_column_exists(conn, "order_sheet_master", "user_id", "INTEGER")
+            query = """
+                SELECT id, name, category, uploaded_at, workspace_id, file_reference,
+                       is_active, created_at, user_id
                 FROM order_sheet_master
                 WHERE id = ? AND workspace_id = ?
-                """,
-                (id, workspace_id),
-            ).fetchone()
+            """
+            params: list[Any] = [id, workspace_id]
+            if user_id is not None:
+                query += " AND user_id = ?"
+                params.append(user_id)
+            row = conn.execute(query, tuple(params)).fetchone()
 
             if not row:
                 return None
@@ -11883,6 +12213,7 @@ class CentralizedDB:
                 "file_reference": row[5],
                 "is_active": row[6],
                 "created_at": row[7],
+                "user_id": row[8],
             }
 
     def list_order_sheets(
@@ -11891,11 +12222,20 @@ class CentralizedDB:
         workspace_id: str = "default",
         limit: int = 100,
         offset: int = 0,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """List order sheets filtered by category and workspace. Returns list of dicts."""
+        """List order sheets filtered by category, workspace, and optional owner."""
         with sqlite3.connect(self.db_path) as conn:
-            query = "SELECT id, name, category, uploaded_at, workspace_id, file_reference, is_active, created_at FROM order_sheet_master WHERE workspace_id = ?"
+            self._ensure_column_exists(conn, "order_sheet_master", "user_id", "INTEGER")
+            query = (
+                "SELECT id, name, category, uploaded_at, workspace_id, file_reference, "
+                "is_active, created_at, user_id FROM order_sheet_master WHERE workspace_id = ?"
+            )
             params: list[Any] = [workspace_id]
+
+            if user_id is not None:
+                query += " AND user_id = ?"
+                params.append(user_id)
 
             if category:
                 query += " AND category = ?"
@@ -11916,6 +12256,7 @@ class CentralizedDB:
                     "file_reference": row[5],
                     "is_active": row[6],
                     "created_at": row[7],
+                    "user_id": row[8],
                 }
                 for row in rows
             ]
@@ -12171,7 +12512,9 @@ class CentralizedDB:
             ],
         )
 
-    def export_master_distributors_excel(self, workspace_id: str | None = None) -> bytes:
+    def export_master_distributors_excel(
+        self, workspace_id: str | None = None, user_id: int | None = None
+    ) -> bytes:
         columns = [
             "id",
             "distributor_id",
@@ -12203,13 +12546,17 @@ class CentralizedDB:
             "status",
             "created_at",
         ]
-        rows = self._read_table_rows("master_distributors", columns, workspace_id=workspace_id)
+        rows = self._read_table_rows(
+            "master_distributors", columns, workspace_id=workspace_id, user_id=user_id
+        )
         df = pd.DataFrame(rows, columns=columns)
         buffer = BytesIO()
         df.to_excel(buffer, index=False)
         return buffer.getvalue()
 
-    def export_master_distributors_csv(self, workspace_id: str | None = None) -> bytes:
+    def export_master_distributors_csv(
+        self, workspace_id: str | None = None, user_id: int | None = None
+    ) -> bytes:
         columns = [
             "id", "distributor_id", "firm_name", "firm_nick_name", "name",
             "contact_person_role",
@@ -12221,7 +12568,9 @@ class CentralizedDB:
             "sales_executive_email", "sales_executive_birthday",
             "sales_executive_anniversary", "credit_limit", "status", "created_at",
         ]
-        rows = self._read_table_rows("master_distributors", columns, workspace_id=workspace_id)
+        rows = self._read_table_rows(
+            "master_distributors", columns, workspace_id=workspace_id, user_id=user_id
+        )
         df = pd.DataFrame(rows, columns=columns)
         return df.to_csv(index=False).encode("utf-8")
 
@@ -12269,9 +12618,15 @@ class CentralizedDB:
         return pdf_bytes
 
     def _read_table_rows(
-        self, table_name: str, columns: list[str], workspace_id: str | None = None,
+        self,
+        table_name: str,
+        columns: list[str],
+        workspace_id: str | None = None,
         distributor_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[list[Any]]:
+        if user_id is None and table_name in ("master_distributors", "master_retailers"):
+            return []
         query = f"SELECT {', '.join(columns)} FROM {table_name}"
         clauses = []
         params: list[Any] = []
@@ -12281,6 +12636,9 @@ class CentralizedDB:
         if distributor_id is not None:
             clauses.append("distributor_id = ?")
             params.append(distributor_id)
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            params.append(user_id)
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         with sqlite3.connect(self.db_path) as conn:
@@ -12316,7 +12674,11 @@ class CentralizedDB:
         )
 
     def _read_master_retailer_rows_with_distributor_name(
-        self, columns: list[str], workspace_id: str | None = None, distributor_id: int | None = None
+        self,
+        columns: list[str],
+        workspace_id: str | None = None,
+        distributor_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[list[Any]]:
         """
         Same as _read_table_rows("master_retailers", columns, ...) but
@@ -12324,6 +12686,8 @@ class CentralizedDB:
         actual name — showing a bare internal ID number in an export
         is not usable/readable for a real person.
         """
+        if user_id is None:
+            return []
         select_parts = []
         for col in columns:
             if col == "distributor_id":
@@ -12336,8 +12700,8 @@ class CentralizedDB:
             f"SELECT {', '.join(select_parts)} FROM master_retailers mr "
             "LEFT JOIN master_distributors md ON mr.distributor_id = md.id"
         )
-        clauses = []
-        params: list[Any] = []
+        clauses = ["mr.user_id = ?"]
+        params: list[Any] = [user_id]
         if workspace_id:
             clauses.append("mr.workspace_id = ?")
             params.append(workspace_id)
@@ -12351,7 +12715,10 @@ class CentralizedDB:
         return [list(row) for row in rows]
 
     def export_master_retailers_excel(
-        self, workspace_id: str | None = None, distributor_id: int | None = None
+        self,
+        workspace_id: str | None = None,
+        distributor_id: int | None = None,
+        user_id: int | None = None,
     ) -> bytes:
         columns = [
             "id",
@@ -12385,7 +12752,10 @@ class CentralizedDB:
         ]
         display_columns = ["distributor_name" if c == "distributor_id" else c for c in columns]
         rows = self._read_master_retailer_rows_with_distributor_name(
-            columns, workspace_id=workspace_id, distributor_id=distributor_id
+            columns,
+            workspace_id=workspace_id,
+            distributor_id=distributor_id,
+            user_id=user_id,
         )
         df = pd.DataFrame(rows, columns=display_columns)
         buffer = BytesIO()
@@ -12393,7 +12763,10 @@ class CentralizedDB:
         return buffer.getvalue()
 
     def export_master_retailers_csv(
-        self, workspace_id: str | None = None, distributor_id: int | None = None
+        self,
+        workspace_id: str | None = None,
+        distributor_id: int | None = None,
+        user_id: int | None = None,
     ) -> bytes:
         columns = [
             "id", "retailer_id", "retailer_code", "name", "distributor_id",
@@ -12408,10 +12781,48 @@ class CentralizedDB:
         ]
         display_columns = ["distributor_name" if c == "distributor_id" else c for c in columns]
         rows = self._read_master_retailer_rows_with_distributor_name(
-            columns, workspace_id=workspace_id, distributor_id=distributor_id
+            columns,
+            workspace_id=workspace_id,
+            distributor_id=distributor_id,
+            user_id=user_id,
         )
         df = pd.DataFrame(rows, columns=display_columns)
         return df.to_csv(index=False).encode("utf-8")
+
+    def claim_unowned_masters(
+        self, workspace_id: str, user_id: int
+    ) -> dict[str, int]:
+        """
+        Assign legacy Party Master rows (user_id IS NULL) in this workspace
+        to the given user. Safe to call once for the historical owner
+        (e.g. kunwar1del); new users who never claim keep empty lists.
+        Does not steal rows already owned by another user_id.
+        """
+        if not user_id:
+            raise ValueError("user_id is required")
+        ws = (workspace_id or "").strip() or "default"
+        with sqlite3.connect(self.db_path) as conn:
+            dist_cur = conn.execute(
+                """
+                UPDATE master_distributors
+                SET user_id = ?
+                WHERE workspace_id = ? AND user_id IS NULL
+                """,
+                (user_id, ws),
+            )
+            ret_cur = conn.execute(
+                """
+                UPDATE master_retailers
+                SET user_id = ?
+                WHERE workspace_id = ? AND user_id IS NULL
+                """,
+                (user_id, ws),
+            )
+            conn.commit()
+        return {
+            "distributors_claimed": int(dist_cur.rowcount or 0),
+            "retailers_claimed": int(ret_cur.rowcount or 0),
+        }
 
     def export_targets_achievements(self) -> str:
         return self.export_table(
@@ -12487,6 +12898,7 @@ class CentralizedDB:
         limit: int = 50,
         party_type: str | None = None,
         party_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
         self.ensure_executive_visits_table()
         query = (
@@ -12495,6 +12907,9 @@ class CentralizedDB:
             "FROM executive_visits WHERE workspace_id = ?"
         )
         params: list[Any] = [workspace_id]
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params.append(user_id)
         if party_type:
             query += " AND party_type = ?"
             params.append(party_type)
@@ -14233,8 +14648,10 @@ class CentralizedDB:
         return f"{start}-{start + 1}"
 
     def list_distributor_secondary_sales(self, user_id: int | None) -> list[dict[str, Any]]:
-        """All master distributors + this user's monthly secondary entries,
-        grouped by FY under each distributor."""
+        """Distributors owned by this user (or with this user's secondary_sales
+        rows) + monthly secondary entries, grouped by FY under each distributor.
+        Brand-new users with no masters and no secondary rows see an empty list.
+        """
         if not user_id:
             return []
         self.ensure_distributor_secondary_sales_table()
@@ -14244,8 +14661,15 @@ class CentralizedDB:
                 """
                 SELECT id, COALESCE(firm_name, name, 'Unknown') AS distributor_name
                 FROM master_distributors
+                WHERE user_id = ?
+                   OR id IN (
+                        SELECT DISTINCT distributor_id
+                        FROM distributor_secondary_sales
+                        WHERE user_id = ?
+                   )
                 ORDER BY LOWER(COALESCE(firm_name, name, ''))
-                """
+                """,
+                (user_id, user_id),
             ).fetchall()
             entry_rows = conn.execute(
                 """

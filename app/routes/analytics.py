@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template_string, current_app
 
 from centralized_db_system.db import CentralizedDB
-from app.routes.auth import require_jwt_auth, get_workspace_id
+from app.routes.auth import require_jwt_auth, get_workspace_id, get_request_user_id
 
 analytics_blueprint = Blueprint("analytics", __name__)
 
@@ -322,8 +322,12 @@ def analytics() -> str:
     workspace_id = get_workspace_id()
     db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
     dashboard_stats = db.get_dashboard_payload(workspace_id=workspace_id)
-    distributors = db.list_master_distributors(limit=50, workspace_id=workspace_id)
-    raw_retailers = db.list_master_retailers(limit=50, workspace_id=workspace_id)
+    distributors = db.list_master_distributors(
+        limit=50, workspace_id=workspace_id, user_id=get_request_user_id()
+    )
+    raw_retailers = db.list_master_retailers(
+        limit=50, workspace_id=workspace_id, user_id=get_request_user_id()
+    )
     dist_id_to_name = {d["id"]: d["firm_name"] for d in distributors}
     retailers = []
     for r in raw_retailers:

@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 from flask import Blueprint, request, jsonify, current_app
-from app.routes.auth import require_jwt_auth
+from app.routes.auth import require_jwt_auth, get_request_user_id
 from centralized_db_system.db import CentralizedDB
 
 order_sheets_bp = Blueprint("order_sheets", __name__, url_prefix="/api/v1/order-sheets")
@@ -101,6 +101,7 @@ def create_order_sheet():
 
     try:
         db = _get_db()
+        uid = get_request_user_id()
         sheet_id = db.add_order_sheet(
             name=name,
             category=category,
@@ -108,9 +109,10 @@ def create_order_sheet():
             workspace_id=workspace_id,
             is_active=is_active,
             content_fingerprint=_fingerprint_file(file_reference),
+            user_id=uid,
         )
         
-        sheet = db.get_order_sheet(sheet_id, workspace_id)
+        sheet = db.get_order_sheet(sheet_id, workspace_id, user_id=uid)
         return jsonify({"data": sheet, "message": "Order sheet created successfully"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -144,6 +146,7 @@ def list_order_sheets():
             workspace_id=workspace_id,
             limit=limit,
             offset=offset,
+            user_id=get_request_user_id(),
         )
         return jsonify({"data": sheets}), 200
     except Exception as e:
@@ -165,7 +168,7 @@ def get_order_sheet(sheet_id: int):
 
     try:
         db = _get_db()
-        sheet = db.get_order_sheet(sheet_id, workspace_id)
+        sheet = db.get_order_sheet(sheet_id, workspace_id, user_id=get_request_user_id())
         
         if not sheet:
             return jsonify({"error": "Order sheet not found"}), 404
