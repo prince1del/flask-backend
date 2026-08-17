@@ -26,6 +26,7 @@ from .executive import executive_bp
 from .hop import hop_bp
 from .dsr_market import dsr_market_bp
 from .distributor_zone import distributor_zone_bp
+from .distributor_grievances import distributor_grievances_bp
 from .personal_todos import personal_todos_bp
 from .pjp import pjp_bp
 from .ask_nexora_troubleshoot import ask_nexora_troubleshoot_bp
@@ -61,6 +62,7 @@ __all__ = [
     'hop_bp',
     'dsr_market_bp',
     'distributor_zone_bp',
+    'distributor_grievances_bp',
     'personal_todos_bp',
     'pjp_bp',
     'ask_nexora_troubleshoot_bp',

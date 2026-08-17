@@ -66,6 +66,7 @@ from app.routes import (
     hop_bp,
     dsr_market_bp,
     distributor_zone_bp,
+    distributor_grievances_bp,
     personal_todos_bp,
     pjp_bp,
     ask_nexora_troubleshoot_bp,
@@ -331,6 +332,7 @@ def create_app() -> Flask:
     app.register_blueprint(hop_bp)
     app.register_blueprint(dsr_market_bp)
     app.register_blueprint(distributor_zone_bp)
+    app.register_blueprint(distributor_grievances_bp)
     app.register_blueprint(personal_todos_bp)
     app.register_blueprint(pjp_bp)
     app.register_blueprint(ask_nexora_troubleshoot_bp)

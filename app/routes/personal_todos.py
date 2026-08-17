@@ -17,6 +17,7 @@ CATEGORIES = {
     "Boss Task",
     "Retailer Query",
     "Distributor Query",
+    "Grievance",
     "Call",
     "Report",
     "Internal Work",
@@ -69,6 +70,10 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_personal_todos_user "
         "ON personal_todos(workspace_id, user_id, status, due_date)"
     )
+    try:
+        conn.execute("ALTER TABLE personal_todos ADD COLUMN linked_grievance_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
@@ -93,6 +98,9 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "linked_party_id": row["linked_party_id"],
         "linked_distributor_id": row["linked_distributor_id"],
         "linked_retailer_id": row["linked_retailer_id"],
+        "linked_grievance_id": row["linked_grievance_id"]
+        if "linked_grievance_id" in row.keys()
+        else None,
         "bucket": _bucket_for_row(row),
     }
 
