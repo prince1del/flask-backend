@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 
@@ -76,6 +77,10 @@ def _ensure_grievances_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE distributor_grievances ADD COLUMN complaint_mode TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE distributor_grievances ADD COLUMN follow_ups_json TEXT")
+    except sqlite3.OperationalError:
+        pass
 
 
 def _ensure_personal_todos_columns(conn: sqlite3.Connection) -> None:
@@ -114,8 +119,21 @@ def _ensure_personal_todos_columns(conn: sqlite3.Connection) -> None:
             pass
 
 
+def _parse_follow_ups(raw) -> list:
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+
 def _row_to_dict(row: sqlite3.Row) -> dict:
     status = (row["status"] or "open").strip().lower()
+    keys = row.keys()
     return {
         "id": row["id"],
         "workspace_id": row["workspace_id"],
@@ -124,12 +142,13 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "distributor_name": row["distributor_name"],
         "problem_text": row["problem_text"],
         "problem_date": row["problem_date"],
-        "complaint_mode": row["complaint_mode"] if "complaint_mode" in row.keys() else None,
+        "complaint_mode": row["complaint_mode"] if "complaint_mode" in keys else None,
         "email_sent_at": row["email_sent_at"],
         "email_subject": row["email_subject"],
         "status": status,
-        "is_open": status == "open",
+        "is_open": status != "closed",
         "solution_text": row["solution_text"],
+        "follow_ups": _parse_follow_ups(row["follow_ups_json"] if "follow_ups_json" in keys else None),
         "linked_todo_id": row["linked_todo_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -432,6 +451,110 @@ def resolve_grievance(grievance_id: int):
         updated = _get_owned(conn, grievance_id, workspace_id, uid)
 
     return jsonify({"success": True, "data": _row_to_dict(updated)})
+
+
+@distributor_grievances_bp.route("/<int:grievance_id>/follow-up", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_grievance_follow_up(grievance_id: int):
+    """Log a follow-up. Open cases stay open; closed cases reopen and return to My To-Do."""
+    uid, err = _require_user_id()
+    if err:
+        return err
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    note = (
+        data.get("follow_up_text")
+        or data.get("note")
+        or data.get("solution_text")
+        or ""
+    ).strip()
+    if not note:
+        return jsonify({"success": False, "error": {"message": "follow_up_text is required"}}), 400
+
+    now = _now_iso()
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_grievances_table(conn)
+        _ensure_personal_todos_columns(conn)
+        row = _get_owned(conn, grievance_id, workspace_id, uid)
+        if not row:
+            return jsonify({"success": False, "error": {"message": "Grievance not found"}}), 404
+
+        was_closed = (row["status"] or "").strip().lower() == "closed"
+        keys = row.keys()
+        follow_ups = _parse_follow_ups(row["follow_ups_json"] if "follow_ups_json" in keys else None)
+        follow_ups.append({"text": note, "created_at": now})
+        follow_ups_json = json.dumps(follow_ups, ensure_ascii=False)
+
+        if was_closed:
+            conn.execute(
+                """
+                UPDATE distributor_grievances
+                SET follow_ups_json = ?, status = 'open', closed_at = NULL, updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND user_id = ?
+                """,
+                (follow_ups_json, now, grievance_id, workspace_id, uid),
+            )
+            todo_id = row["linked_todo_id"]
+            reopened_todo = False
+            if todo_id:
+                cur = conn.execute(
+                    """
+                    UPDATE personal_todos
+                    SET status = 'pending', completed_at = NULL, updated_at = ?
+                    WHERE id = ? AND workspace_id = ? AND user_id = ?
+                    """,
+                    (now, todo_id, workspace_id, uid),
+                )
+                reopened_todo = cur.rowcount > 0
+            if not reopened_todo:
+                cur = conn.execute(
+                    """
+                    UPDATE personal_todos
+                    SET status = 'pending', completed_at = NULL, updated_at = ?
+                    WHERE linked_grievance_id = ? AND workspace_id = ? AND user_id = ?
+                    """,
+                    (now, grievance_id, workspace_id, uid),
+                )
+                reopened_todo = cur.rowcount > 0
+            if not reopened_todo:
+                new_todo_id = _create_linked_todo(
+                    conn,
+                    workspace_id=workspace_id,
+                    user_id=uid,
+                    username=None,
+                    grievance_id=grievance_id,
+                    distributor_id=int(row["distributor_id"] or 0),
+                    distributor_name=(row["distributor_name"] or "").strip()
+                    or f"Distributor #{row['distributor_id']}",
+                    problem_text=row["problem_text"] or note,
+                    problem_date=row["problem_date"] or now[:10],
+                )
+                conn.execute(
+                    """
+                    UPDATE distributor_grievances
+                    SET linked_todo_id = ?, updated_at = ?
+                    WHERE id = ? AND workspace_id = ? AND user_id = ?
+                    """,
+                    (new_todo_id, now, grievance_id, workspace_id, uid),
+                )
+        else:
+            conn.execute(
+                """
+                UPDATE distributor_grievances
+                SET follow_ups_json = ?, updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND user_id = ?
+                """,
+                (follow_ups_json, now, grievance_id, workspace_id, uid),
+            )
+        conn.commit()
+        updated = _get_owned(conn, grievance_id, workspace_id, uid)
+
+    return jsonify({
+        "success": True,
+        "reopened": was_closed,
+        "data": _row_to_dict(updated),
+    })
 
 
 @distributor_grievances_bp.route("/<int:grievance_id>", methods=["GET"])
