@@ -436,6 +436,25 @@ def get_batch(batch_id: int):
                 (batch_id, uid),
             ).fetchall()
         ]
+        # Linked State → Cities map for cascading dropdowns on mobile.
+        cities_by_state: dict[str, list[str]] = {}
+        for st, city in conn.execute(
+            """
+            SELECT DISTINCT state, town_city FROM call_list_rows
+            WHERE batch_id = ? AND user_id = ?
+              AND IFNULL(TRIM(state),'') != ''
+              AND IFNULL(TRIM(town_city),'') != ''
+            ORDER BY state COLLATE NOCASE, town_city COLLATE NOCASE
+            """,
+            (batch_id, uid),
+        ).fetchall():
+            key = str(st).strip()
+            val = str(city).strip()
+            if not key or not val:
+                continue
+            bucket = cities_by_state.setdefault(key, [])
+            if val not in bucket:
+                bucket.append(val)
         districts = [
             r[0]
             for r in conn.execute(
@@ -462,6 +481,7 @@ def get_batch(batch_id: int):
     data["filters"] = {
         "states": states,
         "cities": cities,
+        "cities_by_state": cities_by_state,
         "districts": districts,
         "status_counts": status_counts,
     }
