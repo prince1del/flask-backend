@@ -14855,9 +14855,9 @@ class CentralizedDB:
         return f"{start}-{start + 1}"
 
     def list_distributor_secondary_sales(self, user_id: int | None) -> list[dict[str, Any]]:
-        """Distributors owned by this user (or with this user's secondary_sales
-        rows) + monthly secondary entries, grouped by FY under each distributor.
-        Brand-new users with no masters and no secondary rows see an empty list.
+        """Active distributors owned by this user + monthly secondary entries,
+        grouped by FY under each distributor. Inactive / past parties are omitted.
+        Brand-new users with no masters see an empty list.
         """
         if not user_id:
             return []
@@ -14866,17 +14866,15 @@ class CentralizedDB:
             conn.row_factory = sqlite3.Row
             dist_rows = conn.execute(
                 """
-                SELECT id, COALESCE(firm_name, name, 'Unknown') AS distributor_name
+                SELECT id,
+                       COALESCE(firm_name, name, 'Unknown') AS distributor_name,
+                       IFNULL(status, 'active') AS status
                 FROM master_distributors
                 WHERE user_id = ?
-                   OR id IN (
-                        SELECT DISTINCT distributor_id
-                        FROM distributor_secondary_sales
-                        WHERE user_id = ?
-                   )
+                  AND LOWER(IFNULL(status, 'active')) != 'inactive'
                 ORDER BY LOWER(COALESCE(firm_name, name, ''))
                 """,
-                (user_id, user_id),
+                (user_id,),
             ).fetchall()
             entry_rows = conn.execute(
                 """
@@ -14926,10 +14924,13 @@ class CentralizedDB:
             for fy in fiscal_years:
                 fy["months"].sort(key=lambda x: (x["year"], x["month"]), reverse=True)
             total = round(sum(float(m["amount"]) for m in months), 2)
+            status = str(d["status"] or "active").strip().lower() or "active"
             result.append(
                 {
                     "distributor_id": dist_id,
                     "distributor_name": d["distributor_name"],
+                    "status": status,
+                    "is_active": status != "inactive",
                     "total_amount": total,
                     "fiscal_years": fiscal_years,
                     "months": months,
@@ -14961,6 +14962,20 @@ class CentralizedDB:
             raise ValueError("amount must be ≥ 0")
         self.ensure_distributor_secondary_sales_table()
         with sqlite3.connect(self.db_path) as conn:
+            party = conn.execute(
+                """
+                SELECT IFNULL(status, 'active') AS status
+                FROM master_distributors
+                WHERE id = ? AND user_id = ?
+                """,
+                (distributor_id, user_id),
+            ).fetchone()
+            if party is None:
+                raise ValueError("Distributor not found")
+            if str(party[0] or "active").strip().lower() == "inactive":
+                raise ValueError(
+                    "Cannot record secondary sales for an inactive distributor"
+                )
             conn.execute(
                 """
                 INSERT INTO distributor_secondary_sales

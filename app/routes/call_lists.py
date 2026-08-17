@@ -8,6 +8,7 @@ linked_distributor_id is stored NULL for now (future link).
 from __future__ import annotations
 
 import io
+import json
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -30,6 +31,17 @@ CALL_STATUSES = {
     "deal_done",
     "no_answer",
 }
+
+# Prefer non-pending when deriving a single primary for sort / legacy column.
+_PRIMARY_STATUS_ORDER = (
+    "deal_done",
+    "not_interested",
+    "wrong_number",
+    "follow_up",
+    "called",
+    "no_answer",
+    "pending",
+)
 
 
 def _db_path() -> str:
@@ -114,6 +126,278 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_call_list_rows_geo "
         "ON call_list_rows(batch_id, state, town_city, district)"
     )
+    # Multi-select tags (JSON array). Primary call_status kept for sort / legacy.
+    cols = {
+        r[1]
+        for r in conn.execute("PRAGMA table_info(call_list_rows)").fetchall()
+    }
+    if "call_statuses_json" not in cols:
+        conn.execute(
+            "ALTER TABLE call_list_rows ADD COLUMN call_statuses_json TEXT"
+        )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS call_list_brands (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            brand_name TEXT NOT NULL,
+            brand_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, workspace_id, brand_key)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_call_list_brands_user "
+        "ON call_list_brands(user_id, workspace_id, brand_name COLLATE NOCASE)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS call_list_deals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            deal_name TEXT NOT NULL,
+            deal_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, workspace_id, deal_key)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_call_list_deals_user "
+        "ON call_list_deals(user_id, workspace_id, deal_name COLLATE NOCASE)"
+    )
+
+
+def _brand_key(name: str) -> str:
+    return re.sub(r"\s+", " ", (name or "").strip().lower())
+
+
+def _split_brand_names(raw: Any) -> list[str]:
+    """Parse brands from list or comma/semicolon/newline text."""
+    items: list[str] = []
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        items = [str(x).strip() for x in raw if str(x).strip()]
+    else:
+        text = str(raw).strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    items = [str(x).strip() for x in parsed if str(x).strip()]
+                else:
+                    items = [text]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                items = re.split(r"[,;\n]+", text)
+        else:
+            items = re.split(r"[,;\n]+", text)
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in items:
+        clean = re.sub(r"\s+", " ", str(name).strip())
+        if not clean:
+            continue
+        key = _brand_key(clean)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(clean)
+    return out
+
+
+def _upsert_call_list_brands(
+    conn: sqlite3.Connection,
+    user_id: int,
+    workspace_id: str,
+    names: list[str],
+) -> None:
+    now = _now_iso()
+    for name in names:
+        key = _brand_key(name)
+        if not key:
+            continue
+        conn.execute(
+            """
+            INSERT INTO call_list_brands (
+                workspace_id, user_id, brand_name, brand_key, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, workspace_id, brand_key) DO NOTHING
+            """,
+            (workspace_id, user_id, name.strip(), key, now),
+        )
+
+
+def _user_brand_options(
+    conn: sqlite3.Connection, user_id: int, workspace_id: str
+) -> list[str]:
+    by_key: dict[str, str] = {}
+    for (name,) in conn.execute(
+        """
+        SELECT brand_name FROM call_list_brands
+        WHERE user_id = ? AND workspace_id = ?
+        ORDER BY brand_name COLLATE NOCASE
+        """,
+        (user_id, workspace_id),
+    ).fetchall():
+        clean = str(name or "").strip()
+        key = _brand_key(clean)
+        if key and key not in by_key:
+            by_key[key] = clean
+    for (raw,) in conn.execute(
+        """
+        SELECT brands_carried FROM call_list_rows
+        WHERE user_id = ? AND workspace_id = ?
+          AND IFNULL(TRIM(brands_carried),'') != ''
+        """,
+        (user_id, workspace_id),
+    ).fetchall():
+        for name in _split_brand_names(raw):
+            key = _brand_key(name)
+            if key and key not in by_key:
+                by_key[key] = name
+    return sorted(by_key.values(), key=lambda s: s.casefold())
+
+
+def _upsert_call_list_deals(
+    conn: sqlite3.Connection,
+    user_id: int,
+    workspace_id: str,
+    names: list[str],
+) -> None:
+    now = _now_iso()
+    for name in names:
+        key = _brand_key(name)
+        if not key:
+            continue
+        conn.execute(
+            """
+            INSERT INTO call_list_deals (
+                workspace_id, user_id, deal_name, deal_key, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, workspace_id, deal_key) DO NOTHING
+            """,
+            (workspace_id, user_id, name.strip(), key, now),
+        )
+
+
+def _user_deal_options(
+    conn: sqlite3.Connection, user_id: int, workspace_id: str
+) -> list[str]:
+    by_key: dict[str, str] = {}
+    for (name,) in conn.execute(
+        """
+        SELECT deal_name FROM call_list_deals
+        WHERE user_id = ? AND workspace_id = ?
+        ORDER BY deal_name COLLATE NOCASE
+        """,
+        (user_id, workspace_id),
+    ).fetchall():
+        clean = str(name or "").strip()
+        key = _brand_key(clean)
+        if key and key not in by_key:
+            by_key[key] = clean
+    for (raw,) in conn.execute(
+        """
+        SELECT deals_in FROM call_list_rows
+        WHERE user_id = ? AND workspace_id = ?
+          AND IFNULL(TRIM(deals_in),'') != ''
+        """,
+        (user_id, workspace_id),
+    ).fetchall():
+        for name in _split_brand_names(raw):
+            key = _brand_key(name)
+            if key and key not in by_key:
+                by_key[key] = name
+    return sorted(by_key.values(), key=lambda s: s.casefold())
+
+
+def _normalize_statuses(raw: Any) -> list[str]:
+    """Accept list, comma string, or single status → unique valid tags."""
+    items: list[str] = []
+    if raw is None:
+        return ["pending"]
+    if isinstance(raw, (list, tuple)):
+        items = [str(x).strip().lower() for x in raw if str(x).strip()]
+    else:
+        text = str(raw).strip()
+        if not text:
+            return ["pending"]
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    items = [str(x).strip().lower() for x in parsed if str(x).strip()]
+                else:
+                    items = [text.lower()]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                items = [s.strip().lower() for s in text.split(",") if s.strip()]
+        else:
+            items = [s.strip().lower() for s in text.split(",") if s.strip()]
+    out: list[str] = []
+    for s in items:
+        if s in CALL_STATUSES and s not in out:
+            out.append(s)
+    if not out:
+        return ["pending"]
+    # Pending alone; if mixed with others, drop pending.
+    if len(out) > 1 and "pending" in out:
+        out = [s for s in out if s != "pending"]
+    return out or ["pending"]
+
+
+def _primary_status(statuses: list[str]) -> str:
+    for pref in _PRIMARY_STATUS_ORDER:
+        if pref in statuses:
+            return pref
+    return statuses[0] if statuses else "pending"
+
+
+def _statuses_from_row(row: sqlite3.Row) -> list[str]:
+    raw_json = None
+    try:
+        raw_json = row["call_statuses_json"]
+    except (IndexError, KeyError):
+        raw_json = None
+    if raw_json:
+        return _normalize_statuses(raw_json)
+    return _normalize_statuses(row["call_status"] if "call_status" in row.keys() else "pending")
+
+
+def _statuses_json(statuses: list[str]) -> str:
+    return json.dumps(_normalize_statuses(statuses), separators=(",", ":"))
+
+
+def _parse_statuses_payload(raw: Any) -> tuple[list[str] | None, str | None]:
+    """Return (statuses, error_message)."""
+    if raw is None:
+        return None, "Missing status"
+    if isinstance(raw, (list, tuple)):
+        candidates = [str(x).strip().lower() for x in raw if str(x).strip()]
+    else:
+        text = str(raw).strip()
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    candidates = [
+                        str(x).strip().lower() for x in parsed if str(x).strip()
+                    ]
+                else:
+                    candidates = [text.lower()] if text else []
+            except (TypeError, ValueError, json.JSONDecodeError):
+                candidates = [s.strip().lower() for s in text.split(",") if s.strip()]
+        else:
+            candidates = [s.strip().lower() for s in text.split(",") if s.strip()]
+    bad = [s for s in candidates if s not in CALL_STATUSES]
+    if bad:
+        return None, f"Invalid status. Use: {', '.join(sorted(CALL_STATUSES))}"
+    return _normalize_statuses(candidates), None
 
 
 def _norm_header(value: Any) -> str:
@@ -248,6 +532,7 @@ def _batch_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _row_dict(row: sqlite3.Row) -> dict[str, Any]:
+    statuses = _statuses_from_row(row)
     return {
         "id": row["id"],
         "batch_id": row["batch_id"],
@@ -260,7 +545,8 @@ def _row_dict(row: sqlite3.Row) -> dict[str, Any]:
         "pin_code": row["pin_code"],
         "phone": row["phone"],
         "email": row["email"],
-        "call_status": row["call_status"] or "pending",
+        "call_status": _primary_status(statuses),
+        "call_statuses": statuses,
         "profile_notes": row["profile_notes"],
         "brands_carried": row["brands_carried"],
         "deals_in": row["deals_in"],
@@ -397,6 +683,78 @@ def upload_batch():
     return jsonify({"success": True, "data": _batch_dict(batch)}), 201
 
 
+@call_lists_bp.route("/brands", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def list_brands():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_tables(conn)
+        brands = _user_brand_options(conn, uid, workspace_id)
+    return jsonify({"success": True, "data": brands, "count": len(brands)}), 200
+
+
+@call_lists_bp.route("/brands", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_brand():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("brand_name") or payload.get("name") or "").strip()
+    name = re.sub(r"\s+", " ", name)
+    if not name:
+        return (
+            jsonify({"success": False, "error": {"message": "brand_name is required"}}),
+            400,
+        )
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_tables(conn)
+        _upsert_call_list_brands(conn, uid, workspace_id, [name])
+        conn.commit()
+        brands = _user_brand_options(conn, uid, workspace_id)
+    return jsonify({"success": True, "data": brands, "count": len(brands)}), 201
+
+
+@call_lists_bp.route("/deals", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def list_deals():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_tables(conn)
+        deals = _user_deal_options(conn, uid, workspace_id)
+    return jsonify({"success": True, "data": deals, "count": len(deals)}), 200
+
+
+@call_lists_bp.route("/deals", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_deal():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("deal_name") or payload.get("name") or "").strip()
+    name = re.sub(r"\s+", " ", name)
+    if not name:
+        return (
+            jsonify({"success": False, "error": {"message": "deal_name is required"}}),
+            400,
+        )
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_tables(conn)
+        _upsert_call_list_deals(conn, uid, workspace_id, [name])
+        conn.commit()
+        deals = _user_deal_options(conn, uid, workspace_id)
+    return jsonify({"success": True, "data": deals, "count": len(deals)}), 201
+
+
 @call_lists_bp.route("/<int:batch_id>", methods=["GET"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")
@@ -469,13 +827,17 @@ def get_batch(batch_id: int):
         ]
         status_rows = conn.execute(
             """
-            SELECT call_status, COUNT(*) AS c FROM call_list_rows
+            SELECT call_status, call_statuses_json FROM call_list_rows
             WHERE batch_id = ? AND user_id = ?
-            GROUP BY call_status
             """,
             (batch_id, uid),
         ).fetchall()
-        status_counts = {r["call_status"] or "pending": int(r["c"]) for r in status_rows}
+        status_counts: dict[str, int] = {}
+        for r in status_rows:
+            for tag in _statuses_from_row(r):
+                status_counts[tag] = status_counts.get(tag, 0) + 1
+        brand_options = _user_brand_options(conn, uid, workspace_id)
+        deal_options = _user_deal_options(conn, uid, workspace_id)
 
     data = _batch_dict(batch)
     data["filters"] = {
@@ -484,6 +846,8 @@ def get_batch(batch_id: int):
         "cities_by_state": cities_by_state,
         "districts": districts,
         "status_counts": status_counts,
+        "brand_options": brand_options,
+        "deal_options": deal_options,
     }
     return jsonify({"success": True, "data": data}), 200
 
@@ -502,6 +866,9 @@ def list_rows(batch_id: int):
     district = (request.args.get("district") or "").strip()
     status = (request.args.get("status") or "").strip().lower()
     q = (request.args.get("q") or "").strip()
+    status_filters = [
+        s.strip() for s in status.split(",") if s.strip() and s.strip() in CALL_STATUSES
+    ]
 
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
@@ -523,9 +890,18 @@ def list_rows(batch_id: int):
         if district:
             where.append("LOWER(IFNULL(district,'')) = LOWER(?)")
             params.append(district)
-        if status:
-            where.append("LOWER(IFNULL(call_status,'pending')) = ?")
-            params.append(status)
+        if status_filters:
+            # Match if primary equals OR JSON tags contain any selected status.
+            clauses: list[str] = []
+            for s in status_filters:
+                clauses.append(
+                    "("
+                    "LOWER(IFNULL(call_status,'pending')) = ? OR "
+                    "IFNULL(call_statuses_json,'') LIKE ?"
+                    ")"
+                )
+                params.extend([s, f'%"{s}"%'])
+            where.append("(" + " OR ".join(clauses) + ")")
         if q:
             where.append(
                 "("
@@ -595,31 +971,36 @@ def update_row(row_id: int):
 
         sets: list[str] = []
         params: list[Any] = []
-        status = payload.get("call_status")
-        if status is not None:
-            st = str(status).strip().lower()
-            if st not in CALL_STATUSES:
+        statuses_payload = payload.get("call_statuses")
+        status_single = payload.get("call_status")
+        if statuses_payload is not None or status_single is not None:
+            statuses, status_err = _parse_statuses_payload(
+                statuses_payload if statuses_payload is not None else status_single
+            )
+            if status_err or not statuses:
                 return (
                     jsonify(
                         {
                             "success": False,
                             "error": {
-                                "message": f"Invalid status. Use: {', '.join(sorted(CALL_STATUSES))}"
+                                "message": status_err
+                                or f"Invalid status. Use: {', '.join(sorted(CALL_STATUSES))}"
                             },
                         }
                     ),
                     400,
                 )
+            primary = _primary_status(statuses)
             sets.append("call_status = ?")
-            params.append(st)
-            if st != "pending":
+            params.append(primary)
+            sets.append("call_statuses_json = ?")
+            params.append(_statuses_json(statuses))
+            if any(s != "pending" for s in statuses):
                 sets.append("last_called_at = COALESCE(last_called_at, ?)")
                 params.append(_now_iso())
 
         for field in (
             "profile_notes",
-            "brands_carried",
-            "deals_in",
             "feedback_note",
         ):
             if field in payload:
@@ -627,6 +1008,22 @@ def update_row(row_id: int):
                 text = None if val is None else str(val).strip() or None
                 sets.append(f"{field} = ?")
                 params.append(text)
+
+        if "brands_carried" in payload:
+            brand_names = _split_brand_names(payload.get("brands_carried"))
+            brands_text = ", ".join(brand_names) if brand_names else None
+            sets.append("brands_carried = ?")
+            params.append(brands_text)
+            if brand_names:
+                _upsert_call_list_brands(conn, uid, workspace_id, brand_names)
+
+        if "deals_in" in payload:
+            deal_names = _split_brand_names(payload.get("deals_in"))
+            deals_text = ", ".join(deal_names) if deal_names else None
+            sets.append("deals_in = ?")
+            params.append(deals_text)
+            if deal_names:
+                _upsert_call_list_deals(conn, uid, workspace_id, deal_names)
 
         # Future distributor link — accept but never auto-fill from Party Master.
         if "linked_distributor_id" in payload:
@@ -726,6 +1123,7 @@ def export_batch(batch_id: int):
         ]
     )
     for r in rows:
+        statuses = _statuses_from_row(r)
         ws.append(
             [
                 r["serial_no"],
@@ -737,7 +1135,7 @@ def export_batch(batch_id: int):
                 r["pin_code"],
                 r["phone"],
                 r["email"],
-                r["call_status"],
+                ", ".join(statuses),
                 r["profile_notes"],
                 r["brands_carried"],
                 r["deals_in"],
