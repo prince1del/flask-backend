@@ -937,6 +937,66 @@ def delete_visit(visit_id: int):
     return jsonify({"success": True, "data": {"id": visit_id, "deleted": True}})
 
 
+@dsr_market_bp.route("/visits/delete-selected", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def delete_selected_visits():
+    """Bulk-delete market visits owned by the caller (admins may delete any in workspace)."""
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify(
+            {"success": False, "error": {"message": "ids must be a non-empty list"}}
+        ), 400
+    ids: list[int] = []
+    for item in raw_ids:
+        try:
+            n = int(item)
+            if n > 0:
+                ids.append(n)
+        except (TypeError, ValueError):
+            continue
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return jsonify({"success": False, "error": {"message": "No valid ids"}}), 400
+
+    workspace_id = get_workspace_id()
+    uid = _user_id()
+    role = (_current_user().get("role") or "").strip().lower()
+    is_admin = role in {"admin", "hop_admin"}
+
+    with sqlite3.connect(_db_path()) as conn:
+        _ensure_table(conn)
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT id, user_id FROM dsr_market_visits WHERE workspace_id = ? AND id IN ({placeholders})",
+            [workspace_id, *ids],
+        ).fetchall()
+        allowed = [
+            int(vid)
+            for vid, owner in rows
+            if is_admin or uid is None or owner in (None, uid)
+        ]
+        if not allowed:
+            return jsonify(
+                {"success": False, "error": {"message": "No matching visits to delete"}}
+            ), 404
+        ph = ",".join("?" * len(allowed))
+        conn.execute(
+            f"DELETE FROM dsr_market_visits WHERE workspace_id = ? AND id IN ({ph})",
+            [workspace_id, *allowed],
+        )
+        conn.commit()
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {"deleted": len(allowed), "ids": allowed},
+            "message": f"Deleted {len(allowed)} visit(s)",
+        }
+    )
+
+
 @dsr_market_bp.route("/visits", methods=["GET"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")
