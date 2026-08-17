@@ -72,6 +72,10 @@ def _ensure_grievances_table(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_dg_user_status "
         "ON distributor_grievances(workspace_id, user_id, status, problem_date)"
     )
+    try:
+        conn.execute("ALTER TABLE distributor_grievances ADD COLUMN complaint_mode TEXT")
+    except sqlite3.OperationalError:
+        pass
 
 
 def _ensure_personal_todos_columns(conn: sqlite3.Connection) -> None:
@@ -120,6 +124,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "distributor_name": row["distributor_name"],
         "problem_text": row["problem_text"],
         "problem_date": row["problem_date"],
+        "complaint_mode": row["complaint_mode"] if "complaint_mode" in row.keys() else None,
         "email_sent_at": row["email_sent_at"],
         "email_subject": row["email_subject"],
         "status": status,
@@ -310,8 +315,16 @@ def create_grievance():
     if not problem_date:
         problem_date = datetime.now().date().isoformat()
 
+    complaint_mode = (
+        data.get("complaint_mode")
+        or data.get("mode_of_complaint")
+        or data.get("communication_mode")
+        or ""
+    ).strip() or None
     email_sent_at = (data.get("email_sent_at") or "").strip() or None
     email_subject = (data.get("email_subject") or "").strip() or None
+    if complaint_mode and complaint_mode.lower() == "mail" and not email_subject:
+        email_subject = None
 
     db = CentralizedDB(_db_path())
     dist = db.get_master_distributor(distributor_id, workspace_id=workspace_id, user_id=uid)
@@ -330,9 +343,9 @@ def create_grievance():
             """
             INSERT INTO distributor_grievances (
                 workspace_id, user_id, distributor_id, distributor_name,
-                problem_text, problem_date, email_sent_at, email_subject,
+                problem_text, problem_date, complaint_mode, email_sent_at, email_subject,
                 status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
             """,
             (
                 workspace_id,
@@ -341,6 +354,7 @@ def create_grievance():
                 distributor_name,
                 problem_text,
                 problem_date,
+                complaint_mode,
                 email_sent_at,
                 email_subject,
                 now,

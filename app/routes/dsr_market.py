@@ -9,7 +9,7 @@ from calendar import month_name
 from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request, send_file
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
 
 from app.routes.auth import get_workspace_id, require_jwt_auth, require_role
@@ -1240,6 +1240,385 @@ def regenerate_narratives():
             "success": True,
             "data": {"scanned": len(enriched), "updated": updated},
             "message": f"Regenerated narratives for {updated} of {len(enriched)} visits",
+        }
+    )
+
+
+def _norm_header_cell(value) -> str:
+    return " ".join(str(value or "").strip().lower().replace(".", " ").split())
+
+
+def _parse_visit_date_cell(value) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        try:
+            return value.isoformat()[:10]
+        except Exception:
+            pass
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d-%b-%Y", "%d/%m/%Y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(text[:12], fmt).date().isoformat()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")[:10]).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _parse_order_lacs_cell(value) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _cell_as_text(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = str(value).strip()
+    return text or None
+
+
+def _map_dsr_import_headers(header_row: tuple) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for idx, raw in enumerate(header_row):
+        h = _norm_header_cell(raw)
+        if not h:
+            continue
+        if "sr" in h and "no" in h:
+            mapping["sr"] = idx
+        elif h == "date":
+            mapping["date"] = idx
+        elif h == "day":
+            mapping["day"] = idx
+        elif "name of customer" in h:
+            mapping["customer"] = idx
+        elif "owner" in h and "name" in h:
+            mapping["owner"] = idx
+        elif "contact" in h:
+            mapping["contact"] = idx
+        elif "mbo" in h or "ars" in h:
+            mapping["channel"] = idx
+        elif "type" in h and ("a / b / c" in h or "a b c" in h):
+            mapping["customer_type"] = idx
+        elif "complete address" in h or h == "address":
+            mapping["address"] = idx
+        elif "city" in h:
+            mapping["city"] = idx
+        elif "existing" in h:
+            mapping["existing"] = idx
+        elif "order" in h and "lac" in h:
+            mapping["order"] = idx
+        elif h == "bed":
+            mapping["bed"] = idx
+        elif h == "bath":
+            mapping["bath"] = idx
+        elif h == "tob":
+            mapping["tob"] = idx
+        elif h == "others" or h == "other":
+            mapping["others"] = idx
+        elif "competitor" in h:
+            mapping["competitor"] = idx
+        elif "branding" in h:
+            mapping["branding"] = idx
+        elif "feed back" in h or "feedback" in h:
+            mapping["feedback"] = idx
+        elif "remark" in h:
+            mapping["remarks"] = idx
+    return mapping
+
+
+def _parse_dsr_import_excel(file_bytes: bytes, filename: str) -> dict:
+    """Parse field DSR Excel (HO layout) into visit dicts grouped day-wise."""
+    wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    chosen_sheet = None
+    header_row_idx = None
+    header_row = None
+    col_map: dict[str, int] = {}
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
+            if i > 40:
+                break
+            cells = [_norm_header_cell(c) for c in row]
+            if any("name of customer" in c for c in cells):
+                chosen_sheet = sheet_name
+                header_row_idx = i
+                header_row = row
+                col_map = _map_dsr_import_headers(row)
+                break
+        if chosen_sheet:
+            break
+
+    if not chosen_sheet or not header_row or "customer" not in col_map:
+        wb.close()
+        raise ValueError("Could not find DSR header row (Name of Customer) in the Excel file")
+
+    ws = wb[chosen_sheet]
+    visits: list[dict] = []
+    current_date: str | None = None
+    skipped_invalid = 0
+
+    def col(row: tuple, key: str):
+        idx = col_map.get(key)
+        if idx is None or idx >= len(row):
+            return None
+        return row[idx]
+
+    for row in ws.iter_rows(min_row=(header_row_idx or 0) + 1, values_only=True):
+        customer = _cell_as_text(col(row, "customer"))
+        if not customer:
+            skipped_invalid += 1
+            continue
+
+        parsed_date = _parse_visit_date_cell(col(row, "date"))
+        if parsed_date:
+            current_date = parsed_date
+        if not current_date:
+            skipped_invalid += 1
+            continue
+
+        existing = _cell_as_text(col(row, "existing"))
+        if existing and existing.upper() in {"N", "NEW"}:
+            existing = "New"
+        elif existing and existing.lower() == "former":
+            existing = "Former"
+
+        visits.append(
+            {
+                "visit_date": current_date,
+                "customer_name": customer,
+                "owner_name": _cell_as_text(col(row, "owner")),
+                "contact_nos": _cell_as_text(col(row, "contact")),
+                "channel_type": _cell_as_text(col(row, "channel")),
+                "customer_type": _cell_as_text(col(row, "customer_type")),
+                "address": _cell_as_text(col(row, "address")),
+                "city_area": _cell_as_text(col(row, "city")),
+                "existing_or_new": existing,
+                "order_lacs": _parse_order_lacs_cell(col(row, "order")),
+                "bed": _cell_as_text(col(row, "bed")),
+                "bath": _cell_as_text(col(row, "bath")),
+                "tob": _cell_as_text(col(row, "tob")),
+                "others": _cell_as_text(col(row, "others")),
+                "competitor_brands": _cell_as_text(col(row, "competitor")),
+                "branding_yn": _cell_as_text(col(row, "branding")),
+                "retailer_feedback": _cell_as_text(col(row, "feedback")),
+                "sm_remarks": _cell_as_text(col(row, "remarks")),
+            }
+        )
+
+    wb.close()
+    if not visits:
+        raise ValueError("No customer rows found below the DSR header")
+
+    visit_dates = sorted({v["visit_date"] for v in visits})
+    return {
+        "filename": filename,
+        "sheet": chosen_sheet,
+        "visits": visits,
+        "visit_dates": visit_dates,
+        "skipped_invalid": skipped_invalid,
+    }
+
+
+def _visit_import_key(visit_date: str, customer_name: str) -> tuple[str, str]:
+    return (visit_date, (customer_name or "").strip().lower())
+
+
+def _bulk_import_dsr_visits(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    user_id: int | None,
+    username: str | None,
+    visits: list[dict],
+    *,
+    skip_duplicates: bool = True,
+    auto_day_close: bool = True,
+) -> dict:
+    imported = 0
+    skipped_duplicates = 0
+    created_at = datetime.now(timezone.utc).isoformat()
+    imported_dates: set[str] = set()
+
+    existing_keys: set[tuple[str, str]] = set()
+    if skip_duplicates and user_id is not None:
+        rows = conn.execute(
+            """
+            SELECT visit_date, customer_name FROM dsr_market_visits
+            WHERE workspace_id = ? AND user_id = ?
+            """,
+            (workspace_id, user_id),
+        ).fetchall()
+        existing_keys = {_visit_import_key(r[0], r[1]) for r in rows}
+
+    for item in visits:
+        visit_date = item.get("visit_date") or ""
+        customer_name = (item.get("customer_name") or "").strip()
+        if not visit_date or not customer_name:
+            continue
+        key = _visit_import_key(visit_date, customer_name)
+        if skip_duplicates and key in existing_keys:
+            skipped_duplicates += 1
+            continue
+
+        conn.execute(
+            """
+            INSERT INTO dsr_market_visits (
+                workspace_id, user_id, username, visit_date, customer_name, location, owner_name, contact_nos,
+                channel_type, customer_type, address, city_area, existing_or_new,
+                order_lacs, bed, bath, tob, others, competitor_brands, branding_yn,
+                retailer_feedback, sm_remarks, visit_intel_json,
+                is_draft, draft_party_kind, linked_distributor_id, linked_retailer_id, area_text,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?, ?)
+            """,
+            (
+                workspace_id,
+                user_id,
+                username,
+                visit_date,
+                customer_name,
+                None,
+                item.get("owner_name"),
+                item.get("contact_nos"),
+                item.get("channel_type"),
+                item.get("customer_type"),
+                item.get("address"),
+                item.get("city_area"),
+                item.get("existing_or_new"),
+                item.get("order_lacs"),
+                item.get("bed"),
+                item.get("bath"),
+                item.get("tob"),
+                item.get("others"),
+                item.get("competitor_brands"),
+                item.get("branding_yn"),
+                item.get("retailer_feedback"),
+                item.get("sm_remarks"),
+                None,
+                item.get("city_area"),
+                created_at,
+            ),
+        )
+        imported += 1
+        imported_dates.add(visit_date)
+        if skip_duplicates:
+            existing_keys.add(key)
+
+    if auto_day_close and user_id is not None:
+        closed_at = datetime.now(timezone.utc).isoformat()
+        for visit_date in imported_dates:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO dsr_day_closures (workspace_id, user_id, visit_date, closed_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (workspace_id, user_id, visit_date, closed_at),
+            )
+
+    return {
+        "imported": imported,
+        "skipped_duplicates": skipped_duplicates,
+        "visit_dates": sorted(imported_dates),
+        "date_count": len(imported_dates),
+    }
+
+
+@dsr_market_bp.route("/import", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def import_dsr_excel():
+    """Upload field DSR Excel (.xlsx) and insert visits day-wise into My visit reports."""
+    uploaded = request.files.get("file") or request.files.get("excel")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"success": False, "error": {"message": "Upload an Excel file (.xlsx)"}}), 400
+    filename = uploaded.filename
+    if not filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify(
+            {"success": False, "error": {"message": "Only .xlsx / .xlsm DSR files are supported"}}
+        ), 400
+    file_bytes = uploaded.read()
+    if not file_bytes:
+        return jsonify({"success": False, "error": {"message": "Empty file"}}), 400
+
+    try:
+        parsed = _parse_dsr_import_excel(file_bytes, filename)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+    except Exception as exc:
+        return jsonify({"success": False, "error": {"message": f"Unable to read Excel: {exc}"}}), 400
+
+    skip_duplicates = _truthy_flag(
+        request.form.get("skip_duplicates") or request.form.get("skipDuplicates") or "1"
+    )
+    auto_day_close = _truthy_flag(
+        request.form.get("auto_day_close") or request.form.get("autoDayClose") or "1"
+    )
+
+    workspace_id = get_workspace_id()
+    user = _current_user()
+    uid = _user_id()
+
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        stats = _bulk_import_dsr_visits(
+            conn,
+            workspace_id,
+            uid,
+            user.get("username"),
+            parsed.get("visits") or [],
+            skip_duplicates=skip_duplicates,
+            auto_day_close=auto_day_close,
+        )
+        conn.commit()
+
+    if stats["imported"] <= 0 and stats["skipped_duplicates"] > 0:
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "message": (
+                        "All rows already exist in your visit report "
+                        f"({stats['skipped_duplicates']} duplicates skipped)."
+                    ),
+                    "code": "all_duplicates",
+                },
+                "data": {
+                    "filename": parsed.get("filename"),
+                    "sheet": parsed.get("sheet"),
+                    **stats,
+                    "skipped_invalid": parsed.get("skipped_invalid", 0),
+                },
+            }
+        ), 409
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "filename": parsed.get("filename"),
+                "sheet": parsed.get("sheet"),
+                "parsed_rows": len(parsed.get("visits") or []),
+                "skipped_invalid": parsed.get("skipped_invalid", 0),
+                **stats,
+            },
+            "message": (
+                f"Imported {stats['imported']} visits across {stats['date_count']} day(s) "
+                f"from {parsed.get('sheet') or filename}"
+            ),
         }
     )
 
