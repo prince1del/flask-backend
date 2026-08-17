@@ -416,9 +416,25 @@ def _map_headers(row: tuple[Any, ...]) -> dict[str, int]:
             "name",
             "party name",
             "outlet",
+            "outlet name",
+            "name of retailer",
+            "retailer name",
+            "retailer",
+            "customer name",
+            "account name",
+            "mbo",
+            "mbo name",
+            "shop",
         },
-        "address": {"address", "addr"},
-        "town_city": {"town city", "town", "city", "city town"},
+        "address": {"address", "addr", "address details for expansion"},
+        "town_city": {
+            "town city",
+            "town",
+            "city",
+            "city town",
+            "area",
+            "location",
+        },
         "district": {"district", "dist"},
         "state": {"state"},
         "pin_code": {"pin code", "pincode", "pin", "zip"},
@@ -430,8 +446,9 @@ def _map_headers(row: tuple[Any, ...]) -> dict[str, int]:
             "contact no",
             "contact number",
             "mobile number",
+            "contact nos",
         },
-        "email": {"email", "e mail", "mail"},
+        "email": {"email", "e mail", "mail", "email id", "emailid", "e mail id"},
     }
     mapping: dict[str, int] = {}
     for idx, cell in enumerate(row):
@@ -442,7 +459,18 @@ def _map_headers(row: tuple[Any, ...]) -> dict[str, int]:
             if key in names and field not in mapping:
                 mapping[field] = idx
                 break
+        if "shop_name" not in mapping and _looks_like_shop_header(key):
+            mapping["shop_name"] = idx
     return mapping
+
+
+def _looks_like_shop_header(key: str) -> bool:
+    if not key or "owner" in key:
+        return False
+    has_name = "name" in key
+    return has_name and any(
+        token in key for token in ("retailer", "shop", "store", "firm", "outlet", "party", "mbo")
+    )
 
 
 def _cell(row: tuple[Any, ...], idx: int | None) -> str | None:
