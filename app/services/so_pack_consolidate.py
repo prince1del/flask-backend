@@ -404,7 +404,13 @@ def _unpack_archive(file_bytes: bytes, filename: str) -> list[tuple[str, bytes]]
                 for info in rf.infolist():
                     fn = info.filename
                     if fn.lower().endswith(".pdf") and not info.is_dir():
-                        pdfs.append((Path(fn).name, rf.read(info)))
+                        try:
+                            pdfs.append((Path(fn).name, rf.read(info)))
+                        except rarfile.RarCannotExec as exc:
+                            raise ValueError(
+                                "RAR uploaded, but server extractor tool is unavailable. "
+                                "Please upload ZIP (same PDFs) or enable unrar/unar/bsdtar on server."
+                            ) from exc
         finally:
             try:
                 Path(tmp_path).unlink(missing_ok=True)
