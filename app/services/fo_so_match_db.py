@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -1026,6 +1027,11 @@ def get_mother_candidates(
     distributor_id: int,
     season: str,
     category: str,
+    child_so_numbers: list[str] | None = None,
+    child_order_date: str | None = None,
+    child_po_number: str | None = None,
+    child_total_qty: float | None = None,
+    child_total_net: float | None = None,
 ) -> list[dict[str, Any]]:
     """Find existing match runs for this distributor+season+category
     that could be the mother SO for a split."""
@@ -1033,16 +1039,31 @@ def get_mother_candidates(
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         """SELECT id, distributor_name, so_source_filename, so_qty, so_net_amount,
-                  fo_qty, fo_exmill_value, rows_json, created_at
+                  fo_qty, fo_exmill_value, rows_json, so_line_detail_json, created_at
            FROM fo_so_match_runs
            WHERE user_id = ? AND distributor_id = ? AND season = ? AND category = ?
            ORDER BY id DESC""",
         (user_id, distributor_id, season, category),
     ).fetchall()
+    child_so_numbers = [str(x).strip() for x in (child_so_numbers or []) if str(x).strip()]
+    child_prefixes = {
+        _so_family_prefix(x) for x in child_so_numbers if _so_family_prefix(x)
+    }
+    child_po_key = _po_key(child_po_number)
+    child_order_date_norm = str(child_order_date or "").strip()
+    child_qty = float(child_total_qty or 0.0)
+    child_net = float(child_total_net or 0.0)
     result = []
     for r in rows:
         d = dict(r)
         rows_data = json.loads(d.pop("rows_json", "[]"))
+        line_detail_data = []
+        try:
+            line_detail_data = json.loads(d.pop("so_line_detail_json", "[]") or "[]")
+            if not isinstance(line_detail_data, list):
+                line_detail_data = []
+        except Exception:
+            line_detail_data = []
         # Extract SO numbers and article summary
         so_numbers = set()
         articles = []
@@ -1058,7 +1079,79 @@ def get_mother_candidates(
                 "fo_qty": float(row.get("fo_qty") or 0),
                 "so_net_amount": float(row.get("so_net_amount") or 0),
             })
+        mother_order_date = ""
+        mother_po_number = ""
+        if line_detail_data:
+            first = line_detail_data[0] if isinstance(line_detail_data[0], dict) else {}
+            mother_order_date = str(first.get("order_date") or "").strip()
+            mother_po_number = str(first.get("po_number") or "").strip()
+        mother_prefixes = {_so_family_prefix(x) for x in so_numbers if _so_family_prefix(x)}
+        family_hits = len(child_prefixes & mother_prefixes) if child_prefixes else 0
+        family_score = (
+            (family_hits / max(1, len(child_prefixes))) if child_prefixes else 0.0
+        )
+        qty_gap = abs(float(d.get("so_qty") or 0.0) - child_qty) if child_qty > 0 else 0.0
+        net_gap = abs(float(d.get("so_net_amount") or 0.0) - child_net) if child_net > 0 else 0.0
+        qty_score = (
+            1.0 / (1.0 + (qty_gap / max(child_qty, 1.0))) if child_qty > 0 else 0.0
+        )
+        net_score = (
+            1.0 / (1.0 + (net_gap / max(child_net, 1.0))) if child_net > 0 else 0.0
+        )
+        po_score = 0.0
+        mother_po_key = _po_key(mother_po_number)
+        if child_po_key and mother_po_key:
+            if child_po_key == mother_po_key:
+                po_score = 1.0
+            elif child_po_key in mother_po_key or mother_po_key in child_po_key:
+                po_score = 0.6
+        date_score = 1.0 if (
+            child_order_date_norm and mother_order_date and child_order_date_norm == mother_order_date
+        ) else 0.0
+        suggestion_score = (
+            (qty_score * 0.35) +
+            (net_score * 0.30) +
+            (family_score * 0.20) +
+            (po_score * 0.10) +
+            (date_score * 0.05)
+        )
+        reason_bits: list[str] = []
+        if family_hits > 0:
+            reason_bits.append(f"same SO-family {family_hits}x")
+        if child_qty > 0:
+            reason_bits.append(f"Δqty {int(qty_gap)}")
+        if child_net > 0:
+            reason_bits.append(f"Δnet ₹{int(round(net_gap, 0))}")
+        if po_score >= 1.0:
+            reason_bits.append("same PO")
+        elif po_score > 0:
+            reason_bits.append("similar PO")
+        if date_score > 0:
+            reason_bits.append("same order date")
         d["so_numbers"] = sorted(so_numbers)
         d["articles"] = articles
+        d["order_date"] = mother_order_date
+        d["po_number"] = mother_po_number
+        d["suggestion_score"] = round(suggestion_score, 4)
+        d["suggestion_reason"] = " · ".join(reason_bits) if reason_bits else "candidate"
         result.append(d)
-    return result
+    return sorted(
+        result,
+        key=lambda x: (float(x.get("suggestion_score") or 0.0), int(x.get("id") or 0)),
+        reverse=True,
+    )
+
+
+def _so_family_prefix(raw: str | None) -> str | None:
+    text = str(raw or "").strip().upper()
+    if not text:
+        return None
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) >= 4:
+        return digits[:4]
+    compact = re.sub(r"[^A-Z0-9]", "", text)
+    return compact[:4] if compact else None
+
+
+def _po_key(raw: str | None) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(raw or "").upper())

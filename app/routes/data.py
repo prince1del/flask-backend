@@ -4095,13 +4095,34 @@ def so_split_candidates() -> Response:
     distributor_id = request.args.get("distributor_id", type=int)
     season = request.args.get("season", "").strip()
     category = request.args.get("category", "").strip()
+    child_so_numbers_raw = request.args.getlist("child_so_numbers")
+    if not child_so_numbers_raw:
+        csv_raw = request.args.get("child_so_numbers", "").strip()
+        if csv_raw:
+            child_so_numbers_raw = [x.strip() for x in csv_raw.split(",")]
+    child_so_numbers = [x for x in child_so_numbers_raw if x]
+    child_order_date = request.args.get("child_order_date", "").strip() or None
+    child_po_number = request.args.get("child_po_number", "").strip() or None
+    child_total_qty = request.args.get("child_total_qty", type=float)
+    child_total_net = request.args.get("child_total_net", type=float)
     if not distributor_id or not season or not category:
         return _json_response(
             {"success": False, "error": {"message": "distributor_id, season, category required"}}, 400
         )
     conn = sqlite3.connect(_db_path())
     try:
-        candidates = matchdb.get_mother_candidates(conn, user_id, distributor_id, season, category)
+        candidates = matchdb.get_mother_candidates(
+            conn,
+            user_id,
+            distributor_id,
+            season,
+            category,
+            child_so_numbers=child_so_numbers,
+            child_order_date=child_order_date,
+            child_po_number=child_po_number,
+            child_total_qty=child_total_qty,
+            child_total_net=child_total_net,
+        )
         return _json_response({"success": True, "data": {"candidates": candidates}})
     finally:
         conn.close()
