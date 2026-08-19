@@ -14659,10 +14659,12 @@ class CentralizedDB:
         SO total, the deposits recorded against it, and running paid/
         outstanding totals.
 
-        SO total is the actual Sales Order value (fo_so_match_runs.so_net_amount)
-        for SOs that have been run through Order Desk's FO<->SO matching —
-        deliberately NOT filled_orders / FO ex-mill value, and deliberately
-        NOT SOs uploaded but not yet matched (those don't have a reliable
+        SO total is the matched Sales Order **bill amount incl. GST**
+        (sum of so_breakdown.total on fo_so_match_runs.rows_json) for SOs
+        run through Order Desk's FO<->SO matching — deliberately NOT
+        so_net_amount alone (ex-mill / pre-tax), and deliberately NOT
+        filled_orders / FO ex-mill value, and deliberately NOT SOs
+        uploaded but not yet matched (those don't have a reliable
         season/category/amount anywhere else in the app either, so nothing
         is invented for them here). Only (distributor, season, category)
         combinations that actually have a matched SO are included.
@@ -14682,14 +14684,15 @@ class CentralizedDB:
         if not user_id:
             return []
         self.ensure_distributor_category_payments_table()
+        from app.services.fo_so_match_db import so_bill_total_from_match_rows
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             # Same key as Android OrderMatchRunSummary.dedupeKey():
             # fo:<filled_order_id> else party:<dist>|<season>|<category>
-            so_totals = conn.execute(
+            so_run_rows = conn.execute(
                 """
-                SELECT distributor_id, season, category,
-                       SUM(COALESCE(so_net_amount, 0)) AS so_total
+                SELECT distributor_id, season, category, so_net_amount, rows_json
                 FROM fo_so_match_runs
                 WHERE user_id = ?
                   AND distributor_id IS NOT NULL
@@ -14710,10 +14713,20 @@ class CentralizedDB:
                            || '|' || COALESCE(category, '')
                     END
                   )
-                GROUP BY distributor_id, season, category
                 """,
                 (user_id, user_id),
             ).fetchall()
+            so_totals_by_key: dict[tuple[int, str, str], float] = {}
+            for combo in so_run_rows:
+                dist_id = combo["distributor_id"]
+                season = combo["season"]
+                category = combo["category"]
+                key = (dist_id, season, category)
+                bill = so_bill_total_from_match_rows(
+                    combo["rows_json"],
+                    float(combo["so_net_amount"] or 0),
+                )
+                so_totals_by_key[key] = so_totals_by_key.get(key, 0.0) + bill
             deposit_rows = conn.execute(
                 "SELECT id, distributor_id, season, category, amount, payment_date, note, created_at "
                 "FROM distributor_category_payments WHERE user_id = ? "
@@ -14740,11 +14753,8 @@ class CentralizedDB:
                 )
 
             by_distributor: dict[int, dict[str, Any]] = {}
-            for combo in so_totals:
-                dist_id = combo["distributor_id"]
-                season = combo["season"]
-                category = combo["category"]
-                so_total = float(combo["so_total"] or 0)
+            for (dist_id, season, category), so_total in so_totals_by_key.items():
+                so_total = float(so_total or 0)
                 deposits = deposits_by_key.get((dist_id, season, category), [])
                 paid_total = sum(d["amount"] for d in deposits)
                 dist_entry = by_distributor.setdefault(

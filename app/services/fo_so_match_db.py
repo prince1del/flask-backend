@@ -557,6 +557,53 @@ def _compute_so_totals_from_rows(rows: list[Any]) -> dict[str, dict[str, float]]
     return so_totals
 
 
+def so_bill_total_from_match_rows(
+    rows_json: str | bytes | None,
+    so_net_fallback: float | None = None,
+) -> float:
+    """Final SO bill incl. GST from stored match rows; net-only fallback."""
+    rows: list[Any] = []
+    if rows_json:
+        try:
+            parsed = (
+                json.loads(rows_json)
+                if isinstance(rows_json, (str, bytes))
+                else rows_json
+            )
+            if isinstance(parsed, list):
+                rows = parsed
+        except (TypeError, ValueError, json.JSONDecodeError):
+            rows = []
+    bill = 0.0
+    found = False
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        breakdown = r.get("so_breakdown")
+        if isinstance(breakdown, list) and breakdown:
+            for cell in breakdown:
+                if not isinstance(cell, dict):
+                    continue
+                cell_total = float(cell.get("total") or 0)
+                if cell_total > 0:
+                    bill += cell_total
+                    found = True
+                else:
+                    net = float(cell.get("net") or 0)
+                    gst = float(cell.get("gst") or 0)
+                    if net or gst:
+                        bill += net + gst
+                        found = True
+            continue
+        line_net = float(r.get("so_net_amount") or 0)
+        if line_net:
+            bill += line_net
+            found = True
+    if found and bill > 0:
+        return round(bill, 2)
+    return round(float(so_net_fallback or 0), 2)
+
+
 def list_match_runs(
     conn: sqlite3.Connection,
     user_id: int | None = None,

@@ -4975,9 +4975,8 @@ def statement_of_account_from_ledger() -> Response:
 @require_jwt_auth
 def get_distributor_payment_status() -> Response:
     """Drawer-only "Distributors Payment Status" tree: distributor -> season
-    -> category, each carrying its SO total (from this user's own
-    filled_orders — same source as the "Total value of SO" home card) and
-    whatever deposits have been recorded against it."""
+    -> category, each carrying its SO bill total (incl. GST from matched SO
+    Pack runs) and whatever deposits have been recorded against it."""
     db = CentralizedDB(_db_path())
     user_id = _current_user_id()
     distributors = db.list_distributor_category_payment_status(user_id)

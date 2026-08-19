@@ -25,6 +25,7 @@ call_lists_bp = Blueprint("call_lists", __name__, url_prefix="/api/v1/call-lists
 CALL_STATUSES = {
     "pending",
     "called",
+    "currently_working",
     "follow_up",
     "not_interested",
     "wrong_number",
@@ -38,10 +39,28 @@ _PRIMARY_STATUS_ORDER = (
     "not_interested",
     "wrong_number",
     "follow_up",
+    "currently_working",
     "called",
     "no_answer",
     "pending",
 )
+
+_STATUS_LABELS = {
+    "pending": "Pending",
+    "called": "Called",
+    "currently_working": "Currently working",
+    "follow_up": "Follow up",
+    "not_interested": "Not interested",
+    "wrong_number": "Wrong number",
+    "no_answer": "No answer",
+    "deal_done": "Deal done",
+}
+
+
+def _status_labels_joined(statuses: list[str]) -> str:
+    return ", ".join(
+        _STATUS_LABELS.get(s, s.replace("_", " ").title()) for s in statuses
+    )
 
 
 def _db_path() -> str:
@@ -348,6 +367,9 @@ def _normalize_statuses(raw: Any) -> list[str]:
     # Pending alone; if mixed with others, drop pending.
     if len(out) > 1 and "pending" in out:
         out = [s for s in out if s != "pending"]
+    # Any outcome after outreach implies the shop was called.
+    if out != ["pending"] and "called" not in out:
+        out.append("called")
     return out or ["pending"]
 
 
@@ -483,6 +505,41 @@ def _cell(row: tuple[Any, ...], idx: int | None) -> str | None:
     return text or None
 
 
+def _normalize_phone_india(raw: str | None) -> str | None:
+    """Canonical display for India mobiles and landlines from Excel (+91 …)."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) < 7:
+        return text
+
+    if digits.startswith("00"):
+        digits = digits[2:]
+
+    core: str | None = None
+    if digits.startswith("91") and len(digits) >= 11:
+        core = digits
+    elif len(digits) == 10 and digits[0] in "6789":
+        core = "91" + digits
+    elif digits.startswith("0") and len(digits) >= 10:
+        core = "91" + digits[1:]
+    elif len(digits) in (10, 11) and digits[0] in "12345":
+        core = "91" + digits
+
+    if not core:
+        return text
+
+    national = core[2:]
+    if len(national) == 10 and national[0] in "6789":
+        return f"+91 {national[:5]} {national[5:]}"
+    if len(national) >= 10:
+        return f"+91 {national[:3]} {national[3:6]} {national[6:]}"
+    return f"+91 {national}"
+
+
 def _parse_workbook(file_bytes: bytes) -> tuple[str | None, list[dict[str, Any]]]:
     wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
     try:
@@ -519,7 +576,7 @@ def _parse_workbook(file_bytes: bytes) -> tuple[str | None, list[dict[str, Any]]
         if not row or not any(c is not None and str(c).strip() for c in row):
             continue
         shop = _cell(row, mapping.get("shop_name"))
-        phone = _cell(row, mapping.get("phone"))
+        phone = _normalize_phone_india(_cell(row, mapping.get("phone")))
         if not shop and not phone:
             continue
         serial_raw = _cell(row, mapping.get("serial_no"))
@@ -909,27 +966,35 @@ def list_rows(batch_id: int):
             )
         where = ["batch_id = ?", "user_id = ?"]
         params: list[Any] = [batch_id, uid]
+        region_where = list(where)
+        region_params: list[Any] = list(params)
         if state:
             where.append("LOWER(IFNULL(state,'')) = LOWER(?)")
             params.append(state)
+            region_where.append("LOWER(IFNULL(state,'')) = LOWER(?)")
+            region_params.append(state)
         if city:
             where.append("LOWER(IFNULL(town_city,'')) = LOWER(?)")
             params.append(city)
+            region_where.append("LOWER(IFNULL(town_city,'')) = LOWER(?)")
+            region_params.append(city)
         if district:
             where.append("LOWER(IFNULL(district,'')) = LOWER(?)")
             params.append(district)
+            region_where.append("LOWER(IFNULL(district,'')) = LOWER(?)")
+            region_params.append(district)
         if status_filters:
-            # Match if primary equals OR JSON tags contain any selected status.
-            clauses: list[str] = []
-            for s in status_filters:
-                clauses.append(
-                    "("
-                    "LOWER(IFNULL(call_status,'pending')) = ? OR "
-                    "IFNULL(call_statuses_json,'') LIKE ?"
-                    ")"
-                )
-                params.extend([s, f'%"{s}"%'])
-            where.append("(" + " OR ".join(clauses) + ")")
+            # One chip at a time — match primary call_status (outcome), not every tag.
+            if len(status_filters) == 1:
+                s = status_filters[0]
+                where.append("LOWER(IFNULL(call_status,'pending')) = ?")
+                params.append(s)
+            else:
+                clauses: list[str] = []
+                for s in status_filters:
+                    clauses.append("LOWER(IFNULL(call_status,'pending')) = ?")
+                    params.append(s)
+                where.append("(" + " OR ".join(clauses) + ")")
         if q:
             where.append(
                 "("
@@ -939,11 +1004,27 @@ def list_rows(batch_id: int):
             )
             like = f"%{q}%"
             params.extend([like, like, like, like])
+            region_where.append(
+                "("
+                "IFNULL(shop_name,'') LIKE ? OR IFNULL(phone,'') LIKE ? OR "
+                "IFNULL(town_city,'') LIKE ? OR IFNULL(address,'') LIKE ?"
+                ")"
+            )
+            region_params.extend([like, like, like, like])
         where_sql = " AND ".join(where)
         total = conn.execute(
             f"SELECT COUNT(*) FROM call_list_rows WHERE {where_sql}",
             tuple(params),
         ).fetchone()[0]
+        region_total: int | None = None
+        if state or city or district or q:
+            region_sql = " AND ".join(region_where)
+            region_total = int(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM call_list_rows WHERE {region_sql}",
+                    tuple(region_params),
+                ).fetchone()[0]
+            )
         rows = conn.execute(
             f"""
             SELECT * FROM call_list_rows
@@ -963,6 +1044,7 @@ def list_rows(batch_id: int):
                 "success": True,
                 "data": {
                     "total": int(total),
+                    "region_total": region_total,
                     "limit": limit,
                     "offset": offset,
                     "rows": [_row_dict(r) for r in rows],
@@ -1163,7 +1245,7 @@ def export_batch(batch_id: int):
                 r["pin_code"],
                 r["phone"],
                 r["email"],
-                ", ".join(statuses),
+                _status_labels_joined(statuses),
                 r["profile_notes"],
                 r["brands_carried"],
                 r["deals_in"],

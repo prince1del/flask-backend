@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import tempfile
@@ -60,24 +61,39 @@ class PaymentCollectionTests(unittest.TestCase):
         """Same FO rematched twice must not double SO total / recovery."""
         user_id = 42
         dist_id = 7
+        bill_rows = json.dumps(
+            [
+                {
+                    "so_breakdown": [
+                        {
+                            "so_number": "SO-1",
+                            "qty": 1.0,
+                            "net": 1_000_000.0,
+                            "gst": 50_000.0,
+                            "total": 1_050_000.0,
+                        }
+                    ]
+                }
+            ]
+        )
         with sqlite3.connect(self.path) as conn:
             matchdb.ensure_schema(conn)
-            for so_net in (1_000_000.0, 1_000_000.0, 1_050_000.0):
+            for so_net in (1_000_000.0, 1_000_000.0, 1_000_000.0):
                 conn.execute(
                     """
                     INSERT INTO fo_so_match_runs (
                         user_id, filled_order_id, distributor_id, distributor_name,
                         category, season, so_net_amount, rows_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', datetime('now'))
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
-                    (user_id, 99, dist_id, "Bernina", "Bed", "AW26", so_net),
+                    (user_id, 99, dist_id, "Bernina", "Bed", "AW26", so_net, bill_rows),
                 )
             conn.commit()
 
         board = self.db.list_distributor_category_payment_status(user_id)
         self.assertEqual(len(board), 1)
         cat = board[0]["seasons"][0]["categories"][0]
-        # Latest run only (1_050_000) — not 3_050_000 from summing all three.
+        # Latest run only — bill incl. GST (1_050_000), not net (1_000_000).
         self.assertEqual(cat["so_total"], 1_050_000.0)
         self.assertEqual(cat["outstanding"], 1_050_000.0)
 
