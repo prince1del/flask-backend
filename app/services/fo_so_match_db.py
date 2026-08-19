@@ -52,6 +52,30 @@ CREATE TABLE IF NOT EXISTS fo_so_match_so_index (
 );
 CREATE INDEX IF NOT EXISTS idx_fo_so_match_so_run
     ON fo_so_match_so_index(run_id);
+
+-- SO splits: tracks when a mother SO is split into child SOs.
+-- mother_run_id = the fo_so_match_runs.id that was split FROM
+-- child_run_id  = the fo_so_match_runs.id created for the child SO (nullable until child is matched)
+CREATE TABLE IF NOT EXISTS so_splits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    mother_run_id INTEGER NOT NULL,
+    child_run_id INTEGER,
+    mother_so_numbers TEXT,
+    child_so_numbers TEXT,
+    distributor_id INTEGER,
+    season TEXT,
+    category TEXT,
+    split_articles_json TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (mother_run_id) REFERENCES fo_so_match_runs(id),
+    FOREIGN KEY (child_run_id) REFERENCES fo_so_match_runs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_so_splits_user
+    ON so_splits(user_id, mother_run_id);
+CREATE INDEX IF NOT EXISTS idx_so_splits_child
+    ON so_splits(user_id, child_run_id);
 """
 
 _schema_ensured = False
@@ -80,6 +104,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("SELECT 1 FROM fo_so_match_runs LIMIT 1")
             conn.execute("SELECT so_line_detail_json FROM fo_so_match_runs LIMIT 1")
             conn.execute("SELECT 1 FROM fo_so_match_so_index LIMIT 1")
+            conn.execute("SELECT 1 FROM so_splits LIMIT 1")
             return
         except sqlite3.OperationalError:
             _schema_ensured = False
@@ -696,3 +721,344 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
         return True
     conn.commit()
     return False
+
+
+# ── SO Split helpers ──────────────────────────────────────────────
+
+
+def create_so_split(
+    conn: sqlite3.Connection,
+    user_id: int,
+    mother_run_id: int,
+    child_so_numbers: list[str],
+    split_articles: list[dict[str, Any]],
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Split a mother SO: reduce mother qty, record the split.
+
+    `split_articles` = list of {article_code, article_name, split_qty, split_net, split_gst, split_total}
+    representing what moves from mother → child.
+
+    Returns the created split record + updated mother rows_json.
+    """
+    ensure_schema(conn)
+
+    # Fetch mother run
+    row = conn.execute(
+        "SELECT * FROM fo_so_match_runs WHERE id = ? AND user_id = ?",
+        (mother_run_id, user_id),
+    ).fetchone()
+    if not row:
+        raise ValueError("Mother SO run not found")
+
+    mother = _row_to_dict(row, RUN_COLUMNS)
+    mother_rows: list[dict] = json.loads(mother["rows_json"] or "[]")
+
+    # Build lookup of what to split
+    split_lookup: dict[str, dict] = {}
+    for art in split_articles:
+        code = str(art.get("article_code") or "").strip().upper()
+        if code:
+            split_lookup[code] = art
+
+    # Reduce mother SO rows by split quantities
+    updated_mother_rows = []
+    for mrow in mother_rows:
+        art_code = str(
+            mrow.get("article_code") or mrow.get("fo_article_code") or ""
+        ).strip().upper()
+        sp = split_lookup.get(art_code)
+        if sp:
+            split_qty = float(sp.get("split_qty") or 0)
+            # Reduce SO qty on mother
+            old_so_qty = float(mrow.get("so_qty") or 0)
+            new_so_qty = max(0.0, old_so_qty - split_qty)
+            mrow["so_qty"] = new_so_qty
+            # Reduce in so_breakdown too
+            remaining = split_qty
+            for bd in (mrow.get("so_breakdown") or []):
+                if remaining <= 0:
+                    break
+                bd_qty = float(bd.get("qty") or 0)
+                reduce = min(bd_qty, remaining)
+                if bd_qty > 0:
+                    ratio = reduce / bd_qty
+                    bd["qty"] = round(bd_qty - reduce, 4)
+                    bd["net"] = round(float(bd.get("net") or 0) * (1 - ratio), 2)
+                    bd["gst"] = round(float(bd.get("gst") or 0) * (1 - ratio), 2)
+                    bd["total"] = round(float(bd.get("total") or 0) * (1 - ratio), 2)
+                remaining -= reduce
+            # Recalculate line-level so_net_amount
+            mrow["so_net_amount"] = sum(
+                float(bd.get("net") or 0) for bd in (mrow.get("so_breakdown") or [])
+            )
+            # Update match status
+            fo_qty = float(mrow.get("fo_qty") or 0)
+            if new_so_qty == 0 and fo_qty > 0:
+                mrow["status"] = "MISSING_ON_SO"
+            elif new_so_qty > 0 and abs(new_so_qty - fo_qty) > 0.01:
+                mrow["status"] = "QTY_MISMATCH"
+        updated_mother_rows.append(mrow)
+
+    # Recalculate mother run aggregates
+    new_so_qty_total = sum(float(r.get("so_qty") or 0) for r in updated_mother_rows)
+    new_so_net_total = sum(float(r.get("so_net_amount") or 0) for r in updated_mother_rows)
+    fo_qty_total = float(mother.get("fo_qty") or 0)
+
+    # Update mother run
+    conn.execute(
+        """UPDATE fo_so_match_runs
+           SET rows_json = ?, so_qty = ?, so_net_amount = ?, delta_qty = ?, delta_value = ?
+           WHERE id = ? AND user_id = ?""",
+        (
+            json.dumps(updated_mother_rows, default=str),
+            new_so_qty_total,
+            new_so_net_total,
+            fo_qty_total - new_so_qty_total,
+            float(mother.get("fo_exmill_value") or 0) - new_so_net_total,
+            mother_run_id,
+            user_id,
+        ),
+    )
+
+    # Extract mother SO numbers
+    mother_so_numbers = set()
+    for mrow in mother_rows:
+        for sn in (mrow.get("so_numbers") or []):
+            mother_so_numbers.add(sn)
+
+    # Create split record
+    cur = conn.execute(
+        """INSERT INTO so_splits
+           (user_id, mother_run_id, mother_so_numbers, child_so_numbers,
+            distributor_id, season, category, split_articles_json, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            user_id,
+            mother_run_id,
+            json.dumps(sorted(mother_so_numbers)),
+            json.dumps(child_so_numbers),
+            mother.get("distributor_id"),
+            mother.get("season"),
+            mother.get("category"),
+            json.dumps(split_articles, default=str),
+            note,
+        ),
+    )
+    split_id = cur.lastrowid
+    conn.commit()
+
+    return {
+        "split_id": split_id,
+        "mother_run_id": mother_run_id,
+        "child_so_numbers": child_so_numbers,
+        "split_articles": split_articles,
+        "mother_so_qty_after": new_so_qty_total,
+        "mother_so_net_after": new_so_net_total,
+    }
+
+
+def link_child_run_to_split(
+    conn: sqlite3.Connection,
+    user_id: int,
+    split_id: int,
+    child_run_id: int,
+) -> bool:
+    """After child SO is matched as its own run, link it back to the split."""
+    ensure_schema(conn)
+    cur = conn.execute(
+        "UPDATE so_splits SET child_run_id = ? WHERE id = ? AND user_id = ?",
+        (child_run_id, split_id, user_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_splits_for_run(
+    conn: sqlite3.Connection,
+    user_id: int,
+    mother_run_id: int,
+) -> list[dict[str, Any]]:
+    """List all splits created from a mother run."""
+    ensure_schema(conn)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """SELECT id, mother_run_id, child_run_id, mother_so_numbers, child_so_numbers,
+                  distributor_id, season, category, split_articles_json, note, created_at
+           FROM so_splits WHERE user_id = ? AND mother_run_id = ?
+           ORDER BY created_at""",
+        (user_id, mother_run_id),
+    ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["split_articles"] = json.loads(d.pop("split_articles_json", "[]"))
+        d["mother_so_numbers"] = json.loads(d.get("mother_so_numbers") or "[]")
+        d["child_so_numbers"] = json.loads(d.get("child_so_numbers") or "[]")
+        result.append(d)
+    return result
+
+
+def list_all_splits(
+    conn: sqlite3.Connection,
+    user_id: int,
+) -> list[dict[str, Any]]:
+    """List all SO splits for this user."""
+    ensure_schema(conn)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """SELECT s.id, s.mother_run_id, s.child_run_id,
+                  s.mother_so_numbers, s.child_so_numbers,
+                  s.distributor_id, s.season, s.category,
+                  s.split_articles_json, s.note, s.created_at,
+                  m.distributor_name
+           FROM so_splits s
+           LEFT JOIN fo_so_match_runs m ON m.id = s.mother_run_id
+           WHERE s.user_id = ?
+           ORDER BY s.created_at DESC""",
+        (user_id,),
+    ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["split_articles"] = json.loads(d.pop("split_articles_json", "[]"))
+        d["mother_so_numbers"] = json.loads(d.get("mother_so_numbers") or "[]")
+        d["child_so_numbers"] = json.loads(d.get("child_so_numbers") or "[]")
+        result.append(d)
+    return result
+
+
+def undo_so_split(
+    conn: sqlite3.Connection,
+    user_id: int,
+    split_id: int,
+) -> bool:
+    """Undo a split: restore mother SO quantities, delete split record.
+    Does NOT delete the child run (if any) — that's a separate action."""
+    ensure_schema(conn)
+
+    split_row = conn.execute(
+        "SELECT * FROM so_splits WHERE id = ? AND user_id = ?",
+        (split_id, user_id),
+    ).fetchone()
+    if not split_row:
+        return False
+
+    split = dict(split_row)
+    mother_run_id = split["mother_run_id"]
+    split_articles: list[dict] = json.loads(split.get("split_articles_json") or "[]")
+
+    # Fetch mother run
+    mother_row = conn.execute(
+        "SELECT * FROM fo_so_match_runs WHERE id = ? AND user_id = ?",
+        (mother_run_id, user_id),
+    ).fetchone()
+    if not mother_row:
+        # Mother run deleted — just remove split record
+        conn.execute("DELETE FROM so_splits WHERE id = ?", (split_id,))
+        conn.commit()
+        return True
+
+    mother = _row_to_dict(mother_row, RUN_COLUMNS)
+    mother_rows: list[dict] = json.loads(mother["rows_json"] or "[]")
+
+    # Build restore lookup
+    restore_lookup: dict[str, dict] = {}
+    for art in split_articles:
+        code = str(art.get("article_code") or "").strip().upper()
+        if code:
+            restore_lookup[code] = art
+
+    # Add back split quantities to mother
+    for mrow in mother_rows:
+        art_code = str(
+            mrow.get("article_code") or mrow.get("fo_article_code") or ""
+        ).strip().upper()
+        sp = restore_lookup.get(art_code)
+        if sp:
+            restore_qty = float(sp.get("split_qty") or 0)
+            mrow["so_qty"] = float(mrow.get("so_qty") or 0) + restore_qty
+            # Restore in first so_breakdown entry proportionally
+            bds = mrow.get("so_breakdown") or []
+            if bds:
+                bd = bds[0]
+                bd["qty"] = float(bd.get("qty") or 0) + restore_qty
+                restore_net = float(sp.get("split_net") or 0)
+                restore_gst = float(sp.get("split_gst") or 0)
+                restore_total = float(sp.get("split_total") or 0)
+                bd["net"] = round(float(bd.get("net") or 0) + restore_net, 2)
+                bd["gst"] = round(float(bd.get("gst") or 0) + restore_gst, 2)
+                bd["total"] = round(float(bd.get("total") or 0) + restore_total, 2)
+            mrow["so_net_amount"] = sum(
+                float(b.get("net") or 0) for b in bds
+            )
+            # Restore match status
+            fo_qty = float(mrow.get("fo_qty") or 0)
+            if abs(mrow["so_qty"] - fo_qty) <= 0.01:
+                mrow["status"] = "MATCH"
+
+    new_so_qty = sum(float(r.get("so_qty") or 0) for r in mother_rows)
+    new_so_net = sum(float(r.get("so_net_amount") or 0) for r in mother_rows)
+
+    conn.execute(
+        """UPDATE fo_so_match_runs
+           SET rows_json = ?, so_qty = ?, so_net_amount = ?,
+               delta_qty = ?, delta_value = ?
+           WHERE id = ? AND user_id = ?""",
+        (
+            json.dumps(mother_rows, default=str),
+            new_so_qty,
+            new_so_net,
+            float(mother.get("fo_qty") or 0) - new_so_qty,
+            float(mother.get("fo_exmill_value") or 0) - new_so_net,
+            mother_run_id,
+            user_id,
+        ),
+    )
+    conn.execute("DELETE FROM so_splits WHERE id = ?", (split_id,))
+    conn.commit()
+    return True
+
+
+def get_mother_candidates(
+    conn: sqlite3.Connection,
+    user_id: int,
+    distributor_id: int,
+    season: str,
+    category: str,
+) -> list[dict[str, Any]]:
+    """Find existing match runs for this distributor+season+category
+    that could be the mother SO for a split."""
+    ensure_schema(conn)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """SELECT id, distributor_name, so_source_filename, so_qty, so_net_amount,
+                  fo_qty, fo_exmill_value, rows_json, created_at
+           FROM fo_so_match_runs
+           WHERE user_id = ? AND distributor_id = ? AND season = ? AND category = ?
+           ORDER BY id DESC""",
+        (user_id, distributor_id, season, category),
+    ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        rows_data = json.loads(d.pop("rows_json", "[]"))
+        # Extract SO numbers and article summary
+        so_numbers = set()
+        articles = []
+        for row in rows_data:
+            for sn in (row.get("so_numbers") or []):
+                so_numbers.add(sn)
+            art_code = row.get("article_code") or row.get("fo_article_code") or ""
+            art_name = row.get("article_name") or row.get("fo_article_name") or ""
+            articles.append({
+                "article_code": art_code,
+                "article_name": art_name,
+                "so_qty": float(row.get("so_qty") or 0),
+                "fo_qty": float(row.get("fo_qty") or 0),
+                "so_net_amount": float(row.get("so_net_amount") or 0),
+            })
+        d["so_numbers"] = sorted(so_numbers)
+        d["articles"] = articles
+        result.append(d)
+    return result

@@ -4080,6 +4080,128 @@ def order_match_delete_selected() -> Response:
         conn.close()
 
 
+# ── SO Split endpoints ────────────────────────────────────────────
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-split/candidates", methods=["GET"])
+@require_jwt_auth
+def so_split_candidates() -> Response:
+    """Find existing match runs for a distributor+season+category (mother candidates)."""
+    from app.services import fo_so_match_db as matchdb
+
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Auth required"}}, 401)
+    distributor_id = request.args.get("distributor_id", type=int)
+    season = request.args.get("season", "").strip()
+    category = request.args.get("category", "").strip()
+    if not distributor_id or not season or not category:
+        return _json_response(
+            {"success": False, "error": {"message": "distributor_id, season, category required"}}, 400
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        candidates = matchdb.get_mother_candidates(conn, user_id, distributor_id, season, category)
+        return _json_response({"success": True, "data": {"candidates": candidates}})
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-split", methods=["POST"])
+@require_jwt_auth
+def create_so_split() -> Response:
+    """Create an SO split: reduce mother SO qty, record split articles."""
+    from app.services import fo_so_match_db as matchdb
+
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Auth required"}}, 401)
+    payload = request.get_json(silent=True) or {}
+    mother_run_id = payload.get("mother_run_id")
+    child_so_numbers = payload.get("child_so_numbers", [])
+    split_articles = payload.get("split_articles", [])
+    note = payload.get("note")
+    if not mother_run_id or not split_articles:
+        return _json_response(
+            {"success": False, "error": {"message": "mother_run_id and split_articles required"}}, 400
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        result = matchdb.create_so_split(
+            conn, user_id, int(mother_run_id), child_so_numbers, split_articles, note
+        )
+        return _json_response({"success": True, "data": result})
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-split/list", methods=["GET"])
+@require_jwt_auth
+def list_so_splits() -> Response:
+    """List all SO splits for the current user."""
+    from app.services import fo_so_match_db as matchdb
+
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Auth required"}}, 401)
+    mother_run_id = request.args.get("mother_run_id", type=int)
+    conn = sqlite3.connect(_db_path())
+    try:
+        if mother_run_id:
+            splits = matchdb.list_splits_for_run(conn, user_id, mother_run_id)
+        else:
+            splits = matchdb.list_all_splits(conn, user_id)
+        return _json_response({"success": True, "data": {"splits": splits}})
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-split/<int:split_id>", methods=["DELETE"])
+@require_jwt_auth
+def undo_so_split_route(split_id: int) -> Response:
+    """Undo an SO split: restore mother qty, delete split record."""
+    from app.services import fo_so_match_db as matchdb
+
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Auth required"}}, 401)
+    conn = sqlite3.connect(_db_path())
+    try:
+        ok = matchdb.undo_so_split(conn, user_id, split_id)
+        if ok:
+            return _json_response({"success": True, "data": {"undone": True}})
+        return _json_response(
+            {"success": False, "error": {"message": "Split not found"}}, 404
+        )
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/so-split/<int:split_id>/link-child", methods=["POST"])
+@require_jwt_auth
+def link_child_to_split(split_id: int) -> Response:
+    """Link a child match run to an existing split record."""
+    from app.services import fo_so_match_db as matchdb
+
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Auth required"}}, 401)
+    payload = request.get_json(silent=True) or {}
+    child_run_id = payload.get("child_run_id")
+    if not child_run_id:
+        return _json_response(
+            {"success": False, "error": {"message": "child_run_id required"}}, 400
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        ok = matchdb.link_child_run_to_split(conn, user_id, split_id, int(child_run_id))
+        return _json_response({"success": True, "data": {"linked": ok}})
+    finally:
+        conn.close()
+
+
 def _archive_order_pdf_to_drive(
     *,
     db: CentralizedDB,
