@@ -5019,6 +5019,29 @@ def add_distributor_payment_deposit() -> Response:
     return _json_response({"success": True, "data": {"entry": entry}})
 
 
+@data_blueprint.route("/api/v1/distributor-payments/cd", methods=["POST"])
+@require_jwt_auth
+def set_distributor_cd_rate() -> Response:
+    """Set Cash Discount % for a distributor+season."""
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Not signed in"}}, 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        distributor_id = int(payload["distributor_id"])
+        season = str(payload["season"]).strip()
+        cd_percent = float(payload["cd_percent"])
+    except (TypeError, ValueError, KeyError):
+        return _json_response(
+            {"success": False, "error": {"message": "distributor_id, season, cd_percent required"}}, 400
+        )
+    if not season:
+        return _json_response({"success": False, "error": {"message": "season is required"}}, 400)
+    entry = db.set_distributor_cd_rate(user_id, distributor_id, season, cd_percent)
+    return _json_response({"success": True, "data": entry})
+
+
 @data_blueprint.route(
     "/api/v1/distributor-payments/deposits/<int:deposit_id>", methods=["DELETE"]
 )

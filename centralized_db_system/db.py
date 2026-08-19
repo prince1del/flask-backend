@@ -14653,6 +14653,53 @@ class CentralizedDB:
                 "CREATE INDEX IF NOT EXISTS idx_dcp_lookup "
                 "ON distributor_category_payments(user_id, distributor_id, season, category)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributor_cd_rates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    distributor_id INTEGER NOT NULL,
+                    season TEXT NOT NULL,
+                    cd_percent REAL NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(user_id, distributor_id, season)
+                )
+                """
+            )
+
+    def get_distributor_cd_rates(self, user_id: int) -> dict[tuple[int, str], float]:
+        """Return {(distributor_id, season): cd_percent} for a user."""
+        self.ensure_distributor_category_payments_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT distributor_id, season, cd_percent FROM distributor_cd_rates WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        return {(r["distributor_id"], r["season"]): float(r["cd_percent"]) for r in rows}
+
+    def set_distributor_cd_rate(
+        self, user_id: int, distributor_id: int, season: str, cd_percent: float
+    ) -> dict[str, Any]:
+        """Upsert CD% for a distributor+season. Returns the saved record."""
+        self.ensure_distributor_category_payments_table()
+        cd_percent = max(0.0, min(100.0, cd_percent))
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO distributor_cd_rates (user_id, distributor_id, season, cd_percent, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(user_id, distributor_id, season)
+                DO UPDATE SET cd_percent = excluded.cd_percent, updated_at = excluded.updated_at
+                """,
+                (user_id, distributor_id, season, cd_percent),
+            )
+            conn.commit()
+        return {
+            "distributor_id": distributor_id,
+            "season": season,
+            "cd_percent": cd_percent,
+        }
 
     def list_distributor_category_payment_status(self, user_id: int | None) -> list[dict[str, Any]]:
         """Distributor -> season -> category tree: each category carries its
@@ -14752,11 +14799,15 @@ class CentralizedDB:
                     }
                 )
 
+            cd_rates = self.get_distributor_cd_rates(user_id)
+
             by_distributor: dict[int, dict[str, Any]] = {}
             for (dist_id, season, category), so_total in so_totals_by_key.items():
                 so_total = float(so_total or 0)
                 deposits = deposits_by_key.get((dist_id, season, category), [])
                 paid_total = sum(d["amount"] for d in deposits)
+                cd_pct = cd_rates.get((dist_id, season), 0.0)
+                bill_after_cd = so_total * (1 - cd_pct / 100.0)
                 dist_entry = by_distributor.setdefault(
                     dist_id,
                     {
@@ -14766,14 +14817,15 @@ class CentralizedDB:
                     },
                 )
                 season_entry = dist_entry["seasons"].setdefault(
-                    season, {"season": season, "categories": []}
+                    season, {"season": season, "cd_percent": cd_pct, "categories": []}
                 )
                 season_entry["categories"].append(
                     {
                         "category": category,
                         "so_total": so_total,
+                        "bill_after_cd": round(bill_after_cd, 2),
                         "paid_total": paid_total,
-                        "outstanding": so_total - paid_total,
+                        "outstanding": round(bill_after_cd - paid_total, 2),
                         "deposits": deposits,
                     }
                 )
