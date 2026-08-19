@@ -14731,12 +14731,10 @@ class CentralizedDB:
         if not user_id:
             return []
         self.ensure_distributor_category_payments_table()
-        from app.services.fo_so_match_db import so_bill_total_from_match_rows
+        from app.services.fo_so_match_db import so_net_and_bill_from_match_rows
 
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            # Same key as Android OrderMatchRunSummary.dedupeKey():
-            # fo:<filled_order_id> else party:<dist>|<season>|<category>
             so_run_rows = conn.execute(
                 """
                 SELECT distributor_id, season, category, so_net_amount, rows_json
@@ -14763,17 +14761,20 @@ class CentralizedDB:
                 """,
                 (user_id, user_id),
             ).fetchall()
-            so_totals_by_key: dict[tuple[int, str, str], float] = {}
+            # Track both net (pre-GST) and bill (incl. GST) per key
+            so_net_by_key: dict[tuple[int, str, str], float] = {}
+            so_bill_by_key: dict[tuple[int, str, str], float] = {}
             for combo in so_run_rows:
                 dist_id = combo["distributor_id"]
                 season = combo["season"]
                 category = combo["category"]
                 key = (dist_id, season, category)
-                bill = so_bill_total_from_match_rows(
+                net, bill = so_net_and_bill_from_match_rows(
                     combo["rows_json"],
                     float(combo["so_net_amount"] or 0),
                 )
-                so_totals_by_key[key] = so_totals_by_key.get(key, 0.0) + bill
+                so_net_by_key[key] = so_net_by_key.get(key, 0.0) + net
+                so_bill_by_key[key] = so_bill_by_key.get(key, 0.0) + bill
             deposit_rows = conn.execute(
                 "SELECT id, distributor_id, season, category, amount, payment_date, note, created_at "
                 "FROM distributor_category_payments WHERE user_id = ? "
@@ -14802,12 +14803,16 @@ class CentralizedDB:
             cd_rates = self.get_distributor_cd_rates(user_id)
 
             by_distributor: dict[int, dict[str, Any]] = {}
-            for (dist_id, season, category), so_total in so_totals_by_key.items():
-                so_total = float(so_total or 0)
-                deposits = deposits_by_key.get((dist_id, season, category), [])
+            for key in so_bill_by_key:
+                dist_id, season, category = key
+                so_total = float(so_bill_by_key.get(key, 0))
+                so_net = float(so_net_by_key.get(key, 0))
+                deposits = deposits_by_key.get(key, [])
                 paid_total = sum(d["amount"] for d in deposits)
                 cd_pct = cd_rates.get((dist_id, season), 0.0)
-                bill_after_cd = so_total * (1 - cd_pct / 100.0)
+                # CD is on net (pre-GST), GST stays on full total
+                cd_amount = so_net * (cd_pct / 100.0)
+                bill_after_cd = so_total - cd_amount
                 dist_entry = by_distributor.setdefault(
                     dist_id,
                     {
@@ -14823,6 +14828,8 @@ class CentralizedDB:
                     {
                         "category": category,
                         "so_total": so_total,
+                        "so_net": so_net,
+                        "cd_amount": round(cd_amount, 2),
                         "bill_after_cd": round(bill_after_cd, 2),
                         "paid_total": paid_total,
                         "outstanding": round(bill_after_cd - paid_total, 2),

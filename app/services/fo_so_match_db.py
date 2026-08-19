@@ -604,6 +604,57 @@ def so_bill_total_from_match_rows(
     return round(float(so_net_fallback or 0), 2)
 
 
+def so_net_and_bill_from_match_rows(
+    rows_json: str | bytes | None,
+    so_net_fallback: float | None = None,
+) -> tuple[float, float]:
+    """Return (so_net_total, so_bill_total_incl_gst) from stored match rows."""
+    rows: list[Any] = []
+    if rows_json:
+        try:
+            parsed = (
+                json.loads(rows_json)
+                if isinstance(rows_json, (str, bytes))
+                else rows_json
+            )
+            if isinstance(parsed, list):
+                rows = parsed
+        except (TypeError, ValueError, json.JSONDecodeError):
+            rows = []
+    net_sum = 0.0
+    bill_sum = 0.0
+    found = False
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        breakdown = r.get("so_breakdown")
+        if isinstance(breakdown, list) and breakdown:
+            for cell in breakdown:
+                if not isinstance(cell, dict):
+                    continue
+                net = float(cell.get("net") or 0)
+                gst = float(cell.get("gst") or 0)
+                total = float(cell.get("total") or 0)
+                if total > 0:
+                    bill_sum += total
+                    net_sum += net if net else total
+                    found = True
+                elif net or gst:
+                    bill_sum += net + gst
+                    net_sum += net
+                    found = True
+            continue
+        line_net = float(r.get("so_net_amount") or 0)
+        if line_net:
+            bill_sum += line_net
+            net_sum += line_net
+            found = True
+    if found and bill_sum > 0:
+        return (round(net_sum, 2), round(bill_sum, 2))
+    fallback = round(float(so_net_fallback or 0), 2)
+    return (fallback, fallback)
+
+
 def list_match_runs(
     conn: sqlite3.Connection,
     user_id: int | None = None,
