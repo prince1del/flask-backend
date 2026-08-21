@@ -5452,6 +5452,22 @@ def list_order_fulfillment_uploads() -> Response:
     tracking_records = db.list_order_lifecycle_tracking(
         workspace_id=workspace_id, limit=500, user_id=user_id
     )
+    # CI list: mark SO matched when order_ref exists in FO↔SO Order Match
+    # even if Sales Order PDF was never uploaded to lifecycle.
+    for rec in tracking_records:
+        if rec.get("has_sales_order"):
+            continue
+        ref = str(rec.get("order_ref_no") or "").strip()
+        if not ref:
+            continue
+        try:
+            om = _lookup_order_match_so(ref, user_id=user_id)
+        except Exception:
+            om = None
+        if om:
+            rec["has_order_match_so"] = True
+            # List UI treats this as linked (same as detail sheet).
+            rec["has_sales_order"] = True
     return _json_response({
         "success": True,
         "data": {

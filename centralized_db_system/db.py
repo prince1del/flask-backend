@@ -6531,7 +6531,7 @@ class CentralizedDB:
             "olt.sales_order_file_reference, olt.commercial_invoice_file_reference, "
             "olt.payment_status, olt.transit_status, olt.created_at, "
             "olt.commercial_invoice_parsed, olt.commercial_invoice_date, "
-            "olt.commercial_invoice_drive_file_id "
+            "olt.commercial_invoice_drive_file_id, olt.sales_order_parsed "
             "FROM order_lifecycle_tracking olt "
             "LEFT JOIN master_distributors md ON olt.distributor_id = md.id"
         )
@@ -6588,13 +6588,32 @@ class CentralizedDB:
             has_ci = bool(row[5]) or bool(row[11]) or bool(parsed)
             ci_date = row[10] or header.get("invoice_date")
             ci_categories = self._ci_categories_summary(parsed) if has_ci else []
+            so_parsed_raw = row[12] if len(row) > 12 else None
+            has_so_parsed = False
+            if isinstance(so_parsed_raw, str) and so_parsed_raw.strip():
+                try:
+                    so_loaded = json.loads(so_parsed_raw)
+                    has_so_parsed = isinstance(so_loaded, dict) and bool(
+                        so_loaded.get("header")
+                        or so_loaded.get("rows")
+                        or so_loaded.get("line_items")
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    has_so_parsed = False
+            elif isinstance(so_parsed_raw, dict):
+                has_so_parsed = bool(
+                    so_parsed_raw.get("header")
+                    or so_parsed_raw.get("rows")
+                    or so_parsed_raw.get("line_items")
+                )
             results.append(
                 {
                     "tracking_id": row[0],
                     "order_ref_no": row[1],
                     "distributor_id": row[2],
                     "distributor_name": row[3],
-                    "has_sales_order": bool(row[4]),
+                    # File OR bridged Order Match parsed SO (no PDF required).
+                    "has_sales_order": bool(row[4]) or has_so_parsed,
                     "has_commercial_invoice": has_ci,
                     "payment_status": row[6],
                     "transit_status": row[7],
