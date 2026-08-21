@@ -658,24 +658,53 @@ class CentralizedDB:
                 CREATE TABLE IF NOT EXISTS target_achievement_channel_prefs (
                     workspace_id TEXT NOT NULL DEFAULT 'default',
                     user_id INTEGER NOT NULL,
+                    financial_year_id INTEGER NOT NULL,
                     use_manual INTEGER NOT NULL DEFAULT 0,
                     use_so INTEGER NOT NULL DEFAULT 0,
                     use_ci INTEGER NOT NULL DEFAULT 1,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (workspace_id, user_id)
+                    PRIMARY KEY (workspace_id, user_id, financial_year_id)
                 )
                 """
             )
+            # Migrate older user-only prefs table (no financial_year_id) if present.
+            prefs_cols = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(target_achievement_channel_prefs)"
+                ).fetchall()
+            }
+            if "financial_year_id" not in prefs_cols:
+                conn.execute("ALTER TABLE target_achievement_channel_prefs RENAME TO target_achievement_channel_prefs_legacy")
+                conn.execute(
+                    """
+                    CREATE TABLE target_achievement_channel_prefs (
+                        workspace_id TEXT NOT NULL DEFAULT 'default',
+                        user_id INTEGER NOT NULL,
+                        financial_year_id INTEGER NOT NULL,
+                        use_manual INTEGER NOT NULL DEFAULT 0,
+                        use_so INTEGER NOT NULL DEFAULT 0,
+                        use_ci INTEGER NOT NULL DEFAULT 1,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (workspace_id, user_id, financial_year_id)
+                    )
+                    """
+                )
+                # Legacy rows had no FY — leave them unused; defaults apply per FY.
+                conn.execute("DROP TABLE IF EXISTS target_achievement_channel_prefs_legacy")
             conn.commit()
 
     def get_achievement_channel_prefs(
-        self, workspace_id: str, user_id: int | None
+        self,
+        workspace_id: str,
+        user_id: int | None,
+        financial_year_id: int | None = None,
     ) -> dict[str, bool]:
-        """Which achievement channels count toward the active total.
+        """Which achievement channels count toward the active total for one FY.
 
         Defaults to CI-only (historical behaviour) when unset.
         """
-        if user_id is None:
+        if user_id is None or financial_year_id is None:
             return {"manual": False, "so": False, "ci": True}
         self.ensure_target_achievement_tables()
         with sqlite3.connect(self.db_path) as conn:
@@ -683,9 +712,9 @@ class CentralizedDB:
                 """
                 SELECT use_manual, use_so, use_ci
                 FROM target_achievement_channel_prefs
-                WHERE workspace_id = ? AND user_id = ?
+                WHERE workspace_id = ? AND user_id = ? AND financial_year_id = ?
                 """,
-                (workspace_id, int(user_id)),
+                (workspace_id, int(user_id), int(financial_year_id)),
             ).fetchone()
         if not row:
             return {"manual": False, "so": False, "ci": True}
@@ -699,20 +728,21 @@ class CentralizedDB:
         self,
         workspace_id: str,
         user_id: int,
+        financial_year_id: int,
         use_manual: bool,
         use_so: bool,
         use_ci: bool,
     ) -> dict[str, bool]:
-        """Persist channel toggles. SO + CI together is rejected by the route."""
+        """Persist per-FY channel toggles. SO + CI together is rejected by the route."""
         self.ensure_target_achievement_tables()
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO target_achievement_channel_prefs
-                    (workspace_id, user_id, use_manual, use_so, use_ci, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+                    (workspace_id, user_id, financial_year_id, use_manual, use_so, use_ci, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(workspace_id, user_id, financial_year_id) DO UPDATE SET
                     use_manual = excluded.use_manual,
                     use_so = excluded.use_so,
                     use_ci = excluded.use_ci,
@@ -721,6 +751,7 @@ class CentralizedDB:
                 (
                     workspace_id,
                     int(user_id),
+                    int(financial_year_id),
                     1 if use_manual else 0,
                     1 if use_so else 0,
                     1 if use_ci else 0,
@@ -728,7 +759,12 @@ class CentralizedDB:
                 ),
             )
             conn.commit()
-        return {"manual": bool(use_manual), "so": bool(use_so), "ci": bool(use_ci)}
+        return {
+            "manual": bool(use_manual),
+            "so": bool(use_so),
+            "ci": bool(use_ci),
+            "financial_year_id": int(financial_year_id),
+        }
 
     def _migrate_category_breakup_schema(self, conn: sqlite3.Connection) -> None:
         tables = {
@@ -15255,7 +15291,7 @@ class CentralizedDB:
         so_channel = so_total if so_total > 0 else excel_total
         manual_channel = float(manual_fy or 0) + float(manual_dist_total or 0)
 
-        prefs = self.get_achievement_channel_prefs(workspace_id, user_id)
+        prefs = self.get_achievement_channel_prefs(workspace_id, user_id, financial_year_id)
         use_manual = bool(prefs.get("manual"))
         use_so = bool(prefs.get("so"))
         use_ci = bool(prefs.get("ci"))

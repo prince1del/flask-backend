@@ -288,41 +288,72 @@ def get_fy_overview():
                 }
             )
 
-        prefs = db.get_achievement_channel_prefs(workspace_id, user_id)
         return jsonify({
             'success': True,
             'data': {
                 'rows': rows,
                 'unit': 'lakhs',
-                'channels': prefs,
             },
         }), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@target_achievement_bp.route('/achievement-channels', methods=['GET', 'PUT'])
+@target_achievement_bp.route('/achievement-channels', methods=['GET', 'PUT', 'POST'])
+@target_achievement_bp.route(
+    '/years/<int:year_id>/achievement-channels', methods=['GET', 'PUT', 'POST']
+)
 @require_jwt_auth
-def achievement_channels():
-    """Toggle which sources count toward Target vs Achievement (per user).
+def achievement_channels(year_id: int | None = None):
+    """Toggle which sources count toward Target vs Achievement (per user + FY).
 
     Rules: any single channel, or Manual+SO / Manual+CI. SO+CI is rejected.
+    Prefer /years/<year_id>/achievement-channels. Legacy path requires ?year_id=.
     """
     try:
         workspace_id = get_workspace_id()
         user_id = _jwt_user_id()
         if user_id is None:
-            return jsonify({'success': False, 'error': 'User required'}), 401
+            return jsonify({
+                'success': False,
+                'error': {'message': 'User required'},
+                'message': 'User required',
+            }), 401
+        if year_id is None:
+            year_id = request.args.get('year_id', type=int)
+            if year_id is None:
+                body_peek = request.get_json(silent=True) or {}
+                raw = body_peek.get('year_id') or body_peek.get('financial_year_id')
+                try:
+                    year_id = int(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    year_id = None
+        if year_id is None:
+            return jsonify({
+                'success': False,
+                'error': {'message': 'year_id required'},
+                'message': 'year_id required',
+            }), 400
+
         db = _cdb()
+        y = _get_year_or_404(int(year_id), workspace_id, user_id=user_id)
+        if not y:
+            return jsonify({
+                'success': False,
+                'error': {'message': 'Fiscal year not found'},
+                'message': 'Fiscal year not found',
+            }), 404
+
         if request.method == 'GET':
-            prefs = db.get_achievement_channel_prefs(workspace_id, user_id)
+            prefs = db.get_achievement_channel_prefs(workspace_id, user_id, int(year_id))
+            prefs = {**prefs, 'financial_year_id': int(year_id)}
             return jsonify({'success': True, 'data': prefs}), 200
 
         body = request.get_json(silent=True) or {}
         use_manual = bool(body.get('manual', body.get('use_manual', False)))
         use_so = bool(body.get('so', body.get('use_so', False)))
         use_ci = bool(body.get('ci', body.get('use_ci', False)))
-        if (use_so and use_ci:
+        if use_so and use_ci:
             return jsonify({
                 'success': False,
                 'error': {'message': 'SO and CI cannot be on together. Use Manual+SO or Manual+CI.'},
@@ -335,11 +366,11 @@ def achievement_channels():
                 'message': 'Turn on at least one: Manual, SO, or CI.',
             }), 400
         prefs = db.set_achievement_channel_prefs(
-            workspace_id, int(user_id), use_manual, use_so, use_ci
+            workspace_id, int(user_id), int(year_id), use_manual, use_so, use_ci
         )
         return jsonify({'success': True, 'data': prefs}), 200
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': {'message': str(e)}, 'message': str(e)}), 500
 
 @target_achievement_bp.route('/years', methods=['POST'])
 @require_jwt_auth
