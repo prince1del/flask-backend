@@ -3,8 +3,11 @@
 Rules (Balaji AW26 reference):
 - Same SO number + same material qty/net → already in system (no duplicate).
 - Same SO number + changed qty/value/lines → Old vs New compare → replace confirm.
-- New SO number overlapping materials of an existing SO on the *same* FO →
-  ask Additional vs Split; Split reduces parent materials then adds the new SO.
+- After a reduce/replace, FO leftover (mismatch) is free for a *new* SO number:
+  if leftover covers the new SO qty → Additional automatically (no Split prompt).
+  Example: replace 193 1044→648 (leftover 396), then 543@396 → Additional, not Split.
+- Split only when FO is already covered (little/no leftover) and the new SO overlaps
+  materials still booked on a parent SO — then parent must be reduced (case 3a).
 - Rematch only against that FO (season/category stay with the FO row).
 """
 
@@ -197,6 +200,38 @@ def find_parent_candidates(
     return candidates
 
 
+def fo_qty_leftover(existing_run: dict[str, Any] | None) -> float:
+    """Pcs still open on FO after current SOs (sum of max(0, fo − so) per match row)."""
+    if not existing_run:
+        return 0.0
+    leftover = 0.0
+    for row in existing_run.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        fo_q = _f(row.get("fo_qty"))
+        so_q = _f(row.get("so_qty"))
+        if fo_q > so_q + 0.05:
+            leftover += fo_q - so_q
+    return round(leftover, 4)
+
+
+def leftover_covers_new_so(
+    existing_run: dict[str, Any] | None,
+    new_lines: list[dict[str, Any]],
+    *,
+    tol: float = 0.5,
+) -> bool:
+    """True when FO mismatch leftover can absorb this new SO without cutting a parent.
+
+    Balaji: after replace 193→648, leftover≈396; SO 543@396 → Additional (not Split).
+    """
+    leftover = fo_qty_leftover(existing_run)
+    new_qty = _f(summarize_lines(new_lines).get("qty"))
+    if new_qty <= 0.05:
+        return False
+    return leftover + tol >= new_qty
+
+
 def tag_additional(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for row in lines:
@@ -232,7 +267,7 @@ def analyze_incoming_against_existing(
     so_pack: dict[str, Any],
     conflicts: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Decide already / replace / split-or-additional / clean."""
+    """Decide already / replace / split-or-additional / clean / auto-additional."""
     new_lines = [
         r for r in (so_pack.get("line_detail") or []) if isinstance(r, dict)
     ]
@@ -245,10 +280,8 @@ def analyze_incoming_against_existing(
         for c in conflicts:
             so_n = str(c.get("so_number") or "")
             old_l = lines_for_so(existing_lines, so_n)
-            # If existing run lines missing (legacy), try empty old
             new_l = lines_for_so(new_lines, so_n)
             if not new_l:
-                # whole pack may be single-SO without field — use all new lines
                 if len(new_numbers) == 1:
                     new_l = new_lines
             cmp = build_so_compare(
@@ -256,7 +289,8 @@ def analyze_incoming_against_existing(
                 old_lines=old_l,
                 new_lines=new_l,
                 run_id=c.get("run_id") or (existing_run or {}).get("id"),
-                filled_order_id=(existing_run or {}).get("filled_order_id") or c.get("filled_order_id"),
+                filled_order_id=(existing_run or {}).get("filled_order_id")
+                or c.get("filled_order_id"),
                 season=(existing_run or {}).get("season"),
                 category=(existing_run or {}).get("category"),
             )
@@ -271,17 +305,32 @@ def analyze_incoming_against_existing(
 
     if existing_run and new_lines:
         parents = find_parent_candidates(existing_lines, new_lines)
-        # Only prompt when new SO numbers are truly new and materials overlap a parent
+        leftover = fo_qty_leftover(existing_run)
+        new_summary = summarize_lines(new_lines)
+        # FO still short and this SO fits the gap → Additional (silent).
+        # Do NOT offer Split: parent was already reduced via Replace.
+        if parents and leftover_covers_new_so(existing_run, new_lines):
+            return {
+                "action": "save_new",
+                "so_numbers": new_numbers,
+                "auto_additional": True,
+                "fo_leftover_qty": leftover,
+                "new_summary": new_summary,
+                "parent_candidates": parents,
+            }
         if parents:
+            recommended = "additional" if leftover > 0.5 else "split"
             return {
                 "action": "split_or_additional",
                 "parent_candidates": parents,
-                "new_summary": summarize_lines(new_lines),
+                "new_summary": new_summary,
                 "so_numbers": new_numbers,
                 "filled_order_id": existing_run.get("filled_order_id"),
                 "season": existing_run.get("season"),
                 "category": existing_run.get("category"),
                 "run_id": existing_run.get("id"),
+                "fo_leftover_qty": leftover,
+                "recommended_action": recommended,
             }
 
     return {"action": "save_new", "so_numbers": new_numbers}
@@ -294,7 +343,6 @@ def merge_lines_for_replace(
 ) -> list[dict[str, Any]]:
     kept = remove_so_numbers(existing_lines, replace_so_numbers)
     incoming = [r for r in new_lines if isinstance(r, dict)]
-    # If new pack lines lack so_number but single replace target, stamp it
     if replace_so_numbers and incoming and not any(so_number_of(r) for r in incoming):
         only = next(iter(replace_so_numbers))
         stamped = []

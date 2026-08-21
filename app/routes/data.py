@@ -4024,6 +4024,9 @@ def so_pack_match_filled_order() -> Response:
                             "filled_order_id": filled_order_id,
                             "season": decision.get("season"),
                             "category": decision.get("category"),
+                            "fo_leftover_qty": decision.get("fo_leftover_qty"),
+                            "recommended_action": decision.get("recommended_action")
+                            or "split",
                         },
                     },
                     409,
@@ -4032,8 +4035,8 @@ def so_pack_match_filled_order() -> Response:
         # Build merged line_detail when revising an existing FO match.
         working_pack = so_pack
         replaced_note = None
-        # New SO numbers with no material overlap still merge into the FO's
-        # existing match run (one FO = one run; never wipe prior SOs).
+        # New SO that fits FO leftover (after replace) merges as Additional —
+        # including when materials still overlap the reduced parent (Balaji 543).
         effective_action = confirm_action
         if (
             not effective_action
@@ -4042,7 +4045,13 @@ def so_pack_match_filled_order() -> Response:
             and new_lines
         ):
             effective_action = "additional"
-            replaced_note = "Additional order SO added"
+            if decision.get("auto_additional"):
+                replaced_note = (
+                    f"Additional SO linked to FO leftover "
+                    f"({decision.get('fo_leftover_qty')} pcs open)"
+                )
+            else:
+                replaced_note = "Additional order SO added"
 
         if existing and effective_action in ("replace", "split", "additional"):
             existing_lines = list(existing.get("so_line_detail") or [])

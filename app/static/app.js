@@ -9208,13 +9208,16 @@ function _confirmSoReplaceDialog(compares) {
     `<table style="width:100%;font-size:12px;border-collapse:collapse;">` +
     `<thead><tr><th align="left">SO</th><th align="left">Old</th><th align="left">New</th><th align="left">Delta</th></tr></thead>` +
     `<tbody>${rows || '<tr><td colspan="4">No detail</td></tr>'}</tbody></table>` +
-    `<p style="margin:10px 0 0;opacity:.75;font-size:12px;">Leftover FO qty shows as mismatch until another SO covers it.</p>`;
+    `<p style="margin:10px 0 0;opacity:.75;font-size:12px;">After replace, leftover FO qty becomes mismatch — upload the complementary SO next as <strong>Additional</strong> (not Split).</p>`;
   return showSimpleConfirmModal('Replace old SO?', html, 'Replace', 'Cancel');
 }
 
 function _confirmSoSplitOrAdditionalDialog(err) {
   const parents = err.parent_candidates || [];
   const ns = err.new_summary || {};
+  const leftover = Number(err.fo_leftover_qty || 0);
+  const recommended = String(err.recommended_action || 'split').toLowerCase();
+  const preferAdd = recommended === 'additional';
   return new Promise((resolve) => {
     const ui = nxThemeUi();
     const overlay = document.createElement('div');
@@ -9226,6 +9229,15 @@ function _confirmSoSplitOrAdditionalDialog(err) {
       `SO ${escapeHtml(String(p.so_number || ''))} · overlap qty ${Number(p.overlap_qty || 0)}` +
       `</option>`
     ).join('');
+    const leftoverHint = leftover > 0.5
+      ? `<p style="font-size:12px;margin:0 0 10px;color:${ui.accent};">FO leftover open: <strong>${leftover}</strong> pcs — prefer <strong>Additional</strong> (do not reduce parent again).</p>`
+      : `<p style="font-size:12px;margin:0 0 10px;opacity:.75;">FO is already covered — Split reduces parent then adds this SO.</p>`;
+    const addStyle = preferAdd
+      ? `flex:1;background:${ui.accent};border-color:${ui.accent};color:${ui.accentFg};`
+      : `flex:1;background:${ui.secondaryBg};border-color:${ui.secondaryBorder};color:${ui.boxFg};`;
+    const splitStyle = preferAdd
+      ? `flex:1;background:${ui.secondaryBg};border-color:${ui.secondaryBorder};color:${ui.boxFg};`
+      : `flex:1;background:${ui.accent};border-color:${ui.accent};color:${ui.accentFg};`;
     const box = document.createElement('div');
     box.style.cssText =
       `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
@@ -9237,14 +9249,15 @@ function _confirmSoSplitOrAdditionalDialog(err) {
       `New qty <strong style="color:${ui.boxFg};">${Number(ns.qty || 0)}</strong> · ` +
       `net ₹${Number(ns.net || 0).toLocaleString('en-IN')}` +
       `</div>` +
+      leftoverHint +
       `<label style="font-size:12px;display:block;margin-bottom:4px;">If Split — parent SO</label>` +
       `<select id="of-so-split-parent" style="width:100%;margin-bottom:14px;padding:8px;border-radius:8px;` +
       `background:${ui.secondaryBg};color:${ui.boxFg};border:1px solid ${ui.secondaryBorder};">` +
       `${options || '<option value="">—</option>'}</select>` +
-      `<p style="font-size:12px;opacity:.75;margin:0 0 14px;">Split = reduce parent + add this SO. Additional = keep parent, mark this SO additional.</p>` +
+      `<p style="font-size:12px;opacity:.75;margin:0 0 14px;">Split = reduce parent + add this SO. Additional = keep parent, link this SO to FO leftover.</p>` +
       `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
-      `<button id="soa-split" class="btn btn-primary" style="flex:1;background:${ui.accent};border-color:${ui.accent};color:${ui.accentFg};">SO Split</button>` +
-      `<button id="soa-add" class="btn btn-secondary" style="flex:1;background:${ui.secondaryBg};border-color:${ui.secondaryBorder};color:${ui.boxFg};">Additional</button>` +
+      `<button id="soa-add" class="btn" style="${addStyle}">Additional</button>` +
+      `<button id="soa-split" class="btn" style="${splitStyle}">SO Split</button>` +
       `<button id="soa-cancel" class="btn btn-secondary" style="flex:1;background:${ui.secondaryBg};border-color:${ui.secondaryBorder};color:${ui.boxFg};">Cancel</button>` +
       `</div>`;
     overlay.appendChild(box);
