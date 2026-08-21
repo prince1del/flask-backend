@@ -757,50 +757,61 @@ def lookup_so_in_order_match(
     if not run:
         return None
     want = key.upper()
-    # Prefer match-row so_totals (same figure Order Match UI shows) over
-    # summing so_line_detail — detail rows can repeat SO header qty per design.
-    qty = 0.0
-    net = 0.0
-    so_totals = run.get("so_totals") if isinstance(run.get("so_totals"), dict) else {}
-    totals_hit = None
-    for tkey, tval in so_totals.items():
-        if not isinstance(tval, dict):
-            continue
-        if (normalize_so_number(tkey) or "").upper() == want:
-            totals_hit = tval
-            break
-    if totals_hit is not None:
-        try:
-            qty = float(totals_hit.get("qty") or 0)
-        except (TypeError, ValueError):
-            qty = 0.0
-        try:
-            net = float(totals_hit.get("net") or 0)
-        except (TypeError, ValueError):
-            net = 0.0
-
     lines = [
         dict(l)
         for l in (run.get("so_line_detail") or [])
         if isinstance(l, dict)
         and (normalize_so_number(l.get("so_number")) or "").upper() == want
     ]
-    if qty <= 0:
-        for l in lines:
-            try:
-                qty += float(l.get("qty") or l.get("quantity") or 0)
-            except (TypeError, ValueError):
-                pass
-            try:
-                net += float(l.get("net_amount") or l.get("net") or 0)
-            except (TypeError, ValueError):
-                pass
-    elif net <= 0:
-        for l in lines:
-            try:
-                net += float(l.get("net_amount") or l.get("net") or 0)
-            except (TypeError, ValueError):
-                pass
+
+    line_qty = 0.0
+    line_net = 0.0
+    line_qtys: list[float] = []
+    for l in lines:
+        try:
+            q = float(l.get("qty") or l.get("quantity") or 0)
+        except (TypeError, ValueError):
+            q = 0.0
+        if q > 0:
+            line_qtys.append(q)
+            line_qty += q
+        try:
+            line_net += float(l.get("net_amount") or l.get("net") or 0)
+        except (TypeError, ValueError):
+            pass
+
+    so_totals = run.get("so_totals") if isinstance(run.get("so_totals"), dict) else {}
+    totals_qty = 0.0
+    totals_net = 0.0
+    for tkey, tval in so_totals.items():
+        if not isinstance(tval, dict):
+            continue
+        if (normalize_so_number(tkey) or "").upper() != want:
+            continue
+        try:
+            totals_qty = float(tval.get("qty") or 0)
+        except (TypeError, ValueError):
+            totals_qty = 0.0
+        try:
+            totals_net = float(tval.get("net") or 0)
+        except (TypeError, ValueError):
+            totals_net = 0.0
+        break
+
+    # SO pack line_detail = real SO order qty (for CI compare).
+    # so_totals from FO↔SO rows can be short when FO didn't cover every SO pc.
+    # Guard: if every line carries the same qty, that is usually the SO header
+    # repeated per design (e.g. 6×648) — use that single value, not the sum.
+    if len(line_qtys) > 1 and len(set(round(q, 4) for q in line_qtys)) == 1:
+        qty = line_qtys[0]
+        net = totals_net if totals_net > 0 else line_net
+    elif line_qty > 0:
+        qty = line_qty
+        net = line_net if line_net > 0 else totals_net
+    else:
+        qty = totals_qty
+        net = totals_net
+
     return {
         "so_number": key,
         "run_id": run_id,
