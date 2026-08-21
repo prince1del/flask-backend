@@ -3861,16 +3861,25 @@ def so_pack_match_filled_order() -> Response:
     Body JSON:
       filled_order_id: int
       so_pack: analyze payload (needs line_detail)
-      so_buyer_label / so_source_filename optional (for saved Order Match page)
-    Persists a match run and returns it under data.run for the Order Match workspace.
+      so_buyer_label / so_source_filename optional
+      confirm_action: optional replace | split | additional
+      parent_so_number: required when confirm_action=split
+
+    Revision rules:
+      - same SO# + same content → already_in_system
+      - same SO# + changed qty/value → replace_confirmation_required
+      - new SO# overlapping materials on this FO → split_or_additional_required
     """
     import filled_orders_db as fodb
     from app.services import fo_so_match_db as matchdb
+    from app.services import fo_so_revision as sorev
     from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
 
     body = request.get_json(silent=True, force=True) or {}
     filled_order_id = body.get("filled_order_id")
     so_pack = body.get("so_pack")
+    confirm_action = (body.get("confirm_action") or "").strip().lower() or None
+    parent_so_number = (body.get("parent_so_number") or "").strip() or None
     try:
         filled_order_id = int(filled_order_id)
     except (TypeError, ValueError):
@@ -3907,6 +3916,9 @@ def so_pack_match_filled_order() -> Response:
         meta = so_pack.get("meta") or {}
         so_source_filename = meta.get("source_filename")
 
+    new_lines = [r for r in (so_pack.get("line_detail") or []) if isinstance(r, dict)]
+    new_numbers = matchdb.extract_so_numbers_from_pack(so_pack)
+
     conn = sqlite3.connect(_db_path())
     try:
         fodb.ensure_schema(conn)
@@ -3917,8 +3929,168 @@ def so_pack_match_filled_order() -> Response:
                 404,
             )
         items = fodb.get_filled_order_items(conn, filled_order_id)
+        existing = sorev.get_latest_run_for_fo(
+            conn, user_id=user_id, filled_order_id=filled_order_id
+        )
+        conflicts = matchdb.find_so_number_conflicts(conn, new_numbers)
+        # SO index is global — only revise when the conflicting run is this same FO.
+        fo_conflicts = [
+            c
+            for c in conflicts
+            if int(c.get("filled_order_id") or 0) == int(filled_order_id)
+            or (
+                existing
+                and int(c.get("run_id") or 0) == int(existing.get("id") or 0)
+            )
+        ]
+        other_fo_conflicts = [c for c in conflicts if c not in fo_conflicts]
+        if other_fo_conflicts and not confirm_action:
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "duplicate_sales_order",
+                        "message": (
+                            "Sales Order already matched to a different Filled Order. "
+                            "Delete it from Order Match first, then upload again."
+                        ),
+                        "conflicts": other_fo_conflicts,
+                    },
+                },
+                409,
+            )
+        conflicts = fo_conflicts
+
+        decision = sorev.analyze_incoming_against_existing(
+            existing_run=existing,
+            so_pack=so_pack,
+            conflicts=conflicts,
+        )
+
+        if confirm_action and decision["action"] == "already_in_system":
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "so_already_in_system",
+                        "message": "SO already in system — no change detected.",
+                        "compares": decision.get("compares") or [],
+                    },
+                },
+                409,
+            )
+
+        if not confirm_action:
+            if decision["action"] == "already_in_system":
+                return _json_response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "so_already_in_system",
+                            "message": "SO already in system — no change detected.",
+                            "compares": decision.get("compares") or [],
+                        },
+                    },
+                    409,
+                )
+            if decision["action"] == "replace_confirm":
+                return _json_response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "so_replace_confirmation_required",
+                            "message": (
+                                "Sales Order revision detected — confirm replace "
+                                "old SO with new SO (full details below)."
+                            ),
+                            "compares": decision.get("compares") or [],
+                        },
+                    },
+                    409,
+                )
+            if decision["action"] == "split_or_additional":
+                return _json_response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "so_split_or_additional_required",
+                            "message": (
+                                "This SO overlaps materials already on this FO — "
+                                "choose Additional order or SO split."
+                            ),
+                            "parent_candidates": decision.get("parent_candidates") or [],
+                            "new_summary": decision.get("new_summary"),
+                            "run_id": decision.get("run_id"),
+                            "filled_order_id": filled_order_id,
+                            "season": decision.get("season"),
+                            "category": decision.get("category"),
+                        },
+                    },
+                    409,
+                )
+
+        # Build merged line_detail when revising an existing FO match.
+        working_pack = so_pack
+        replaced_note = None
+        # New SO numbers with no material overlap still merge into the FO's
+        # existing match run (one FO = one run; never wipe prior SOs).
+        effective_action = confirm_action
+        if (
+            not effective_action
+            and existing
+            and decision["action"] == "save_new"
+            and new_lines
+        ):
+            effective_action = "additional"
+            replaced_note = "Additional order SO added"
+
+        if existing and effective_action in ("replace", "split", "additional"):
+            existing_lines = list(existing.get("so_line_detail") or [])
+            if effective_action == "replace":
+                replace_nums = {
+                    str(c.get("so_number") or "")
+                    for c in conflicts
+                    if c.get("so_number")
+                }
+                if not replace_nums:
+                    replace_nums = set(new_numbers)
+                merged = sorev.merge_lines_for_replace(
+                    existing_lines, new_lines, replace_nums
+                )
+                replaced_note = f"Replaced SO {', '.join(sorted(replace_nums))}"
+            elif effective_action == "split":
+                if not parent_so_number:
+                    return _json_response(
+                        {
+                            "success": False,
+                            "error": {
+                                "message": "parent_so_number is required for split",
+                            },
+                        },
+                        400,
+                    )
+                merged = sorev.merge_lines_for_split(
+                    existing_lines, new_lines, parent_so_number
+                )
+                replaced_note = (
+                    f"Split from SO {parent_so_number} — parent reduced, new SO added"
+                )
+            else:  # additional
+                merged = sorev.merge_lines_for_additional(existing_lines, new_lines)
+                if not replaced_note:
+                    replaced_note = "Additional order SO added"
+            working_pack = sorev.pack_from_lines(
+                merged, source_filename=so_source_filename
+            )
+            # Free SO index + drop previous FO run before saving the merged match.
+            matchdb.delete_match_run(conn, user_id, int(existing["id"]))
+            for c in conflicts:
+                rid = c.get("run_id")
+                if rid and int(rid) != int(existing["id"]):
+                    matchdb.delete_match_run(conn, user_id, int(rid))
+
         result = run_match_saved_fo_vs_so_pack(
-            fo_meta=fo, fo_items=items, so_pack_payload=so_pack,
+            fo_meta=fo, fo_items=items, so_pack_payload=working_pack,
         )
         try:
             run = matchdb.save_match_run(
@@ -3927,8 +4099,10 @@ def so_pack_match_filled_order() -> Response:
                 match_payload=result,
                 so_buyer_label=so_buyer_label,
                 so_source_filename=so_source_filename,
-                so_line_detail=so_pack.get("line_detail") if isinstance(so_pack.get("line_detail"), list) else None,
-                so_pack=so_pack,
+                so_line_detail=working_pack.get("line_detail")
+                if isinstance(working_pack.get("line_detail"), list)
+                else None,
+                so_pack=working_pack,
             )
         except matchdb.DuplicateSalesOrderError as dup:
             return _json_response(
@@ -3944,6 +4118,9 @@ def so_pack_match_filled_order() -> Response:
             )
         result["run"] = {k: v for k, v in run.items() if k != "rows"}
         result["run_id"] = run.get("id")
+        if replaced_note:
+            result["revision_note"] = replaced_note
+            result["confirm_action"] = effective_action
         return _json_response({"success": True, "data": result})
     except Exception as exc:
         return _json_response(

@@ -73,6 +73,37 @@ class DuplicateSalesOrderError(ValueError):
         )
 
 
+class SoAlreadyInSystemError(ValueError):
+    """Same SO number + same qty/value/lines — no duplicate write."""
+
+    def __init__(self, compare: dict[str, Any]):
+        self.compare = compare
+        nums = ", ".join(
+            str(n) for n in (compare.get("so_numbers") or [])[:5] if n
+        ) or "SO"
+        super().__init__(f"SO already in system ({nums}) — no change detected.")
+
+
+class SoReplaceConfirmationRequired(ValueError):
+    """Same SO number but qty/value/lines differ — UI must confirm replace."""
+
+    def __init__(self, compare: dict[str, Any]):
+        self.compare = compare
+        super().__init__(
+            "Sales Order revision detected — confirm replace old SO with new SO."
+        )
+
+
+class SoSplitOrAdditionalRequired(ValueError):
+    """New SO number overlaps FO articles already covered by another SO on this FO."""
+
+    def __init__(self, compare: dict[str, Any]):
+        self.compare = compare
+        super().__init__(
+            "This SO overlaps an existing SO on this FO — choose Additional order or SO split."
+        )
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     global _schema_ensured
     if _schema_ensured:

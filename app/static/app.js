@@ -9109,7 +9109,7 @@ function _matchLabStatusClass(status) {
   return 'color:#ff6b6b;font-weight:600;';
 }
 
-async function runSoPackFoMatch() {
+async function runSoPackFoMatch(extra = {}) {
   const sel = document.getElementById('of-so-pack-fo-pick');
   const btn = document.getElementById('of-so-pack-fo-match-btn');
   const resultBox = document.getElementById('of-so-pack-result');
@@ -9139,16 +9139,42 @@ async function runSoPackFoMatch() {
         so_pack: ofSoPackLastPayload,
         so_buyer_label: _soPackBuyerLabel(ofSoPackLastPayload),
         so_source_filename: (ofSoPackLastPayload.meta || {}).source_filename || null,
+        confirm_action: extra.confirm_action || undefined,
+        parent_so_number: extra.parent_so_number || undefined,
       }),
     });
     const data = await parseApiJson(response);
     if (!response.ok || !data.success) {
-      throw new Error((data.error && data.error.message) || 'Match failed');
+      const err = (data && data.error) || {};
+      const code = err.code || '';
+      if (code === 'so_already_in_system') {
+        throw new Error(err.message || 'SO already in system');
+      }
+      if (code === 'so_replace_confirmation_required') {
+        const ok = await _confirmSoReplaceDialog(err.compares || []);
+        if (!ok) throw new Error('Replace cancelled');
+        return runSoPackFoMatch({ confirm_action: 'replace' });
+      }
+      if (code === 'so_split_or_additional_required') {
+        const choice = await _confirmSoSplitOrAdditionalDialog(err);
+        if (!choice) throw new Error('Cancelled');
+        if (choice.action === 'additional') {
+          return runSoPackFoMatch({ confirm_action: 'additional' });
+        }
+        return runSoPackFoMatch({
+          confirm_action: 'split',
+          parent_so_number: choice.parent_so_number,
+        });
+      }
+      throw new Error(err.message || 'Match failed');
     }
     ofSoPackFoMatchResult = data.data || {};
     const runId = ofSoPackFoMatchResult.run_id || (ofSoPackFoMatchResult.run && ofSoPackFoMatchResult.run.id);
+    const note = ofSoPackFoMatchResult.revision_note
+      ? ` — ${ofSoPackFoMatchResult.revision_note}`
+      : '';
     if (resultBox) {
-      resultBox.textContent = 'Match saved — opening Order Match…';
+      resultBox.textContent = `Match saved${note} — opening Order Match…`;
       resultBox.classList.add('so-pack-ok');
     }
     if (typeof nexoraToast === 'function') nexoraToast('FO vs SO match saved', 'success');
@@ -9162,6 +9188,84 @@ async function runSoPackFoMatch() {
   } finally {
     if (btn) btn.disabled = !(sel && sel.value);
   }
+}
+
+function _confirmSoReplaceDialog(compares) {
+  const rows = (compares || []).map((c) => {
+    const o = c.old || {};
+    const n = c.new || {};
+    return (
+      `<tr>` +
+      `<td><strong>${escapeHtml(String(c.so_number || ''))}</strong></td>` +
+      `<td>${Number(o.qty || 0)} / ₹${Number(o.net || 0).toLocaleString('en-IN')}</td>` +
+      `<td>${Number(n.qty || 0)} / ₹${Number(n.net || 0).toLocaleString('en-IN')}</td>` +
+      `<td>${Number(c.delta_qty || 0)} / ₹${Number(c.delta_net || 0).toLocaleString('en-IN')}</td>` +
+      `</tr>`
+    );
+  }).join('');
+  const html =
+    `<p style="margin:0 0 10px;">Same SO number already on this FO, but qty/value changed. Replace old with new?</p>` +
+    `<table style="width:100%;font-size:12px;border-collapse:collapse;">` +
+    `<thead><tr><th align="left">SO</th><th align="left">Old</th><th align="left">New</th><th align="left">Delta</th></tr></thead>` +
+    `<tbody>${rows || '<tr><td colspan="4">No detail</td></tr>'}</tbody></table>` +
+    `<p style="margin:10px 0 0;opacity:.75;font-size:12px;">Leftover FO qty shows as mismatch until another SO covers it.</p>`;
+  return showSimpleConfirmModal('Replace old SO?', html, 'Replace', 'Cancel');
+}
+
+function _confirmSoSplitOrAdditionalDialog(err) {
+  const parents = err.parent_candidates || [];
+  const ns = err.new_summary || {};
+  return new Promise((resolve) => {
+    const ui = nxThemeUi();
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      `position: fixed; inset: 0; background: ${ui.overlay}; ` +
+      'display: flex; align-items: center; justify-content: center; z-index: 100002;';
+    const options = parents.map((p, i) =>
+      `<option value="${escapeHtml(String(p.so_number || ''))}" ${i === 0 ? 'selected' : ''}>` +
+      `SO ${escapeHtml(String(p.so_number || ''))} · overlap qty ${Number(p.overlap_qty || 0)}` +
+      `</option>`
+    ).join('');
+    const box = document.createElement('div');
+    box.style.cssText =
+      `background: ${ui.boxBg}; border: 1px solid ${ui.boxBorder}; border-radius: 12px; ` +
+      `padding: 24px; max-width: 480px; width: 92%; color: ${ui.boxFg};`;
+    box.innerHTML =
+      `<div style="font-size:16px;font-weight:600;margin-bottom:10px;color:${ui.accent};">Additional or SO split?</div>` +
+      `<div style="font-size:13px;color:${ui.muted};line-height:1.5;margin-bottom:12px;">` +
+      `New SO overlaps materials already on this FO.<br>` +
+      `New qty <strong style="color:${ui.boxFg};">${Number(ns.qty || 0)}</strong> · ` +
+      `net ₹${Number(ns.net || 0).toLocaleString('en-IN')}` +
+      `</div>` +
+      `<label style="font-size:12px;display:block;margin-bottom:4px;">If Split — parent SO</label>` +
+      `<select id="of-so-split-parent" style="width:100%;margin-bottom:14px;padding:8px;border-radius:8px;` +
+      `background:${ui.secondaryBg};color:${ui.boxFg};border:1px solid ${ui.secondaryBorder};">` +
+      `${options || '<option value="">—</option>'}</select>` +
+      `<p style="font-size:12px;opacity:.75;margin:0 0 14px;">Split = reduce parent + add this SO. Additional = keep parent, mark this SO additional.</p>` +
+      `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
+      `<button id="soa-split" class="btn btn-primary" style="flex:1;background:${ui.accent};border-color:${ui.accent};color:${ui.accentFg};">SO Split</button>` +
+      `<button id="soa-add" class="btn btn-secondary" style="flex:1;background:${ui.secondaryBg};border-color:${ui.secondaryBorder};color:${ui.boxFg};">Additional</button>` +
+      `<button id="soa-cancel" class="btn btn-secondary" style="flex:1;background:${ui.secondaryBg};border-color:${ui.secondaryBorder};color:${ui.boxFg};">Cancel</button>` +
+      `</div>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const cleanup = (val) => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resolve(val);
+    };
+    box.querySelector('#soa-split').addEventListener('click', () => {
+      const sel = box.querySelector('#of-so-split-parent');
+      const parent = (sel && sel.value) || (parents[0] && parents[0].so_number) || '';
+      if (!parent) {
+        nexoraToast('Choose parent SO for split', 'warn');
+        return;
+      }
+      cleanup({ action: 'split', parent_so_number: parent });
+    });
+    box.querySelector('#soa-add').addEventListener('click', () => cleanup({ action: 'additional' }));
+    box.querySelector('#soa-cancel').addEventListener('click', () => cleanup(null));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
+  });
 }
 
 const orderMatchState = {
