@@ -4970,7 +4970,8 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
             "ci_buyer_name": buyer_name,
             "ci_buyer_gst": buyer_gst,
             "customers_match": party_match,
-            "so_has_file": bool(matching_so.get("sales_order_file_reference")),
+            "so_has_file": _lifecycle_has_real_sales_order(matching_so),
+            "so_from_order_match": bool(order_match_so),
             "so_tracking_id": matching_so.get("tracking_id"),
             "so_item_count": len(so_items),
             "ci_line_count": None,
@@ -4991,6 +4992,8 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
             "order_ref_no": matching_so.get("order_ref_no"),
             "distributor_id": matching_so.get("distributor_id"),
             "sales_order_file_reference": matching_so.get("sales_order_file_reference"),
+            "has_sales_order": _lifecycle_has_real_sales_order(matching_so),
+            "from_order_match": bool(order_match_so),
             "commercial_invoice_file_reference": matching_so.get(
                 "commercial_invoice_file_reference"
             ),
@@ -6808,8 +6811,14 @@ def _auto_confirm_ci_preview(preview: dict) -> dict:
     )
     has_real_so = (
         not preview.get("no_match_found")
-        and compare
-        and (compare.get("so_has_file") or matching_so.get("sales_order_file_reference"))
+        and bool(matching_so)
+        and (
+            compare.get("so_has_file")
+            or matching_so.get("sales_order_file_reference")
+            or matching_so.get("has_sales_order")
+            or matching_so.get("from_order_match")
+            or preview.get("order_match_so")
+        )
     )
     amount = preview.get("extracted_amount")
     try:
