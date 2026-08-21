@@ -653,7 +653,82 @@ class CentralizedDB:
                 "CREATE INDEX IF NOT EXISTS idx_ta_others_lines_fy "
                 "ON target_others_lines(workspace_id, financial_year_id)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_achievement_channel_prefs (
+                    workspace_id TEXT NOT NULL DEFAULT 'default',
+                    user_id INTEGER NOT NULL,
+                    use_manual INTEGER NOT NULL DEFAULT 0,
+                    use_so INTEGER NOT NULL DEFAULT 0,
+                    use_ci INTEGER NOT NULL DEFAULT 1,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (workspace_id, user_id)
+                )
+                """
+            )
             conn.commit()
+
+    def get_achievement_channel_prefs(
+        self, workspace_id: str, user_id: int | None
+    ) -> dict[str, bool]:
+        """Which achievement channels count toward the active total.
+
+        Defaults to CI-only (historical behaviour) when unset.
+        """
+        if user_id is None:
+            return {"manual": False, "so": False, "ci": True}
+        self.ensure_target_achievement_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT use_manual, use_so, use_ci
+                FROM target_achievement_channel_prefs
+                WHERE workspace_id = ? AND user_id = ?
+                """,
+                (workspace_id, int(user_id)),
+            ).fetchone()
+        if not row:
+            return {"manual": False, "so": False, "ci": True}
+        return {
+            "manual": bool(int(row[0] or 0)),
+            "so": bool(int(row[1] or 0)),
+            "ci": bool(int(row[2] or 0)),
+        }
+
+    def set_achievement_channel_prefs(
+        self,
+        workspace_id: str,
+        user_id: int,
+        use_manual: bool,
+        use_so: bool,
+        use_ci: bool,
+    ) -> dict[str, bool]:
+        """Persist channel toggles. SO + CI together is rejected by the route."""
+        self.ensure_target_achievement_tables()
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO target_achievement_channel_prefs
+                    (workspace_id, user_id, use_manual, use_so, use_ci, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+                    use_manual = excluded.use_manual,
+                    use_so = excluded.use_so,
+                    use_ci = excluded.use_ci,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    workspace_id,
+                    int(user_id),
+                    1 if use_manual else 0,
+                    1 if use_so else 0,
+                    1 if use_ci else 0,
+                    now,
+                ),
+            )
+            conn.commit()
+        return {"manual": bool(use_manual), "so": bool(use_so), "ci": bool(use_ci)}
 
     def _migrate_category_breakup_schema(self, conn: sqlite3.Connection) -> None:
         tables = {
@@ -15176,19 +15251,43 @@ class CentralizedDB:
         ci_total = sum(float(r.get("achievement_ci") or 0) for r in breakup)
         manual_dist_total = sum(float(r.get("achievement_manual") or 0) for r in breakup)
         so_total = self.sum_so_value_for_fy(user_id, fy_label)
-        # CI is always the primary achievement channel (including 0 after deletes).
-        # SO/FO totals remain in the payload for reference but do not drive the card.
-        if ci_total > 0:
-            active_source, active_achievement = "ci", ci_total
-        elif excel_total > 0:
-            active_source, active_achievement = "excel", excel_total
-        elif manual_fy > 0:
-            active_source, active_achievement = "manual_fy", manual_fy
-        elif manual_dist_total > 0:
-            active_source, active_achievement = "manual_distributor", manual_dist_total
+        # "SO value" channel = Order Desk SO total when present, else Excel SO upload.
+        so_channel = so_total if so_total > 0 else excel_total
+        manual_channel = float(manual_fy or 0) + float(manual_dist_total or 0)
+
+        prefs = self.get_achievement_channel_prefs(workspace_id, user_id)
+        use_manual = bool(prefs.get("manual"))
+        use_so = bool(prefs.get("so"))
+        use_ci = bool(prefs.get("ci"))
+        # Hard rule: never combine SO + CI.
+        if use_so and use_ci:
+            use_ci = False
+
+        if use_manual or use_so or use_ci:
+            active_achievement = 0.0
+            sources: list[str] = []
+            if use_manual:
+                active_achievement += manual_channel
+                sources.append("manual")
+            if use_so:
+                active_achievement += so_channel
+                sources.append("so")
+            if use_ci:
+                active_achievement += ci_total
+                sources.append("ci")
+            active_source = "+".join(sources) if sources else "none"
         else:
-            # CI channel empty and no excel/manual — show 0 (not FO/SO stand-in).
-            active_source, active_achievement = "ci", 0.0
+            # Legacy fallback when every toggle is off — keep CI-first behaviour.
+            if ci_total > 0:
+                active_source, active_achievement = "ci", ci_total
+            elif excel_total > 0:
+                active_source, active_achievement = "excel", excel_total
+            elif manual_fy > 0:
+                active_source, active_achievement = "manual_fy", manual_fy
+            elif manual_dist_total > 0:
+                active_source, active_achievement = "manual_distributor", manual_dist_total
+            else:
+                active_source, active_achievement = "ci", 0.0
         # Keep year rollup aligned with the active channel (drops stale Excel totals).
         self.sync_financial_year_achievement_from_breakup(workspace_id, financial_year_id)
         pct = round((active_achievement / target_lakhs) * 100, 2) if target_lakhs > 0 else 0.0
@@ -15199,6 +15298,13 @@ class CentralizedDB:
             "achievement_ci_total": ci_total,
             "achievement_manual_distributor_total": manual_dist_total,
             "achievement_so_total": so_total,
+            "achievement_manual_channel": manual_channel,
+            "achievement_so_channel": so_channel,
+            "channels": {
+                "manual": use_manual,
+                "so": use_so,
+                "ci": use_ci,
+            },
             "active_source": active_source,
             "active_achievement": active_achievement,
             "percentage": pct,

@@ -280,10 +280,64 @@ def get_fy_overview():
                     "distributor_target_narration": _narrate_inr_cr_lakh(
                         _lakhs_to_rupees(dist_target)
                     ),
+                    "active_source": summary.get("active_source"),
+                    "channels": summary.get("channels") or {"manual": False, "so": False, "ci": True},
+                    "achievement_manual_channel": float(summary.get("achievement_manual_channel") or 0),
+                    "achievement_so_channel": float(summary.get("achievement_so_channel") or 0),
+                    "achievement_ci_total": float(summary.get("achievement_ci_total") or 0),
                 }
             )
 
-        return jsonify({'success': True, 'data': {'rows': rows, 'unit': 'lakhs'}}), 200
+        prefs = db.get_achievement_channel_prefs(workspace_id, user_id)
+        return jsonify({
+            'success': True,
+            'data': {
+                'rows': rows,
+                'unit': 'lakhs',
+                'channels': prefs,
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@target_achievement_bp.route('/achievement-channels', methods=['GET', 'PUT'])
+@require_jwt_auth
+def achievement_channels():
+    """Toggle which sources count toward Target vs Achievement (per user).
+
+    Rules: any single channel, or Manual+SO / Manual+CI. SO+CI is rejected.
+    """
+    try:
+        workspace_id = get_workspace_id()
+        user_id = _jwt_user_id()
+        if user_id is None:
+            return jsonify({'success': False, 'error': 'User required'}), 401
+        db = _cdb()
+        if request.method == 'GET':
+            prefs = db.get_achievement_channel_prefs(workspace_id, user_id)
+            return jsonify({'success': True, 'data': prefs}), 200
+
+        body = request.get_json(silent=True) or {}
+        use_manual = bool(body.get('manual', body.get('use_manual', False)))
+        use_so = bool(body.get('so', body.get('use_so', False)))
+        use_ci = bool(body.get('ci', body.get('use_ci', False)))
+        if (use_so and use_ci:
+            return jsonify({
+                'success': False,
+                'error': {'message': 'SO and CI cannot be on together. Use Manual+SO or Manual+CI.'},
+                'message': 'SO and CI cannot be on together. Use Manual+SO or Manual+CI.',
+            }), 400
+        if not (use_manual or use_so or use_ci):
+            return jsonify({
+                'success': False,
+                'error': {'message': 'Turn on at least one: Manual, SO, or CI.'},
+                'message': 'Turn on at least one: Manual, SO, or CI.',
+            }), 400
+        prefs = db.set_achievement_channel_prefs(
+            workspace_id, int(user_id), use_manual, use_so, use_ci
+        )
+        return jsonify({'success': True, 'data': prefs}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
