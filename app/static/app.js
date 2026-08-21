@@ -9507,9 +9507,21 @@ function renderOrderMatchDetailRows(rows) {
     const soNums = Array.isArray(r.so_numbers)
       ? r.so_numbers.map((n) => String(n || '').trim()).filter(Boolean)
       : [];
-    const soLabel = soNums.length
+    const breakdown = Array.isArray(r.so_breakdown) ? r.so_breakdown : [];
+    let soLabel = soNums.length
       ? soNums.map((n) => (/^so\b/i.test(n) ? n : `SO ${n}`)).join(', ')
       : '—';
+    if (breakdown.length > 1) {
+      soLabel = breakdown
+        .map((b) => {
+          const n = String(b.so_number || '').trim();
+          if (!n) return '';
+          const q = Number(b.qty || 0);
+          return `SO ${n}: ${q}`;
+        })
+        .filter(Boolean)
+        .join(' · ');
+    }
     const statusHtml = ok
       ? `<span class="of-match-status of-match-status--ok" title="${foEscapeText(status)}">✓ ${foEscapeText(statusWord)}</span>`
       : `<span class="of-match-status of-match-status--flag" title="${foEscapeText(status)}">${foEscapeText(statusWord || '—')}</span>`;
