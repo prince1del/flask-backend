@@ -798,19 +798,36 @@ def lookup_so_in_order_match(
             totals_net = 0.0
         break
 
-    # SO pack line_detail = real SO order qty (for CI compare).
-    # so_totals from FO↔SO rows can be short when FO didn't cover every SO pc.
-    # Guard: if every line carries the same qty, that is usually the SO header
-    # repeated per design (e.g. 6×648) — use that single value, not the sum.
-    if len(line_qtys) > 1 and len(set(round(q, 4) for q in line_qtys)) == 1:
-        qty = line_qtys[0]
-        net = totals_net if totals_net > 0 else line_net
-    elif line_qty > 0:
-        qty = line_qty
-        net = line_net if line_net > 0 else totals_net
-    else:
+    def _compress_repeated_so_qty(qtys: list[float], bridge: float) -> float:
+        """Undo SO-header qty stamped on every design line (16×648, 8×396)."""
+        if not qtys:
+            return bridge
+        total = float(sum(qtys))
+        rounded = [round(q, 4) for q in qtys]
+        if len(set(rounded)) == 1:
+            return float(rounded[0])
+        if bridge > 0 and total > bridge * 1.2:
+            ratio = total / bridge
+            n = int(round(ratio))
+            if n >= 2 and abs(ratio - n) < 0.08:
+                return bridge
+        # Mode: most common line qty, if sum ≈ n × mode
+        counts: dict[float, int] = {}
+        for q in rounded:
+            counts[q] = counts.get(q, 0) + 1
+        mode = max(counts.items(), key=lambda kv: kv[1])[0]
+        mode_hits = counts[mode]
+        if mode > 0 and len(qtys) >= 2 and total > mode * 1.2 and mode_hits >= (len(qtys) + 1) // 2:
+            ratio = total / mode
+            n = int(round(ratio))
+            if n >= 2 and abs(ratio - n) < 0.08:
+                return float(mode)
+        return total
+
+    qty = _compress_repeated_so_qty(line_qtys, totals_qty)
+    if qty <= 0:
         qty = totals_qty
-        net = totals_net
+    net = line_net if line_net > 0 else totals_net
 
     return {
         "so_number": key,
