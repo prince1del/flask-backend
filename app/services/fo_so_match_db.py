@@ -727,3 +727,115 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
         return True
     conn.commit()
     return False
+
+
+def lookup_so_in_order_match(
+    conn: sqlite3.Connection,
+    so_number: str,
+    *,
+    user_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Find an SO that exists in FO↔SO Order Match (may have no lifecycle PDF yet)."""
+    ensure_schema(conn)
+    key = normalize_so_number(so_number)
+    if not key:
+        return None
+    row = conn.execute(
+        "SELECT so_number, run_id, user_id, filled_order_id "
+        "FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
+        (key,),
+    ).fetchone()
+    if not row:
+        return None
+    run_id = int(row[1])
+    idx_user = int(row[2]) if row[2] is not None else None
+    if user_id is not None and idx_user is not None and idx_user != int(user_id):
+        return None
+    run = get_match_run(conn, run_id, user_id=user_id)
+    if run is None and user_id is not None:
+        run = get_match_run(conn, run_id, user_id=None)
+    if not run:
+        return None
+    want = key.upper()
+    lines = [
+        dict(l)
+        for l in (run.get("so_line_detail") or [])
+        if isinstance(l, dict)
+        and (normalize_so_number(l.get("so_number")) or "").upper() == want
+    ]
+    qty = 0.0
+    net = 0.0
+    for l in lines:
+        try:
+            qty += float(l.get("qty") or l.get("quantity") or 0)
+        except (TypeError, ValueError):
+            pass
+        try:
+            net += float(l.get("net_amount") or l.get("net") or 0)
+        except (TypeError, ValueError):
+            pass
+    return {
+        "so_number": key,
+        "run_id": run_id,
+        "filled_order_id": run.get("filled_order_id") or row[3],
+        "distributor_id": run.get("distributor_id"),
+        "distributor_name": run.get("distributor_name"),
+        "season": run.get("season"),
+        "category": run.get("category"),
+        "so_qty": round(qty, 4),
+        "so_net": round(net, 2),
+        "line_count": len(lines),
+        "line_detail": lines,
+    }
+
+
+def sales_order_parsed_from_order_match(lookup: dict[str, Any]) -> dict[str, Any]:
+    """Lifecycle-compatible sales_order_parsed built from Order Match SO lines."""
+    lines_out: list[dict[str, Any]] = []
+    for r in lookup.get("line_detail") or []:
+        if not isinstance(r, dict):
+            continue
+        q = 0.0
+        try:
+            q = float(r.get("qty") or r.get("quantity") or 0)
+        except (TypeError, ValueError):
+            q = 0.0
+        net = 0.0
+        try:
+            net = float(r.get("net_amount") or r.get("net") or 0)
+        except (TypeError, ValueError):
+            net = 0.0
+        name = (
+            str(r.get("product_name") or "").strip()
+            or str(r.get("product_detail") or "").strip()
+            or str(r.get("material_code") or "").strip()
+            or "Item"
+        )
+        lines_out.append(
+            {
+                "item_name": name,
+                "product": name,
+                "material_code": r.get("material_code"),
+                "qty": q,
+                "quantity": q,
+                "net_amount": net,
+                "value": net,
+                "amount": net,
+                "so_number": lookup.get("so_number"),
+            }
+        )
+    return {
+        "source": "order_match",
+        "order_match_run_id": lookup.get("run_id"),
+        "header": {
+            "order_ref_no": lookup.get("so_number"),
+            "total_qty": lookup.get("so_qty"),
+            "net_amount": lookup.get("so_net"),
+        },
+        "line_items": lines_out,
+        "rows": lines_out,
+        "totals": {
+            "total_qty": lookup.get("so_qty"),
+            "net_amount": lookup.get("so_net"),
+        },
+    }

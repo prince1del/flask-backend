@@ -4641,6 +4641,85 @@ def _lifecycle_has_real_sales_order(tracking: dict | None) -> bool:
     return False
 
 
+def _lookup_order_match_so(order_ref_no: str, user_id: int | None = None) -> dict | None:
+    """SO present in FO↔SO Order Match index (SO Pack match), even without SO PDF."""
+    from app.services import fo_so_match_db as matchdb
+
+    ref = (order_ref_no or "").strip()
+    if not ref:
+        return None
+    conn = sqlite3.connect(_db_path())
+    try:
+        matchdb.ensure_schema(conn)
+        om = matchdb.lookup_so_in_order_match(conn, ref, user_id=user_id)
+        if om is None and user_id is not None:
+            om = matchdb.lookup_so_in_order_match(conn, ref, user_id=None)
+        return om
+    finally:
+        conn.close()
+
+
+def _bridge_order_match_so_into_lifecycle(
+    db,
+    *,
+    order_ref_no: str,
+    workspace_id: str,
+    user_id: int | None,
+    distributor_id: int | None = None,
+) -> dict | None:
+    """
+    If SO exists only in Order Match (FO↔SO), seed lifecycle sales_order_parsed
+    so CI can link without re-uploading the SO PDF.
+    """
+    from app.services import fo_so_match_db as matchdb
+
+    om = _lookup_order_match_so(order_ref_no, user_id=user_id)
+    if not om:
+        return None
+    parsed = matchdb.sales_order_parsed_from_order_match(om)
+    dist_id = distributor_id or om.get("distributor_id")
+    existing = db.get_order_lifecycle_by_order_ref_no(
+        order_ref_no, workspace_id=workspace_id
+    )
+    if existing and existing.get("distributor_id"):
+        dist_id = dist_id or existing.get("distributor_id")
+    if not dist_id:
+        return om
+    try:
+        tracking_id = db.link_sales_order_to_order_lifecycle(
+            order_ref_no=order_ref_no,
+            distributor_id=int(dist_id),
+            sales_order_file_reference=None,
+            sales_order_parsed=parsed,
+            workspace_id=workspace_id or "default",
+        )
+        # Populate so_qty on fulfillment items for SO↔CI compare.
+        for row in parsed.get("line_items") or []:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("item_name") or row.get("product") or "").strip()
+            qty = float(row.get("qty") or row.get("quantity") or 0)
+            val = float(row.get("net_amount") or row.get("value") or row.get("amount") or 0)
+            if not name or qty <= 0:
+                continue
+            try:
+                db.upsert_order_lifecycle_item(
+                    tracking_id,
+                    item_name=name,
+                    qty=qty,
+                    value=val,
+                    source="so",
+                    workspace_id=workspace_id or "default",
+                )
+            except Exception:
+                pass
+        om = dict(om)
+        om["lifecycle_tracking_id"] = tracking_id
+        return om
+    except Exception:
+        return om
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/upload/invoice", methods=["POST"])
 @require_jwt_auth
 def upload_invoice_v2() -> Response:
@@ -4751,6 +4830,7 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
     so_distributor = None
     distributor_name = None
     existing_ci_only_tracking = None
+    order_match_so = None
     if order_ref_no:
         existing_tracking = db.get_order_lifecycle_by_order_ref_no(
             order_ref_no, workspace_id=workspace_id
@@ -4776,6 +4856,38 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
                     distributor_name = (
                         so_distributor.get("firm_name") or so_distributor.get("name")
                     )
+
+        # SO Pack → Order Match often has the SO without a lifecycle PDF.
+        # Bridge that SO into lifecycle so CI can confirm-link.
+        if matching_so is None:
+            uid = _current_user_id()
+            dist_hint = None
+            if existing_tracking and existing_tracking.get("distributor_id"):
+                dist_hint = existing_tracking.get("distributor_id")
+            order_match_so = _bridge_order_match_so_into_lifecycle(
+                db,
+                order_ref_no=order_ref_no,
+                workspace_id=workspace_id or "default",
+                user_id=uid,
+                distributor_id=int(dist_hint) if dist_hint else None,
+            )
+            if order_match_so:
+                matching_so = db.get_order_lifecycle_by_order_ref_no(
+                    order_ref_no, workspace_id=workspace_id
+                )
+                if matching_so and _lifecycle_has_real_sales_order(matching_so):
+                    existing_ci_only_tracking = None
+                    if matching_so.get("distributor_id") and not so_distributor:
+                        so_distributor = db.get_master_distributor(
+                            matching_so["distributor_id"], workspace_id=workspace_id
+                        )
+                        if so_distributor:
+                            distributor_name = (
+                                so_distributor.get("firm_name")
+                                or so_distributor.get("name")
+                            )
+                else:
+                    matching_so = None
 
     own_company_gst = None
     try:
@@ -4894,6 +5006,17 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
             "commercial_invoice_file_reference": str(target_path),
             "commercial_invoice_parsed": parsed_invoice,
             "matching_sales_order": matching_so_summary,
+            "order_match_so": (
+                {
+                    "so_number": order_match_so.get("so_number"),
+                    "run_id": order_match_so.get("run_id"),
+                    "so_qty": order_match_so.get("so_qty"),
+                    "so_net": order_match_so.get("so_net"),
+                    "source": "order_match",
+                }
+                if order_match_so
+                else None
+            ),
             "distributor_name": distributor_name,
             "suggested_distributor": suggested_distributor,
             "ci_customer_match": ci_customer_match,
@@ -5433,9 +5556,8 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
         "expected_delivery_date": tracking.get("expected_delivery_date"),
         "actual_delivery_date": tracking.get("actual_delivery_date"),
         "pod_number": tracking.get("pod_number"),
-        "has_sales_order": bool(
-            tracking.get("sales_order_file_reference")
-            or tracking.get("sales_order_drive_file_id")
+        "has_sales_order": _lifecycle_has_real_sales_order(tracking) or bool(
+            tracking.get("sales_order_drive_file_id")
         ),
         "has_commercial_invoice": bool(
             tracking.get("commercial_invoice_file_reference")
@@ -5448,6 +5570,102 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
         "items": items,
         "item_count": len(items),
     }
+
+    # Bridge: SO exists in Order Match (FO↔SO) but no lifecycle SO PDF yet.
+    # Seed sales_order_parsed so CI shows SO MATCHED / PARTIAL instead of UNMATCHED.
+    order_ref = str(tracking.get("order_ref_no") or "").strip()
+    if (
+        order_ref
+        and payload.get("has_commercial_invoice")
+        and not _lifecycle_has_real_sales_order(tracking)
+    ):
+        om = _bridge_order_match_so_into_lifecycle(
+            db,
+            order_ref_no=order_ref,
+            workspace_id=workspace_id or "default",
+            user_id=_current_user_id(),
+            distributor_id=distributor_id,
+        )
+        if om:
+            payload["order_match_so"] = {
+                "so_number": om.get("so_number"),
+                "run_id": om.get("run_id"),
+                "so_qty": om.get("so_qty"),
+                "so_net": om.get("so_net"),
+                "source": "order_match",
+            }
+            payload["has_order_match_so"] = True
+            # Refresh tracking flags after bridge
+            tracking = db.get_order_lifecycle_tracking(
+                tracking_id, workspace_id=workspace_id, user_id=_current_user_id()
+            ) or tracking
+            payload["has_sales_order"] = _lifecycle_has_real_sales_order(tracking)
+            # Expose SO lines for mobile qty compare even if item rematch is thin
+            so_bridge_lines = []
+            for l in om.get("line_detail") or []:
+                if not isinstance(l, dict):
+                    continue
+                try:
+                    q = float(l.get("qty") or l.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    q = 0.0
+                if q <= 0:
+                    continue
+                so_bridge_lines.append(
+                    {
+                        "item_name": l.get("product_name")
+                        or l.get("product_detail")
+                        or l.get("material_code"),
+                        "material_code": l.get("material_code"),
+                        "qty": q,
+                        "value": l.get("net_amount") or l.get("net"),
+                    }
+                )
+            if so_bridge_lines:
+                payload["so_line_items"] = so_bridge_lines
+                payload["so_line_count"] = len(so_bridge_lines)
+            # Reload items after SO upsert
+            try:
+                raw_items = db.list_order_lifecycle_items_for_tracking(
+                    tracking_id, workspace_id=workspace_id or "default"
+                )
+                items = []
+                for it in raw_items:
+                    items.append(
+                        {
+                            "id": it.get("id"),
+                            "product_code": it.get("product_code"),
+                            "item_key": it.get("item_key"),
+                            "item_name": it.get("item_name"),
+                            "brand": it.get("brand"),
+                            "color": it.get("color"),
+                            "ordered_qty": it.get("ordered_qty"),
+                            "fulfilled_qty": it.get("fulfilled_qty"),
+                            "so_qty": it.get("so_qty"),
+                            "ci_qty": it.get("ci_qty"),
+                            "ordered_value": it.get("ordered_value"),
+                            "so_value": it.get("so_value"),
+                            "ci_value": it.get("ci_value"),
+                            "has_discrepancy": bool(it.get("has_discrepancy")),
+                            "discrepancy_notes": it.get("discrepancy_notes"),
+                        }
+                    )
+                payload["items"] = items
+                payload["item_count"] = len(items)
+            except Exception:
+                pass
+    elif order_ref and not payload.get("has_sales_order"):
+        om = _lookup_order_match_so(order_ref, user_id=_current_user_id())
+        if om:
+            payload["order_match_so"] = {
+                "so_number": om.get("so_number"),
+                "run_id": om.get("run_id"),
+                "so_qty": om.get("so_qty"),
+                "so_net": om.get("so_net"),
+                "source": "order_match",
+            }
+            payload["has_order_match_so"] = True
+
     # Attach CI header/totals summary when a full CI detail was saved
     ci_parsed = tracking.get("commercial_invoice_parsed")
     if isinstance(ci_parsed, dict):
@@ -6105,13 +6323,30 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
     # Sheet the matched Sales Order was already filed under.
     matching_so_for_move = db.get_order_lifecycle_by_order_ref_no(order_ref_no, workspace_id=workspace_id)
     if not matching_so_for_move or not _lifecycle_has_real_sales_order(matching_so_for_move):
+        # SO may only exist in FO↔SO Order Match — bridge then retry.
+        _bridge_order_match_so_into_lifecycle(
+            db,
+            order_ref_no=order_ref_no,
+            workspace_id=workspace_id or "default",
+            user_id=_current_user_id(),
+            distributor_id=(
+                int(matching_so_for_move["distributor_id"])
+                if matching_so_for_move and matching_so_for_move.get("distributor_id")
+                else None
+            ),
+        )
+        matching_so_for_move = db.get_order_lifecycle_by_order_ref_no(
+            order_ref_no, workspace_id=workspace_id
+        )
+    if not matching_so_for_move or not _lifecycle_has_real_sales_order(matching_so_for_move):
         return Response(
             json.dumps({
                 "success": False,
                 "error": {
                     "message": (
-                        f"No Sales Order PDF found in Nexora for order ref \"{order_ref_no}\". "
-                        "Use Confirm — save CI-only (no SO), or upload the SO first."
+                        f"No Sales Order found in Nexora for order ref \"{order_ref_no}\" "
+                        "(Sales Orders PDF or Order Match). "
+                        "Use Confirm — save CI-only (no SO), or upload/match the SO first."
                     ),
                     "code": "so_not_found",
                 },
