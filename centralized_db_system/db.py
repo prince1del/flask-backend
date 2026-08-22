@@ -820,6 +820,40 @@ class CentralizedDB:
                 WHERE COALESCE(achievement_excel, 0) = 0 AND COALESCE(achievement, 0) != 0
                 """
             )
+        # Copy the legacy single achievement_amount into the matching split
+        # column so CI/SO sync cannot later clobber typed manual figures.
+        if (
+            "achievement_amount" in breakup_cols
+            and "source" in breakup_cols
+            and "achievement_manual" in breakup_cols
+        ):
+            conn.execute(
+                """
+                UPDATE target_achievement_breakup
+                SET achievement_manual = achievement_amount
+                WHERE COALESCE(achievement_manual, 0) = 0
+                  AND LOWER(COALESCE(source, '')) = 'manual'
+                  AND COALESCE(achievement_amount, 0) != 0
+                """
+            )
+            conn.execute(
+                """
+                UPDATE target_achievement_breakup
+                SET achievement_ci = achievement_amount
+                WHERE COALESCE(achievement_ci, 0) = 0
+                  AND LOWER(COALESCE(source, '')) = 'ci'
+                  AND COALESCE(achievement_amount, 0) != 0
+                """
+            )
+            conn.execute(
+                """
+                UPDATE target_achievement_breakup
+                SET achievement_excel = achievement_amount
+                WHERE COALESCE(achievement_excel, 0) = 0
+                  AND LOWER(COALESCE(source, '')) IN ('excel_upload', 'upload', 'excel')
+                  AND COALESCE(achievement_amount, 0) != 0
+                """
+            )
         self._invalidate_table_columns_cache(
             "target_achievement_breakup", "target_achievement_years"
         )
@@ -1060,9 +1094,50 @@ class CentralizedDB:
     def _breakup_source_column(self, source: str) -> str:
         return {
             "excel_upload": "achievement_excel",
+            "upload": "achievement_excel",
+            "excel": "achievement_excel",
             "manual": "achievement_manual",
             "ci": "achievement_ci",
-        }.get(source, "achievement_excel")
+        }.get((source or "").lower(), "achievement_excel")
+
+    def _derived_breakup_source(self, excel: float, ci: float, manual: float) -> str:
+        flags: list[str] = []
+        if float(manual or 0) > 0:
+            flags.append("manual")
+        if float(excel or 0) > 0:
+            flags.append("excel_upload")
+        if float(ci or 0) > 0:
+            flags.append("ci")
+        if len(flags) == 1:
+            return flags[0]
+        return "mixed"
+
+    def _split_achievement_values(
+        self,
+        *,
+        excel: float = 0.0,
+        ci: float = 0.0,
+        manual: float = 0.0,
+        amount: float = 0.0,
+        source: str = "",
+    ) -> tuple[float, float, float, float]:
+        """Return (excel, ci, manual, total). Fall back to legacy single amount+source."""
+        excel = float(excel or 0)
+        ci = float(ci or 0)
+        manual = float(manual or 0)
+        amount = float(amount or 0)
+        if excel == 0 and ci == 0 and manual == 0 and amount != 0:
+            src = (source or "").lower()
+            if src == "manual":
+                manual = amount
+            elif src == "ci":
+                ci = amount
+            else:
+                excel = amount
+        total = excel + ci + manual
+        if total == 0:
+            total = amount
+        return excel, ci, manual, total
 
     def create_financial_year(
         self,
@@ -13444,7 +13519,11 @@ class CentralizedDB:
         nick: str | None = None,
         source: str = "upload",
     ) -> None:
-        """Store distributor-wise target/achievement (amounts in lakhs)."""
+        """Store distributor-wise target/achievement (amounts in lakhs).
+
+        Writes only the named source column (manual / ci / excel). Other
+        channels on the same distributor row are preserved.
+        """
         self.ensure_target_achievement_tables()
         self._invalidate_table_columns_cache("target_achievement_breakup")
         resolved = self.resolve_ta_distributor_reference(
@@ -13475,65 +13554,113 @@ class CentralizedDB:
                         """,
                         (financial_year_id, resolved["source_distributor_name"]),
                     )
-                existing_target = 0.0
+                has_split = (
+                    "achievement_excel" in cols
+                    and "achievement_ci" in cols
+                    and "achievement_manual" in cols
+                )
+                source_col = self._breakup_source_column(source)
+                select_cols = ["target_amount"]
+                if has_split:
+                    select_cols.extend(
+                        ["achievement_excel", "achievement_ci", "achievement_manual"]
+                    )
                 row = conn.execute(
-                    """
-                    SELECT target_amount FROM target_achievement_breakup
-                    WHERE financial_year_id = ? AND attribute_type = 'distributor' AND attribute_name = ?
+                    f"""
+                    SELECT {", ".join(select_cols)}
+                    FROM target_achievement_breakup
+                    WHERE financial_year_id = ? AND attribute_type = 'distributor'
+                      AND attribute_name = ?
                     """,
                     (financial_year_id, display_name),
                 ).fetchone()
-                if row:
-                    existing_target = float(row[0] or 0)
+                existing_target = float(row[0] or 0) if row else 0.0
+                excel = float(row[1] or 0) if row and has_split else 0.0
+                ci = float(row[2] or 0) if row and has_split else 0.0
+                manual = float(row[3] or 0) if row and has_split else 0.0
+                if has_split:
+                    if source_col == "achievement_manual":
+                        manual = achievement_amount
+                    elif source_col == "achievement_ci":
+                        ci = achievement_amount
+                    else:
+                        excel = achievement_amount
+                    stored_amount = excel + ci + manual
+                    stored_source = self._derived_breakup_source(excel, ci, manual)
+                else:
+                    stored_amount = achievement_amount
+                    stored_source = source
                 final_target = target_amount if target_amount is not None else existing_target
                 achievement_percent = (
-                    round((achievement_amount / final_target) * 100, 2) if final_target > 0 else 0.0
+                    round((stored_amount / final_target) * 100, 2) if final_target > 0 else 0.0
                 )
                 has_ws = "workspace_id" in cols
-                if has_ws:
+                if row:
+                    sets = [
+                        "achievement_amount = ?",
+                        "achievement_percent = ?",
+                        "target_amount = ?",
+                        "source = ?",
+                    ]
+                    params: list[Any] = [
+                        stored_amount,
+                        achievement_percent,
+                        final_target,
+                        stored_source,
+                    ]
+                    if has_split:
+                        sets.extend(
+                            [
+                                "achievement_excel = ?",
+                                "achievement_ci = ?",
+                                "achievement_manual = ?",
+                            ]
+                        )
+                        params.extend([excel, ci, manual])
+                    params.extend([financial_year_id, display_name])
                     conn.execute(
-                        """
-                        INSERT INTO target_achievement_breakup (
-                            workspace_id, financial_year_id, attribute_type, attribute_name,
-                            target_amount, achievement_amount, achievement_percent, source
-                        ) VALUES (?, ?, 'distributor', ?, ?, ?, ?, ?)
-                        ON CONFLICT(financial_year_id, attribute_type, attribute_name) DO UPDATE SET
-                            achievement_amount = excluded.achievement_amount,
-                            achievement_percent = excluded.achievement_percent,
-                            target_amount = excluded.target_amount,
-                            source = excluded.source
+                        f"""
+                        UPDATE target_achievement_breakup
+                        SET {", ".join(sets)}
+                        WHERE financial_year_id = ? AND attribute_type = 'distributor'
+                          AND attribute_name = ?
                         """,
-                        (
-                            workspace_id,
-                            financial_year_id,
-                            display_name,
-                            final_target,
-                            achievement_amount,
-                            achievement_percent,
-                            source,
-                        ),
+                        tuple(params),
                     )
                 else:
+                    insert_cols = [
+                        "financial_year_id",
+                        "attribute_type",
+                        "attribute_name",
+                        "target_amount",
+                        "achievement_amount",
+                        "achievement_percent",
+                        "source",
+                    ]
+                    vals: list[Any] = [
+                        financial_year_id,
+                        "distributor",
+                        display_name,
+                        final_target,
+                        stored_amount,
+                        achievement_percent,
+                        stored_source,
+                    ]
+                    if has_ws:
+                        insert_cols.insert(0, "workspace_id")
+                        vals.insert(0, workspace_id)
+                    if has_split:
+                        insert_cols.extend(
+                            ["achievement_excel", "achievement_ci", "achievement_manual"]
+                        )
+                        vals.extend([excel, ci, manual])
+                    placeholders = ", ".join("?" for _ in insert_cols)
                     conn.execute(
-                        """
-                        INSERT INTO target_achievement_breakup (
-                            financial_year_id, attribute_type, attribute_name,
-                            target_amount, achievement_amount, achievement_percent, source
-                        ) VALUES (?, 'distributor', ?, ?, ?, ?, ?)
-                        ON CONFLICT(financial_year_id, attribute_type, attribute_name) DO UPDATE SET
-                            achievement_amount = excluded.achievement_amount,
-                            achievement_percent = excluded.achievement_percent,
-                            target_amount = excluded.target_amount,
-                            source = excluded.source
+                        f"""
+                        INSERT INTO target_achievement_breakup ({", ".join(insert_cols)})
+                        VALUES ({placeholders})
                         """,
-                        (
-                            financial_year_id,
-                            display_name,
-                            final_target,
-                            achievement_amount,
-                            achievement_percent,
-                            source,
-                        ),
+                        tuple(vals),
                     )
                 identity_sets: list[str] = []
                 identity_params: list[Any] = []
@@ -14235,12 +14362,32 @@ class CentralizedDB:
         total = 0.0
         with sqlite3.connect(self.db_path) as conn:
             cols = self._breakup_table_columns(conn)
-            if "attribute_type" in cols and "achievement_amount" in cols:
+            has_split = (
+                "achievement_excel" in cols
+                and "achievement_ci" in cols
+                and "achievement_manual" in cols
+            )
+            if has_split:
+                query = (
+                    "SELECT SUM("
+                    "COALESCE(achievement_excel, 0) + COALESCE(achievement_ci, 0) "
+                    "+ COALESCE(achievement_manual, 0)"
+                    ") FROM target_achievement_breakup WHERE financial_year_id = ?"
+                )
+                params: list[Any] = [financial_year_id]
+                if "attribute_type" in cols:
+                    query += " AND attribute_type = 'distributor'"
+                if "workspace_id" in cols:
+                    query += " AND workspace_id = ?"
+                    params.append(workspace_id)
+                row = conn.execute(query, tuple(params)).fetchone()
+                total = float(row[0] or 0) if row else 0.0
+            elif "attribute_type" in cols and "achievement_amount" in cols:
                 query = (
                     "SELECT SUM(achievement_amount) FROM target_achievement_breakup "
                     "WHERE financial_year_id = ? AND attribute_type = 'distributor'"
                 )
-                params: list[Any] = [financial_year_id]
+                params = [financial_year_id]
                 if "workspace_id" in cols:
                     query += " AND workspace_id = ?"
                     params.append(workspace_id)
@@ -14381,6 +14528,13 @@ class CentralizedDB:
                     extra_cols.append("distributor_id")
                 if "source_distributor_name" in cols:
                     extra_cols.append("source_distributor_name")
+                for split_col in (
+                    "achievement_excel",
+                    "achievement_ci",
+                    "achievement_manual",
+                ):
+                    if split_col in cols:
+                        extra_cols.append(split_col)
                 extra_sel = (", " + ", ".join(extra_cols)) if extra_cols else ""
                 query = (
                     f"SELECT attribute_name{extra_sel}, target_amount, achievement_amount, "
@@ -14398,9 +14552,16 @@ class CentralizedDB:
                 for r in rows:
                     amount = float(r["achievement_amount"] or 0)
                     src = (r["source"] or "").lower()
-                    excel = amount if src in ("excel_upload", "upload") else 0.0
-                    ci = amount if src == "ci" else 0.0
-                    manual = amount if src == "manual" else 0.0
+                    excel = float(r["achievement_excel"] or 0) if "achievement_excel" in cols else 0.0
+                    ci = float(r["achievement_ci"] or 0) if "achievement_ci" in cols else 0.0
+                    manual = float(r["achievement_manual"] or 0) if "achievement_manual" in cols else 0.0
+                    excel, ci, manual, total = self._split_achievement_values(
+                        excel=excel,
+                        ci=ci,
+                        manual=manual,
+                        amount=amount,
+                        source=src,
+                    )
                     identity = self._ta_breakup_display_fields(
                         workspace_id,
                         r["attribute_name"],
@@ -14417,9 +14578,9 @@ class CentralizedDB:
                             "achievement_excel": excel,
                             "achievement_ci": ci,
                             "achievement_manual": manual,
-                            "achievement_lakhs": amount,
+                            "achievement_lakhs": total,
                             "percentage": float(r["achievement_percent"] or 0),
-                            "source": r["source"],
+                            "source": src or self._derived_breakup_source(excel, ci, manual),
                         }
                     )
                 return result
@@ -14631,7 +14792,21 @@ class CentralizedDB:
                     f"WHERE financial_year_id = ?{ws_clause}{type_clause}",
                     tuple(params),
                 )
-            if "achievement_amount" in cols and "source" in cols:
+            has_split = (
+                "achievement_excel" in cols
+                and "achievement_manual" in cols
+                and "achievement_amount" in cols
+            )
+            if has_split:
+                # Keep typed manual / Excel; only CI was zeroed.
+                conn.execute(
+                    f"UPDATE target_achievement_breakup SET achievement_amount = "
+                    f"COALESCE(achievement_excel, 0) + COALESCE(achievement_ci, 0) "
+                    f"+ COALESCE(achievement_manual, 0) "
+                    f"WHERE financial_year_id = ?{ws_clause}{type_clause}",
+                    tuple(params),
+                )
+            elif "achievement_amount" in cols and "source" in cols:
                 conn.execute(
                     f"UPDATE target_achievement_breakup SET achievement_amount = 0 "
                     f"WHERE financial_year_id = ?{ws_clause}{type_clause} "
@@ -14648,6 +14823,8 @@ class CentralizedDB:
         Always rewrites the CI channel from live invoices: first zeroes
         stored CI achievement for the FY, then re-applies current totals.
         Deleting every CI therefore correctly drives achievement_ci to 0.
+
+        Manual (typed) and Excel channels are left untouched.
         """
         from app.fiscal_year import fiscal_year_date_bounds
 

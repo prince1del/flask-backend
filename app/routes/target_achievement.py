@@ -626,15 +626,9 @@ def get_distributor_targets(year_id):
         for r in breakup:
             name = (r.get("distributor_name") or "").strip()
             tl = float(r.get("target_lakhs") or 0)
-            ach = float(
-                r.get("achievement_lakhs")
-                or (
-                    float(r.get("achievement_excel") or 0)
-                    + float(r.get("achievement_ci") or 0)
-                    + float(r.get("achievement_manual") or 0)
-                )
-                or 0
-            )
+            # List is the user's typed rows (target and/or manual Ach).
+            # Order Desk CI/SO must not invent extra distributors here.
+            ach = float(r.get("achievement_manual") or 0)
             # Keep mid-year joins with Ach but no Target (target=0) visible in the list.
             if (
                 tl <= 0

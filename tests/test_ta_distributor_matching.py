@@ -73,3 +73,32 @@ def test_upsert_links_breakup_to_master(linked_ta_db):
     assert row["distributor_name"] == "Savitri Steel Cement Traders"
     assert row["source_distributor_name"] == "Savitri Steel Cement Traders, Varan"
     assert row["achievement_lakhs"] == 42.5
+    assert row["achievement_excel"] == 42.5
+    assert row["achievement_manual"] == 0.0
+
+
+def test_ci_upsert_does_not_overwrite_manual_achievement(linked_ta_db):
+    db, year_id = linked_ta_db
+    db.upsert_target_distributor_breakup(
+        workspace_id="ws-test",
+        financial_year_id=year_id,
+        distributor_name="Savitri Steel Cement Traders",
+        achievement_lakhs=10.0,
+        target_lakhs=50.0,
+        source="manual",
+    )
+    db.upsert_target_distributor_breakup(
+        workspace_id="ws-test",
+        financial_year_id=year_id,
+        distributor_name="Savitri Steel Cement Traders",
+        achievement_lakhs=3.5,
+        source="ci",
+    )
+    rows = db.list_target_distributor_breakup("ws-test", year_id)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["achievement_manual"] == 10.0
+    assert row["achievement_ci"] == 3.5
+    assert row["achievement_excel"] == 0.0
+    assert row["achievement_lakhs"] == 13.5
+    assert row["target_lakhs"] == 50.0
