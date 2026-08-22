@@ -795,6 +795,40 @@ def _looks_like_bare_category_size_query(normalized: str) -> bool:
     return find_bare_category_size_in_query(normalized) is not None
 
 
+# "Aster ka retailer margin kitna hai" / "Florentine customer discount" —
+# a brand's Retailer Margin / Proposed Customer Discount from Article
+# Master's extra_attributes (booked figures, not derived from MRP/PTR).
+_RETAILER_MARGIN_PHRASES = ("retailer margin", "retailer md", "retail mark down", "retailer markdown")
+_CUSTOMER_MARGIN_PHRASES = (
+    "customer margin", "customer discount", "proposed customer discount",
+    "cust discount", "cust. discount", "perceived margin", "perceived",
+)
+_MARGIN_QUERY_EXTRA_WORDS = {
+    "margin", "customer", "discount", "proposed", "cust", "perceived",
+    "retailer", "markdown", "mark", "down", "md",
+}
+
+
+def _detect_margin_field(normalized: str) -> str | None:
+    if any(p in normalized for p in _RETAILER_MARGIN_PHRASES):
+        return "retailer"
+    if any(p in normalized for p in _CUSTOMER_MARGIN_PHRASES):
+        return "customer"
+    return None
+
+
+def _looks_like_margin_query(normalized: str) -> bool:
+    return _detect_margin_field(normalized) is not None
+
+
+def margin_brand_hint(query: str) -> str:
+    """Brand text left after stripping margin-intent words + the usual
+    party-query filler words (ka/ki/kitna/hai/size words/...)."""
+    base = extract_party_name_candidate(query)
+    tokens = [t for t in base.split() if t.lower() not in _MARGIN_QUERY_EXTRA_WORDS]
+    return " ".join(tokens).strip()
+
+
 _CALC_NUM_RE = r"\d[\d,]*\.?\d*"
 
 
@@ -901,6 +935,8 @@ def infer_ai_intent(query: str) -> str:
         return "price_range_articles"
     if _looks_like_bare_category_size_query(normalized):
         return "category_size_articles"
+    if _looks_like_margin_query(normalized):
+        return "article_margin"
     if _looks_like_calculator_query(normalized):
         return "calculator"
     fuzzy_intent = _fuzzy_intent_from_words(normalized)

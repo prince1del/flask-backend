@@ -16,6 +16,8 @@ from typing import Any
 import pandas as pd
 import pdfplumber
 
+import article_master_parser as amparser
+
 from flask import (
     Blueprint,
     Response,
@@ -58,10 +60,12 @@ from app.utils import (
     find_price_range_in_query,
     infer_ai_intent,
     infer_distributor_name,
+    margin_brand_hint,
     normalize_voice_query,
     number_to_words_indian,
     stage_label_for_key,
     try_calculator,
+    _detect_margin_field,
 )
 from app.verification import (
     parse_distributor_fields_from_text,
@@ -8012,6 +8016,50 @@ def ai_assistant_query() -> Response:
         answer = (
             f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
         )
+    elif intent == "article_margin":
+        # "Aster ka retailer margin kitna hai" / "Florentine customer
+        # discount" — Article Master's Retailer Margin / Proposed Customer
+        # Discount, a booked business figure from extra_attributes, not a
+        # value derivable from MRP/PTR.
+        field_type = _detect_margin_field(query.lower())
+        brand_hint = margin_brand_hint(query)
+        if not brand_hint:
+            answer = f"{ask_prefix} Which brand's margin? e.g. 'Aster ka retailer margin'."
+        else:
+            margin_search = db.global_search(brand_hint, workspace_id=workspace_id, user_id=user_id)
+            articles = (margin_search.get("results") or {}).get("article_master") or []
+            if not articles:
+                answer = f"{ask_prefix} No article found for '{brand_hint}'."
+            else:
+                field_label = "Retailer Margin" if field_type == "retailer" else "Proposed Customer Discount"
+                aliases = (
+                    ("retailer margin", "retailer md", "retail mark down", "retailer markdown")
+                    if field_type == "retailer"
+                    else (
+                        "proposed customer discount", "perceived", "proposed cust. discount",
+                        "proposed cust discount", "perceived margin",
+                    )
+                )
+                lines = []
+                for a in articles[:12]:
+                    extra = a.get("extra_attributes")
+                    if isinstance(extra, str):
+                        try:
+                            extra = json.loads(extra)
+                        except (TypeError, ValueError):
+                            extra = {}
+                    extra_lower = {str(k).strip().lower(): v for k, v in (extra or {}).items()}
+                    raw_val = next(
+                        (extra_lower[a2] for a2 in aliases if extra_lower.get(a2) not in (None, "")),
+                        None,
+                    )
+                    pct = amparser.format_percent_display(raw_val) if raw_val is not None else None
+                    label = " ".join(x for x in (a.get("brand"), a.get("size")) if x).strip() or "?"
+                    lines.append(f"{label} — {field_label}: {pct or 'not set'}")
+                extra_count = len(articles) - 12
+                answer = f"{ask_prefix} {field_label} for '{brand_hint}':\n" + "\n".join(lines)
+                if extra_count > 0:
+                    answer += f"\n…and {extra_count} more."
     elif intent == "calculator":
         calc = try_calculator(query.lower())
         if not calc:
