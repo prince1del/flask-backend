@@ -2783,13 +2783,24 @@ class CentralizedDB:
 
     def update_user_role(self, user_id: int, workspace_id: str, role: str) -> dict[str, Any]:
         """Workspace-scoped: can only touch a user inside the caller's own workspace."""
+        self.ensure_user_profile_columns()
         with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            owner_select = (
+                ", IFNULL(is_workspace_owner, 0) AS is_workspace_owner"
+                if "is_workspace_owner" in cols
+                else ", 0 AS is_workspace_owner"
+            )
             existing = conn.execute(
-                "SELECT id FROM users WHERE id = ? AND workspace_id = ?",
+                f"SELECT id, username{owner_select} FROM users WHERE id = ? AND workspace_id = ?",
                 (int(user_id), workspace_id),
             ).fetchone()
             if existing is None:
                 raise ValueError("User not found in this workspace")
+            if int(existing[2] or 0) == 1 and role != "sales_executive":
+                raise ValueError(
+                    "Workspace owner must stay Sales Executive so the mobile BD app keeps working"
+                )
             conn.execute(
                 "UPDATE users SET role = ?, updated_at = ? WHERE id = ?",
                 (role, datetime.now(timezone.utc).isoformat(), int(user_id)),
