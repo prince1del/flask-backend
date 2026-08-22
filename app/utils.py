@@ -511,10 +511,12 @@ def normalize_voice_query(text: str) -> str:
     # in these queries, not a blanket letter/digit split, so it doesn't
     # touch intentionally-joined tokens like season codes ("aw26").
     text = re.sub(r"(?i)\b(ka|ki|ke|of|is|fy)(20\d{2})\b", r"\1 \2", text)
-    # "ex-mill" (a supported price field) gets misheard as "x-meal" by
-    # voice STT often enough to need its own fix, same as the exmill/
-    # x-mill/xmill spelling variants already recognized downstream.
-    text = re.sub(r"(?i)\bx[\s-]?meals?\b", "ex mill", text)
+    # "ex-mill" (a supported price field) gets misheard by voice STT as
+    # "x-meal(s)", "X-Men", "x mil", "x-mell", or typed as "exmil" (single
+    # L) often enough to need its own fix — every variant collapses to the
+    # one canonical "ex mill" so downstream keyword checks and the
+    # stopword-based brand extraction only ever have to recognize one form.
+    text = re.sub(r"(?i)\b(?:ex|x)[\s-]?(?:mill|mil|mel|mell|meal|meals|men)\b", "ex mill", text)
     return text
 
 
@@ -538,7 +540,7 @@ _MONTH_NAMES: dict[str, int] = {
 # on the day number. Word boundaries keep "sep"/"mar" etc. from matching
 # inside an unrelated longer word.
 _ABSOLUTE_DATE_RE = re.compile(
-    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + "|".join(_MONTH_NAMES) + r")\b"
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(" + "|".join(_MONTH_NAMES) + r")\b"
     r"|\b(" + "|".join(_MONTH_NAMES) + r")\s+(\d{1,2})(?:st|nd|rd|th)?\b",
     re.IGNORECASE,
 )
