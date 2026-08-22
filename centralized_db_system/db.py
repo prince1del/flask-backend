@@ -692,6 +692,39 @@ class CentralizedDB:
                 )
                 # Legacy rows had no FY — leave them unused; defaults apply per FY.
                 conn.execute("DROP TABLE IF EXISTS target_achievement_channel_prefs_legacy")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_manual_category_catalog (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workspace_id TEXT NOT NULL DEFAULT 'default',
+                    user_id INTEGER NOT NULL,
+                    category_name TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    builtin INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(workspace_id, user_id, category_name)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_manual_category_amounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workspace_id TEXT NOT NULL DEFAULT 'default',
+                    user_id INTEGER NOT NULL,
+                    financial_year_id INTEGER NOT NULL,
+                    distributor_name TEXT NOT NULL,
+                    category_name TEXT NOT NULL,
+                    amount_lakhs REAL NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(workspace_id, user_id, financial_year_id, distributor_name, category_name)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ta_manual_cat_amt_fy "
+                "ON target_manual_category_amounts(workspace_id, user_id, financial_year_id)"
+            )
             conn.commit()
 
     def get_achievement_channel_prefs(
@@ -780,6 +813,209 @@ class CentralizedDB:
                 conn, "target_achievement_category_breakup", column_name, column_type
             )
         self._invalidate_table_columns_cache("target_achievement_category_breakup")
+
+    TA_MANUAL_CATEGORY_DEFAULTS = ("Bed", "Bath", "TOB", "Pillow")
+
+    def ensure_manual_category_catalog(
+        self, workspace_id: str, user_id: int | None
+    ) -> list[dict[str, Any]]:
+        """Seed Bed/Bath/TOB/Pillow once per user. Catalog is year-independent."""
+        self.ensure_target_achievement_tables()
+        if user_id is None:
+            return []
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            for i, name in enumerate(self.TA_MANUAL_CATEGORY_DEFAULTS):
+                conn.execute(
+                    """
+                    INSERT INTO target_manual_category_catalog (
+                        workspace_id, user_id, category_name, sort_order, builtin, created_at
+                    ) VALUES (?, ?, ?, ?, 1, ?)
+                    ON CONFLICT(workspace_id, user_id, category_name) DO NOTHING
+                    """,
+                    (workspace_id, int(user_id), name, i, now),
+                )
+            conn.commit()
+            rows = conn.execute(
+                """
+                SELECT category_name, sort_order, builtin
+                FROM target_manual_category_catalog
+                WHERE workspace_id = ? AND user_id = ?
+                ORDER BY builtin DESC, sort_order ASC, LOWER(category_name) ASC
+                """,
+                (workspace_id, int(user_id)),
+            ).fetchall()
+        return [
+            {
+                "name": r["category_name"],
+                "sort_order": int(r["sort_order"] or 0),
+                "builtin": bool(int(r["builtin"] or 0)),
+            }
+            for r in rows
+        ]
+
+    def add_manual_category(
+        self, workspace_id: str, user_id: int, category_name: str
+    ) -> dict[str, Any]:
+        """Add a custom category that shows on every FY. Does not change amounts."""
+        self.ensure_target_achievement_tables()
+        name = " ".join((category_name or "").split()).strip()
+        if not name:
+            raise ValueError("category name required")
+        if len(name) > 40:
+            raise ValueError("category name too long")
+        catalog = self.ensure_manual_category_catalog(workspace_id, user_id)
+        existing = next(
+            (c for c in catalog if c["name"].lower() == name.lower()),
+            None,
+        )
+        if existing:
+            return existing
+        custom_count = sum(1 for c in catalog if not c["builtin"])
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO target_manual_category_catalog (
+                    workspace_id, user_id, category_name, sort_order, builtin, created_at
+                ) VALUES (?, ?, ?, ?, 0, ?)
+                """,
+                (workspace_id, int(user_id), name, 100 + custom_count, now),
+            )
+            conn.commit()
+        return {"name": name, "sort_order": 100 + custom_count, "builtin": False}
+
+    def list_manual_category_amounts(
+        self,
+        workspace_id: str,
+        user_id: int | None,
+        financial_year_id: int,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """FY amounts keyed by lowercase distributor name. Catalog names always included later."""
+        self.ensure_target_achievement_tables()
+        if user_id is None:
+            return {}
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT distributor_name, category_name, amount_lakhs
+                FROM target_manual_category_amounts
+                WHERE workspace_id = ? AND user_id = ? AND financial_year_id = ?
+                """,
+                (workspace_id, int(user_id), int(financial_year_id)),
+            ).fetchall()
+        by_dist: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            key = (r["distributor_name"] or "").strip().lower()
+            if not key:
+                continue
+            lakhs = float(r["amount_lakhs"] or 0)
+            by_dist.setdefault(key, []).append(
+                {
+                    "name": r["category_name"],
+                    "amount_lakhs": lakhs,
+                    "amount_rupees": round(lakhs * 100_000.0, 2),
+                }
+            )
+        return by_dist
+
+    def replace_distributor_manual_categories(
+        self,
+        *,
+        workspace_id: str,
+        user_id: int,
+        financial_year_id: int,
+        distributor_name: str,
+        categories: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Replace one distributor's manual category amounts for one FY.
+
+        Empty list clears the split (typed Ach total can still exist).
+        New names are added to the year-independent catalog.
+        """
+        self.ensure_target_achievement_tables()
+        dist = (distributor_name or "").strip()
+        if not dist:
+            raise ValueError("distributor_name required")
+        self.ensure_manual_category_catalog(workspace_id, user_id)
+        cleaned: list[tuple[str, float]] = []
+        seen: set[str] = set()
+        for raw in categories or []:
+            name = " ".join(
+                str(raw.get("name") or raw.get("category") or "").split()
+            ).strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            if raw.get("amount_rupees") is not None:
+                lakhs = float(raw.get("amount_rupees") or 0) / 100_000.0
+            else:
+                lakhs = float(
+                    raw.get("amount_lakhs") or raw.get("amount") or 0
+                )
+            if lakhs < 0:
+                lakhs = 0.0
+            if lakhs <= 0.0000005:
+                continue
+            self.add_manual_category(workspace_id, user_id, name)
+            cleaned.append((name, round(lakhs, 6)))
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                DELETE FROM target_manual_category_amounts
+                WHERE workspace_id = ? AND user_id = ? AND financial_year_id = ?
+                  AND LOWER(distributor_name) = LOWER(?)
+                """,
+                (workspace_id, int(user_id), int(financial_year_id), dist),
+            )
+            for name, lakhs in cleaned:
+                conn.execute(
+                    """
+                    INSERT INTO target_manual_category_amounts (
+                        workspace_id, user_id, financial_year_id, distributor_name,
+                        category_name, amount_lakhs, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        workspace_id,
+                        int(user_id),
+                        int(financial_year_id),
+                        dist,
+                        name,
+                        lakhs,
+                        now,
+                    ),
+                )
+            conn.commit()
+        return [
+            {
+                "name": n,
+                "amount_lakhs": a,
+                "amount_rupees": round(a * 100_000.0, 2),
+            }
+            for n, a in cleaned
+        ]
+
+    def attach_manual_categories_to_breakup(
+        self,
+        workspace_id: str,
+        user_id: int | None,
+        financial_year_id: int,
+        breakup: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        amounts = self.list_manual_category_amounts(
+            workspace_id, user_id, financial_year_id
+        )
+        for row in breakup:
+            key = (row.get("distributor_name") or "").strip().lower()
+            row["manual_categories"] = list(amounts.get(key) or [])
+        return breakup
 
     def _breakup_table_columns(self, conn: sqlite3.Connection) -> set[str]:
         return {row[1] for row in conn.execute("PRAGMA table_info(target_achievement_breakup)").fetchall()}
@@ -1282,6 +1518,13 @@ class CentralizedDB:
                 "DELETE FROM target_achievement_uploads WHERE financial_year_id = ?",
                 (fy_id,),
             )
+            try:
+                conn.execute(
+                    "DELETE FROM target_manual_category_amounts WHERE financial_year_id = ?",
+                    (fy_id,),
+                )
+            except sqlite3.OperationalError:
+                pass
             cursor = conn.execute(
                 "DELETE FROM target_achievement_years WHERE id = ? AND workspace_id = ?",
                 (fy_id, workspace_id),
@@ -1340,6 +1583,20 @@ class CentralizedDB:
                     del_sql += " AND attribute_type = 'distributor'"
                 conn.execute(del_sql, tuple(del_params))
             conn.commit()
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    DELETE FROM target_manual_category_amounts
+                    WHERE workspace_id = ? AND financial_year_id = ?
+                      AND LOWER(distributor_name) = LOWER(?)
+                    """,
+                    (workspace_id, financial_year_id, name),
+                )
+                conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
         fy_total = self.sync_financial_year_target_from_breakup(workspace_id, financial_year_id)
         return {"distributor_name": name, "fy_target_lakhs": fy_total, "is_others": is_others}

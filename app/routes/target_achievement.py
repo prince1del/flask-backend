@@ -709,6 +709,8 @@ def get_breakup(year_id):
         fy_label = year.get("display_year") or year.get("financial_year") or year.get("year") or ""
         summary = db.build_fy_achievement_summary(workspace_id, year_id, fy_label, user_id)
         breakup = db.list_target_distributor_breakup(workspace_id, year_id)
+        db.attach_manual_categories_to_breakup(workspace_id, user_id, year_id, breakup)
+        catalog = db.ensure_manual_category_catalog(workspace_id, user_id)
         category_matrix = db.get_category_breakup_matrix(workspace_id, year_id)
         return jsonify(
             {
@@ -718,6 +720,7 @@ def get_breakup(year_id):
                     'summary': summary,
                     'category_matrix': category_matrix,
                     'has_category_detail': category_matrix.get('has_data', False),
+                    'manual_category_catalog': catalog,
                     'unit': 'lakhs',
                     'fy_label': fy_label,
                 },
@@ -725,6 +728,35 @@ def get_breakup(year_id):
         ), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@target_achievement_bp.route('/manual-categories', methods=['GET', 'POST'])
+@require_jwt_auth
+def manual_category_catalog():
+    """Year-independent category list (Bed/Bath/TOB/Pillow + user-added)."""
+    try:
+        workspace_id = get_workspace_id()
+        user_id = _jwt_user_id()
+        if user_id is None:
+            return jsonify({
+                'success': False,
+                'error': {'message': 'User required'},
+                'message': 'User required',
+            }), 401
+        db = _cdb()
+        if request.method == 'GET':
+            catalog = db.ensure_manual_category_catalog(workspace_id, user_id)
+            return jsonify({'success': True, 'data': {'catalog': catalog}}), 200
+        body = request.get_json(silent=True) or {}
+        name = body.get('name') or body.get('category') or body.get('category_name')
+        row = db.add_manual_category(workspace_id, int(user_id), str(name or ''))
+        catalog = db.ensure_manual_category_catalog(workspace_id, user_id)
+        return jsonify({'success': True, 'data': {'category': row, 'catalog': catalog}}), 201
+    except ValueError as e:
+        return jsonify({'success': False, 'error': {'message': str(e)}, 'message': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': {'message': str(e)}, 'message': str(e)}), 500
+
 
 @target_achievement_bp.route('/years/<int:year_id>/category-breakup', methods=['GET'])
 @require_jwt_auth
@@ -1202,15 +1234,29 @@ def upload_achievement(year_id):
         amount = data.get('amount')
         file_name = data.get('file_name', 'manual-entry')
         nick = (data.get('nick') or '').strip() or None
+        categories = data.get('categories')
 
         if not distributor or amount is None:
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
 
         workspace_id = get_workspace_id()
-        if not _get_year_or_404(year_id, workspace_id, user_id=_jwt_user_id()):
+        user_id = _jwt_user_id()
+        if not _get_year_or_404(year_id, workspace_id, user_id=user_id):
             return jsonify({'success': False, 'error': 'Year not found'}), 404
 
         db = _cdb()
+        saved_cats = None
+        if categories is not None and user_id is not None:
+            saved_cats = db.replace_distributor_manual_categories(
+                workspace_id=workspace_id,
+                user_id=int(user_id),
+                financial_year_id=year_id,
+                distributor_name=distributor,
+                categories=categories if isinstance(categories, list) else [],
+            )
+            cat_sum = sum(float(c.get('amount_lakhs') or 0) for c in saved_cats)
+            if cat_sum > 0:
+                amount = cat_sum
         db.upsert_target_distributor_breakup(
             workspace_id=workspace_id,
             financial_year_id=year_id,
@@ -1234,7 +1280,15 @@ def upload_achievement(year_id):
             upload_id = None
         conn.close()
 
-        return jsonify({'success': True, 'data': {'upload_id': upload_id, 'total_achievement_lakhs': total_lakhs}}), 201
+        return jsonify({
+            'success': True,
+            'data': {
+                'upload_id': upload_id,
+                'total_achievement_lakhs': total_lakhs,
+                'categories': saved_cats,
+                'achievement_lakhs': float(amount),
+            },
+        }), 201
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

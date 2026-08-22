@@ -102,3 +102,58 @@ def test_ci_upsert_does_not_overwrite_manual_achievement(linked_ta_db):
     assert row["achievement_excel"] == 0.0
     assert row["achievement_lakhs"] == 13.5
     assert row["target_lakhs"] == 50.0
+
+
+def test_manual_category_catalog_persists_and_custom_can_be_added(linked_ta_db):
+    db, _year_id = linked_ta_db
+    catalog = db.ensure_manual_category_catalog("ws-test", 1)
+    names = [c["name"] for c in catalog]
+    assert names[:4] == ["Bed", "Bath", "TOB", "Pillow"]
+    rugs = db.add_manual_category("ws-test", 1, "Rugs")
+    assert rugs["name"] == "Rugs"
+    assert rugs["builtin"] is False
+    again = db.ensure_manual_category_catalog("ws-test", 1)
+    assert "Rugs" in [c["name"] for c in again]
+    # Same custom on a second FY still in catalog (year-independent).
+    assert db.add_manual_category("ws-test", 1, "rugs")["name"] == "Rugs"
+
+
+def test_manual_category_amounts_replace_on_existing_distributor(linked_ta_db):
+    db, year_id = linked_ta_db
+    db.upsert_target_distributor_breakup(
+        workspace_id="ws-test",
+        financial_year_id=year_id,
+        distributor_name="Savitri Steel Cement Traders",
+        achievement_lakhs=12.0,
+        target_lakhs=50.0,
+        source="manual",
+    )
+    saved = db.replace_distributor_manual_categories(
+        workspace_id="ws-test",
+        user_id=1,
+        financial_year_id=year_id,
+        distributor_name="Savitri Steel Cement Traders",
+        categories=[
+            {"name": "Bed", "amount_rupees": 800_000},
+            {"name": "Bath", "amount_rupees": 400_000},
+        ],
+    )
+    assert len(saved) == 2
+    by_name = {c["name"]: c["amount_lakhs"] for c in saved}
+    assert by_name["Bed"] == 8.0
+    assert by_name["Bath"] == 4.0
+    # Update existing card — replace split, keep catalog.
+    saved2 = db.replace_distributor_manual_categories(
+        workspace_id="ws-test",
+        user_id=1,
+        financial_year_id=year_id,
+        distributor_name="Savitri Steel Cement Traders",
+        categories=[{"name": "Bed", "amount_rupees": 1_000_000}],
+    )
+    assert len(saved2) == 1
+    assert saved2[0]["name"] == "Bed"
+    amounts = db.list_manual_category_amounts("ws-test", 1, year_id)
+    dist = amounts["savitri steel cement traders"]
+    assert len(dist) == 1
+    catalog = db.ensure_manual_category_catalog("ws-test", 1)
+    assert [c["name"] for c in catalog][:4] == ["Bed", "Bath", "TOB", "Pillow"]
