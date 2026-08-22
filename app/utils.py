@@ -730,20 +730,25 @@ _AMOUNT_QUESTION_WORDS = ("kitna", "kitne", "kitni", "how much", "total", "value
 
 
 def _looks_like_direct_order_query(normalized: str) -> bool:
-    """"Choice Corner ka Aster ka order kitne ka hai" — distributor + brand
-    + an order word + an explicit amount question, but no season code and
-    no "out of them" follow-up phrase. Routed to the same season_order_value
-    handler, which already treats a missing season as "across every season
-    on file" — the gap was only in intent classification, not the handler.
-    Requires BOTH an order word and an amount-question word (not just
-    "order" alone) so a statement that merely mentions an order in passing
-    doesn't get misrouted here."""
+    """"Choice Corner ka Aster ka order kitne ka hai" (explicit amount
+    question) or the shorter "bnd ka towel ka order" (no "kitna" at all,
+    but "order" as the final word is itself the question in this app's
+    phrasing) — distributor/category/brand + an order word, no season
+    code, no "out of them" follow-up phrase. Routed to the same
+    season_order_value handler, which resolves a missing season to the
+    most recent one on file — the gap was only in intent classification.
+    Requires an order word AND (an amount-question word OR the query
+    ending on that order word) so a statement that merely mentions an
+    order in passing mid-sentence doesn't get misrouted here."""
     has_order_word = any(
         re.search(rf"\b{re.escape(w)}\b", normalized)
         for w in _SEASON_ORDER_TRIGGER_WORDS
     )
+    if not has_order_word:
+        return False
     has_amount_question = any(w in normalized for w in _AMOUNT_QUESTION_WORDS)
-    return has_order_word and has_amount_question
+    ends_on_order_word = bool(re.search(r"\border(s)?\s*[?.!]*$", normalized.strip()))
+    return has_amount_question or ends_on_order_word
 
 
 # A DD-MM-YYYY/DD/MM/YYYY style date must never get read as a price range

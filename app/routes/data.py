@@ -49,6 +49,7 @@ from app.three_step_verification import (
 )
 from app.utils import (
     _CALC_OP_LABELS,
+    _CONTEXT_FOLLOWUP_PHRASES,
     _PARTY_QUERY_STOPWORDS,
     _SEASON_TOKEN_RE,
     detect_upload_file_type,
@@ -7449,6 +7450,27 @@ def _match_token_from_candidates(
     return best if best_ratio >= min_ratio else None
 
 
+# "towel" and the stored category "Bath" are lexically unrelated — no
+# edit-distance ratio in _match_token_from_candidates will ever bring
+# them close, so a plain fuzzy match can never bridge this synonym pair.
+_CATEGORY_WORD_SYNONYMS = {
+    "towel": "Bath", "towels": "Bath", "bath": "Bath",
+    "bedsheet": "Bed", "bedsheets": "Bed", "bed": "Bed", "sheet": "Bed", "sheets": "Bed",
+}
+
+
+def _match_category_from_query(entity_query: str, categories: list[str]) -> str | None:
+    """Try the known category-word synonym map first (only when that
+    literal category value actually exists in this user's own data), then
+    fall back to the existing fuzzy matcher for brand-name-style typos."""
+    categories_lower = {c.lower(): c for c in categories}
+    for word in entity_query.split():
+        mapped = _CATEGORY_WORD_SYNONYMS.get(word)
+        if mapped and mapped.lower() in categories_lower:
+            return categories_lower[mapped.lower()]
+    return _match_token_from_candidates(entity_query, categories)
+
+
 # Natural-language phrases for the size codes filled-order items are
 # stored under (e.g. "KS BS" = King Size Bed Sheet) — voice queries say
 # "king size bedsheet", not the abbreviation, so map the phrase to the
@@ -7897,20 +7919,34 @@ def ai_assistant_query() -> Response:
         normalized_season_query = query.lower()
         season_match = _SEASON_TOKEN_RE.search(normalized_season_query)
         season_prefix = season_match.group(0).upper() if season_match else None
-        # infer_ai_intent() only ever routes here without a season code via
-        # _looks_like_context_order_query — a follow-up ("out of them how
-        # many aster order") naming no season/distributor of its own,
-        # referring back to whatever the previous question was about. In
-        # that case "no season" means "across every season on file", not
-        # a failed lookup — and the distributor must come from context_query
-        # since this query never names one.
-        is_context_followup = season_prefix is None
+        # A genuine "out of them how many aster order" follow-up names no
+        # season/distributor of its own, referring back to whatever the
+        # previous question was about — "no season" there means "across
+        # every season on file", and the distributor must come from
+        # context_query since this query never names one. Any OTHER query
+        # with no season code ("bnd ka towel ka order", "aster ka order
+        # kitna tha") is a fresh question, not a follow-up — defaults to
+        # the most recent season on file instead, same as how PJP defaults
+        # to today when no date is given, rather than silently summing
+        # the user's entire order history.
+        is_context_followup = season_prefix is None and any(
+            phrase in normalized_season_query for phrase in _CONTEXT_FOLLOWUP_PHRASES
+        )
+        season_label = season_prefix
 
         with sqlite3.connect(_db_path()) as fo_conn:
             fodb.ensure_schema(fo_conn)
-            seasons = fodb.list_seasons_matching_prefix(
-                fo_conn, user_id, season_prefix or ""
-            )
+            if season_prefix:
+                seasons = fodb.list_seasons_matching_prefix(fo_conn, user_id, season_prefix)
+            elif is_context_followup:
+                seasons = fodb.list_seasons_matching_prefix(fo_conn, user_id, "")
+            else:
+                last_season = fodb.get_last_season(fo_conn, user_id)
+                if last_season:
+                    seasons = [last_season]
+                    season_label = last_season
+                else:
+                    seasons = fodb.list_seasons_matching_prefix(fo_conn, user_id, "")
 
             if not seasons:
                 answer = (
@@ -7925,7 +7961,7 @@ def ai_assistant_query() -> Response:
                 entity_query = re.sub(r"\b(aw|ss|fw)\d{2}\b", " ", entity_query)
 
                 categories = fodb.list_distinct_categories(fo_conn, user_id, seasons)
-                category = _match_token_from_candidates(entity_query, categories)
+                category = _match_category_from_query(entity_query, categories)
 
                 brands = fodb.list_distinct_brands(fo_conn, user_id, seasons)
                 brand = _match_token_from_candidates(entity_query, brands)
@@ -7974,7 +8010,7 @@ def ai_assistant_query() -> Response:
                     size=size,
                 )
 
-                desc_bits = [season_prefix] if season_prefix else []
+                desc_bits = [season_label] if season_label else []
                 if brand:
                     desc_bits.append(brand)
                 if size:
