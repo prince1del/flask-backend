@@ -1019,20 +1019,10 @@ def _format_article_by_size_answer(
         category = article.get("category") or "—"
         product = article.get("product_type") or "—"
         mrp = float(article.get("mrp") or 0)
-        ptr = float(article.get("ptr") or 0)
-        ex_mill = float(article.get("ex_mill_price") or 0)
-        if lang == "hi":
-            lines.append(
-                f"**{article.get('brand')}** — {category}, {product}: "
-                f"MRP **₹{_format_inr(mrp)}**, PTR **₹{_format_inr(ptr)}**, "
-                f"Ex-mill **₹{_format_inr(ex_mill)}**"
-            )
-        else:
-            lines.append(
-                f"**{article.get('brand')}** — {category}, {product}: "
-                f"MRP **₹{_format_inr(mrp)}**, PTR **₹{_format_inr(ptr)}**, "
-                f"ex-mill **₹{_format_inr(ex_mill)}**"
-            )
+        lines.append(
+            f"**{article.get('brand')}** — {category}, {product}: "
+            f"MRP **₹{_format_inr(mrp)}**"
+        )
     header = (
         f"**{label}** — {len(articles)} item(s) mile Article Master mein:"
         if lang == "hi"

@@ -7143,8 +7143,8 @@ def _summarize_ask_nexora_search(
         def _price_bits(a: dict) -> list[str]:
             # Only show the field(s) actually asked about — "aster exmill"
             # shouldn't also print MRP the user never asked for. With no
-            # specific field named, fall back to MRP + Ex-mill (the old
-            # always-show-everything behavior).
+            # specific field named, default to MRP only — Ex-mill/PTR are
+            # cost-side figures the user has to ask for explicitly.
             mrp_n = _as_float(a.get("mrp"))
             ex_mill_n = _as_float(a.get("ex_mill_price"))
             ptr_n = _as_float(a.get("ptr"))
@@ -7161,8 +7161,6 @@ def _summarize_ask_nexora_search(
             else:
                 if mrp_n > 0:
                     bits.append(f"MRP ₹{int(round(mrp_n))}")
-                if ex_mill_n > 0:
-                    bits.append(f"Ex-mill ₹{int(round(ex_mill_n))}")
             return bits
 
         def _label(a: dict, include_size: bool) -> str:
