@@ -222,6 +222,16 @@ def create_app() -> Flask:
             app.logger.warning("BD owner login migrate skipped: %s", exc)
         try:
             cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+            hop_login = cdb.ensure_hop_admin_login(
+                old_username=os.getenv("HOP_ADMIN_OLD_USERNAME", "hop_prizm"),
+                new_username=os.getenv("HOP_ADMIN_USERNAME", "prince1del"),
+                new_password=os.getenv("HOP_ADMIN_PASSWORD", "@Princeking123"),
+            )
+            app.logger.info("HoP admin login ensure: %s", hop_login)
+        except Exception as exc:
+            app.logger.warning("HoP admin login ensure skipped: %s", exc)
+        try:
+            cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
             owner_user = os.getenv("WORKSPACE_OWNER_USERNAME", "kunwar1del").strip() or "kunwar1del"
             promote = cdb.promote_workspace_owner(owner_user)
             app.logger.info("Workspace supreme owner promote: %s", promote)

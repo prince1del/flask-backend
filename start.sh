@@ -19,7 +19,7 @@ try:
     from flask_migrate import upgrade, stamp
     from app.web_app import create_app
     from app.db import db
-    from app.hop_schema import HOP_ROLE, HOP_WORKSPACE_ID, ensure_hop_schema
+    from app.hop_schema import ensure_hop_schema
     from centralized_db_system.db import CentralizedDB
 
     app = create_app()
@@ -71,15 +71,12 @@ try:
         ensure_hop_schema(db_path)
         print(
             "HOP SEED",
-            cdb.create_user(
-                os.getenv("HOP_ADMIN_USERNAME", "hop_prizm"),
-                os.getenv("HOP_ADMIN_PASSWORD", "Prizm@2026!"),
-                role=HOP_ROLE,
-                workspace_id=HOP_WORKSPACE_ID,
+            cdb.ensure_hop_admin_login(
+                old_username=os.getenv("HOP_ADMIN_OLD_USERNAME", "hop_prizm"),
+                new_username=os.getenv("HOP_ADMIN_USERNAME", "prince1del"),
+                new_password=os.getenv("HOP_ADMIN_PASSWORD", "@Princeking123"),
             ),
         )
-    except ValueError as e:
-        print("HOP SEED skip:", e)
     except Exception as e:
         print("HOP SEED err:", e)
 

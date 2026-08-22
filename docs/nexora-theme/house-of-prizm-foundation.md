@@ -9,8 +9,8 @@
 ```bat
 .venv\Scripts\python.exe scripts\create_hop_user.py
 ```
-Default username: `hop_prizm` (override with `--username` / `--password` or env `HOP_ADMIN_USERNAME` / `HOP_ADMIN_PASSWORD`).  
-If the user already exists, the script leaves it unchanged (no password reset).
+Default username: `prince1del` (override with `--username` / `--password` or env `HOP_ADMIN_USERNAME` / `HOP_ADMIN_PASSWORD`).  
+If `hop_prizm` still exists, the script renames it to `prince1del` and sets the password.
 
 ## Architecture (locked)
 **Project-centric ERP** — Project is the hub. Funnel:

@@ -28,7 +28,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 1. Copy `app-debug.apk` to phone
 2. Enable **Install unknown apps** for Files/Chrome
 3. Open APK → Install
-4. Login: `hop_prizm` / `Prizm@2026!`
+4. Login: `prince1del` / `@Princeking123`
 
 ## Android Studio
 

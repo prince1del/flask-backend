@@ -2712,6 +2712,103 @@ class CentralizedDB:
             conn.commit()
             return {"action": "renamed", "user_id": uid, "username": new_u}
 
+    def ensure_hop_admin_login(
+        self,
+        old_username: str = "hop_prizm",
+        new_username: str = "prince1del",
+        new_password: str = "@Princeking123",
+    ) -> dict[str, Any]:
+        """Create or rename the House of Prizm admin login (idempotent)."""
+        from app.hop_schema import HOP_ROLE, HOP_WORKSPACE_ID, ensure_hop_schema
+
+        ensure_hop_schema(self.db_path)
+        self.ensure_user_profile_columns()
+        old_u = (old_username or "").strip()
+        new_u = (new_username or "").strip()
+        password = (new_password or "").strip()
+        if not new_u or not password:
+            return {"action": "noop", "reason": "username and password required"}
+
+        now = datetime.now(timezone.utc).isoformat()
+        pw_hash = generate_password_hash(password)
+
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            old_row = (
+                conn.execute(
+                    "SELECT id FROM users WHERE lower(username) = lower(?)",
+                    (old_u,),
+                ).fetchone()
+                if old_u
+                else None
+            )
+            new_row = conn.execute(
+                "SELECT id FROM users WHERE lower(username) = lower(?)",
+                (new_u,),
+            ).fetchone()
+
+            def _apply(uid: int, username: str) -> None:
+                sets = [
+                    "username = ?",
+                    "password_hash = ?",
+                    "role = ?",
+                    "workspace_id = ?",
+                ]
+                params: list[Any] = [username, pw_hash, HOP_ROLE, HOP_WORKSPACE_ID]
+                if "status" in cols:
+                    sets.append("status = ?")
+                    params.append("active")
+                if "updated_at" in cols:
+                    sets.append("updated_at = ?")
+                    params.append(now)
+                params.append(uid)
+                conn.execute(
+                    f"UPDATE users SET {', '.join(sets)} WHERE id = ?",
+                    params,
+                )
+
+            if old_row is not None and (
+                new_row is None or int(new_row[0]) == int(old_row[0])
+            ):
+                uid = int(old_row[0])
+                renamed = old_u.lower() != new_u.lower()
+                _apply(uid, new_u)
+                conn.commit()
+                return {
+                    "action": "renamed" if renamed else "updated",
+                    "user_id": uid,
+                    "username": new_u,
+                }
+
+            if new_row is not None:
+                uid = int(new_row[0])
+                _apply(uid, new_u)
+                conn.commit()
+                return {"action": "updated", "user_id": uid, "username": new_u}
+
+            extra_cols: list[str] = []
+            extra_vals: list[Any] = []
+            if "status" in cols:
+                extra_cols.append("status")
+                extra_vals.append("active")
+            col_sql = "username, password_hash, created_at, role, workspace_id"
+            val_sql = "?, ?, ?, ?, ?"
+            params = [new_u, pw_hash, now, HOP_ROLE, HOP_WORKSPACE_ID]
+            if extra_cols:
+                col_sql += ", " + ", ".join(extra_cols)
+                val_sql += ", " + ", ".join("?" for _ in extra_vals)
+                params.extend(extra_vals)
+            cur = conn.execute(
+                f"INSERT INTO users ({col_sql}) VALUES ({val_sql})",
+                params,
+            )
+            conn.commit()
+            return {
+                "action": "created",
+                "user_id": int(cur.lastrowid),
+                "username": new_u,
+            }
+
     def ensure_default_admin_user(self) -> None:
         if os.getenv("AUTH_ENABLED", "false").lower() not in {"1", "true", "yes", "on"}:
             return
