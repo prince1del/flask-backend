@@ -163,6 +163,30 @@ def _normalize_size_hint(text: str) -> str | None:
     return code if code in PRODUCT_LABELS else None
 
 
+_CATEGORY_QUERY_FILLERS = {
+    "hai", "kya", "hain", "batao", "bata", "dikhao", "dikhaiye", "list",
+    "sab", "all", "available", "please", "pls", "de", "do", "dena", "dijiye",
+    "chahiye", "milega", "milegi", "koi", "hain?",
+}
+
+
+def _wants_category_size_listing(question: str) -> str | None:
+    """Bare category+size query with no brand — e.g. 'single bedsheet',
+    'double bedsheet' — should list every matching article across brands
+    instead of demanding a brand name. Only fires on an exact match of the
+    whole (filler-stripped) question so branded queries like 'florentine
+    double bedsheet' still go through the normal brand lookup."""
+    cleaned = re.sub(r"[?.!,]+", " ", (question or "").lower())
+    tokens = [t for t in cleaned.split() if t not in _CATEGORY_QUERY_FILLERS]
+    phrase = _normalize_space(" ".join(tokens))
+    if not phrase:
+        return None
+    for label, code in _SIZE_LABEL_ALIASES.items():
+        if phrase == label or phrase == label.replace(" ", ""):
+            return code
+    return None
+
+
 def _split_brand_and_size(phrase: str) -> tuple[str, str | None]:
     phrase = _normalize_space(phrase)
     if not phrase:
@@ -947,6 +971,79 @@ def _query_articles_by_brand(
     return results
 
 
+def _query_articles_by_size(
+    conn: sqlite3.Connection,
+    user_id: int,
+    workspace_id: str | None,
+    size_hint: str,
+) -> list[dict[str, Any]]:
+    """Every active article matching a size/category code, across all brands."""
+    if not workspace_id:
+        return []
+    query = """
+        SELECT category, product_type, brand, size, ex_mill_price, mrp, ptr, season_tag
+        FROM article_master
+        WHERE user_id = ? AND is_active = 1 AND workspace_id = ?
+        ORDER BY brand, size
+    """
+    rows = conn.execute(query, [user_id, workspace_id]).fetchall()
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        if not _sizes_match(size_hint, row[3]):
+            continue
+        results.append({
+            "category": row[0],
+            "product_type": row[1],
+            "brand": row[2],
+            "size": row[3],
+            "ex_mill_price": row[4],
+            "mrp": row[5],
+            "ptr": row[6],
+            "season_tag": row[7],
+        })
+    return results
+
+
+def _format_article_by_size_answer(
+    articles: list[dict[str, Any]],
+    size_hint: str,
+    lang: str,
+) -> str:
+    label = _size_label(size_hint) or size_hint
+    if not articles:
+        if lang == "hi":
+            return f"Article Master mein **{label}** category mein koi item nahi mila."
+        return f"No items found in Article Master for **{label}**."
+    lines: list[str] = []
+    for article in articles[:20]:
+        category = article.get("category") or "—"
+        product = article.get("product_type") or "—"
+        mrp = float(article.get("mrp") or 0)
+        ptr = float(article.get("ptr") or 0)
+        ex_mill = float(article.get("ex_mill_price") or 0)
+        if lang == "hi":
+            lines.append(
+                f"**{article.get('brand')}** — {category}, {product}: "
+                f"MRP **₹{_format_inr(mrp)}**, PTR **₹{_format_inr(ptr)}**, "
+                f"Ex-mill **₹{_format_inr(ex_mill)}**"
+            )
+        else:
+            lines.append(
+                f"**{article.get('brand')}** — {category}, {product}: "
+                f"MRP **₹{_format_inr(mrp)}**, PTR **₹{_format_inr(ptr)}**, "
+                f"ex-mill **₹{_format_inr(ex_mill)}**"
+            )
+    header = (
+        f"**{label}** — {len(articles)} item(s) mile Article Master mein:"
+        if lang == "hi"
+        else f"**{label}** — {len(articles)} item(s) found in Article Master:"
+    )
+    if len(articles) > 20:
+        extra = len(articles) - 20
+        lines.append(f"…aur {extra} aur." if lang == "hi" else f"…and {extra} more.")
+    return header + "\n" + "\n".join(lines)
+
+
 def _format_article_ex_mill_answer(
     articles: list[dict[str, Any]],
     brand_hint: str,
@@ -1438,6 +1535,17 @@ def answer_question(
                 "intent": "article_ex_mill",
                 "data": {"brand_hint": brand_hint, "size_hint": size_hint, "matches": len(articles)},
             }
+
+    # Bare category+size query, no brand — e.g. "single bedsheet?",
+    # "double bedsheet" — list every matching article across brands.
+    category_size_hint = _wants_category_size_listing(q)
+    if category_size_hint:
+        articles = _query_articles_by_size(conn, user_id, ws, category_size_hint)
+        return {
+            "answer": _format_article_by_size_answer(articles, category_size_hint, lang),
+            "intent": "article_category_listing",
+            "data": {"size_hint": category_size_hint, "matches": len(articles)},
+        }
 
     # Nickname → distributor (e.g. "bnd kaun distributor hai", "sup nick")
     nick_dist = _find_distributor_by_nickname(q, distributors)
