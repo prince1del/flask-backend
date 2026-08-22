@@ -7540,14 +7540,14 @@ def ai_assistant_query() -> Response:
     context_query = normalize_voice_query(context_query)
     db = CentralizedDB(_db_path())
     intent = infer_ai_intent(query)
-    ask_prefix = "Nexora:"
+    ask_prefix = ""
     if not query:
         return Response(
             json.dumps(
                 {
                     "intent": "wake",
                     "query": "",
-                    "answer": f"{ask_prefix} Listening — ask about last visit, PJP, alerts, credit status, parties, or MRP 1000-2000.",
+                    "answer": "Listening — ask about last visit, PJP, alerts, credit status, parties, or MRP 1000-2000.",
                 },
                 ensure_ascii=False,
             ),
@@ -8277,7 +8277,7 @@ def ai_assistant_query() -> Response:
 
     return Response(
         json.dumps(
-            {"intent": intent, "query": query, "answer": answer}, ensure_ascii=False
+            {"intent": intent, "query": query, "answer": answer.strip()}, ensure_ascii=False
         ),
         mimetype="application/json",
     )
