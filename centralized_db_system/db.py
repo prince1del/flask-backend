@@ -2373,6 +2373,107 @@ class CentralizedDB:
                 return False
             return check_password_hash(row[0], password)
 
+    _RECOVERY_PIN_MAX_ATTEMPTS = 5
+    _RECOVERY_PIN_LOCKOUT_MINUTES = 15
+
+    def set_recovery_pin(self, user_id: int, pin: str) -> None:
+        """Self-service: a logged-in user sets/changes their own recovery PIN."""
+        pin = (pin or "").strip()
+        if not pin.isdigit() or not (4 <= len(pin) <= 6):
+            raise ValueError("Recovery PIN must be 4-6 digits")
+        self.ensure_user_profile_columns()
+        pin_hash = generate_password_hash(pin)
+        with sqlite3.connect(self.db_path) as conn:
+            existing = conn.execute(
+                "SELECT id FROM users WHERE id = ?", (int(user_id),)
+            ).fetchone()
+            if existing is None:
+                raise ValueError("User not found")
+            conn.execute(
+                "UPDATE users SET recovery_pin_hash = ?, recovery_pin_fail_count = 0, "
+                "recovery_pin_locked_until = NULL, updated_at = ? WHERE id = ?",
+                (pin_hash, datetime.now(timezone.utc).isoformat(), int(user_id)),
+            )
+
+    def has_recovery_pin(self, user_id: int) -> bool:
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT recovery_pin_hash FROM users WHERE id = ?", (int(user_id),)
+            ).fetchone()
+        return bool(row and row[0])
+
+    def reset_password_with_pin(
+        self, username: str, pin: str, new_password: str
+    ) -> tuple[bool, str]:
+        """Self-service: forgot password, verified by the recovery PIN instead."""
+        username = (username or "").strip()
+        pin = (pin or "").strip()
+        if not username or not pin or not new_password:
+            return False, "User Id, recovery PIN and new password are required"
+        if len(new_password) < 6:
+            return False, "New password must be at least 6 characters"
+
+        self.ensure_user_profile_columns()
+        generic_error = "Invalid User Id or recovery PIN"
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "email" in cols:
+                row = conn.execute(
+                    "SELECT id, recovery_pin_hash, recovery_pin_fail_count, recovery_pin_locked_until "
+                    "FROM users WHERE username = ? OR lower(IFNULL(email,'')) = lower(?)",
+                    (username, username),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT id, recovery_pin_hash, recovery_pin_fail_count, recovery_pin_locked_until "
+                    "FROM users WHERE username = ?",
+                    (username,),
+                ).fetchone()
+
+            if row is None:
+                return False, generic_error
+
+            user_id, pin_hash, fail_count, locked_until = row
+            fail_count = fail_count or 0
+
+            if locked_until:
+                try:
+                    locked_dt = datetime.fromisoformat(locked_until)
+                    if datetime.now(timezone.utc) < locked_dt:
+                        return False, "Too many attempts. Try again in a few minutes."
+                except ValueError:
+                    pass
+
+            if not pin_hash:
+                return False, "No recovery PIN set for this account. Contact your admin."
+
+            if not check_password_hash(pin_hash, pin):
+                fail_count += 1
+                if fail_count >= self._RECOVERY_PIN_MAX_ATTEMPTS:
+                    locked_dt = datetime.now(timezone.utc) + timedelta(
+                        minutes=self._RECOVERY_PIN_LOCKOUT_MINUTES
+                    )
+                    conn.execute(
+                        "UPDATE users SET recovery_pin_fail_count = 0, "
+                        "recovery_pin_locked_until = ? WHERE id = ?",
+                        (locked_dt.isoformat(), user_id),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE users SET recovery_pin_fail_count = ? WHERE id = ?",
+                        (fail_count, user_id),
+                    )
+                return False, generic_error
+
+            new_hash = generate_password_hash(new_password)
+            conn.execute(
+                "UPDATE users SET password_hash = ?, recovery_pin_fail_count = 0, "
+                "recovery_pin_locked_until = NULL, updated_at = ? WHERE id = ?",
+                (new_hash, datetime.now(timezone.utc).isoformat(), user_id),
+            )
+            return True, "Password reset successful"
+
     def ensure_user_profile_columns(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             self._ensure_column_exists(conn, "users", "email", "TEXT")
@@ -2380,6 +2481,11 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "users", "phone", "TEXT")
             self._ensure_column_exists(conn, "users", "employee_id", "TEXT")
             self._ensure_column_exists(conn, "users", "updated_at", "TEXT")
+            self._ensure_column_exists(conn, "users", "recovery_pin_hash", "TEXT")
+            self._ensure_column_exists(
+                conn, "users", "recovery_pin_fail_count", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column_exists(conn, "users", "recovery_pin_locked_until", "TEXT")
             self._ensure_column_exists(
                 conn, "users", "is_workspace_owner", "INTEGER NOT NULL DEFAULT 0"
             )

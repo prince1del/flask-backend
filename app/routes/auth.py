@@ -371,6 +371,43 @@ def api_login() -> tuple[Response, int]:
     )
 
 
+@auth_blueprint.route("/api/v1/auth/set-recovery-pin", methods=["POST"], endpoint="set_recovery_pin")
+@require_jwt_auth
+def set_recovery_pin() -> tuple[Response, int]:
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    data = request.get_json(silent=True) or {}
+    pin = str(data.get("pin") or "")
+    try:
+        _get_auth_db().set_recovery_pin(user_id, pin)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"code": "INVALID_PIN", "message": str(exc)}}), 400
+    return jsonify({"success": True, "message": "Recovery PIN saved"}), 200
+
+
+@auth_blueprint.route("/api/v1/auth/recovery-pin-status", methods=["GET"], endpoint="recovery_pin_status")
+@require_jwt_auth
+def recovery_pin_status() -> tuple[Response, int]:
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    has_pin = _get_auth_db().has_recovery_pin(user_id)
+    return jsonify({"success": True, "data": {"has_recovery_pin": has_pin}}), 200
+
+
+@auth_blueprint.route("/api/v1/auth/forgot-password", methods=["POST"], endpoint="forgot_password")
+def forgot_password() -> tuple[Response, int]:
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username") or "")
+    pin = str(data.get("pin") or "")
+    new_password = str(data.get("new_password") or "")
+    ok, message = _get_auth_db().reset_password_with_pin(username, pin, new_password)
+    if not ok:
+        return jsonify({"success": False, "error": {"code": "RESET_FAILED", "message": message}}), 400
+    return jsonify({"success": True, "message": message}), 200
+
+
 @auth_blueprint.route("/api/v1/me/profile", methods=["GET"])
 @require_jwt_auth
 def get_my_profile() -> tuple[Response, int]:
