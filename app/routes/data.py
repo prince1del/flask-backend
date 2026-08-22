@@ -54,6 +54,7 @@ from app.utils import (
     _looks_like_past_tense_pjp_query,
     extract_party_name_candidate,
     find_absolute_date_in_query,
+    find_bare_category_size_in_query,
     find_price_range_in_query,
     infer_ai_intent,
     infer_distributor_name,
@@ -7996,6 +7997,23 @@ def ai_assistant_query() -> Response:
             answer = (
                 f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query='mrp')}"
             )
+    elif intent == "category_size_articles":
+        # Bare "single bedsheet" / "double bedsheet" — no brand named — list
+        # every matching Article Master SKU across brands instead of the
+        # generic party-name search (which finds nothing: both words are
+        # search stopwords).
+        size_code = find_bare_category_size_in_query(query)
+        articles = db._search_articles_by_size(size_code, user_id) if size_code else []
+        search_results = {
+            "results": {
+                "distributors": [], "retailers": [], "orders": [], "stock": [],
+                "article_master": articles, "verifications": [],
+                "visit_logs": [], "analytics": [],
+            }
+        }
+        answer = (
+            f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
+        )
     elif intent == "calculator":
         calc = try_calculator(query.lower())
         if not calc:

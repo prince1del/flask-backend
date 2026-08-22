@@ -26,6 +26,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from .firebase_sync import FirebaseSync
 from .sync import OfflineSyncStore
 from .article_master import ArticleMasterService
+from .order_reconciliation import normalize_product_code
 
 
 class CentralizedDB:
@@ -8741,6 +8742,34 @@ class CentralizedDB:
             except sqlite3.OperationalError:
                 return []
         return [dict(r) for r in rows]
+
+    def _search_articles_by_size(
+        self,
+        size_code: str,
+        user_id: int | None,
+    ) -> list[dict[str, Any]]:
+        """Every active Article Master SKU whose size matches size_code,
+        across all brands — Ask Nexora's bare "single bedsheet"/"double
+        bedsheet" (no brand named) instead of the old brand-required lookup."""
+        if user_id is None or not size_code:
+            return []
+        sql = (
+            "SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key "
+            "FROM article_master "
+            "WHERE user_id = ? AND is_active = 1 "
+            "ORDER BY LOWER(COALESCE(brand, '')), LOWER(COALESCE(size, ''))"
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(sql, [user_id]).fetchall()
+            except sqlite3.OperationalError:
+                return []
+        target = normalize_product_code(size_code)
+        return [
+            dict(r) for r in rows
+            if normalize_product_code(r["size"] or "") == target
+        ]
 
     def _filter_global_search_results(
         self,

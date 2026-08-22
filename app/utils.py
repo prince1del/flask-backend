@@ -7,6 +7,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from centralized_db_system.order_reconciliation import PRODUCT_LABELS, normalize_product_code
+
 
 def auth_enabled() -> bool:
     value = os.getenv("AUTH_ENABLED")
@@ -747,6 +749,52 @@ def _looks_like_price_range_query(normalized: str) -> bool:
     return find_price_range_in_query(normalized) is not None
 
 
+# Bare category+size phrases like "single bedsheet"/"double bedsheet" with
+# no brand — mirrors nexora_ask.py's _SIZE_LABEL_ALIASES so both Ask Nexora
+# code paths recognize the same phrasing.
+_BARE_CATEGORY_SIZE_ALIASES: dict[str, str] = {
+    **{v.lower(): k for k, v in PRODUCT_LABELS.items()},
+    "king bedsheet": "KS BS",
+    "king bed sheet": "KS BS",
+    "king bed": "KS BS",
+    "king bs": "KS BS",
+    "double bedsheet": "DB BS",
+    "double bed sheet": "DB BS",
+    "single bedsheet": "SB BS",
+    "single bed sheet": "SB BS",
+}
+
+_CATEGORY_SIZE_QUERY_FILLERS = {
+    "hai", "kya", "hain", "batao", "bata", "dikhao", "dikhaiye", "list",
+    "sab", "all", "available", "please", "pls", "de", "do", "dena", "dijiye",
+    "chahiye", "milega", "milegi", "koi",
+}
+
+
+def find_bare_category_size_in_query(query: str) -> str | None:
+    """Detect a bare category+size query with no brand — e.g. "single
+    bedsheet", "double bedsheet?" — so callers can list every matching
+    article across brands instead of falling through to a party-name
+    search that finds nothing (both words are search stopwords). Only
+    fires on an exact match of the whole (filler-stripped) question so
+    branded queries like "florentine double bedsheet" still go through
+    the normal brand/search lookup."""
+    cleaned = re.sub(r"[?.!,]+", " ", (query or "").lower())
+    tokens = [t for t in cleaned.split() if t not in _CATEGORY_SIZE_QUERY_FILLERS]
+    phrase = " ".join(tokens).strip()
+    phrase = re.sub(r"\s+", " ", phrase)
+    if not phrase:
+        return None
+    for label, code in _BARE_CATEGORY_SIZE_ALIASES.items():
+        if phrase == label or phrase == label.replace(" ", ""):
+            return code
+    return None
+
+
+def _looks_like_bare_category_size_query(normalized: str) -> bool:
+    return find_bare_category_size_in_query(normalized) is not None
+
+
 _CALC_NUM_RE = r"\d[\d,]*\.?\d*"
 
 
@@ -851,6 +899,8 @@ def infer_ai_intent(query: str) -> str:
         return "season_order_value"
     if _looks_like_price_range_query(normalized):
         return "price_range_articles"
+    if _looks_like_bare_category_size_query(normalized):
+        return "category_size_articles"
     if _looks_like_calculator_query(normalized):
         return "calculator"
     fuzzy_intent = _fuzzy_intent_from_words(normalized)
