@@ -918,10 +918,30 @@ def _looks_like_calculator_query(normalized: str) -> bool:
     return try_calculator(normalized) is not None
 
 
+# A bare greeting with nothing else in it ("hi", "good morning", "hello
+# nexora") — not a real question, just wants "hello back". Checked as an
+# exact match against the whole (nexora-stripped) query so it never
+# swallows a real question that happens to start with a greeting word.
+_GREETING_PHRASES = {
+    "hi", "hii", "hiii", "hiya", "hey", "heya", "hello", "yo", "namaste",
+    "namaskar", "howdy", "good morning", "good afternoon", "good evening",
+    "good night", "gm",
+}
+
+
+def _looks_like_greeting_query(normalized: str) -> bool:
+    text = re.sub(r"[^a-z\s]", " ", normalized)
+    text = re.sub(r"\bnexora\b", " ", text)
+    text = " ".join(text.split())
+    return bool(text) and text in _GREETING_PHRASES
+
+
 def infer_ai_intent(query: str) -> str:
     normalized = normalize_voice_query(query or "").strip().lower()
     if not normalized:
         return "search"
+    if _looks_like_greeting_query(normalized):
+        return "greeting"
     for intent, phrases in _INTENT_KEYWORDS.items():
         if any(phrase in normalized for phrase in phrases):
             return intent

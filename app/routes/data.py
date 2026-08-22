@@ -7539,7 +7539,13 @@ def ai_assistant_query() -> Response:
     )
     workspace_id = get_workspace_id()
 
-    if intent == "last_visit":
+    if intent == "greeting":
+        profile = db.get_user_profile(user_id) if user_id is not None else None
+        display_name = ((profile or {}).get("full_name") or (profile or {}).get("username") or "").strip()
+        first_name = display_name.split()[0] if display_name else ""
+        greeting_target = f", {first_name}" if first_name else ""
+        answer = f"{ask_prefix} Hello{greeting_target}! How can I help you today?"
+    elif intent == "last_visit":
         entity = (
             query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
         )
