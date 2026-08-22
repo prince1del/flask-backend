@@ -237,6 +237,18 @@ def create_app() -> Flask:
             app.logger.info("Workspace supreme owner promote: %s", promote)
         except Exception as exc:
             app.logger.warning("Workspace owner promote skipped: %s", exc)
+        try:
+            cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+            dedupe = cdb.dedupe_email_login_accounts()
+            if dedupe.get("changes"):
+                app.logger.info("Login email dedupe: %s", dedupe)
+        except Exception as exc:
+            app.logger.warning("Login email dedupe skipped: %s", exc)
+        try:
+            cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+            cdb.ensure_login_identity_indexes()
+        except Exception as exc:
+            app.logger.warning("Login identity indexes skipped: %s", exc)
 
     @app.route("/", methods=["GET", "POST"])
     @app.route("/dashboard")

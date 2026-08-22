@@ -80,6 +80,16 @@ try:
     except Exception as e:
         print("HOP SEED err:", e)
 
+    try:
+        print("LOGIN DEDUPE", cdb.dedupe_email_login_accounts())
+    except Exception as e:
+        print("LOGIN DEDUPE err:", e)
+
+    try:
+        cdb.ensure_login_identity_indexes()
+    except Exception as e:
+        print("LOGIN INDEX err:", e)
+
     # Free peak RAM before gunicorn starts (same shell, sequential).
     del cdb, app, db
     gc.collect()

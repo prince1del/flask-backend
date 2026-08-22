@@ -2222,12 +2222,254 @@ class CentralizedDB:
             for row in rows
         ]
 
+    # ---------- Login identity: one email = one account (strict) ----------
+    @staticmethod
+    def normalize_login_key(value: str | None) -> str | None:
+        v = (value or "").strip()
+        return v.lower() if v else None
+
+    @staticmethod
+    def is_email_shaped(value: str | None) -> bool:
+        v = (value or "").strip()
+        if "@" not in v:
+            return False
+        local, _, domain = v.partition("@")
+        return bool(local.strip()) and "." in domain
+
+    def ensure_login_identity_indexes(self) -> None:
+        """DB guardrail: unique non-empty email (case-insensitive)."""
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "email" not in cols:
+                return
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower
+                ON users(lower(trim(email)))
+                WHERE email IS NOT NULL AND trim(email) != ''
+                """
+            )
+            conn.commit()
+
+    def find_login_identity_owner_ids(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        username: str | None = None,
+        email: str | None = None,
+        exclude_user_id: int | None = None,
+    ) -> list[int]:
+        """User ids that already own any of the given login keys (username or email)."""
+        keys: set[str] = set()
+        for raw in (username, email):
+            key = self.normalize_login_key(raw)
+            if key:
+                keys.add(key)
+        if not keys:
+            return []
+
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        has_email = "email" in cols
+        owner_ids: set[int] = set()
+        for key in keys:
+            if has_email:
+                rows = conn.execute(
+                    """
+                    SELECT id FROM users
+                    WHERE lower(trim(username)) = ?
+                       OR (
+                            email IS NOT NULL
+                            AND trim(email) != ''
+                            AND lower(trim(email)) = ?
+                       )
+                    """,
+                    (key, key),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id FROM users WHERE lower(trim(username)) = ?",
+                    (key,),
+                ).fetchall()
+            for row in rows:
+                uid = int(row[0])
+                if exclude_user_id is None or uid != int(exclude_user_id):
+                    owner_ids.add(uid)
+        return sorted(owner_ids)
+
+    def assert_login_identity_available(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        username: str,
+        email: str | None = None,
+        exclude_user_id: int | None = None,
+    ) -> tuple[str, str | None]:
+        """
+        Enforce one email = one login across username and email columns.
+        Returns (clean_username, clean_email_or_none).
+        """
+        clean_user = (username or "").strip()
+        if not clean_user:
+            raise ValueError("User Id is required")
+
+        clean_email: str | None
+        if email is None:
+            clean_email = clean_user if self.is_email_shaped(clean_user) else None
+        else:
+            clean_email = email.strip() or None
+
+        if self.is_email_shaped(clean_user):
+            if clean_email and self.normalize_login_key(clean_email) != self.normalize_login_key(
+                clean_user
+            ):
+                raise ValueError(
+                    "When User Id is an email, profile email must match that email"
+                )
+            clean_email = clean_user
+
+        conflicts = self.find_login_identity_owner_ids(
+            conn,
+            username=clean_user,
+            email=clean_email,
+            exclude_user_id=exclude_user_id,
+        )
+        if conflicts:
+            raise ValueError(
+                "This email or User Id is already registered to another login. "
+                "One email = one account."
+            )
+        return clean_user, clean_email
+
+    def dedupe_email_login_accounts(
+        self,
+        *,
+        prefer_username: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Remove legacy duplicate login rows that share the same email.
+        Keeps workspace owner, then prefer_username, then lowest user id.
+        """
+        self.ensure_user_profile_columns()
+        prefer = (prefer_username or os.getenv("WORKSPACE_OWNER_USERNAME", "kunwar1del")).strip()
+        actions: list[dict[str, Any]] = []
+        now = datetime.now(timezone.utc).isoformat()
+
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            has_owner = "is_workspace_owner" in cols
+            dup_groups = conn.execute(
+                """
+                SELECT lower(trim(email)) AS email_key, GROUP_CONCAT(id) AS ids
+                FROM users
+                WHERE email IS NOT NULL AND trim(email) != ''
+                GROUP BY email_key
+                HAVING COUNT(*) > 1
+                """
+            ).fetchall()
+
+            for email_key, ids_csv in dup_groups:
+                ids = [int(x) for x in (ids_csv or "").split(",") if x.strip()]
+                if len(ids) < 2:
+                    continue
+                placeholders = ",".join("?" for _ in ids)
+                owner_sql = (
+                    "SELECT id, username, IFNULL(is_workspace_owner, 0) "
+                    if has_owner
+                    else "SELECT id, username, 0 "
+                )
+                rows = conn.execute(
+                    f"""
+                    {owner_sql}
+                    FROM users
+                    WHERE id IN ({placeholders})
+                    ORDER BY is_workspace_owner DESC,
+                             CASE WHEN lower(username) = lower(?) THEN 0 ELSE 1 END,
+                             id ASC
+                    """,
+                    (*ids, prefer),
+                ).fetchall()
+                keeper_id = int(rows[0][0])
+                for dup_id, dup_username, _ in rows[1:]:
+                    archived = f"archived_dup_{dup_id}"
+                    conn.execute(
+                        """
+                        UPDATE users
+                        SET username = ?,
+                            email = NULL,
+                            status = 'inactive',
+                            updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (archived, now, int(dup_id)),
+                    )
+                    actions.append(
+                        {
+                            "action": "archived_duplicate",
+                            "email": email_key,
+                            "kept_user_id": keeper_id,
+                            "removed_user_id": int(dup_id),
+                            "removed_username": dup_username,
+                            "archived_username": archived,
+                        }
+                    )
+
+            conn.commit()
+        return {"action": "deduped", "changes": actions}
+
+    def resolve_user_login_row(
+        self,
+        conn: sqlite3.Connection,
+        login: str,
+        select_columns: list[str],
+    ) -> sqlite3.Row | None:
+        """Resolve login id — prefer username match, then email."""
+        needle = (login or "").strip()
+        if not needle:
+            return None
+        key = self.normalize_login_key(needle)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        col_sql = ", ".join(select_columns)
+        if "email" in cols:
+            rows = conn.execute(
+                f"""
+                SELECT {col_sql} FROM users
+                WHERE username = ?
+                   OR lower(trim(username)) = ?
+                   OR (
+                        email IS NOT NULL
+                        AND trim(email) != ''
+                        AND lower(trim(email)) = ?
+                   )
+                """,
+                (needle, key, key),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""
+                SELECT {col_sql} FROM users
+                WHERE username = ? OR lower(trim(username)) = ?
+                """,
+                (needle, key),
+            ).fetchall()
+        if not rows:
+            return None
+        if len(rows) == 1:
+            return rows[0]
+        for row in rows:
+            if row["username"] == needle:
+                return row
+        for row in rows:
+            if self.normalize_login_key(row["username"]) == key:
+                return row
+        return rows[0]
+
     def create_user(
         self,
         username: str,
         password: str,
         role: str = 'unassigned',
         workspace_id: str = 'default',
+        email: str | None = None,
     ) -> dict[str, Any]:
         username = (username or "").strip()
         if not username or not password:
@@ -2247,22 +2489,44 @@ class CentralizedDB:
                 None,
             )
 
+        self.ensure_user_profile_columns()
+        self.ensure_login_identity_indexes()
+
         with sqlite3.connect(self.db_path) as conn:
-            existing = conn.execute(
-                "SELECT id FROM users WHERE username = ?", (username,)
-            ).fetchone()
-            if existing:
-                raise ValueError("user already exists")
+            clean_user, clean_email = self.assert_login_identity_available(
+                conn, username=username, email=email
+            )
 
             password_hash = generate_password_hash(password)
             created_at = datetime.now(timezone.utc).isoformat()
-            cursor = conn.execute(
-                "INSERT INTO users (username, password_hash, created_at, role, workspace_id, status) VALUES (?, ?, ?, ?, ?, ?)",
-                (username, password_hash, created_at, role, resolved_workspace, "active"),
-            )
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "email" in cols and clean_email:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO users
+                    (username, password_hash, created_at, role, workspace_id, status, email)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        clean_user,
+                        password_hash,
+                        created_at,
+                        role,
+                        resolved_workspace,
+                        "active",
+                        clean_email,
+                    ),
+                )
+            else:
+                cursor = conn.execute(
+                    "INSERT INTO users (username, password_hash, created_at, role, workspace_id, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    (clean_user, password_hash, created_at, role, resolved_workspace, "active"),
+                )
+            conn.commit()
             return {
                 "id": cursor.lastrowid,
-                "username": username,
+                "username": clean_user,
+                "email": clean_email,
                 "created_at": created_at,
                 "workspace_id": resolved_workspace,
                 "role": role,
@@ -2358,20 +2622,15 @@ class CentralizedDB:
         if not username or not password:
             return False
 
+        self.ensure_user_profile_columns()
         with sqlite3.connect(self.db_path) as conn:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
-            if "email" in cols:
-                row = conn.execute(
-                    "SELECT password_hash FROM users WHERE username = ? OR lower(IFNULL(email,'')) = lower(?)",
-                    (username, username),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    "SELECT password_hash FROM users WHERE username = ?", (username,)
-                ).fetchone()
+            conn.row_factory = sqlite3.Row
+            row = self.resolve_user_login_row(
+                conn, username, ["id", "username", "password_hash"]
+            )
             if not row:
                 return False
-            return check_password_hash(row[0], password)
+            return check_password_hash(row["password_hash"], password)
 
     _RECOVERY_PIN_MAX_ATTEMPTS = 5
     _RECOVERY_PIN_LOCKOUT_MINUTES = 15
@@ -2417,25 +2676,23 @@ class CentralizedDB:
         self.ensure_user_profile_columns()
         generic_error = "Invalid User Id or recovery PIN"
         with sqlite3.connect(self.db_path) as conn:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
-            if "email" in cols:
-                row = conn.execute(
-                    "SELECT id, recovery_pin_hash, recovery_pin_fail_count, recovery_pin_locked_until "
-                    "FROM users WHERE username = ? OR lower(IFNULL(email,'')) = lower(?)",
-                    (username, username),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    "SELECT id, recovery_pin_hash, recovery_pin_fail_count, recovery_pin_locked_until "
-                    "FROM users WHERE username = ?",
-                    (username,),
-                ).fetchone()
-
-            if row is None:
+            conn.row_factory = sqlite3.Row
+            base = self.resolve_user_login_row(
+                conn,
+                username,
+                [
+                    "id",
+                    "recovery_pin_hash",
+                    "recovery_pin_fail_count",
+                    "recovery_pin_locked_until",
+                ],
+            )
+            if base is None:
                 return False, generic_error
-
-            user_id, pin_hash, fail_count, locked_until = row
-            fail_count = fail_count or 0
+            user_id = base["id"]
+            pin_hash = base["recovery_pin_hash"]
+            fail_count = base["recovery_pin_fail_count"] or 0
+            locked_until = base["recovery_pin_locked_until"]
 
             if locked_until:
                 try:
@@ -2692,38 +2949,42 @@ class CentralizedDB:
         uid = int(user_id)
         with sqlite3.connect(self.db_path) as conn:
             existing = conn.execute(
-                "SELECT id, username FROM users WHERE id = ?", (uid,)
+                "SELECT id, username, email FROM users WHERE id = ?", (uid,)
             ).fetchone()
             if existing is None:
                 raise ValueError("User not found")
+
+            next_username = (
+                username.strip() if username is not None else (existing[1] or "")
+            )
+            if email is not None:
+                next_email = email.strip() or None
+            elif existing[2]:
+                next_email = existing[2]
+            else:
+                next_email = None
+
+            clean_user, clean_email = self.assert_login_identity_available(
+                conn,
+                username=next_username,
+                email=next_email,
+                exclude_user_id=uid,
+            )
 
             sets: list[str] = []
             params: list[Any] = []
 
             if username is not None:
-                clean_user = username.strip()
-                if not clean_user:
-                    raise ValueError("User Id is required")
-                clash = conn.execute(
-                    "SELECT id FROM users WHERE username = ? AND id != ?",
-                    (clean_user, uid),
-                ).fetchone()
-                if clash:
-                    raise ValueError("User Id already taken")
                 sets.append("username = ?")
                 params.append(clean_user)
 
-            if email is not None:
-                clean_email = email.strip()
-                if clean_email:
-                    clash = conn.execute(
-                        "SELECT id FROM users WHERE lower(IFNULL(email,'')) = lower(?) AND id != ?",
-                        (clean_email, uid),
-                    ).fetchone()
-                    if clash:
-                        raise ValueError("Email already taken")
+            if email is not None or (
+                username is not None
+                and self.is_email_shaped(clean_user)
+                and clean_email
+            ):
                 sets.append("email = ?")
-                params.append(clean_email or None)
+                params.append(clean_email)
 
             if full_name is not None:
                 sets.append("full_name = ?")
@@ -2796,6 +3057,12 @@ class CentralizedDB:
             if new_row is not None and int(new_row[0]) != int(old_row[0]):
                 return {"action": "blocked", "reason": "target username already exists"}
             uid = int(old_row[0])
+            try:
+                clean_user, clean_email = self.assert_login_identity_available(
+                    conn, username=new_u, email=new_u, exclude_user_id=uid
+                )
+            except ValueError as exc:
+                return {"action": "blocked", "reason": str(exc)}
             conn.execute(
                 """
                 UPDATE users SET
@@ -2807,16 +3074,16 @@ class CentralizedDB:
                 WHERE id = ?
                 """,
                 (
-                    new_u,
+                    clean_user,
                     generate_password_hash(new_password),
-                    new_u,
+                    clean_email,
                     full_name,
                     datetime.now(timezone.utc).isoformat(),
                     uid,
                 ),
             )
             conn.commit()
-            return {"action": "renamed", "user_id": uid, "username": new_u}
+            return {"action": "renamed", "user_id": uid, "username": clean_user}
 
     def ensure_hop_admin_login(
         self,
@@ -2854,13 +3121,19 @@ class CentralizedDB:
             ).fetchone()
 
             def _apply(uid: int, username: str) -> None:
+                clean_user, clean_email = self.assert_login_identity_available(
+                    conn, username=username, email=None, exclude_user_id=uid
+                )
                 sets = [
                     "username = ?",
                     "password_hash = ?",
                     "role = ?",
                     "workspace_id = ?",
                 ]
-                params: list[Any] = [username, pw_hash, HOP_ROLE, HOP_WORKSPACE_ID]
+                params: list[Any] = [clean_user, pw_hash, HOP_ROLE, HOP_WORKSPACE_ID]
+                if "email" in cols:
+                    sets.append("email = ?")
+                    params.append(clean_email)
                 if "status" in cols:
                     sets.append("status = ?")
                     params.append("active")
@@ -2892,14 +3165,24 @@ class CentralizedDB:
                 conn.commit()
                 return {"action": "updated", "user_id": uid, "username": new_u}
 
+            try:
+                clean_user, clean_email = self.assert_login_identity_available(
+                    conn, username=new_u, email=None
+                )
+            except ValueError as exc:
+                return {"action": "blocked", "reason": str(exc)}
+
             extra_cols: list[str] = []
             extra_vals: list[Any] = []
             if "status" in cols:
                 extra_cols.append("status")
                 extra_vals.append("active")
+            if "email" in cols and clean_email:
+                extra_cols.append("email")
+                extra_vals.append(clean_email)
             col_sql = "username, password_hash, created_at, role, workspace_id"
             val_sql = "?, ?, ?, ?, ?"
-            params = [new_u, pw_hash, now, HOP_ROLE, HOP_WORKSPACE_ID]
+            params = [clean_user, pw_hash, now, HOP_ROLE, HOP_WORKSPACE_ID]
             if extra_cols:
                 col_sql += ", " + ", ".join(extra_cols)
                 val_sql += ", " + ", ".join("?" for _ in extra_vals)

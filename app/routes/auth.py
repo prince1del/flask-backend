@@ -277,15 +277,7 @@ def get_user_row(username: str) -> dict[str, object] | None:
         for col in ("role", "workspace_id", "email", "full_name", "phone", "status", "is_workspace_owner"):
             if col in columns:
                 select_columns.append(col)
-        if "email" in columns:
-            query = (
-                f"SELECT {', '.join(select_columns)} FROM users "
-                "WHERE username = ? OR lower(IFNULL(email,'')) = lower(?)"
-            )
-            row = conn.execute(query, (username, username)).fetchone()
-        else:
-            query = f"SELECT {', '.join(select_columns)} FROM users WHERE username = ?"
-            row = conn.execute(query, (username,)).fetchone()
+        row = db.resolve_user_login_row(conn, username, select_columns)
         data = dict(row) if row is not None else None
         if data is not None and "role" not in data:
             data["role"] = "unassigned"

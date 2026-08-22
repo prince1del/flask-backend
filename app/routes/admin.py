@@ -10,10 +10,11 @@ Admin endpoints for system management and configuration
 
 import os
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.db import db
 from app.models import User, AuditLog
 from app.routes.auth import require_jwt_auth, require_role
+from centralized_db_system.db import CentralizedDB
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, desc
 
@@ -46,6 +47,11 @@ def _forbidden(message: str):
 
 def _is_founder_requester() -> bool:
     return _requester().get('username') == _founder_username()
+
+
+def _auth_db() -> CentralizedDB:
+    return CentralizedDB(str(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")))
+
 
 # ========== ADMIN 1: LIST USERS ==========
 @admin_bp.route('/users', methods=['GET'])
@@ -110,55 +116,35 @@ def create_user():
             return _forbidden('Insufficient permissions to assign admin role')
 
     try:
-        # Check if user already exists
-        existing = User.query.filter(
-            (User.username == username) | (User.email == email)
-        ).first()
-        
-        if existing:
-            return jsonify({'success': False, 'data': None, 'message': 'Username or email already exists'}), 409
-
         from app.workspace_tenancy import resolve_workspace_id_for_new_user
 
-        # Each executive login gets a private data silo unless admin shares one.
+        cdb = _auth_db()
         workspace_id = resolve_workspace_id_for_new_user(
             username,
             role,
             data.get('workspace_id'),
         )
 
-        # Create new user
-        user = User(
-            username=username,
-            email=email,
-            role=role,
-            status='active',
-            workspace_id=workspace_id,
-        )
-        user.set_password(password)
-        
-        db.session.add(user)
-        db.session.commit()
-        
-        # Create audit log
-        audit = AuditLog(
-            user_id=user.id,
-            action='user_created',
-            resource_type='user',
-            resource_id=user.id,
-            details=f'User {username} created (workspace={workspace_id})'
-        )
-        db.session.add(audit)
-        db.session.commit()
+        try:
+            created = cdb.create_user(
+                username,
+                password,
+                role=role,
+                workspace_id=workspace_id,
+                email=email,
+            )
+        except ValueError as exc:
+            return jsonify({'success': False, 'data': None, 'message': str(exc)}), 409
+
+        profile = cdb.get_user_profile(int(created["id"])) or created
         
         return jsonify({
             'success': True,
-            'data': user.to_dict(),
+            'data': profile,
             'message': f'User {username} created successfully with private data space {workspace_id}'
         }), 201
     
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'data': None, 'message': f'Error creating user: {str(e)}'}), 500
 
 
@@ -182,7 +168,18 @@ def update_user(user_id):
         
         # Update allowed fields
         if 'email' in data:
-            user.email = data['email'].strip()
+            new_email = data['email'].strip()
+            cdb = _auth_db()
+            try:
+                cdb.update_user_profile(
+                    int(user.id),
+                    email=new_email,
+                )
+            except ValueError as exc:
+                return jsonify({'success': False, 'data': None, 'message': str(exc)}), 409
+            refreshed = cdb.get_user_profile(int(user.id))
+            if refreshed and refreshed.get("email") is not None:
+                user.email = refreshed.get("email")
         if 'role' in data:
             if data['role'] not in ['admin', 'sales_executive', 'distributor', 'retailer', 'unassigned']:
                 return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
