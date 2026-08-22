@@ -855,6 +855,34 @@ def _looks_like_bare_category_size_query(normalized: str) -> bool:
     return find_bare_category_size_in_query(normalized) is not None
 
 
+# "size of double bedsheet" / "double bedsheet ka size" — wants the
+# physical cm dimension (Article Master's "BS Size"), not MRP. Checked
+# separately from the plain MRP listing above so the two questions get
+# different answers instead of "size" just being swallowed as a filler.
+_PHYSICAL_SIZE_MARKER_WORDS = {"size", "of", "ka", "ki"}
+
+
+def find_bare_category_physical_size_query(query: str) -> str | None:
+    if "size" not in (query or "").lower():
+        return None
+    cleaned = re.sub(r"[?.!,]+", " ", (query or "").lower())
+    tokens = [
+        t for t in cleaned.split()
+        if t not in _CATEGORY_SIZE_QUERY_FILLERS and t not in _PHYSICAL_SIZE_MARKER_WORDS
+    ]
+    phrase = re.sub(r"\s+", " ", " ".join(tokens)).strip()
+    if not phrase:
+        return None
+    for label, code in _BARE_CATEGORY_SIZE_ALIASES.items():
+        if phrase == label or phrase == label.replace(" ", ""):
+            return code
+    return None
+
+
+def _looks_like_bare_category_physical_size_query(normalized: str) -> bool:
+    return find_bare_category_physical_size_query(normalized) is not None
+
+
 # "Aster ka retailer margin kitna hai" / "Florentine customer discount" —
 # a brand's Retailer Margin / Proposed Customer Discount from Article
 # Master's extra_attributes (booked figures, not derived from MRP/PTR).
@@ -1052,6 +1080,8 @@ def infer_ai_intent(query: str) -> str:
         return "season_order_value"
     if _looks_like_price_range_query(normalized):
         return "price_range_articles"
+    if _looks_like_bare_category_physical_size_query(normalized):
+        return "category_size_dimensions"
     if _looks_like_bare_category_size_query(normalized):
         return "category_size_articles"
     if _looks_like_margin_query(normalized):

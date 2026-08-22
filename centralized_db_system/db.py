@@ -8754,7 +8754,8 @@ class CentralizedDB:
         if user_id is None or not size_code:
             return []
         sql = (
-            "SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, item_key "
+            "SELECT id, category, brand, size, product_type, mrp, ptr, ex_mill_price, "
+            "item_key, extra_attributes "
             "FROM article_master "
             "WHERE user_id = ? AND is_active = 1 "
             "ORDER BY LOWER(COALESCE(brand, '')), LOWER(COALESCE(size, ''))"

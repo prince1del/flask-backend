@@ -56,6 +56,7 @@ from app.utils import (
     _looks_like_past_tense_pjp_query,
     extract_party_name_candidate,
     find_absolute_date_in_query,
+    find_bare_category_physical_size_query,
     find_bare_category_size_in_query,
     find_price_range_in_query,
     identity_name_hint,
@@ -8060,6 +8061,35 @@ def ai_assistant_query() -> Response:
         answer = (
             f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
         )
+    elif intent == "category_size_dimensions":
+        # "size of double bedsheet" / "double bedsheet ka size" — the
+        # physical cm dimension (Article Master's "BS Size"), which varies
+        # per brand, not MRP. Same size_code resolution as the bare
+        # category+size MRP listing above.
+        size_code = find_bare_category_physical_size_query(query)
+        articles = db._search_articles_by_size(size_code, user_id) if size_code else []
+        if not articles:
+            answer = f"{ask_prefix} No matching article found."
+        else:
+            _PHYSICAL_SIZE_KEYS = ("bs size", "bedset size (cms)", "bedset size", "size")
+            lines = []
+            for a in articles[:20]:
+                extra = a.get("extra_attributes")
+                if isinstance(extra, str):
+                    try:
+                        extra = json.loads(extra)
+                    except (TypeError, ValueError):
+                        extra = {}
+                extra_lower = {str(k).strip().lower(): v for k, v in (extra or {}).items()}
+                dim = next(
+                    (extra_lower[k] for k in _PHYSICAL_SIZE_KEYS if extra_lower.get(k) not in (None, "")),
+                    None,
+                )
+                brand = a.get("brand") or "?"
+                lines.append(f"{brand} — {dim}" if dim else f"{brand} — size not on file")
+            answer = f"{ask_prefix} Size by brand:\n" + "\n".join(lines)
+            if len(articles) > 20:
+                answer += f"\n…and {len(articles) - 20} more."
     elif intent == "article_margin":
         # "Aster ka retailer margin kitna hai" / "Florentine customer
         # discount" — Article Master's Retailer Margin / Proposed Customer
