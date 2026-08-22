@@ -725,6 +725,12 @@ class CentralizedDB:
                 "CREATE INDEX IF NOT EXISTS idx_ta_manual_cat_amt_fy "
                 "ON target_manual_category_amounts(workspace_id, user_id, financial_year_id)"
             )
+            self._ensure_column_exists(
+                conn,
+                "target_manual_category_catalog",
+                "hidden",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
             conn.commit()
 
     def get_achievement_channel_prefs(
@@ -842,6 +848,7 @@ class CentralizedDB:
                 SELECT category_name, sort_order, builtin
                 FROM target_manual_category_catalog
                 WHERE workspace_id = ? AND user_id = ?
+                  AND COALESCE(hidden, 0) = 0
                 ORDER BY builtin DESC, sort_order ASC, LOWER(category_name) ASC
                 """,
                 (workspace_id, int(user_id)),
@@ -872,9 +879,36 @@ class CentralizedDB:
         )
         if existing:
             return existing
-        custom_count = sum(1 for c in catalog if not c["builtin"])
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            hidden_row = conn.execute(
+                """
+                SELECT category_name, sort_order, builtin
+                FROM target_manual_category_catalog
+                WHERE workspace_id = ? AND user_id = ?
+                  AND LOWER(category_name) = LOWER(?)
+                  AND COALESCE(hidden, 0) = 1
+                """,
+                (workspace_id, int(user_id), name),
+            ).fetchone()
+            if hidden_row:
+                conn.execute(
+                    """
+                    UPDATE target_manual_category_catalog
+                    SET hidden = 0
+                    WHERE workspace_id = ? AND user_id = ?
+                      AND LOWER(category_name) = LOWER(?)
+                    """,
+                    (workspace_id, int(user_id), name),
+                )
+                conn.commit()
+                return {
+                    "name": hidden_row["category_name"],
+                    "sort_order": int(hidden_row["sort_order"] or 0),
+                    "builtin": bool(int(hidden_row["builtin"] or 0)),
+                }
+            custom_count = sum(1 for c in catalog if not c["builtin"])
             conn.execute(
                 """
                 INSERT INTO target_manual_category_catalog (
@@ -885,6 +919,39 @@ class CentralizedDB:
             )
             conn.commit()
         return {"name": name, "sort_order": 100 + custom_count, "builtin": False}
+
+    def remove_manual_category(
+        self, workspace_id: str, user_id: int, category_name: str
+    ) -> bool:
+        """Hide a category from the user's catalog (builtin or custom). Clears saved amounts."""
+        self.ensure_target_achievement_tables()
+        name = " ".join((category_name or "").split()).strip()
+        if not name:
+            raise ValueError("category name required")
+        self.ensure_manual_category_catalog(workspace_id, user_id)
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                UPDATE target_manual_category_catalog
+                SET hidden = 1
+                WHERE workspace_id = ? AND user_id = ?
+                  AND LOWER(category_name) = LOWER(?)
+                  AND COALESCE(hidden, 0) = 0
+                """,
+                (workspace_id, int(user_id), name),
+            )
+            if cur.rowcount <= 0:
+                return False
+            conn.execute(
+                """
+                DELETE FROM target_manual_category_amounts
+                WHERE workspace_id = ? AND user_id = ?
+                  AND LOWER(category_name) = LOWER(?)
+                """,
+                (workspace_id, int(user_id), name),
+            )
+            conn.commit()
+        return True
 
     def list_manual_category_amounts(
         self,

@@ -118,6 +118,32 @@ def test_manual_category_catalog_persists_and_custom_can_be_added(linked_ta_db):
     assert db.add_manual_category("ws-test", 1, "rugs")["name"] == "Rugs"
 
 
+def test_manual_category_can_be_removed_and_restored(linked_ta_db):
+    db, year_id = linked_ta_db
+    assert db.remove_manual_category("ws-test", 1, "Bath") is True
+    catalog = db.ensure_manual_category_catalog("ws-test", 1)
+    assert "Bath" not in [c["name"] for c in catalog]
+    # Re-adding a hidden builtin restores it without duplicating rows.
+    restored = db.add_manual_category("ws-test", 1, "Bath")
+    assert restored["name"] == "Bath"
+    again = db.ensure_manual_category_catalog("ws-test", 1)
+    assert "Bath" in [c["name"] for c in again]
+    db.replace_distributor_manual_categories(
+        workspace_id="ws-test",
+        user_id=1,
+        financial_year_id=year_id,
+        distributor_name="Savitri Steel Cement Traders",
+        categories=[{"name": "Pillow", "amount_rupees": 200_000}],
+    )
+    assert db.remove_manual_category("ws-test", 1, "Pillow") is True
+    amounts = db.list_manual_category_amounts("ws-test", 1, year_id)
+    assert all(
+        c["name"].lower() != "pillow"
+        for cats in amounts.values()
+        for c in cats
+    )
+
+
 def test_manual_category_amounts_replace_on_existing_distributor(linked_ta_db):
     db, year_id = linked_ta_db
     db.upsert_target_distributor_breakup(

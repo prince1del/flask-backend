@@ -730,7 +730,7 @@ def get_breakup(year_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@target_achievement_bp.route('/manual-categories', methods=['GET', 'POST'])
+@target_achievement_bp.route('/manual-categories', methods=['GET', 'POST', 'DELETE'])
 @require_jwt_auth
 def manual_category_catalog():
     """Year-independent category list (Bed/Bath/TOB/Pillow + user-added)."""
@@ -748,6 +748,24 @@ def manual_category_catalog():
             catalog = db.ensure_manual_category_catalog(workspace_id, user_id)
             return jsonify({'success': True, 'data': {'catalog': catalog}}), 200
         body = request.get_json(silent=True) or {}
+        if request.method == 'DELETE':
+            name = (
+                request.args.get('name')
+                or body.get('name')
+                or body.get('category')
+                or body.get('category_name')
+            )
+            removed = db.remove_manual_category(
+                workspace_id, int(user_id), str(name or '')
+            )
+            if not removed:
+                return jsonify({
+                    'success': False,
+                    'error': {'message': 'Category not found'},
+                    'message': 'Category not found',
+                }), 404
+            catalog = db.ensure_manual_category_catalog(workspace_id, user_id)
+            return jsonify({'success': True, 'data': {'catalog': catalog}}), 200
         name = body.get('name') or body.get('category') or body.get('category_name')
         row = db.add_manual_category(workspace_id, int(user_id), str(name or ''))
         catalog = db.ensure_manual_category_catalog(workspace_id, user_id)
