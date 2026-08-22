@@ -280,6 +280,7 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
 _PARTY_QUERY_STOPWORDS = {
     "ka", "ki", "ke", "hai", "batao", "bata", "batado", "batayein",
     "kitna", "kitni", "kya", "please", "tell", "me", "show", "what", "is",
+    "can", "you",
     "are", "the", "of", "for", "target", "targets", "achievement",
     "achievements", "achieve", "achieved", "kiya", "vs", "versus",
     "top-selling", "top", "selling", "best", "design", "trend", "trends",
@@ -305,6 +306,7 @@ _PARTY_QUERY_STOPWORDS = {
     "ne", "kari", "kare", "kiye", "liya", "liye", "diye", "hua", "hui",
     "hue", "becha", "beche", "bechi", "li", "le", "lo", "lena", "lene",
     "kharida", "kharide", "kharidi", "khareed", "sold", "bought",
+    "mujhe", "dikhao", "dikha", "dikhaiye", "dikhaye", "dikhaao",
 }
 
 
@@ -606,6 +608,23 @@ def _looks_like_pjp_query(normalized: str) -> bool:
     return has_date and has_visit
 
 
+# A handful of unambiguous "where will I be" self-location phrasings ask
+# for PJP without ever naming a date — the resolver already defaults to
+# today when nothing more specific is found, so these just need to reach
+# it. Kept as an explicit phrase list (not folded into _looks_like_pjp_query's
+# has_date-optional path) so a stray "visit"/"jana" word elsewhere in an
+# unrelated sentence still can't accidentally trigger PJP.
+_DATELESS_PJP_SELF_PHRASES = (
+    "where i will be", "where do i have to go", "where should i go",
+    "where am i going", "where will i go", "where i have to go",
+    "kaha jana hai", "mujhe kaha jana hai", "aaj kaha jana hai",
+)
+
+
+def _looks_like_dateless_pjp_query(normalized: str) -> bool:
+    return any(p in normalized for p in _DATELESS_PJP_SELF_PHRASES)
+
+
 _ONES_WORDS = [
     "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
     "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
@@ -701,6 +720,26 @@ def _looks_like_context_order_query(normalized: str) -> bool:
     )
 
 
+_AMOUNT_QUESTION_WORDS = ("kitna", "kitne", "kitni", "how much", "total", "value")
+
+
+def _looks_like_direct_order_query(normalized: str) -> bool:
+    """"Choice Corner ka Aster ka order kitne ka hai" — distributor + brand
+    + an order word + an explicit amount question, but no season code and
+    no "out of them" follow-up phrase. Routed to the same season_order_value
+    handler, which already treats a missing season as "across every season
+    on file" — the gap was only in intent classification, not the handler.
+    Requires BOTH an order word and an amount-question word (not just
+    "order" alone) so a statement that merely mentions an order in passing
+    doesn't get misrouted here."""
+    has_order_word = any(
+        re.search(rf"\b{re.escape(w)}\b", normalized)
+        for w in _SEASON_ORDER_TRIGGER_WORDS
+    )
+    has_amount_question = any(w in normalized for w in _AMOUNT_QUESTION_WORDS)
+    return has_order_word and has_amount_question
+
+
 # A DD-MM-YYYY/DD/MM/YYYY style date must never get read as a price range
 # ("17-08-2026" -> lo=17, hi=8) — bail out of price-range detection
 # entirely whenever one of these is present in the query.
@@ -718,6 +757,17 @@ _PRICE_RANGE_RE = re.compile(
 # this detector runs on full sentences, not just a bare range, so it would
 # otherwise steal "10/2" away from the calculator's division operator.
 
+# "2000 2500 ke bich/beech ki bedsheet" — two numbers back-to-back with NO
+# connector word between them, the range word ("ke bich"/"ke beech") only
+# showing up after both. Kept as a separate, narrower pattern (rather than
+# making the connector in _PRICE_RANGE_RE optional) so a stray pair of
+# unrelated numbers elsewhere in a sentence can't be read as a range
+# without this specific "ke bich/beech" marker actually being present.
+_HINDI_BICH_RANGE_RE = re.compile(
+    r"([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+ke\s+(?:bich|beech|beach|bheech)\b",
+    re.IGNORECASE,
+)
+
 
 def find_price_range_in_query(query: str) -> tuple[float, float] | None:
     """Detect an MRP/price-range mention anywhere in free text — not just
@@ -725,25 +775,27 @@ def find_price_range_in_query(query: str) -> tuple[float, float] | None:
     global_search's _parse_mrp_price_range is anchored to the whole
     string, so it can't see "1000 se 2500 ke beech ki bedsheet dikhao").
     Handles the hyphen/"to"/"/"/"~" forms plus Hindi "se"/"aur" ("1000 se
-    2500 ke beech", "1000 aur 2500 ke beech")."""
+    2500 ke beech", "1000 aur 2500 ke beech") and the connector-less
+    "2000 2500 ke bich" form."""
     text = query or ""
     if _DATE_LIKE_RE.search(text):
         return None
-    for match in _PRICE_RANGE_RE.finditer(text):
-        try:
-            lo = float(match.group(1).replace(",", ""))
-            hi = float(match.group(2).replace(",", ""))
-        except ValueError:
-            continue
-        if lo < 0 or hi < 0 or hi > 1_000_000:
-            continue
-        if max(lo, hi) < 10:
-            # Too small to plausibly be an MRP figure in this business —
-            # likely an unrelated pair of small numbers in the sentence.
-            continue
-        if lo > hi:
-            lo, hi = hi, lo
-        return lo, hi
+    for pattern in (_PRICE_RANGE_RE, _HINDI_BICH_RANGE_RE):
+        for match in pattern.finditer(text):
+            try:
+                lo = float(match.group(1).replace(",", ""))
+                hi = float(match.group(2).replace(",", ""))
+            except ValueError:
+                continue
+            if lo < 0 or hi < 0 or hi > 1_000_000:
+                continue
+            if max(lo, hi) < 10:
+                # Too small to plausibly be an MRP figure in this business —
+                # likely an unrelated pair of small numbers in the sentence.
+                continue
+            if lo > hi:
+                lo, hi = hi, lo
+            return lo, hi
     return None
 
 
@@ -920,6 +972,27 @@ def _looks_like_calculator_query(normalized: str) -> bool:
     return try_calculator(normalized) is not None
 
 
+# "Ayush Agarwal kon hai" / "who is Ayush Agarwal" — a person's name, not a
+# firm — resolved against distributor contact names (and, as a fallback,
+# retailer owner/contact names), not the article/party-profile machinery.
+_IDENTITY_QUERY_PHRASES = ("kon hai", "kaun hai", "who is", "who are")
+
+
+def _looks_like_identity_query(normalized: str) -> bool:
+    return any(p in normalized for p in _IDENTITY_QUERY_PHRASES)
+
+
+def identity_name_hint(query: str) -> str:
+    """Text before the "kon hai"/"who is" phrase, filler-stripped — the
+    person's name being asked about."""
+    lower = (query or "").lower()
+    for phrase in _IDENTITY_QUERY_PHRASES:
+        idx = lower.find(phrase)
+        if idx != -1:
+            return extract_party_name_candidate(query[:idx])
+    return extract_party_name_candidate(query)
+
+
 # A bare greeting with nothing else in it ("hi", "good morning", "hello
 # nexora") — not a real question, just wants "hello back". Checked as an
 # exact match against the whole (nexora-stripped) query so it never
@@ -947,11 +1020,13 @@ def infer_ai_intent(query: str) -> str:
     for intent, phrases in _INTENT_KEYWORDS.items():
         if any(phrase in normalized for phrase in phrases):
             return intent
-    if _looks_like_pjp_query(normalized):
+    if _looks_like_pjp_query(normalized) or _looks_like_dateless_pjp_query(normalized):
         return "pjp"
     if _looks_like_season_order_query(normalized):
         return "season_order_value"
     if _looks_like_context_order_query(normalized):
+        return "season_order_value"
+    if _looks_like_direct_order_query(normalized):
         return "season_order_value"
     if _looks_like_price_range_query(normalized):
         return "price_range_articles"
@@ -959,6 +1034,8 @@ def infer_ai_intent(query: str) -> str:
         return "category_size_articles"
     if _looks_like_margin_query(normalized):
         return "article_margin"
+    if _looks_like_identity_query(normalized):
+        return "identity"
     if _looks_like_calculator_query(normalized):
         return "calculator"
     fuzzy_intent = _fuzzy_intent_from_words(normalized)

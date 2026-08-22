@@ -9471,7 +9471,7 @@ class CentralizedDB:
                                     None, query_nospace, key.replace(" ", "")
                                 ).ratio(),
                             )
-                            if ratio >= 0.75:
+                            if ratio >= 0.70:
                                 matched.append(candidates[key])
                         if matched:
                             by_field: dict[str, list[str]] = {}

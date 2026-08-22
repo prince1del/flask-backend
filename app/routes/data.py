@@ -58,6 +58,7 @@ from app.utils import (
     find_absolute_date_in_query,
     find_bare_category_size_in_query,
     find_price_range_in_query,
+    identity_name_hint,
     infer_ai_intent,
     infer_distributor_name,
     margin_brand_hint,
@@ -7545,6 +7546,43 @@ def ai_assistant_query() -> Response:
         first_name = display_name.split()[0] if display_name else ""
         greeting_target = f", {first_name}" if first_name else ""
         answer = f"{ask_prefix} Hello{greeting_target}! How can I help you today?"
+    elif intent == "identity":
+        # "Ayush Agarwal kon hai" — a person's name, not a firm. Distributor
+        # contact names already resolve through _find_distributor_fuzzy
+        # (same edit-distance tier used for firm names); retailers are
+        # checked as a plain LIKE fallback since there's no equivalent
+        # fuzzy tier for them yet.
+        name_hint = identity_name_hint(query)
+        if not name_hint:
+            answer = f"{ask_prefix} Who do you mean?"
+        else:
+            person_dist = _find_distributor_fuzzy(db, name_hint, workspace_id)
+            if person_dist and person_dist.get("name"):
+                firm = person_dist.get("firm_name") or "—"
+                nick = person_dist.get("firm_nick_name")
+                firm_label = f"{firm} ({nick})" if nick else firm
+                answer = (
+                    f"{ask_prefix} {person_dist['name']} is the contact person "
+                    f"for distributor {firm_label}."
+                )
+            else:
+                like_query = f"%{name_hint.lower()}%"
+                with sqlite3.connect(_db_path()) as id_conn:
+                    id_conn.row_factory = sqlite3.Row
+                    ret_row = id_conn.execute(
+                        "SELECT name, owner_name, contact_person FROM master_retailers "
+                        "WHERE workspace_id = ? AND (LOWER(owner_name) LIKE ? "
+                        "OR LOWER(contact_person) LIKE ?) LIMIT 1",
+                        (workspace_id, like_query, like_query),
+                    ).fetchone()
+                if ret_row:
+                    person = ret_row["owner_name"] or ret_row["contact_person"]
+                    answer = (
+                        f"{ask_prefix} {person} is associated with retailer "
+                        f"{ret_row['name']}."
+                    )
+                else:
+                    answer = f"{ask_prefix} I couldn't find anyone named '{name_hint}'."
     elif intent == "last_visit":
         entity = (
             query.split("to", 1)[-1].strip().rstrip("?") if "to" in query else query
@@ -8122,6 +8160,21 @@ def ai_assistant_query() -> Response:
                 **search_results,
                 "results": {"distributors": results_map["distributors"]},
             }
+        elif not any(
+            results_map.get(k)
+            for k in ("retailers", "orders", "stock", "verifications", "visit_logs", "analytics")
+        ):
+            # Nothing matched at all — last resort: the same edit-distance
+            # distributor fuzzy match the season/last-visit/profile intents
+            # already use (handles voice-STT letter swaps like "bermina"/
+            # "vernina" for Bernina) that the generic FTS-based
+            # global_search above doesn't try for a plain "search" query.
+            fuzzy_dist = _find_distributor_fuzzy(db, search_query, workspace_id)
+            if fuzzy_dist:
+                search_results = {
+                    **search_results,
+                    "results": {"distributors": [fuzzy_dist]},
+                }
         answer = (
             f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
         )
