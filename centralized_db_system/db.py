@@ -2537,6 +2537,11 @@ class CentralizedDB:
         "bright", "emerald", "custom",
         "royal_navy", "burgundy_antique", "black_soft_gold", "deep_teal_brass",
         "chocolate_gold", "plum_rose", "olive_brass", "midnight_copper",
+        # Android app's "glass" theme catalog (Theme.kt) — a separate client
+        # sharing this same per-user storage. Keep both clients' names here.
+        "ruby_glass", "tangerine_glass", "citrine_glass", "lime_glass",
+        "emerald_glass", "turquoise_glass", "sapphire_glass", "indigo_glass",
+        "amethyst_glass", "rose_glass", "snow_glass",
     })
 
     @classmethod
