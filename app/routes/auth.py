@@ -388,6 +388,58 @@ def recovery_pin_status() -> tuple[Response, int]:
     return jsonify({"success": True, "data": {"has_recovery_pin": has_pin}}), 200
 
 
+_ALLOWED_WORKSPACE_ROLES = {"admin", "sales_executive", "distributor", "retailer", "unassigned"}
+
+
+@auth_blueprint.route("/api/v1/workspace/users", methods=["GET"], endpoint="list_workspace_users")
+@require_jwt_auth
+def list_workspace_users() -> tuple[Response, int]:
+    requester = getattr(request, "user", None) or {}
+    if not requester.get("is_workspace_owner"):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {"code": "FORBIDDEN", "message": "Only the workspace owner can manage users"},
+                }
+            ),
+            403,
+        )
+    workspace_id = requester.get("workspace_id", "default")
+    users = _get_auth_db().list_workspace_users(workspace_id)
+    return jsonify({"success": True, "data": users}), 200
+
+
+@auth_blueprint.route(
+    "/api/v1/workspace/users/<int:target_user_id>/role",
+    methods=["PUT"],
+    endpoint="update_workspace_user_role",
+)
+@require_jwt_auth
+def update_workspace_user_role(target_user_id: int) -> tuple[Response, int]:
+    requester = getattr(request, "user", None) or {}
+    if not requester.get("is_workspace_owner"):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {"code": "FORBIDDEN", "message": "Only the workspace owner can manage users"},
+                }
+            ),
+            403,
+        )
+    data = request.get_json(silent=True) or {}
+    role = str(data.get("role") or "").strip()
+    if role not in _ALLOWED_WORKSPACE_ROLES:
+        return jsonify({"success": False, "error": {"code": "INVALID_ROLE", "message": "Invalid role"}}), 400
+    workspace_id = requester.get("workspace_id", "default")
+    try:
+        updated = _get_auth_db().update_user_role(target_user_id, workspace_id, role)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": str(exc)}}), 404
+    return jsonify({"success": True, "data": updated}), 200
+
+
 @auth_blueprint.route("/api/v1/auth/forgot-password", methods=["POST"], endpoint="forgot_password")
 def forgot_password() -> tuple[Response, int]:
     data = request.get_json(silent=True) or {}

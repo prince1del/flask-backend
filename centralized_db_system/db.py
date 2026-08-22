@@ -2736,6 +2736,38 @@ class CentralizedDB:
             )
             return True, "Password reset successful"
 
+    def list_workspace_users(self, workspace_id: str) -> list[dict[str, Any]]:
+        """Roster for the workspace-owner's user-management screen — same
+        workspace only, never cross-tenant."""
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT id, username, full_name, email, role, status "
+                "FROM users WHERE workspace_id = ? ORDER BY username COLLATE NOCASE",
+                (workspace_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_user_role(self, user_id: int, workspace_id: str, role: str) -> dict[str, Any]:
+        """Workspace-scoped: can only touch a user inside the caller's own workspace."""
+        with sqlite3.connect(self.db_path) as conn:
+            existing = conn.execute(
+                "SELECT id FROM users WHERE id = ? AND workspace_id = ?",
+                (int(user_id), workspace_id),
+            ).fetchone()
+            if existing is None:
+                raise ValueError("User not found in this workspace")
+            conn.execute(
+                "UPDATE users SET role = ?, updated_at = ? WHERE id = ?",
+                (role, datetime.now(timezone.utc).isoformat(), int(user_id)),
+            )
+            conn.commit()
+        profile = self.get_user_profile(int(user_id))
+        if profile is None:
+            raise ValueError("User not found")
+        return profile
+
     def ensure_user_profile_columns(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             self._ensure_column_exists(conn, "users", "email", "TEXT")
