@@ -894,6 +894,13 @@ _CALC_NUM_RE = r"\d[\d,]*\.?\d*"
 
 _CALC_OP_LABELS = {"+": "+", "-": "-", "*": "×", "/": "÷"}
 
+# "2 4 45 876 943" — a bare list of numbers with no operator word anywhere,
+# same as typing numbers into a calculator app and having them add up.
+# Anchored to the WHOLE query (only digits/commas/dots/whitespace) so a
+# sentence that merely happens to contain several numbers among other
+# words never gets silently summed.
+_BARE_NUMBER_LIST_RE = re.compile(r"^\s*\d[\d,\.]*(?:\s+\d[\d,\.]*)+\s*$")
+
 
 def _calc_op_between(segment: str) -> str | None:
     if re.search(r"\+|\bplus\b|\bjod\b|\bjama\b|\badd\b", segment):
@@ -970,7 +977,16 @@ def try_calculator(normalized: str) -> dict | None:
         prev_end = m.end()
 
     if not ops:
-        return None
+        # No operator word/symbol found anywhere — if the query is nothing
+        # BUT a bare list of numbers, assume the user means to add them
+        # (mirrors how punching numbers into a calculator app works).
+        # Anything else in the query means this isn't a bare list, so
+        # don't guess.
+        if not _BARE_NUMBER_LIST_RE.match(normalized.strip()):
+            return None
+        operands = [float(m.group().replace(",", "")) for m in matches]
+        ops = ["+"] * (len(operands) - 1)
+        total = sum(operands)
     return {"op": "arithmetic", "operands": operands, "ops": ops, "result": total}
 
 
