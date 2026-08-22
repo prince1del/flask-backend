@@ -498,6 +498,12 @@ def normalize_voice_query(text: str) -> str:
     # match outright (plain substring check, no typo tolerance) — not a
     # real word in this app's context, safe to normalize unconditionally.
     text = re.sub(r"(?i)\badress\b", "address", text)
+    # "Aster" (a real brand) heard by voice STT as "esto" — confirmed via
+    # the Ask Nexora troubleshoot log ("x-mell of esto"). Not a real word
+    # in this app's context, safe to normalize unconditionally rather than
+    # relying on the fuzzy-match fallback (whose ratio for "esto" vs
+    # "aster" is too low to trust generally).
+    text = re.sub(r"(?i)\besto\b", "aster", text)
     # A spoken number sequence that happens to sound like a clock time
     # ("five twenty five") gets heard as "5:25" — Ask Nexora has no
     # clock-time query anywhere, so any H:MM/HH:MM pattern here is really
