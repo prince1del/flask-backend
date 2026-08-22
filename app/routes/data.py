@@ -7963,11 +7963,29 @@ def ai_assistant_query() -> Response:
                 categories = fodb.list_distinct_categories(fo_conn, user_id, seasons)
                 category = _match_category_from_query(entity_query, categories)
 
+                # "towel order" resolves category correctly to "Bath" via
+                # the synonym map, but the leftover word "towel" then also
+                # fuzzy-matches a real brand named e.g. "Gym Towel" against
+                # the UNMODIFIED entity_query below — silently narrowing a
+                # plain category question into a (wrong) brand+category
+                # one that matches nothing. Strip the category's own words
+                # AND whichever synonym word(s) resolved it before matching
+                # brand/size, so a word already "spent" on category can't
+                # also be claimed by an unrelated field.
+                brand_size_query = entity_query
+                if category:
+                    strip_words = set(category.lower().split()) | {
+                        k for k, v in _CATEGORY_WORD_SYNONYMS.items()
+                        if v.lower() == category.lower()
+                    }
+                    strip_pattern = r"\b(" + "|".join(re.escape(w) for w in strip_words) + r")\b"
+                    brand_size_query = re.sub(strip_pattern, " ", entity_query, flags=re.IGNORECASE)
+
                 brands = fodb.list_distinct_brands(fo_conn, user_id, seasons)
-                brand = _match_token_from_candidates(entity_query, brands)
+                brand = _match_token_from_candidates(brand_size_query, brands)
 
                 sizes = fodb.list_distinct_sizes(fo_conn, user_id, seasons)
-                size = _match_size_from_query(entity_query, sizes)
+                size = _match_size_from_query(brand_size_query, sizes)
 
                 # Whatever's left after stripping season/category/brand words is
                 # the candidate distributor name, same follow-up-aware fallback
