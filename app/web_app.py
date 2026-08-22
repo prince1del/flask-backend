@@ -242,6 +242,9 @@ def create_app() -> Flask:
             dedupe = cdb.dedupe_email_login_accounts()
             if dedupe.get("changes"):
                 app.logger.info("Login email dedupe: %s", dedupe)
+            purge = cdb.delete_archived_duplicate_logins()
+            if purge.get("deleted"):
+                app.logger.info("Archived duplicate login purge: %s", purge)
         except Exception as exc:
             app.logger.warning("Login email dedupe skipped: %s", exc)
         try:

@@ -2352,7 +2352,6 @@ class CentralizedDB:
         self.ensure_user_profile_columns()
         prefer = (prefer_username or os.getenv("WORKSPACE_OWNER_USERNAME", "kunwar1del")).strip()
         actions: list[dict[str, Any]] = []
-        now = datetime.now(timezone.utc).isoformat()
 
         with sqlite3.connect(self.db_path) as conn:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
@@ -2390,31 +2389,58 @@ class CentralizedDB:
                 ).fetchall()
                 keeper_id = int(rows[0][0])
                 for dup_id, dup_username, _ in rows[1:]:
-                    archived = f"archived_dup_{dup_id}"
+                    uid = int(dup_id)
                     conn.execute(
-                        """
-                        UPDATE users
-                        SET username = ?,
-                            email = NULL,
-                            status = 'inactive',
-                            updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (archived, now, int(dup_id)),
+                        "DELETE FROM user_ui_preferences WHERE user_id = ?",
+                        (uid,),
                     )
+                    conn.execute("DELETE FROM users WHERE id = ?", (uid,))
                     actions.append(
                         {
-                            "action": "archived_duplicate",
+                            "action": "deleted_duplicate",
                             "email": email_key,
                             "kept_user_id": keeper_id,
-                            "removed_user_id": int(dup_id),
+                            "removed_user_id": uid,
                             "removed_username": dup_username,
-                            "archived_username": archived,
                         }
                     )
 
             conn.commit()
+        purge = self.delete_archived_duplicate_logins()
+        if purge.get("deleted"):
+            actions.extend(
+                {"action": "deleted_archived_duplicate", **item} for item in purge["deleted"]
+            )
         return {"action": "deduped", "changes": actions}
+
+    def delete_archived_duplicate_logins(self) -> dict[str, Any]:
+        """Hard-delete inactive archived_dup_* login shells left from email dedupe."""
+        self.ensure_user_profile_columns()
+        deleted: list[dict[str, Any]] = []
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            owner_clause = (
+                "AND IFNULL(is_workspace_owner, 0) = 0"
+                if "is_workspace_owner" in cols
+                else ""
+            )
+            rows = conn.execute(
+                f"""
+                SELECT id, username FROM users
+                WHERE lower(username) LIKE 'archived_dup_%'
+                  AND IFNULL(status, 'active') = 'inactive'
+                  {owner_clause}
+                """
+            ).fetchall()
+            for uid, uname in rows:
+                conn.execute(
+                    "DELETE FROM user_ui_preferences WHERE user_id = ?",
+                    (int(uid),),
+                )
+                conn.execute("DELETE FROM users WHERE id = ?", (int(uid),))
+                deleted.append({"user_id": int(uid), "username": uname})
+            conn.commit()
+        return {"action": "deleted_archived_duplicates", "deleted": deleted}
 
     def resolve_user_login_row(
         self,
@@ -2743,8 +2769,14 @@ class CentralizedDB:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT id, username, full_name, email, role, status "
-                "FROM users WHERE workspace_id = ? ORDER BY username COLLATE NOCASE",
+                """
+                SELECT id, username, full_name, email, role, status
+                FROM users
+                WHERE workspace_id = ?
+                  AND IFNULL(status, 'active') = 'active'
+                  AND lower(username) NOT LIKE 'archived_dup_%'
+                ORDER BY username COLLATE NOCASE
+                """,
                 (workspace_id,),
             ).fetchall()
         return [dict(r) for r in rows]

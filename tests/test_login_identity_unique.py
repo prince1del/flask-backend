@@ -111,6 +111,12 @@ def test_dedupe_archives_duplicate_email_login(db: CentralizedDB):
     result = db.dedupe_email_login_accounts(prefer_username="kunwar1del")
     assert result["changes"]
 
+    with sqlite3.connect(db.db_path) as conn:
+        ghost = conn.execute(
+            "SELECT id FROM users WHERE lower(username) LIKE 'archived_dup_%'"
+        ).fetchone()
+        assert ghost is None
+
     profile = db.update_user_profile(
         int(owner["id"]),
         username="kunwar1del",

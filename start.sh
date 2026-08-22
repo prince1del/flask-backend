@@ -82,6 +82,7 @@ try:
 
     try:
         print("LOGIN DEDUPE", cdb.dedupe_email_login_accounts())
+        print("ARCHIVED PURGE", cdb.delete_archived_duplicate_logins())
     except Exception as e:
         print("LOGIN DEDUPE err:", e)
 
