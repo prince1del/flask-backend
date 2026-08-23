@@ -603,9 +603,9 @@
         : '',
       docTerms: '',
       sections: isComm
-        ? [{ title: 'Shortlisted-1 (Sheer + Chair Fabric)', lines: [hopEmptyDocLine(), hopEmptyDocLine()] }]
+        ? [{ title: 'Shortlisted-1', lines: [hopEmptyDocLine()] }]
         : null,
-      lines: isComm ? null : [hopEmptyDocLine(), hopEmptyDocLine()],
+      lines: isComm ? null : [hopEmptyDocLine()],
     };
   }
 
@@ -667,7 +667,7 @@
       linesBlock = d.sections.map((sec, si) => `
         <div class="hop-comm-section">
           <div class="hop-comm-section-head">
-            <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="Section e.g. Shortlisted-1 (Sheer + Chair Fabric)" />
+            <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="e.g. Shortlisted-1 (Sheer + Chair Fabric)" />
             <button type="button" class="nx-btn" onclick="hopManualDocAddLine(${si})">+ Line</button>
           </div>
           <table class="hop-comm-table hop-comm-table--form">
@@ -755,7 +755,7 @@
     const d = hopState.manualDocDraft;
     if (!d?.sections) return;
     const n = d.sections.length + 1;
-    d.sections.push({ title: `Shortlisted-${n}`, lines: [hopEmptyDocLine(), hopEmptyDocLine()] });
+    d.sections.push({ title: `Shortlisted-${n}`, lines: [hopEmptyDocLine()] });
     hopManualDocRefresh(hopState.manualDocCustomers, hopState.manualDocFirmTerms);
   }
 
