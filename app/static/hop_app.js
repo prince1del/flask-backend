@@ -2168,8 +2168,10 @@ function openHopView(viewName, opts) {
     foldId = 'purchase';
   } else if (v === 'journal_entries') {
     foldId = 'accounting';
-  } else if (v === 'vyapar_import' || v === 'wipe_data' || v === 'theme') {
+  } else if (v === 'vyapar_import' || v === 'wipe_data' || v === 'theme' || v === 'company_profile') {
     foldId = 'settings';
+  } else if (v === 'hop_manual_doc_create') {
+    foldId = 'sale';
   }
   hopOpenNavFoldExclusive(foldId);
 
@@ -2202,6 +2204,8 @@ function openHopView(viewName, opts) {
         vyapar_import: renderHopVyaparImportModule,
         wipe_data: renderHopWipeDataModule,
         theme: renderHopThemeModule,
+        company_profile: renderHopFirmProfileModule,
+        hop_manual_doc_create: renderHopManualDocCreateModule,
         visiting_card: () => {
           // Visiting card lives under Parties → Add Party → Scan
           openHopView('parties');
@@ -4242,7 +4246,7 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
       : `/api/v1/hop/documents/preview?source_txn_id=${sid}`;
     const data = await hopApi(url);
     const body = document.getElementById('hop-doc-preview-body');
-    if (body) body.innerHTML = hopRenderDocPreviewHtml(data);
+    if (body) body.innerHTML = (window.hopRenderDocPreviewHtml || hopRenderDocPreviewHtml)(data);
   } catch (e) {
     const body = document.getElementById('hop-doc-preview-body');
     if (body) {
@@ -6041,13 +6045,15 @@ const HOP_SALE_LEDGER = {
     types: [...HOP_TXN_ESTIMATE],
     empty: 'No estimates / quotations in this filter.',
     numberLabel: 'Estimate no',
-    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopShowForm('quotation')">+ New Quotation</button>`,
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(27,'commercial')">+ Commercial Quotation</button>
+      <button type="button" class="nx-btn inv-add-btn" onclick="hopOpenManualDocCreate(27,'standard')">+ Estimate</button>`,
   },
   sale_proforma: {
     title: 'Proforma Invoice',
     types: [...HOP_TXN_PROFORMA],
     empty: 'No proforma invoices in this filter.',
     numberLabel: 'Proforma no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(83,'standard')">+ New Proforma</button>`,
   },
   sale_orders: {
     title: 'Sale Order',
