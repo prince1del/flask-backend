@@ -7424,6 +7424,8 @@ function hopRenderInvoiceRows(rows) {
     const party = r.customer_company || r.party_name || r.client_name || '';
     const partyTxnId = Number(r.party_txn_id || 0) || 0;
     const sourceTxnId = Number(r.source_txn_id || 0) || 0;
+    const txnTypeNum = Number(r.txn_type || 0);
+    const canEdit = partyTxnId > 0 && sourceTxnId < 0 && (txnTypeNum === 27 || txnTypeNum === 83);
     const canPreview = partyTxnId > 0 || sourceTxnId > 0;
     const click = canPreview
       ? ` class="inv-row is-clickable" role="button" tabindex="0" title="Click to preview"
@@ -7445,6 +7447,7 @@ function hopRenderInvoiceRows(rows) {
       <td>${hopInvoiceStatusBadge(eff)}</td>
       <td class="inv-actions" onclick="event.stopPropagation()">
         ${canPreview ? `<button type="button" class="inv-ico-btn" title="Preview" onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})">👁</button>` : ''}
+        ${canEdit ? `<button type="button" class="inv-ico-btn" title="Edit quotation" onclick="hopOpenManualDocEdit(${partyTxnId})">✎</button>` : ''}
         ${payBtn}
       </td>
     </tr>`;

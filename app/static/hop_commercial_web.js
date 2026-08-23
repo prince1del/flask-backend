@@ -105,7 +105,7 @@
     return round2(rate * (1 - discPct / 100));
   }
 
-  function hopCommBuildUnifiedTable(sections, grand) {
+  function hopCommBuildUnifiedTable(sections) {
     let bodyRows = '';
     for (const sec of sections) {
       bodyRows += `<tr class="hop-doc-comm-section-row"><td colspan="10">${foEscapeText(sec.title)}</td></tr>`;
@@ -126,14 +126,10 @@
         </tr>`;
       });
       bodyRows += `<tr class="hop-doc-comm-total-row">
-        <td colspan="9" class="num"><strong>TOTAL:</strong></td>
+        <td colspan="9" class="num"><strong>Section total:</strong></td>
         <td class="num"><strong>${hopCommMoney(sec.sectionTotal)}</strong></td>
       </tr>`;
     }
-    bodyRows += `<tr class="hop-doc-comm-grand-row">
-      <td colspan="9" class="num"><strong>GRAND TOTAL:</strong></td>
-      <td class="num"><strong>${hopCommMoney(grand)}</strong></td>
-    </tr>`;
     return `
       <div class="hop-doc-comm-wrap">
         <table class="hop-doc-table hop-doc-table-commercial hop-doc-comm-unified">
@@ -151,6 +147,36 @@
           </tr></thead>
           <tbody>${bodyRows}</tbody>
         </table>
+      </div>`;
+  }
+
+  function hopCommDocTotalsHtml(totals) {
+    const t = totals || {};
+    const breakdown = t.tax_breakdown || [];
+    let taxRows = breakdown.map((b) => {
+      const scope = b.scope === 'shipping' ? 'Shipping' : 'Items';
+      const label = `GST @ ${hopCommPctLabel(b.tax_pct)} on ${scope} (${hopCommMoney(b.taxable_amount)})`;
+      return `<div class="hop-comm-doc-tot-row"><span>${foEscapeText(label)}</span><strong>${hopCommMoney(b.tax_amount)}</strong></div>`;
+    }).join('');
+    if (!taxRows && Number(t.line_tax_total || t.tax_total || 0) > 0.009) {
+      taxRows = `<div class="hop-comm-doc-tot-row"><span>Total GST</span><strong>${hopCommMoney(t.line_tax_total || t.tax_total)}</strong></div>`;
+    } else if (Number(t.shipping_tax_amount || 0) > 0.009 && !breakdown.some((b) => b.scope === 'shipping')) {
+      taxRows += `<div class="hop-comm-doc-tot-row"><span>GST @ ${hopCommPctLabel(t.shipping_tax_pct)} on Shipping (${hopCommMoney(t.shipping_amount)})</span><strong>${hopCommMoney(t.shipping_tax_amount)}</strong></div>`;
+    }
+    const shipRow = Number(t.shipping_amount || 0) > 0.009
+      ? `<div class="hop-comm-doc-tot-row"><span>Shipping charges</span><strong>${hopCommMoney(t.shipping_amount)}</strong></div>`
+      : '';
+    const discRow = Number(t.discount_amount || 0) > 0.009
+      ? `<div class="hop-comm-doc-tot-row"><span>Discount</span><strong>− ${hopCommMoney(t.discount_amount)}</strong></div>`
+      : '';
+    return `
+      <div class="hop-comm-doc-totals">
+        <div class="hop-comm-doc-tot-row"><span>Total value (excl. tax)</span><strong>${hopCommMoney(t.taxable_total || t.sub_total)}</strong></div>
+        ${taxRows}
+        <div class="hop-comm-doc-tot-row"><span>Total GST</span><strong>${hopCommMoney(t.tax_total)}</strong></div>
+        ${shipRow}
+        ${discRow}
+        <div class="hop-comm-doc-tot-row hop-comm-doc-tot-grand"><span>Grand Total</span><strong>${hopCommMoney(t.grand_total)}</strong></div>
       </div>`;
   }
 
@@ -177,14 +203,15 @@
     const lines = data.lines || [];
     const title = header.doc_title || 'Commercial Quotation';
     const sections = hopCommGroupSections(lines);
-    const grand = round2(lines.reduce((s, ln) => s + hopCommCalcLine(ln).net, 0));
+    const totals = data.totals || {};
     const notes = header.notes || '';
     const terms = data.terms || '';
     const delivery = data.delivery_terms || '';
 
     let tablesHtml = '';
     if (sections.length) {
-      tablesHtml = hopCommBuildUnifiedTable(sections, grand);
+      tablesHtml = hopCommBuildUnifiedTable(sections);
+      tablesHtml += hopCommDocTotalsHtml(totals);
     } else {
       tablesHtml = `<div class="hop-doc-missing"><strong>No line items.</strong></div>`;
     }
@@ -643,12 +670,15 @@
       txnType: Number(txnType),
       mode: mode || 'standard',
       returnView: hopState.view || (txnType === 83 ? 'sale_proforma' : 'sale_estimates'),
+      editId: null,
     };
     hopState.manualDocDraft = {
       customerId: '',
       txnDate: new Date().toISOString().slice(0, 10),
       txnNumber: '',
       txnNumberManual: false,
+      shippingAmount: '',
+      shippingTaxPct: '18',
       notes: isComm
         ? 'Dear Sir,\n\nWe thank you for the enquiry. Having completed our review of your requirements, we are pleased to submit the Commercial offer for it.'
         : '',
@@ -665,6 +695,50 @@
     openHopView('hop_manual_doc_create');
   }
 
+  async function hopOpenManualDocEdit(partyTxnId) {
+    const data = await hopApi(`/api/v1/hop/party-transactions/${partyTxnId}`);
+    const txnType = Number(data.txn_type || 27);
+    const mode = data.mode === 'commercial' ? 'commercial' : 'standard';
+    hopManualDocInit(txnType, mode);
+    hopState.manualDoc.editId = Number(partyTxnId);
+    hopState.manualDoc.returnView = txnType === 83 ? 'sale_proforma' : 'sale_estimates';
+    const d = hopState.manualDocDraft;
+    d.customerId = String(data.customer_id || '');
+    d.txnDate = data.txn_date || d.txnDate;
+    d.txnNumber = data.txn_number || '';
+    d.txnNumberManual = true;
+    d.notes = data.notes || '';
+    d.docTerms = data.doc_terms || '';
+    d.shippingAmount = Number(data.shipping_amount || 0) > 0 ? String(data.shipping_amount) : '';
+    d.shippingTaxPct = data.shipping_tax_pct != null && data.shipping_tax_pct !== '' ? String(data.shipping_tax_pct) : '18';
+    const mapLine = (ln) => ({
+      item_name: ln.item_name || '',
+      description: ln.description || '',
+      qty: ln.qty != null && ln.qty !== '' ? String(ln.qty) : '',
+      unit: ln.unit || 'MTR',
+      rate: ln.rate != null && ln.rate !== '' ? String(ln.rate) : '',
+      discount_pct: ln.discount_pct != null ? String(ln.discount_pct) : '0',
+      tax_pct: ln.tax_pct != null ? String(ln.tax_pct) : '5',
+      hsn: ln.hsn || '',
+    });
+    if (mode === 'commercial' && data.sections?.length) {
+      d.sections = data.sections.map((sec, si) => ({
+        title: sec.title || `Shortlisted-${si + 1}`,
+        lines: [...(sec.lines || []).map(mapLine), hopEmptyDocLine()],
+      }));
+    } else {
+      d.lines = [...(data.lines || []).map(mapLine), hopEmptyDocLine()];
+    }
+    openHopView('hop_manual_doc_create');
+  }
+
+  function hopManualDocShippingTaxAmount(d) {
+    const ship = Number(d?.shippingAmount || 0);
+    const pct = Number(d?.shippingTaxPct || 0);
+    if (!(ship > 0) || !(pct > 0)) return 0;
+    return round2(ship * pct / 100);
+  }
+
   function hopManualDocLineFilled(ln) {
     const q = Number(ln.qty);
     const r = Number(ln.rate);
@@ -677,7 +751,7 @@
     const allLines = d.sections
       ? d.sections.flatMap((s) => s.lines.filter(hopManualDocLineFilled))
       : d.lines.filter(hopManualDocLineFilled);
-    return round2(allLines.reduce((sum, ln) => {
+    const itemsTotal = round2(allLines.reduce((sum, ln) => {
       const qty = Number(ln.qty);
       const rate = Number(ln.rate);
       const gross = round2(qty * rate);
@@ -688,6 +762,9 @@
       const tax = round2(taxable * gst / 100);
       return sum + round2(taxable + tax);
     }, 0));
+    const ship = Number(d.shippingAmount || 0);
+    const shipTax = hopManualDocShippingTaxAmount(d);
+    return round2(itemsTotal + ship + shipTax);
   }
 
   function hopManualDocLineCalc(ln) {
@@ -881,13 +958,26 @@
         ${isComm ? `<label class="hop-manual-wide"><span>Cover letter (Dear Sir…)</span>
           <textarea class="nx-input" rows="4" oninput="hopManualDocSetField('notes',this.value)">${foEscapeText(d.notes)}</textarea></label>` : ''}
         ${linesBlock}
+        <div class="hop-comm-shipping-block">
+          <div class="hop-comm-shipping-head">Shipping & freight</div>
+          <div class="hop-comm-shipping-grid">
+            <label class="hop-comm-field"><span>Shipping charges (₹)</span>
+              <input type="text" id="hop-manual-shipping" class="nx-input" value="${foEscapeText(d.shippingAmount || '')}" oninput="hopManualDocSetField('shippingAmount',this.value)" placeholder="0.00" inputmode="decimal" /></label>
+            <label class="hop-comm-field"><span>GST on shipping (%)</span>
+              <input type="text" id="hop-manual-shipping-gst" class="nx-input" value="${foEscapeText(d.shippingTaxPct || '18')}" oninput="hopManualDocSetField('shippingTaxPct',this.value)" inputmode="decimal" /></label>
+            <div class="hop-comm-shipping-calc">
+              <span>GST on shipping</span>
+              <strong id="hop-manual-shipping-tax">${hopManualDocShippingTaxAmount(d) > 0.009 ? hopCommMoney(hopManualDocShippingTaxAmount(d)) : '—'}</strong>
+            </div>
+          </div>
+        </div>
         <label class="hop-manual-wide"><span>Terms & conditions</span>
           <textarea class="nx-input" rows="3" oninput="hopManualDocSetField('docTerms',this.value)">${foEscapeText(d.docTerms)}</textarea></label>
         <div class="hop-manual-doc-foot">
           <strong id="hop-manual-doc-grand">Grand total: ${hopPreviewMoney(grand)}</strong>
           <div class="hop-manual-doc-btns">
             <button type="button" class="nx-btn" onclick="openHopView('${foEscapeText(md.returnView || 'sale_estimates')}')">Cancel</button>
-            <button type="button" class="nx-btn nx-btn-primary" onclick="hopManualDocSave()">Save & preview</button>
+            <button type="button" class="nx-btn nx-btn-primary" onclick="hopManualDocSave()">${hopState.manualDoc?.editId ? 'Update & preview' : 'Save & preview'}</button>
           </div>
         </div>
       </div>`;
@@ -901,6 +991,12 @@
   function hopManualDocUpdateGrandTotal() {
     const el = document.getElementById('hop-manual-doc-grand');
     if (el) el.textContent = `Grand total: ${hopPreviewMoney(hopManualDocCalcGrand())}`;
+    const shipTaxEl = document.getElementById('hop-manual-shipping-tax');
+    if (shipTaxEl) {
+      const d = hopState.manualDocDraft;
+      const v = d ? hopManualDocShippingTaxAmount(d) : 0;
+      shipTaxEl.textContent = v > 0.009 ? hopCommMoney(v) : '—';
+    }
     hopManualDocUpdateAllSectionTotals();
   }
 
@@ -912,6 +1008,9 @@
     if (hopState.manualDocDraft) hopState.manualDocDraft[key] = val;
     if (key === 'txnDate' && hopState.manualDocDraft && !hopState.manualDocDraft.txnNumberManual) {
       hopManualDocFetchNextNumber();
+    }
+    if (key === 'shippingAmount' || key === 'shippingTaxPct') {
+      hopManualDocUpdateGrandTotal();
     }
   }
 
@@ -1034,20 +1133,25 @@
       notes: String(d.notes || '').trim() || undefined,
       doc_terms: String(d.docTerms || '').trim() || undefined,
       txn_label: isComm ? 'Commercial Quotation' : (md.txnType === 83 ? 'Proforma Invoice' : 'Estimate / Quotation'),
+      shipping_amount: Number(d.shippingAmount || 0),
+      shipping_tax_pct: Number(d.shippingTaxPct || 0),
       lines: rawLines,
     };
     const txnNum = String(d.txnNumber || document.getElementById('hop-manual-txn-number')?.value || '').trim();
     if (txnNum) payload.txn_number = txnNum;
-    if (errEl) errEl.textContent = 'Saving…';
+    const editId = Number(md.editId || 0);
+    const url = editId ? `/api/v1/hop/party-transactions/${editId}` : '/api/v1/hop/party-transactions';
+    const method = editId ? 'PATCH' : 'POST';
+    if (errEl) errEl.textContent = editId ? 'Updating…' : 'Saving…';
     try {
-      const row = await hopApi('/api/v1/hop/party-transactions', {
-        method: 'POST',
+      const row = await hopApi(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const id = row?.party_txn_id || row?.id;
+      const id = row?.party_txn_id || row?.id || editId;
       if (!id) throw new Error('Save failed — no document id returned');
-      if (typeof nexoraToast === 'function') nexoraToast('Document saved', 'ok');
+      if (typeof nexoraToast === 'function') nexoraToast(editId ? 'Document updated' : 'Document saved', 'ok');
       openHopView(md.returnView || 'sale_estimates');
       hopOpenSaleDocPreview(Number(id), 0);
     } catch (e) {
@@ -1075,7 +1179,10 @@
       return;
     }
     const md = hopState.manualDoc;
-    const title = md.txnType === 83 ? 'New Proforma Invoice' : (md.mode === 'commercial' ? 'Commercial quotation' : 'New Estimate');
+    const isEdit = !!md.editId;
+    const title = isEdit
+      ? (md.txnType === 83 ? 'Edit Proforma Invoice' : (md.mode === 'commercial' ? 'Edit Commercial quotation' : 'Edit Estimate'))
+      : (md.txnType === 83 ? 'New Proforma Invoice' : (md.mode === 'commercial' ? 'Commercial quotation' : 'New Estimate'));
     const body = `<div id="hop-manual-doc-body">${hopManualDocRenderBody(customers, firmTerms)}</div>`;
     mount.innerHTML = hopModuleShell('Sale', title, '', '', body);
     hopManualDocFetchNextNumber();
@@ -1086,6 +1193,7 @@
   window.renderHopFirmProfileModule = renderHopFirmProfileModule;
   window.renderHopManualDocCreateModule = renderHopManualDocCreateModule;
   window.hopOpenManualDocCreate = hopOpenManualDocCreate;
+  window.hopOpenManualDocEdit = hopOpenManualDocEdit;
   window.hopFirmGstOnInput = hopFirmGstOnInput;
   window.hopFirmFetchGst = hopFirmFetchGst;
   window.hopFirmReadImage = hopFirmReadImage;

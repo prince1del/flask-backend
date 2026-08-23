@@ -4585,6 +4585,31 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   position:sticky;top:0;z-index:2;padding:12px 0 14px;margin-bottom:12px;
   background:#faf8f5;border-bottom:1px solid #e2e8f0;
 }
+.hop-comm-doc-totals{
+  margin:14px 0 0;padding:14px 16px;border:1px solid #e2e8f0;border-radius:10px;
+  background:#f8fafc;max-width:420px;margin-left:auto;
+}
+.hop-comm-doc-tot-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:6px 0;font-size:.88rem;color:#0f172a;
+}
+.hop-comm-doc-tot-row strong{font-variant-numeric:tabular-nums;}
+.hop-comm-doc-tot-grand{
+  margin-top:8px;padding-top:10px;border-top:2px solid #1d4ed8;
+  font-size:.95rem;font-weight:700;
+}
+.hop-comm-doc-tot-grand strong{color:#1d4ed8;font-size:1.05rem;}
+.hop-comm-shipping-block{
+  margin:16px 0;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;
+}
+.hop-comm-shipping-head{font-size:.88rem;font-weight:700;color:#0f172a;margin-bottom:10px;}
+.hop-comm-shipping-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:end;}
+.hop-comm-shipping-calc{
+  padding:10px 12px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;
+}
+.hop-comm-shipping-calc span{display:block;font-size:.68rem;font-weight:650;color:#64748b;margin-bottom:4px;text-transform:uppercase;}
+.hop-comm-shipping-calc strong{font-size:1rem;color:#1d4ed8;font-variant-numeric:tabular-nums;}
+@media (max-width:900px){.hop-comm-shipping-grid{grid-template-columns:1fr;}}
 .hop-comm-lines{display:flex;flex-direction:column;gap:12px;margin:12px 0;}
 .hop-comm-line-card{
   background:#fff;border:1px solid #e2e8f0;border-radius:12px;

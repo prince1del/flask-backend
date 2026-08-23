@@ -161,6 +161,55 @@ def patch_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: dic
     return get_firm_profile(conn, workspace_id)
 
 
+def _line_taxable_amount(ln: dict[str, Any]) -> float:
+    qty = float(ln.get("qty") or 0)
+    rate = float(ln.get("rate") or 0)
+    disc = float(ln.get("discount_amount") or 0)
+    disc_pct = float(ln.get("discount_pct") or 0)
+    gross = round(qty * rate, 2)
+    if disc_pct > 0.009:
+        disc = round(gross * disc_pct / 100.0, 2)
+    return max(0.0, round(gross - disc, 2))
+
+
+def tax_breakdown_from_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group line GST by tax_pct — for preview / PDF totals."""
+    buckets: dict[float, dict[str, Any]] = {}
+    for ln in lines or []:
+        pct = round(float(ln.get("tax_pct") or 0), 2)
+        tax = float(ln.get("tax_amount") or 0)
+        if pct <= 0.009 and tax <= 0.009:
+            continue
+        bucket = buckets.setdefault(
+            pct,
+            {"tax_pct": pct, "taxable_amount": 0.0, "tax_amount": 0.0, "scope": "items"},
+        )
+        bucket["taxable_amount"] += _line_taxable_amount(ln)
+        bucket["tax_amount"] += tax
+    out: list[dict[str, Any]] = []
+    for bucket in buckets.values():
+        out.append(
+            {
+                "tax_pct": bucket["tax_pct"],
+                "taxable_amount": round(bucket["taxable_amount"], 2),
+                "tax_amount": round(bucket["tax_amount"], 2),
+                "scope": "items",
+            }
+        )
+    return sorted(out, key=lambda x: float(x.get("tax_pct") or 0))
+
+
+def _shipping_tax_amounts(
+    shipping: float, shipping_tax_pct: float, shipping_tax_amount: float = 0.0
+) -> tuple[float, float]:
+    ship = max(0.0, float(shipping or 0))
+    pct = max(0.0, float(shipping_tax_pct or 0))
+    tax = float(shipping_tax_amount or 0)
+    if tax <= 0.009 and ship > 0.009 and pct > 0.009:
+        tax = round(ship * pct / 100.0, 2)
+    return ship, round(tax, 2)
+
+
 def compute_line_amounts(
     qty: float,
     rate: float,
@@ -328,6 +377,11 @@ def build_txn_preview(
 
     header_total = float(h.get("total_amount") or 0)
     shipping = float(h.get("shipping_amount") or 0)
+    shipping_tax_pct = float(h.get("shipping_tax_pct") or 0)
+    shipping_tax_amount = float(h.get("shipping_tax_amount") or 0)
+    shipping, shipping_tax_amount = _shipping_tax_amounts(
+        shipping, shipping_tax_pct, shipping_tax_amount
+    )
     doc_discount = float(h.get("discount_amount") or 0)
     doc_discount_pct = float(h.get("discount_pct") or 0)
     if doc_discount <= 0.009 and doc_discount_pct > 0.009 and sub_total > 0:
@@ -335,7 +389,23 @@ def build_txn_preview(
     round_off = float(h.get("round_off") or 0)
     if not lines and header_total:
         sub_total = header_total
-    computed_grand = sub_total + tax_total - doc_discount + shipping + round_off
+    line_tax_total = round(tax_total, 2)
+    tax_breakdown = tax_breakdown_from_lines(lines)
+    if shipping_tax_amount > 0.009:
+        tax_breakdown.append(
+            {
+                "tax_pct": round(shipping_tax_pct, 2),
+                "taxable_amount": round(shipping, 2),
+                "tax_amount": round(shipping_tax_amount, 2),
+                "scope": "shipping",
+            }
+        )
+        tax_breakdown = sorted(tax_breakdown, key=lambda x: float(x.get("tax_pct") or 0))
+    tax_total = round(line_tax_total + shipping_tax_amount, 2)
+    computed_grand = round(
+        sub_total + line_tax_total + shipping + shipping_tax_amount - doc_discount + round_off,
+        2,
+    )
     grand = header_total if header_total > 0.009 else computed_grand
 
     tax_pct = 0.0
@@ -429,11 +499,16 @@ def build_txn_preview(
         "totals": {
             "qty": qty_total,
             "sub_total": round(sub_total, 2),
+            "taxable_total": round(sub_total, 2),
+            "line_tax_total": line_tax_total,
             "tax_total": round(tax_total, 2),
             "tax_pct": tax_pct,
+            "tax_breakdown": tax_breakdown,
             "discount_amount": round(doc_discount, 2),
             "discount_pct": doc_discount_pct,
             "shipping_amount": round(shipping, 2),
+            "shipping_tax_pct": round(shipping_tax_pct, 2),
+            "shipping_tax_amount": round(shipping_tax_amount, 2),
             "round_off": round(round_off, 2),
             "grand_total": round(grand, 2),
             "amount_in_words": amount_in_words_inr(grand),
@@ -492,43 +567,11 @@ def next_manual_doc_number(
     return f"{prefix}/{fy}/{max_serial + 1}"
 
 
-def create_manual_party_document(
-    conn: sqlite3.Connection,
-    workspace_id: str,
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    """Create Estimate (27) or Proforma (83) with line items — preview + PDF ready."""
-    from app.hop_ops import get_customer
-
-    txn_type = int(payload.get("txn_type") or 0)
-    if txn_type not in (27, 83):
-        raise ValueError("txn_type must be 27 (estimate) or 83 (proforma)")
-
-    customer_id = int(payload.get("customer_id") or 0)
-    if not customer_id:
-        raise ValueError("customer_id is required")
-    customer = get_customer(conn, workspace_id, customer_id)
-    if not customer:
-        raise ValueError("customer_id not found")
-
-    txn_date = _clean(payload.get("txn_date"))
-    if not txn_date:
-        from datetime import datetime, timezone
-
-        txn_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    default_label = "Estimate / Quotation" if txn_type == 27 else "Proforma Invoice"
-    txn_label = _clean(payload.get("txn_label")) or default_label
-    notes = _clean(payload.get("notes"))
-
-    raw_lines = payload.get("lines") or []
-    if not isinstance(raw_lines, list) or not raw_lines:
-        raise ValueError("At least one line item is required")
-
+def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]], float, float]:
     computed_lines: list[dict[str, Any]] = []
     sub_total = 0.0
     tax_total = 0.0
-    for i, line in enumerate(raw_lines):
+    for i, line in enumerate(raw_lines or []):
         if not isinstance(line, dict):
             continue
         qty = float(line.get("qty") or 0)
@@ -563,17 +606,183 @@ def create_manual_party_document(
                 "line_total": line_total,
             }
         )
+    return computed_lines, round(sub_total, 2), round(tax_total, 2)
 
-    if not computed_lines:
-        raise ValueError("At least one valid line item is required")
 
+def _finalize_manual_doc_totals(
+    sub_total: float,
+    line_tax_total: float,
+    payload: dict[str, Any],
+) -> dict[str, float]:
     shipping = float(payload.get("shipping_amount") or 0)
+    shipping_tax_pct = float(payload.get("shipping_tax_pct") or 0)
+    shipping, shipping_tax_amount = _shipping_tax_amounts(shipping, shipping_tax_pct, 0)
     doc_discount = float(payload.get("discount_amount") or 0)
     doc_discount_pct = float(payload.get("discount_pct") or 0)
     if doc_discount <= 0.009 and doc_discount_pct > 0.009 and sub_total > 0:
         doc_discount = round(sub_total * doc_discount_pct / 100.0, 2)
     round_off = float(payload.get("round_off") or 0)
-    grand = round(sub_total + tax_total - doc_discount + shipping + round_off, 2)
+    tax_total = round(line_tax_total + shipping_tax_amount, 2)
+    grand = round(
+        sub_total + line_tax_total + shipping + shipping_tax_amount - doc_discount + round_off,
+        2,
+    )
+    return {
+        "shipping": shipping,
+        "shipping_tax_pct": shipping_tax_pct,
+        "shipping_tax_amount": shipping_tax_amount,
+        "doc_discount": doc_discount,
+        "doc_discount_pct": doc_discount_pct,
+        "round_off": round_off,
+        "line_tax_total": line_tax_total,
+        "tax_total": tax_total,
+        "grand": grand,
+    }
+
+
+def _group_lines_for_edit(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    current_title = ""
+    for ln in lines:
+        title = _clean(ln.get("section_title")) or "Items"
+        if not sections or title != current_title:
+            sections.append({"title": title, "lines": []})
+            current_title = title
+        sections[-1]["lines"].append(
+            {
+                "item_name": ln.get("item_name") or "",
+                "description": ln.get("description") or "",
+                "qty": ln.get("qty"),
+                "unit": ln.get("unit") or "MTR",
+                "rate": ln.get("rate"),
+                "discount_pct": ln.get("discount_pct") or 0,
+                "tax_pct": ln.get("tax_pct") or 0,
+                "hsn": ln.get("hsn") or "",
+                "section_title": title,
+            }
+        )
+    return sections
+
+
+def get_party_transaction_edit_data(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    party_txn_id: int,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT * FROM hop_party_transactions
+        WHERE workspace_id=? AND id=?
+        """,
+        (workspace_id, int(party_txn_id)),
+    ).fetchone()
+    if not row:
+        return None
+    h = dict(row)
+    txn_type = int(h.get("txn_type") or 0)
+    source_txn_id = int(h.get("source_txn_id") or 0)
+    if txn_type not in (27, 83) or source_txn_id >= 0:
+        return None
+    lines = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT * FROM hop_txn_lines
+            WHERE workspace_id=? AND source_txn_id=?
+            ORDER BY line_no ASC, id ASC
+            """,
+            (workspace_id, source_txn_id),
+        ).fetchall()
+    ]
+    flat_lines = [
+        {
+            "item_name": _clean(ln.get("item_name")),
+            "description": _clean(ln.get("description")),
+            "qty": float(ln.get("qty") or 0),
+            "unit": _clean(ln.get("unit")) or "MTR",
+            "rate": float(ln.get("rate") or 0),
+            "discount_pct": float(ln.get("discount_pct") or 0),
+            "tax_pct": float(ln.get("tax_pct") or 0),
+            "hsn": _clean(ln.get("hsn")),
+            "section_title": _clean(ln.get("section_title")),
+        }
+        for ln in lines
+    ]
+    label = _clean(h.get("txn_label"))
+    is_commercial = txn_type == 27 and (
+        "commercial" in label.lower()
+        or any(_clean(ln.get("section_title")) for ln in lines)
+    )
+    out: dict[str, Any] = {
+        "party_txn_id": int(h.get("id") or 0),
+        "source_txn_id": source_txn_id,
+        "txn_type": txn_type,
+        "txn_label": label,
+        "txn_number": _clean(h.get("txn_number")),
+        "txn_date": _clean(h.get("txn_date"))[:10],
+        "customer_id": int(h.get("party_id") or 0),
+        "notes": _clean(h.get("notes")),
+        "doc_terms": _clean(h.get("doc_terms")),
+        "delivery_terms": _clean(h.get("delivery_terms")),
+        "shipping_amount": float(h.get("shipping_amount") or 0),
+        "shipping_tax_pct": float(h.get("shipping_tax_pct") or 0),
+        "shipping_tax_amount": float(h.get("shipping_tax_amount") or 0),
+        "discount_amount": float(h.get("discount_amount") or 0),
+        "discount_pct": float(h.get("discount_pct") or 0),
+        "round_off": float(h.get("round_off") or 0),
+        "mode": "commercial" if is_commercial else "standard",
+        "lines": flat_lines,
+    }
+    if is_commercial:
+        out["sections"] = _group_lines_for_edit(lines)
+    return out
+
+
+def create_manual_party_document(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Create Estimate (27) or Proforma (83) with line items — preview + PDF ready."""
+    from app.hop_ops import get_customer
+
+    txn_type = int(payload.get("txn_type") or 0)
+    if txn_type not in (27, 83):
+        raise ValueError("txn_type must be 27 (estimate) or 83 (proforma)")
+
+    customer_id = int(payload.get("customer_id") or 0)
+    if not customer_id:
+        raise ValueError("customer_id is required")
+    customer = get_customer(conn, workspace_id, customer_id)
+    if not customer:
+        raise ValueError("customer_id not found")
+
+    txn_date = _clean(payload.get("txn_date"))
+    if not txn_date:
+        from datetime import datetime, timezone
+
+        txn_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    default_label = "Estimate / Quotation" if txn_type == 27 else "Proforma Invoice"
+    txn_label = _clean(payload.get("txn_label")) or default_label
+    notes = _clean(payload.get("notes"))
+
+    raw_lines = payload.get("lines") or []
+    if not isinstance(raw_lines, list) or not raw_lines:
+        raise ValueError("At least one line item is required")
+
+    computed_lines, sub_total, line_tax_total = _parse_manual_doc_lines(raw_lines)
+    if not computed_lines:
+        raise ValueError("At least one valid line item is required")
+
+    totals = _finalize_manual_doc_totals(sub_total, line_tax_total, payload)
+    shipping = totals["shipping"]
+    shipping_tax_pct = totals["shipping_tax_pct"]
+    shipping_tax_amount = totals["shipping_tax_amount"]
+    doc_discount = totals["doc_discount"]
+    doc_discount_pct = totals["doc_discount_pct"]
+    round_off = totals["round_off"]
+    grand = totals["grand"]
 
     doc_terms = _clean(payload.get("doc_terms") or payload.get("terms"))
     delivery_terms = _clean(payload.get("delivery_terms"))
@@ -597,10 +806,10 @@ def create_manual_party_document(
         INSERT INTO hop_party_transactions (
             workspace_id, party_type, party_id, party_name, source_txn_id,
             txn_type, txn_label, txn_number, txn_date, total_amount,
-            balance_amount, status_text, notes, shipping_amount, discount_amount,
-            discount_pct, round_off, doc_terms, delivery_terms,
-            created_at, updated_at
-        ) VALUES (?, 'customer', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            balance_amount, status_text, notes, shipping_amount, shipping_tax_pct,
+            shipping_tax_amount, discount_amount, discount_pct, round_off,
+            doc_terms, delivery_terms, created_at, updated_at
+        ) VALUES (?, 'customer', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
         """,
         (
             workspace_id,
@@ -615,6 +824,8 @@ def create_manual_party_document(
             "Draft",
             notes,
             shipping,
+            shipping_tax_pct,
+            shipping_tax_amount,
             doc_discount,
             doc_discount_pct,
             round_off,
@@ -628,6 +839,108 @@ def create_manual_party_document(
 
     return {
         "party_txn_id": party_txn_id,
+        "source_txn_id": source_txn_id,
+        "txn_number": txn_number,
+        "txn_type": txn_type,
+        "txn_label": txn_label,
+        "txn_date": txn_date,
+        "total_amount": grand,
+        "customer_id": customer_id,
+        "party_name": party_name,
+    }
+
+
+def update_manual_party_document(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    party_txn_id: int,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Update Nexora-created Estimate (27) or Proforma (83)."""
+    from app.hop_ops import get_customer
+
+    row = conn.execute(
+        """
+        SELECT * FROM hop_party_transactions
+        WHERE workspace_id=? AND id=?
+        """,
+        (workspace_id, int(party_txn_id)),
+    ).fetchone()
+    if not row:
+        raise ValueError("Transaction not found")
+    h = dict(row)
+    txn_type = int(h.get("txn_type") or 0)
+    source_txn_id = int(h.get("source_txn_id") or 0)
+    if txn_type not in (27, 83) or source_txn_id >= 0:
+        raise ValueError("Only Nexora-created estimates/proformas can be edited")
+
+    customer_id = int(payload.get("customer_id") or h.get("party_id") or 0)
+    if not customer_id:
+        raise ValueError("customer_id is required")
+    customer = get_customer(conn, workspace_id, customer_id)
+    if not customer:
+        raise ValueError("customer_id not found")
+
+    txn_date = _clean(payload.get("txn_date")) or _clean(h.get("txn_date"))[:10]
+    default_label = "Estimate / Quotation" if txn_type == 27 else "Proforma Invoice"
+    txn_label = _clean(payload.get("txn_label")) or _clean(h.get("txn_label")) or default_label
+    notes = _clean(payload.get("notes")) if "notes" in payload else _clean(h.get("notes"))
+
+    raw_lines = payload.get("lines") or []
+    if not isinstance(raw_lines, list) or not raw_lines:
+        raise ValueError("At least one line item is required")
+    computed_lines, sub_total, line_tax_total = _parse_manual_doc_lines(raw_lines)
+    if not computed_lines:
+        raise ValueError("At least one valid line item is required")
+
+    totals = _finalize_manual_doc_totals(sub_total, line_tax_total, payload)
+    shipping = totals["shipping"]
+    shipping_tax_pct = totals["shipping_tax_pct"]
+    shipping_tax_amount = totals["shipping_tax_amount"]
+    doc_discount = totals["doc_discount"]
+    doc_discount_pct = totals["doc_discount_pct"]
+    round_off = totals["round_off"]
+    grand = totals["grand"]
+
+    doc_terms = _clean(payload.get("doc_terms") or payload.get("terms") or h.get("doc_terms"))
+    delivery_terms = _clean(payload.get("delivery_terms") or h.get("delivery_terms"))
+    txn_number = _clean(payload.get("txn_number")) or _clean(h.get("txn_number"))
+    party_name = _clean(customer.get("company"))
+
+    conn.execute(
+        """
+        UPDATE hop_party_transactions SET
+            party_id=?, party_name=?, txn_label=?, txn_number=?, txn_date=?,
+            total_amount=?, notes=?, shipping_amount=?, shipping_tax_pct=?,
+            shipping_tax_amount=?, discount_amount=?, discount_pct=?, round_off=?,
+            doc_terms=?, delivery_terms=?, updated_at=datetime('now')
+        WHERE workspace_id=? AND id=?
+        """,
+        (
+            customer_id,
+            party_name,
+            txn_label,
+            txn_number,
+            txn_date,
+            grand,
+            notes,
+            shipping,
+            shipping_tax_pct,
+            shipping_tax_amount,
+            doc_discount,
+            doc_discount_pct,
+            round_off,
+            doc_terms,
+            delivery_terms,
+            workspace_id,
+            int(party_txn_id),
+        ),
+    )
+    replace_txn_lines(conn, workspace_id, source_txn_id, computed_lines)
+    conn.commit()
+
+    return {
+        "party_txn_id": int(party_txn_id),
         "source_txn_id": source_txn_id,
         "txn_number": txn_number,
         "txn_type": txn_type,

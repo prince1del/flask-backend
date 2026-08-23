@@ -1839,6 +1839,29 @@ def party_transactions_collection():
     return jsonify({"success": True, "data": rows})
 
 
+@hop_bp.route("/party-transactions/<int:txn_id>", methods=["GET", "PATCH"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_detail(txn_id: int):
+    """Load or update Nexora-created Estimate / Proforma for edit."""
+    ensure_hop_schema(_db_path())
+    from app.hop_doc_preview import get_party_transaction_edit_data, update_manual_party_document
+
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            row = get_party_transaction_edit_data(conn, _ws(), txn_id)
+        if not row:
+            return _json_error("Editable estimate/proforma not found", "NOT_FOUND", 404)
+        return jsonify({"success": True, "data": row})
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = update_manual_party_document(conn, _ws(), txn_id, _payload())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row})
+
+
 @hop_bp.route("/party-transactions/<int:txn_id>/preview", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

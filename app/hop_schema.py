@@ -769,6 +769,8 @@ def ensure_hop_schema(db_path: str | Path) -> None:
 
         for col, ddl in [
             ("shipping_amount", "REAL DEFAULT 0"),
+            ("shipping_tax_pct", "REAL DEFAULT 0"),
+            ("shipping_tax_amount", "REAL DEFAULT 0"),
             ("discount_amount", "REAL DEFAULT 0"),
             ("discount_pct", "REAL DEFAULT 0"),
             ("round_off", "REAL DEFAULT 0"),
