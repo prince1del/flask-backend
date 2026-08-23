@@ -639,6 +639,53 @@
     }, 0));
   }
 
+  function hopManualDocLineCalc(ln) {
+    const qty = Number(ln.qty || 0);
+    const rate = Number(ln.rate || 0);
+    const gross = round2(qty * rate);
+    const discPct = Number(ln.discount_pct || 0);
+    const disc = discPct > 0 ? round2(gross * discPct / 100) : 0;
+    const taxable = Math.max(0, gross - disc);
+    const gst = Number(ln.tax_pct || 0);
+    const tax = round2(taxable * gst / 100);
+    const net = round2(taxable + tax);
+    return { gross, net };
+  }
+
+  function hopManualDocLineAmountLabels(ln) {
+    const q = Number(ln.qty);
+    const r = Number(ln.rate);
+    if (!(q > 0) || Number.isNaN(r) || r < 0 || String(ln.rate ?? '').trim() === '') {
+      return { amount: '—', net: '—' };
+    }
+    const c = hopManualDocLineCalc(ln);
+    return { amount: hopCommMoney(c.gross), net: hopCommMoney(c.net) };
+  }
+
+  function hopManualDocUpdateLineTotals(si, li) {
+    const d = hopState.manualDocDraft;
+    const ln = si >= 0 ? d?.sections?.[si]?.lines?.[li] : d?.lines?.[li];
+    if (!ln) return;
+    const { amount, net } = hopManualDocLineAmountLabels(ln);
+    const amtEl = document.getElementById(`hop-comm-amt-${si}-${li}`);
+    const netEl = document.getElementById(`hop-comm-net-${si}-${li}`);
+    if (amtEl) amtEl.textContent = amount;
+    if (netEl) netEl.innerHTML = net === '—' ? '—' : `<strong>${net}</strong>`;
+    if (si >= 0) hopManualDocUpdateSectionTotal(si);
+    hopManualDocUpdateGrandTotal();
+  }
+
+  function hopManualDocUpdateSectionTotal(si) {
+    const d = hopState.manualDocDraft;
+    const sec = d?.sections?.[si];
+    if (!sec) return;
+    const total = round2(
+      sec.lines.filter(hopManualDocLineFilled).reduce((s, ln) => s + hopManualDocLineCalc(ln).net, 0)
+    );
+    const el = document.getElementById(`hop-comm-sec-total-${si}`);
+    if (el) el.textContent = total > 0.009 ? `Section total: ${hopPreviewMoney(total)}` : '';
+  }
+
   function hopManualDocLineHasDraft(ln) {
     return String(ln.item_name || '').trim() || String(ln.qty || '').trim() || String(ln.rate || '').trim();
   }
@@ -653,14 +700,17 @@
   }
 
   function hopManualDocLineRowHtml(ln, si, li, showDisc) {
-    return `<tr>
+    const amts = hopManualDocLineAmountLabels(ln);
+    return `<tr id="hop-comm-row-${si}-${li}">
       <td class="cen hop-comm-sl">${li + 1}</td>
       <td><input class="nx-input hop-comm-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Item Description" /></td>
       <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="Qty" /></td>
       <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" /></td>
       <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="Rate" /></td>
+      ${showDisc ? `<td class="num hop-comm-amt" id="hop-comm-amt-${si}-${li}">${amts.amount}</td>` : ''}
       ${showDisc ? `<td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>` : ''}
       <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></td>
+      ${showDisc ? `<td class="num hop-comm-net" id="hop-comm-net-${si}-${li}">${amts.net === '—' ? '—' : `<strong>${amts.net}</strong>`}</td>` : ''}
       ${!showDisc ? `<td><input class="nx-input hop-comm-inp" value="${foEscapeText(ln.hsn)}" oninput="hopManualDocSetLine(${si},${li},'hsn',this.value)" /></td>` : ''}
       <td><button type="button" class="nx-btn nx-btn-ghost hop-comm-del" onclick="hopManualDocRemoveLine(${si},${li})" title="Remove">×</button></td>
     </tr>`;
@@ -684,13 +734,20 @@
               <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="e.g. Shortlisted-1 (Sheer + Chair Fabric)" />
             </label>
           </div>
+          <div class="hop-comm-table-scroll">
           <table class="hop-comm-table hop-comm-table--form">
             <thead><tr>
               <th class="cen">Sl.</th><th>Item Description</th><th class="num">Qty.</th><th class="cen">Unit</th>
-              <th class="num">Project Rate</th><th class="cen">Discount</th><th class="cen">GST %</th><th></th>
+              <th class="num">Project Rate</th><th class="num">Amount</th><th class="cen">Discount</th><th class="cen">GST %</th>
+              <th class="num">Net</th><th></th>
             </tr></thead>
             <tbody id="hop-comm-tbody-${si}">${sec.lines.map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true)).join('')}</tbody>
           </table>
+          </div>
+          <p class="hop-comm-sec-total" id="hop-comm-sec-total-${si}">${(() => {
+            const t = round2(sec.lines.filter(hopManualDocLineFilled).reduce((s, ln) => s + hopManualDocLineCalc(ln).net, 0));
+            return t > 0.009 ? `Section total: ${hopPreviewMoney(t)}` : '';
+          })()}</p>
           <div class="hop-comm-section-actions">
             <button type="button" class="nx-btn nx-btn-primary hop-comm-add-item" onclick="hopManualDocAddLine(${si})">+ Add item to this section</button>
           </div>
@@ -772,7 +829,7 @@
       }
     }
     if (key === 'qty' || key === 'rate' || key === 'discount_pct' || key === 'tax_pct') {
-      hopManualDocUpdateGrandTotal();
+      hopManualDocUpdateLineTotals(si, li);
     }
   }
 
