@@ -4208,30 +4208,85 @@ function hopDocPrintStylesheetFallback() {
     @media print{body{margin:0;padding:0;}}`;
 }
 
-function hopDownloadDocPreview() {
+function hopDocSafeFilename(meta) {
+  return String(meta?.docNumber || meta?.docTitle || 'document')
+    .replace(/[/\\:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 96) || 'quotation';
+}
+
+function hopLoadHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById('hop-html2pdf-script');
+    if (existing) {
+      if (window.html2pdf) resolve(window.html2pdf);
+      else {
+        existing.addEventListener('load', () => resolve(window.html2pdf));
+        existing.addEventListener('error', () => reject(new Error('PDF library failed to load')));
+      }
+      return;
+    }
+    const s = document.createElement('script');
+    s.id = 'hop-html2pdf-script';
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js';
+    s.crossOrigin = 'anonymous';
+    s.onload = () => resolve(window.html2pdf);
+    s.onerror = () => reject(new Error('Could not load PDF library — check internet connection'));
+    document.head.appendChild(s);
+  });
+}
+
+async function hopDownloadDocPreview() {
   const sheet = document.getElementById('hop-doc-preview-sheet');
   if (!sheet) return;
   const meta = hopState.docPreviewMeta || {};
-  const safeName = String(meta.docNumber || meta.docTitle || 'document')
-    .replace(/[^\w\-./]+/g, '_')
-    .slice(0, 80);
-  const title = meta.docNumber
-    ? `${meta.docTitle || 'Document'} — ${meta.docNumber}`
-    : (meta.docTitle || 'Document Preview');
-  const styles = (window.hopDocPrintStylesheet || hopDocPrintStylesheetFallback)();
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${foEscapeText(title)}</title>
-    <style>${styles}</style></head><body>${sheet.outerHTML}</body></html>`;
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${safeName || 'quotation'}.html`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  if (typeof nexoraToast === 'function') {
-    nexoraToast('Downloaded — open file and Print → Save as PDF', 'ok');
+  const safeName = hopDocSafeFilename(meta);
+  const isCommercial = !!sheet.querySelector('.hop-doc-comm-unified');
+  if (typeof nexoraToast === 'function') nexoraToast('Preparing PDF…', 'ok');
+  let wrap = null;
+  try {
+    const html2pdf = await hopLoadHtml2Pdf();
+    wrap = document.createElement('div');
+    wrap.className = 'hop-pdf-export-clone';
+    wrap.style.cssText = [
+      'position:fixed',
+      'left:-12000px',
+      'top:0',
+      `width:${isCommercial ? '1100px' : '794px'}`,
+      'background:#fff',
+      'padding:20px',
+      'color:#0f172a',
+    ].join(';');
+    const styles = (window.hopDocPrintStylesheet || hopDocPrintStylesheetFallback)();
+    wrap.innerHTML = `<style>${styles}</style>${sheet.outerHTML}`;
+    document.body.appendChild(wrap);
+    await html2pdf().set({
+      margin: [8, 8, 8, 8],
+      filename: `${safeName}.pdf`,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: isCommercial ? 1100 : 794,
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: isCommercial ? 'landscape' : 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.hop-doc-section', '.hop-doc-bottom'] },
+    }).from(wrap).save();
+    if (typeof nexoraToast === 'function') nexoraToast('PDF downloaded', 'ok');
+  } catch (e) {
+    console.error('PDF download failed', e);
+    if (typeof nexoraToast === 'function') {
+      nexoraToast(e?.message || 'PDF failed — opening print view instead', 'warn');
+    }
+    hopPrintPartyTxnPreview();
+  } finally {
+    wrap?.remove();
   }
 }
 
@@ -4279,7 +4334,7 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
         <div class="hop-doc-preview-loading">Loading document…</div>
       </div>
       <div class="hop-doc-preview-foot">
-        <button type="button" class="nx-btn" onclick="hopDownloadDocPreview()">Download</button>
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopDownloadDocPreview()">Download PDF</button>
         <button type="button" class="nx-btn" onclick="hopPrintPartyTxnPreview()">Print</button>
         ${openListBtn}
         <button type="button" class="nx-btn hop-doc-preview-close" onclick="hopClosePartyTxnDetail()">Close</button>
