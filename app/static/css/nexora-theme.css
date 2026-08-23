@@ -4616,8 +4616,12 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .hop-manual-wide{display:block;margin:12px 0;}
 .hop-manual-wide span{display:block;font-size:.72rem;font-weight:650;color:var(--nxt-text-dim,#64748b);margin-bottom:4px;}
 .hop-comm-section{margin:16px 0;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:8px;}
-.hop-comm-section-head{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
-.hop-comm-section-head .nx-input{flex:1;}
+.hop-comm-section-head{display:block;margin-bottom:8px;}
+.hop-comm-section-label{display:block;width:100%;}
+.hop-comm-section-label span{display:block;font-size:.72rem;font-weight:650;color:var(--nxt-text-dim,#64748b);margin-bottom:4px;}
+.hop-comm-section-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;}
+.hop-comm-add-item{font-weight:700;}
+.hop-comm-add-section{margin-top:12px;font-weight:650;}
 .hop-comm-table{width:100%;border-collapse:collapse;font-size:.78rem;}
 .hop-comm-table th,.hop-comm-table td{padding:4px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:middle;}
 .hop-comm-table .hop-comm-inp{padding:6px 8px;font-size:.78rem;min-width:0;width:100%;}

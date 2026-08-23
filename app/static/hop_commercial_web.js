@@ -639,6 +639,19 @@
     }, 0));
   }
 
+  function hopManualDocLineHasDraft(ln) {
+    return String(ln.item_name || '').trim() || String(ln.qty || '').trim() || String(ln.rate || '').trim();
+  }
+
+  function hopManualDocRefreshSectionTbody(si) {
+    const d = hopState.manualDocDraft;
+    const tbody = document.getElementById(`hop-comm-tbody-${si}`);
+    if (!tbody || !d?.sections?.[si]) return;
+    tbody.innerHTML = d.sections[si].lines
+      .map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true))
+      .join('');
+  }
+
   function hopManualDocLineRowHtml(ln, si, li, showDisc) {
     return `<tr>
       <td class="cen hop-comm-sl">${li + 1}</td>
@@ -665,20 +678,24 @@
     let linesBlock = '';
     if (isComm && d.sections) {
       linesBlock = d.sections.map((sec, si) => `
-        <div class="hop-comm-section">
+        <div class="hop-comm-section" data-section-idx="${si}">
           <div class="hop-comm-section-head">
-            <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="e.g. Shortlisted-1 (Sheer + Chair Fabric)" />
-            <button type="button" class="nx-btn" onclick="hopManualDocAddLine(${si})">+ Line</button>
+            <label class="hop-comm-section-label"><span>Shortlist section</span>
+              <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="e.g. Shortlisted-1 (Sheer + Chair Fabric)" />
+            </label>
           </div>
           <table class="hop-comm-table hop-comm-table--form">
             <thead><tr>
               <th class="cen">Sl.</th><th>Item Description</th><th class="num">Qty.</th><th class="cen">Unit</th>
               <th class="num">Project Rate</th><th class="cen">Discount</th><th class="cen">GST %</th><th></th>
             </tr></thead>
-            <tbody>${sec.lines.map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true)).join('')}</tbody>
+            <tbody id="hop-comm-tbody-${si}">${sec.lines.map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true)).join('')}</tbody>
           </table>
+          <div class="hop-comm-section-actions">
+            <button type="button" class="nx-btn nx-btn-primary hop-comm-add-item" onclick="hopManualDocAddLine(${si})">+ Add item to this section</button>
+          </div>
         </div>`).join('');
-      linesBlock += `<button type="button" class="nx-btn" onclick="hopManualDocAddSection()">+ Add section</button>`;
+      linesBlock += `<button type="button" class="nx-btn hop-comm-add-section" onclick="hopManualDocAddSection()">+ Add new shortlist section (Shortlisted-2, 3…)</button>`;
     } else {
       const lines = d.lines || [];
       linesBlock = `
@@ -746,6 +763,14 @@
     const bucket = si >= 0 ? d.sections?.[si]?.lines : d.lines;
     if (!bucket?.[li]) return;
     bucket[li][key] = val;
+    if (si >= 0 && li === bucket.length - 1 && hopManualDocLineHasDraft(bucket[li])) {
+      bucket.push(hopEmptyDocLine());
+      const tbody = document.getElementById(`hop-comm-tbody-${si}`);
+      if (tbody) {
+        const newLi = bucket.length - 1;
+        tbody.insertAdjacentHTML('beforeend', hopManualDocLineRowHtml(bucket[newLi], si, newLi, true));
+      }
+    }
     if (key === 'qty' || key === 'rate' || key === 'discount_pct' || key === 'tax_pct') {
       hopManualDocUpdateGrandTotal();
     }
@@ -764,6 +789,12 @@
     if (!d) return;
     if (si >= 0 && d.sections?.[si]) {
       d.sections[si].lines.push(hopEmptyDocLine());
+      const tbody = document.getElementById(`hop-comm-tbody-${si}`);
+      if (tbody) {
+        const li = d.sections[si].lines.length - 1;
+        tbody.insertAdjacentHTML('beforeend', hopManualDocLineRowHtml(d.sections[si].lines[li], si, li, true));
+        return;
+      }
     } else if (d.lines) {
       d.lines.push(hopEmptyDocLine());
     }
@@ -776,6 +807,11 @@
     if (si >= 0 && d.sections?.[si]) {
       d.sections[si].lines.splice(li, 1);
       if (!d.sections[si].lines.length) d.sections[si].lines.push(hopEmptyDocLine());
+      if (document.getElementById(`hop-comm-tbody-${si}`)) {
+        hopManualDocRefreshSectionTbody(si);
+        hopManualDocUpdateGrandTotal();
+        return;
+      }
     } else if (d.lines) {
       d.lines.splice(li, 1);
       if (!d.lines.length) d.lines.push(hopEmptyDocLine());
