@@ -23,6 +23,10 @@ FONT_BODY = 7.5
 FONT_HEADER = 8.0
 FONT_ITEM_NAME = 7.5
 FONT_ITEM_DESC = 7.0
+MAX_ITEM_LINES = 4
+TABLE_HEADER_H = 8.0
+SECTION_ROW_H = 6.0
+PAGE_BREAK_PAD = 2.0
 
 
 def _t(text: Any) -> str:
@@ -90,7 +94,7 @@ def _decode_image_bytes(url: Any) -> bytes | None:
         return None
 
 
-def _wrap_lines(pdf: FPDF, text: str, width_mm: float, *, font_style: str = "", font_size: float = 6) -> list[str]:
+def _wrap_lines(pdf: FPDF, text: str, width_mm: float, *, font_style: str = "", font_size: float = 6, max_lines: int = 8) -> list[str]:
     txt = _t(text)
     if not txt:
         return []
@@ -121,7 +125,25 @@ def _wrap_lines(pdf: FPDF, text: str, width_mm: float, *, font_style: str = "", 
             current = chunk
     if current:
         lines.append(current)
-    return lines or [txt[:40]]
+    if not lines:
+        lines = [txt[:40]]
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        tail = lines[-1]
+        if len(tail) > 3:
+            lines[-1] = tail[: max(1, len(tail) - 3)] + "..."
+    return lines
+
+
+def _page_bottom(pdf: FPDF) -> float:
+    return float(pdf.h - pdf.b_margin - PAGE_BREAK_PAD)
+
+
+def _ensure_space(pdf: FPDF, needed_h: float) -> bool:
+    if pdf.get_y() + needed_h <= _page_bottom(pdf):
+        return False
+    pdf.add_page()
+    return True
 
 
 def _item_desc_text(description: Any) -> str:
@@ -141,9 +163,9 @@ def _row_height_for_item(
     *,
     min_h: float = 7.0,
 ) -> float:
-    name_lines = _wrap_lines(pdf, item_name or "Item", item_col_w, font_style="B", font_size=FONT_ITEM_NAME)
+    name_lines = _wrap_lines(pdf, item_name or "Item", item_col_w, font_style="B", font_size=FONT_ITEM_NAME, max_lines=MAX_ITEM_LINES)
     desc_text = _item_desc_text(description)
-    desc_lines = _wrap_lines(pdf, desc_text, item_col_w, font_style="", font_size=FONT_ITEM_DESC) if desc_text else []
+    desc_lines = _wrap_lines(pdf, desc_text, item_col_w, font_style="", font_size=FONT_ITEM_DESC, max_lines=2) if desc_text else []
     pad = 2.4
     name_h = len(name_lines) * 3.6
     desc_h = len(desc_lines) * 3.2 if desc_lines else 0
@@ -219,7 +241,14 @@ def _draw_table_row(
     fill: bool = False,
     fill_color: tuple[int, int, int] = C_WHITE,
     bold_cols: set[int] | None = None,
+    on_new_page: Any = None,
 ) -> None:
+    if _ensure_space(pdf, row_h):
+        if callable(on_new_page):
+            on_new_page()
+    auto = pdf.auto_page_break
+    margin = pdf.b_margin
+    pdf.set_auto_page_break(auto=False)
     y = pdf.get_y()
     x = pdf.l_margin
     bold_cols = bold_cols or set()
@@ -227,17 +256,20 @@ def _draw_table_row(
     if fill:
         pdf.set_fill_color(*fill_color)
     pdf.set_text_color(*C_INK)
-    for i, (w, val, al) in enumerate(zip(cols, values, aligns)):
-        if item_col is not None and i == item_col:
-            _draw_item_cell(pdf, x, y, w, row_h, item_name, item_desc)
-        else:
-            style = "FD" if fill else "D"
-            pdf.rect(x, y, w, row_h, style=style)
-            pdf.set_font("Helvetica", "B" if i in bold_cols else "", FONT_BODY)
-            pdf.set_xy(x, y + (row_h - 4.0) / 2)
-            pdf.cell(w, 4.0, _t(val), align=al, border=0)
-        x += w
-    pdf.set_y(y + row_h)
+    try:
+        for i, (w, val, al) in enumerate(zip(cols, values, aligns)):
+            if item_col is not None and i == item_col:
+                _draw_item_cell(pdf, x, y, w, row_h, item_name, item_desc)
+            else:
+                style = "FD" if fill else "D"
+                pdf.rect(x, y, w, row_h, style=style)
+                pdf.set_font("Helvetica", "B" if i in bold_cols else "", FONT_BODY)
+                pdf.set_xy(x, y + (row_h - 4.0) / 2)
+                pdf.cell(w, 4.0, _t(val), align=al, border=0)
+            x += w
+        pdf.set_y(y + row_h)
+    finally:
+        pdf.set_auto_page_break(auto=auto, margin=margin)
 
 
 def _draw_firm_header(pdf: FPDF, firm: dict[str, Any]) -> None:
@@ -394,16 +426,26 @@ def _draw_commercial_table(pdf: _HopPdf, lines: list[dict]) -> None:
         ("C", "L", "R", "C", "R", "R", "R", "C", "C", "R"),
     )
 
+    def _repeat_header() -> None:
+        _draw_header_row(
+            pdf,
+            cols,
+            headers,
+            ("C", "L", "R", "C", "R", "R", "R", "C", "C", "R"),
+        )
+
     table_w = sum(cols)
     sl = 0
     net_col = len(cols) - 1
     for sec in sections:
+        if _ensure_space(pdf, SECTION_ROW_H):
+            _repeat_header()
         pdf.set_x(pdf.l_margin)
         pdf.set_fill_color(*C_SECTION_BG)
         _set_border_color(pdf)
         pdf.set_font("Helvetica", "B", FONT_HEADER)
         pdf.set_text_color(*C_INK)
-        pdf.cell(table_w, 6, _t(sec.get("title") or "Items"), border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(table_w, SECTION_ROW_H, _t(sec.get("title") or "Items"), border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         sec_total = 0.0
         for ln in sec.get("lines") or []:
             sl += 1
@@ -441,7 +483,10 @@ def _draw_commercial_table(pdf: _HopPdf, lines: list[dict]) -> None:
                 item_name=item_name,
                 item_desc=item_desc,
                 bold_cols={net_col},
+                on_new_page=_repeat_header,
             )
+        if _ensure_space(pdf, SECTION_ROW_H):
+            _repeat_header()
         pdf.set_x(pdf.l_margin)
         pdf.set_fill_color(*C_TOTAL_ROW_BG)
         _set_border_color(pdf)
@@ -463,6 +508,15 @@ def _draw_standard_table(pdf: _HopPdf, lines: list[dict]) -> None:
         headers,
         ("C", "L", "L", "R", "C", "R", "R", "R"),
     )
+
+    def _repeat_header() -> None:
+        _draw_header_row(
+            pdf,
+            cols,
+            headers,
+            ("C", "L", "L", "R", "C", "R", "R", "R"),
+        )
+
     for i, ln in enumerate(lines, 1):
         qty = float(ln.get("qty") or 0)
         rate = float(ln.get("rate") or 0)
@@ -493,6 +547,7 @@ def _draw_standard_table(pdf: _HopPdf, lines: list[dict]) -> None:
             item_name=item_name,
             item_desc=item_desc,
             bold_cols={len(cols) - 1},
+            on_new_page=_repeat_header,
         )
     pdf.ln(2)
 
