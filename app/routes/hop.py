@@ -1751,11 +1751,21 @@ def commission_sale_invoices():
     return jsonify({"success": True, "data": {"rows": rows}})
 
 
-@hop_bp.route("/party-transactions", methods=["GET"])
+@hop_bp.route("/party-transactions", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def party_transactions_collection():
     ensure_hop_schema(_db_path())
+    if request.method == "POST":
+        from app.hop_doc_preview import create_manual_party_document
+
+        try:
+            with hop_db.connect(_db_path()) as conn:
+                row = create_manual_party_document(conn, _ws(), _payload())
+        except ValueError as exc:
+            return _json_error(str(exc))
+        return jsonify({"success": True, "data": row}), 201
+
     party_type = (request.args.get("party_type") or "").strip().lower()
     party_id = request.args.get("party_id", type=int)
     txn_types_raw = (request.args.get("txn_types") or request.args.get("txn_type") or "").strip()

@@ -367,3 +367,161 @@ def build_txn_preview(
             else ""
         ),
     }
+
+
+def next_manual_source_txn_id(conn: sqlite3.Connection, workspace_id: str) -> int:
+    """Negative ids for Nexora-created docs — Vyapar imports use positive source_txn_id."""
+    row = conn.execute(
+        """
+        SELECT MIN(source_txn_id) AS m FROM hop_party_transactions
+        WHERE workspace_id=? AND source_txn_id < 0
+        """,
+        (workspace_id,),
+    ).fetchone()
+    m = int((dict(row) if row else {}).get("m") or 0)
+    return (m if m < 0 else 0) - 1
+
+
+def next_manual_doc_number(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    txn_type: int,
+    txn_date: str,
+) -> str:
+    from app.hop_doc_numbers import HOP_DOC_PREFIX_BY_TYPE, indian_fy_label
+
+    prefix = HOP_DOC_PREFIX_BY_TYPE.get(int(txn_type))
+    fy = indian_fy_label(txn_date)
+    if not prefix or not fy:
+        return str(int(txn_type))
+    pattern = f"{prefix}/{fy}/%"
+    rows = conn.execute(
+        """
+        SELECT txn_number FROM hop_party_transactions
+        WHERE workspace_id=? AND txn_type=? AND txn_number LIKE ?
+        """,
+        (workspace_id, int(txn_type), pattern),
+    ).fetchall()
+    max_serial = 0
+    for r in rows:
+        num = str(dict(r).get("txn_number") or "")
+        tail = num.rsplit("/", 1)[-1]
+        if tail.isdigit():
+            max_serial = max(max_serial, int(tail))
+    return f"{prefix}/{fy}/{max_serial + 1}"
+
+
+def create_manual_party_document(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Create Estimate (27) or Proforma (83) with line items — preview + PDF ready."""
+    from app.hop_ops import get_customer
+
+    txn_type = int(payload.get("txn_type") or 0)
+    if txn_type not in (27, 83):
+        raise ValueError("txn_type must be 27 (estimate) or 83 (proforma)")
+
+    customer_id = int(payload.get("customer_id") or 0)
+    if not customer_id:
+        raise ValueError("customer_id is required")
+    customer = get_customer(conn, workspace_id, customer_id)
+    if not customer:
+        raise ValueError("customer_id not found")
+
+    txn_date = _clean(payload.get("txn_date"))
+    if not txn_date:
+        from datetime import datetime, timezone
+
+        txn_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    default_label = "Estimate / Quotation" if txn_type == 27 else "Proforma Invoice"
+    txn_label = _clean(payload.get("txn_label")) or default_label
+    notes = _clean(payload.get("notes"))
+
+    raw_lines = payload.get("lines") or []
+    if not isinstance(raw_lines, list) or not raw_lines:
+        raise ValueError("At least one line item is required")
+
+    computed_lines: list[dict[str, Any]] = []
+    sub_total = 0.0
+    tax_total = 0.0
+    for i, line in enumerate(raw_lines):
+        if not isinstance(line, dict):
+            continue
+        qty = float(line.get("qty") or 0)
+        rate = float(line.get("rate") or 0)
+        if qty <= 0 or rate < 0:
+            continue
+        tax_pct = float(line.get("tax_pct") or 0)
+        disc = float(line.get("discount_amount") or 0)
+        taxable = max(0.0, (qty * rate) - disc)
+        tax_amt = round(taxable * tax_pct / 100.0, 2)
+        line_total = round(taxable + tax_amt, 2)
+        sub_total += taxable
+        tax_total += tax_amt
+        computed_lines.append(
+            {
+                "line_no": i + 1,
+                "item_name": _clean(line.get("item_name")) or "Item",
+                "item_code": _clean(line.get("item_code")),
+                "description": _clean(line.get("description")),
+                "hsn": _clean(line.get("hsn")),
+                "qty": qty,
+                "unit": _clean(line.get("unit")) or "Pcs",
+                "rate": rate,
+                "discount_amount": disc,
+                "tax_pct": tax_pct,
+                "tax_amount": tax_amt,
+                "line_total": line_total,
+            }
+        )
+
+    if not computed_lines:
+        raise ValueError("At least one valid line item is required")
+
+    grand = round(sub_total + tax_total, 2)
+    source_txn_id = next_manual_source_txn_id(conn, workspace_id)
+    txn_number = _clean(payload.get("txn_number")) or next_manual_doc_number(
+        conn, workspace_id, txn_type, txn_date
+    )
+    party_name = _clean(customer.get("company"))
+
+    cur = conn.execute(
+        """
+        INSERT INTO hop_party_transactions (
+            workspace_id, party_type, party_id, party_name, source_txn_id,
+            txn_type, txn_label, txn_number, txn_date, total_amount,
+            balance_amount, status_text, notes, created_at, updated_at
+        ) VALUES (?, 'customer', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, datetime('now'), datetime('now'))
+        """,
+        (
+            workspace_id,
+            customer_id,
+            party_name,
+            source_txn_id,
+            txn_type,
+            txn_label,
+            txn_number,
+            txn_date,
+            grand,
+            "Draft",
+            notes,
+        ),
+    )
+    party_txn_id = int(cur.lastrowid)
+    replace_txn_lines(conn, workspace_id, source_txn_id, computed_lines)
+    conn.commit()
+
+    return {
+        "party_txn_id": party_txn_id,
+        "source_txn_id": source_txn_id,
+        "txn_number": txn_number,
+        "txn_type": txn_type,
+        "txn_label": txn_label,
+        "txn_date": txn_date,
+        "total_amount": grand,
+        "customer_id": customer_id,
+        "party_name": party_name,
+    }
