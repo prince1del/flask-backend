@@ -4220,77 +4220,57 @@ function hopDocSafeFilename(meta) {
     .slice(0, 96) || 'quotation';
 }
 
-function hopLoadHtml2Pdf() {
-  if (window.html2pdf) return Promise.resolve(window.html2pdf);
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById('hop-html2pdf-script');
-    if (existing) {
-      if (window.html2pdf) resolve(window.html2pdf);
-      else {
-        existing.addEventListener('load', () => resolve(window.html2pdf));
-        existing.addEventListener('error', () => reject(new Error('PDF library failed to load')));
-      }
-      return;
+async function hopDownloadPdfBlob(path, filename) {
+  if (typeof fetchWithAuth !== 'function') {
+    throw new Error('Sign in required to download PDF');
+  }
+  const response = await fetchWithAuth(path);
+  if (!response.ok) {
+    let msg = 'PDF download failed';
+    try {
+      const data = await response.json();
+      msg = getApiErrorMessage(data, msg);
+    } catch (_) {
+      msg = `PDF download failed (${response.status})`;
     }
-    const s = document.createElement('script');
-    s.id = 'hop-html2pdf-script';
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js';
-    s.crossOrigin = 'anonymous';
-    s.onload = () => resolve(window.html2pdf);
-    s.onerror = () => reject(new Error('Could not load PDF library — check internet connection'));
-    document.head.appendChild(s);
-  });
+    throw new Error(msg);
+  }
+  const blob = await response.blob();
+  if (!blob || blob.size < 32) {
+    throw new Error('PDF file is empty');
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 async function hopDownloadDocPreview() {
-  const sheet = document.getElementById('hop-doc-preview-sheet');
-  if (!sheet) return;
+  const ids = hopState.docPreviewIds || {};
+  const pid = Number(ids.partyTxnId || 0);
+  const sid = Number(ids.sourceTxnId || 0);
   const meta = hopState.docPreviewMeta || {};
   const safeName = hopDocSafeFilename(meta);
-  const isCommercial = !!sheet.querySelector('.hop-doc-comm-unified');
+  if (!pid && !sid) {
+    if (typeof nexoraToast === 'function') nexoraToast('Preview not ready yet', 'warn');
+    return;
+  }
+  const path = pid
+    ? `/api/v1/hop/party-transactions/${pid}/download.pdf`
+    : `/api/v1/hop/documents/download.pdf?source_txn_id=${sid}`;
   if (typeof nexoraToast === 'function') nexoraToast('Preparing PDF…', 'ok');
-  let wrap = null;
   try {
-    const html2pdf = await hopLoadHtml2Pdf();
-    wrap = document.createElement('div');
-    wrap.className = 'hop-pdf-export-clone';
-    wrap.style.cssText = [
-      'position:fixed',
-      'left:-12000px',
-      'top:0',
-      `width:${isCommercial ? '1100px' : '794px'}`,
-      'background:#fff',
-      'padding:20px',
-      'color:#0f172a',
-    ].join(';');
-    const styles = (window.hopDocPrintStylesheet || hopDocPrintStylesheetFallback)();
-    wrap.innerHTML = `<style>${styles}</style>${sheet.outerHTML}`;
-    document.body.appendChild(wrap);
-    await html2pdf().set({
-      margin: [8, 8, 8, 8],
-      filename: `${safeName}.pdf`,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: isCommercial ? 1100 : 794,
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: isCommercial ? 'landscape' : 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.hop-doc-section', '.hop-doc-bottom'] },
-    }).from(wrap).save();
+    await hopDownloadPdfBlob(path, `${safeName}.pdf`);
     if (typeof nexoraToast === 'function') nexoraToast('PDF downloaded', 'ok');
   } catch (e) {
     console.error('PDF download failed', e);
     if (typeof nexoraToast === 'function') {
-      nexoraToast(e?.message || 'PDF failed — opening print view instead', 'warn');
+      nexoraToast(e?.message || 'PDF download failed', 'err');
     }
-    hopPrintPartyTxnPreview();
-  } finally {
-    wrap?.remove();
   }
 }
 
@@ -4321,6 +4301,7 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
     return;
   }
   hopClosePartyTxnDetail();
+  hopState.docPreviewIds = { partyTxnId: pid, sourceTxnId: sid };
   const overlay = document.createElement('div');
   overlay.id = 'hop-party-txn-overlay';
   overlay.className = 'hop-doc-preview-overlay';
@@ -7548,7 +7529,7 @@ function hopShowInvRowContextMenu(e, opts) {
     </button>`;
     items += `<button type="button" class="hop-inv-ctx-item" role="menuitem"
       onclick="hopCloseInvRowContextMenu();hopOpenManualDocDuplicate(${partyTxnId});">
-      <span class="hop-inv-ctx-ico">⧉</span> Duplicate PI / Quotation
+      <span class="hop-inv-ctx-ico">⧉</span> Duplicate
     </button>`;
     items += `<button type="button" class="hop-inv-ctx-item hop-inv-ctx-danger" role="menuitem"
       onclick="hopCloseInvRowContextMenu();hopDeleteManualDoc(${partyTxnId});">
@@ -7615,6 +7596,7 @@ function hopRenderInvoiceRows(rows) {
       <td>${hopInvoiceStatusBadge(eff)}</td>
       <td class="inv-actions" onclick="event.stopPropagation()">
         ${canPreview ? `<button type="button" class="inv-ico-btn" title="Preview" onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})">👁</button>` : ''}
+        ${canEdit ? `<button type="button" class="inv-ico-btn" title="Duplicate" onclick="hopOpenManualDocDuplicate(${partyTxnId})">⧉</button>` : ''}
         ${canEdit ? `<button type="button" class="inv-ico-btn" title="Edit" onclick="hopOpenManualDocEdit(${partyTxnId})">✎</button>` : ''}
         ${canEdit ? `<button type="button" class="inv-ico-btn" title="Delete" onclick="hopDeleteManualDoc(${partyTxnId})">🗑</button>` : ''}
         ${payBtn}

@@ -1889,6 +1889,69 @@ def party_transaction_preview(txn_id: int):
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/party-transactions/<int:txn_id>/download.pdf", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_download_pdf(txn_id: int):
+    """Direct PDF download for a party transaction preview."""
+    ensure_hop_schema(_db_path())
+    from app.hop_doc_preview import build_txn_preview
+    from app.hop_doc_pdf import _safe_filename, build_preview_pdf
+
+    with hop_db.connect(_db_path()) as conn:
+        data = build_txn_preview(conn, _ws(), party_txn_id=txn_id)
+    if not data:
+        return _json_error("Transaction not found", "NOT_FOUND", 404)
+    try:
+        pdf_bytes = build_preview_pdf(data)
+    except Exception as exc:
+        return _json_error(f"PDF generation failed ({exc})", "PDF_ERROR", 500)
+    fname = f"{_safe_filename(data)}.pdf"
+    from flask import Response
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@hop_bp.route("/documents/download.pdf", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def documents_download_pdf():
+    """Direct PDF download by party_txn_id or Vyapar source_txn_id."""
+    ensure_hop_schema(_db_path())
+    from app.hop_doc_preview import build_txn_preview
+    from app.hop_doc_pdf import _safe_filename, build_preview_pdf
+
+    party_txn_id = request.args.get("party_txn_id", type=int)
+    source_txn_id = request.args.get("source_txn_id", type=int)
+    if not party_txn_id and not source_txn_id:
+        return _json_error("party_txn_id or source_txn_id is required", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        data = build_txn_preview(
+            conn,
+            _ws(),
+            party_txn_id=party_txn_id,
+            source_txn_id=source_txn_id,
+        )
+    if not data:
+        return _json_error("Transaction not found", "NOT_FOUND", 404)
+    try:
+        pdf_bytes = build_preview_pdf(data)
+    except Exception as exc:
+        return _json_error(f"PDF generation failed ({exc})", "PDF_ERROR", 500)
+    fname = f"{_safe_filename(data)}.pdf"
+    from flask import Response
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @hop_bp.route("/documents/preview", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
