@@ -4284,6 +4284,29 @@ function hopUpdateDocPreviewHead(data) {
   hopState.docPreviewMeta = { docTitle: title, docNumber: num };
 }
 
+function hopUpdateDocPreviewFoot(data, partyTxnId) {
+  const foot = document.querySelector('#hop-party-txn-overlay .hop-doc-preview-foot');
+  if (!foot || !data) return;
+  const pid = Number(partyTxnId || hopState.docPreviewIds?.partyTxnId || 0);
+  const header = data.header || {};
+  const sourceTxnId = Number(header.source_txn_id ?? hopState.docPreviewIds?.sourceTxnId ?? 0);
+  const txnType = Number(header.txn_type || 0);
+  const canEdit = pid > 0 && sourceTxnId < 0 && (txnType === 27 || txnType === 83);
+  foot.querySelector('.hop-doc-preview-duplicate')?.remove();
+  if (!canEdit) return;
+  const dup = document.createElement('button');
+  dup.type = 'button';
+  dup.className = 'nx-btn hop-doc-preview-duplicate';
+  dup.textContent = 'Duplicate';
+  dup.onclick = () => {
+    hopClosePartyTxnDetail();
+    hopOpenManualDocDuplicate(pid);
+  };
+  const closeBtn = foot.querySelector('.hop-doc-preview-close');
+  if (closeBtn) foot.insertBefore(dup, closeBtn);
+  else foot.appendChild(dup);
+}
+
 async function hopOpenPartyTxnDetail(txnId) {
   return hopOpenSaleDocPreview(txnId, 0);
 }
@@ -4336,6 +4359,7 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
     const body = document.getElementById('hop-doc-preview-body');
     if (body) body.innerHTML = (window.hopRenderDocPreviewHtml || hopRenderDocPreviewHtml)(data);
     hopUpdateDocPreviewHead(data);
+    hopUpdateDocPreviewFoot(data, pid);
   } catch (e) {
     const body = document.getElementById('hop-doc-preview-body');
     if (body) {
