@@ -13,6 +13,9 @@ def _t(text: Any) -> str:
     s = str(text or "").strip()
     s = s.replace("₹", "Rs.")
     s = s.replace("\u2013", "-").replace("\u2014", "-")
+    s = s.replace("\u2026", "...").replace("…", "...")
+    s = s.replace("\u2018", "'").replace("\u2019", "'")
+    s = s.replace("\u201c", '"').replace("\u201d", '"')
     return s.encode("latin-1", "replace").decode("latin-1")
 
 
@@ -56,7 +59,11 @@ def _safe_filename(preview: dict[str, Any]) -> str:
 
 def _fit(text: str, max_len: int) -> str:
     s = _t(text)
-    return s if len(s) <= max_len else s[: max(0, max_len - 1)] + "…"
+    if len(s) <= max_len:
+        return s
+    if max_len <= 3:
+        return s[:max_len]
+    return s[: max_len - 3] + "..."
 
 
 def _scale_cols(pdf: FPDF, weights: tuple[float, ...]) -> tuple[float, ...]:
@@ -81,14 +88,13 @@ def _row_cells(
     header: bool = False,
 ) -> None:
     pdf.set_x(pdf.l_margin)
-    style = "B" if header else ""
     if header:
         pdf.set_fill_color(29, 78, 216)
         pdf.set_text_color(255, 255, 255)
     else:
         pdf.set_text_color(15, 23, 42)
     for w, val, al in zip(cols, values, aligns):
-        pdf.cell(w, height, val, border=1, align=al, fill=fill)
+        pdf.cell(w, height, _t(val), border=1, align=al, fill=fill)
     pdf.ln()
 
 
