@@ -754,6 +754,10 @@ def ensure_hop_schema(db_path: str | Path) -> None:
 
         for col, ddl in [
             ("delivery_terms", "TEXT"),
+            ("business_type", "TEXT"),
+            ("business_category", "TEXT"),
+            ("pincode", "TEXT"),
+            ("signature_url", "TEXT"),
         ]:
             _ensure_column(conn, "hop_firm_profile", col, ddl)
 

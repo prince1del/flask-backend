@@ -93,8 +93,9 @@ def upsert_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: di
         INSERT INTO hop_firm_profile (
             workspace_id, firm_name, address, phone, email, gstin, state, pan,
             bank_name, bank_account, bank_ifsc, bank_holder, logo_url, terms_default,
-            delivery_terms, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            delivery_terms, business_type, business_category, pincode, signature_url,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(workspace_id) DO UPDATE SET
             firm_name=excluded.firm_name,
             address=excluded.address,
@@ -110,6 +111,10 @@ def upsert_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: di
             logo_url=COALESCE(NULLIF(excluded.logo_url,''), hop_firm_profile.logo_url),
             terms_default=COALESCE(NULLIF(excluded.terms_default,''), hop_firm_profile.terms_default),
             delivery_terms=COALESCE(NULLIF(excluded.delivery_terms,''), hop_firm_profile.delivery_terms),
+            business_type=COALESCE(NULLIF(excluded.business_type,''), hop_firm_profile.business_type),
+            business_category=COALESCE(NULLIF(excluded.business_category,''), hop_firm_profile.business_category),
+            pincode=COALESCE(NULLIF(excluded.pincode,''), hop_firm_profile.pincode),
+            signature_url=COALESCE(NULLIF(excluded.signature_url,''), hop_firm_profile.signature_url),
             updated_at=datetime('now')
         """,
         (
@@ -128,6 +133,10 @@ def upsert_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: di
             _clean(payload.get("logo_url")),
             _clean(payload.get("terms_default")),
             _clean(payload.get("delivery_terms")),
+            _clean(payload.get("business_type")),
+            _clean(payload.get("business_category")),
+            _clean(payload.get("pincode")),
+            _clean(payload.get("signature_url")),
         ),
     )
 
@@ -139,7 +148,8 @@ def patch_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: dic
     field_map = (
         "firm_name", "address", "phone", "email", "gstin", "state", "pan",
         "bank_name", "bank_account", "bank_ifsc", "bank_holder", "logo_url",
-        "terms_default", "delivery_terms",
+        "terms_default", "delivery_terms", "business_type", "business_category",
+        "pincode", "signature_url",
     )
     for key in field_map:
         if key in payload:
@@ -216,6 +226,10 @@ def get_firm_profile(conn: sqlite3.Connection, workspace_id: str) -> dict[str, A
         "logo_url": "",
         "terms_default": "Thanks for doing business with us!",
         "delivery_terms": "",
+        "business_type": "",
+        "business_category": "",
+        "pincode": "",
+        "signature_url": "",
     }
 
 
@@ -355,6 +369,7 @@ def build_txn_preview(
             "bank_ifsc": _clean(firm.get("bank_ifsc")),
             "bank_holder": _clean(firm.get("bank_holder")),
             "logo_url": _clean(firm.get("logo_url")),
+            "signature_url": _clean(firm.get("signature_url")),
         },
         "party": {
             "name": party_name,
