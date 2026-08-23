@@ -4185,12 +4185,16 @@ function hopPrintPartyTxnPreview() {
     <style>
       body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:16px;background:#fff;}
       table{width:100%;border-collapse:collapse;}
-      th,td{border:1px solid #cbd5e1;padding:6px 8px;font-size:12px;}
+      th,td{border:1px solid #94a3b8;padding:5px 6px;font-size:11px;}
       th{background:#1d4ed8;color:#fff;text-align:left;}
-      .num{text-align:right;}
-      .title{text-align:center;color:#1d4ed8;font-size:22px;font-weight:700;margin:12px 0;}
+      .num{text-align:right;font-variant-numeric:tabular-nums;}
+      .cen{text-align:center;}
+      .hop-doc-comm-unified{min-width:780px;}
+      .hop-doc-comm-section-row td{background:#f1f5f9;font-weight:800;}
+      .hop-doc-comm-total-row td{background:#f8fafc;font-weight:700;}
+      .hop-doc-comm-grand-row td{background:#0f172a;color:#fff;font-weight:800;}
+      .hop-doc-letter p{margin:0 0 8px;line-height:1.5;}
       .muted{color:#64748b;font-size:12px;}
-      .tot-bar{background:#0f172a;color:#fff;font-weight:700;}
       @media print{body{margin:0}}
     </style></head><body>${sheet.innerHTML}</body></html>`);
   w.document.close();

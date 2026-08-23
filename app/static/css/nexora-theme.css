@@ -4563,14 +4563,35 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .hop-doc-logo-img{width:72px;height:72px;object-fit:contain;border-radius:6px;flex-shrink:0;}
 .hop-doc-sign-img{max-width:140px;max-height:56px;object-fit:contain;margin:4px 0;}
 .hop-doc-intro{margin:0 0 12px;padding:10px 12px;background:#f8fafc;border-left:3px solid #1d4ed8;font-size:12px;line-height:1.5;}
-.hop-doc-section-head{font-weight:800;color:#1e3a8a;margin:14px 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.03em;}
-.hop-doc-table-commercial th,.hop-doc-table-commercial td{font-size:11px;}
-.hop-doc-section-total td{background:#eff6ff !important;}
-.hop-doc-grand-total{
-  display:flex;justify-content:space-between;align-items:center;gap:12px;
-  margin:12px 0 16px;padding:12px 14px;background:#0f172a;color:#fff;
-  font-weight:800;font-size:14px;border-radius:4px;
+.hop-doc-letter{margin:0 0 14px;font-size:12px;line-height:1.55;color:#0f172a;}
+.hop-doc-letter p{margin:0 0 8px;}
+.hop-doc-comm-wrap{overflow-x:auto;margin:8px 0 14px;-webkit-overflow-scrolling:touch;}
+.hop-doc-comm-unified{min-width:780px;font-size:11px;}
+.hop-doc-comm-unified th,.hop-doc-comm-unified td{border:1px solid #94a3b8;padding:5px 6px;vertical-align:middle;}
+.hop-doc-comm-unified th{background:#1d4ed8;color:#fff;font-size:11px;font-weight:700;}
+.hop-doc-comm-unified .cen{text-align:center;}
+.hop-doc-comm-unified .num{text-align:right;font-variant-numeric:tabular-nums;}
+.hop-doc-comm-unified .item{text-align:left;min-width:140px;}
+.hop-doc-comm-section-row td{
+  background:#f1f5f9;font-weight:800;font-size:11px;text-transform:none;
+  letter-spacing:.01em;color:#0f172a;border-top:2px solid #64748b;
 }
+.hop-doc-comm-total-row td{background:#f8fafc;font-weight:700;}
+.hop-doc-comm-grand-row td{background:#0f172a !important;color:#fff !important;font-weight:800;font-size:12px;}
+.hop-doc-comm-grand-row .num{color:#fff !important;}
+.hop-doc-bottom--commercial{grid-template-columns:1fr auto;}
+.hop-doc-sign-block{text-align:right;min-width:160px;margin-top:8px;}
+.hop-manual-doc-sticky{
+  position:sticky;top:0;z-index:2;padding:10px 0 12px;margin-bottom:8px;
+  background:var(--nxt-bg,#0a1628);border-bottom:1px solid rgba(255,255,255,.1);
+}
+.hop-comm-table--form thead th{
+  background:#1d4ed8;color:#fff;font-size:.72rem;font-weight:700;padding:6px 4px;
+}
+.hop-comm-table--form .cen{text-align:center;}
+.hop-comm-table--form .num{text-align:right;}
+.hop-comm-del{min-width:32px;padding:4px 8px;}
+.hop-comm-sl{font-size:.75rem;color:var(--nxt-text-dim,#64748b);width:28px;}
 .hop-gst-tick{color:#16a34a;font-weight:800;font-size:1.1rem;margin-left:6px;}
 .hop-gst-tick.is-valid{color:#16a34a;}
 .hop-gst-tick.is-verified{color:#15803d;}

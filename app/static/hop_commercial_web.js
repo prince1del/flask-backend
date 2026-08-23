@@ -78,6 +78,65 @@
     return n.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   }
 
+  /** FAIRFIELD table amounts — comma decimals, no ₹ prefix in cells. */
+  function hopCommMoney(n) {
+    const v = Number(n || 0);
+    return v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function hopCommIntroHtml(notes) {
+    if (!notes) return '';
+    let text = String(notes).trim();
+    if (!/^dear\s+sir/i.test(text)) text = `Dear Sir,\n\n${text}`;
+    return text.split(/\n+/).filter(Boolean).map((p) => `<p>${foEscapeText(p)}</p>`).join('');
+  }
+
+  function hopCommBuildUnifiedTable(sections, grand) {
+    let bodyRows = '';
+    for (const sec of sections) {
+      bodyRows += `<tr class="hop-doc-comm-section-row"><td colspan="9">${foEscapeText(sec.title)}</td></tr>`;
+      sec.lines.forEach((ln, i) => {
+        const c = hopCommCalcLine(ln);
+        bodyRows += `<tr class="hop-doc-comm-line-row">
+          <td class="cen">${i + 1}</td>
+          <td class="item">${foEscapeText(ln.item_name || 'Item')}${ln.description ? `<div class="hop-doc-muted">${foEscapeText(ln.description)}</div>` : ''}</td>
+          <td class="num">${hopCommQtyLabel(c.qty)}</td>
+          <td class="cen">${foEscapeText(ln.unit || 'MTR')}</td>
+          <td class="num">${hopCommMoney(c.rate)}</td>
+          <td class="num">${hopCommMoney(c.gross)}</td>
+          <td class="cen">${hopCommPctLabel(c.discPct)}</td>
+          <td class="cen">${hopCommPctLabel(c.taxPct)}</td>
+          <td class="num"><strong>${hopCommMoney(c.net)}</strong></td>
+        </tr>`;
+      });
+      bodyRows += `<tr class="hop-doc-comm-total-row">
+        <td colspan="8" class="num"><strong>TOTAL:</strong></td>
+        <td class="num"><strong>${hopCommMoney(sec.sectionTotal)}</strong></td>
+      </tr>`;
+    }
+    bodyRows += `<tr class="hop-doc-comm-grand-row">
+      <td colspan="8" class="num"><strong>GRAND TOTAL:</strong></td>
+      <td class="num"><strong>${hopCommMoney(grand)}</strong></td>
+    </tr>`;
+    return `
+      <div class="hop-doc-comm-wrap">
+        <table class="hop-doc-table hop-doc-table-commercial hop-doc-comm-unified">
+          <thead><tr>
+            <th class="cen">Sl.</th>
+            <th>Item Description</th>
+            <th class="num">Qty.</th>
+            <th class="cen">Unit</th>
+            <th class="num">Project Rate</th>
+            <th class="num">Amount</th>
+            <th class="cen">Discount</th>
+            <th class="cen">GST %</th>
+            <th class="num">Amount</th>
+          </tr></thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>`;
+  }
+
   function hopDocLogoHtml(firm) {
     const url = String(firm?.logo_url || '').trim();
     if (url.startsWith('data:') || url.startsWith('http')) {
@@ -108,39 +167,7 @@
 
     let tablesHtml = '';
     if (sections.length) {
-      tablesHtml = sections.map((sec) => {
-        const rows = sec.lines.map((ln, i) => {
-          const c = hopCommCalcLine(ln);
-          return `<tr>
-            <td>${i + 1}</td>
-            <td><div class="hop-doc-item-name">${foEscapeText(ln.item_name || 'Item')}</div>${ln.description ? `<div class="hop-doc-muted">${foEscapeText(ln.description)}</div>` : ''}</td>
-            <td class="num">${hopCommQtyLabel(c.qty)}</td>
-            <td>${foEscapeText(ln.unit || 'MTR')}</td>
-            <td class="num">${hopPreviewMoney(c.rate)}</td>
-            <td class="num">${hopPreviewMoney(c.gross)}</td>
-            <td class="num">${hopCommPctLabel(c.discPct)}</td>
-            <td class="num">${hopCommPctLabel(c.taxPct)}</td>
-            <td class="num"><strong>${hopPreviewMoney(c.net)}</strong></td>
-          </tr>`;
-        }).join('');
-        return `
-          <div class="hop-doc-section-head">${foEscapeText(sec.title)}</div>
-          <table class="hop-doc-table hop-doc-table-commercial">
-            <thead><tr>
-              <th>Sl</th><th>Item</th><th>Qty</th><th>Unit</th><th>Project Rate</th>
-              <th>Amount</th><th>Disc%</th><th>GST%</th><th>Net</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-            <tfoot><tr class="hop-doc-section-total">
-              <td colspan="8" class="num"><strong>Section TOTAL</strong></td>
-              <td class="num"><strong>${hopPreviewMoney(sec.sectionTotal)}</strong></td>
-            </tr></tfoot>
-          </table>`;
-      }).join('');
-      tablesHtml += `
-        <div class="hop-doc-grand-total">
-          <span>GRAND TOTAL</span><strong>${hopPreviewMoney(grand)}</strong>
-        </div>`;
+      tablesHtml = hopCommBuildUnifiedTable(sections, grand);
     } else {
       tablesHtml = `<div class="hop-doc-missing"><strong>No line items.</strong></div>`;
     }
@@ -183,24 +210,18 @@
             <div><span class="hop-doc-meta-label">Date</span> ${foEscapeText(hopPreviewDate(header.doc_date))}</div>
           </div>
         </div>
-        ${notes ? `<div class="hop-doc-intro">${foEscapeText(notes)}</div>` : ''}
+        ${notes ? `<div class="hop-doc-letter">${hopCommIntroHtml(notes)}</div>` : ''}
         ${tablesHtml}
-        <div class="hop-doc-bottom">
+        <div class="hop-doc-bottom hop-doc-bottom--commercial">
           <div class="hop-doc-bottom-left">
             ${delivery ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Delivery Terms</div><div>${foEscapeText(delivery)}</div></div>` : ''}
-            <div class="hop-doc-section">
-              <div class="hop-doc-meta-label">Terms and Conditions</div>
-              <div>${foEscapeText(terms)}</div>
-            </div>
+            ${terms ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Terms and Conditions</div><div>${foEscapeText(terms)}</div></div>` : ''}
             ${bankHtml}
           </div>
-          <div class="hop-doc-totals">
-            <div class="hop-doc-tot-row hop-doc-tot-grand"><span>Grand Total</span><strong>${hopPreviewMoney(grand)}</strong></div>
-            <div class="hop-doc-sign">
-              <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
-              ${hopDocSignHtml(firm)}
-              <div>Authorized Signatory</div>
-            </div>
+          <div class="hop-doc-sign-block">
+            <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
+            ${hopDocSignHtml(firm)}
+            <div>Authorized Signatory</div>
           </div>
         </div>
       </div>`;
@@ -578,7 +599,7 @@
       customerId: '',
       txnDate: new Date().toISOString().slice(0, 10),
       notes: isComm
-        ? 'We thank you for the enquiry. Having completed our review of your requirements, we are pleased to submit the Commercial offer for it.'
+        ? 'Dear Sir,\n\nWe thank you for the enquiry. Having completed our review of your requirements, we are pleased to submit the Commercial offer for it.'
         : '',
       docTerms: '',
       sections: isComm
@@ -620,14 +641,15 @@
 
   function hopManualDocLineRowHtml(ln, si, li, showDisc) {
     return `<tr>
-      <td><input class="nx-input hop-comm-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Item" /></td>
-      <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" /></td>
-      <td><input class="nx-input hop-comm-inp" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" /></td>
-      <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" /></td>
-      ${showDisc ? `<td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>` : ''}
-      <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></td>
+      <td class="cen hop-comm-sl">${li + 1}</td>
+      <td><input class="nx-input hop-comm-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Item Description" /></td>
+      <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="Qty" /></td>
+      <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" /></td>
+      <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="Rate" /></td>
+      ${showDisc ? `<td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>` : ''}
+      <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></td>
       ${!showDisc ? `<td><input class="nx-input hop-comm-inp" value="${foEscapeText(ln.hsn)}" oninput="hopManualDocSetLine(${si},${li},'hsn',this.value)" /></td>` : ''}
-      <td><button type="button" class="nx-btn nx-btn-ghost" onclick="hopManualDocRemoveLine(${si},${li})">×</button></td>
+      <td><button type="button" class="nx-btn nx-btn-ghost hop-comm-del" onclick="hopManualDocRemoveLine(${si},${li})" title="Remove">×</button></td>
     </tr>`;
   }
 
@@ -645,11 +667,14 @@
       linesBlock = d.sections.map((sec, si) => `
         <div class="hop-comm-section">
           <div class="hop-comm-section-head">
-            <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="Section title" />
+            <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="Section e.g. Shortlisted-1 (Sheer + Chair Fabric)" />
             <button type="button" class="nx-btn" onclick="hopManualDocAddLine(${si})">+ Line</button>
           </div>
-          <table class="hop-comm-table">
-            <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Rate</th><th>Disc%</th><th>GST%</th><th></th></tr></thead>
+          <table class="hop-comm-table hop-comm-table--form">
+            <thead><tr>
+              <th class="cen">Sl.</th><th>Item Description</th><th class="num">Qty.</th><th class="cen">Unit</th>
+              <th class="num">Project Rate</th><th class="cen">Discount</th><th class="cen">GST %</th><th></th>
+            </tr></thead>
             <tbody>${sec.lines.map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true)).join('')}</tbody>
           </table>
         </div>`).join('');
@@ -668,7 +693,8 @@
     return `
       <div class="hop-manual-doc">
         <p id="hop-manual-doc-err" class="nx-oc-error"></p>
-        <div class="hop-manual-doc-grid">
+        <div class="hop-manual-doc-sticky">
+          <div class="hop-manual-doc-grid">
           <label><span>Customer *</span>
             <select id="hop-manual-customer" class="nx-input" onchange="hopManualDocSetCustomer(this.value)">
               <option value="">Select customer</option>${custOpts}
@@ -676,8 +702,9 @@
           <label><span>Date</span>
             <input type="date" class="nx-input" value="${foEscapeText(d.txDate)}" onchange="hopManualDocSetField('txnDate',this.value)" /></label>
         </div>
-        ${isComm ? `<label class="hop-manual-wide"><span>Intro / cover note</span>
-          <textarea class="nx-input" rows="3" oninput="hopManualDocSetField('notes',this.value)">${foEscapeText(d.notes)}</textarea></label>` : ''}
+        </div>
+        ${isComm ? `<label class="hop-manual-wide"><span>Cover letter (Dear Sir…)</span>
+          <textarea class="nx-input" rows="4" oninput="hopManualDocSetField('notes',this.value)">${foEscapeText(d.notes)}</textarea></label>` : ''}
         ${linesBlock}
         <label class="hop-manual-wide"><span>Terms & conditions</span>
           <textarea class="nx-input" rows="3" oninput="hopManualDocSetField('docTerms',this.value)">${foEscapeText(d.docTerms)}</textarea></label>
