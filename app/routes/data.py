@@ -2345,16 +2345,26 @@ def extract_order_sheet_item_key(material_description: str) -> str | None:
     tc = tc_match.group(1)
     remainder = text[: tc_match.start()].strip()
 
-    # Glued packs 1+2DB and glued forms DBSET/SBSET — `\b` right after DB
-    # misses DBSET (D-B-S are all word chars).
-    size_match = re.search(
-        r"(?:(?<=\d\+\d)|(?<![A-Z0-9]))(SB|DB|DBL|KS|KB|KDB|QB)(?:SET|SETS|BS|FS)?\b",
+    # Glued fitted-sheet codes: KSFST183X198+30 / DBFST… (no word-break after KS)
+    fst_match = re.search(
+        r"(?<![A-Z0-9])(SB|DB|DBL|KS|KB|KDB|QB)FST(?=\d|X|\b)",
         remainder,
+        re.IGNORECASE,
     )
-    size = size_match.group(1) if size_match else None
+    size = None
+    if fst_match:
+        size = fst_match.group(1).upper()
+    else:
+        # Glued packs 1+2DB and glued forms DBSET/SBSET — `\b` right after DB
+        # misses DBSET (D-B-S are all word chars).
+        size_match = re.search(
+            r"(?:(?<=\d\+\d)|(?<![A-Z0-9]))(SB|DB|DBL|KS|KB|KDB|QB)(?:SET|SETS|BS|FS)?\b",
+            remainder,
+        )
+        size = size_match.group(1) if size_match else None
     if size == "DBL":
         size = "DB"
-    elif size in {"KDB", "QB"}:
+    elif size in {"KDB", "QB", "KB"}:
         size = "KS"
     elif not size:
         if re.search(r"\bDUVET\b", remainder):
@@ -2601,6 +2611,9 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
         raise ValueError("doc_type must be 'SO' or 'CI'")
 
     items: list[dict[str, Any]] = []
+    # Page-end brand left alone (e.g. "FLFIEST") while next page starts mid-line
+    # with SN + "1+2 KSFST…" — hold prefix and prepend to the next SN row.
+    pending_prefix: str | None = None
     try:
         with pdfplumber.open(path) as pdf:
             for page in pdf.pages:
@@ -2631,6 +2644,8 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                             description_cell = row[1]
                             # Any SN can split across a page: last row of page N is
                             # truncated, first leftover row of page N+1 has no SN.
+                            # Inverse split also happens: brand ("FLFIEST") left on
+                            # page N with empty SN; page N+1 has SN + remainder.
                             if not serial_no.isdigit():
                                 continuation = _clean_pdf_cell_text(description_cell)
                                 if items and _ci_should_stitch_page_break(
@@ -2640,6 +2655,9 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                                     merged = f"{items[-1]['item_name']} {continuation}".strip()
                                     items[-1]["item_name"] = merged
                                     items[-1]["item_key"] = extract_order_sheet_item_key(merged)
+                                    pending_prefix = None
+                                elif continuation and _ci_text_is_page_prefix(continuation):
+                                    pending_prefix = continuation
                                 continue
                             code = None
                             qty_cell, net_value_cell = row[4], row[8]
@@ -2688,6 +2706,17 @@ def parse_bombay_dyeing_so_ci_line_items(path: str | Path, doc_type: str) -> lis
                                     line_total = round(taxable_for_check + igst_amt, 2)
 
                         full_description = _clean_pdf_cell_text(description_cell)
+                        if (
+                            doc_type == "CI"
+                            and pending_prefix
+                            and full_description
+                            and _ci_line_missing_leading_brand(full_description)
+                        ):
+                            full_description = f"{pending_prefix} {full_description}".strip()
+                            pending_prefix = None
+                        elif doc_type == "CI" and pending_prefix:
+                            # Next SN already has a brand — drop stale prefix
+                            pending_prefix = None
                         qty = _clean_pdf_cell_number(qty_cell)
                         net_value = _clean_pdf_cell_number(net_value_cell)
                         if not full_description or qty is None or net_value is None:
@@ -2853,6 +2882,48 @@ def _ci_text_is_page_continuation(text: str) -> bool:
     if upper in {"C", "TC", "T C", "T"}:
         return True
     if re.match(r"^\d{3,4}[A-Z]{2,4}", upper):
+        return True
+    # Mid-description remainder (size/pack) that belongs on the previous SN
+    if re.match(r"^(?:1\+2|1\+1|(?:KS|DB|SB|KB)FST|\d{2,4}\s*[Xx×])", upper):
+        return True
+    return False
+
+
+def _ci_text_is_page_prefix(text: str) -> bool:
+    """True when an SN-empty row is the brand START of the *next* line.
+
+    Commercial Invoice (1).PDF page 2 ends with description ``FLFIEST`` (UoM SET)
+    and page 3 opens SN 14 as ``1+2 KSFST…`` — brand must be held, not dropped
+    or wrongly stitched onto the previous complete SN.
+    """
+    upper = _clean_pdf_cell_text(text).upper()
+    if not upper or _ci_is_footer_text(upper) or len(upper) > 48:
+        return False
+    if _ci_design_colour_tokens(upper):
+        return False
+    if re.search(r"\d{2,4}\s*[Xx×]\s*\d{2,4}", upper):
+        return False
+    if re.search(r"(?<![A-Z0-9])(KS|DB|SB|KB)FST", upper):
+        return False
+    # Remainder of previous line, not a next-line brand
+    if re.match(r"^(?:1\+2|1\+1|\d)", upper):
+        return False
+    tokens = upper.split()
+    if not tokens or not re.match(r"^[A-Z]{2,}$", tokens[0]):
+        return False
+    return True
+
+
+def _ci_line_missing_leading_brand(name: str) -> bool:
+    """True when a SN row description starts mid-line (brand left on prior page)."""
+    upper = (name or "").strip().upper()
+    if not upper:
+        return False
+    if re.match(r"^(?:1\+2|1\+1)\b", upper):
+        return True
+    if re.match(r"^(?:KS|DB|SB|KB)FST", upper):
+        return True
+    if re.match(r"^\d{2,4}\s*[Xx×]", upper):
         return True
     return False
 
