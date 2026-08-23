@@ -709,7 +709,7 @@
         <label class="hop-manual-wide"><span>Terms & conditions</span>
           <textarea class="nx-input" rows="3" oninput="hopManualDocSetField('docTerms',this.value)">${foEscapeText(d.docTerms)}</textarea></label>
         <div class="hop-manual-doc-foot">
-          <strong>Grand total: ${hopPreviewMoney(grand)}</strong>
+          <strong id="hop-manual-doc-grand">Grand total: ${hopPreviewMoney(grand)}</strong>
           <div class="hop-manual-doc-btns">
             <button type="button" class="nx-btn" onclick="openHopView('${foEscapeText(md.returnView || 'sale_estimates')}')">Cancel</button>
             <button type="button" class="nx-btn nx-btn-primary" onclick="hopManualDocSave()">Save & preview</button>
@@ -721,6 +721,11 @@
   function hopManualDocRefresh(customers, firmTerms) {
     const el = document.getElementById('hop-manual-doc-body');
     if (el) el.innerHTML = hopManualDocRenderBody(customers, firmTerms);
+  }
+
+  function hopManualDocUpdateGrandTotal() {
+    const el = document.getElementById('hop-manual-doc-grand');
+    if (el) el.textContent = `Grand total: ${hopPreviewMoney(hopManualDocCalcGrand())}`;
   }
 
   function hopManualDocSetCustomer(v) {
@@ -741,7 +746,9 @@
     const bucket = si >= 0 ? d.sections?.[si]?.lines : d.lines;
     if (!bucket?.[li]) return;
     bucket[li][key] = val;
-    hopManualDocRefresh(hopState.manualDocCustomers, hopState.manualDocFirmTerms);
+    if (key === 'qty' || key === 'rate' || key === 'discount_pct' || key === 'tax_pct') {
+      hopManualDocUpdateGrandTotal();
+    }
   }
 
   function hopManualDocAddSection() {
