@@ -752,6 +752,21 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             """
         )
 
+        for col, ddl in [
+            ("delivery_terms", "TEXT"),
+        ]:
+            _ensure_column(conn, "hop_firm_profile", col, ddl)
+
+        for col, ddl in [
+            ("shipping_amount", "REAL DEFAULT 0"),
+            ("discount_amount", "REAL DEFAULT 0"),
+            ("discount_pct", "REAL DEFAULT 0"),
+            ("round_off", "REAL DEFAULT 0"),
+            ("doc_terms", "TEXT"),
+            ("delivery_terms", "TEXT"),
+        ]:
+            _ensure_column(conn, "hop_party_transactions", col, ddl)
+
         # Manual commission + TDS against a tax invoice (Sale Invoice)
         conn.execute(
             """

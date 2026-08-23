@@ -92,8 +92,9 @@ def upsert_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: di
         """
         INSERT INTO hop_firm_profile (
             workspace_id, firm_name, address, phone, email, gstin, state, pan,
-            bank_name, bank_account, bank_ifsc, bank_holder, logo_url, terms_default, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            bank_name, bank_account, bank_ifsc, bank_holder, logo_url, terms_default,
+            delivery_terms, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(workspace_id) DO UPDATE SET
             firm_name=excluded.firm_name,
             address=excluded.address,
@@ -108,6 +109,7 @@ def upsert_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: di
             bank_holder=COALESCE(NULLIF(excluded.bank_holder,''), hop_firm_profile.bank_holder),
             logo_url=COALESCE(NULLIF(excluded.logo_url,''), hop_firm_profile.logo_url),
             terms_default=COALESCE(NULLIF(excluded.terms_default,''), hop_firm_profile.terms_default),
+            delivery_terms=COALESCE(NULLIF(excluded.delivery_terms,''), hop_firm_profile.delivery_terms),
             updated_at=datetime('now')
         """,
         (
@@ -125,8 +127,28 @@ def upsert_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: di
             _clean(payload.get("bank_holder")),
             _clean(payload.get("logo_url")),
             _clean(payload.get("terms_default")),
+            _clean(payload.get("delivery_terms")),
         ),
     )
+
+
+def patch_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Settings screen save — overwrites provided fields (incl. logo / banking)."""
+    existing = get_firm_profile(conn, workspace_id)
+    merged = dict(existing)
+    field_map = (
+        "firm_name", "address", "phone", "email", "gstin", "state", "pan",
+        "bank_name", "bank_account", "bank_ifsc", "bank_holder", "logo_url",
+        "terms_default", "delivery_terms",
+    )
+    for key in field_map:
+        if key in payload:
+            merged[key] = _clean(payload.get(key))
+    if not _clean(merged.get("firm_name")):
+        merged["firm_name"] = "House of Prizm"
+    upsert_firm_profile(conn, workspace_id, merged)
+    conn.commit()
+    return get_firm_profile(conn, workspace_id)
 
 
 def replace_txn_lines(
@@ -193,6 +215,7 @@ def get_firm_profile(conn: sqlite3.Connection, workspace_id: str) -> dict[str, A
         "bank_holder": "",
         "logo_url": "",
         "terms_default": "Thanks for doing business with us!",
+        "delivery_terms": "",
     }
 
 
@@ -263,9 +286,16 @@ def build_txn_preview(
         qty_total += qty
 
     header_total = float(h.get("total_amount") or 0)
+    shipping = float(h.get("shipping_amount") or 0)
+    doc_discount = float(h.get("discount_amount") or 0)
+    doc_discount_pct = float(h.get("discount_pct") or 0)
+    if doc_discount <= 0.009 and doc_discount_pct > 0.009 and sub_total > 0:
+        doc_discount = round(sub_total * doc_discount_pct / 100.0, 2)
+    round_off = float(h.get("round_off") or 0)
     if not lines and header_total:
         sub_total = header_total
-    grand = header_total if header_total > 0.009 else (sub_total + tax_total)
+    computed_grand = sub_total + tax_total - doc_discount + shipping + round_off
+    grand = header_total if header_total > 0.009 else computed_grand
 
     tax_pct = 0.0
     if lines:
@@ -286,7 +316,9 @@ def build_txn_preview(
     party_email = _clean(party.get("email"))
 
     notes = _clean(h.get("notes"))
-    terms = _clean(firm.get("terms_default")) or "Thanks for doing business with us!"
+    doc_terms = _clean(h.get("doc_terms"))
+    delivery_terms = _clean(h.get("delivery_terms"))
+    terms = doc_terms or _clean(firm.get("terms_default")) or "Thanks for doing business with us!"
 
     from app.hop_doc_numbers import format_full_doc_number
 
@@ -355,10 +387,15 @@ def build_txn_preview(
             "sub_total": round(sub_total, 2),
             "tax_total": round(tax_total, 2),
             "tax_pct": tax_pct,
+            "discount_amount": round(doc_discount, 2),
+            "discount_pct": doc_discount_pct,
+            "shipping_amount": round(shipping, 2),
+            "round_off": round(round_off, 2),
             "grand_total": round(grand, 2),
             "amount_in_words": amount_in_words_inr(grand),
         },
         "terms": terms,
+        "delivery_terms": delivery_terms,
         "lines_missing": len(lines) == 0,
         "lines_missing_hint": (
             "Item rows are not loaded yet. Re-import your Vyapar .vyb backup "
@@ -481,7 +518,25 @@ def create_manual_party_document(
     if not computed_lines:
         raise ValueError("At least one valid line item is required")
 
-    grand = round(sub_total + tax_total, 2)
+    shipping = float(payload.get("shipping_amount") or 0)
+    doc_discount = float(payload.get("discount_amount") or 0)
+    doc_discount_pct = float(payload.get("discount_pct") or 0)
+    if doc_discount <= 0.009 and doc_discount_pct > 0.009 and sub_total > 0:
+        doc_discount = round(sub_total * doc_discount_pct / 100.0, 2)
+    round_off = float(payload.get("round_off") or 0)
+    grand = round(sub_total + tax_total - doc_discount + shipping + round_off, 2)
+
+    doc_terms = _clean(payload.get("doc_terms") or payload.get("terms"))
+    delivery_terms = _clean(payload.get("delivery_terms"))
+    if not doc_terms:
+        firm = get_firm_profile(conn, workspace_id)
+        doc_terms = _clean(firm.get("terms_default"))
+        if not delivery_terms:
+            delivery_terms = _clean(firm.get("delivery_terms"))
+    elif not delivery_terms:
+        firm = get_firm_profile(conn, workspace_id)
+        delivery_terms = _clean(firm.get("delivery_terms"))
+
     source_txn_id = next_manual_source_txn_id(conn, workspace_id)
     txn_number = _clean(payload.get("txn_number")) or next_manual_doc_number(
         conn, workspace_id, txn_type, txn_date
@@ -493,8 +548,10 @@ def create_manual_party_document(
         INSERT INTO hop_party_transactions (
             workspace_id, party_type, party_id, party_name, source_txn_id,
             txn_type, txn_label, txn_number, txn_date, total_amount,
-            balance_amount, status_text, notes, created_at, updated_at
-        ) VALUES (?, 'customer', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, datetime('now'), datetime('now'))
+            balance_amount, status_text, notes, shipping_amount, discount_amount,
+            discount_pct, round_off, doc_terms, delivery_terms,
+            created_at, updated_at
+        ) VALUES (?, 'customer', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
         """,
         (
             workspace_id,
@@ -508,6 +565,12 @@ def create_manual_party_document(
             grand,
             "Draft",
             notes,
+            shipping,
+            doc_discount,
+            doc_discount_pct,
+            round_off,
+            doc_terms,
+            delivery_terms,
         ),
     )
     party_txn_id = int(cur.lastrowid)

@@ -1751,6 +1751,25 @@ def commission_sale_invoices():
     return jsonify({"success": True, "data": {"rows": rows}})
 
 
+@hop_bp.route("/firm-profile", methods=["GET", "PATCH"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def firm_profile_route():
+    ensure_hop_schema(_db_path())
+    from app.hop_doc_preview import get_firm_profile, patch_firm_profile
+
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            row = get_firm_profile(conn, _ws())
+        return jsonify({"success": True, "data": row})
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = patch_firm_profile(conn, _ws(), _payload())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row})
+
+
 @hop_bp.route("/party-transactions", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
