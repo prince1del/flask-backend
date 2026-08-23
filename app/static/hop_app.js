@@ -4180,30 +4180,69 @@ function hopPreviewDate(ymd) {
 function hopPrintPartyTxnPreview() {
   const sheet = document.getElementById('hop-doc-preview-sheet');
   if (!sheet) return;
-  const w = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1000');
+  const meta = hopState.docPreviewMeta || {};
+  const title = meta.docNumber
+    ? `${meta.docTitle || 'Document'} — ${meta.docNumber}`
+    : (meta.docTitle || 'Document Preview');
+  const styles = (window.hopDocPrintStylesheet || hopDocPrintStylesheetFallback)();
+  const w = window.open('', '_blank', 'noopener,noreferrer,width=920,height=1100');
   if (!w) {
     window.print();
     return;
   }
-  w.document.write(`<!DOCTYPE html><html><head><title>Preview</title>
-    <style>
-      body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:16px;background:#fff;}
-      table{width:100%;border-collapse:collapse;}
-      th,td{border:1px solid #94a3b8;padding:5px 6px;font-size:11px;}
-      th{background:#1d4ed8;color:#fff;text-align:left;}
-      .num{text-align:right;font-variant-numeric:tabular-nums;}
-      .cen{text-align:center;}
-      .hop-doc-comm-unified{min-width:780px;}
-      .hop-doc-comm-section-row td{background:#f1f5f9;font-weight:800;}
-      .hop-doc-comm-total-row td{background:#f8fafc;font-weight:700;}
-      .hop-doc-comm-grand-row td{background:#0f172a;color:#fff;font-weight:800;}
-      .hop-doc-letter p{margin:0 0 8px;line-height:1.5;}
-      .muted{color:#64748b;font-size:12px;}
-      @media print{body{margin:0}}
-    </style></head><body>${sheet.innerHTML}</body></html>`);
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${foEscapeText(title)}</title>
+    <style>${styles}</style></head><body>${sheet.outerHTML}</body></html>`);
   w.document.close();
   w.focus();
-  setTimeout(() => { w.print(); }, 250);
+  setTimeout(() => { w.print(); }, 350);
+}
+
+function hopDocPrintStylesheetFallback() {
+  return `
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:16px;background:#fff;}
+    table{width:100%;border-collapse:collapse;}
+    th,td{border:1px solid #94a3b8;padding:5px 6px;font-size:11px;}
+    th{background:#1d4ed8;color:#fff;text-align:left;}
+    .num{text-align:right;font-variant-numeric:tabular-nums;}
+    .cen{text-align:center;}
+    @media print{body{margin:0;padding:0;}}`;
+}
+
+function hopDownloadDocPreview() {
+  const sheet = document.getElementById('hop-doc-preview-sheet');
+  if (!sheet) return;
+  const meta = hopState.docPreviewMeta || {};
+  const safeName = String(meta.docNumber || meta.docTitle || 'document')
+    .replace(/[^\w\-./]+/g, '_')
+    .slice(0, 80);
+  const title = meta.docNumber
+    ? `${meta.docTitle || 'Document'} — ${meta.docNumber}`
+    : (meta.docTitle || 'Document Preview');
+  const styles = (window.hopDocPrintStylesheet || hopDocPrintStylesheetFallback)();
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${foEscapeText(title)}</title>
+    <style>${styles}</style></head><body>${sheet.outerHTML}</body></html>`;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safeName || 'quotation'}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  if (typeof nexoraToast === 'function') {
+    nexoraToast('Downloaded — open file and Print → Save as PDF', 'ok');
+  }
+}
+
+function hopUpdateDocPreviewHead(data) {
+  const head = document.querySelector('#hop-party-txn-overlay .hop-doc-preview-head-title');
+  if (!head || !data) return;
+  const header = data.header || {};
+  const title = header.doc_title || 'Document';
+  const num = header.doc_number || '';
+  head.textContent = num ? `${title} · ${num}` : title;
+  hopState.docPreviewMeta = { docTitle: title, docNumber: num };
 }
 
 async function hopOpenPartyTxnDetail(txnId) {
@@ -4231,15 +4270,16 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
     : '';
   overlay.innerHTML = `
     <div class="hop-doc-preview-backdrop" onclick="hopClosePartyTxnDetail()"></div>
-    <div class="hop-doc-preview-modal" role="dialog" aria-modal="true" aria-label="Preview">
+    <div class="hop-doc-preview-modal" role="dialog" aria-modal="true" aria-label="Document preview">
       <div class="hop-doc-preview-head">
-        <strong>Preview</strong>
+        <h2 class="hop-doc-preview-head-title">Document Preview</h2>
         <button type="button" class="hop-doc-preview-x" onclick="hopClosePartyTxnDetail()" aria-label="Close">&times;</button>
       </div>
       <div class="hop-doc-preview-scroll" id="hop-doc-preview-body">
         <div class="hop-doc-preview-loading">Loading document…</div>
       </div>
       <div class="hop-doc-preview-foot">
+        <button type="button" class="nx-btn" onclick="hopDownloadDocPreview()">Download</button>
         <button type="button" class="nx-btn" onclick="hopPrintPartyTxnPreview()">Print</button>
         ${openListBtn}
         <button type="button" class="nx-btn hop-doc-preview-close" onclick="hopClosePartyTxnDetail()">Close</button>
@@ -4255,6 +4295,7 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
     const data = await hopApi(url);
     const body = document.getElementById('hop-doc-preview-body');
     if (body) body.innerHTML = (window.hopRenderDocPreviewHtml || hopRenderDocPreviewHtml)(data);
+    hopUpdateDocPreviewHead(data);
   } catch (e) {
     const body = document.getElementById('hop-doc-preview-body');
     if (body) {
@@ -4390,10 +4431,7 @@ function hopRenderDocPreviewHtml(data) {
             <div class="hop-doc-meta-label">${foEscapeText(title)} Amount in Words</div>
             <div>${foEscapeText(totals.amount_in_words || '')}</div>
           </div>
-          <div class="hop-doc-section">
-            <div class="hop-doc-meta-label">Terms and Conditions</div>
-            <div>${foEscapeText(data.terms || 'Thanks for doing business with us!')}</div>
-          </div>
+          ${data.terms ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Terms and Conditions</div><div>${foEscapeText(data.terms)}</div></div>` : ''}
           ${bankHtml}
         </div>
         <div class="hop-doc-totals">
@@ -9726,6 +9764,7 @@ window.hopFilterParties = hopFilterParties;
 window.hopOpenPartyTxnDetail = hopOpenPartyTxnDetail;
 window.hopOpenSaleDocPreview = hopOpenSaleDocPreview;
 window.hopDeleteManualDoc = hopDeleteManualDoc;
+window.hopDownloadDocPreview = hopDownloadDocPreview;
 window.hopClosePartyTxnDetail = hopClosePartyTxnDetail;
 window.hopOpenPartyTxnInModule = hopOpenPartyTxnInModule;
 window.hopPrintPartyTxnPreview = hopPrintPartyTxnPreview;

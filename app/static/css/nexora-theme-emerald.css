@@ -441,6 +441,9 @@ html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executiv
 html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .hop-doc-preview-modal {
   color: #1F1F1F;
 }
+html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) .hop-doc-preview-head-title {
+  color: #1F1F1F !important;
+}
 
 /* ========== Parties (full light surface — was broken/mixed) ========== */
 html:is([data-hop-theme="emerald"], [data-hop-theme="nexora"]) :is(#hop-executive-workspace, #dashboard) .hop-view--parties,

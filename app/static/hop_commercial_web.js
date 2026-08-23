@@ -388,10 +388,7 @@
               <div class="hop-doc-meta-label">${foEscapeText(title)} Amount in Words</div>
               <div>${foEscapeText(totals.amount_in_words || '')}</div>
             </div>
-            <div class="hop-doc-section">
-              <div class="hop-doc-meta-label">Terms and Conditions</div>
-              <div>${foEscapeText(data.terms || 'Thanks for doing business with us!')}</div>
-            </div>
+            ${data.terms ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Terms and Conditions</div><div>${foEscapeText(data.terms)}</div></div>` : ''}
             ${bankHtml}
           </div>
           <div class="hop-doc-totals">
@@ -955,7 +952,6 @@
   function hopManualDocRenderBody(customers, firmTerms) {
     const md = hopState.manualDoc || {};
     const d = hopState.manualDocDraft || {};
-    if (!d.docTerms && firmTerms) d.docTerms = firmTerms;
     const isComm = md.mode === 'commercial' && md.txnType === 27;
     const docNoLabel = hopManualDocNumberLabel(md.txnType);
     const custOpts = (customers || []).map((c) =>
@@ -1039,7 +1035,7 @@
         <div class="hop-vyp-bottom">
           <div class="hop-vyp-bottom-left">
             <label class="hop-vyp-field"><span>Terms & conditions</span>
-              <textarea class="hop-vyp-control" rows="4" oninput="hopManualDocSetField('docTerms',this.value)">${foEscapeText(d.docTerms)}</textarea>
+              <textarea class="hop-vyp-control" rows="4" oninput="hopManualDocSetField('docTerms',this.value)" placeholder="${foEscapeAttr(firmTerms ? 'Default from settings — leave blank for none' : 'Optional')}">${foEscapeText(d.docTerms)}</textarea>
             </label>
           </div>
           <div class="hop-vyp-bottom-right">
@@ -1258,6 +1254,58 @@
     hopMountManualDocOverlay();
     if (mount) mount.innerHTML = '';
   }
+
+  /* ---------- Print / download stylesheet (full document, not modal chrome) ---------- */
+  function hopDocPrintStylesheet() {
+    return `
+      *{box-sizing:border-box;}
+      body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:0;padding:16px;background:#fff;font-size:13px;line-height:1.45;}
+      .hop-doc-preview-sheet{background:#fff;border:none;border-radius:0;padding:0;max-width:860px;margin:0 auto;color:#0f172a;}
+      .hop-doc-firm{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:8px;}
+      .hop-doc-firm-name{font-size:1.15rem;font-weight:700;margin-bottom:4px;}
+      .hop-doc-muted{color:#64748b;font-size:12px;}
+      .hop-doc-logo{width:64px;height:64px;border-radius:8px;background:linear-gradient(145deg,#1d4ed8,#0ea5e9);color:#fff;display:grid;place-items:center;font-weight:800;font-size:1.4rem;}
+      .hop-doc-logo-img,.hop-doc-sign-img{max-width:120px;max-height:64px;object-fit:contain;}
+      .hop-doc-title{text-align:center;color:#1d4ed8;font-size:1.45rem;font-weight:800;margin:14px 0 12px;}
+      .hop-doc-meta{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;}
+      .hop-doc-meta-label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;}
+      .hop-doc-party-name{font-weight:700;font-size:14px;margin:2px 0 4px;}
+      .hop-doc-meta-right{text-align:right;}
+      table{width:100%;border-collapse:collapse;margin:8px 0 14px;}
+      .hop-doc-table th{background:#1d4ed8;color:#fff;text-align:left;padding:8px;font-size:12px;font-weight:700;}
+      .hop-doc-table td{border:1px solid #cbd5e1;padding:7px 8px;vertical-align:top;}
+      .hop-doc-table .num,.hop-doc-table th:nth-child(n+4){text-align:right;}
+      .hop-doc-table tfoot td{background:#f8fafc;font-weight:600;}
+      .hop-doc-item-name{font-weight:600;}
+      .hop-doc-comm-wrap{overflow:visible;margin:8px 0 14px;}
+      .hop-doc-comm-unified{min-width:0;font-size:11px;}
+      .hop-doc-comm-unified th,.hop-doc-comm-unified td{border:1px solid #94a3b8;padding:5px 6px;vertical-align:middle;}
+      .hop-doc-comm-unified th{background:#1d4ed8;color:#fff;font-size:11px;font-weight:700;}
+      .hop-doc-comm-unified .cen{text-align:center;}
+      .hop-doc-comm-unified .num{text-align:right;font-variant-numeric:tabular-nums;}
+      .hop-doc-comm-section-row td{background:#f1f5f9;font-weight:800;}
+      .hop-doc-comm-total-row td{background:#f8fafc;font-weight:700;}
+      .hop-doc-bottom{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;margin-top:8px;page-break-inside:avoid;}
+      .hop-doc-bottom--commercial{grid-template-columns:1.2fr .8fr;}
+      .hop-doc-section{margin-bottom:12px;}
+      .hop-doc-totals,.hop-comm-doc-totals{border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;background:#f8fafc;margin:8px 0 14px;max-width:420px;margin-left:auto;}
+      .hop-doc-tot-row,.hop-comm-doc-tot-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #e2e8f0;}
+      .hop-doc-tot-grand,.hop-comm-doc-tot-grand{border-bottom:none;font-weight:800;font-size:1.05rem;margin-top:4px;}
+      .hop-comm-doc-tot-grand strong{color:#1d4ed8;}
+      .hop-doc-sign-block,.hop-doc-sign{margin-top:12px;text-align:right;}
+      .hop-doc-sign-space{height:48px;}
+      .hop-doc-letter p{margin:0 0 8px;line-height:1.5;}
+      .hop-doc-bank{margin-top:10px;font-size:12px;}
+      @media print{
+        body{padding:0;margin:0;}
+        .hop-doc-preview-sheet{max-width:none;}
+        .hop-doc-comm-wrap{overflow:visible;}
+        .hop-doc-bottom,.hop-doc-comm-wrap{page-break-inside:avoid;}
+        tr{page-break-inside:avoid;}
+      }`;
+  }
+
+  window.hopDocPrintStylesheet = hopDocPrintStylesheet;
 
   /* ---------- Expose globals (hop_app.js loaders + onclick) ---------- */
   window.hopRenderDocPreviewHtml = hopRenderDocPreviewHtml;

@@ -109,8 +109,8 @@ def upsert_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: di
             bank_ifsc=COALESCE(NULLIF(excluded.bank_ifsc,''), hop_firm_profile.bank_ifsc),
             bank_holder=COALESCE(NULLIF(excluded.bank_holder,''), hop_firm_profile.bank_holder),
             logo_url=COALESCE(NULLIF(excluded.logo_url,''), hop_firm_profile.logo_url),
-            terms_default=COALESCE(NULLIF(excluded.terms_default,''), hop_firm_profile.terms_default),
-            delivery_terms=COALESCE(NULLIF(excluded.delivery_terms,''), hop_firm_profile.delivery_terms),
+            terms_default=excluded.terms_default,
+            delivery_terms=excluded.delivery_terms,
             business_type=COALESCE(NULLIF(excluded.business_type,''), hop_firm_profile.business_type),
             business_category=COALESCE(NULLIF(excluded.business_category,''), hop_firm_profile.business_category),
             pincode=COALESCE(NULLIF(excluded.pincode,''), hop_firm_profile.pincode),
@@ -300,7 +300,7 @@ def get_firm_profile(conn: sqlite3.Connection, workspace_id: str) -> dict[str, A
         "bank_ifsc": "",
         "bank_holder": "",
         "logo_url": "",
-        "terms_default": "Thanks for doing business with us!",
+        "terms_default": "",
         "delivery_terms": "",
         "business_type": "",
         "business_category": "",
@@ -429,7 +429,10 @@ def build_txn_preview(
     notes = _clean(h.get("notes"))
     doc_terms = _clean(h.get("doc_terms"))
     delivery_terms = _clean(h.get("delivery_terms"))
-    terms = doc_terms or _clean(firm.get("terms_default")) or "Thanks for doing business with us!"
+    if doc_terms:
+        terms = doc_terms
+    else:
+        terms = _clean(firm.get("terms_default"))
 
     from app.hop_doc_numbers import format_full_doc_number
 
@@ -784,13 +787,15 @@ def create_manual_party_document(
     round_off = totals["round_off"]
     grand = totals["grand"]
 
-    doc_terms = _clean(payload.get("doc_terms") or payload.get("terms"))
-    delivery_terms = _clean(payload.get("delivery_terms"))
-    if not doc_terms:
+    doc_terms = ""
+    delivery_terms = ""
+    if "doc_terms" in payload or "terms" in payload:
+        doc_terms = _clean(payload.get("doc_terms") or payload.get("terms"))
+    else:
         firm = get_firm_profile(conn, workspace_id)
         doc_terms = _clean(firm.get("terms_default"))
-        if not delivery_terms:
-            delivery_terms = _clean(firm.get("delivery_terms"))
+    if "delivery_terms" in payload:
+        delivery_terms = _clean(payload.get("delivery_terms"))
     elif not delivery_terms:
         firm = get_firm_profile(conn, workspace_id)
         delivery_terms = _clean(firm.get("delivery_terms"))
@@ -902,8 +907,14 @@ def update_manual_party_document(
     round_off = totals["round_off"]
     grand = totals["grand"]
 
-    doc_terms = _clean(payload.get("doc_terms") or payload.get("terms") or h.get("doc_terms"))
-    delivery_terms = _clean(payload.get("delivery_terms") or h.get("delivery_terms"))
+    if "doc_terms" in payload or "terms" in payload:
+        doc_terms = _clean(payload.get("doc_terms") or payload.get("terms"))
+    else:
+        doc_terms = _clean(h.get("doc_terms"))
+    if "delivery_terms" in payload:
+        delivery_terms = _clean(payload.get("delivery_terms"))
+    else:
+        delivery_terms = _clean(h.get("delivery_terms"))
     txn_number = _clean(payload.get("txn_number")) or _clean(h.get("txn_number"))
     party_name = _clean(customer.get("company"))
 

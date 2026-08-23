@@ -497,6 +497,9 @@ html[data-hop-theme="bright"] :is(#hop-executive-workspace, #dashboard) .hop-the
 html[data-hop-theme="bright"] .hop-doc-preview-modal {
   color: #0f172a;
 }
+html[data-hop-theme="bright"] .hop-doc-preview-head-title {
+  color: #0f172a !important;
+}
 
 /* ========== Parties (full light surface — was broken/mixed) ========== */
 html[data-hop-theme="bright"] :is(#hop-executive-workspace, #dashboard) .hop-view--parties,
