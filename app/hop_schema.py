@@ -753,6 +753,12 @@ def ensure_hop_schema(db_path: str | Path) -> None:
         )
 
         for col, ddl in [
+            ("discount_pct", "REAL DEFAULT 0"),
+            ("section_title", "TEXT"),
+        ]:
+            _ensure_column(conn, "hop_txn_lines", col, ddl)
+
+        for col, ddl in [
             ("delivery_terms", "TEXT"),
             ("business_type", "TEXT"),
             ("business_category", "TEXT"),

@@ -161,6 +161,30 @@ def patch_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: dic
     return get_firm_profile(conn, workspace_id)
 
 
+def compute_line_amounts(
+    qty: float,
+    rate: float,
+    discount_pct: float = 0.0,
+    discount_amount: float = 0.0,
+    tax_pct: float = 0.0,
+) -> dict[str, float]:
+    """FAIRFIELD-style: gross = qty×rate; net = (gross−disc)×(1+GST%)."""
+    gross = round(qty * rate, 2)
+    disc = float(discount_amount or 0)
+    if float(discount_pct or 0) > 0.009:
+        disc = round(gross * float(discount_pct) / 100.0, 2)
+    taxable = max(0.0, gross - disc)
+    tax_amt = round(taxable * float(tax_pct or 0) / 100.0, 2)
+    line_total = round(taxable + tax_amt, 2)
+    return {
+        "gross": gross,
+        "discount_amount": disc,
+        "taxable": round(taxable, 2),
+        "tax_amount": tax_amt,
+        "line_total": line_total,
+    }
+
+
 def replace_txn_lines(
     conn: sqlite3.Connection,
     workspace_id: str,
@@ -177,9 +201,10 @@ def replace_txn_lines(
             """
             INSERT INTO hop_txn_lines (
                 workspace_id, source_txn_id, line_no, item_name, item_code, description, hsn,
-                qty, unit, rate, discount_amount, tax_pct, tax_amount, line_total,
+                qty, unit, rate, discount_amount, discount_pct, section_title,
+                tax_pct, tax_amount, line_total,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             """,
             (
                 workspace_id,
@@ -193,6 +218,8 @@ def replace_txn_lines(
                 _clean(line.get("unit")) or "Pcs",
                 float(line.get("rate") or 0),
                 float(line.get("discount_amount") or 0),
+                float(line.get("discount_pct") or 0),
+                _clean(line.get("section_title")),
                 float(line.get("tax_pct") or 0),
                 float(line.get("tax_amount") or 0),
                 float(line.get("line_total") or 0),
@@ -391,6 +418,8 @@ def build_txn_preview(
                 "unit": _clean(ln.get("unit")) or "Pcs",
                 "rate": float(ln.get("rate") or 0),
                 "discount_amount": float(ln.get("discount_amount") or 0),
+                "discount_pct": float(ln.get("discount_pct") or 0),
+                "section_title": _clean(ln.get("section_title")),
                 "tax_pct": float(ln.get("tax_pct") or 0),
                 "tax_amount": float(ln.get("tax_amount") or 0),
                 "line_total": float(ln.get("line_total") or 0),
@@ -507,10 +536,13 @@ def create_manual_party_document(
         if qty <= 0 or rate < 0:
             continue
         tax_pct = float(line.get("tax_pct") or 0)
+        disc_pct = float(line.get("discount_pct") or 0)
         disc = float(line.get("discount_amount") or 0)
-        taxable = max(0.0, (qty * rate) - disc)
-        tax_amt = round(taxable * tax_pct / 100.0, 2)
-        line_total = round(taxable + tax_amt, 2)
+        amounts = compute_line_amounts(qty, rate, disc_pct, disc, tax_pct)
+        taxable = amounts["taxable"]
+        tax_amt = amounts["tax_amount"]
+        line_total = amounts["line_total"]
+        disc = amounts["discount_amount"]
         sub_total += taxable
         tax_total += tax_amt
         computed_lines.append(
@@ -523,7 +555,9 @@ def create_manual_party_document(
                 "qty": qty,
                 "unit": _clean(line.get("unit")) or "Pcs",
                 "rate": rate,
+                "discount_pct": disc_pct,
                 "discount_amount": disc,
+                "section_title": _clean(line.get("section_title")),
                 "tax_pct": tax_pct,
                 "tax_amount": tax_amt,
                 "line_total": line_total,
