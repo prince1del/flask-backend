@@ -675,15 +675,36 @@
     hopManualDocUpdateGrandTotal();
   }
 
-  function hopManualDocUpdateSectionTotal(si) {
+  function hopManualDocSectionTotalValue(si) {
     const d = hopState.manualDocDraft;
     const sec = d?.sections?.[si];
-    if (!sec) return;
-    const total = round2(
+    if (!sec) return 0;
+    return round2(
       sec.lines.filter(hopManualDocLineFilled).reduce((s, ln) => s + hopManualDocLineCalc(ln).net, 0)
     );
+  }
+
+  function hopManualDocSectionTotalRowHtml(si) {
+    const total = hopManualDocSectionTotalValue(si);
+    const val = total > 0.009 ? hopCommMoney(total) : '—';
+    return `<tr class="hop-comm-form-total-row">
+      <td colspan="8" class="num"><strong>TOTAL:</strong></td>
+      <td class="num hop-comm-sec-total-cell" id="hop-comm-sec-total-${si}"><strong>${val}</strong></td>
+      <td></td>
+    </tr>`;
+  }
+
+  function hopManualDocUpdateSectionTotal(si) {
+    const total = hopManualDocSectionTotalValue(si);
     const el = document.getElementById(`hop-comm-sec-total-${si}`);
-    if (el) el.textContent = total > 0.009 ? `Section total: ${hopPreviewMoney(total)}` : '';
+    if (el) {
+      el.innerHTML = total > 0.009 ? `<strong>${hopCommMoney(total)}</strong>` : '<strong>—</strong>';
+    }
+  }
+
+  function hopManualDocUpdateAllSectionTotals() {
+    const d = hopState.manualDocDraft;
+    (d?.sections || []).forEach((_, si) => hopManualDocUpdateSectionTotal(si));
   }
 
   function hopManualDocLineHasDraft(ln) {
@@ -742,12 +763,9 @@
               <th class="num">Net</th><th></th>
             </tr></thead>
             <tbody id="hop-comm-tbody-${si}">${sec.lines.map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true)).join('')}</tbody>
+            <tfoot id="hop-comm-tfoot-${si}">${hopManualDocSectionTotalRowHtml(si)}</tfoot>
           </table>
           </div>
-          <p class="hop-comm-sec-total" id="hop-comm-sec-total-${si}">${(() => {
-            const t = round2(sec.lines.filter(hopManualDocLineFilled).reduce((s, ln) => s + hopManualDocLineCalc(ln).net, 0));
-            return t > 0.009 ? `Section total: ${hopPreviewMoney(t)}` : '';
-          })()}</p>
           <div class="hop-comm-section-actions">
             <button type="button" class="nx-btn nx-btn-primary hop-comm-add-item" onclick="hopManualDocAddLine(${si})">+ Add item to this section</button>
           </div>
@@ -800,6 +818,7 @@
   function hopManualDocUpdateGrandTotal() {
     const el = document.getElementById('hop-manual-doc-grand');
     if (el) el.textContent = `Grand total: ${hopPreviewMoney(hopManualDocCalcGrand())}`;
+    hopManualDocUpdateAllSectionTotals();
   }
 
   function hopManualDocSetCustomer(v) {
@@ -850,6 +869,7 @@
       if (tbody) {
         const li = d.sections[si].lines.length - 1;
         tbody.insertAdjacentHTML('beforeend', hopManualDocLineRowHtml(d.sections[si].lines[li], si, li, true));
+        hopManualDocUpdateSectionTotal(si);
         return;
       }
     } else if (d.lines) {
@@ -866,6 +886,7 @@
       if (!d.sections[si].lines.length) d.sections[si].lines.push(hopEmptyDocLine());
       if (document.getElementById(`hop-comm-tbody-${si}`)) {
         hopManualDocRefreshSectionTbody(si);
+        hopManualDocUpdateSectionTotal(si);
         hopManualDocUpdateGrandTotal();
         return;
       }
