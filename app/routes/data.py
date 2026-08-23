@@ -78,6 +78,49 @@ from app.verification import (
 
 data_blueprint = Blueprint("data", __name__)
 
+
+@data_blueprint.route("/api/v1/utils/scan-visiting-card", methods=["POST"])
+@require_jwt_auth
+def scan_visiting_card_generic() -> tuple[Response, int]:
+    """OCR a visiting card image -> structured fields, for any logged-in
+    account regardless of role/shell (Executive, Business, Distributor,
+    Retailer). Never auto-saves anywhere — caller reviews/edits in the UI
+    and saves through that shell's own normal create-party flow."""
+    upload = request.files.get("card_image") or request.files.get("file") or request.files.get("image")
+    if not upload or not getattr(upload, "filename", None):
+        return jsonify(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": "card_image file is required"}}
+        ), 400
+
+    from app.services.visiting_card_ocr import save_upload_temp, scan_visiting_card
+
+    path = None
+    try:
+        path = save_upload_temp(upload)
+        result = scan_visiting_card(path)
+        return jsonify({"success": True, "data": result}), 200
+    except MemoryError:
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": "OCR_OOM",
+                    "message": "Server ran out of memory reading the card. Add GEMINI_API_KEY on Render.",
+                },
+            }
+        ), 503
+    except Exception as exc:
+        return jsonify(
+            {"success": False, "error": {"code": "OCR_ERROR", "message": f"Card scan failed: {exc}"}}
+        ), 500
+    finally:
+        if path is not None:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
 HTML_TEMPLATE = """
 <!doctype html>
 <html>
