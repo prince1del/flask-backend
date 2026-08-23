@@ -4586,9 +4586,13 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   background:var(--nxt-bg,#0a1628);border-bottom:1px solid rgba(255,255,255,.1);
 }
 .hop-comm-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:4px;}
-.hop-comm-table--form{min-width:1040px;}
-.hop-comm-inp-article{min-width:120px;}
-.hop-comm-inp-desc{min-width:100px;}
+.hop-comm-table--form{min-width:1180px;}
+.hop-comm-table--form th:nth-child(2),
+.hop-comm-table--form td:nth-child(2){min-width:220px;width:220px;}
+.hop-comm-table--form th:nth-child(3),
+.hop-comm-table--form td:nth-child(3){min-width:180px;width:180px;}
+.hop-comm-inp-article{min-width:210px;}
+.hop-comm-inp-desc{min-width:170px;}
 .hop-comm-pc-disc{font-variant-numeric:tabular-nums;white-space:nowrap;padding:6px 8px !important;font-size:.78rem;color:#334155;}
 .hop-comm-amt,.hop-comm-net{font-variant-numeric:tabular-nums;white-space:nowrap;padding:6px 8px !important;font-size:.78rem;}
 .hop-comm-form-total-row td{

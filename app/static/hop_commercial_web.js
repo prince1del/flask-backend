@@ -118,8 +118,8 @@
           <td class="num">${hopCommQtyLabel(c.qty)}</td>
           <td class="cen">${foEscapeText(ln.unit || 'MTR')}</td>
           <td class="num">${hopCommMoney(c.rate)}</td>
-          <td class="num">${hopCommMoney(perPc)}</td>
           <td class="num">${hopCommMoney(c.gross)}</td>
+          <td class="num">${hopCommMoney(perPc)}</td>
           <td class="cen">${hopCommPctLabel(c.discPct)}</td>
           <td class="cen">${hopCommPctLabel(c.taxPct)}</td>
           <td class="num"><strong>${hopCommMoney(c.net)}</strong></td>
@@ -143,8 +143,8 @@
             <th class="num">Qty.</th>
             <th class="cen">Unit</th>
             <th class="num">Project Rate</th>
-            <th class="num">Per Pc after Disc.</th>
             <th class="num">Amount</th>
+            <th class="num">Per Pc after Disc.</th>
             <th class="cen">Discount</th>
             <th class="cen">GST %</th>
             <th class="num">Net Amount</th>
@@ -784,8 +784,8 @@
       <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="Qty" /></td>
       <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" /></td>
       <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="Rate" /></td>
-      ${showDisc ? `<td class="num hop-comm-pc-disc" id="hop-comm-pc-disc-${si}-${li}">${perPc}</td>` : ''}
       ${showDisc ? `<td class="num hop-comm-amt" id="hop-comm-amt-${si}-${li}">${amts.amount}</td>` : ''}
+      ${showDisc ? `<td class="num hop-comm-pc-disc" id="hop-comm-pc-disc-${si}-${li}">${perPc}</td>` : ''}
       ${showDisc ? `<td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>` : ''}
       <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></td>
       ${showDisc ? `<td class="num hop-comm-net" id="hop-comm-net-${si}-${li}">${amts.net === '—' ? '—' : `<strong>${amts.net}</strong>`}</td>` : ''}
@@ -816,7 +816,7 @@
           <table class="hop-comm-table hop-comm-table--form">
             <thead><tr>
               <th class="cen">Sl.</th><th>Article</th><th>Description</th><th class="num">Qty.</th><th class="cen">Unit</th>
-              <th class="num">Project Rate</th><th class="num">Per Pc after Disc.</th><th class="num">Amount</th><th class="cen">Discount</th><th class="cen">GST %</th>
+              <th class="num">Project Rate</th><th class="num">Amount</th><th class="num">Per Pc after Disc.</th><th class="cen">Discount</th><th class="cen">GST %</th>
               <th class="num">Net</th><th></th>
             </tr></thead>
             <tbody id="hop-comm-tbody-${si}">${sec.lines.map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true)).join('')}</tbody>
