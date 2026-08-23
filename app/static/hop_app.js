@@ -2066,6 +2066,10 @@ function hopSetMainFullpage(enabled) {
 
 /** Mobile / fullscreen back — closes overlays first, then pops view history. */
 function hopGoBack() {
+  if (document.getElementById('hop-inv-ctx-menu')) {
+    hopCloseInvRowContextMenu();
+    return;
+  }
   if (document.getElementById('hop-vyp-doc-overlay')) {
     if (typeof hopCloseManualDocOverlay === 'function') hopCloseManualDocOverlay();
     return;
@@ -7505,6 +7509,70 @@ function hopInvoiceSummary(rows) {
   return { total, received, balance, overdue, unpaid, count: rows.length };
 }
 
+function hopCloseInvRowContextMenu() {
+  document.getElementById('hop-inv-ctx-menu')?.remove();
+  document.removeEventListener('keydown', hopInvCtxEscHandler);
+}
+
+function hopInvCtxEscHandler(e) {
+  if (e.key === 'Escape') hopCloseInvRowContextMenu();
+}
+
+function hopShowInvRowContextMenu(e, opts) {
+  e.preventDefault();
+  e.stopPropagation();
+  hopCloseInvRowContextMenu();
+  const partyTxnId = Number(opts?.partyTxnId || 0);
+  const sourceTxnId = Number(opts?.sourceTxnId || 0);
+  const canEdit = !!opts?.canEdit;
+  const canPreview = !!opts?.canPreview;
+  if (!canPreview && !canEdit) return;
+
+  const menu = document.createElement('div');
+  menu.id = 'hop-inv-ctx-menu';
+  menu.className = 'hop-inv-ctx-menu';
+  menu.setAttribute('role', 'menu');
+
+  const label = opts?.label || 'Document';
+  let items = `<div class="hop-inv-ctx-head">${foEscapeText(label)}</div>`;
+  if (canPreview) {
+    items += `<button type="button" class="hop-inv-ctx-item" role="menuitem"
+      onclick="hopCloseInvRowContextMenu();hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId});">
+      <span class="hop-inv-ctx-ico">👁</span> View
+    </button>`;
+  }
+  if (canEdit) {
+    items += `<button type="button" class="hop-inv-ctx-item" role="menuitem"
+      onclick="hopCloseInvRowContextMenu();hopOpenManualDocEdit(${partyTxnId});">
+      <span class="hop-inv-ctx-ico">✎</span> Edit
+    </button>`;
+    items += `<button type="button" class="hop-inv-ctx-item" role="menuitem"
+      onclick="hopCloseInvRowContextMenu();hopOpenManualDocDuplicate(${partyTxnId});">
+      <span class="hop-inv-ctx-ico">⧉</span> Duplicate PI / Quotation
+    </button>`;
+    items += `<button type="button" class="hop-inv-ctx-item hop-inv-ctx-danger" role="menuitem"
+      onclick="hopCloseInvRowContextMenu();hopDeleteManualDoc(${partyTxnId});">
+      <span class="hop-inv-ctx-ico">🗑</span> Delete
+    </button>`;
+  }
+  menu.innerHTML = items;
+  document.body.appendChild(menu);
+
+  const rect = menu.getBoundingClientRect();
+  let left = e.clientX;
+  let top = e.clientY;
+  if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+  if (top + rect.height > window.innerHeight - 8) top = window.innerHeight - rect.height - 8;
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${Math.max(8, top)}px`;
+
+  document.addEventListener('keydown', hopInvCtxEscHandler);
+  setTimeout(() => {
+    document.addEventListener('click', hopCloseInvRowContextMenu, { once: true });
+    document.addEventListener('contextmenu', hopCloseInvRowContextMenu, { once: true });
+  }, 0);
+}
+
 function hopRenderInvoiceRows(rows) {
   const meta = hopSaleDocMeta();
   const empty = meta.empty || 'No invoices in this filter.';
@@ -7524,11 +7592,14 @@ function hopRenderInvoiceRows(rows) {
     const txnTypeNum = Number(r.txn_type || 0);
     const canEdit = partyTxnId > 0 && sourceTxnId < 0 && (txnTypeNum === 27 || txnTypeNum === 83);
     const canPreview = partyTxnId > 0 || sourceTxnId > 0;
+    const ctxMenu = (canPreview || canEdit)
+      ? ` oncontextmenu="hopShowInvRowContextMenu(event,{partyTxnId:${partyTxnId},sourceTxnId:${sourceTxnId},canEdit:${canEdit},canPreview:${canPreview},label:${JSON.stringify(party)}})"`
+      : '';
     const click = canPreview
-      ? ` class="inv-row is-clickable" role="button" tabindex="0" title="Click to preview"
+      ? ` class="inv-row is-clickable" role="button" tabindex="0" title="Click to preview · Right-click for actions"
          onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})"
-         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId});}"`
-      : ' class="inv-row"';
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId});}"${ctxMenu}`
+      : ` class="inv-row"${ctxMenu}`;
     const balCell = isNonReceivable ? '—' : hopMoney(r.balance);
     const dueCell = isNonReceivable ? '—' : hopCell(r.due_date);
     const payBtn = isNonReceivable
@@ -9820,6 +9891,8 @@ window.hopOpenPartyTxnDetail = hopOpenPartyTxnDetail;
 window.hopOpenSaleDocPreview = hopOpenSaleDocPreview;
 window.hopDeleteManualDoc = hopDeleteManualDoc;
 window.hopDownloadDocPreview = hopDownloadDocPreview;
+window.hopShowInvRowContextMenu = hopShowInvRowContextMenu;
+window.hopCloseInvRowContextMenu = hopCloseInvRowContextMenu;
 window.hopClosePartyTxnDetail = hopClosePartyTxnDetail;
 window.hopOpenPartyTxnInModule = hopOpenPartyTxnInModule;
 window.hopPrintPartyTxnPreview = hopPrintPartyTxnPreview;

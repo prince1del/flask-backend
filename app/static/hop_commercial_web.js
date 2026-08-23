@@ -692,45 +692,79 @@
     hopMountManualDocOverlay();
   }
 
+  function hopManualDocApplyApiData(data, opts) {
+    const editId = opts?.editId;
+    const duplicate = !!opts?.duplicate;
+    const d = hopState.manualDocDraft;
+    if (!d) return;
+    d.customerId = String(data.customer_id || '');
+    d.txnDate = duplicate
+      ? new Date().toISOString().slice(0, 10)
+      : (data.txn_date || d.txnDate);
+    if (duplicate) {
+      d.txnNumber = '';
+      d.txnNumberManual = false;
+    } else {
+      d.txnNumber = data.txn_number || '';
+      d.txnNumberManual = true;
+    }
+    d.notes = data.notes || '';
+    d.docTerms = data.doc_terms || '';
+    d.shippingAmount = Number(data.shipping_amount || 0) > 0 ? String(data.shipping_amount) : '';
+    d.shippingTaxPct = data.shipping_tax_pct != null && data.shipping_tax_pct !== '' ? String(data.shipping_tax_pct) : '18';
+    const mapLine = (ln) => ({
+      item_name: ln.item_name || '',
+      description: ln.description || '',
+      qty: ln.qty != null && ln.qty !== '' ? String(ln.qty) : '',
+      unit: ln.unit || 'MTR',
+      rate: ln.rate != null && ln.rate !== '' ? String(ln.rate) : '',
+      discount_pct: ln.discount_pct != null ? String(ln.discount_pct) : '0',
+      tax_pct: ln.tax_pct != null ? String(ln.tax_pct) : '5',
+      hsn: ln.hsn || '',
+    });
+    const mode = hopState.manualDoc?.mode || 'standard';
+    if (mode === 'commercial' && data.sections?.length) {
+      d.sections = data.sections.map((sec, si) => ({
+        title: sec.title || `Shortlisted-${si + 1}`,
+        lines: [...(sec.lines || []).map(mapLine), hopEmptyDocLine()],
+      }));
+    } else {
+      d.lines = [...(data.lines || []).map(mapLine), hopEmptyDocLine()];
+    }
+    if (editId) hopState.manualDoc.editId = Number(editId);
+    else if (duplicate) hopState.manualDoc.editId = null;
+  }
+
   async function hopOpenManualDocEdit(partyTxnId) {
     try {
       const data = await hopApi(`/api/v1/hop/party-transactions/${partyTxnId}`);
       const txnType = Number(data.txn_type || 27);
       const mode = data.mode === 'commercial' ? 'commercial' : 'standard';
       hopManualDocInit(txnType, mode);
-      hopState.manualDoc.editId = Number(partyTxnId);
       hopState.manualDoc.returnView = hopState.view || (txnType === 83 ? 'sale_proforma' : 'sale_estimates');
-      const d = hopState.manualDocDraft;
-      d.customerId = String(data.customer_id || '');
-      d.txnDate = data.txn_date || d.txnDate;
-      d.txnNumber = data.txn_number || '';
-      d.txnNumberManual = true;
-      d.notes = data.notes || '';
-      d.docTerms = data.doc_terms || '';
-      d.shippingAmount = Number(data.shipping_amount || 0) > 0 ? String(data.shipping_amount) : '';
-      d.shippingTaxPct = data.shipping_tax_pct != null && data.shipping_tax_pct !== '' ? String(data.shipping_tax_pct) : '18';
-      const mapLine = (ln) => ({
-        item_name: ln.item_name || '',
-        description: ln.description || '',
-        qty: ln.qty != null && ln.qty !== '' ? String(ln.qty) : '',
-        unit: ln.unit || 'MTR',
-        rate: ln.rate != null && ln.rate !== '' ? String(ln.rate) : '',
-        discount_pct: ln.discount_pct != null ? String(ln.discount_pct) : '0',
-        tax_pct: ln.tax_pct != null ? String(ln.tax_pct) : '5',
-        hsn: ln.hsn || '',
-      });
-      if (mode === 'commercial' && data.sections?.length) {
-        d.sections = data.sections.map((sec, si) => ({
-          title: sec.title || `Shortlisted-${si + 1}`,
-          lines: [...(sec.lines || []).map(mapLine), hopEmptyDocLine()],
-        }));
-      } else {
-        d.lines = [...(data.lines || []).map(mapLine), hopEmptyDocLine()];
-      }
+      hopManualDocApplyApiData(data, { editId: partyTxnId });
       hopMountManualDocOverlay();
     } catch (e) {
       if (typeof nexoraToast === 'function') nexoraToast(e?.message || 'Could not open document', 'err');
       else alert(e?.message || 'Could not open document');
+    }
+  }
+
+  async function hopOpenManualDocDuplicate(partyTxnId) {
+    try {
+      const data = await hopApi(`/api/v1/hop/party-transactions/${partyTxnId}`);
+      const txnType = Number(data.txn_type || 27);
+      const mode = data.mode === 'commercial' ? 'commercial' : 'standard';
+      hopManualDocInit(txnType, mode);
+      hopState.manualDoc.returnView = hopState.view || (txnType === 83 ? 'sale_proforma' : 'sale_estimates');
+      hopManualDocApplyApiData(data, { duplicate: true });
+      hopMountManualDocOverlay();
+      if (typeof nexoraToast === 'function') {
+        nexoraToast('Duplicate opened — change party/details and save as new document', 'ok');
+      }
+    } catch (e) {
+      if (typeof nexoraToast === 'function') nexoraToast(e?.message || 'Could not duplicate document', 'err');
+      else alert(e?.message || 'Could not duplicate document');
     }
   }
 
@@ -1313,6 +1347,7 @@
   window.renderHopManualDocCreateModule = renderHopManualDocCreateModule;
   window.hopOpenManualDocCreate = hopOpenManualDocCreate;
   window.hopOpenManualDocEdit = hopOpenManualDocEdit;
+  window.hopOpenManualDocDuplicate = hopOpenManualDocDuplicate;
   window.hopCloseManualDocOverlay = hopCloseManualDocOverlay;
   window.hopManualDocDelete = hopManualDocDelete;
   window.hopFirmGstOnInput = hopFirmGstOnInput;

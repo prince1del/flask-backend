@@ -6050,6 +6050,27 @@ html[data-hop-theme="custom"] .hop-add-party-choice span{
 .inv-row.is-clickable:hover{background:rgba(37,224,255,.07);}
 .inv-row.is-clickable:focus-visible{outline:2px solid rgba(37,224,255,.45);outline-offset:-2px;}
 .inv-row.is-selected{background:rgba(37,224,255,.12);}
+.hop-inv-ctx-menu{
+  position:fixed;z-index:18500;min-width:210px;
+  background:#fff;border:1px solid #cbd5e1;border-radius:10px;
+  box-shadow:0 16px 40px rgba(15,23,42,.22);padding:6px 0;
+  color:#0f172a;font-size:.88rem;
+}
+.hop-inv-ctx-head{
+  padding:8px 14px 6px;font-size:.72rem;font-weight:700;color:#64748b;
+  text-transform:uppercase;letter-spacing:.04em;
+  border-bottom:1px solid #e2e8f0;margin-bottom:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;
+}
+.hop-inv-ctx-item{
+  display:flex;align-items:center;gap:10px;width:100%;
+  border:none;background:transparent;text-align:left;
+  padding:9px 14px;cursor:pointer;color:#0f172a;font-size:.88rem;
+}
+.hop-inv-ctx-item:hover,.hop-inv-ctx-item:focus{background:#f1f5f9;outline:none;}
+.hop-inv-ctx-ico{width:18px;text-align:center;opacity:.85;}
+.hop-inv-ctx-danger{color:#b91c1c;}
+.hop-inv-ctx-danger:hover{background:#fef2f2;}
 .hop-comm-bar{
   flex:0 0 auto;
   display:flex;
