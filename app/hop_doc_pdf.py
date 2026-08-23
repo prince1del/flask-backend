@@ -315,6 +315,71 @@ class _HopPdf(FPDF):
         self.cell(0, 5, _t(f"Page {self.page_no()}"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
+def _format_doc_date(raw: str) -> str:
+    doc_date = _t(raw)
+    if len(doc_date) >= 10 and doc_date[4] == "-":
+        return f"{doc_date[8:10]}-{doc_date[5:7]}-{doc_date[0:4]}"
+    return doc_date or "-"
+
+
+def _draw_doc_meta_right(pdf: FPDF, y0: float, header: dict[str, Any]) -> float:
+    """Right-aligned No. / Date block — labels and values in fixed columns."""
+    epw = float(pdf.epw)
+    block_w = 92.0
+    x0 = pdf.l_margin + epw - block_w
+    label_w = 18.0
+    gap = 4.0
+    val_w = block_w - label_w - gap
+    row_h = 6.0
+
+    rows = (
+        ("No.", _t(header.get("doc_number") or "-")),
+        ("Date", _format_doc_date(header.get("doc_date") or "")),
+    )
+    y = y0
+    for label, value in rows:
+        pdf.set_xy(x0, y)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(*C_MUTED)
+        pdf.cell(label_w, row_h, label, align="R")
+        pdf.set_xy(x0 + label_w + gap, y)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(*C_INK)
+        if pdf.get_string_width(value) > val_w - 1:
+            pdf.set_font("Helvetica", "", 8)
+        pdf.cell(val_w, row_h, value, align="L")
+        y += row_h
+    return y
+
+
+def _draw_party_meta(pdf: FPDF, title: str, party: dict[str, Any], header: dict[str, Any]) -> None:
+    epw = float(pdf.epw)
+    left_w = epw * 0.55
+    y0 = pdf.get_y()
+
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*C_MUTED)
+    pdf.set_x(pdf.l_margin)
+    pdf.cell(left_w, 4, _t(f"{title} For"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(*C_INK)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(left_w, 5, _t(party.get("billing_name") or party.get("name") or "-"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    for bit in (
+        party.get("address"),
+        party.get("gstin") and f"GSTIN: {party.get('gstin')}",
+        party.get("phone") and f"Phone: {party.get('phone')}",
+    ):
+        if bit:
+            pdf.set_x(pdf.l_margin)
+            pdf.set_font("Helvetica", size=8)
+            pdf.set_text_color(*C_MUTED)
+            pdf.multi_cell(left_w, 4, _t(bit), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    y_left = pdf.get_y()
+    y_right = _draw_doc_meta_right(pdf, y0, header)
+    pdf.set_xy(pdf.l_margin, max(y_left, y_right) + 3)
+
+
 def build_preview_pdf(preview: dict[str, Any]) -> bytes:
     commercial = _is_commercial(preview)
     pdf = _HopPdf(orientation="L" if commercial else "P", unit="mm", format="A4")
@@ -338,47 +403,7 @@ def build_preview_pdf(preview: dict[str, Any]) -> bytes:
     pdf.set_text_color(*C_INK)
 
     pdf.ln(2)
-    epw = float(pdf.epw)
-    left_w = epw * 0.58
-    right_w = epw - left_w - 4
-    right_x = pdf.l_margin + left_w + 4
-    y0 = pdf.get_y()
-
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.set_text_color(*C_MUTED)
-    pdf.set_x(pdf.l_margin)
-    pdf.cell(left_w, 4, _t(f"{title} For"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.set_text_color(*C_INK)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(left_w, 5, _t(party.get("billing_name") or party.get("name") or "-"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    for bit in (
-        party.get("address"),
-        party.get("gstin") and f"GSTIN: {party.get('gstin')}",
-        party.get("phone") and f"Phone: {party.get('phone')}",
-    ):
-        if bit:
-            pdf.set_x(pdf.l_margin)
-            pdf.set_font("Helvetica", size=8)
-            pdf.set_text_color(*C_MUTED)
-            pdf.multi_cell(left_w, 4, _t(bit), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    y_left = pdf.get_y()
-
-    pdf.set_xy(right_x, y0)
-    pdf.set_font("Helvetica", size=9)
-    pdf.set_text_color(*C_INK)
-    label_w = min(28, right_w * 0.35)
-    val_w = right_w - label_w
-    pdf.cell(label_w, 5, "No.", align="R")
-    pdf.cell(val_w, 5, _t(header.get("doc_number") or "-"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_x(right_x)
-    pdf.cell(label_w, 5, "Date", align="R")
-    doc_date = _t(header.get("doc_date") or "")
-    if len(doc_date) >= 10 and doc_date[4] == "-":
-        doc_date = f"{doc_date[8:10]}-{doc_date[5:7]}-{doc_date[0:4]}"
-    pdf.cell(val_w, 5, doc_date or "-", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    y_right = pdf.get_y()
-    pdf.set_xy(pdf.l_margin, max(y_left, y_right) + 3)
+    _draw_party_meta(pdf, title, party, header)
 
     notes = _t(header.get("notes"))
     if notes:
