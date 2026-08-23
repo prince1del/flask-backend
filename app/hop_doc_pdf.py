@@ -10,6 +10,20 @@ from typing import Any
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
+# Match web preview (nexora-theme.css / hop_commercial_web.js)
+C_BLUE = (29, 78, 216)
+C_INK = (15, 23, 42)
+C_MUTED = (71, 85, 105)
+C_BORDER = (148, 163, 184)
+C_SECTION_BG = (241, 245, 249)
+C_TOTAL_ROW_BG = (248, 250, 252)
+C_WHITE = (255, 255, 255)
+
+FONT_BODY = 7.5
+FONT_HEADER = 8.0
+FONT_ITEM_NAME = 7.5
+FONT_ITEM_DESC = 7.0
+
 
 def _t(text: Any) -> str:
     s = str(text or "").strip()
@@ -125,16 +139,45 @@ def _row_height_for_item(
     item_name: str,
     description: str,
     *,
-    min_h: float = 6.0,
+    min_h: float = 7.0,
 ) -> float:
-    name_lines = _wrap_lines(pdf, item_name or "Item", item_col_w, font_style="B", font_size=6)
+    name_lines = _wrap_lines(pdf, item_name or "Item", item_col_w, font_style="B", font_size=FONT_ITEM_NAME)
     desc_text = _item_desc_text(description)
-    desc_lines = _wrap_lines(pdf, desc_text, item_col_w, font_style="", font_size=5.5) if desc_text else []
-    pad = 2.0
-    name_h = len(name_lines) * 3.2
-    desc_h = len(desc_lines) * 2.8 if desc_lines else 0
-    gap = 0.8 if desc_lines else 0
+    desc_lines = _wrap_lines(pdf, desc_text, item_col_w, font_style="", font_size=FONT_ITEM_DESC) if desc_text else []
+    pad = 2.4
+    name_h = len(name_lines) * 3.6
+    desc_h = len(desc_lines) * 3.2 if desc_lines else 0
+    gap = 0.6 if desc_lines else 0
     return max(min_h, pad + name_h + gap + desc_h)
+
+
+def _set_border_color(pdf: FPDF) -> None:
+    pdf.set_draw_color(*C_BORDER)
+
+
+def _draw_header_row(
+    pdf: FPDF,
+    cols: tuple[float, ...],
+    headers: tuple[str, ...],
+    aligns: tuple[str, ...],
+    *,
+    row_h: float = 8.0,
+) -> None:
+    y = pdf.get_y()
+    table_w = sum(cols)
+    pdf.set_fill_color(*C_BLUE)
+    pdf.set_draw_color(*C_BLUE)
+    pdf.rect(pdf.l_margin, y, table_w, row_h, style="F")
+    pdf.set_text_color(*C_WHITE)
+    pdf.set_font("Helvetica", "B", FONT_HEADER)
+    x = pdf.l_margin
+    text_y = y + (row_h - 4.2) / 2
+    for w, label, al in zip(cols, headers, aligns):
+        pdf.set_xy(x, text_y)
+        pdf.cell(w, 4.2, _t(label), align=al, border=0)
+        x += w
+    _set_border_color(pdf)
+    pdf.set_y(y + row_h)
 
 
 def _full_width_text(pdf: FPDF, h: float, text: str) -> None:
@@ -143,23 +186,24 @@ def _full_width_text(pdf: FPDF, h: float, text: str) -> None:
 
 
 def _draw_item_cell(pdf: FPDF, x: float, y: float, w: float, h: float, item_name: str, description: str) -> None:
+    _set_border_color(pdf)
     pdf.rect(x, y, w, h)
-    inner_x = x + 1.2
-    inner_w = max(6.0, w - 2.4)
-    ty = y + 1.6
-    pdf.set_text_color(15, 23, 42)
-    for line in _wrap_lines(pdf, item_name or "Item", inner_w, font_style="B", font_size=6):
+    inner_x = x + 1.4
+    inner_w = max(6.0, w - 2.8)
+    ty = y + 1.8
+    pdf.set_text_color(*C_INK)
+    for line in _wrap_lines(pdf, item_name or "Item", inner_w, font_style="B", font_size=FONT_ITEM_NAME):
         pdf.set_xy(inner_x, ty)
-        pdf.cell(inner_w, 3.2, line, border=0)
-        ty += 3.2
+        pdf.cell(inner_w, 3.6, line, border=0)
+        ty += 3.6
     desc_text = _item_desc_text(description)
     if desc_text:
-        ty += 0.4
-        pdf.set_text_color(100, 116, 139)
-        for line in _wrap_lines(pdf, desc_text, inner_w, font_style="", font_size=5.5):
+        ty += 0.5
+        pdf.set_text_color(*C_MUTED)
+        for line in _wrap_lines(pdf, desc_text, inner_w, font_style="", font_size=FONT_ITEM_DESC):
             pdf.set_xy(inner_x, ty)
-            pdf.cell(inner_w, 2.8, line, border=0)
-            ty += 2.8
+            pdf.cell(inner_w, 3.2, line, border=0)
+            ty += 3.2
 
 
 def _draw_table_row(
@@ -173,24 +217,25 @@ def _draw_table_row(
     item_name: str = "",
     item_desc: str = "",
     fill: bool = False,
-    header: bool = False,
+    fill_color: tuple[int, int, int] = C_WHITE,
+    bold_cols: set[int] | None = None,
 ) -> None:
     y = pdf.get_y()
     x = pdf.l_margin
-    if header:
-        pdf.set_fill_color(29, 78, 216)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Helvetica", "B", 6)
-    else:
-        pdf.set_text_color(15, 23, 42)
-        pdf.set_font("Helvetica", size=6)
+    bold_cols = bold_cols or set()
+    _set_border_color(pdf)
+    if fill:
+        pdf.set_fill_color(*fill_color)
+    pdf.set_text_color(*C_INK)
     for i, (w, val, al) in enumerate(zip(cols, values, aligns)):
         if item_col is not None and i == item_col:
             _draw_item_cell(pdf, x, y, w, row_h, item_name, item_desc)
         else:
-            pdf.rect(x, y, w, row_h, style="FD" if fill else "D")
-            pdf.set_xy(x, y + (row_h - 3.8) / 2)
-            pdf.cell(w, 3.8, _t(val), align=al, border=0)
+            style = "FD" if fill else "D"
+            pdf.rect(x, y, w, row_h, style=style)
+            pdf.set_font("Helvetica", "B" if i in bold_cols else "", FONT_BODY)
+            pdf.set_xy(x, y + (row_h - 4.0) / 2)
+            pdf.cell(w, 4.0, _t(val), align=al, border=0)
         x += w
     pdf.set_y(y + row_h)
 
@@ -202,11 +247,11 @@ def _draw_firm_header(pdf: FPDF, firm: dict[str, Any]) -> None:
     y0 = pdf.get_y()
 
     pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(15, 23, 42)
+    pdf.set_text_color(*C_INK)
     pdf.set_x(pdf.l_margin)
     pdf.multi_cell(text_w, 6, _t(firm.get("name") or "House of Prizm"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", size=8)
-    pdf.set_text_color(100, 116, 139)
+    pdf.set_text_color(*C_MUTED)
     for bit in (
         firm.get("address"),
         f"Phone: {firm.get('phone')}" if firm.get("phone") else "",
@@ -234,7 +279,7 @@ class _HopPdf(FPDF):
     def footer(self):
         self.set_y(-10)
         self.set_font("Helvetica", size=7)
-        self.set_text_color(100, 116, 139)
+        self.set_text_color(*C_MUTED)
         self.cell(0, 5, _t(f"Page {self.page_no()}"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
@@ -254,11 +299,11 @@ def build_preview_pdf(preview: dict[str, Any]) -> bytes:
     _draw_firm_header(pdf, firm)
 
     pdf.ln(2)
-    pdf.set_font("Helvetica", "B", 15)
-    pdf.set_text_color(29, 78, 216)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(*C_BLUE)
     title = _t(header.get("doc_title") or "Document")
-    pdf.cell(0, 8, title, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_text_color(15, 23, 42)
+    pdf.cell(0, 9, title, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_text_color(*C_INK)
 
     pdf.ln(2)
     epw = float(pdf.epw)
@@ -268,11 +313,11 @@ def build_preview_pdf(preview: dict[str, Any]) -> bytes:
     y0 = pdf.get_y()
 
     pdf.set_font("Helvetica", "B", 8)
-    pdf.set_text_color(100, 116, 139)
+    pdf.set_text_color(*C_MUTED)
     pdf.set_x(pdf.l_margin)
     pdf.cell(left_w, 4, _t(f"{title} For"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "B", 10)
-    pdf.set_text_color(15, 23, 42)
+    pdf.set_text_color(*C_INK)
     pdf.set_x(pdf.l_margin)
     pdf.multi_cell(left_w, 5, _t(party.get("billing_name") or party.get("name") or "-"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     for bit in (
@@ -283,13 +328,13 @@ def build_preview_pdf(preview: dict[str, Any]) -> bytes:
         if bit:
             pdf.set_x(pdf.l_margin)
             pdf.set_font("Helvetica", size=8)
-            pdf.set_text_color(100, 116, 139)
+            pdf.set_text_color(*C_MUTED)
             pdf.multi_cell(left_w, 4, _t(bit), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     y_left = pdf.get_y()
 
     pdf.set_xy(right_x, y0)
     pdf.set_font("Helvetica", size=9)
-    pdf.set_text_color(15, 23, 42)
+    pdf.set_text_color(*C_INK)
     label_w = min(28, right_w * 0.35)
     val_w = right_w - label_w
     pdf.cell(label_w, 5, "No.", align="R")
@@ -306,7 +351,7 @@ def build_preview_pdf(preview: dict[str, Any]) -> bytes:
     notes = _t(header.get("notes"))
     if notes:
         pdf.set_font("Helvetica", size=8)
-        pdf.set_text_color(15, 23, 42)
+        pdf.set_text_color(*C_INK)
         for para in notes.split("\n"):
             if para.strip():
                 _full_width_text(pdf, 4, para.strip())
@@ -342,25 +387,23 @@ def _draw_commercial_table(pdf: _HopPdf, lines: list[dict]) -> None:
         "GST %",
         "Net Amount",
     )
-    _draw_table_row(
+    _draw_header_row(
         pdf,
         cols,
         headers,
         ("C", "L", "R", "C", "R", "R", "R", "C", "C", "R"),
-        row_h=7,
-        fill=True,
-        header=True,
     )
 
     table_w = sum(cols)
     sl = 0
+    net_col = len(cols) - 1
     for sec in sections:
-        y = pdf.get_y()
         pdf.set_x(pdf.l_margin)
-        pdf.set_fill_color(241, 245, 249)
-        pdf.set_font("Helvetica", "B", 6)
-        pdf.set_text_color(15, 23, 42)
-        pdf.cell(table_w, 5, _t(sec.get("title") or "Items"), border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_fill_color(*C_SECTION_BG)
+        _set_border_color(pdf)
+        pdf.set_font("Helvetica", "B", FONT_HEADER)
+        pdf.set_text_color(*C_INK)
+        pdf.cell(table_w, 6, _t(sec.get("title") or "Items"), border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         sec_total = 0.0
         for ln in sec.get("lines") or []:
             sl += 1
@@ -397,13 +440,15 @@ def _draw_commercial_table(pdf: _HopPdf, lines: list[dict]) -> None:
                 item_col=item_col_idx,
                 item_name=item_name,
                 item_desc=item_desc,
+                bold_cols={net_col},
             )
-        y = pdf.get_y()
         pdf.set_x(pdf.l_margin)
-        pdf.set_font("Helvetica", "B", 6)
-        pdf.set_text_color(15, 23, 42)
-        pdf.cell(table_w - cols[-1], 5, "Section total", border=1, align="R")
-        pdf.cell(cols[-1], 5, _money(sec_total, compact=True), border=1, align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_fill_color(*C_TOTAL_ROW_BG)
+        _set_border_color(pdf)
+        pdf.set_font("Helvetica", "B", FONT_BODY)
+        pdf.set_text_color(*C_INK)
+        pdf.cell(table_w - cols[-1], 6, "Section total", border=1, align="R", fill=True)
+        pdf.cell(cols[-1], 6, _money(sec_total, compact=True), border=1, align="R", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
 
 
@@ -412,14 +457,11 @@ def _draw_standard_table(pdf: _HopPdf, lines: list[dict]) -> None:
     cols = _scale_cols(pdf, weights)
     item_col_idx = 1
     headers = ("#", "Item Name", "HSN", "Qty", "Unit", "Rate", "GST", "Amount")
-    _draw_table_row(
+    _draw_header_row(
         pdf,
         cols,
         headers,
         ("C", "L", "L", "R", "C", "R", "R", "R"),
-        row_h=7,
-        fill=True,
-        header=True,
     )
     for i, ln in enumerate(lines, 1):
         qty = float(ln.get("qty") or 0)
@@ -450,6 +492,7 @@ def _draw_standard_table(pdf: _HopPdf, lines: list[dict]) -> None:
             item_col=item_col_idx,
             item_name=item_name,
             item_desc=item_desc,
+            bold_cols={len(cols) - 1},
         )
     pdf.ln(2)
 
@@ -464,7 +507,7 @@ def _draw_totals_block(pdf: _HopPdf, totals: dict, commercial: bool) -> None:
     y = pdf.get_y()
     pdf.set_xy(x, y)
     pdf.set_font("Helvetica", size=8)
-    pdf.set_text_color(15, 23, 42)
+    pdf.set_text_color(*C_INK)
     rows = []
     if commercial:
         rows.append(("Total value (excl. tax)", _money(totals.get("taxable_total") or totals.get("sub_total"))))
@@ -480,7 +523,12 @@ def _draw_totals_block(pdf: _HopPdf, totals: dict, commercial: bool) -> None:
     rows.append(("Grand Total", _money(totals.get("grand_total"))))
     for label, val in rows:
         pdf.set_x(x)
-        pdf.set_font("Helvetica", "B" if label == "Grand Total" else "", 8 if label != "Grand Total" else 10)
+        is_grand = label == "Grand Total"
+        pdf.set_font("Helvetica", "B", 10 if is_grand else 8)
+        if is_grand:
+            pdf.set_text_color(*C_BLUE)
+        else:
+            pdf.set_text_color(*C_INK)
         pdf.cell(label_w, 5, _t(label), border=0)
         pdf.cell(val_w, 5, val, align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(3)
@@ -498,7 +546,7 @@ def _draw_terms_bank(pdf: _HopPdf, preview: dict) -> None:
     y0 = pdf.get_y()
 
     pdf.set_font("Helvetica", size=8)
-    pdf.set_text_color(15, 23, 42)
+    pdf.set_text_color(*C_INK)
     if delivery:
         pdf.set_x(pdf.l_margin)
         pdf.set_font("Helvetica", "B", 8)
@@ -536,7 +584,7 @@ def _draw_terms_bank(pdf: _HopPdf, preview: dict) -> None:
 
     pdf.set_xy(sign_x, y0)
     pdf.set_font("Helvetica", size=8)
-    pdf.set_text_color(100, 116, 139)
+    pdf.set_text_color(*C_MUTED)
     pdf.cell(sign_w, 4, _t(f"For {firm.get('name') or 'House of Prizm'}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     sig_y = pdf.get_y() + 1
     if sig_bytes:
@@ -550,10 +598,10 @@ def _draw_terms_bank(pdf: _HopPdf, preview: dict) -> None:
             sig_y += 10
     else:
         sig_y += 12
-    pdf.set_draw_color(203, 213, 225)
+    _set_border_color(pdf)
     pdf.line(sign_x, sig_y, sign_x + sign_w, sig_y)
     pdf.set_xy(sign_x, sig_y + 2)
     pdf.set_font("Helvetica", "B", 8)
-    pdf.set_text_color(15, 23, 42)
+    pdf.set_text_color(*C_INK)
     pdf.cell(sign_w, 4, "Authorized Signatory", align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_y(max(y_left, pdf.get_y()) + 2)
