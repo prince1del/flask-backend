@@ -4586,7 +4586,10 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
   background:var(--nxt-bg,#0a1628);border-bottom:1px solid rgba(255,255,255,.1);
 }
 .hop-comm-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:4px;}
-.hop-comm-table--form{min-width:920px;}
+.hop-comm-table--form{min-width:1040px;}
+.hop-comm-inp-article{min-width:120px;}
+.hop-comm-inp-desc{min-width:100px;}
+.hop-comm-pc-disc{font-variant-numeric:tabular-nums;white-space:nowrap;padding:6px 8px !important;font-size:.78rem;color:#334155;}
 .hop-comm-amt,.hop-comm-net{font-variant-numeric:tabular-nums;white-space:nowrap;padding:6px 8px !important;font-size:.78rem;}
 .hop-comm-form-total-row td{
   background:#f1f5f9 !important;border-top:2px solid #94a3b8 !important;
@@ -4621,7 +4624,9 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .hop-firm-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;flex-wrap:wrap;}
 .hop-firm-hint{font-size:.75rem;color:var(--nxt-text-dim,#64748b);margin:0;}
 .hop-manual-doc{max-width:980px;}
-.hop-manual-doc-grid{display:grid;grid-template-columns:1fr 180px;gap:12px;margin-bottom:12px;}
+.hop-manual-doc-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px;}
+.hop-manual-doc-full{grid-column:1/-1;}
+.hop-manual-doc-grid-meta{display:grid;grid-template-columns:180px 1fr;gap:12px;}
 .hop-manual-wide{display:block;margin:12px 0;}
 .hop-manual-wide span{display:block;font-size:.72rem;font-weight:650;color:var(--nxt-text-dim,#64748b);margin-bottom:4px;}
 .hop-comm-section{margin:16px 0;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:8px;}
@@ -4641,7 +4646,7 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 }
 .hop-manual-doc-btns{display:flex;gap:8px;flex-wrap:wrap;}
 @media (max-width:700px){
-  .hop-firm-grid,.hop-manual-doc-grid{grid-template-columns:1fr;}
+  .hop-firm-grid,.hop-manual-doc-grid,.hop-manual-doc-grid-meta{grid-template-columns:1fr;}
 }
 .hop-doc-bank{margin-top:10px;font-size:12px;}
 .hop-doc-preview-foot{

@@ -91,18 +91,34 @@
     return text.split(/\n+/).filter(Boolean).map((p) => `<p>${foEscapeText(p)}</p>`).join('');
   }
 
+  function hopCommItemCell(ln) {
+    const name = foEscapeText(ln.item_name || 'Item');
+    let desc = String(ln.description || '').trim();
+    if (desc && !desc.startsWith('(')) desc = `(${desc})`;
+    return `<div class="hop-doc-item-name">${name}</div>${desc ? `<div class="hop-doc-item-desc hop-doc-muted">${foEscapeText(desc)}</div>` : ''}`;
+  }
+
+  function hopCommRateAfterDiscFromLine(ln) {
+    const rate = Number(ln.rate || 0);
+    const discPct = Number(ln.discount_pct || 0);
+    if (!(rate >= 0)) return 0;
+    return round2(rate * (1 - discPct / 100));
+  }
+
   function hopCommBuildUnifiedTable(sections, grand) {
     let bodyRows = '';
     for (const sec of sections) {
-      bodyRows += `<tr class="hop-doc-comm-section-row"><td colspan="9">${foEscapeText(sec.title)}</td></tr>`;
+      bodyRows += `<tr class="hop-doc-comm-section-row"><td colspan="10">${foEscapeText(sec.title)}</td></tr>`;
       sec.lines.forEach((ln, i) => {
         const c = hopCommCalcLine(ln);
+        const perPc = hopCommRateAfterDiscFromLine(ln);
         bodyRows += `<tr class="hop-doc-comm-line-row">
           <td class="cen">${i + 1}</td>
-          <td class="item">${foEscapeText(ln.item_name || 'Item')}${ln.description ? `<div class="hop-doc-muted">${foEscapeText(ln.description)}</div>` : ''}</td>
+          <td class="item">${hopCommItemCell(ln)}</td>
           <td class="num">${hopCommQtyLabel(c.qty)}</td>
           <td class="cen">${foEscapeText(ln.unit || 'MTR')}</td>
           <td class="num">${hopCommMoney(c.rate)}</td>
+          <td class="num">${hopCommMoney(perPc)}</td>
           <td class="num">${hopCommMoney(c.gross)}</td>
           <td class="cen">${hopCommPctLabel(c.discPct)}</td>
           <td class="cen">${hopCommPctLabel(c.taxPct)}</td>
@@ -110,12 +126,12 @@
         </tr>`;
       });
       bodyRows += `<tr class="hop-doc-comm-total-row">
-        <td colspan="8" class="num"><strong>TOTAL:</strong></td>
+        <td colspan="9" class="num"><strong>TOTAL:</strong></td>
         <td class="num"><strong>${hopCommMoney(sec.sectionTotal)}</strong></td>
       </tr>`;
     }
     bodyRows += `<tr class="hop-doc-comm-grand-row">
-      <td colspan="8" class="num"><strong>GRAND TOTAL:</strong></td>
+      <td colspan="9" class="num"><strong>GRAND TOTAL:</strong></td>
       <td class="num"><strong>${hopCommMoney(grand)}</strong></td>
     </tr>`;
     return `
@@ -127,10 +143,11 @@
             <th class="num">Qty.</th>
             <th class="cen">Unit</th>
             <th class="num">Project Rate</th>
+            <th class="num">Per Pc after Disc.</th>
             <th class="num">Amount</th>
             <th class="cen">Discount</th>
             <th class="cen">GST %</th>
-            <th class="num">Amount</th>
+            <th class="num">Net Amount</th>
           </tr></thead>
           <tbody>${bodyRows}</tbody>
         </table>
@@ -585,7 +602,39 @@
 
   /* ---------- Manual Estimate / Proforma create ---------- */
   function hopEmptyDocLine() {
-    return { item_name: '', qty: '', unit: 'MTR', rate: '', discount_pct: '0', tax_pct: '5', hsn: '' };
+    return { item_name: '', description: '', qty: '', unit: 'MTR', rate: '', discount_pct: '0', tax_pct: '5', hsn: '' };
+  }
+
+  function hopManualDocNumberLabel(txnType) {
+    return Number(txnType) === 83 ? 'Proforma Invoice No.' : 'Estimate / Quotation No.';
+  }
+
+  async function hopManualDocFetchNextNumber() {
+    const md = hopState.manualDoc || {};
+    const d = hopState.manualDocDraft;
+    if (!d || d.txnNumberManual) return;
+    const txnType = md.txnType || 27;
+    const date = d.txnDate || new Date().toISOString().slice(0, 10);
+    try {
+      const data = await hopApi(
+        `/api/v1/hop/party-transactions/next-number?txn_type=${txnType}&txn_date=${encodeURIComponent(date)}`
+      );
+      d.txnNumber = data?.txn_number || '';
+      const el = document.getElementById('hop-manual-txn-number');
+      if (el && !d.txnNumberManual) el.value = d.txnNumber;
+    } catch (_) { /* user can type manually */ }
+  }
+
+  function hopManualDocSetTxnNumber(v) {
+    if (!hopState.manualDocDraft) return;
+    hopState.manualDocDraft.txnNumber = v;
+    hopState.manualDocDraft.txnNumberManual = true;
+  }
+
+  function hopManualDocRateAfterDiscLabel(ln) {
+    const rate = Number(ln.rate || 0);
+    if (String(ln.rate ?? '').trim() === '' || Number.isNaN(rate) || rate < 0) return '—';
+    return hopCommMoney(hopCommRateAfterDiscFromLine(ln));
   }
 
   function hopManualDocInit(txnType, mode) {
@@ -598,6 +647,8 @@
     hopState.manualDocDraft = {
       customerId: '',
       txnDate: new Date().toISOString().slice(0, 10),
+      txnNumber: '',
+      txnNumberManual: false,
       notes: isComm
         ? 'Dear Sir,\n\nWe thank you for the enquiry. Having completed our review of your requirements, we are pleased to submit the Commercial offer for it.'
         : '',
@@ -667,10 +718,13 @@
     const ln = si >= 0 ? d?.sections?.[si]?.lines?.[li] : d?.lines?.[li];
     if (!ln) return;
     const { amount, net } = hopManualDocLineAmountLabels(ln);
+    const perPc = hopManualDocRateAfterDiscLabel(ln);
     const amtEl = document.getElementById(`hop-comm-amt-${si}-${li}`);
     const netEl = document.getElementById(`hop-comm-net-${si}-${li}`);
+    const pcEl = document.getElementById(`hop-comm-pc-disc-${si}-${li}`);
     if (amtEl) amtEl.textContent = amount;
     if (netEl) netEl.innerHTML = net === '—' ? '—' : `<strong>${net}</strong>`;
+    if (pcEl) pcEl.textContent = perPc;
     if (si >= 0) hopManualDocUpdateSectionTotal(si);
     hopManualDocUpdateGrandTotal();
   }
@@ -688,7 +742,7 @@
     const total = hopManualDocSectionTotalValue(si);
     const val = total > 0.009 ? hopCommMoney(total) : '—';
     return `<tr class="hop-comm-form-total-row">
-      <td colspan="8" class="num"><strong>TOTAL:</strong></td>
+      <td colspan="10" class="num"><strong>TOTAL:</strong></td>
       <td class="num hop-comm-sec-total-cell" id="hop-comm-sec-total-${si}"><strong>${val}</strong></td>
       <td></td>
     </tr>`;
@@ -722,12 +776,15 @@
 
   function hopManualDocLineRowHtml(ln, si, li, showDisc) {
     const amts = hopManualDocLineAmountLabels(ln);
+    const perPc = hopManualDocRateAfterDiscLabel(ln);
     return `<tr id="hop-comm-row-${si}-${li}">
       <td class="cen hop-comm-sl">${li + 1}</td>
-      <td><input class="nx-input hop-comm-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Item Description" /></td>
+      <td><input class="nx-input hop-comm-inp hop-comm-inp-article" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Article / item name" /></td>
+      <td><input class="nx-input hop-comm-inp hop-comm-inp-desc" value="${foEscapeText(ln.description || '')}" oninput="hopManualDocSetLine(${si},${li},'description',this.value)" placeholder="e.g. FR Treated" /></td>
       <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="Qty" /></td>
       <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" /></td>
       <td><input class="nx-input hop-comm-inp num" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="Rate" /></td>
+      ${showDisc ? `<td class="num hop-comm-pc-disc" id="hop-comm-pc-disc-${si}-${li}">${perPc}</td>` : ''}
       ${showDisc ? `<td class="num hop-comm-amt" id="hop-comm-amt-${si}-${li}">${amts.amount}</td>` : ''}
       ${showDisc ? `<td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>` : ''}
       <td><input class="nx-input hop-comm-inp cen" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></td>
@@ -742,7 +799,7 @@
     const d = hopState.manualDocDraft || {};
     if (!d.docTerms && firmTerms) d.docTerms = firmTerms;
     const isComm = md.mode === 'commercial' && md.txnType === 27;
-    const title = md.txnType === 83 ? 'New Proforma Invoice' : (isComm ? 'Commercial quotation' : 'New Estimate');
+    const docNoLabel = hopManualDocNumberLabel(md.txnType);
     const custOpts = (customers || []).map((c) =>
       `<option value="${c.id}"${String(d.customerId) === String(c.id) ? ' selected' : ''}>${foEscapeText(c.company || c.name || '—')}</option>`).join('');
 
@@ -758,8 +815,8 @@
           <div class="hop-comm-table-scroll">
           <table class="hop-comm-table hop-comm-table--form">
             <thead><tr>
-              <th class="cen">Sl.</th><th>Item Description</th><th class="num">Qty.</th><th class="cen">Unit</th>
-              <th class="num">Project Rate</th><th class="num">Amount</th><th class="cen">Discount</th><th class="cen">GST %</th>
+              <th class="cen">Sl.</th><th>Article</th><th>Description</th><th class="num">Qty.</th><th class="cen">Unit</th>
+              <th class="num">Project Rate</th><th class="num">Per Pc after Disc.</th><th class="num">Amount</th><th class="cen">Discount</th><th class="cen">GST %</th>
               <th class="num">Net</th><th></th>
             </tr></thead>
             <tbody id="hop-comm-tbody-${si}">${sec.lines.map((ln, li) => hopManualDocLineRowHtml(ln, si, li, true)).join('')}</tbody>
@@ -787,12 +844,18 @@
         <p id="hop-manual-doc-err" class="nx-oc-error"></p>
         <div class="hop-manual-doc-sticky">
           <div class="hop-manual-doc-grid">
-          <label><span>Customer *</span>
+          <label class="hop-manual-doc-full"><span>Customer *</span>
             <select id="hop-manual-customer" class="nx-input" onchange="hopManualDocSetCustomer(this.value)">
               <option value="">Select customer</option>${custOpts}
             </select></label>
-          <label><span>Date</span>
-            <input type="date" class="nx-input" value="${foEscapeText(d.txDate)}" onchange="hopManualDocSetField('txnDate',this.value)" /></label>
+          <div class="hop-manual-doc-grid-meta">
+            <label><span>Date</span>
+              <input type="date" id="hop-manual-txn-date" class="nx-input" value="${foEscapeText(d.txnDate)}" onchange="hopManualDocSetField('txnDate',this.value)" /></label>
+            <label><span>${foEscapeText(docNoLabel)}</span>
+              <input type="text" id="hop-manual-txn-number" class="nx-input" value="${foEscapeText(d.txnNumber || '')}" oninput="hopManualDocSetTxnNumber(this.value)" placeholder="Auto serial — edit to override" />
+              <small class="hop-firm-hint">Auto +1 each save · you can type your own number</small>
+            </label>
+          </div>
         </div>
         </div>
         ${isComm ? `<label class="hop-manual-wide"><span>Cover letter (Dear Sir…)</span>
@@ -827,6 +890,9 @@
 
   function hopManualDocSetField(key, val) {
     if (hopState.manualDocDraft) hopState.manualDocDraft[key] = val;
+    if (key === 'txnDate' && hopState.manualDocDraft && !hopState.manualDocDraft.txnNumberManual) {
+      hopManualDocFetchNextNumber();
+    }
   }
 
   function hopManualDocSetSectionTitle(si, val) {
@@ -914,6 +980,7 @@
           if (!hopManualDocLineFilled(ln)) continue;
           rawLines.push({
             item_name: String(ln.item_name).trim(),
+            description: String(ln.description || '').trim() || undefined,
             qty: Number(ln.qty),
             unit: String(ln.unit || 'MTR').trim() || 'MTR',
             rate: Number(ln.rate),
@@ -949,6 +1016,8 @@
       txn_label: isComm ? 'Commercial Quotation' : (md.txnType === 83 ? 'Proforma Invoice' : 'Estimate / Quotation'),
       lines: rawLines,
     };
+    const txnNum = String(d.txnNumber || document.getElementById('hop-manual-txn-number')?.value || '').trim();
+    if (txnNum) payload.txn_number = txnNum;
     if (errEl) errEl.textContent = 'Saving…';
     try {
       const row = await hopApi('/api/v1/hop/party-transactions', {
@@ -989,6 +1058,7 @@
     const title = md.txnType === 83 ? 'New Proforma Invoice' : (md.mode === 'commercial' ? 'Commercial quotation' : 'New Estimate');
     const body = `<div id="hop-manual-doc-body">${hopManualDocRenderBody(customers, firmTerms)}</div>`;
     mount.innerHTML = hopModuleShell('Sale', title, '', '', body);
+    hopManualDocFetchNextNumber();
   }
 
   /* ---------- Expose globals (hop_app.js loaders + onclick) ---------- */
@@ -1002,6 +1072,8 @@
   window.hopFirmSaveProfile = hopFirmSaveProfile;
   window.hopManualDocSetCustomer = hopManualDocSetCustomer;
   window.hopManualDocSetField = hopManualDocSetField;
+  window.hopManualDocSetTxnNumber = hopManualDocSetTxnNumber;
+  window.hopManualDocFetchNextNumber = hopManualDocFetchNextNumber;
   window.hopManualDocSetSectionTitle = hopManualDocSetSectionTitle;
   window.hopManualDocSetLine = hopManualDocSetLine;
   window.hopManualDocAddSection = hopManualDocAddSection;

@@ -1770,6 +1770,26 @@ def firm_profile_route():
     return jsonify({"success": True, "data": row})
 
 
+@hop_bp.route("/party-transactions/next-number", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_next_number():
+    """Next serial for manual Estimate (27) / Proforma (83) — user may override on POST."""
+    ensure_hop_schema(_db_path())
+    from app.hop_doc_preview import next_manual_doc_number
+    from datetime import datetime, timezone
+
+    txn_type = request.args.get("txn_type", type=int) or 27
+    if txn_type not in (27, 83):
+        return _json_error("txn_type must be 27 or 83", "VALIDATION_ERROR", 400)
+    txn_date = (request.args.get("txn_date") or "").strip()
+    if not txn_date:
+        txn_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    with hop_db.connect(_db_path()) as conn:
+        txn_number = next_manual_doc_number(conn, _ws(), txn_type, txn_date)
+    return jsonify({"success": True, "data": {"txn_number": txn_number, "txn_type": txn_type}})
+
+
 @hop_bp.route("/party-transactions", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
