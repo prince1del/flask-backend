@@ -823,7 +823,21 @@
     const md = hopState.manualDoc || {};
     const editId = Number(md.editId || 0);
     if (!editId) return;
-    if (!confirm('Delete this document permanently? This cannot be undone.')) return;
+    let ok = false;
+    if (typeof nexoraConfirm === 'function') {
+      ok = await nexoraConfirm(
+        'Delete this document permanently?\n\nThis cannot be undone.',
+        {
+          title: 'Delete document?',
+          okText: 'Yes, delete',
+          cancelText: 'No',
+          danger: true,
+        },
+      );
+    } else {
+      ok = !!window.confirm('Delete this document permanently? This cannot be undone.');
+    }
+    if (!ok) return;
     const errEl = document.getElementById('hop-manual-doc-err');
     if (errEl) errEl.textContent = 'Deleting…';
     try {

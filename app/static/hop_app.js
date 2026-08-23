@@ -7623,10 +7623,24 @@ function hopRenderInvoiceRows(rows) {
   }).join('');
 }
 
-function hopDeleteManualDoc(partyTxnId) {
+async function hopDeleteManualDoc(partyTxnId) {
   const id = Number(partyTxnId || 0);
   if (!id) return;
-  if (!confirm('Delete this quotation / proforma permanently?')) return;
+  let ok = false;
+  if (typeof nexoraConfirm === 'function') {
+    ok = await nexoraConfirm(
+      'Delete this quotation / proforma permanently?\n\nThis cannot be undone.',
+      {
+        title: 'Delete document?',
+        okText: 'Yes, delete',
+        cancelText: 'No',
+        danger: true,
+      },
+    );
+  } else {
+    ok = !!window.confirm('Delete this quotation / proforma permanently?');
+  }
+  if (!ok) return;
   hopApi(`/api/v1/hop/party-transactions/${id}`, { method: 'DELETE' })
     .then(() => {
       if (typeof nexoraToast === 'function') nexoraToast('Document deleted', 'ok');
