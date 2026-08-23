@@ -692,44 +692,117 @@
 
   function hopOpenManualDocCreate(txnType, mode) {
     hopManualDocInit(txnType, mode);
-    openHopView('hop_manual_doc_create');
+    hopMountManualDocOverlay();
   }
 
   async function hopOpenManualDocEdit(partyTxnId) {
-    const data = await hopApi(`/api/v1/hop/party-transactions/${partyTxnId}`);
-    const txnType = Number(data.txn_type || 27);
-    const mode = data.mode === 'commercial' ? 'commercial' : 'standard';
-    hopManualDocInit(txnType, mode);
-    hopState.manualDoc.editId = Number(partyTxnId);
-    hopState.manualDoc.returnView = txnType === 83 ? 'sale_proforma' : 'sale_estimates';
-    const d = hopState.manualDocDraft;
-    d.customerId = String(data.customer_id || '');
-    d.txnDate = data.txn_date || d.txnDate;
-    d.txnNumber = data.txn_number || '';
-    d.txnNumberManual = true;
-    d.notes = data.notes || '';
-    d.docTerms = data.doc_terms || '';
-    d.shippingAmount = Number(data.shipping_amount || 0) > 0 ? String(data.shipping_amount) : '';
-    d.shippingTaxPct = data.shipping_tax_pct != null && data.shipping_tax_pct !== '' ? String(data.shipping_tax_pct) : '18';
-    const mapLine = (ln) => ({
-      item_name: ln.item_name || '',
-      description: ln.description || '',
-      qty: ln.qty != null && ln.qty !== '' ? String(ln.qty) : '',
-      unit: ln.unit || 'MTR',
-      rate: ln.rate != null && ln.rate !== '' ? String(ln.rate) : '',
-      discount_pct: ln.discount_pct != null ? String(ln.discount_pct) : '0',
-      tax_pct: ln.tax_pct != null ? String(ln.tax_pct) : '5',
-      hsn: ln.hsn || '',
-    });
-    if (mode === 'commercial' && data.sections?.length) {
-      d.sections = data.sections.map((sec, si) => ({
-        title: sec.title || `Shortlisted-${si + 1}`,
-        lines: [...(sec.lines || []).map(mapLine), hopEmptyDocLine()],
-      }));
-    } else {
-      d.lines = [...(data.lines || []).map(mapLine), hopEmptyDocLine()];
+    try {
+      const data = await hopApi(`/api/v1/hop/party-transactions/${partyTxnId}`);
+      const txnType = Number(data.txn_type || 27);
+      const mode = data.mode === 'commercial' ? 'commercial' : 'standard';
+      hopManualDocInit(txnType, mode);
+      hopState.manualDoc.editId = Number(partyTxnId);
+      hopState.manualDoc.returnView = hopState.view || (txnType === 83 ? 'sale_proforma' : 'sale_estimates');
+      const d = hopState.manualDocDraft;
+      d.customerId = String(data.customer_id || '');
+      d.txnDate = data.txn_date || d.txnDate;
+      d.txnNumber = data.txn_number || '';
+      d.txnNumberManual = true;
+      d.notes = data.notes || '';
+      d.docTerms = data.doc_terms || '';
+      d.shippingAmount = Number(data.shipping_amount || 0) > 0 ? String(data.shipping_amount) : '';
+      d.shippingTaxPct = data.shipping_tax_pct != null && data.shipping_tax_pct !== '' ? String(data.shipping_tax_pct) : '18';
+      const mapLine = (ln) => ({
+        item_name: ln.item_name || '',
+        description: ln.description || '',
+        qty: ln.qty != null && ln.qty !== '' ? String(ln.qty) : '',
+        unit: ln.unit || 'MTR',
+        rate: ln.rate != null && ln.rate !== '' ? String(ln.rate) : '',
+        discount_pct: ln.discount_pct != null ? String(ln.discount_pct) : '0',
+        tax_pct: ln.tax_pct != null ? String(ln.tax_pct) : '5',
+        hsn: ln.hsn || '',
+      });
+      if (mode === 'commercial' && data.sections?.length) {
+        d.sections = data.sections.map((sec, si) => ({
+          title: sec.title || `Shortlisted-${si + 1}`,
+          lines: [...(sec.lines || []).map(mapLine), hopEmptyDocLine()],
+        }));
+      } else {
+        d.lines = [...(data.lines || []).map(mapLine), hopEmptyDocLine()];
+      }
+      hopMountManualDocOverlay();
+    } catch (e) {
+      if (typeof nexoraToast === 'function') nexoraToast(e?.message || 'Could not open document', 'err');
+      else alert(e?.message || 'Could not open document');
     }
-    openHopView('hop_manual_doc_create');
+  }
+
+  function hopCloseManualDocOverlay() {
+    document.getElementById('hop-vyp-doc-overlay')?.remove();
+    document.body.classList.remove('hop-vyp-doc-open');
+  }
+
+  async function hopMountManualDocOverlay() {
+    hopCloseManualDocOverlay();
+    let customers = hopState.manualDocCustomers || [];
+    let firmTerms = hopState.manualDocFirmTerms || '';
+    try {
+      const [cust, firm] = await Promise.all([
+        hopApi('/api/v1/hop/customers'),
+        hopApi('/api/v1/hop/firm-profile').catch(() => ({})),
+      ]);
+      customers = cust || [];
+      firmTerms = firm?.terms_default || '';
+      hopState.manualDocCustomers = customers;
+      hopState.manualDocFirmTerms = firmTerms;
+    } catch (e) {
+      if (typeof nexoraToast === 'function') nexoraToast(e?.message || 'Failed to load form', 'err');
+      return;
+    }
+    const md = hopState.manualDoc || {};
+    const isEdit = !!md.editId;
+    const title = isEdit
+      ? (md.txnType === 83 ? 'Edit Proforma Invoice' : (md.mode === 'commercial' ? 'Edit Commercial Quotation' : 'Edit Estimate/Quotation'))
+      : (md.txnType === 83 ? 'Proforma Invoice' : (md.mode === 'commercial' ? 'Commercial Quotation' : 'Estimate/Quotation'));
+    const el = document.createElement('div');
+    el.id = 'hop-vyp-doc-overlay';
+    el.className = 'hop-vyp-doc-overlay is-open';
+    el.innerHTML = `
+      <div class="hop-vyp-doc-shell">
+        <div class="hop-vyp-doc-head">
+          <div class="hop-vyp-doc-head-left">
+            <button type="button" class="hop-vyp-doc-x" onclick="hopCloseManualDocOverlay()" title="Close">×</button>
+            <h2>${foEscapeText(title)}</h2>
+          </div>
+          <div class="hop-vyp-doc-head-right">
+            ${isEdit ? `<button type="button" class="hop-vyp-btn hop-vyp-btn--danger hop-vyp-btn--sm" onclick="hopManualDocDelete()">Delete</button>` : ''}
+            <button type="button" class="hop-vyp-btn hop-vyp-btn--primary hop-vyp-btn--sm" onclick="hopManualDocSave()">${isEdit ? 'Update' : 'Save'}</button>
+          </div>
+        </div>
+        <div class="hop-vyp-doc-scroll" id="hop-manual-doc-body">
+          ${hopManualDocRenderBody(customers, firmTerms)}
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    document.body.classList.add('hop-vyp-doc-open');
+    if (!isEdit) hopManualDocFetchNextNumber();
+  }
+
+  async function hopManualDocDelete() {
+    const md = hopState.manualDoc || {};
+    const editId = Number(md.editId || 0);
+    if (!editId) return;
+    if (!confirm('Delete this document permanently? This cannot be undone.')) return;
+    const errEl = document.getElementById('hop-manual-doc-err');
+    if (errEl) errEl.textContent = 'Deleting…';
+    try {
+      await hopApi(`/api/v1/hop/party-transactions/${editId}`, { method: 'DELETE' });
+      if (typeof nexoraToast === 'function') nexoraToast('Document deleted', 'ok');
+      hopCloseManualDocOverlay();
+      openHopView(md.returnView || 'sale_estimates');
+    } catch (e) {
+      if (errEl) errEl.textContent = e?.message || 'Delete failed';
+    }
   }
 
   function hopManualDocShippingTaxAmount(d) {
@@ -818,17 +891,17 @@
   function hopManualDocSectionTotalHtml(si) {
     const total = hopManualDocSectionTotalValue(si);
     const val = total > 0.009 ? hopCommMoney(total) : '—';
-    return `<div class="hop-comm-section-total" id="hop-comm-sec-total-wrap-${si}">
-      <span class="hop-comm-section-total-label">Section total</span>
+    return `<div class="hop-vyp-section-total">
+      <span>Section total</span>
       <strong class="hop-comm-sec-total-cell" id="hop-comm-sec-total-${si}">${val}</strong>
     </div>`;
   }
 
   function hopManualDocRefreshSectionLines(si) {
     const d = hopState.manualDocDraft;
-    const container = document.getElementById(`hop-comm-lines-${si}`);
-    if (!container || !d?.sections?.[si]) return;
-    container.innerHTML = d.sections[si].lines
+    const tbody = document.getElementById(`hop-comm-lines-${si}`);
+    if (!tbody || !d?.sections?.[si]) return;
+    tbody.innerHTML = d.sections[si].lines
       .map((ln, li) => hopManualDocLineCardHtml(ln, si, li))
       .join('');
   }
@@ -836,39 +909,20 @@
   function hopManualDocLineCardHtml(ln, si, li) {
     const amts = hopManualDocLineAmountLabels(ln);
     const perPc = hopManualDocRateAfterDiscLabel(ln);
-    return `<div class="hop-comm-line-card" id="hop-comm-row-${si}-${li}">
-      <div class="hop-comm-line-card-head">
-        <span class="hop-comm-sl-badge">${li + 1}</span>
-        <button type="button" class="hop-comm-line-del" onclick="hopManualDocRemoveLine(${si},${li})" title="Remove line">Remove</button>
-      </div>
-      <div class="hop-comm-line-main">
-        <label class="hop-comm-field hop-comm-field--article">
-          <span>Article</span>
-          <input class="nx-input" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Fabric / item name" />
-        </label>
-        <label class="hop-comm-field hop-comm-field--desc">
-          <span>Description</span>
-          <input class="nx-input" value="${foEscapeText(ln.description || '')}" oninput="hopManualDocSetLine(${si},${li},'description',this.value)" placeholder="e.g. FR Treated, colour, finish" />
-        </label>
-      </div>
-      <div class="hop-comm-line-grid">
-        <label class="hop-comm-field"><span>Qty.</span>
-          <input class="nx-input" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="0" /></label>
-        <label class="hop-comm-field hop-comm-field--unit"><span>Unit</span>
-          <input class="nx-input" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" placeholder="MTR" /></label>
-        <label class="hop-comm-field"><span>Project Rate (₹)</span>
-          <input class="nx-input" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="0.00" /></label>
-        <label class="hop-comm-field hop-comm-field--pct"><span>Discount %</span>
-          <input class="nx-input" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></label>
-        <label class="hop-comm-field hop-comm-field--pct"><span>GST %</span>
-          <input class="nx-input" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></label>
-      </div>
-      <div class="hop-comm-line-calc">
-        <div class="hop-comm-calc-cell"><span>Amount</span><strong id="hop-comm-amt-${si}-${li}">${amts.amount}</strong></div>
-        <div class="hop-comm-calc-cell"><span>Per Pc after Disc.</span><strong id="hop-comm-pc-disc-${si}-${li}">${perPc}</strong></div>
-        <div class="hop-comm-calc-cell hop-comm-calc-cell--net"><span>Net Amount</span><strong id="hop-comm-net-${si}-${li}">${amts.net === '—' ? '—' : amts.net}</strong></div>
-      </div>
-    </div>`;
+    return `<tr class="hop-vyp-row" id="hop-comm-row-${si}-${li}">
+      <td class="hop-vyp-sl">${li + 1}</td>
+      <td class="hop-vyp-item"><input class="hop-vyp-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Item / article" /></td>
+      <td class="hop-vyp-desc"><input class="hop-vyp-inp" value="${foEscapeText(ln.description || '')}" oninput="hopManualDocSetLine(${si},${li},'description',this.value)" placeholder="Description" /></td>
+      <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="0" /></td>
+      <td class="hop-vyp-unit"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" placeholder="MTR" /></td>
+      <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="0.00" /></td>
+      <td class="hop-vyp-read" id="hop-comm-amt-${si}-${li}">${amts.amount}</td>
+      <td class="hop-vyp-read" id="hop-comm-pc-disc-${si}-${li}">${perPc}</td>
+      <td class="hop-vyp-pct"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>
+      <td class="hop-vyp-pct"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></td>
+      <td class="hop-vyp-read hop-vyp-net" id="hop-comm-net-${si}-${li}">${amts.net}</td>
+      <td class="hop-vyp-act"><button type="button" class="hop-vyp-trash" onclick="hopManualDocRemoveLine(${si},${li})" title="Remove row">🗑</button></td>
+    </tr>`;
   }
 
   function hopManualDocUpdateSectionTotal(si) {
@@ -910,74 +964,108 @@
     let linesBlock = '';
     if (isComm && d.sections) {
       linesBlock = d.sections.map((sec, si) => `
-        <div class="hop-comm-section" data-section-idx="${si}">
-          <div class="hop-comm-section-head">
-            <label class="hop-comm-section-label"><span>Shortlist section</span>
-              <input class="nx-input" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="e.g. Shortlisted-1 (Sheer + Chair Fabric)" />
-            </label>
+        <div class="hop-vyp-section" data-section-idx="${si}">
+          <div class="hop-vyp-section-head">
+            <input class="hop-vyp-section-title" value="${foEscapeText(sec.title)}" oninput="hopManualDocSetSectionTitle(${si},this.value)" placeholder="Shortlisted-1" />
           </div>
-          <div class="hop-comm-lines" id="hop-comm-lines-${si}">
-            ${sec.lines.map((ln, li) => hopManualDocLineCardHtml(ln, si, li)).join('')}
+          <div class="hop-vyp-table-wrap">
+            <table class="hop-vyp-table">
+              <thead>
+                <tr>
+                  <th class="hop-vyp-sl">#</th>
+                  <th class="hop-vyp-item">ITEM</th>
+                  <th class="hop-vyp-desc">DESCRIPTION</th>
+                  <th class="hop-vyp-num">QTY</th>
+                  <th class="hop-vyp-unit">UNIT</th>
+                  <th class="hop-vyp-num">PRICE/UNIT</th>
+                  <th class="hop-vyp-num">AMOUNT</th>
+                  <th class="hop-vyp-num">PER PC</th>
+                  <th class="hop-vyp-pct">DISC%</th>
+                  <th class="hop-vyp-pct">TAX%</th>
+                  <th class="hop-vyp-num">NET</th>
+                  <th class="hop-vyp-act"></th>
+                </tr>
+              </thead>
+              <tbody id="hop-comm-lines-${si}">
+                ${sec.lines.map((ln, li) => hopManualDocLineCardHtml(ln, si, li)).join('')}
+              </tbody>
+            </table>
           </div>
           ${hopManualDocSectionTotalHtml(si)}
-          <div class="hop-comm-section-actions">
-            <button type="button" class="nx-btn nx-btn-primary hop-comm-add-item" onclick="hopManualDocAddLine(${si})">+ Add item to this section</button>
-          </div>
+          <button type="button" class="hop-vyp-add-row" onclick="hopManualDocAddLine(${si})">+ ADD ROW</button>
         </div>`).join('');
-      linesBlock += `<button type="button" class="nx-btn hop-comm-add-section" onclick="hopManualDocAddSection()">+ Add new shortlist section (Shortlisted-2, 3…)</button>`;
+      linesBlock += `<button type="button" class="hop-vyp-add-section" onclick="hopManualDocAddSection()">+ Add shortlist section</button>`;
     } else {
       const lines = d.lines || [];
       linesBlock = `
-        <table class="hop-comm-table">
-          <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Rate</th><th>GST%</th><th>HSN</th><th></th></tr></thead>
-          <tbody>${lines.map((ln, li) => hopManualDocLineRowHtml(ln, -1, li, false)).join('')}</tbody>
-        </table>
-        <button type="button" class="nx-btn" onclick="hopManualDocAddLine(-1)">+ Add line</button>`;
+        <div class="hop-vyp-table-wrap">
+          <table class="hop-vyp-table hop-vyp-table--simple">
+            <thead><tr>
+              <th>ITEM</th><th>QTY</th><th>UNIT</th><th>PRICE/UNIT</th><th>TAX%</th><th>HSN</th><th></th>
+            </tr></thead>
+            <tbody id="hop-comm-lines--1">${lines.map((ln, li) => hopManualDocLineRowHtml(ln, -1, li, false)).join('')}</tbody>
+          </table>
+        </div>
+        <button type="button" class="hop-vyp-add-row" onclick="hopManualDocAddLine(-1)">+ ADD ROW</button>`;
     }
 
     const grand = hopManualDocCalcGrand();
+    const shipTax = hopManualDocShippingTaxAmount(d);
+    const isEdit = !!md.editId;
     return `
-      <div class="hop-manual-doc">
+      <div class="hop-vyp-doc">
         <p id="hop-manual-doc-err" class="nx-oc-error"></p>
-        <div class="hop-manual-doc-sticky">
-          <div class="hop-manual-doc-grid">
-          <label class="hop-manual-doc-full"><span>Customer *</span>
-            <select id="hop-manual-customer" class="nx-input" onchange="hopManualDocSetCustomer(this.value)">
-              <option value="">Select customer</option>${custOpts}
-            </select></label>
-          <div class="hop-manual-doc-grid-meta">
-            <label><span>Date</span>
-              <input type="date" id="hop-manual-txn-date" class="nx-input" value="${foEscapeText(d.txnDate)}" onchange="hopManualDocSetField('txnDate',this.value)" /></label>
-            <label><span>${foEscapeText(docNoLabel)}</span>
-              <input type="text" id="hop-manual-txn-number" class="nx-input" value="${foEscapeText(d.txnNumber || '')}" oninput="hopManualDocSetTxnNumber(this.value)" placeholder="Auto serial — edit to override" />
-              <small class="hop-firm-hint">Auto +1 each save · you can type your own number</small>
+        <div class="hop-vyp-top">
+          <div class="hop-vyp-top-left">
+            <label class="hop-vyp-field"><span>Customer *</span>
+              <select id="hop-manual-customer" class="hop-vyp-control" onchange="hopManualDocSetCustomer(this.value)">
+                <option value="">Search / select customer</option>${custOpts}
+              </select>
+            </label>
+            ${isComm ? `<label class="hop-vyp-field"><span>Cover letter</span>
+              <textarea class="hop-vyp-control" rows="2" oninput="hopManualDocSetField('notes',this.value)">${foEscapeText(d.notes)}</textarea>
+            </label>` : ''}
+          </div>
+          <div class="hop-vyp-top-right">
+            <label class="hop-vyp-field"><span>${foEscapeText(docNoLabel)}</span>
+              <input type="text" id="hop-manual-txn-number" class="hop-vyp-control" value="${foEscapeText(d.txnNumber || '')}" oninput="hopManualDocSetTxnNumber(this.value)" placeholder="Auto serial" />
+            </label>
+            <label class="hop-vyp-field"><span>Date</span>
+              <input type="date" id="hop-manual-txn-date" class="hop-vyp-control" value="${foEscapeText(d.txnDate)}" onchange="hopManualDocSetField('txnDate',this.value)" />
             </label>
           </div>
         </div>
-        </div>
-        ${isComm ? `<label class="hop-manual-wide"><span>Cover letter (Dear Sir…)</span>
-          <textarea class="nx-input" rows="4" oninput="hopManualDocSetField('notes',this.value)">${foEscapeText(d.notes)}</textarea></label>` : ''}
         ${linesBlock}
-        <div class="hop-comm-shipping-block">
-          <div class="hop-comm-shipping-head">Shipping & freight</div>
-          <div class="hop-comm-shipping-grid">
-            <label class="hop-comm-field"><span>Shipping charges (₹)</span>
-              <input type="text" id="hop-manual-shipping" class="nx-input" value="${foEscapeText(d.shippingAmount || '')}" oninput="hopManualDocSetField('shippingAmount',this.value)" placeholder="0.00" inputmode="decimal" /></label>
-            <label class="hop-comm-field"><span>GST on shipping (%)</span>
-              <input type="text" id="hop-manual-shipping-gst" class="nx-input" value="${foEscapeText(d.shippingTaxPct || '18')}" oninput="hopManualDocSetField('shippingTaxPct',this.value)" inputmode="decimal" /></label>
-            <div class="hop-comm-shipping-calc">
+        <div class="hop-vyp-bottom">
+          <div class="hop-vyp-bottom-left">
+            <label class="hop-vyp-field"><span>Terms & conditions</span>
+              <textarea class="hop-vyp-control" rows="4" oninput="hopManualDocSetField('docTerms',this.value)">${foEscapeText(d.docTerms)}</textarea>
+            </label>
+          </div>
+          <div class="hop-vyp-bottom-right">
+            <div class="hop-vyp-sum-row">
+              <span>Shipping</span>
+              <input type="text" id="hop-manual-shipping" class="hop-vyp-control hop-vyp-control--sm" value="${foEscapeText(d.shippingAmount || '')}" oninput="hopManualDocSetField('shippingAmount',this.value)" placeholder="0.00" inputmode="decimal" />
+            </div>
+            <div class="hop-vyp-sum-row">
+              <span>GST on shipping %</span>
+              <input type="text" id="hop-manual-shipping-gst" class="hop-vyp-control hop-vyp-control--sm" value="${foEscapeText(d.shippingTaxPct || '18')}" oninput="hopManualDocSetField('shippingTaxPct',this.value)" inputmode="decimal" />
+            </div>
+            <div class="hop-vyp-sum-row hop-vyp-sum-muted">
               <span>GST on shipping</span>
-              <strong id="hop-manual-shipping-tax">${hopManualDocShippingTaxAmount(d) > 0.009 ? hopCommMoney(hopManualDocShippingTaxAmount(d)) : '—'}</strong>
+              <strong id="hop-manual-shipping-tax">${shipTax > 0.009 ? hopCommMoney(shipTax) : '—'}</strong>
+            </div>
+            <div class="hop-vyp-sum-row hop-vyp-sum-grand">
+              <span>Total</span>
+              <strong id="hop-manual-doc-grand">${hopPreviewMoney(grand)}</strong>
             </div>
           </div>
         </div>
-        <label class="hop-manual-wide"><span>Terms & conditions</span>
-          <textarea class="nx-input" rows="3" oninput="hopManualDocSetField('docTerms',this.value)">${foEscapeText(d.docTerms)}</textarea></label>
-        <div class="hop-manual-doc-foot">
-          <strong id="hop-manual-doc-grand">Grand total: ${hopPreviewMoney(grand)}</strong>
-          <div class="hop-manual-doc-btns">
-            <button type="button" class="nx-btn" onclick="openHopView('${foEscapeText(md.returnView || 'sale_estimates')}')">Cancel</button>
-            <button type="button" class="nx-btn nx-btn-primary" onclick="hopManualDocSave()">${hopState.manualDoc?.editId ? 'Update & preview' : 'Save & preview'}</button>
+        <div class="hop-vyp-foot">
+          ${isEdit ? `<button type="button" class="hop-vyp-btn hop-vyp-btn--danger" onclick="hopManualDocDelete()">Delete</button>` : '<span></span>'}
+          <div class="hop-vyp-foot-right">
+            <button type="button" class="hop-vyp-btn" onclick="hopCloseManualDocOverlay()">Cancel</button>
+            <button type="button" class="hop-vyp-btn hop-vyp-btn--primary" onclick="hopManualDocSave()">${isEdit ? 'Update' : 'Save'}</button>
           </div>
         </div>
       </div>`;
@@ -990,7 +1078,7 @@
 
   function hopManualDocUpdateGrandTotal() {
     const el = document.getElementById('hop-manual-doc-grand');
-    if (el) el.textContent = `Grand total: ${hopPreviewMoney(hopManualDocCalcGrand())}`;
+    if (el) el.textContent = hopPreviewMoney(hopManualDocCalcGrand());
     const shipTaxEl = document.getElementById('hop-manual-shipping-tax');
     if (shipTaxEl) {
       const d = hopState.manualDocDraft;
@@ -1152,6 +1240,7 @@
       const id = row?.party_txn_id || row?.id || editId;
       if (!id) throw new Error('Save failed — no document id returned');
       if (typeof nexoraToast === 'function') nexoraToast(editId ? 'Document updated' : 'Document saved', 'ok');
+      hopCloseManualDocOverlay();
       openHopView(md.returnView || 'sale_estimates');
       hopOpenSaleDocPreview(Number(id), 0);
     } catch (e) {
@@ -1160,32 +1249,14 @@
   }
 
   async function renderHopManualDocCreateModule(mount) {
+    // Legacy view path — redirect into full-screen overlay.
     if (!hopState.manualDoc || !hopState.manualDocDraft) {
       hopManualDocInit(27, 'commercial');
     }
-    let customers = [];
-    let firmTerms = '';
-    try {
-      const [cust, firm] = await Promise.all([
-        hopApi('/api/v1/hop/customers'),
-        hopApi('/api/v1/hop/firm-profile').catch(() => ({})),
-      ]);
-      customers = cust || [];
-      firmTerms = firm?.terms_default || '';
-      hopState.manualDocCustomers = customers;
-      hopState.manualDocFirmTerms = firmTerms;
-    } catch (e) {
-      mount.innerHTML = hopModuleShell('Sale', 'Create document', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
-      return;
-    }
-    const md = hopState.manualDoc;
-    const isEdit = !!md.editId;
-    const title = isEdit
-      ? (md.txnType === 83 ? 'Edit Proforma Invoice' : (md.mode === 'commercial' ? 'Edit Commercial quotation' : 'Edit Estimate'))
-      : (md.txnType === 83 ? 'New Proforma Invoice' : (md.mode === 'commercial' ? 'Commercial quotation' : 'New Estimate'));
-    const body = `<div id="hop-manual-doc-body">${hopManualDocRenderBody(customers, firmTerms)}</div>`;
-    mount.innerHTML = hopModuleShell('Sale', title, '', '', body);
-    hopManualDocFetchNextNumber();
+    const ret = hopState.manualDoc?.returnView || 'sale_estimates';
+    openHopView(ret);
+    hopMountManualDocOverlay();
+    if (mount) mount.innerHTML = '';
   }
 
   /* ---------- Expose globals (hop_app.js loaders + onclick) ---------- */
@@ -1194,6 +1265,8 @@
   window.renderHopManualDocCreateModule = renderHopManualDocCreateModule;
   window.hopOpenManualDocCreate = hopOpenManualDocCreate;
   window.hopOpenManualDocEdit = hopOpenManualDocEdit;
+  window.hopCloseManualDocOverlay = hopCloseManualDocOverlay;
+  window.hopManualDocDelete = hopManualDocDelete;
   window.hopFirmGstOnInput = hopFirmGstOnInput;
   window.hopFirmFetchGst = hopFirmFetchGst;
   window.hopFirmReadImage = hopFirmReadImage;

@@ -2066,6 +2066,10 @@ function hopSetMainFullpage(enabled) {
 
 /** Mobile / fullscreen back — closes overlays first, then pops view history. */
 function hopGoBack() {
+  if (document.getElementById('hop-vyp-doc-overlay')) {
+    if (typeof hopCloseManualDocOverlay === 'function') hopCloseManualDocOverlay();
+    return;
+  }
   if (document.getElementById('hop-party-edit-modal')) {
     hopClosePartyEditModal();
     return;
@@ -7447,11 +7451,28 @@ function hopRenderInvoiceRows(rows) {
       <td>${hopInvoiceStatusBadge(eff)}</td>
       <td class="inv-actions" onclick="event.stopPropagation()">
         ${canPreview ? `<button type="button" class="inv-ico-btn" title="Preview" onclick="hopOpenSaleDocPreview(${partyTxnId}, ${sourceTxnId})">👁</button>` : ''}
-        ${canEdit ? `<button type="button" class="inv-ico-btn" title="Edit quotation" onclick="hopOpenManualDocEdit(${partyTxnId})">✎</button>` : ''}
+        ${canEdit ? `<button type="button" class="inv-ico-btn" title="Edit" onclick="hopOpenManualDocEdit(${partyTxnId})">✎</button>` : ''}
+        ${canEdit ? `<button type="button" class="inv-ico-btn" title="Delete" onclick="hopDeleteManualDoc(${partyTxnId})">🗑</button>` : ''}
         ${payBtn}
       </td>
     </tr>`;
   }).join('');
+}
+
+function hopDeleteManualDoc(partyTxnId) {
+  const id = Number(partyTxnId || 0);
+  if (!id) return;
+  if (!confirm('Delete this quotation / proforma permanently?')) return;
+  hopApi(`/api/v1/hop/party-transactions/${id}`, { method: 'DELETE' })
+    .then(() => {
+      if (typeof nexoraToast === 'function') nexoraToast('Document deleted', 'ok');
+      const view = hopState.view || 'sale_estimates';
+      openHopView(view);
+    })
+    .catch((e) => {
+      if (typeof nexoraToast === 'function') nexoraToast(e?.message || 'Delete failed', 'err');
+      else alert(e?.message || 'Delete failed');
+    });
 }
 
 function hopRefreshInvoiceUi() {
@@ -9704,6 +9725,7 @@ window.hopSelectParty = hopSelectParty;
 window.hopFilterParties = hopFilterParties;
 window.hopOpenPartyTxnDetail = hopOpenPartyTxnDetail;
 window.hopOpenSaleDocPreview = hopOpenSaleDocPreview;
+window.hopDeleteManualDoc = hopDeleteManualDoc;
 window.hopClosePartyTxnDetail = hopClosePartyTxnDetail;
 window.hopOpenPartyTxnInModule = hopOpenPartyTxnInModule;
 window.hopPrintPartyTxnPreview = hopPrintPartyTxnPreview;

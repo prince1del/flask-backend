@@ -950,3 +950,40 @@ def update_manual_party_document(
         "customer_id": customer_id,
         "party_name": party_name,
     }
+
+
+def delete_manual_party_document(
+    conn: sqlite3.Connection,
+    workspace_id: str,
+    party_txn_id: int,
+) -> dict[str, Any]:
+    """Delete Nexora-created Estimate (27) / Proforma (83) only (source_txn_id < 0)."""
+    row = conn.execute(
+        """
+        SELECT id, source_txn_id, txn_type, txn_number FROM hop_party_transactions
+        WHERE workspace_id=? AND id=?
+        """,
+        (workspace_id, int(party_txn_id)),
+    ).fetchone()
+    if not row:
+        raise ValueError("Transaction not found")
+    h = dict(row)
+    txn_type = int(h.get("txn_type") or 0)
+    source_txn_id = int(h.get("source_txn_id") or 0)
+    if txn_type not in (27, 83) or source_txn_id >= 0:
+        raise ValueError("Only Nexora-created estimates/proformas can be deleted")
+    conn.execute(
+        "DELETE FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=?",
+        (workspace_id, source_txn_id),
+    )
+    conn.execute(
+        "DELETE FROM hop_party_transactions WHERE workspace_id=? AND id=?",
+        (workspace_id, int(party_txn_id)),
+    )
+    conn.commit()
+    return {
+        "party_txn_id": int(party_txn_id),
+        "source_txn_id": source_txn_id,
+        "txn_number": _clean(h.get("txn_number")),
+        "deleted": True,
+    }

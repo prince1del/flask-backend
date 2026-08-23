@@ -4581,6 +4581,133 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 .hop-doc-comm-grand-row .num{color:#fff !important;}
 .hop-doc-bottom--commercial{grid-template-columns:1fr auto;}
 .hop-doc-sign-block{text-align:right;min-width:160px;margin-top:8px;}
+/* ---------- Vyapar-style full-screen Estimate / Quotation / PI overlay ---------- */
+.hop-vyp-doc-overlay{
+  position:fixed;inset:0;z-index:18000;
+  background:#eef1f5;
+  display:flex;flex-direction:column;
+  opacity:0;pointer-events:none;transition:opacity .15s ease;
+}
+.hop-vyp-doc-overlay.is-open{opacity:1;pointer-events:auto;}
+body.hop-vyp-doc-open{overflow:hidden;}
+.hop-vyp-doc-shell{
+  flex:1;min-height:0;display:flex;flex-direction:column;
+  width:100%;height:100%;background:#eef1f5;
+}
+.hop-vyp-doc-head{
+  flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 16px;background:#fff;border-bottom:1px solid #e2e8f0;
+  box-shadow:0 1px 0 rgba(15,23,42,.04);
+}
+.hop-vyp-doc-head-left{display:flex;align-items:center;gap:10px;}
+.hop-vyp-doc-head h2{margin:0;font-size:1.15rem;font-weight:700;color:#0f172a;}
+.hop-vyp-doc-x{
+  width:34px;height:34px;border:none;border-radius:8px;background:#f1f5f9;color:#475569;
+  font-size:1.4rem;line-height:1;cursor:pointer;
+}
+.hop-vyp-doc-x:hover{background:#e2e8f0;color:#0f172a;}
+.hop-vyp-doc-head-right{display:flex;gap:8px;align-items:center;}
+.hop-vyp-doc-scroll{flex:1;min-height:0;overflow:auto;padding:14px 16px 28px;}
+.hop-vyp-doc{max-width:1280px;margin:0 auto;}
+.hop-vyp-top{
+  display:grid;grid-template-columns:1.4fr .9fr;gap:16px;margin-bottom:14px;
+  background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;
+}
+.hop-vyp-top-left,.hop-vyp-top-right{display:flex;flex-direction:column;gap:10px;}
+.hop-vyp-field{display:flex;flex-direction:column;gap:4px;}
+.hop-vyp-field span{font-size:.72rem;font-weight:650;color:#64748b;}
+.hop-vyp-control{
+  width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;
+  background:#fff;color:#0f172a;font-size:.88rem;
+}
+.hop-vyp-control:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.15);}
+.hop-vyp-control--sm{max-width:140px;text-align:right;}
+.hop-vyp-section{
+  background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;
+}
+.hop-vyp-section-title{
+  width:100%;max-width:420px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;
+  font-weight:700;font-size:.9rem;margin-bottom:10px;
+}
+.hop-vyp-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.hop-vyp-table{
+  width:100%;min-width:1100px;border-collapse:collapse;font-size:.8rem;background:#fff;
+}
+.hop-vyp-table th{
+  background:#f8fafc;color:#475569;font-size:.68rem;font-weight:700;letter-spacing:.03em;
+  text-align:left;padding:8px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;
+}
+.hop-vyp-table td{padding:4px 4px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+.hop-vyp-sl{width:36px;text-align:center !important;color:#94a3b8;}
+.hop-vyp-item{min-width:220px;width:26%;}
+.hop-vyp-desc{min-width:200px;width:22%;}
+.hop-vyp-num{min-width:88px;width:88px;}
+.hop-vyp-unit{min-width:64px;width:64px;}
+.hop-vyp-pct{min-width:64px;width:64px;}
+.hop-vyp-act{width:40px;}
+.hop-vyp-inp{
+  width:100%;padding:8px 8px;border:1px solid transparent;border-radius:6px;
+  background:transparent;font-size:.84rem;color:#0f172a;
+}
+.hop-vyp-inp:hover{border-color:#e2e8f0;background:#f8fafc;}
+.hop-vyp-inp:focus{outline:none;border-color:#2563eb;background:#fff;box-shadow:0 0 0 2px rgba(37,99,235,.12);}
+.hop-vyp-inp--num{text-align:right;}
+.hop-vyp-inp--cen{text-align:center;}
+.hop-vyp-read{text-align:right;font-variant-numeric:tabular-nums;color:#334155;padding-right:8px !important;white-space:nowrap;}
+.hop-vyp-net{font-weight:700;color:#1d4ed8;}
+.hop-vyp-trash{
+  border:none;background:transparent;cursor:pointer;opacity:.55;font-size:.95rem;padding:4px 6px;
+}
+.hop-vyp-trash:hover{opacity:1;}
+.hop-vyp-add-row{
+  margin-top:8px;border:1px solid #93c5fd;background:#eff6ff;color:#1d4ed8;
+  font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer;
+}
+.hop-vyp-add-row:hover{background:#dbeafe;}
+.hop-vyp-add-section{
+  margin:4px 0 12px;border:1px dashed #cbd5e1;background:#fff;color:#475569;
+  font-weight:650;padding:8px 12px;border-radius:8px;cursor:pointer;width:100%;
+}
+.hop-vyp-section-total{
+  display:flex;justify-content:flex-end;gap:12px;align-items:center;
+  margin-top:8px;padding:8px 10px;background:#f8fafc;border-radius:8px;font-size:.85rem;
+}
+.hop-vyp-section-total strong{color:#1d4ed8;font-variant-numeric:tabular-nums;}
+.hop-vyp-bottom{
+  display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-top:8px;
+}
+.hop-vyp-bottom-left,.hop-vyp-bottom-right{
+  background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;
+}
+.hop-vyp-sum-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;
+  font-size:.88rem;color:#0f172a;
+}
+.hop-vyp-sum-muted{color:#64748b;}
+.hop-vyp-sum-grand{
+  margin-top:8px;padding-top:10px;border-top:2px solid #1d4ed8;font-weight:700;
+}
+.hop-vyp-sum-grand strong{font-size:1.15rem;color:#1d4ed8;font-variant-numeric:tabular-nums;}
+.hop-vyp-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-top:14px;padding-top:4px;
+}
+.hop-vyp-foot-right{display:flex;gap:8px;}
+.hop-vyp-btn{
+  border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;
+  padding:9px 16px;font-weight:650;font-size:.88rem;cursor:pointer;
+}
+.hop-vyp-btn:hover{background:#f8fafc;}
+.hop-vyp-btn--primary{background:#2563eb;border-color:#2563eb;color:#fff;}
+.hop-vyp-btn--primary:hover{background:#1d4ed8;}
+.hop-vyp-btn--danger{background:#fff;border-color:#fecaca;color:#b91c1c;}
+.hop-vyp-btn--danger:hover{background:#fef2f2;}
+.hop-vyp-btn--sm{padding:7px 12px;font-size:.8rem;}
+@media (max-width:900px){
+  .hop-vyp-top,.hop-vyp-bottom{grid-template-columns:1fr;}
+  .hop-vyp-table{min-width:980px;}
+}
+
 .hop-manual-doc-sticky{
   position:sticky;top:0;z-index:2;padding:12px 0 14px;margin-bottom:12px;
   background:#faf8f5;border-bottom:1px solid #e2e8f0;

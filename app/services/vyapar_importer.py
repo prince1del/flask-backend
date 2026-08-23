@@ -903,10 +903,15 @@ def import_vyapar_backup(
             _clean(r.get("company")).lower(): r for r in hop_ops_module.list_vendors(target_conn, workspace_id)
         }
 
+        # Only Vyapar-sourced rows (positive source_txn_id). Nexora-created
+        # estimates/proformas use negative source_txn_id and must stay untouched.
         existing_party_txn_ids = {
             int(r[0])
             for r in target_conn.execute(
-                "SELECT source_txn_id FROM hop_party_transactions WHERE workspace_id=?",
+                """
+                SELECT source_txn_id FROM hop_party_transactions
+                WHERE workspace_id=? AND source_txn_id IS NOT NULL AND source_txn_id > 0
+                """,
                 (workspace_id,),
             ).fetchall()
         }
@@ -1010,7 +1015,11 @@ def import_vyapar_backup(
             inv_date_key = inv_date[:10] if inv_date else ""
             party_id_val = (customer or {}).get("id") if party_type == "customer" else (vendor or {}).get("id")
             # Upsert party transaction — always refresh amount/balance so Paid status stays correct.
+            # Hard guard: never touch Nexora-created docs (source_txn_id < 0).
             try:
+                if txn_id <= 0:
+                    out["party_txns_skipped"] += 1
+                    continue
                 if txn_id in existing_party_txn_ids:
                     target_conn.execute(
                         """
@@ -1019,7 +1028,7 @@ def import_vyapar_backup(
                             txn_type=?, txn_label=?, txn_number=?, txn_date=?,
                             total_amount=?, balance_amount=?, status_text=?, notes=?,
                             updated_at=datetime('now')
-                        WHERE workspace_id=? AND source_txn_id=?
+                        WHERE workspace_id=? AND source_txn_id=? AND source_txn_id > 0
                         """,
                         (
                             party_type,
@@ -1075,7 +1084,7 @@ def import_vyapar_backup(
                                 txn_type=?, txn_label=?, txn_number=?, txn_date=?,
                                 total_amount=?, balance_amount=?, status_text=?, notes=?,
                                 updated_at=datetime('now')
-                            WHERE workspace_id=? AND source_txn_id=?
+                            WHERE workspace_id=? AND source_txn_id=? AND source_txn_id > 0
                             """,
                             (
                                 party_type,
@@ -1289,6 +1298,9 @@ def import_vyapar_backup(
                 upsert_firm_profile(target_conn, workspace_id, firm)
             lines_by_txn = fetch_all_line_items(src)
             for txn_id, lines in lines_by_txn.items():
+                # Never overwrite line items for Nexora-created docs (negative ids).
+                if int(txn_id) <= 0:
+                    continue
                 out["txn_lines_imported"] += replace_txn_lines(
                     target_conn, workspace_id, int(txn_id), lines
                 )
