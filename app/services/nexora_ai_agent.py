@@ -35,7 +35,7 @@ workspace). Today's date is {today} (UTC) — use this to resolve relative dates
 ("tomorrow", "kal", "next Monday") into an actual YYYY-MM-DD before calling
 get_pjp_for_date.
 
-You answer questions across four areas, each with its own tools:
+You answer questions across six areas, each with its own tools:
 - Order Desk: CI (customer indent) vs SO (sales order) reconciliation —
   matched/mismatched quantities and values, by season, category
   (Bed/Bath/Pillow/TOB), and distributor.
@@ -44,6 +44,10 @@ You answer questions across four areas, each with its own tools:
 - PJP (Permanent Journey Plan): the planned visit for a specific date.
 - Distributor Payment Status: SO bill amount, deposits recorded, and
   outstanding balance per distributor/season/category.
+- Party Profile: a distributor or retailer's contact person, phone, address,
+  GST, email, and last visit date.
+- Article Price: MRP/PTR/ex-mill price lookup by brand, product, or print
+  style, optionally narrowed to one size.
 
 Rules:
 - ONLY state numbers/facts that came back from a tool call. Never estimate or invent.
@@ -179,6 +183,47 @@ def _tool_declarations() -> list[dict[str, Any]]:
                         "description": "Filter to one distributor (optional).",
                     }
                 },
+            },
+        },
+        {
+            "name": "get_party_profile",
+            "description": (
+                "Look up a distributor or retailer by name (typo-tolerant) - "
+                "contact person, phone, address, GST, email, and their last visit "
+                "date. Use for 'X ka number/address/GST/last visit kya hai' type "
+                "questions. Tries distributors first, then retailers."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "party_name": {
+                        "type": "string",
+                        "description": "The distributor or retailer's name (can be partial/misspelled).",
+                    }
+                },
+                "required": ["party_name"],
+            },
+        },
+        {
+            "name": "get_article_price",
+            "description": (
+                "Search Article Master for MRP/PTR/ex-mill price by brand, product, "
+                "or print style (e.g. 'Cardinal', 'towel'). Use for 'X ka MRP/rate/"
+                "ex-mill kya hai' type questions. Optionally narrow to one exact size."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Brand, product, or print-style text to search for.",
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Exact size string to narrow to, e.g. '(224 X 254)' (optional).",
+                    },
+                },
+                "required": ["query"],
             },
         },
     ]
@@ -341,6 +386,88 @@ def _run_tool(
                         cat["deposits_count"] = len(cat.get("deposits") or [])
                         cat.pop("deposits", None)
             return {"distributors": _sanitize(rows), "count": len(rows)}
+
+        if name == "get_party_profile":
+            party_name = str(args.get("party_name") or "").strip()
+            if not party_name:
+                return {"error": "party_name is required"}
+
+            from centralized_db_system.db import CentralizedDB
+            from app.routes.data import _find_distributor_fuzzy
+
+            db = CentralizedDB(_db_path())
+
+            dist = _find_distributor_fuzzy(db, party_name, workspace_id)
+            if dist:
+                dist_id = dist.get("id")
+                last_visit = db.get_last_visit_date("distributor", dist_id) if dist_id else None
+                return _sanitize({
+                    "type": "distributor",
+                    "name": dist.get("firm_name") or dist.get("name"),
+                    "nick_name": dist.get("firm_nick_name"),
+                    "contact_person": dist.get("name"),
+                    "phone": dist.get("phone_number"),
+                    "address": dist.get("address"),
+                    "location": dist.get("location"),
+                    "gst_no": dist.get("gst_no"),
+                    "email": dist.get("email"),
+                    "credit_limit": dist.get("credit_limit"),
+                    "payment_terms": dist.get("payment_terms"),
+                    "status": dist.get("status"),
+                    "last_visit": last_visit,
+                })
+
+            # No distributor matched — try retailers with the same
+            # substring-on-name/owner/contact pattern the "identity" intent
+            # already uses.
+            like_query = f"%{party_name.lower()}%"
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT id, name, owner_name, contact_person, phone_number, "
+                "address, location, gst_no, email FROM master_retailers "
+                "WHERE workspace_id = ? AND (LOWER(name) LIKE ? OR "
+                "LOWER(owner_name) LIKE ? OR LOWER(contact_person) LIKE ?) LIMIT 1",
+                (workspace_id, like_query, like_query, like_query),
+            ).fetchone()
+            conn.row_factory = None
+            if not row:
+                return {"error": f"No distributor or retailer matching '{party_name}' found"}
+            ret = dict(row)
+            last_visit = db.get_last_visit_date("retailer", ret["id"]) if ret.get("id") else None
+            return _sanitize({
+                "type": "retailer",
+                "name": ret.get("name"),
+                "contact_person": ret.get("owner_name") or ret.get("contact_person"),
+                "phone": ret.get("phone_number"),
+                "address": ret.get("address"),
+                "location": ret.get("location"),
+                "gst_no": ret.get("gst_no"),
+                "email": ret.get("email"),
+                "last_visit": last_visit,
+            })
+
+        if name == "get_article_price":
+            query = str(args.get("query") or "").strip()
+            if not query:
+                return {"error": "query is required"}
+            size = str(args.get("size") or "").strip()
+            conn.row_factory = sqlite3.Row
+            sql = (
+                "SELECT brand, size, bs_size, product, print_style, colors, mrp, "
+                "selling_price, ptr, retailer_margin, exmill_price "
+                "FROM article_master_v2 WHERE workspace_id = ? "
+                "AND (brand LIKE ? OR product LIKE ? OR print_style LIKE ?)"
+            )
+            like = f"%{query}%"
+            params: list[Any] = [workspace_id, like, like, like]
+            if size:
+                sql += " AND size = ?"
+                params.append(size)
+            sql += " ORDER BY brand, size LIMIT 25"
+            rows = conn.execute(sql, params).fetchall()
+            conn.row_factory = None
+            articles = [dict(r) for r in rows]
+            return {"articles": _sanitize(articles), "count": len(articles)}
 
         return {"error": f"Unknown tool: {name}"}
     finally:
