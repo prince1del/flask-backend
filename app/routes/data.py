@@ -8372,6 +8372,7 @@ def ai_assistant_query() -> Response:
         )
 
     ai_fallback_used = False
+    _ai_fallback_debug = None
     if _is_unresolved_answer(answer):
         # Rule-based engine admits it couldn't answer — hand off to the
         # Gemini tool-calling Order Desk agent before giving up, so a real
@@ -8386,10 +8387,11 @@ def ai_assistant_query() -> Response:
                 answer = f"{ask_prefix} {ai_answer}"
                 intent = "ai_order_desk"
                 ai_fallback_used = True
-            except NexoraAiAgentError:
-                pass  # AI unavailable (no key / quota / all models down) — fall through to the apology.
-            except Exception:  # noqa: BLE001 - never let the AI agent 500 this endpoint
-                pass
+            except NexoraAiAgentError as exc:
+                _ai_fallback_debug = f"NexoraAiAgentError: {exc}"
+            except Exception as exc:  # noqa: BLE001 - never let the AI agent 500 this endpoint
+                import traceback
+                _ai_fallback_debug = f"{exc.__class__.__name__}: {exc}\n{traceback.format_exc()}"
         if not ai_fallback_used:
             log_unresolved_query(workspace_id, user_id, query)
             answer = (
@@ -8410,9 +8412,12 @@ def ai_assistant_query() -> Response:
         # branch just logged this exact failure a moment ago above.
         resolve_unresolved_query(workspace_id, query)
 
+    _resp_payload = {"intent": intent, "query": query, "answer": answer.strip()}
+    if _ai_fallback_debug:
+        _resp_payload["_ai_fallback_debug"] = _ai_fallback_debug
     return Response(
         json.dumps(
-            {"intent": intent, "query": query, "answer": answer.strip()}, ensure_ascii=False
+            _resp_payload, ensure_ascii=False
         ),
         mimetype="application/json",
     )
