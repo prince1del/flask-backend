@@ -142,6 +142,47 @@ def insert_filled_order_item(conn, filled_order_id, item):
     conn.commit()
 
 
+def merge_items_into_filled_order(conn, user_id, filled_order_id, items, extra_filename=None):
+    """Add new lines into an existing FO, clubbing qty on the same item_key."""
+    existing = conn.execute(
+        """SELECT id, item_key, raw_qty_value, final_piece_qty, ex_mill_price, matched
+           FROM filled_order_items WHERE filled_order_id = ?""",
+        (filled_order_id,),
+    ).fetchall()
+    by_key = {row[1]: row for row in existing if row[1]}
+    for item in items:
+        key = item.get("item_key")
+        if key and key in by_key:
+            row_id, _, raw_qty, final_qty, ex_mill, matched = by_key[key]
+            new_raw = (raw_qty or 0) + (item.get("raw_qty_value") or 0)
+            new_final = (final_qty or 0) + (item.get("final_piece_qty") or 0)
+            new_ex = item.get("ex_mill_price") or ex_mill
+            new_matched = 1 if (matched or item.get("matched")) else 0
+            conn.execute(
+                """UPDATE filled_order_items
+                   SET raw_qty_value = ?, final_piece_qty = ?, ex_mill_price = ?, matched = ?
+                   WHERE id = ?""",
+                (new_raw, new_final, new_ex, new_matched, row_id),
+            )
+        else:
+            insert_filled_order_item(conn, filled_order_id, item)
+    if extra_filename:
+        row = conn.execute(
+            "SELECT source_filename FROM filled_orders WHERE id = ? AND user_id = ?",
+            (filled_order_id, user_id),
+        ).fetchone()
+        previous = (row[0] or "") if row else ""
+        if extra_filename not in previous:
+            combined = f"{previous} + {extra_filename}".strip(" +") if previous else extra_filename
+            conn.execute(
+                "UPDATE filled_orders SET source_filename = ? WHERE id = ? AND user_id = ?",
+                (combined, filled_order_id, user_id),
+            )
+    recompute_order_counts(conn, filled_order_id)
+    conn.commit()
+    return get_filled_order(conn, user_id, filled_order_id)
+
+
 def recompute_filled_order_quantities(conn, filled_order_id: int) -> int:
     """Re-apply qty-column rules to saved lines (fixes legacy bale miscounts)."""
     import filled_orders_parser as foparser

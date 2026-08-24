@@ -68,6 +68,9 @@ PREFERRED_FINAL_QTY_HEADERS = [
     "order in pieces",
     "additional order qty",
     "additional quantity",
+    "total qty",
+    "total quantity",
+    "total pcs",
 ]
 
 # Calendar-month headers used as order splits (BALAJI / similar booking forms).
@@ -1050,6 +1053,8 @@ def build_filled_order_rows(valid_rows, header_row, col_mapping, qty_col_idx, ba
             elif raw_col_name and raw_col_name.lower() != "nan":
                 extra_attributes[raw_col_name] = val
 
+        fill_ex_mill_from_line_value(core_fields, extra_attributes, raw_qty)
+
         rows.append({
             "line_number": line_number,
             "core_fields": core_fields,
@@ -1162,6 +1167,9 @@ def match_and_normalize(
         matched = True
         article_id = article["id"]
     else:
+        fill_ex_mill_from_line_value(
+            core_fields, extra_attributes, parsed_row.get("raw_qty_value"),
+        )
         bale_size = core_fields.get("bale_pack_size")
         mrp, ptr, ex_mill = (
             core_fields.get("mrp"), core_fields.get("ptr"), core_fields.get("ex_mill_price"),
@@ -1206,6 +1214,63 @@ def match_and_normalize(
         "ptr": _safe_float(ptr),
         "ex_mill_price": ex_f,
     }
+
+
+def _looks_like_qty_subheader_row(values) -> bool:
+    texts = [amparser._norm(v) for v in values if amparser._norm(v)]
+    if not texts:
+        return False
+    blob = " ".join(texts)
+    return (
+        "total qty" in blob
+        or "total quantity" in blob
+        or "per color" in blob
+        or "per colour" in blob
+    )
+
+
+def flatten_two_row_order_header(header_row, sub_row):
+    """Join a QUALITY/SIZE header with the next 'Per Color / total qty' sub-row."""
+    if not _looks_like_qty_subheader_row(sub_row):
+        return list(header_row), False
+    width = max(len(header_row), len(sub_row))
+    merged = []
+    for idx in range(width):
+        top = header_row[idx] if idx < len(header_row) else None
+        sub = sub_row[idx] if idx < len(sub_row) else None
+        top_s = str(top).strip() if top is not None and str(top).strip().lower() not in {"", "nan", "none"} else ""
+        sub_s = str(sub).strip() if sub is not None and str(sub).strip().lower() not in {"", "nan", "none"} else ""
+        if top_s and sub_s:
+            merged.append(f"{top_s} {sub_s}")
+        else:
+            merged.append(top_s or sub_s)
+    return merged, True
+
+
+def fill_ex_mill_from_line_value(core_fields: dict, extra_attributes: dict, raw_qty):
+    """If EXMILL rate is missing, derive it from 'value at exmill' / qty."""
+    if _safe_float(core_fields.get("ex_mill_price")):
+        return
+    qty = _safe_float(raw_qty)
+    if not qty:
+        return
+    for key, val in (extra_attributes or {}).items():
+        norm = amparser._norm(key)
+        compact = norm.replace("-", "").replace(" ", "")
+        if "value" in compact and "exmill" in compact:
+            amount = _safe_float(val)
+            if amount:
+                core_fields["ex_mill_price"] = round(amount / qty, 4)
+                return
+
+
+def looks_like_addon_order_filename(filename: str | None) -> bool:
+    """Special / additional booking files should add to an existing FO, not replace it."""
+    stem = Path(filename or "").stem.lower()
+    return any(
+        token in stem
+        for token in ("special", "additional", "addnl", "extra order", "addon")
+    )
 
 
 def _sheet_name_looks_non_order(sheet_name: str) -> bool:
@@ -1312,8 +1377,15 @@ def detect_category_from_order_file(path, filename: str | None = None) -> str | 
     raw_df = read_excel_sheet(path, sheet_name=sheet_name, header=None)
     header_idx = amparser.detect_header_row(raw_df)
     header_row = raw_df.iloc[header_idx].tolist()
+    data_start = header_idx + 1
+    if header_idx + 1 < len(raw_df):
+        header_row, used_sub = flatten_two_row_order_header(
+            header_row, raw_df.iloc[header_idx + 1].tolist(),
+        )
+        if used_sub:
+            data_start = header_idx + 2
     col_mapping = amparser.map_columns_to_core(header_row)
-    data_rows_all = raw_df.iloc[header_idx + 1 :]
+    data_rows_all = raw_df.iloc[data_start:]
     valid_rows = [
         row
         for _, row in data_rows_all.iterrows()
@@ -1428,9 +1500,16 @@ def parse_sheet_filled_order_rows(
     raw_df = read_excel_sheet(path, sheet_name=sheet_name, header=None)
     header_idx = amparser.detect_header_row(raw_df)
     header_row = raw_df.iloc[header_idx].tolist()
+    data_start = header_idx + 1
+    if header_idx + 1 < len(raw_df):
+        header_row, used_sub = flatten_two_row_order_header(
+            header_row, raw_df.iloc[header_idx + 1].tolist(),
+        )
+        if used_sub:
+            data_start = header_idx + 2
     col_mapping = amparser.map_columns_to_core(header_row)
     valid_rows = [
-        row for _, row in raw_df.iloc[header_idx + 1:].iterrows()
+        row for _, row in raw_df.iloc[data_start:].iterrows()
         if amparser.is_data_row(row.tolist(), col_mapping)
     ]
     qty_detection = detect_quantity_column(

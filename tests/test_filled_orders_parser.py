@@ -703,3 +703,30 @@ def test_so_pack_export_rejected_with_clear_guidance(tmp_path):
         foparser.detect_category_from_order_file(path, filename=path.name)
     with pytest.raises(ValueError, match="Brand \\+ Size"):
         foparser.parse_filled_order_workbook(path, "Bed")
+
+
+def test_bath_linen_special_sheet_maps_quality_exmill_and_total_qty(tmp_path):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["QUALITY", "SIZE", "GSM", "NO.SHADES", "SKU", "DELHI", "", "MRP", "EXMILL", "value at exmill"])
+    ws.append(["", "", "", "", "", "Per Color", "total qty", "", "", ""])
+    ws.append(["FLORA", "40*60", 400, 9, 1, 300, 2700, 142, 77, 207900])
+    ws.append(["TULIP", "75*150", 450, 11, 1, 255, 2805, 825, 450, 1262250])
+    path = tmp_path / "BND Bath linen special order.xlsx"
+    wb.save(path)
+
+    assert foparser.detect_category_from_order_file(path, filename=path.name) == "Bath"
+    parsed = foparser.parse_filled_order_workbook(path, "Bath")
+    assert parsed["status"] == "ok"
+    assert amparser._norm(parsed["quantity_column_used"]) == "total qty"
+    rows = parsed["parsed_rows"]
+    assert len(rows) == 2
+    flora = next(r for r in rows if str(r["core_fields"].get("brand")).upper() == "FLORA")
+    assert float(flora["raw_qty_value"]) == 2700
+    assert float(flora["core_fields"]["ex_mill_price"]) == 77
+
+
+def test_addon_filename_detected():
+    assert foparser.looks_like_addon_order_filename("BND Bath linen special order.xlsx")
+    assert foparser.looks_like_addon_order_filename("bernina additional order.xlsx")
+    assert not foparser.looks_like_addon_order_filename("bernina_bed.xlsx")

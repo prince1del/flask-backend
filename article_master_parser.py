@@ -949,7 +949,10 @@ CORE_FIELD_ALIASES = {
     "size": ["size"],
     "mrp": ["mrp"],
     "ptr": ["ptr", "tentative (ptr)", "tentative ptr"],
-    "ex_mill_price": ["ex-mill", "ex mill", "exmill price", "ex-mill per pcs", "ex mill per pcs"],
+    "ex_mill_price": [
+        "ex-mill", "ex mill", "exmill", "exmill price",
+        "ex-mill per pcs", "ex mill per pcs", "exmill rate",
+    ],
     "bale_pack_size": [
         "bale size", "bale pack size", "bale pack sizes",
         "pack sizes", "pack size",
@@ -972,6 +975,11 @@ DEFAULT_PRODUCT_BY_CATEGORY = {
 # whose normalized name starts with "bale" and contains "size" anywhere in it.
 CORE_FIELD_KEYWORD_RULES = {
     "bale_pack_size": lambda name: name.startswith("bale") and "size" in name,
+    "ex_mill_price": lambda name: (
+        "exmill" in name.replace("-", "").replace(" ", "")
+        and "value" not in name
+        and "markup" not in name
+    ),
 }
 
 # Order matters: check Blanket/Comforter/BIAB before generic Pillow check
@@ -1169,6 +1177,21 @@ def infer_blank_brand_column(header_row, mapping):
     if blank_idxs:
         mapping = dict(mapping)
         mapping[blank_idxs[0]] = "brand"
+        return mapping
+    return infer_quality_as_brand_column(header_row, mapping)
+
+
+def infer_quality_as_brand_column(header_row, mapping):
+    """Bernina bath special-order sheets use QUALITY as the brand column."""
+    if any(field == "brand" for field in mapping.values()):
+        return mapping
+    for idx, raw_name in enumerate(header_row):
+        if mapping.get(idx) is not None:
+            continue
+        if _norm(raw_name) == "quality":
+            mapping = dict(mapping)
+            mapping[idx] = "brand"
+            break
     return mapping
 
 
@@ -1188,7 +1211,8 @@ def map_columns_to_core(header_row):
                     matched_core = core_field
                     break
         mapping[idx] = matched_core
-    return infer_blank_brand_column(header_row, mapping)
+    mapping = infer_blank_brand_column(header_row, mapping)
+    return infer_quality_as_brand_column(header_row, mapping)
 
 
 def resolve_core_field_for_name(raw_name):

@@ -99,7 +99,7 @@ def _duplicate_order_response(
     default_message = (
         f"{distributor_name_raw} already has a {category} filled order for season "
         f"{season}{f' (uploaded {uploaded_on})' if uploaded_on else ''}. "
-        "Replace it with this upload?"
+        "Add this file into that order, or replace it?"
     )
     return jsonify({
         "status": "duplicate_order_confirmation_required",
@@ -189,6 +189,7 @@ def upload_filled_order():
     use_last_season = _bool_form(request.form.get("use_last_season"))
     confirm_commit = _bool_form(request.form.get("confirm_commit"))
     confirm_replace = _bool_form(request.form.get("confirm_replace"))
+    confirm_merge = _bool_form(request.form.get("confirm_merge"))
 
     filename_stem = fodist.normalize_filename_stem(file.filename or "upload")
 
@@ -340,10 +341,13 @@ def upload_filled_order():
                 "sample_items": _sanitize_for_json(matched_items[:10]),
             }), 200
 
-        if existing_order and not confirm_replace:
-            return _duplicate_order_response(
-                conn, user_id, distributor_id, category, season, distributor_name_raw,
-            )
+        if existing_order and not confirm_replace and not confirm_merge:
+            if foparser.looks_like_addon_order_filename(file.filename):
+                confirm_merge = True
+            else:
+                return _duplicate_order_response(
+                    conn, user_id, distributor_id, category, season, distributor_name_raw,
+                )
 
         skip_keys_raw = request.form.get("skip_item_keys") or "[]"
         try:
@@ -362,10 +366,25 @@ def upload_filled_order():
         existing_now = fodb.find_filled_order_by_distributor_category_season(
             conn, user_id, distributor_id, category, season,
         )
-        if existing_now and not confirm_replace:
-            return _duplicate_order_response(
-                conn, user_id, distributor_id, category, season, distributor_name_raw,
+        if existing_now and not confirm_replace and not confirm_merge:
+            if foparser.looks_like_addon_order_filename(file.filename):
+                confirm_merge = True
+            else:
+                return _duplicate_order_response(
+                    conn, user_id, distributor_id, category, season, distributor_name_raw,
+                )
+
+        if existing_now and confirm_merge and not confirm_replace:
+            order = fodb.merge_items_into_filled_order(
+                conn, user_id, existing_now["id"], matched_items,
+                extra_filename=file.filename,
             )
+            return jsonify({
+                "status": "success",
+                "filled_order": order,
+                "replaced_existing": False,
+                "merged_into_existing": True,
+            }), 200
 
         if existing_now and confirm_replace:
             fodb.delete_filled_order(conn, user_id, existing_now["id"])

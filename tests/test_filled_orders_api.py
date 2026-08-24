@@ -437,3 +437,62 @@ def test_season_overview_groups_by_season(tmp_path, monkeypatch):
     assert row["total_piece_qty"] > 0
     assert row["total_ex_mill_value"] > 0
     assert season["total_piece_qty"] == row["total_piece_qty"]
+
+
+def test_special_order_merges_into_existing_instead_of_replace(tmp_path, monkeypatch):
+    client, token, distributor_id = setup_app(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def first_payload(**extra):
+        data = {
+            "file": (io.BytesIO(_bedsheet_workbook_bytes().read()), "bernina_bed.xlsx"),
+            "distributor_id": str(distributor_id),
+            "category": "Bed",
+            "season": "AW26",
+        }
+        data.update(extra)
+        return data
+
+    assert client.post(
+        "/api/v1/filled-orders/upload",
+        data=first_payload(confirm_commit="true"),
+        content_type="multipart/form-data",
+        headers=headers,
+    ).get_json()["status"] == "success"
+
+    extra_wb = _make_workbook(
+        ["Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size", "Qnty"],
+        [["ASTER", "DB BS", "Bedsheet SS-26", 999, 450, 400, 12, 12]],
+    )
+    merged = client.post(
+        "/api/v1/filled-orders/upload",
+        data={
+            "file": (extra_wb, "BND Bath linen special order.xlsx"),
+            "distributor_id": str(distributor_id),
+            "category": "Bed",
+            "season": "AW26",
+            "confirm_commit": "true",
+        },
+        content_type="multipart/form-data",
+        headers=headers,
+    )
+    payload = merged.get_json()
+    assert merged.status_code == 200, payload
+    assert payload["status"] == "success"
+    assert payload["merged_into_existing"] is True
+    assert payload["replaced_existing"] is False
+
+    listed = client.get("/api/v1/filled-orders/list", headers=headers).get_json()
+    assert listed["count"] == 1
+    order = listed["filled_orders"][0]
+    detail = client.get(f"/api/v1/filled-orders/{order['id']}", headers=headers).get_json()
+    items = detail["items"]
+    assert items, detail
+    aster = next(
+        it for it in items
+        if str(it.get("brand") or "").strip().upper() == "ASTER"
+        or "ASTER" in str(it.get("item_key") or "").upper()
+    )
+    assert float(aster["final_piece_qty"]) == 72  # 60 original + 12 special
+    # ASTER 72×400 + unmatched NEWCO 25×200
+    assert float(order["total_ex_mill_value"]) == 72 * 400 + 25 * 200
