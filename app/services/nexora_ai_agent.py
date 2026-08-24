@@ -374,7 +374,10 @@ def _call_gemini(contents: list[dict[str, Any]]) -> tuple[dict[str, Any], str]:
                 last_err = exc.read().decode("utf-8", errors="ignore")[:300]
             except Exception:
                 last_err = str(exc)
-            if exc.code == 404:
+            if exc.code in (404, 429):
+                # 404 = model unavailable, 429 = this model's quota is
+                # exhausted — either way, the next model in the list might
+                # still work (they're billed/rate-limited separately).
                 continue
             raise NexoraAiAgentError(f"Gemini call failed: {last_err}") from exc
         except Exception as exc:  # noqa: BLE001 - network errors, try next model

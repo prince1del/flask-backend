@@ -1,15 +1,21 @@
-"""Shared Gemini model configuration for OCR features."""
+"""Shared Gemini model configuration for OCR + AI-agent features."""
 
 from __future__ import annotations
 
 import os
 
-# Pinned GA model for OCR use-cases.
-DEFAULT_GEMINI_FLASH_MODEL = "gemini-3.5-flash"
+# Newer/preview models (gemini-3.5-flash, gemini-flash-latest) have much
+# tighter free-tier quotas than the established gemini-2.0-flash /
+# gemini-1.5-flash (15 RPM on free tier) — try those first so a busy day
+# doesn't hit 429s as fast. The caller's retry loop falls through this whole
+# list on both 404 (model unavailable) and 429 (quota exceeded), so the
+# newer models still get tried as a last resort if the established ones are
+# also exhausted.
+DEFAULT_GEMINI_FLASH_MODEL = "gemini-2.0-flash"
 
 
 def get_ocr_gemini_models() -> tuple[str, ...]:
-    """Return ordered model candidates for OCR calls.
+    """Return ordered model candidates for OCR / AI-agent calls.
 
     Priority:
     1) GEMINI_OCR_MODELS (comma-separated list)
@@ -28,7 +34,7 @@ def get_ocr_gemini_models() -> tuple[str, ...]:
 
     return (
         DEFAULT_GEMINI_FLASH_MODEL,
-        "gemini-flash-latest",
-        "gemini-2.0-flash",
         "gemini-1.5-flash",
+        "gemini-flash-latest",
+        "gemini-3.5-flash",
     )
