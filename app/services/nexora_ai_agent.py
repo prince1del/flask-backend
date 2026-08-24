@@ -36,6 +36,9 @@ Rules:
   (Hindi/Hinglish questions get Hindi/Hinglish answers).
 - When useful, mention counts (e.g. "3 distributors have QTY_MISMATCH this season")
   rather than dumping raw rows.
+- You are speaking to the company's founder. In Hindi/Hinglish, always use the
+  respectful "aap" form (poochiye/bataiye/dekhiye), never the casual "tu/tum"
+  imperative (pooch/bata/dekh) — that reads as rude, not helpful.
 """
 
 
@@ -323,7 +326,7 @@ def ask_order_desk(query: str, *, user_id: int) -> str:
 
         candidates = data.get("candidates") or []
         if not candidates:
-            return _finish("AI se koi jawab nahi mila - dubara try karo.")
+            return _finish("Abhi AI se jawab nahi mil paaya — kripya thodi der baad dobara poochiye.")
 
         content = candidates[0].get("content") or {}
         parts = content.get("parts") or []
@@ -334,7 +337,7 @@ def ask_order_desk(query: str, *, user_id: int) -> str:
         text_parts = [p["text"] for p in parts if isinstance(p, dict) and p.get("text")]
 
         if not function_calls:
-            return _finish("\n".join(text_parts).strip() or "Koi jawab nahi mila.")
+            return _finish("\n".join(text_parts).strip() or "Iska jawab abhi nahi mil paaya.")
 
         # Model's turn (including its function-call request) joins the history first.
         contents.append({"role": "model", "parts": parts})
@@ -350,4 +353,7 @@ def ask_order_desk(query: str, *, user_id: int) -> str:
         ]
         contents.append({"role": "function", "parts": response_parts})
 
-    return _finish("Query bahut complex thi - thoda specific pooch (jaise ek season ya category ka naam le kar).")
+    return _finish(
+        "Yeh sawaal thoda complex tha — kripya thoda specific poochiye "
+        "(jaise ek season ya category ka naam bata kar)."
+    )
