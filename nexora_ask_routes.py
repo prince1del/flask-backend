@@ -7,6 +7,7 @@ from flask import Blueprint, current_app, jsonify, request
 import nexora_ask
 import nexora_ask_learn as learn
 from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.services.nexora_ai_agent import NexoraAiAgentError, ask_order_desk
 
 nexora_ask_bp = Blueprint("nexora_ask", __name__, url_prefix="/api/v1/nexora")
 
@@ -38,19 +39,48 @@ def ask_nexora():
         .lower() in ("1", "true", "yes")
     )
 
+    user_id = _get_current_user_id()
+    workspace_id = get_workspace_id()
+
     conn = _get_db_connection()
     db_path = current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
     try:
         result = nexora_ask.answer_question(
             conn,
-            _get_current_user_id(),
+            user_id,
             question,
-            workspace_id=get_workspace_id(),
+            workspace_id=workspace_id,
             db_path=db_path,
             _use_llm=use_llm,
         )
     finally:
         conn.close()
+
+    # Rule-based engine couldn't really answer — hand off to the Gemini
+    # tool-calling agent, which can actually go fetch fresh Order Desk
+    # (CI/SO reconciliation) data instead of just admitting defeat.
+    #
+    # "help" is the obvious no-match signal, but empirically (verified by
+    # direct testing) most unmatched free-form questions actually land in
+    # the "item_qty" fuzzy-article-match branch with data.matches == 0 and
+    # a "no matching order line found" answer — a silent failure, not a
+    # loud one. Both count as "didn't answer" here.
+    #
+    # Only for the BD workspace — the agent's tools are BD-specific
+    # (filled_orders / fo_so_match_runs); House of Prizm has its own hop_ask
+    # path above and no equivalent tools yet.
+    intent = result.get("intent")
+    no_match = intent == "help" or (intent == "item_qty" and (result.get("data") or {}).get("matches") == 0)
+    if no_match and workspace_id != "house_of_prizm":
+        try:
+            ai_answer = ask_order_desk(question, user_id=user_id)
+            result = {
+                "answer": ai_answer,
+                "intent": "ai_order_desk",
+                "data": {"fallback_from": intent},
+            }
+        except NexoraAiAgentError:
+            pass  # AI unavailable (no key / all models down) — keep the original answer.
 
     return jsonify({
         "status": "success",
@@ -60,8 +90,8 @@ def ask_nexora():
         "data": {
             **(result.get("data") or {}),
             "isolation": {
-                "user_id": _get_current_user_id(),
-                "workspace_id": get_workspace_id(),
+                "user_id": user_id,
+                "workspace_id": workspace_id,
             },
         },
     }), 200

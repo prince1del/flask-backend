@@ -32,6 +32,7 @@ from .pjp import pjp_bp
 from .ask_nexora_troubleshoot import ask_nexora_troubleshoot_bp
 from .payment_collection import payment_collection_bp
 from .call_lists import call_lists_bp
+from .ai_agent import ai_agent_bp
 
 __all__ = [
     'target_achievement_bp',
@@ -68,4 +69,5 @@ __all__ = [
     'ask_nexora_troubleshoot_bp',
     'payment_collection_bp',
     'call_lists_bp',
+    'ai_agent_bp',
 ]

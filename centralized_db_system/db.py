@@ -2762,40 +2762,145 @@ class CentralizedDB:
             )
             return True, "Password reset successful"
 
-    def list_workspace_users(self, workspace_id: str) -> list[dict[str, Any]]:
-        """Roster for the workspace-owner's user-management screen — same
-        workspace only, never cross-tenant."""
+    def workspace_user_stats(
+        self, workspace_id: str, *, owner_scope: bool = False
+    ) -> dict[str, int]:
+        """Team counts for the admin stats row (unfiltered by search/role)."""
         self.ensure_user_profile_columns()
+        where = [
+            "IFNULL(status, 'active') = 'active'",
+            "lower(username) NOT LIKE 'archived_dup_%'",
+        ]
+        params: list[Any] = []
+        if not owner_scope:
+            where.insert(0, "workspace_id = ?")
+            params.append(workspace_id)
+        where_sql = " AND ".join(where)
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN IFNULL(status, 'active') = 'active' THEN 1 ELSE 0 END) AS active,
+                    SUM(CASE WHEN role = 'sales_executive' THEN 1 ELSE 0 END) AS sales_executive
+                FROM users
+                WHERE {where_sql}
+                """,
+                params,
+            ).fetchone()
+        if row is None:
+            return {"total": 0, "active": 0, "sales_executive": 0}
+        return {
+            "total": int(row[0] or 0),
+            "active": int(row[1] or 0),
+            "sales_executive": int(row[2] or 0),
+        }
+
+    def list_workspace_users(
+        self,
+        workspace_id: str,
+        *,
+        owner_scope: bool = False,
+        q: str | None = None,
+        role: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> dict[str, Any]:
+        """Paginated roster for the workspace-owner user-management screen.
+
+        When ``owner_scope`` is True (supreme workspace owner), lists every
+        active login on the platform — each executive still has a private data
+        silo, but the founder can search and assign roles from one place.
+        Otherwise scoped to a single ``workspace_id``."""
+        self.ensure_user_profile_columns()
+        page = max(1, int(page or 1))
+        page_size = min(100, max(1, int(page_size or 25)))
+        offset = (page - 1) * page_size
+
+        where = [
+            "IFNULL(status, 'active') = 'active'",
+            "lower(username) NOT LIKE 'archived_dup_%'",
+        ]
+        params: list[Any] = []
+        if not owner_scope:
+            where.insert(0, "workspace_id = ?")
+            params.append(workspace_id)
+
+        role_key = (role or "").strip().lower()
+        if role_key:
+            where.append("role = ?")
+            params.append(role_key)
+
+        query_text = (q or "").strip().lower()
+        if query_text:
+            like = f"%{query_text}%"
+            where.append(
+                "(lower(username) LIKE ? OR lower(IFNULL(full_name, '')) LIKE ? "
+                "OR lower(IFNULL(email, '')) LIKE ?)"
+            )
+            params.extend([like, like, like])
+
+        where_sql = " AND ".join(where)
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            total = int(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM users WHERE {where_sql}",
+                    params,
+                ).fetchone()[0]
+                or 0
+            )
             rows = conn.execute(
-                """
+                f"""
                 SELECT id, username, full_name, email, role, status
                 FROM users
-                WHERE workspace_id = ?
-                  AND IFNULL(status, 'active') = 'active'
-                  AND lower(username) NOT LIKE 'archived_dup_%'
+                WHERE {where_sql}
                 ORDER BY username COLLATE NOCASE
+                LIMIT ? OFFSET ?
                 """,
-                (workspace_id,),
+                [*params, page_size, offset],
             ).fetchall()
-        return [dict(r) for r in rows]
 
-    def update_user_role(self, user_id: int, workspace_id: str, role: str) -> dict[str, Any]:
-        """Workspace-scoped: can only touch a user inside the caller's own workspace.
+        total_pages = (total + page_size - 1) // page_size if total else 0
+        return {
+            "items": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "stats": self.workspace_user_stats(workspace_id, owner_scope=owner_scope),
+        }
 
-        No role-lockout guard needed here: the mobile app has a dedicated
-        screen for every role an owner could pick (Admin dashboard for
-        "admin"; the BD workspace as the catch-all for a non-hop owner on
-        any other role), so an owner can never end up on the unsupported-role
-        screen regardless of which role they set on their own account.
-        """
+    def update_user_role(
+        self,
+        user_id: int,
+        workspace_id: str,
+        role: str,
+        *,
+        owner_scope: bool = False,
+    ) -> dict[str, Any]:
+        """Update a user's role.
+
+        Workspace-scoped by default. Supreme owner (``owner_scope``) may update
+        any active login regardless of private ``exec_*`` silo."""
         self.ensure_user_profile_columns()
         with sqlite3.connect(self.db_path) as conn:
-            existing = conn.execute(
-                "SELECT id FROM users WHERE id = ? AND workspace_id = ?",
-                (int(user_id), workspace_id),
-            ).fetchone()
+            if owner_scope:
+                existing = conn.execute(
+                    """
+                    SELECT id FROM users
+                    WHERE id = ?
+                      AND IFNULL(status, 'active') = 'active'
+                      AND lower(username) NOT LIKE 'archived_dup_%'
+                    """,
+                    (int(user_id),),
+                ).fetchone()
+            else:
+                existing = conn.execute(
+                    "SELECT id FROM users WHERE id = ? AND workspace_id = ?",
+                    (int(user_id), workspace_id),
+                ).fetchone()
             if existing is None:
                 raise ValueError("User not found in this workspace")
             conn.execute(

@@ -406,8 +406,21 @@ def list_workspace_users() -> tuple[Response, int]:
             403,
         )
     workspace_id = requester.get("workspace_id", "default")
-    users = _get_auth_db().list_workspace_users(workspace_id)
-    return jsonify({"success": True, "data": users}), 200
+    q = (request.args.get("q") or "").strip() or None
+    role = (request.args.get("role") or "").strip().lower() or None
+    if role and role not in _ALLOWED_WORKSPACE_ROLES:
+        role = None
+    page = request.args.get("page", default=1, type=int)
+    page_size = request.args.get("page_size", default=25, type=int)
+    payload = _get_auth_db().list_workspace_users(
+        workspace_id,
+        owner_scope=True,
+        q=q,
+        role=role,
+        page=page,
+        page_size=page_size,
+    )
+    return jsonify({"success": True, "data": payload}), 200
 
 
 @auth_blueprint.route(
@@ -434,7 +447,9 @@ def update_workspace_user_role(target_user_id: int) -> tuple[Response, int]:
         return jsonify({"success": False, "error": {"code": "INVALID_ROLE", "message": "Invalid role"}}), 400
     workspace_id = requester.get("workspace_id", "default")
     try:
-        updated = _get_auth_db().update_user_role(target_user_id, workspace_id, role)
+        updated = _get_auth_db().update_user_role(
+            target_user_id, workspace_id, role, owner_scope=True
+        )
     except ValueError as exc:
         return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": str(exc)}}), 404
     return jsonify({"success": True, "data": updated}), 200
