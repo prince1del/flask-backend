@@ -7333,6 +7333,7 @@ _UNRESOLVED_ANSWER_MARKERS = (
     "no target data found",
     "i couldn't find any orders for that season",
     "i couldn't work out that calculation",
+    "no credit policy records found",
 )
 
 
