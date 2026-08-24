@@ -278,7 +278,7 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
 # from a free-text query for intents that need an exact DB name match
 # (target, purchase trends) — e.g. "bernina ka target batao" -> "bernina".
 _PARTY_QUERY_STOPWORDS = {
-    "ka", "ki", "ke", "hai", "batao", "bata", "batado", "batayein",
+    "ka", "ki", "ke", "hai", "hain", "batao", "bata", "batado", "batayein",
     "kitna", "kitni", "kya", "please", "tell", "me", "show", "what", "is",
     "can", "you",
     "are", "the", "of", "for", "target", "targets", "achievement",
