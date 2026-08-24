@@ -61,11 +61,11 @@ from app.utils import (
     find_bare_category_size_in_query,
     find_price_range_in_query,
     identity_name_hint,
+    indian_number_format,
     infer_ai_intent,
     infer_distributor_name,
     margin_brand_hint,
     normalize_voice_query,
-    number_to_words_indian,
     stage_label_for_key,
     try_calculator,
     _detect_margin_field,
@@ -7853,13 +7853,9 @@ def ai_assistant_query() -> Response:
         def _target_ach_bits(target_rs: float, achieved_rs: float) -> str:
             bits = []
             if wants_target_field:
-                bits.append(
-                    f"target Rs {target_rs:,.0f} ({number_to_words_indian(target_rs)})"
-                )
+                bits.append(f"target Rs {indian_number_format(target_rs)}")
             if wants_achievement_field:
-                bits.append(
-                    f"achievement Rs {achieved_rs:,.0f} ({number_to_words_indian(achieved_rs)})"
-                )
+                bits.append(f"achievement Rs {indian_number_format(achieved_rs)}")
             return ", ".join(bits)
 
         db.ensure_target_achievement_tables()
@@ -8160,11 +8156,8 @@ def ai_assistant_query() -> Response:
                     who = distributor_label or "any distributor"
                     answer = f"{ask_prefix} No {desc} order found for {who}."
                 else:
-                    value_txt = (
-                        f"Rs {totals['total_ex_mill_value']:,.0f} "
-                        f"({number_to_words_indian(totals['total_ex_mill_value'])})"
-                    )
-                    qty_txt = f"{totals['total_piece_qty']:,.0f} pcs"
+                    value_txt = f"Rs {indian_number_format(totals['total_ex_mill_value'])}"
+                    qty_txt = f"{indian_number_format(totals['total_piece_qty'])} pcs"
                     if distributor:
                         answer = (
                             f"{ask_prefix} {distributor_label} — {desc} order: "
@@ -8309,26 +8302,26 @@ def ai_assistant_query() -> Response:
         else:
             def _fmt_num(n: float) -> str:
                 if n == int(n):
-                    return f"{int(n):,}"
-                return f"{n:,.2f}".rstrip("0").rstrip(".")
+                    return indian_number_format(n)
+                sign = "-" if n < 0 else ""
+                frac = f"{abs(n):.2f}".split(".")[1].rstrip("0")
+                whole_txt = indian_number_format(abs(int(n)))
+                return f"{sign}{whole_txt}.{frac}" if frac else f"{sign}{whole_txt}"
 
             result = calc["result"]
             result_txt = _fmt_num(result)
-            words_suffix = (
-                f" ({number_to_words_indian(result)})" if abs(result) >= 1000 else ""
-            )
             if calc["op"] == "percent":
                 pct_val, base = calc["operands"]
                 answer = (
                     f"{ask_prefix} {_fmt_num(pct_val)}% of {_fmt_num(base)} "
-                    f"= {result_txt}{words_suffix}"
+                    f"= {result_txt}"
                 )
             else:
                 operands, ops = calc["operands"], calc["ops"]
                 expr = _fmt_num(operands[0])
                 for op, value in zip(ops, operands[1:]):
                     expr += f" {_CALC_OP_LABELS[op]} {_fmt_num(value)}"
-                answer = f"{ask_prefix} {expr} = {result_txt}{words_suffix}"
+                answer = f"{ask_prefix} {expr} = {result_txt}"
     else:
         # Strip filler words so a sentence like "distributor kalra name" or
         # "aster ka mrp aur exmill kya hai" narrows to the actual search

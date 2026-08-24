@@ -680,6 +680,26 @@ def number_to_words_indian(amount) -> str:
     return ("Minus " if negative else "") + " ".join(parts)
 
 
+def indian_number_format(amount) -> str:
+    """Digit grouping by the Indian numbering system — last 3 digits, then
+    pairs: 18629405 -> "1,86,29,405" (1 Crore 86 Lakh 29 Thousand 405),
+    not Python's default western "18,629,405" (millions-style) grouping."""
+    n = int(round(float(amount or 0)))
+    negative = n < 0
+    n = abs(n)
+    s = str(n)
+    if len(s) <= 3:
+        return ("-" if negative else "") + s
+    last3, rest = s[-3:], s[:-3]
+    parts: list[str] = []
+    while len(rest) > 2:
+        parts.insert(0, rest[-2:])
+        rest = rest[:-2]
+    if rest:
+        parts.insert(0, rest)
+    return ("-" if negative else "") + ",".join(parts) + "," + last3
+
+
 _SEASON_TOKEN_RE = re.compile(r"\b(aw|ss|fw)\d{2}\b")
 
 
