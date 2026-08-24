@@ -8381,7 +8381,7 @@ def ai_assistant_query() -> Response:
             try:
                 from app.services.nexora_ai_agent import NexoraAiAgentError, ask_order_desk
 
-                ai_answer = ask_order_desk(query, user_id=user_id)
+                ai_answer = ask_order_desk(query, user_id=user_id, workspace_id=workspace_id)
                 answer = f"{ask_prefix} {ai_answer}"
                 intent = "ai_order_desk"
                 ai_fallback_used = True

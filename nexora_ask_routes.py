@@ -73,7 +73,7 @@ def ask_nexora():
     no_match = intent == "help" or (intent == "item_qty" and (result.get("data") or {}).get("matches") == 0)
     if no_match and workspace_id != "house_of_prizm":
         try:
-            ai_answer = ask_order_desk(question, user_id=user_id)
+            ai_answer = ask_order_desk(question, user_id=user_id, workspace_id=workspace_id)
             result = {
                 "answer": ai_answer,
                 "intent": "ai_order_desk",
