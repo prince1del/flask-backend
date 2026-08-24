@@ -308,6 +308,16 @@ _PARTY_QUERY_STOPWORDS = {
     "kharida", "kharide", "kharidi", "khareed", "sold", "bought",
     "sale", "sales",
     "mujhe", "dikhao", "dikha", "dikhaiye", "dikhaye", "dikhaao",
+    # Personal pronouns/possessives and generic time/quantifier words —
+    # common in the newer personal-task domains (to-do, grievances, market
+    # visit) and, like "hai"/"hain" above, can fuzzy-collide with a short
+    # distributor-name fragment (e.g. "hain" vs "Sain" at exactly the 0.75
+    # match threshold) and produce a confidently wrong answer instead of an
+    # honest "couldn't find that".
+    "mera", "meri", "mere", "apna", "apne", "apni",
+    "uska", "uske", "uski", "iska", "iske", "iski",
+    "abhi", "aaj", "koi", "sabhi", "sara", "saara", "saari",
+    "chahiye", "raha", "rahi", "rahe", "wala", "wale", "wali",
 }
 
 
