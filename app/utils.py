@@ -306,6 +306,7 @@ _PARTY_QUERY_STOPWORDS = {
     "ne", "kari", "kare", "kiye", "liya", "liye", "diye", "hua", "hui",
     "hue", "becha", "beche", "bechi", "li", "le", "lo", "lena", "lene",
     "kharida", "kharide", "kharidi", "khareed", "sold", "bought",
+    "sale", "sales",
     "mujhe", "dikhao", "dikha", "dikhaiye", "dikhaye", "dikhaao",
 }
 
