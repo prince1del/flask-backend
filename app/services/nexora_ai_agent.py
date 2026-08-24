@@ -1,11 +1,12 @@
 """Nexora AI agent — Gemini function-calling over the BD workspace's own data.
 
 Covers Order Desk (CI/SO reconciliation), Target vs Achievement, PJP (planned
-visits), and Distributor Payment Status — the same domains the app's own My
-Day / Order Desk / Distributor Zone screens already show, just reachable by
-free-form question instead of navigating there. Reuses the same raw-REST
-Gemini call pattern as app/services/visiting_card_ocr.py (no new SDK
-dependency, same GEMINI_API_KEY already configured for card OCR).
+visits), Distributor Payment Status, Party Profile, Article Price, Market
+Visit (DSR), To-Do, Grievances, and Distributor Zone — the same domains the
+app's own screens already show, just reachable by free-form question instead
+of navigating there. Reuses the same raw-REST Gemini call pattern as
+app/services/visiting_card_ocr.py (no new SDK dependency, same
+GEMINI_API_KEY already configured for card OCR).
 
 Tool functions are bound server-side to the authenticated user_id/workspace_id
 — Gemini is never given these as editable arguments, so results stay isolated
@@ -35,7 +36,7 @@ workspace). Today's date is {today} (UTC) — use this to resolve relative dates
 ("tomorrow", "kal", "next Monday") into an actual YYYY-MM-DD before calling
 get_pjp_for_date.
 
-You answer questions across six areas, each with its own tools:
+You answer questions across ten areas, each with its own tools:
 - Order Desk: CI (customer indent) vs SO (sales order) reconciliation —
   matched/mismatched quantities and values, by season, category
   (Bed/Bath/Pillow/TOB), and distributor.
@@ -48,6 +49,14 @@ You answer questions across six areas, each with its own tools:
   GST, email, and last visit date.
 - Article Price: MRP/PTR/ex-mill price lookup by brand, product, or print
   style, optionally narrowed to one size.
+- Market Visit (DSR): logged field visits — retailer/customer name,
+  location, order value, feedback/remarks, by date or date range.
+- To-Do: this user's personal task list — title, category, priority,
+  status, due date.
+- Grievances: distributor complaints logged, their status (open/resolved),
+  and solution text.
+- Distributor Zone: one distributor's combined snapshot — this FY's target
+  vs achievement, plus their most recent secondary-sale months.
 
 Rules:
 - ONLY state numbers/facts that came back from a tool call. Never estimate or invent.
@@ -224,6 +233,96 @@ def _tool_declarations() -> list[dict[str, Any]]:
                     },
                 },
                 "required": ["query"],
+            },
+        },
+        {
+            "name": "get_market_visits",
+            "description": (
+                "This user's logged DSR/Market Visit reports - retailer/customer "
+                "name, location, order value, feedback/remarks. Filter by an exact "
+                "date, a date range, and/or a customer name. Use for 'aaj kitne "
+                "visit kiye', 'X ko kab visit kiya tha' type questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {
+                        "type": "string",
+                        "description": "Exact visit date, YYYY-MM-DD (optional).",
+                    },
+                    "from_date": {
+                        "type": "string",
+                        "description": "Range start, YYYY-MM-DD (optional, ignored if date is set).",
+                    },
+                    "to_date": {
+                        "type": "string",
+                        "description": "Range end, YYYY-MM-DD (optional, ignored if date is set).",
+                    },
+                    "customer_name": {
+                        "type": "string",
+                        "description": "Filter to visits whose customer/retailer name contains this text (optional).",
+                    },
+                },
+            },
+        },
+        {
+            "name": "get_todo_list",
+            "description": (
+                "This user's personal To-Do task list - title, category, priority, "
+                "status, due date. Defaults to open tasks (not done) if status is "
+                "omitted. Use for 'aaj ke kaam kya hai', 'pending todo kya hai' "
+                "type questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "One of pending, done, hold (optional - defaults to all not-done tasks).",
+                    }
+                },
+            },
+        },
+        {
+            "name": "get_grievance_status",
+            "description": (
+                "Distributor complaints/grievances this user logged - the problem, "
+                "date, status (open/resolved), and solution text if resolved. "
+                "Filter by distributor name and/or status. Use for 'X ki complaint "
+                "ka kya hua', 'kitni grievance open hai' type questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "distributor_name": {
+                        "type": "string",
+                        "description": "Filter to one distributor (optional).",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "'open' or 'resolved' (optional).",
+                    },
+                },
+            },
+        },
+        {
+            "name": "get_distributor_zone_summary",
+            "description": (
+                "One distributor's combined Distributor Zone snapshot - this "
+                "fiscal year's target vs achievement, plus their most recent "
+                "secondary-sale months (from DSR visit logs). Use for 'X ka "
+                "distributor zone dikhao', 'X ka secondary sale kaisa hai' type "
+                "questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "distributor_name": {
+                        "type": "string",
+                        "description": "The distributor's name (can be partial/misspelled).",
+                    }
+                },
+                "required": ["distributor_name"],
             },
         },
     ]
@@ -468,6 +567,158 @@ def _run_tool(
             conn.row_factory = None
             articles = [dict(r) for r in rows]
             return {"articles": _sanitize(articles), "count": len(articles)}
+
+        if name == "get_market_visits":
+            from app.routes.dsr_market import _ensure_table as _ensure_market_table
+
+            _ensure_market_table(conn)
+            conn.row_factory = sqlite3.Row
+            date_str = str(args.get("date") or "").strip()
+            from_date = str(args.get("from_date") or "").strip()
+            to_date = str(args.get("to_date") or "").strip()
+            customer_name = str(args.get("customer_name") or "").strip()
+            sql = (
+                "SELECT visit_date, customer_name, location, owner_name, "
+                "contact_nos, channel_type, order_lacs, retailer_feedback, "
+                "sm_remarks FROM dsr_market_visits "
+                "WHERE workspace_id = ? AND (user_id = ? OR user_id IS NULL)"
+            )
+            params: list[Any] = [workspace_id, user_id]
+            if date_str:
+                sql += " AND visit_date = ?"
+                params.append(date_str)
+            else:
+                if from_date:
+                    sql += " AND visit_date >= ?"
+                    params.append(from_date)
+                if to_date:
+                    sql += " AND visit_date <= ?"
+                    params.append(to_date)
+            if customer_name:
+                sql += " AND LOWER(customer_name) LIKE ?"
+                params.append(f"%{customer_name.lower()}%")
+            sql += " ORDER BY visit_date DESC, id DESC LIMIT 30"
+            rows = conn.execute(sql, params).fetchall()
+            conn.row_factory = None
+            visits = [dict(r) for r in rows]
+            return {"visits": _sanitize(visits), "count": len(visits)}
+
+        if name == "get_todo_list":
+            from app.routes.personal_todos import _ensure_table as _ensure_todo_table
+
+            _ensure_todo_table(conn)
+            conn.row_factory = sqlite3.Row
+            status = str(args.get("status") or "").strip().lower()
+            sql = (
+                "SELECT task_title, category, person_party, given_by, priority, "
+                "status, due_date, due_time FROM personal_todos "
+                "WHERE workspace_id = ? AND user_id = ?"
+            )
+            params = [workspace_id, user_id]
+            if status:
+                sql += " AND status = ?"
+                params.append(status)
+            else:
+                sql += " AND status != 'done'"
+            sql += " ORDER BY due_date IS NULL, due_date ASC LIMIT 30"
+            rows = conn.execute(sql, params).fetchall()
+            conn.row_factory = None
+            todos = [dict(r) for r in rows]
+            return {"todos": _sanitize(todos), "count": len(todos)}
+
+        if name == "get_grievance_status":
+            from app.routes.distributor_grievances import _ensure_grievances_table
+
+            _ensure_grievances_table(conn)
+            conn.row_factory = sqlite3.Row
+            distributor_name = str(args.get("distributor_name") or "").strip()
+            status = str(args.get("status") or "").strip().lower()
+            sql = (
+                "SELECT distributor_name, problem_text, problem_date, status, "
+                "solution_text, created_at, closed_at FROM distributor_grievances "
+                "WHERE workspace_id = ? AND user_id = ?"
+            )
+            params = [workspace_id, user_id]
+            if distributor_name:
+                sql += " AND LOWER(distributor_name) LIKE ?"
+                params.append(f"%{distributor_name.lower()}%")
+            if status:
+                sql += " AND status = ?"
+                params.append(status)
+            sql += " ORDER BY created_at DESC LIMIT 30"
+            rows = conn.execute(sql, params).fetchall()
+            conn.row_factory = None
+            grievances = [dict(r) for r in rows]
+            return {"grievances": _sanitize(grievances), "count": len(grievances)}
+
+        if name == "get_distributor_zone_summary":
+            distributor_name = str(args.get("distributor_name") or "").strip()
+            if not distributor_name:
+                return {"error": "distributor_name is required"}
+
+            from centralized_db_system.db import CentralizedDB
+            from app.routes.data import _find_distributor_fuzzy
+            from app.routes.distributor_zone import (
+                _breakup_index,
+                _load_dsr_secondary_and_feedback,
+                _match_breakup,
+                _money_from_lakhs,
+                _month_rows,
+                _norm_name as _dz_norm_name,
+                _pick_year,
+            )
+
+            db = CentralizedDB(_db_path())
+            dist = _find_distributor_fuzzy(db, distributor_name, workspace_id)
+            if not dist:
+                return {"error": f"No distributor matching '{distributor_name}' found"}
+
+            year = _pick_year(db, workspace_id, None)
+            fy_label = (year or {}).get("fy_label") or ""
+            resolved_year_id = (year or {}).get("year_id")
+
+            target_money = None
+            achieved_money = None
+            if resolved_year_id:
+                breakup = db.list_target_distributor_breakup(workspace_id, int(resolved_year_id))
+                by_code, by_name = _breakup_index(breakup)
+                matched = _match_breakup(dist, by_code, by_name)
+                if matched:
+                    target_lakhs = float(matched.get("target_lakhs") or 0)
+                    ach_lakhs = float(matched.get("achievement_lakhs") or 0)
+                    if ach_lakhs <= 0:
+                        ach_lakhs = (
+                            float(matched.get("achievement_excel") or 0)
+                            + float(matched.get("achievement_ci") or 0)
+                            + float(matched.get("achievement_manual") or 0)
+                        )
+                    target_money = _money_from_lakhs(target_lakhs)
+                    achieved_money = _money_from_lakhs(ach_lakhs)
+
+            months_by_id, _fb_by_id, months_by_name, _fb_by_name = (
+                _load_dsr_secondary_and_feedback(workspace_id, None, None)
+            )
+            dist_id = dist.get("id")
+            try:
+                dist_id_int = int(dist_id) if dist_id is not None else None
+            except (TypeError, ValueError):
+                dist_id_int = None
+            month_map: dict[str, float] = {}
+            if dist_id_int and dist_id_int in months_by_id:
+                month_map = dict(months_by_id[dist_id_int])
+            else:
+                n = _dz_norm_name(dist.get("firm_name") or dist.get("name"))
+                if n and n in months_by_name:
+                    month_map = dict(months_by_name[n])
+            secondary_months = _month_rows(month_map)[:6]
+
+            return _sanitize({
+                "distributor": dist.get("firm_name") or dist.get("name"),
+                "fiscal_year": fy_label,
+                "target": target_money,
+                "achieved": achieved_money,
+                "recent_secondary_sale_months": secondary_months,
+            })
 
         return {"error": f"Unknown tool: {name}"}
     finally:
