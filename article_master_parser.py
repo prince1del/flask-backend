@@ -978,9 +978,18 @@ CORE_FIELD_KEYWORD_RULES = {
 CATEGORY_KEYWORDS = [
     (["blanket", "comforter", "slumber", "bed in a bag", "bed in a bga", "biab"], "TOB"),
     (["pillow"], "Pillow"),
-    (["towel", "bathmat", "bathrobe", "towelling", "bath mat"], "Bath"),
+    (["towel", "bathmat", "bathrobe", "towelling", "bath mat", "bath linen"], "Bath"),
     (["bedsheet", "sheet set", "sheet sets", "fitted sheet"], "Bed"),
 ]
+
+# Towel size patterns for category fallback when product column is blank
+_BATH_SIZE_PATTERNS = re.compile(
+    r"(?:^| )"
+    r"(?:30\s*[x×*]\s*30|40\s*[x×*]\s*60|60\s*[x×*]\s*120|75\s*[x×*]\s*150|90\s*[x×*]\s*180"
+    r"|bathrobe|r4\s*set|bath\s*robe|gsm)"
+    r"(?:$| )",
+    re.IGNORECASE,
+)
 
 REQUIRED_HEADER_MARKERS = ["brand", "size"]
 
@@ -1210,17 +1219,22 @@ def detect_category_for_text(text):
     for keywords, category in CATEGORY_KEYWORDS:
         if any(kw in normalized for kw in keywords):
             return category
+    if _BATH_SIZE_PATTERNS.search(normalized):
+        return "Bath"
     return None
 
 
 def detect_category_from_sizes(size_values):
-    """When Product column is missing (GT booking forms), infer Bed from size codes."""
+    """When Product column is missing (GT booking forms), infer Bed/Bath from size codes."""
     bed_hits = 0
+    bath_hits = 0
     for value in size_values:
         s = _norm(value)
         if not s:
             continue
-        if any(
+        if _BATH_SIZE_PATTERNS.search(s):
+            bath_hits += 1
+        elif any(
             tok in s
             for tok in (
                 "bedsheet",
@@ -1243,6 +1257,8 @@ def detect_category_from_sizes(size_values):
             ("sb ", "db ", "ks ", "kb ", "dbl ", "kdb ")
         ):
             bed_hits += 1
+    if bath_hits > bed_hits and bath_hits > 0:
+        return "Bath"
     return "Bed" if bed_hits else None
 
 
