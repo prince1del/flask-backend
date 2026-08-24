@@ -706,7 +706,7 @@ _SEASON_TOKEN_RE = re.compile(r"\b(aw|ss|fw)\d{2}\b")
 _SEASON_ORDER_TRIGGER_WORDS = (
     "order", "value", "li", "liya", "liye", "lena", "lene",
     "kharida", "kharide", "kharidi", "khareed", "becha", "beche",
-    "bechi", "purchase", "bought", "sold", "diya", "diye",
+    "bechi", "purchase", "bought", "sold", "sale", "sales", "diya", "diye",
 )
 
 
