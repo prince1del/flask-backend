@@ -8377,16 +8377,41 @@ def ai_assistant_query() -> Response:
             f"{ask_prefix} {_summarize_ask_nexora_search(search_results, raw_query=query)}"
         )
 
+    ai_fallback_used = False
     if _is_unresolved_answer(answer):
-        log_unresolved_query(workspace_id, user_id, query)
-        answer = (
-            f"{ask_prefix} I couldn't find an answer to that — please try "
-            f"asking something else, or rephrase your question."
-        )
+        # Rule-based engine admits it couldn't answer — hand off to the
+        # Gemini tool-calling Order Desk agent before giving up, so a real
+        # CI/SO reconciliation question gets a real answer instead of an
+        # apology. Only for the BD workspace — the agent's tools are
+        # BD-specific (filled_orders / fo_so_match_runs).
+        if user_id is not None and workspace_id != "house_of_prizm":
+            try:
+                from app.services.nexora_ai_agent import NexoraAiAgentError, ask_order_desk
+
+                ai_answer = ask_order_desk(query, user_id=user_id)
+                answer = f"{ask_prefix} {ai_answer}"
+                intent = "ai_order_desk"
+                ai_fallback_used = True
+            except NexoraAiAgentError:
+                pass  # AI unavailable — fall through to the apology below.
+        if not ai_fallback_used:
+            log_unresolved_query(workspace_id, user_id, query)
+            answer = (
+                f"{ask_prefix} I couldn't find an answer to that — please try "
+                f"asking something else, or rephrase your question."
+            )
+            still_unresolved = True
+        else:
+            still_unresolved = False
     else:
+        still_unresolved = False
+
+    if not still_unresolved:
         # This exact question may have failed before (and been logged for
-        # troubleshooting) but now resolves — e.g. after a keyword/entity
-        # fix was taught. Clear the stale entry automatically.
+        # troubleshooting) but now resolves — e.g. after a keyword/entity fix
+        # was taught, or the Gemini fallback answered it. Clear the stale
+        # entry automatically. Skipped when it's still unresolved — that
+        # branch just logged this exact failure a moment ago above.
         resolve_unresolved_query(workspace_id, query)
 
     return Response(
