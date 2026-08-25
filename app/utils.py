@@ -249,6 +249,18 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "kitna cd",
         "cd batao",
     ],
+    "last_order": [
+        "last order",
+        "latest order",
+        "recent order",
+        "pichla order",
+        "pichle order",
+        "aakhri order",
+        "last season order",
+        "pichle season ka order",
+        "recent season order",
+        "last order of",
+    ],
     "category_orders": [
         "which category",
         "konsi category",

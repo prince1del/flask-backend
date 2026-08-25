@@ -7849,6 +7849,34 @@ def ai_assistant_query() -> Response:
                 )
         else:
             answer = f"{ask_prefix} I couldn't identify the distributor for the CD discount question."
+    elif intent == "last_order":
+        entity = extract_party_name_candidate(query)
+        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
+        if distributor:
+            dist_id = distributor.get("id")
+            dist_name = distributor.get("firm_name") or distributor.get("name") or "This distributor"
+            status_rows = db.list_distributor_category_payment_status(user_id)
+            dist_row = next((r for r in status_rows if r.get("distributor_id") == dist_id), None)
+            latest_season = (dist_row or {}).get("seasons") or []
+            latest_season = latest_season[0] if latest_season else None
+            cat_bits = (
+                [
+                    f"{c.get('category')} Rs {indian_number_format(float(c.get('so_total') or 0))}"
+                    for c in latest_season.get("categories", [])
+                ]
+                if latest_season
+                else []
+            )
+            if cat_bits:
+                answer = (
+                    f"{ask_prefix} {dist_name} last order ({latest_season.get('season')}) — "
+                    + ", ".join(cat_bits)
+                    + "."
+                )
+            else:
+                answer = f"{ask_prefix} No sales order data found for {dist_name}."
+        else:
+            answer = f"{ask_prefix} I couldn't identify the distributor for the last order question."
     elif intent == "target":
         # Use the same target_achievement_breakup source as the app's real
         # "Target vs Achievement" card (app/routes/target_achievement.py
