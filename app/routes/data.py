@@ -7819,6 +7819,36 @@ def ai_assistant_query() -> Response:
                 )
         else:
             answer = f"{ask_prefix} No credit policy records found."
+    elif intent == "cd_discount":
+        entity = extract_party_name_candidate(query)
+        distributor = _find_distributor_fuzzy(db, entity, workspace_id)
+        if distributor:
+            dist_id = distributor.get("id")
+            dist_name = distributor.get("firm_name") or distributor.get("name") or "This distributor"
+            status_rows = db.list_distributor_category_payment_status(user_id)
+            dist_row = next((r for r in status_rows if r.get("distributor_id") == dist_id), None)
+            if dist_row:
+                season_bits = []
+                for season_entry in dist_row.get("seasons", []):
+                    cd_pct = float(season_entry.get("cd_percent") or 0)
+                    if cd_pct <= 0:
+                        continue
+                    cd_amt = sum(
+                        float(c.get("cd_amount") or 0) for c in season_entry.get("categories", [])
+                    )
+                    season_bits.append(
+                        f"{season_entry.get('season')}: {cd_pct:g}% (Rs {indian_number_format(cd_amt)})"
+                    )
+                if season_bits:
+                    answer = f"{ask_prefix} {dist_name} CD discount — " + "; ".join(season_bits) + "."
+                else:
+                    answer = f"{ask_prefix} No CD discount set for {dist_name} yet."
+            else:
+                answer = (
+                    f"{ask_prefix} No sales order data found for {dist_name} to calculate CD against."
+                )
+        else:
+            answer = f"{ask_prefix} I couldn't identify the distributor for the CD discount question."
     elif intent == "target":
         # Use the same target_achievement_breakup source as the app's real
         # "Target vs Achievement" card (app/routes/target_achievement.py
