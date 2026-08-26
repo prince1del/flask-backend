@@ -144,6 +144,7 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
         "so_staged": 0,
         "skipped": 0,
         "errors": [],
+        "imported_items": [],
     }
 
     auth_header = request.headers.get("Authorization")
@@ -201,6 +202,14 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
                     payload = resp.get_json(silent=True) or {}
                     if payload.get("success"):
                         summary["ci_imported"] += 1
+                        item_data = payload.get("data") or {}
+                        summary["imported_items"].append({
+                            "kind": "CI",
+                            "filename": filename,
+                            "doc_no": item_data.get("invoice_no") or item_data.get("order_ref_no"),
+                            "party_name": item_data.get("buyer_name"),
+                            "is_duplicate": bool(item_data.get("is_duplicate")),
+                        })
                     else:
                         summary["errors"].append(
                             {"message_id": message_id, "filename": filename, "error": payload.get("error")}
@@ -217,6 +226,14 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
                     payload = resp.get_json(silent=True) or {}
                     if payload.get("success"):
                         summary["so_staged"] += 1
+                        item_data = payload.get("data") or {}
+                        summary["imported_items"].append({
+                            "kind": "SO",
+                            "filename": filename,
+                            "doc_no": item_data.get("order_ref_no") or item_data.get("buyer_code"),
+                            "party_name": item_data.get("buyer_name"),
+                            "needs_confirmation": bool(item_data.get("requires_confirmation")),
+                        })
                     else:
                         summary["errors"].append(
                             {"message_id": message_id, "filename": filename, "error": payload.get("error")}
