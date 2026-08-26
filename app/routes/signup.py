@@ -91,7 +91,13 @@ def signup():
 
     user_id = int(created["id"])
     db.set_company_owner(company_id, user_id)
-    db.set_workspace_owner(user_id, True)
+    # Deliberately NOT is_workspace_owner=True: the Android app treats
+    # that flag as "show the Founder's multi-shell Hub Chooser" (incl.
+    # Admin Zone) — UserSession.usesFounderShellHub() == isWorkspaceOwner.
+    # A new tenant only ever has the one shell/role picked at signup, so
+    # they should land straight in it, not see admin-hub UI they have no
+    # real backend admin rights to use anyway (that's gated separately,
+    # by literal ADMIN_USERNAME match, not this flag).
     if full_name or phone:
         try:
             db.update_user_profile(user_id, full_name=full_name, phone=phone)
@@ -104,7 +110,7 @@ def signup():
         username=created["username"],
         role=role,
         workspace_id=workspace_id,
-        is_workspace_owner=True,
+        is_workspace_owner=False,
     )
 
     return jsonify({
