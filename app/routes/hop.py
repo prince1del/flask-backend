@@ -16,12 +16,11 @@ from app.hop_schema import (
     DEAL_STAGES,
     DEAL_STEPS,
     HOP_ROLE,
-    HOP_WORKSPACE_ID,
     LEAD_STAGES,
     PROJECT_STAGES,
     ensure_hop_schema,
 )
-from app.routes.auth import require_jwt_auth, require_role
+from app.routes.auth import get_workspace_id, require_jwt_auth, require_role
 
 hop_bp = Blueprint("hop", __name__, url_prefix="/api/v1/hop")
 
@@ -31,7 +30,15 @@ def _db_path() -> str:
 
 
 def _ws() -> str:
-    return HOP_WORKSPACE_ID
+    """The calling user's own workspace — was hardcoded to
+    HOP_WORKSPACE_ID ("house_of_prizm") regardless of who was actually
+    logged in, so every hop_admin-role account (present or future)
+    operated on House of Prizm's real data. House of Prizm's own login
+    already carries workspace_id="house_of_prizm" in its JWT, so this is
+    a no-op for that account — only a NEW hop_admin signup (a different
+    "business" category tenant) now correctly gets its own workspace
+    instead of colliding with this one."""
+    return get_workspace_id()
 
 
 def _json_error(message: str, code: str = "BAD_REQUEST", status: int = 400):
@@ -182,7 +189,7 @@ def hop_meta():
             "data": {
                 "product": "House of Prizm",
                 "architecture": "project_centric",
-                "workspace_id": HOP_WORKSPACE_ID,
+                "workspace_id": _ws(),
                 "project_stages": PROJECT_STAGES,
                 "lead_stages": LEAD_STAGES,
                 "deal_steps": DEAL_STEPS,
@@ -203,7 +210,7 @@ def hop_health():
             "data": {
                 "product": "House of Prizm",
                 "role": HOP_ROLE,
-                "workspace_id": HOP_WORKSPACE_ID,
+                "workspace_id": _ws(),
                 "schema": "ready",
             },
         }
