@@ -155,6 +155,28 @@ class CentralizedDB:
             )
             conn.commit()
 
+    def set_company_owner(self, company_id: int, owner_user_id: int) -> None:
+        self.ensure_tenancy_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE companies SET owner_user_id = ?, updated_at = ? WHERE id = ?",
+                (owner_user_id, datetime.now(timezone.utc).isoformat(), company_id),
+            )
+            conn.commit()
+
+    def workspace_id_taken(self, workspace_id: str) -> bool:
+        self.ensure_tenancy_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM workspace_registry WHERE workspace_id = ?", (workspace_id,)
+            ).fetchone()
+            if row:
+                return True
+            row = conn.execute(
+                "SELECT 1 FROM users WHERE workspace_id = ? LIMIT 1", (workspace_id,)
+            ).fetchone()
+            return bool(row)
+
     def create_company(self, name: str, owner_user_id: int | None = None) -> int:
         """Register a brand-new tenant company (Phase 2 signup flow)."""
         self.ensure_tenancy_tables()
@@ -3231,6 +3253,18 @@ class CentralizedDB:
                 (int(user_id),),
             ).fetchone()
         return bool(row and int(row[0] or 0) == 1)
+
+    def set_workspace_owner(self, user_id: int, is_owner: bool = True) -> None:
+        """Generic owner flag setter — for a brand-new tenant's signup
+        admin. Unlike promote_workspace_owner(), no BD-specific role or
+        data-takeover side effects; just the flag."""
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE users SET is_workspace_owner = ? WHERE id = ?",
+                (1 if is_owner else 0, user_id),
+            )
+            conn.commit()
 
     def promote_workspace_owner(
         self,
