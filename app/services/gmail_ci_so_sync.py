@@ -136,6 +136,7 @@ def poll_for_user(
         _so_pack_sniff_kind,
         _parse_sales_order_header_fields,
         _identify_buyer_gst,
+        _extract_ci_buyer_gst,
     )
     from app.three_step_verification import _extract_pdf_text
     from app.services import wetransfer_fetch
@@ -238,7 +239,11 @@ def poll_for_user(
                 # stricter check.
                 header = _parse_sales_order_header_fields(text_sample)
                 all_gsts = [g for g in (header.get("all_gst_numbers") or "").split(",") if g]
-                buyer_gst = _identify_buyer_gst(all_gsts, own_gst)
+                buyer_gst = (
+                    _extract_ci_buyer_gst(text_sample, own_gst)
+                    if kind == "CI"
+                    else _identify_buyer_gst(all_gsts, own_gst)
+                )
                 distributor_hit = (
                     db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
                     if buyer_gst else None
