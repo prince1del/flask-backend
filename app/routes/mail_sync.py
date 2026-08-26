@@ -1,4 +1,6 @@
-from flask import Blueprint, request, jsonify, render_template_string
+import io
+
+from flask import Blueprint, current_app, request, jsonify, render_template_string
 
 from app.routes.auth import require_jwt_auth, get_workspace_id
 from app.storage.gmail_oauth import GmailOAuth
@@ -208,3 +210,122 @@ def poll():
         return jsonify({'success': False, 'error': {'code': 'NOT_CONNECTED', 'message': str(e)}}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': {'code': 'POLL_FAILED', 'message': str(e)}}), 500
+
+
+@mail_sync_bp.route('/pending', methods=['GET'])
+@require_jwt_auth
+def list_pending():
+    """CI/SO the poller found but couldn't safely auto-confirm (ambiguous
+    match) — needs a human to pick a distributor or dismiss it."""
+    try:
+        user = _get_request_user()
+        user_id = user['user_id']
+        workspace_id = get_workspace_id()
+
+        db = CentralizedDB()
+        rows = db.list_gmail_pending_imports(user_id=user_id, workspace_id=workspace_id, status='pending')
+        return jsonify({'success': True, 'data': {'items': rows}}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mail_sync_bp.route('/pending/<int:pending_id>/confirm', methods=['POST'])
+@require_jwt_auth
+def confirm_pending(pending_id: int):
+    try:
+        import json as _json
+
+        from app.routes.data import _confirm_ci_so_link_impl, _confirm_ci_only_impl
+
+        user = _get_request_user()
+        user_id = user['user_id']
+        workspace_id = get_workspace_id()
+        body = request.get_json(silent=True) or {}
+        distributor_id = body.get('distributor_id')
+
+        db = CentralizedDB()
+        row = db.get_gmail_pending_import(pending_id, user_id=user_id, workspace_id=workspace_id)
+        if not row or row.get('status') != 'pending':
+            return jsonify({'success': False, 'error': {'message': 'Pending import not found'}}), 404
+
+        if row['kind'] == 'CI':
+            preview = _json.loads(row.get('preview_json') or '{}')
+            if preview.get('no_match_found'):
+                if not distributor_id:
+                    return jsonify({
+                        'success': False,
+                        'error': {'code': 'DISTRIBUTOR_REQUIRED', 'message': 'distributor_id is required'},
+                    }), 400
+                resp = _confirm_ci_only_impl({
+                    'order_ref_no': preview.get('order_ref_no'),
+                    'invoice_no': preview.get('invoice_no'),
+                    'distributor_id': distributor_id,
+                    'commercial_invoice_file_reference': preview.get('commercial_invoice_file_reference'),
+                    'commercial_invoice_parsed': preview.get('commercial_invoice_parsed'),
+                    'amount': preview.get('extracted_amount'),
+                    'acknowledge_party_mismatch': True,
+                })
+            else:
+                resp = _confirm_ci_so_link_impl({
+                    'order_ref_no': preview.get('order_ref_no'),
+                    'commercial_invoice_file_reference': preview.get('commercial_invoice_file_reference'),
+                    'commercial_invoice_parsed': preview.get('commercial_invoice_parsed'),
+                    'amount': preview.get('extracted_amount'),
+                })
+            result = resp.get_json(silent=True) or {}
+            if not result.get('success') or (result.get('data') or {}).get('link_error'):
+                return jsonify({
+                    'success': False,
+                    'error': {'message': (result.get('data') or {}).get('link_error')
+                              or (result.get('error') or {}).get('message') or 'Confirm failed'},
+                }), 400
+        else:
+            if not distributor_id:
+                return jsonify({
+                    'success': False,
+                    'error': {'code': 'DISTRIBUTOR_REQUIRED', 'message': 'distributor_id is required'},
+                }), 400
+            file_bytes = row.get('file_bytes')
+            if not file_bytes:
+                return jsonify({'success': False, 'error': {'message': 'Original file no longer available'}}), 400
+            client = current_app.test_client()
+            confirm_resp = client.post(
+                '/api/v1/order-fulfillment/upload/sales-order',
+                data={
+                    'file': (io.BytesIO(file_bytes), row.get('filename') or 'so.pdf'),
+                    'distributor_id': str(distributor_id),
+                },
+                headers={'Authorization': request.headers.get('Authorization')},
+                content_type='multipart/form-data',
+            )
+            result = confirm_resp.get_json(silent=True) or {}
+            data = result.get('data') or {}
+            if not result.get('success') or not data.get('tracking_id') or data.get('link_error'):
+                return jsonify({
+                    'success': False,
+                    'error': {'message': data.get('link_error')
+                              or (result.get('error') or {}).get('message') or 'Confirm failed'},
+                }), 400
+
+        db.update_gmail_pending_import_status(pending_id, 'confirmed')
+        return jsonify({'success': True, 'data': {'message': 'Confirmed'}}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mail_sync_bp.route('/pending/<int:pending_id>/reject', methods=['POST'])
+@require_jwt_auth
+def reject_pending(pending_id: int):
+    try:
+        user = _get_request_user()
+        user_id = user['user_id']
+        workspace_id = get_workspace_id()
+
+        db = CentralizedDB()
+        row = db.get_gmail_pending_import(pending_id, user_id=user_id, workspace_id=workspace_id)
+        if not row:
+            return jsonify({'success': False, 'error': {'message': 'Pending import not found'}}), 404
+        db.update_gmail_pending_import_status(pending_id, 'rejected')
+        return jsonify({'success': True, 'data': {'message': 'Dismissed'}}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

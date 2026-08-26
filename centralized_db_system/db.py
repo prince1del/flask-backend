@@ -380,6 +380,119 @@ class CentralizedDB:
             )
             conn.commit()
 
+    def ensure_gmail_pending_imports_table(self) -> None:
+        """Ambiguous auto-import candidates (no clean SO/distributor match)
+        that need a human to pick a distributor or dismiss, from the
+        Gmail CI/SO poller — mirrors the existing bulk-upload 'Needs
+        review' rows, but those never persisted anywhere to revisit."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS gmail_pending_imports (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    workspace_id TEXT DEFAULT 'default',
+                    message_id TEXT,
+                    kind TEXT,
+                    filename TEXT,
+                    doc_no TEXT,
+                    party_name TEXT,
+                    reason TEXT,
+                    preview_json TEXT,
+                    file_bytes BLOB,
+                    status TEXT DEFAULT 'pending',
+                    created_at TEXT
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_gmail_pending_user_ws_status "
+                "ON gmail_pending_imports(user_id, workspace_id, status)"
+            )
+            conn.commit()
+
+    def save_gmail_pending_import(
+        self,
+        user_id: int,
+        workspace_id: str,
+        message_id: str,
+        kind: str,
+        filename: str,
+        doc_no: str | None,
+        party_name: str | None,
+        reason: str | None,
+        preview_json: str | None = None,
+        file_bytes: bytes | None = None,
+    ) -> int:
+        self.ensure_gmail_pending_imports_table()
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO gmail_pending_imports (
+                    user_id, workspace_id, message_id, kind, filename, doc_no,
+                    party_name, reason, preview_json, file_bytes, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                """,
+                (
+                    user_id,
+                    str(workspace_id or "default"),
+                    message_id,
+                    kind,
+                    filename,
+                    doc_no,
+                    party_name,
+                    reason,
+                    preview_json,
+                    file_bytes,
+                    now,
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid or 0)
+
+    def list_gmail_pending_imports(
+        self, user_id: int, workspace_id: str, status: str = "pending"
+    ) -> list[dict[str, Any]]:
+        self.ensure_gmail_pending_imports_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, message_id, kind, filename, doc_no, party_name, reason, status, created_at
+                FROM gmail_pending_imports
+                WHERE user_id = ? AND workspace_id = ? AND status = ?
+                ORDER BY created_at DESC
+                """,
+                (user_id, str(workspace_id or "default"), status),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_gmail_pending_import(
+        self, pending_id: int, user_id: int, workspace_id: str
+    ) -> dict[str, Any] | None:
+        self.ensure_gmail_pending_imports_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM gmail_pending_imports
+                WHERE id = ? AND user_id = ? AND workspace_id = ?
+                """,
+                (pending_id, user_id, str(workspace_id or "default")),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def update_gmail_pending_import_status(self, pending_id: int, status: str) -> bool:
+        self.ensure_gmail_pending_imports_table()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "UPDATE gmail_pending_imports SET status = ? WHERE id = ?",
+                (status, pending_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
     def clear_processed_gmail_messages(self, user_id: int, workspace_id: str) -> int:
         """Wipe the dedup log so the next poll re-scans/re-evaluates every
         matching message again (e.g. after a classification-logic fix)."""

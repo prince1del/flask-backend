@@ -132,6 +132,7 @@ def poll_for_user(
     user — it reuses that request's Authorization header/session to call the
     existing upload endpoints exactly as the founder's own device would.
     """
+    import json
     import os
     import tempfile
 
@@ -145,6 +146,7 @@ def poll_for_user(
         _parse_sales_order_header_fields,
         _identify_buyer_gst,
         _extract_ci_buyer_gst,
+        _auto_confirm_ci_preview,
     )
     from app.three_step_verification import _extract_pdf_text
     from app.services import wetransfer_fetch
@@ -184,6 +186,8 @@ def poll_for_user(
         "skipped": 0,
         "errors": [],
         "imported_items": [],
+        "pending_review": 0,
+        "duplicates": 0,
         "debug": [],
     }
 
@@ -282,21 +286,49 @@ def poll_for_user(
                     )
                     resp = _upload_invoice_v2_impl(uploaded_file=fs)
                     payload = resp.get_json(silent=True) or {}
-                    if payload.get("success"):
-                        summary["ci_imported"] += 1
-                        item_data = payload.get("data") or {}
-                        summary["imported_items"].append({
-                            "kind": "CI",
-                            "filename": filename,
-                            "email_date": email_date,
-                            "doc_no": item_data.get("invoice_no") or item_data.get("order_ref_no"),
-                            "party_name": item_data.get("buyer_name"),
-                            "is_duplicate": bool(item_data.get("is_duplicate")),
-                        })
-                    else:
+                    if not payload.get("success"):
                         summary["errors"].append(
                             {"message_id": message_id, "filename": filename, "error": payload.get("error")}
                         )
+                    else:
+                        preview = payload.get("data") or {}
+                        doc_no = preview.get("invoice_no") or preview.get("order_ref_no")
+                        party_name = preview.get("buyer_name")
+                        confirm_result = _auto_confirm_ci_preview(preview)
+                        state = confirm_result.get("state")
+                        if state == "ok":
+                            summary["ci_imported"] += 1
+                            summary["imported_items"].append({
+                                "kind": "CI",
+                                "filename": filename,
+                                "email_date": email_date,
+                                "doc_no": doc_no,
+                                "party_name": party_name,
+                                "is_duplicate": False,
+                                "auto_confirmed": True,
+                                "confirm_status": confirm_result.get("status"),
+                            })
+                        elif state == "dup":
+                            summary["duplicates"] += 1
+                        elif state == "review":
+                            db.save_gmail_pending_import(
+                                user_id=user_id,
+                                workspace_id=workspace_id,
+                                message_id=message_id,
+                                kind="CI",
+                                filename=filename,
+                                doc_no=doc_no,
+                                party_name=party_name,
+                                reason=confirm_result.get("status"),
+                                preview_json=json.dumps(preview, default=str),
+                            )
+                            summary["pending_review"] += 1
+                        else:
+                            summary["errors"].append({
+                                "message_id": message_id,
+                                "filename": filename,
+                                "error": confirm_result.get("status"),
+                            })
                 else:
                     client = current_app.test_client()
                     headers = {"Authorization": auth_header} if auth_header else {}
@@ -307,21 +339,66 @@ def poll_for_user(
                         content_type="multipart/form-data",
                     )
                     payload = resp.get_json(silent=True) or {}
-                    if payload.get("success"):
-                        summary["so_staged"] += 1
-                        item_data = payload.get("data") or {}
-                        summary["imported_items"].append({
-                            "kind": "SO",
-                            "filename": filename,
-                            "email_date": email_date,
-                            "doc_no": item_data.get("order_ref_no") or item_data.get("buyer_code"),
-                            "party_name": item_data.get("buyer_name"),
-                            "needs_confirmation": bool(item_data.get("requires_confirmation")),
-                        })
-                    else:
+                    if not payload.get("success"):
                         summary["errors"].append(
                             {"message_id": message_id, "filename": filename, "error": payload.get("error")}
                         )
+                    else:
+                        preview = payload.get("data") or {}
+                        doc_no = preview.get("order_ref_no") or preview.get("buyer_code")
+                        party_name = preview.get("buyer_name")
+                        matched_by_code = preview.get("matched_by_buyer_code") or {}
+                        distributor_id = matched_by_code.get("id") if preview.get("signals_agree") else None
+                        auto_confirmed = False
+                        if distributor_id and preview.get("order_ref_no"):
+                            confirm_resp = client.post(
+                                "/api/v1/order-fulfillment/upload/sales-order",
+                                data={
+                                    "file": (io.BytesIO(data), filename),
+                                    "distributor_id": str(distributor_id),
+                                },
+                                headers=headers,
+                                content_type="multipart/form-data",
+                            )
+                            confirm_payload = confirm_resp.get_json(silent=True) or {}
+                            confirm_data = confirm_payload.get("data") or {}
+                            if (
+                                confirm_payload.get("success")
+                                and confirm_data.get("tracking_id")
+                                and not confirm_data.get("is_duplicate")
+                                and not confirm_data.get("link_error")
+                            ):
+                                auto_confirmed = True
+                        if auto_confirmed:
+                            summary["so_staged"] += 1
+                            summary["imported_items"].append({
+                                "kind": "SO",
+                                "filename": filename,
+                                "email_date": email_date,
+                                "doc_no": doc_no,
+                                "party_name": party_name,
+                                "auto_confirmed": True,
+                                "needs_confirmation": False,
+                            })
+                        elif preview.get("is_duplicate"):
+                            summary["duplicates"] += 1
+                        else:
+                            db.save_gmail_pending_import(
+                                user_id=user_id,
+                                workspace_id=workspace_id,
+                                message_id=message_id,
+                                kind="SO",
+                                filename=filename,
+                                doc_no=doc_no,
+                                party_name=party_name,
+                                reason=(
+                                    "Buyer code / GST signals don't agree — pick distributor"
+                                    if preview.get("matched_by_buyer_code") or preview.get("matched_by_gst")
+                                    else "No distributor match found — pick distributor"
+                                ),
+                                file_bytes=data,
+                            )
+                            summary["pending_review"] += 1
             if not handled_any:
                 summary["skipped"] += 1
             db.mark_gmail_message_processed(
