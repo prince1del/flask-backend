@@ -202,7 +202,23 @@ def update_user(user_id):
             if not ws:
                 return jsonify({'success': False, 'data': None, 'message': 'workspace_id cannot be empty'}), 400
             user.workspace_id = ws
-        
+        is_workspace_owner_update = None
+        if 'is_workspace_owner' in data:
+            # Grants/revokes the Android app's Founder multi-shell Hub
+            # Chooser (Admin Zone included) — see
+            # UserSession.usesFounderShellHub(). Founder-only, matching
+            # the same gate as assigning the admin role itself.
+            #
+            # NOT a SQLAlchemy User column (app/models.py never declared
+            # it, even though the live `users` table has had it since
+            # CentralizedDB.ensure_user_profile_columns() added it via raw
+            # ALTER TABLE) — assigning user.is_workspace_owner here would
+            # silently no-op. Written via CentralizedDB.set_workspace_owner()
+            # instead, after the rest of this request's changes commit.
+            if not _is_founder_requester():
+                return _forbidden('Insufficient permissions to change workspace-owner status')
+            is_workspace_owner_update = bool(data['is_workspace_owner'])
+
         user.updated_at = datetime.now(timezone.utc)
         db.session.commit()
         
@@ -216,7 +232,10 @@ def update_user(user_id):
         )
         db.session.add(audit)
         db.session.commit()
-        
+
+        if is_workspace_owner_update is not None:
+            _auth_db().set_workspace_owner(user_id, is_workspace_owner_update)
+
         return jsonify({
             'success': True,
             'data': user.to_dict(),
