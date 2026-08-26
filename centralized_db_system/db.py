@@ -3289,7 +3289,12 @@ class CentralizedDB:
         """Update a user's role.
 
         Workspace-scoped by default. Supreme owner (``owner_scope``) may update
-        any active login regardless of private ``exec_*`` silo."""
+        any active login regardless of private ``exec_*`` silo.
+        Literal role ``admin`` is never assignable here — founder-only via
+        /api/v1/admin/users with ADMIN_USERNAME gate."""
+        role_key = (role or "").strip().lower()
+        if role_key == "admin":
+            raise ValueError("role=admin cannot be assigned via workspace user management")
         self.ensure_user_profile_columns()
         with sqlite3.connect(self.db_path) as conn:
             if owner_scope:
@@ -3350,14 +3355,33 @@ class CentralizedDB:
         return bool(row and int(row[0] or 0) == 1)
 
     def set_workspace_owner(self, user_id: int, is_owner: bool = True) -> None:
-        """Generic owner flag setter — for a brand-new tenant's signup
-        admin. Unlike promote_workspace_owner(), no BD-specific role or
-        data-takeover side effects; just the flag."""
+        """Generic owner flag setter.
+
+        Unlike promote_workspace_owner(), no BD-specific role or data-takeover
+        side effects — just the flag. Granting True is restricted to
+        WORKSPACE_OWNER_USERNAME (default kunwar1del); other accounts may
+        only be demoted. Use promote_workspace_owner() on boot for the
+        supreme owner.
+        """
         self.ensure_user_profile_columns()
+        uid = int(user_id)
         with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT username FROM users WHERE id = ?", (uid,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("User not found")
+            username = str(row[0] or "").strip().lower()
+            supreme = (
+                os.getenv("WORKSPACE_OWNER_USERNAME", "kunwar1del") or "kunwar1del"
+            ).strip().lower()
+            if is_owner and username != supreme:
+                raise ValueError(
+                    f"is_workspace_owner=True only allowed for {supreme}"
+                )
             conn.execute(
                 "UPDATE users SET is_workspace_owner = ? WHERE id = ?",
-                (1 if is_owner else 0, user_id),
+                (1 if is_owner else 0, uid),
             )
             conn.commit()
 

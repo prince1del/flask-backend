@@ -388,7 +388,11 @@ def recovery_pin_status() -> tuple[Response, int]:
     return jsonify({"success": True, "data": {"has_recovery_pin": has_pin}}), 200
 
 
-_ALLOWED_WORKSPACE_ROLES = {"admin", "sales_executive", "distributor", "retailer", "unassigned"}
+# Assignable by workspace owner from the team screen. Literal "admin" is
+# deliberately excluded — only ADMIN_USERNAME (founder) may create/assign
+# role=admin via /api/v1/admin/users, and supreme Hub access is the separate
+# is_workspace_owner flag owned solely by WORKSPACE_OWNER_USERNAME.
+_ALLOWED_WORKSPACE_ROLES = {"sales_executive", "distributor", "retailer", "unassigned", "hop_admin"}
 
 
 @auth_blueprint.route("/api/v1/workspace/users", methods=["GET"], endpoint="list_workspace_users")

@@ -160,9 +160,10 @@ def update_user(user_id):
     # Production SQLAlchemy User.query is empty (GET /admin/users → total:0),
     # so this field must never depend on db.session.get(User, …).
     #
-    # Auth: @require_role('admin') already allows supreme workspace owners
-    # (e.g. kunwar1del / sales_executive + is_workspace_owner) via the
-    # intentional bypass in require_role — no extra _is_founder_requester gate.
+    # Auth: @require_role('admin') allows supreme workspace owners via bypass.
+    # Promote (true) is API-forbidden — only boot promote_workspace_owner(
+    # WORKSPACE_OWNER_USERNAME, default kunwar1del) may grant the flag.
+    # Demote (false) is allowed for other accounts, never for that supreme user.
     if "is_workspace_owner" in data:
         other = {k for k in data.keys() if k != "is_workspace_owner"}
         if other:
@@ -174,6 +175,12 @@ def update_user(user_id):
                     "(CentralizedDB path; cannot mix with SQLAlchemy fields)"
                 ),
             }), 400
+        want_owner = bool(data["is_workspace_owner"])
+        if want_owner:
+            return _forbidden(
+                "Cannot grant is_workspace_owner via API; "
+                "only WORKSPACE_OWNER_USERNAME is promoted on server boot"
+            )
         try:
             cdb = _auth_db()
             target = cdb.get_user_profile(int(user_id))
@@ -181,11 +188,18 @@ def update_user(user_id):
                 return jsonify(
                     {"success": False, "data": None, "message": "User not found"}
                 ), 404
-            want_owner = bool(data["is_workspace_owner"])
-            cdb.set_workspace_owner(int(user_id), want_owner)
+            supreme = (
+                os.getenv("WORKSPACE_OWNER_USERNAME", "kunwar1del") or "kunwar1del"
+            ).strip().lower()
+            if str(target.get("username") or "").strip().lower() == supreme:
+                return _forbidden(
+                    f"Cannot revoke is_workspace_owner on {supreme}; "
+                    "boot promote always restores it"
+                )
+            cdb.set_workspace_owner(int(user_id), False)
             refreshed = cdb.get_user_profile(int(user_id)) or {
                 **target,
-                "is_workspace_owner": want_owner,
+                "is_workspace_owner": False,
             }
             return jsonify({
                 "success": True,
