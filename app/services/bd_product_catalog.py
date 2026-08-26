@@ -105,12 +105,142 @@ BD_SET_TYPE_LABELS: list[tuple[str, str, str]] = [
 _SET_TYPE_BY_KEY = {key: label for _, key, label in BD_SET_TYPE_LABELS}
 
 
+# --- Bath / Towel teaching (FO Brand × Size ↔ SO PDF short names) ---
+# Longer aliases first. Display names must soft-match FO brands after
+# normalize_brand_and_size (e.g. Huk A Buk, Rimzim Cooltex, BD White).
+BD_TOWEL_COLLECTION_ALIASES: tuple[tuple[str, str], ...] = (
+    ("NATURE'S BQT", "Bamboo"),
+    ("NATURES BQT", "Bamboo"),
+    ("NATURE S BQT", "Bamboo"),
+    ("SUPER ULTRX", "Super Ultrx"),
+    ("SUPER ULTRA", "Super Ultrx"),
+    ("RIMZIM COOLTEX", "Rimzim Cooltex"),
+    ("RIMZIM PRINTED", "Rimzim Printed"),
+    ("HUCK A BUCK", "Huk A Buk"),
+    ("HUK A BUK", "Huk A Buk"),
+    ("BD WHITE", "BD White"),
+    ("GYM TOWEL", "Gym Towel"),
+    ("SANTINO", "Santino"),
+    ("COOLTEX", "Rimzim Cooltex"),
+    ("TULIP", "Tulip"),
+    ("BAMBOO", "Bamboo"),
+)
+
+# Physical size / set cues on towel SO lines → FO size labels.
+_TOWEL_SIZE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bR4\b.*\bSET\b|\bR4\s*SET\b", re.I), "Towel Set"),
+    (re.compile(r"50\s*CM\s*[X×]\s*100|50CMX100|50\s*[X×]\s*100", re.I), "Gym Towel"),
+    (
+        re.compile(
+            r"90\s*CM\s*[X×]\s*1\.?\s*8\s*M?|90CMX1\.8|90\s*[X×]\s*180|90CM\s*X1\.8",
+            re.I,
+        ),
+        "Pool Towel",
+    ),
+    (
+        re.compile(
+            r"60\s*CM\s*[X×]\s*1\.?\s*2\s*0?\s*M?|60CMX1\.20|60CMX1\.2|"
+            r"60\s*[X×]\s*120|60CM\s*X\s*1\.2",
+            re.I,
+        ),
+        "Ladies Towel",
+    ),
+    (
+        re.compile(
+            r"75\s*CM\s*[X×]\s*1\.?\s*5\s*0?\s*M?|75CMX150|75CMX1\.5|"
+            r"75\s*[X×]\s*150|75CM\s*X\s*1\.5|75CM\s*X1\.5",
+            re.I,
+        ),
+        "Bath Towel",
+    ),
+    (
+        re.compile(
+            r"72\s*CM\s*C?\s*[X×]?\s*C?\s*1\.?\s*44\s*M?|72CMX?C?1\.44|72\s*[X×]\s*144|"
+            r"72.*?1\.44\s*M?",
+            re.I,
+        ),
+        "Bath Towel",
+    ),
+    (
+        re.compile(r"40\s*CM\s*[X×]\s*60|40CMX60|40\s*[X×]\s*60|40X\s*60", re.I),
+        "Hand Towel",  # upgraded to Set of 2 when 2PC present
+    ),
+)
+
+
 def _norm_space(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
 
 
 def _norm_key(text: str) -> str:
     return _norm_space(text).upper()
+
+
+def lookup_towel_collection(short_code: str) -> str | None:
+    key = _norm_key(short_code)
+    # Apostrophes / punctuation folded for Nature's Bqt etc.
+    key_folded = re.sub(r"[^A-Z0-9]+", " ", key)
+    key_folded = _norm_space(key_folded)
+    for alias, display in BD_TOWEL_COLLECTION_ALIASES:
+        alias_key = _norm_key(alias)
+        alias_folded = _norm_space(re.sub(r"[^A-Z0-9]+", " ", alias_key))
+        if (
+            key == alias_key
+            or key.startswith(alias_key + " ")
+            or key_folded == alias_folded
+            or key_folded.startswith(alias_folded + " ")
+        ):
+            return display
+    return None
+
+
+def lookup_towel_product_type(short_code: str) -> str | None:
+    text = _norm_space(short_code)
+    if not text:
+        return None
+    upper = text.upper()
+    if re.search(r"\bGYM\b", upper) and "TOWEL" in upper:
+        # Prefer gym when brand is gym towel even if size missing
+        for pat, label in _TOWEL_SIZE_RULES:
+            if pat.search(text):
+                return label
+        return "Gym Towel"
+    for pat, label in _TOWEL_SIZE_RULES:
+        if not pat.search(text):
+            continue
+        if label == "Hand Towel" and re.search(
+            r"2\s*PC|2PC|SET\s*OF\s*2|\b2\s*PC\b", upper
+        ):
+            return "Hand Towel Set of 2"
+        return label
+    if re.search(r"\bR4\b", upper):
+        return "Towel Set"
+    return None
+
+
+def enrich_towel_product(short_code: str) -> dict[str, Any] | None:
+    """Resolve Bath/towel SO PDF names → FO Brand × Size labels."""
+    code = _norm_space(short_code)
+    if not code:
+        return None
+    collection = lookup_towel_collection(code)
+    product_type = lookup_towel_product_type(code)
+    if not collection and not product_type:
+        return None
+    if collection and product_type:
+        display = f"{collection} — {product_type}"
+    elif collection:
+        display = collection
+    else:
+        display = product_type or code
+    return {
+        "product_code": code,
+        "collection": collection,
+        "product_type": product_type,
+        "set_type_key": None,
+        "product_name": display,
+        "matched": bool(collection and product_type),
+    }
 
 
 def split_bd_collection_and_set_type(short_code: str) -> tuple[str, str | None]:
@@ -157,6 +287,18 @@ def enrich_bd_product(short_code: str) -> dict[str, Any]:
     collection = lookup_bd_collection(code, collection_code)
     product_type = lookup_bd_product_type(set_key)
 
+    # Bed-sheet maps miss towel SKUs — fall back to Bath/towel teaching.
+    if not (collection and product_type):
+        towel = enrich_towel_product(code)
+        if towel and towel.get("matched"):
+            return towel
+        if towel and (towel.get("collection") or towel.get("product_type")):
+            # Prefer towel partial over empty bed miss
+            if not collection:
+                collection = towel.get("collection")
+            if not product_type:
+                product_type = towel.get("product_type")
+
     if collection and product_type:
         display = f"{collection} — {product_type}"
     elif collection:
@@ -172,7 +314,7 @@ def enrich_bd_product(short_code: str) -> dict[str, Any]:
         "product_type": product_type,
         "set_type_key": set_key,
         "product_name": display,
-        "matched": bool(collection or product_type),
+        "matched": bool(collection and product_type),
     }
 
 

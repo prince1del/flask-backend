@@ -23,12 +23,16 @@ from app.services.so_pack_consolidate import (
 )
 
 QTY_TOL = 0.01
-VALUE_TOL = 10.0  # ₹ ±10 FO ExMill vs SO Net is MATCH (teaching)
+VALUE_TOL = 10.0  # ₹ floor — FO ExMill vs SO Net
+VALUE_TOL_RATE = 0.005  # ±0.5% on large lines (FO bale→pcs exmill float vs SO net)
 
 # Taught FO ↔ SO brand families (distributor wording vs BD collection name).
 # Soft keys only — e.g. "Florentine / Allure" and "Allure" share "allure".
 BRAND_ALIAS_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"allure", "florentine allure"}),
+    frozenset({"bamboo", "nature s bqt", "natures bqt", "nature bqt"}),
+    frozenset({"huk a buk", "huck a buck"}),
+    frozenset({"rimzim cooltex", "cooltex"}),
 )
 
 
@@ -240,9 +244,13 @@ def build_so_buckets_from_line_detail(line_detail: list[dict[str, Any]]) -> dict
     others_qty = 0.0
     others_net = 0.0
     for row in line_detail or []:
-        short = str(row.get("product_name") or "").strip()
-        if not short and row.get("product_detail"):
-            short = product_short_name(str(row.get("product_detail") or ""))
+        # Prefer full PDF line (product_detail) — short product_name often drops size
+        # e.g. "SANTINO PRE DYED 2PC" vs "... 40X60CM ASST12 AW26".
+        detail = str(row.get("product_detail") or "").strip()
+        name = str(row.get("product_name") or "").strip()
+        short = detail if len(detail) >= len(name) else name
+        if not short and detail:
+            short = product_short_name(detail)
         enriched = enrich_bd_product(short) if short else {}
         brand = enriched.get("collection")
         size = enriched.get("product_type")
@@ -451,7 +459,9 @@ def compare_fo_so_buckets(
             status = "EXTRA_ON_SO"
         elif abs(d_qty) > QTY_TOL:
             status = "QTY_MISMATCH"
-        elif abs(d_val) > VALUE_TOL:
+        elif abs(d_val) > max(
+            VALUE_TOL, VALUE_TOL_RATE * max(abs(fo_val), abs(so_val), 1.0)
+        ):
             status = "VALUE_MISMATCH"
         elif key in fuzzy_flags or (
             fo_brand_raw
