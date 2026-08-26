@@ -3421,19 +3421,33 @@ class CentralizedDB:
             role = (row[1] or "unassigned").strip()
             workspace_id = (row[2] or "default").strip() or "default"
 
-            # Only one supreme owner per workspace.
+            # Exactly one supreme owner on the whole platform (not per-workspace).
+            stripped_owners = 0
+            stripped_admins = 0
             if "is_workspace_owner" in cols:
-                conn.execute(
+                cur = conn.execute(
                     """
                     UPDATE users SET is_workspace_owner = 0
-                    WHERE workspace_id = ? AND id != ?
+                    WHERE id != ? AND IFNULL(is_workspace_owner, 0) != 0
                     """,
-                    (workspace_id, uid),
+                    (uid,),
                 )
+                stripped_owners = int(cur.rowcount or 0)
                 conn.execute(
                     "UPDATE users SET is_workspace_owner = 1 WHERE id = ?",
                     (uid,),
                 )
+
+            # Literal role=admin is retired — platform power is is_workspace_owner only.
+            # Do not touch hop_admin (House of Prizm / Business shell).
+            cur = conn.execute(
+                """
+                UPDATE users SET role = 'sales_executive', updated_at = ?
+                WHERE lower(IFNULL(role, '')) = 'admin'
+                """,
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            stripped_admins = int(cur.rowcount or 0)
 
             # Keep BD mobile shell; owner powers come from the flag + require_role bypass.
             if keep_bd_role and role not in {"sales_executive", "admin", "hop_admin"}:
@@ -3515,13 +3529,16 @@ class CentralizedDB:
 
         # Claim helper also covers any NULL leftovers after schema drift.
         claim = self.claim_unowned_masters(workspace_id=workspace_id, user_id=uid)
+        refreshed = self.get_user_profile(uid) or {}
         return {
             "action": "promoted",
             "user_id": uid,
             "username": uname,
-            "role": role,
+            "role": refreshed.get("role") or role,
             "workspace_id": workspace_id,
             "is_workspace_owner": True,
+            "stripped_other_owners": stripped_owners,
+            "stripped_literal_admins": stripped_admins,
             "takeover": takeover,
             "claim": claim,
         }
@@ -3823,6 +3840,8 @@ class CentralizedDB:
             }
 
     def ensure_default_admin_user(self) -> None:
+        """Empty-DB bootstrap: create WORKSPACE_OWNER_USERNAME as sales_executive
+        + is_workspace_owner. Never creates a literal role=admin login."""
         if os.getenv("AUTH_ENABLED", "false").lower() not in {"1", "true", "yes", "on"}:
             return
 
@@ -3831,9 +3850,23 @@ class CentralizedDB:
             if has_user:
                 return
 
-            username = os.getenv("ADMIN_USERNAME", "admin")
-            password = os.getenv("ADMIN_PASSWORD", "Admin123!")
-            self.create_user(username, password, role='admin')
+        username = (
+            os.getenv("WORKSPACE_OWNER_USERNAME")
+            or os.getenv("ADMIN_USERNAME")
+            or "kunwar1del"
+        ).strip() or "kunwar1del"
+        password = (
+            os.getenv("WORKSPACE_OWNER_PASSWORD")
+            or os.getenv("ADMIN_PASSWORD")
+            or "Admin123!"
+        )
+        self.create_user(
+            username, password, role="sales_executive", workspace_id="default"
+        )
+        try:
+            self.promote_workspace_owner(username, takeover_workspace_data=False)
+        except Exception:
+            pass
 
     def _initialize(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

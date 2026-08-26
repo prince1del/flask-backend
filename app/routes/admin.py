@@ -22,7 +22,8 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
 
 def _founder_username() -> str:
-    return (os.getenv('ADMIN_USERNAME') or 'admin').strip()
+    """Sole platform controller — WORKSPACE_OWNER_USERNAME (default kunwar1del)."""
+    return (os.getenv('WORKSPACE_OWNER_USERNAME') or 'kunwar1del').strip() or 'kunwar1del'
 
 
 def _requester() -> dict:
@@ -46,7 +47,12 @@ def _forbidden(message: str):
 
 
 def _is_founder_requester() -> bool:
-    return _requester().get('username') == _founder_username()
+    """Only the supreme workspace owner may perform founder-gated admin actions."""
+    requester = _requester()
+    uname = str(requester.get('username') or '').strip().lower()
+    if uname and uname == _founder_username().lower():
+        return True
+    return bool(requester.get('is_workspace_owner'))
 
 
 def _auth_db() -> CentralizedDB:
@@ -108,12 +114,14 @@ def create_user():
     if not username or not email or not password:
         return jsonify({'success': False, 'data': None, 'message': 'username, email, password required'}), 400
 
-    if role not in ['admin', 'sales_executive', 'distributor', 'retailer', 'unassigned']:
+    if role not in ['sales_executive', 'distributor', 'retailer', 'unassigned', 'hop_admin']:
         return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
 
     if role == 'admin':
-        if not _is_founder_requester():
-            return _forbidden('Insufficient permissions to assign admin role')
+        return _forbidden(
+            'role=admin is disabled; only '
+            f'{_founder_username()} holds platform admin powers via is_workspace_owner'
+        )
 
     try:
         from app.workspace_tenancy import resolve_workspace_id_for_new_user
@@ -238,13 +246,18 @@ def update_user(user_id):
             if refreshed and refreshed.get("email") is not None:
                 user.email = refreshed.get("email")
         if 'role' in data:
-            if data['role'] not in ['admin', 'sales_executive', 'distributor', 'retailer', 'unassigned']:
+            if data['role'] not in ['sales_executive', 'distributor', 'retailer', 'unassigned', 'hop_admin']:
                 return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
-            if data['role'] == 'admin' and not _is_founder_requester():
-                return _forbidden('Insufficient permissions to assign admin role')
-            # Founder must keep admin role — otherwise admin assignment locks out forever.
-            if user.username == founder_username and data['role'] != 'admin':
-                return _forbidden('Founder account must retain the admin role')
+            if data['role'] == 'admin':
+                return _forbidden(
+                    'role=admin is disabled; only '
+                    f'{_founder_username()} holds platform admin powers via is_workspace_owner'
+                )
+            # Founder account must keep an active shell role.
+            if user.username == founder_username and data['role'] not in {
+                'sales_executive', 'hop_admin', 'admin'
+            }:
+                return _forbidden('Founder account must retain an active shell role')
             user.role = data['role']
         if 'status' in data:
             if data['status'] not in ['active', 'inactive']:

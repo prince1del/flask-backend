@@ -389,9 +389,7 @@ def recovery_pin_status() -> tuple[Response, int]:
 
 
 # Assignable by workspace owner from the team screen. Literal "admin" is
-# deliberately excluded — only ADMIN_USERNAME (founder) may create/assign
-# role=admin via /api/v1/admin/users, and supreme Hub access is the separate
-# is_workspace_owner flag owned solely by WORKSPACE_OWNER_USERNAME.
+# retired — platform power is solely is_workspace_owner on WORKSPACE_OWNER_USERNAME.
 _ALLOWED_WORKSPACE_ROLES = {"sales_executive", "distributor", "retailer", "unassigned", "hop_admin"}
 
 
