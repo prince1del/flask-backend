@@ -52,6 +52,7 @@ from app.routes import (
     sales_bp,
     schemas_blueprint,
     storage_bp,
+    mail_sync_bp,
     target_achievement_bp,
     workspaces_blueprint,
     inventory_bp,
@@ -336,6 +337,7 @@ def create_app() -> Flask:
     app.register_blueprint(inventory_bp)
     app.register_blueprint(business_bp)
     app.register_blueprint(storage_bp)
+    app.register_blueprint(mail_sync_bp)
     app.register_blueprint(gdrive_bp)
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)

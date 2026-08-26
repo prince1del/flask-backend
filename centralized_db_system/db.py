@@ -335,6 +335,51 @@ class CentralizedDB:
             conn.commit()
             return cursor.rowcount > 0
 
+    def ensure_gmail_sync_table(self) -> None:
+        """Dedup log for the Gmail CI/SO auto-import poller."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS gmail_sync_processed_messages (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    workspace_id TEXT DEFAULT 'default',
+                    message_id TEXT NOT NULL,
+                    processed_at TEXT,
+                    UNIQUE(user_id, workspace_id, message_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_gmail_sync_user_ws "
+                "ON gmail_sync_processed_messages(user_id, workspace_id)"
+            )
+            conn.commit()
+
+    def get_processed_gmail_message_ids(self, user_id: int, workspace_id: str) -> set[str]:
+        self.ensure_gmail_sync_table()
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT message_id FROM gmail_sync_processed_messages "
+                "WHERE user_id = ? AND workspace_id = ?",
+                (user_id, str(workspace_id or "default")),
+            ).fetchall()
+            return {row[0] for row in rows}
+
+    def mark_gmail_message_processed(self, user_id: int, workspace_id: str, message_id: str) -> None:
+        self.ensure_gmail_sync_table()
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO gmail_sync_processed_messages (user_id, workspace_id, message_id, processed_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, workspace_id, message_id) DO UPDATE SET processed_at = excluded.processed_at
+                """,
+                (user_id, str(workspace_id or "default"), message_id, now),
+            )
+            conn.commit()
+
     def upsert_file_index_records(
         self,
         workspace_id: str,
