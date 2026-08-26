@@ -128,11 +128,15 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
     from flask import current_app, request
     from werkzeug.datastructures import FileStorage
     from centralized_db_system.db import CentralizedDB
-    from app.routes.data import _upload_invoice_v2_impl, _db_path, _expand_ci_upload_items, _so_pack_sniff_kind
+    from app.routes.data import _upload_invoice_v2_impl, _expand_ci_upload_items, _so_pack_sniff_kind
     from app.three_step_verification import _extract_pdf_text
     from app.services import wetransfer_fetch
 
-    db = CentralizedDB(_db_path())
+    # Same no-arg CentralizedDB() as connect/status/disconnect in
+    # app/routes/mail_sync.py — using data.py's _db_path() here instead
+    # previously pointed at a different resolved DB file, so a freshly
+    # connected Gmail account looked "not connected" the moment you polled.
+    db = CentralizedDB()
     account = db.get_storage_account(
         user_id=user_id, provider_type="gmail", workspace_id=workspace_id
     )
