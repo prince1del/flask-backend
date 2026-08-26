@@ -21,16 +21,13 @@ from app.routes.auth import _get_auth_db, get_jwt_service
 signup_bp = Blueprint("signup", __name__, url_prefix="/api/v1")
 
 # Maps the signup form's plain-language category to the actual role the
-# rest of the app already understands (UserSession.isBdUser / roleLabel()
-# on the Android side route purely off this string). "business" is
-# deliberately NOT here — the HOP module's backend (app/hop_schema.py:
-# HOP_WORKSPACE_ID = "house_of_prizm") is hardcoded to one specific
-# workspace regardless of the caller's JWT, so a new tenant signing up as
-# "business" today would actually operate on House of Prizm's real data,
-# not their own. Needs that hardcoding generalized before this category
-# can be offered.
+# rest of the app already understands (UserSession.isBdUser/isHopUser /
+# roleLabel() on the Android side route purely off this string).
+# "business" now works because hop.py's _ws() was fixed to read the
+# caller's real workspace_id instead of hardcoding "house_of_prizm".
 CATEGORY_TO_ROLE = {
     "service": "sales_executive",
+    "business": "hop_admin",
     "distributor": "distributor",
     "retailer": "retailer",
 }
