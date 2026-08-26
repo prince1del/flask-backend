@@ -3168,6 +3168,268 @@ class CentralizedDB:
             )
             return True, "Password reset successful"
 
+    # --- Secret question + email OTP password reset (replaces recovery PIN) ---
+
+    SECRET_QUESTIONS = (
+        "What city were you born in?",
+        "What is your mother's maiden name?",
+        "What was the name of your first school?",
+        "What was the name of your first pet?",
+        "What is your favorite childhood book?",
+    )
+
+    _RESET_CODE_TTL_MINUTES = 15
+    _RESET_CODE_MAX_ATTEMPTS = 5
+
+    @staticmethod
+    def normalize_secret_answer(answer: str) -> str:
+        return " ".join((answer or "").strip().lower().split())
+
+    def set_secret_question(
+        self, user_id: int, question: str, answer: str
+    ) -> None:
+        """Logged-in user (or signup) sets secret question used for password reset."""
+        q = (question or "").strip()
+        if q not in self.SECRET_QUESTIONS:
+            raise ValueError("Invalid secret question")
+        normalized = self.normalize_secret_answer(answer)
+        if len(normalized) < 2:
+            raise ValueError("Secret answer is too short")
+        self.ensure_user_profile_columns()
+        answer_hash = generate_password_hash(normalized)
+        with sqlite3.connect(self.db_path) as conn:
+            existing = conn.execute(
+                "SELECT id FROM users WHERE id = ?", (int(user_id),)
+            ).fetchone()
+            if existing is None:
+                raise ValueError("User not found")
+            conn.execute(
+                """
+                UPDATE users
+                SET secret_question = ?, secret_answer_hash = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    q,
+                    answer_hash,
+                    datetime.now(timezone.utc).isoformat(),
+                    int(user_id),
+                ),
+            )
+            conn.commit()
+
+    def has_secret_question(self, user_id: int) -> bool:
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT secret_answer_hash FROM users WHERE id = ?",
+                (int(user_id),),
+            ).fetchone()
+        return bool(row and row[0])
+
+    def get_secret_question_for_login(self, login: str) -> str | None:
+        """Public hint for forgot-password UI — question text only, never the answer."""
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = self.resolve_user_login_row(
+                conn, login, ["id", "secret_question", "secret_answer_hash"]
+            )
+            if not row or not row["secret_answer_hash"]:
+                return None
+            return row["secret_question"]
+
+    def reset_password_with_secret(
+        self, login: str, answer: str, new_password: str
+    ) -> tuple[bool, str]:
+        login = (login or "").strip()
+        new_password = (new_password or "").strip()
+        if not login or not new_password:
+            return False, "Username and new password are required"
+        if len(new_password) < 8:
+            return False, "Password must be at least 8 characters"
+        normalized = self.normalize_secret_answer(answer)
+        if not normalized:
+            return False, "Secret answer is required"
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = self.resolve_user_login_row(
+                conn,
+                login,
+                ["id", "secret_answer_hash"],
+            )
+            if not row or not row["secret_answer_hash"]:
+                return False, "Secret question is not set for this account"
+            if not check_password_hash(row["secret_answer_hash"], normalized):
+                return False, "Incorrect secret answer"
+            conn.execute(
+                """
+                UPDATE users
+                SET password_hash = ?,
+                    password_reset_code_hash = NULL,
+                    password_reset_expires = NULL,
+                    password_reset_fail_count = 0,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    generate_password_hash(new_password),
+                    datetime.now(timezone.utc).isoformat(),
+                    int(row["id"]),
+                ),
+            )
+            conn.commit()
+        return True, "Password reset successful"
+
+    def issue_password_reset_code(self, login: str) -> tuple[bool, str, str | None, str | None]:
+        """Create a short-lived OTP for email reset.
+
+        Returns (ok, message, plaintext_code_or_none, destination_email_or_none).
+        Caller must send the code via email; plaintext is never stored.
+        """
+        import secrets
+
+        login = (login or "").strip()
+        if not login:
+            return False, "Username or email is required", None, None
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = self.resolve_user_login_row(
+                conn, login, ["id", "email", "username"]
+            )
+            if not row:
+                # Anti-enumeration: pretend success without issuing a code.
+                return True, "If that account exists, a reset code was sent", None, None
+            email = (row["email"] or "").strip() if "email" in row.keys() else ""
+            if not email or "@" not in email:
+                return False, "No email on file for this account; use your secret question", None, None
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            expires = (
+                datetime.now(timezone.utc) + timedelta(minutes=self._RESET_CODE_TTL_MINUTES)
+            ).isoformat()
+            conn.execute(
+                """
+                UPDATE users
+                SET password_reset_code_hash = ?,
+                    password_reset_expires = ?,
+                    password_reset_fail_count = 0,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    generate_password_hash(code),
+                    expires,
+                    datetime.now(timezone.utc).isoformat(),
+                    int(row["id"]),
+                ),
+            )
+            conn.commit()
+        return True, "Reset code created", code, email
+
+    def reset_password_with_code(
+        self, login: str, code: str, new_password: str
+    ) -> tuple[bool, str]:
+        login = (login or "").strip()
+        code = (code or "").strip()
+        new_password = (new_password or "").strip()
+        if not login or not code or not new_password:
+            return False, "Username, code, and new password are required"
+        if len(new_password) < 8:
+            return False, "Password must be at least 8 characters"
+        if not code.isdigit() or len(code) != 6:
+            return False, "Invalid reset code"
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = self.resolve_user_login_row(
+                conn,
+                login,
+                [
+                    "id",
+                    "password_reset_code_hash",
+                    "password_reset_expires",
+                    "password_reset_fail_count",
+                ],
+            )
+            if not row or not row["password_reset_code_hash"]:
+                return False, "No active reset code; request a new one"
+            expires_raw = row["password_reset_expires"]
+            try:
+                expires_at = datetime.fromisoformat(str(expires_raw))
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+            except Exception:
+                return False, "Reset code expired; request a new one"
+            if datetime.now(timezone.utc) > expires_at:
+                return False, "Reset code expired; request a new one"
+            fail_count = int(row["password_reset_fail_count"] or 0)
+            if fail_count >= self._RESET_CODE_MAX_ATTEMPTS:
+                return False, "Too many attempts; request a new code"
+            if not check_password_hash(row["password_reset_code_hash"], code):
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET password_reset_fail_count = ?
+                    WHERE id = ?
+                    """,
+                    (fail_count + 1, int(row["id"])),
+                )
+                conn.commit()
+                return False, "Incorrect reset code"
+            conn.execute(
+                """
+                UPDATE users
+                SET password_hash = ?,
+                    password_reset_code_hash = NULL,
+                    password_reset_expires = NULL,
+                    password_reset_fail_count = 0,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    generate_password_hash(new_password),
+                    datetime.now(timezone.utc).isoformat(),
+                    int(row["id"]),
+                ),
+            )
+            conn.commit()
+        return True, "Password reset successful"
+
+    def delete_login_user(self, user_id: int) -> dict[str, Any]:
+        """Hard-delete a login row (+ UI prefs only).
+
+        Never touches hop_* / masters / DSR / Order Desk tables — business
+        rows for other users (and HoP) stay intact. Orphan rows for the
+        deleted user_id are left as-is rather than cascading wipes.
+        """
+        profile = self.get_user_profile(int(user_id))
+        if profile is None:
+            raise ValueError("User not found")
+        username = str(profile.get("username") or "")
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+            # Best-effort: drop prefs if table exists
+            prefs = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='user_ui_preferences'"
+            ).fetchone()
+            if prefs:
+                conn.execute(
+                    "DELETE FROM user_ui_preferences WHERE user_id = ?",
+                    (int(user_id),),
+                )
+            if "id" not in cols:
+                raise ValueError("Users table missing id")
+            conn.execute("DELETE FROM users WHERE id = ?", (int(user_id),))
+            conn.commit()
+        return {
+            "id": int(user_id),
+            "username": username,
+            "workspace_id": profile.get("workspace_id"),
+            "role": profile.get("role"),
+        }
+
     def workspace_user_stats(
         self, workspace_id: str, *, owner_scope: bool = False
     ) -> dict[str, int]:
@@ -3338,6 +3600,13 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "users", "recovery_pin_locked_until", "TEXT")
             self._ensure_column_exists(
                 conn, "users", "is_workspace_owner", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column_exists(conn, "users", "secret_question", "TEXT")
+            self._ensure_column_exists(conn, "users", "secret_answer_hash", "TEXT")
+            self._ensure_column_exists(conn, "users", "password_reset_code_hash", "TEXT")
+            self._ensure_column_exists(conn, "users", "password_reset_expires", "TEXT")
+            self._ensure_column_exists(
+                conn, "users", "password_reset_fail_count", "INTEGER NOT NULL DEFAULT 0"
             )
 
     def is_workspace_owner_user(self, user_id: int | None) -> bool:
@@ -3559,6 +3828,8 @@ class CentralizedDB:
                 "workspace_id",
                 "status",
                 "is_workspace_owner",
+                "secret_question",
+                "secret_answer_hash",
             ]
             select_cols = [c for c in wanted if c in cols]
             if "id" not in select_cols or "username" not in select_cols:
@@ -3572,6 +3843,10 @@ class CentralizedDB:
         data = dict(row)
         if "is_workspace_owner" in data:
             data["is_workspace_owner"] = bool(int(data.get("is_workspace_owner") or 0))
+        answer_hash = data.pop("secret_answer_hash", None)
+        data["has_secret_question"] = bool(answer_hash)
+        if not data.get("secret_question"):
+            data["secret_question"] = None
         return data
 
     def update_user_profile(

@@ -48,6 +48,8 @@ def signup():
     password = data.get("password") or ""
     email = (data.get("email") or "").strip() or None
     category = (data.get("category") or "").strip().lower()
+    secret_question = (data.get("secret_question") or "").strip()
+    secret_answer = (data.get("secret_answer") or "").strip()
 
     if not company_name:
         return jsonify({"success": False, "error": {"message": "company_name is required"}}), 400
@@ -55,6 +57,13 @@ def signup():
         return jsonify({"success": False, "error": {"message": "username is required"}}), 400
     if len(password) < 8:
         return jsonify({"success": False, "error": {"message": "password must be at least 8 characters"}}), 400
+    if not email or "@" not in email:
+        return jsonify({"success": False, "error": {"message": "a valid email is required"}}), 400
+    if not secret_question or not secret_answer:
+        return jsonify({
+            "success": False,
+            "error": {"message": "secret_question and secret_answer are required"},
+        }), 400
     role = CATEGORY_TO_ROLE.get(category)
     if not role:
         return jsonify({
@@ -90,6 +99,16 @@ def signup():
         return jsonify({"success": False, "error": {"message": str(exc)}}), 409
 
     user_id = int(created["id"])
+    try:
+        db.set_secret_question(user_id, secret_question, secret_answer)
+    except ValueError as exc:
+        # Roll back the login so we don't leave an incomplete account.
+        try:
+            db.delete_login_user(user_id)
+        except Exception:
+            pass
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+
     db.set_company_owner(company_id, user_id)
     # Deliberately NOT is_workspace_owner=True: the Android app treats
     # that flag as "show the Founder's multi-shell Hub Chooser" (incl.

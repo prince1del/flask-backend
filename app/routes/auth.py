@@ -366,16 +366,22 @@ def api_login() -> tuple[Response, int]:
 @auth_blueprint.route("/api/v1/auth/set-recovery-pin", methods=["POST"], endpoint="set_recovery_pin")
 @require_jwt_auth
 def set_recovery_pin() -> tuple[Response, int]:
-    user_id = get_request_user_id()
-    if user_id is None:
-        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
-    data = request.get_json(silent=True) or {}
-    pin = str(data.get("pin") or "")
-    try:
-        _get_auth_db().set_recovery_pin(user_id, pin)
-    except ValueError as exc:
-        return jsonify({"success": False, "error": {"code": "INVALID_PIN", "message": str(exc)}}), 400
-    return jsonify({"success": True, "message": "Recovery PIN saved"}), 200
+    """Deprecated — recovery PIN replaced by secret question + email reset."""
+    return (
+        jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": "DEPRECATED",
+                    "message": (
+                        "Recovery PIN is retired. Set a secret question in Settings, "
+                        "or use email reset from the login screen."
+                    ),
+                },
+            }
+        ),
+        410,
+    )
 
 
 @auth_blueprint.route("/api/v1/auth/recovery-pin-status", methods=["GET"], endpoint="recovery_pin_status")
@@ -384,8 +390,54 @@ def recovery_pin_status() -> tuple[Response, int]:
     user_id = get_request_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
-    has_pin = _get_auth_db().has_recovery_pin(user_id)
-    return jsonify({"success": True, "data": {"has_recovery_pin": has_pin}}), 200
+    has_secret = _get_auth_db().has_secret_question(user_id)
+    return jsonify({
+        "success": True,
+        "data": {
+            "has_recovery_pin": False,
+            "has_secret_question": has_secret,
+        },
+    }), 200
+
+
+@auth_blueprint.route("/api/v1/auth/secret-questions", methods=["GET"], endpoint="list_secret_questions")
+def list_secret_questions() -> tuple[Response, int]:
+    from centralized_db_system.db import CentralizedDB
+
+    return jsonify({
+        "success": True,
+        "data": {"questions": list(CentralizedDB.SECRET_QUESTIONS)},
+    }), 200
+
+
+@auth_blueprint.route("/api/v1/auth/secret-question-hint", methods=["POST"], endpoint="secret_question_hint")
+def secret_question_hint() -> tuple[Response, int]:
+    data = request.get_json(silent=True) or {}
+    login = str(data.get("username") or data.get("login") or "").strip()
+    question = _get_auth_db().get_secret_question_for_login(login) if login else None
+    return jsonify({
+        "success": True,
+        "data": {"secret_question": question},
+    }), 200
+
+
+@auth_blueprint.route("/api/v1/me/secret-question", methods=["PUT"], endpoint="set_my_secret_question")
+@require_jwt_auth
+def set_my_secret_question() -> tuple[Response, int]:
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    data = request.get_json(silent=True) or {}
+    try:
+        _get_auth_db().set_secret_question(
+            user_id,
+            str(data.get("secret_question") or ""),
+            str(data.get("secret_answer") or ""),
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"code": "INVALID", "message": str(exc)}}), 400
+    profile = _get_auth_db().get_user_profile(user_id)
+    return jsonify({"success": True, "data": profile, "message": "Secret question saved"}), 200
 
 
 # Assignable by workspace owner from the team screen. Literal "admin" is
@@ -459,14 +511,172 @@ def update_workspace_user_role(target_user_id: int) -> tuple[Response, int]:
 
 @auth_blueprint.route("/api/v1/auth/forgot-password", methods=["POST"], endpoint="forgot_password")
 def forgot_password() -> tuple[Response, int]:
+    """Reset password via secret answer (preferred) or legacy recovery PIN."""
     data = request.get_json(silent=True) or {}
     username = str(data.get("username") or "")
-    pin = str(data.get("pin") or "")
     new_password = str(data.get("new_password") or "")
-    ok, message = _get_auth_db().reset_password_with_pin(username, pin, new_password)
+    secret_answer = str(data.get("secret_answer") or "").strip()
+    pin = str(data.get("pin") or "").strip()
+
+    if secret_answer:
+        ok, message = _get_auth_db().reset_password_with_secret(
+            username, secret_answer, new_password
+        )
+        if not ok:
+            return jsonify({"success": False, "error": {"code": "RESET_FAILED", "message": message}}), 400
+        return jsonify({"success": True, "message": message}), 200
+
+    if pin:
+        ok, message = _get_auth_db().reset_password_with_pin(username, pin, new_password)
+        if not ok:
+            return jsonify({"success": False, "error": {"code": "RESET_FAILED", "message": message}}), 400
+        return jsonify({"success": True, "message": message}), 200
+
+    return jsonify({
+        "success": False,
+        "error": {
+            "code": "RESET_FAILED",
+            "message": "Provide secret_answer (or request an email code)",
+        },
+    }), 400
+
+
+@auth_blueprint.route(
+    "/api/v1/auth/request-password-reset",
+    methods=["POST"],
+    endpoint="request_password_reset",
+)
+def request_password_reset() -> tuple[Response, int]:
+    """Email a 6-digit reset code when SMTP is configured."""
+    from app.services.outbound_mail import send_plain_email, smtp_configured
+
+    data = request.get_json(silent=True) or {}
+    login = str(data.get("username") or data.get("email") or data.get("login") or "").strip()
+    if not smtp_configured():
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "EMAIL_UNAVAILABLE",
+                "message": (
+                    "Email reset is not configured on the server yet. "
+                    "Use your secret question on the login screen, or ask an admin."
+                ),
+            },
+        }), 503
+
+    ok, message, code, email = _get_auth_db().issue_password_reset_code(login)
+    if not ok:
+        return jsonify({"success": False, "error": {"code": "RESET_FAILED", "message": message}}), 400
+    if code and email:
+        sent, send_err = send_plain_email(
+            to=email,
+            subject="Nexora password reset code",
+            body=(
+                f"Your Nexora password reset code is: {code}\n\n"
+                f"It expires in 15 minutes. If you did not request this, ignore this email.\n"
+            ),
+        )
+        if not sent:
+            return jsonify({
+                "success": False,
+                "error": {"code": "EMAIL_FAILED", "message": f"Could not send email: {send_err}"},
+            }), 502
+    # Always generic when we intentionally hide enumeration
+    return jsonify({
+        "success": True,
+        "message": "If that account has an email on file, a reset code was sent.",
+        "data": {"email_hint": _mask_email(email) if email else None},
+    }), 200
+
+
+@auth_blueprint.route(
+    "/api/v1/auth/reset-password-with-code",
+    methods=["POST"],
+    endpoint="reset_password_with_code",
+)
+def reset_password_with_code() -> tuple[Response, int]:
+    data = request.get_json(silent=True) or {}
+    login = str(data.get("username") or data.get("email") or data.get("login") or "")
+    code = str(data.get("code") or data.get("reset_code") or "")
+    new_password = str(data.get("new_password") or "")
+    ok, message = _get_auth_db().reset_password_with_code(login, code, new_password)
     if not ok:
         return jsonify({"success": False, "error": {"code": "RESET_FAILED", "message": message}}), 400
     return jsonify({"success": True, "message": message}), 200
+
+
+def _mask_email(email: str | None) -> str | None:
+    if not email or "@" not in email:
+        return None
+    local, _, domain = email.partition("@")
+    if len(local) <= 2:
+        masked_local = local[:1] + "*"
+    else:
+        masked_local = local[:1] + "*" * (len(local) - 2) + local[-1:]
+    return f"{masked_local}@{domain}"
+
+
+@auth_blueprint.route("/api/v1/me/delete-account", methods=["POST"], endpoint="delete_my_account")
+@require_jwt_auth
+def delete_my_account() -> tuple[Response, int]:
+    """Self-service account deletion — requires current password confirmation.
+
+    Deletes only the login row (+ UI prefs). Does not wipe HoP / other users'
+    business tables.
+    """
+    import os
+
+    user_id = get_request_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"code": "NO_USER", "message": "User id missing"}}), 401
+    data = request.get_json(silent=True) or {}
+    password = str(data.get("password") or "")
+    if not password:
+        return jsonify({
+            "success": False,
+            "error": {"code": "PASSWORD_REQUIRED", "message": "Password is required to delete your account"},
+        }), 400
+
+    cdb = _get_auth_db()
+    profile = cdb.get_user_profile(int(user_id))
+    if not profile:
+        return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": "User not found"}}), 404
+
+    username = str(profile.get("username") or "")
+    founder = (os.getenv("WORKSPACE_OWNER_USERNAME") or "kunwar1del").strip() or "kunwar1del"
+    if username.lower() == founder.lower():
+        return jsonify({
+            "success": False,
+            "error": {"code": "FORBIDDEN", "message": "Founder account cannot be deleted"},
+        }), 403
+    if (
+        str(profile.get("workspace_id") or "") == "house_of_prizm"
+        and str(profile.get("role") or "") == "hop_admin"
+    ):
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "FORBIDDEN",
+                "message": "House of Prizm admin login cannot be self-deleted",
+            },
+        }), 403
+
+    if not cdb.authenticate_user(username, password):
+        return jsonify({
+            "success": False,
+            "error": {"code": "BAD_PASSWORD", "message": "Incorrect password"},
+        }), 401
+
+    try:
+        deleted = cdb.delete_login_user(int(user_id))
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": str(exc)}}), 404
+
+    return jsonify({
+        "success": True,
+        "data": deleted,
+        "message": "Your account has been deleted",
+    }), 200
 
 
 @auth_blueprint.route("/api/v1/me/profile", methods=["GET"])

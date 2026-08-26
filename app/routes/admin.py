@@ -303,33 +303,79 @@ def update_user(user_id):
 @require_jwt_auth
 @require_role('admin')
 def delete_user(user_id):
-    """Delete a user account"""
+    """Delete a user account.
+
+    Production auth lives in CentralizedDB (DATABASE_PATH), not the SQLAlchemy
+    User model — same dual-DB root cause as is_workspace_owner PUT. Prefer CDB;
+    fall back to SQLAlchemy only for legacy/test rows that exist only there.
+    """
     try:
+        requester = _requester()
+        founder_username = _founder_username()
+        cdb = _auth_db()
+        target = cdb.get_user_profile(int(user_id))
+
+        if target:
+            username = str(target.get("username") or "")
+            role = str(target.get("role") or "")
+            workspace_id = str(target.get("workspace_id") or "")
+
+            if username.lower() == founder_username.lower():
+                return _forbidden('Founder account cannot be deleted')
+
+            requester_id = requester.get('user_id')
+            if requester_id is not None and int(requester_id) == int(user_id):
+                return _forbidden('You cannot delete your own account')
+            if requester.get('username') and requester.get('username') == username:
+                return _forbidden('You cannot delete your own account')
+
+            # Protect production House of Prizm login — never wipe HoP shell access.
+            if workspace_id == "house_of_prizm" and role == "hop_admin":
+                return _forbidden('House of Prizm admin login cannot be deleted')
+
+            if role == 'admin' and not _is_founder_requester():
+                return _forbidden('Insufficient permissions to delete an admin user')
+            if bool(target.get("is_workspace_owner")) and not _is_founder_requester():
+                return _forbidden('Insufficient permissions to delete a workspace owner')
+
+            deleted = cdb.delete_login_user(int(user_id))
+            try:
+                audit = AuditLog(
+                    user_id=user_id,
+                    action='user_deleted',
+                    resource_type='user',
+                    resource_id=user_id,
+                    details=f'User {username} deleted (CentralizedDB)'
+                )
+                db.session.add(audit)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+            return jsonify({
+                'success': True,
+                'data': deleted,
+                'message': f'User {username} deleted successfully'
+            }), 200
+
+        # Legacy SQLAlchemy-only path (unit tests / empty CDB).
         user = db.session.get(User, user_id)
         if not user:
             return jsonify({'success': False, 'data': None, 'message': 'User not found'}), 404
 
-        requester = _requester()
-        founder_username = _founder_username()
-
-        # Never allow deleting the founder — that permanently locks out admin assignment.
         if user.username == founder_username:
             return _forbidden('Founder account cannot be deleted')
 
-        # Prevent accidental lockout / confused deputies deleting themselves.
         requester_id = requester.get('user_id')
         if requester_id is not None and int(requester_id) == int(user.id):
             return _forbidden('You cannot delete your own account')
         if requester.get('username') and requester.get('username') == user.username:
             return _forbidden('You cannot delete your own account')
 
-        # Symmetric with create/update: only founder may remove other admin accounts.
         if user.role == 'admin' and not _is_founder_requester():
             return _forbidden('Insufficient permissions to delete an admin user')
-        
+
         username = user.username
-        
-        # Create audit log before deletion
         audit = AuditLog(
             user_id=user_id,
             action='user_deleted',
@@ -338,16 +384,17 @@ def delete_user(user_id):
             details=f'User {username} deleted'
         )
         db.session.add(audit)
-        
         db.session.delete(user)
         db.session.commit()
-        
+
         return jsonify({
             'success': True,
             'data': None,
             'message': f'User {username} deleted successfully'
         }), 200
-    
+
+    except ValueError as e:
+        return jsonify({'success': False, 'data': None, 'message': str(e)}), 404
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'data': None, 'message': f'Error deleting user: {str(e)}'}), 500
