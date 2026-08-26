@@ -5107,13 +5107,18 @@ class CentralizedDB:
         if not normalized_ref:
             return {"status": "none"}
 
+        if not workspace_id:
+            # Every real caller passes workspace_id today, but silently
+            # falling through to a global (cross-tenant) match if a future
+            # caller forgets is exactly the class of bug Phase 3 is
+            # closing — fail to "no match" instead of leaking.
+            return {"status": "none"}
+
         with sqlite3.connect(self.db_path) as conn:
-            query = "SELECT id, name, firm_name, firm_nick_name FROM master_distributors"
-            params: list[Any] = []
-            if workspace_id:
-                query += " WHERE workspace_id = ?"
-                params.append(workspace_id)
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(
+                "SELECT id, name, firm_name, firm_nick_name FROM master_distributors WHERE workspace_id = ?",
+                (workspace_id,),
+            ).fetchall()
 
         scored: list[tuple[int, int]] = []
         for dist_id, name, firm_name, firm_nick_name in rows:
@@ -10118,8 +10123,9 @@ class CentralizedDB:
                     with sqlite3.connect(self.db_path) as conn2:
                         conn2.row_factory = sqlite3.Row
                         d = conn2.execute(
-                            "SELECT firm_name, name, firm_nick_name FROM master_distributors WHERE id = ?",
-                            (dist_id,),
+                            "SELECT firm_name, name, firm_nick_name FROM master_distributors "
+                            "WHERE id = ? AND workspace_id = ?",
+                            (dist_id, workspace_id),
                         ).fetchone()
                         if d:
                             distributor_name = d["firm_name"] or d["name"]
