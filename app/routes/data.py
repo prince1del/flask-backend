@@ -2205,7 +2205,9 @@ def index() -> str:
 
     if search_query:
         search_results = json.dumps(
-            CentralizedDB(_db_path()).global_search(search_query),
+            CentralizedDB(_db_path()).global_search(
+                search_query, workspace_id=get_workspace_id(), user_id=get_request_user_id()
+            ),
             indent=2,
         )
 

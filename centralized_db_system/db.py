@@ -9963,10 +9963,14 @@ class CentralizedDB:
                         (fts_query, workspace_id),
                     ).fetchall()
                 else:
-                    rows = conn.execute(
-                        "SELECT content, category, source_id, source_table FROM global_search_index WHERE global_search_index MATCH ? ORDER BY rank",
-                        (fts_query,),
-                    ).fetchall()
+                    # No workspace_id = fail closed, not "search everyone's
+                    # data" — this branch used to run an unfiltered MATCH
+                    # across every tenant's global_search_index rows
+                    # (confirmed exploitable: GET /legacy?q=... called
+                    # global_search() with no workspace_id at all, so any
+                    # logged-in user of any tenant got a full cross-tenant
+                    # data dump).
+                    rows = []
             except sqlite3.OperationalError:
                 # Malformed FTS query syntax (e.g. a bare special
                 # character) — fall through to the fuzzy fallback

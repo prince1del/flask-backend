@@ -23,6 +23,14 @@ def record_dispatch():
 
     db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
     workspace_id = get_workspace_id()
+    # Without this, any authenticated user could POST a guessed/foreign
+    # tracking_id: it would write a dispatch/POD record onto another
+    # tenant's order AND the read-back below would leak that tenant's
+    # full order (distributor, CI/SO refs, financial fields) in the
+    # response.
+    lifecycle = db.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
+    if not lifecycle:
+        return jsonify({"success": False, "error": {"message": "tracking_id not found"}}), 404
     pid = db.record_dispatch_pod(
         tracking_id=tracking_id,
         pod_number=pod_number,
@@ -32,7 +40,7 @@ def record_dispatch():
         delivered_at=delivered_at,
         workspace_id=workspace_id,
     )
-    lifecycle = db.get_order_lifecycle_tracking(tracking_id)
+    lifecycle = db.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id)
     return jsonify({"success": True, "data": {"pod_id": pid, "lifecycle": lifecycle}}), 200
 
 
@@ -49,6 +57,11 @@ def create_return():
 
     db = CentralizedDB(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
     workspace_id = get_workspace_id()
+    # Same ownership check as /dispatch — reject a tracking_id that isn't
+    # actually this workspace's, instead of writing a return claim onto
+    # another tenant's order.
+    if not db.get_order_lifecycle_tracking(tracking_id, workspace_id=workspace_id):
+        return jsonify({"success": False, "error": {"message": "tracking_id not found"}}), 404
     cid = db.record_return_claim(
         tracking_id=tracking_id, product_code=product_code, returned_qty=returned_qty, reason=reason, workspace_id=workspace_id
     )
