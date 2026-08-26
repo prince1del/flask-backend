@@ -400,6 +400,51 @@ def delete_user(user_id):
         return jsonify({'success': False, 'data': None, 'message': f'Error deleting user: {str(e)}'}), 500
 
 
+# ========== ADMIN 4b: TENANCY ORPHAN CLEANUP ==========
+# Leftover companies/workspace_registry rows from deleted signups (e.g. test
+# accounts) that have zero remaining users. Founder-only: this is a bulk
+# delete across tenant registry rows, not a single-user action.
+@admin_bp.route('/tenancy/orphans', methods=['GET'])
+@require_jwt_auth
+@require_role('admin')
+def list_tenancy_orphans():
+    if not _is_founder_requester():
+        return _forbidden('Only the founder can view tenancy orphans')
+    try:
+        cdb = _auth_db()
+        orphans = cdb.find_orphaned_tenancy_rows()
+        return jsonify({'success': True, 'data': {'orphans': orphans, 'count': len(orphans)}}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error listing tenancy orphans: {str(e)}'}), 500
+
+
+@admin_bp.route('/tenancy/orphans', methods=['DELETE'])
+@require_jwt_auth
+@require_role('admin')
+def delete_tenancy_orphans():
+    if not _is_founder_requester():
+        return _forbidden('Only the founder can delete tenancy orphans')
+    try:
+        cdb = _auth_db()
+        deleted = cdb.delete_orphaned_tenancy_rows()
+        try:
+            audit = AuditLog(
+                user_id=_requester().get('user_id'),
+                action='tenancy_orphans_deleted',
+                resource_type='workspace_registry',
+                resource_id=None,
+                details=f'{len(deleted)} orphaned workspace/company rows deleted: '
+                        f'{[d["workspace_id"] for d in deleted]}'
+            )
+            db.session.add(audit)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return jsonify({'success': True, 'data': {'deleted': deleted, 'count': len(deleted)}}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error deleting tenancy orphans: {str(e)}'}), 500
+
+
 # ========== ADMIN 5: VIEW AUDIT LOGS ==========
 @admin_bp.route('/audit-logs', methods=['GET'])
 @require_jwt_auth

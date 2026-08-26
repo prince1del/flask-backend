@@ -177,6 +177,62 @@ class CentralizedDB:
             ).fetchone()
             return bool(row)
 
+    def find_orphaned_tenancy_rows(self) -> list[dict[str, Any]]:
+        """workspace_registry rows with zero remaining users — leftover from
+        a deleted signup (e.g. test accounts). Never includes the two seeded
+        real-business workspaces (house_of_prizm, bombay_dyeing_gt_north) or
+        company_id in (1, 2, 3), even if they somehow had no users, as a
+        belt-and-suspenders guard against ever touching real tenants."""
+        self.ensure_tenancy_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT wr.workspace_id, wr.company_id, c.name, c.slug
+                FROM workspace_registry wr
+                JOIN companies c ON c.id = wr.company_id
+                WHERE wr.company_id NOT IN (1, 2, 3)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM users u WHERE u.workspace_id = wr.workspace_id
+                  )
+                """
+            ).fetchall()
+            return [
+                {
+                    "workspace_id": r[0],
+                    "company_id": r[1],
+                    "company_name": r[2],
+                    "company_slug": r[3],
+                }
+                for r in rows
+            ]
+
+    def delete_orphaned_tenancy_rows(self) -> list[dict[str, Any]]:
+        """Delete the workspace_registry + companies rows identified by
+        find_orphaned_tenancy_rows(). Re-checks the same NOT EXISTS
+        condition at delete time (not just trusting a caller-supplied list)
+        so this can never delete a workspace/company that has gained a user
+        since it was listed."""
+        orphans = self.find_orphaned_tenancy_rows()
+        deleted: list[dict[str, Any]] = []
+        with sqlite3.connect(self.db_path) as conn:
+            for o in orphans:
+                workspace_id = o["workspace_id"]
+                company_id = o["company_id"]
+                still_orphaned = conn.execute(
+                    "SELECT 1 FROM users WHERE workspace_id = ? LIMIT 1", (workspace_id,)
+                ).fetchone()
+                if still_orphaned:
+                    continue
+                conn.execute("DELETE FROM workspace_registry WHERE workspace_id = ?", (workspace_id,))
+                remaining = conn.execute(
+                    "SELECT 1 FROM workspace_registry WHERE company_id = ? LIMIT 1", (company_id,)
+                ).fetchone()
+                if not remaining and company_id not in (1, 2, 3):
+                    conn.execute("DELETE FROM companies WHERE id = ?", (company_id,))
+                deleted.append(o)
+            conn.commit()
+        return deleted
+
     def create_company(self, name: str, owner_user_id: int | None = None) -> int:
         """Register a brand-new tenant company (Phase 2 signup flow)."""
         self.ensure_tenancy_tables()
