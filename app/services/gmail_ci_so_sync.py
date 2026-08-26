@@ -30,9 +30,12 @@ SO_KEYWORDS = (
 )
 
 GMAIL_QUERY = (
-    'has:attachment filename:pdf newer_than:60d '
+    'newer_than:60d ('
+    'has:attachment filename:pdf '
     '(subject:(invoice OR "sales order" OR "purchase order" OR "commercial invoice") '
-    'OR filename:(invoice OR order))'
+    'OR filename:(invoice OR order)) '
+    'OR "wetransfer.com" OR "we.tl"'
+    ')'
 )
 
 GMAIL_READONLY_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -60,7 +63,10 @@ def _classify_pdf(subject: str, filename: str, text_sample: str) -> str | None:
     return "CI" if ci_hits >= so_hits else "SO"
 
 
-def _extract_pdf_attachments(service, message_id: str) -> tuple[str, list[tuple[str, bytes]]]:
+def _extract_message_content(
+    service, message_id: str
+) -> tuple[str, str, list[tuple[str, bytes]]]:
+    """Returns (subject, body_text_for_link_scanning, [(filename, pdf_bytes), ...])."""
     msg = service.users().messages().get(userId="me", id=message_id, format="full").execute()
     subject = ""
     for header in (msg.get("payload", {}) or {}).get("headers") or []:
@@ -69,9 +75,11 @@ def _extract_pdf_attachments(service, message_id: str) -> tuple[str, list[tuple[
             break
 
     attachments: list[tuple[str, bytes]] = []
+    body_chunks: list[str] = []
 
     def walk(part: dict[str, Any]) -> None:
         filename = part.get("filename") or ""
+        mime_type = str(part.get("mimeType") or "")
         body = part.get("body") or {}
         if filename.lower().endswith(".pdf") and body.get("attachmentId"):
             att = (
@@ -83,11 +91,16 @@ def _extract_pdf_attachments(service, message_id: str) -> tuple[str, list[tuple[
             )
             data = base64.urlsafe_b64decode(att["data"])
             attachments.append((filename, data))
+        elif not filename and mime_type in ("text/plain", "text/html") and body.get("data"):
+            try:
+                body_chunks.append(base64.urlsafe_b64decode(body["data"]).decode("utf-8", errors="ignore"))
+            except Exception:
+                pass
         for sub_part in part.get("parts") or []:
             walk(sub_part)
 
     walk(msg.get("payload") or {})
-    return subject, attachments
+    return subject, "\n".join(body_chunks), attachments
 
 
 def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> dict[str, Any]:
@@ -103,8 +116,9 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
     from flask import current_app, request
     from werkzeug.datastructures import FileStorage
     from centralized_db_system.db import CentralizedDB
-    from app.routes.data import _upload_invoice_v2_impl, _db_path
+    from app.routes.data import _upload_invoice_v2_impl, _db_path, _expand_ci_upload_items, _so_pack_sniff_kind
     from app.three_step_verification import _extract_pdf_text
+    from app.services import wetransfer_fetch
 
     db = CentralizedDB(_db_path())
     account = db.get_storage_account(
@@ -140,7 +154,23 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
             continue
         summary["scanned"] += 1
         try:
-            subject, attachments = _extract_pdf_attachments(service, message_id)
+            subject, body_text, attachments = _extract_message_content(service, message_id)
+
+            for link in wetransfer_fetch.find_links(f"{subject}\n{body_text}"):
+                try:
+                    fname, raw = wetransfer_fetch.fetch_transfer_bytes(link)
+                    kind = _so_pack_sniff_kind(raw, fname)
+                    if kind not in ("pdf", "zip", "rar"):
+                        summary["errors"].append(
+                            {"message_id": message_id, "link": link, "error": f"Unsupported file type: {kind}"}
+                        )
+                        continue
+                    expanded = _expand_ci_upload_items([(fname, raw)])
+                    attachments.extend(expanded)
+                except Exception as exc:
+                    logger.warning("WeTransfer fetch failed for %s (message %s): %s", link, message_id, exc)
+                    summary["errors"].append({"message_id": message_id, "link": link, "error": str(exc)})
+
             handled_any = False
             for filename, data in attachments:
                 text_sample = ""
