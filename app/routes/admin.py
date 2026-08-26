@@ -155,7 +155,50 @@ def create_user():
 def update_user(user_id):
     """Update user details"""
     data = request.get_json(silent=True) or {}
-    
+
+    # is_workspace_owner lives only on CentralizedDB's real `users` table.
+    # Production SQLAlchemy User.query is empty (GET /admin/users → total:0),
+    # so this field must never depend on db.session.get(User, …).
+    #
+    # Auth: @require_role('admin') already allows supreme workspace owners
+    # (e.g. kunwar1del / sales_executive + is_workspace_owner) via the
+    # intentional bypass in require_role — no extra _is_founder_requester gate.
+    if "is_workspace_owner" in data:
+        other = {k for k in data.keys() if k != "is_workspace_owner"}
+        if other:
+            return jsonify({
+                "success": False,
+                "data": None,
+                "message": (
+                    "is_workspace_owner must be updated alone "
+                    "(CentralizedDB path; cannot mix with SQLAlchemy fields)"
+                ),
+            }), 400
+        try:
+            cdb = _auth_db()
+            target = cdb.get_user_profile(int(user_id))
+            if not target:
+                return jsonify(
+                    {"success": False, "data": None, "message": "User not found"}
+                ), 404
+            want_owner = bool(data["is_workspace_owner"])
+            cdb.set_workspace_owner(int(user_id), want_owner)
+            refreshed = cdb.get_user_profile(int(user_id)) or {
+                **target,
+                "is_workspace_owner": want_owner,
+            }
+            return jsonify({
+                "success": True,
+                "data": refreshed,
+                "message": "is_workspace_owner updated",
+            }), 200
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "data": None,
+                "message": f"Error updating is_workspace_owner: {str(e)}",
+            }), 500
+
     try:
         user = db.session.get(User, user_id)
         if not user:
@@ -202,26 +245,10 @@ def update_user(user_id):
             if not ws:
                 return jsonify({'success': False, 'data': None, 'message': 'workspace_id cannot be empty'}), 400
             user.workspace_id = ws
-        is_workspace_owner_update = None
-        if 'is_workspace_owner' in data:
-            # Grants/revokes the Android app's Founder multi-shell Hub
-            # Chooser (Admin Zone included) — see
-            # UserSession.usesFounderShellHub(). Founder-only, matching
-            # the same gate as assigning the admin role itself.
-            #
-            # NOT a SQLAlchemy User column (app/models.py never declared
-            # it, even though the live `users` table has had it since
-            # CentralizedDB.ensure_user_profile_columns() added it via raw
-            # ALTER TABLE) — assigning user.is_workspace_owner here would
-            # silently no-op. Written via CentralizedDB.set_workspace_owner()
-            # instead, after the rest of this request's changes commit.
-            if not _is_founder_requester():
-                return _forbidden('Insufficient permissions to change workspace-owner status')
-            is_workspace_owner_update = bool(data['is_workspace_owner'])
 
         user.updated_at = datetime.now(timezone.utc)
         db.session.commit()
-        
+
         # Create audit log
         audit = AuditLog(
             user_id=user_id,
@@ -232,9 +259,6 @@ def update_user(user_id):
         )
         db.session.add(audit)
         db.session.commit()
-
-        if is_workspace_owner_update is not None:
-            _auth_db().set_workspace_owner(user_id, is_workspace_owner_update)
 
         return jsonify({
             'success': True,
