@@ -51,3 +51,34 @@ def test_suggest_by_known_alias(tmp_path, monkeypatch):
     suggestion = suggest_distributor_from_filename("kag.xlsx", "ws-1", db_path=str(db_path))
     assert suggestion is not None
     assert suggestion["id"] == dist_id
+
+
+def test_suggest_balaji_haryana_from_long_nick(tmp_path, monkeypatch):
+    """Real production case: nick is 'Balaji Home Décor', file is Balaji haryana.xlsx."""
+    db_path = tmp_path / "dist_balaji.sqlite3"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+
+    from centralized_db_system.db import CentralizedDB
+
+    db = CentralizedDB(str(db_path))
+    balaji_id = db.add_master_distributor(
+        "Jatin Arora",
+        firm_name="Balaji Homedecor",
+        firm_nick_name="Balaji Home Décor",
+        zone="Haryana",
+        workspace_id="ws-1",
+    )
+    db.add_master_distributor(
+        "Other",
+        firm_name="ZIRISE TECHNOLOGIES PRIVATE LIMITED",
+        firm_nick_name="Zirise",
+        zone="Haryana",
+        workspace_id="ws-1",
+    )
+
+    suggestion = suggest_distributor_from_filename(
+        "Balaji haryana.xlsx", "ws-1", db_path=str(db_path)
+    )
+    assert suggestion is not None
+    assert suggestion["id"] == balaji_id
+    assert "balaji" in (suggestion.get("display_name") or "").lower()

@@ -5208,6 +5208,8 @@ class CentralizedDB:
             "sup": "Sain International",
             "savitri steel": "Savitri Steel Cement Traders",
             "balaji home decor": "Balaji Homedecor",
+            "balaji": "Balaji Homedecor",
+            "balaji haryana": "Balaji Homedecor",
             "geb": "Goyal Enterprises",
             "kag": "Kalra Agencies",
             "ptj": "Parnami Textiles",
