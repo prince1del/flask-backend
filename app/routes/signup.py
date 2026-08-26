@@ -20,6 +20,21 @@ from app.routes.auth import _get_auth_db, get_jwt_service
 
 signup_bp = Blueprint("signup", __name__, url_prefix="/api/v1")
 
+# Maps the signup form's plain-language category to the actual role the
+# rest of the app already understands (UserSession.isBdUser / roleLabel()
+# on the Android side route purely off this string). "business" is
+# deliberately NOT here — the HOP module's backend (app/hop_schema.py:
+# HOP_WORKSPACE_ID = "house_of_prizm") is hardcoded to one specific
+# workspace regardless of the caller's JWT, so a new tenant signing up as
+# "business" today would actually operate on House of Prizm's real data,
+# not their own. Needs that hardcoding generalized before this category
+# can be offered.
+CATEGORY_TO_ROLE = {
+    "service": "sales_executive",
+    "distributor": "distributor",
+    "retailer": "retailer",
+}
+
 
 def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", (text or "").strip().lower()).strip("_")
@@ -30,9 +45,12 @@ def _slugify(text: str) -> str:
 def signup():
     data = request.get_json(silent=True) or {}
     company_name = (data.get("company_name") or "").strip()
+    full_name = (data.get("full_name") or "").strip() or None
+    phone = (data.get("phone") or "").strip() or None
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     email = (data.get("email") or "").strip() or None
+    category = (data.get("category") or "").strip().lower()
 
     if not company_name:
         return jsonify({"success": False, "error": {"message": "company_name is required"}}), 400
@@ -40,6 +58,12 @@ def signup():
         return jsonify({"success": False, "error": {"message": "username is required"}}), 400
     if len(password) < 8:
         return jsonify({"success": False, "error": {"message": "password must be at least 8 characters"}}), 400
+    role = CATEGORY_TO_ROLE.get(category)
+    if not role:
+        return jsonify({
+            "success": False,
+            "error": {"message": f"category must be one of: {', '.join(CATEGORY_TO_ROLE)}"},
+        }), 400
 
     db = _get_auth_db()
 
@@ -57,7 +81,7 @@ def signup():
         created = db.create_user(
             username,
             password,
-            role="sales_executive",
+            role=role,
             workspace_id=workspace_id,
             email=email,
         )
@@ -71,12 +95,17 @@ def signup():
     user_id = int(created["id"])
     db.set_company_owner(company_id, user_id)
     db.set_workspace_owner(user_id, True)
+    if full_name or phone:
+        try:
+            db.update_user_profile(user_id, full_name=full_name, phone=phone)
+        except ValueError:
+            pass
 
     service = get_jwt_service()
     access_token, refresh_token = service.create_tokens(
         user_id=user_id,
         username=created["username"],
-        role="sales_executive",
+        role=role,
         workspace_id=workspace_id,
         is_workspace_owner=True,
     )
@@ -89,6 +118,8 @@ def signup():
             "workspace_id": workspace_id,
             "user_id": user_id,
             "username": created["username"],
+            "role": role,
+            "full_name": full_name,
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_in": service.access_token_expiry,
