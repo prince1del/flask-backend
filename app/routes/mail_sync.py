@@ -212,6 +212,25 @@ def poll():
         return jsonify({'success': False, 'error': {'code': 'POLL_FAILED', 'message': str(e)}}), 500
 
 
+@mail_sync_bp.route('/log', methods=['GET'])
+@require_jwt_auth
+def get_import_log():
+    """Permanent history of every CI/SO the poller ever classified from
+    Gmail/WeTransfer — source, outcome, and (if it became a real Order
+    Desk record) the tracking_id to cross-reference there."""
+    try:
+        user = _get_request_user()
+        user_id = user['user_id']
+        workspace_id = get_workspace_id()
+
+        db = CentralizedDB()
+        limit = request.args.get('limit', default=200, type=int) or 200
+        rows = db.list_gmail_import_log(user_id=user_id, workspace_id=workspace_id, limit=limit)
+        return jsonify({'success': True, 'data': {'items': rows}}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mail_sync_bp.route('/pending', methods=['GET'])
 @require_jwt_auth
 def list_pending():

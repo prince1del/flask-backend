@@ -634,6 +634,101 @@ class CentralizedDB:
             conn.commit()
             return cursor.rowcount > 0
 
+    def ensure_gmail_import_log_table(self) -> None:
+        """Permanent audit trail — every attachment the poller classified
+        as CI/SO, whatever happened to it, and (critically) which real
+        Order Desk tracking_id it became if auto-confirmed. Distinct from
+        gmail_sync_processed_messages (dedup only, no detail) and
+        gmail_pending_imports (only unresolved review items)."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS gmail_import_log (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    workspace_id TEXT DEFAULT 'default',
+                    message_id TEXT,
+                    source TEXT,
+                    kind TEXT,
+                    filename TEXT,
+                    doc_no TEXT,
+                    party_name TEXT,
+                    outcome TEXT,
+                    tracking_id INTEGER,
+                    detail TEXT,
+                    email_date TEXT,
+                    created_at TEXT
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_gmail_import_log_user_ws "
+                "ON gmail_import_log(user_id, workspace_id, created_at)"
+            )
+            conn.commit()
+
+    def log_gmail_import(
+        self,
+        user_id: int,
+        workspace_id: str,
+        message_id: str,
+        source: str,
+        kind: str,
+        filename: str,
+        doc_no: str | None,
+        party_name: str | None,
+        outcome: str,
+        tracking_id: int | None = None,
+        detail: str | None = None,
+        email_date: str | None = None,
+    ) -> None:
+        self.ensure_gmail_import_log_table()
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO gmail_import_log (
+                    user_id, workspace_id, message_id, source, kind, filename,
+                    doc_no, party_name, outcome, tracking_id, detail, email_date, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    str(workspace_id or "default"),
+                    message_id,
+                    source,
+                    kind,
+                    filename,
+                    doc_no,
+                    party_name,
+                    outcome,
+                    tracking_id,
+                    detail,
+                    email_date,
+                    now,
+                ),
+            )
+            conn.commit()
+
+    def list_gmail_import_log(
+        self, user_id: int, workspace_id: str, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        self.ensure_gmail_import_log_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, message_id, source, kind, filename, doc_no, party_name,
+                       outcome, tracking_id, detail, email_date, created_at
+                FROM gmail_import_log
+                WHERE user_id = ? AND workspace_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (user_id, str(workspace_id or "default"), limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def clear_processed_gmail_messages(self, user_id: int, workspace_id: str) -> int:
         """Wipe the dedup log so the next poll re-scans/re-evaluates every
         matching message again (e.g. after a classification-logic fix)."""

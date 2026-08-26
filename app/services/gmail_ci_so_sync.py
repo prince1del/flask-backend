@@ -199,7 +199,10 @@ def poll_for_user(
             continue
         summary["scanned"] += 1
         try:
-            subject, email_date, body_text, attachments = _extract_message_content(service, message_id)
+            subject, email_date, body_text, raw_attachments = _extract_message_content(service, message_id)
+            attachments: list[tuple[str, bytes, str]] = [
+                (fn, data, "gmail_attachment") for fn, data in raw_attachments
+            ]
 
             for link in wetransfer_fetch.find_links(f"{subject}\n{body_text}"):
                 try:
@@ -211,13 +214,13 @@ def poll_for_user(
                         )
                         continue
                     expanded = _expand_ci_upload_items([(fname, raw)])
-                    attachments.extend(expanded)
+                    attachments.extend((fn, data, "wetransfer") for fn, data in expanded)
                 except Exception as exc:
                     logger.warning("WeTransfer fetch failed for %s (message %s): %s", link, message_id, exc)
                     summary["errors"].append({"message_id": message_id, "link": link, "error": str(exc)})
 
             handled_any = False
-            for filename, data in attachments:
+            for filename, data, source in attachments:
                 text_sample = ""
                 tmp_path = None
                 try:
@@ -290,6 +293,11 @@ def poll_for_user(
                         summary["errors"].append(
                             {"message_id": message_id, "filename": filename, "error": payload.get("error")}
                         )
+                        db.log_gmail_import(
+                            user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                            source=source, kind="CI", filename=filename, doc_no=None, party_name=None,
+                            outcome="error", detail=str(payload.get("error")), email_date=email_date,
+                        )
                     else:
                         preview = payload.get("data") or {}
                         doc_no = preview.get("invoice_no") or preview.get("order_ref_no")
@@ -308,8 +316,19 @@ def poll_for_user(
                                 "auto_confirmed": True,
                                 "confirm_status": confirm_result.get("status"),
                             })
+                            db.log_gmail_import(
+                                user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                                source=source, kind="CI", filename=filename, doc_no=doc_no, party_name=party_name,
+                                outcome="auto_confirmed", tracking_id=confirm_result.get("tracking_id"),
+                                detail=confirm_result.get("status"), email_date=email_date,
+                            )
                         elif state == "dup":
                             summary["duplicates"] += 1
+                            db.log_gmail_import(
+                                user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                                source=source, kind="CI", filename=filename, doc_no=doc_no, party_name=party_name,
+                                outcome="duplicate", detail=confirm_result.get("status"), email_date=email_date,
+                            )
                         elif state == "review":
                             db.save_gmail_pending_import(
                                 user_id=user_id,
@@ -323,12 +342,22 @@ def poll_for_user(
                                 preview_json=json.dumps(preview, default=str),
                             )
                             summary["pending_review"] += 1
+                            db.log_gmail_import(
+                                user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                                source=source, kind="CI", filename=filename, doc_no=doc_no, party_name=party_name,
+                                outcome="pending_review", detail=confirm_result.get("status"), email_date=email_date,
+                            )
                         else:
                             summary["errors"].append({
                                 "message_id": message_id,
                                 "filename": filename,
                                 "error": confirm_result.get("status"),
                             })
+                            db.log_gmail_import(
+                                user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                                source=source, kind="CI", filename=filename, doc_no=doc_no, party_name=party_name,
+                                outcome="error", detail=confirm_result.get("status"), email_date=email_date,
+                            )
                 else:
                     client = current_app.test_client()
                     headers = {"Authorization": auth_header} if auth_header else {}
@@ -343,6 +372,11 @@ def poll_for_user(
                         summary["errors"].append(
                             {"message_id": message_id, "filename": filename, "error": payload.get("error")}
                         )
+                        db.log_gmail_import(
+                            user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                            source=source, kind="SO", filename=filename, doc_no=None, party_name=None,
+                            outcome="error", detail=str(payload.get("error")), email_date=email_date,
+                        )
                     else:
                         preview = payload.get("data") or {}
                         doc_no = preview.get("order_ref_no") or preview.get("buyer_code")
@@ -350,6 +384,7 @@ def poll_for_user(
                         matched_by_code = preview.get("matched_by_buyer_code") or {}
                         distributor_id = matched_by_code.get("id") if preview.get("signals_agree") else None
                         auto_confirmed = False
+                        confirmed_tracking_id = None
                         if distributor_id and preview.get("order_ref_no"):
                             confirm_resp = client.post(
                                 "/api/v1/order-fulfillment/upload/sales-order",
@@ -369,6 +404,7 @@ def poll_for_user(
                                 and not confirm_data.get("link_error")
                             ):
                                 auto_confirmed = True
+                                confirmed_tracking_id = confirm_data.get("tracking_id")
                         if auto_confirmed:
                             summary["so_staged"] += 1
                             summary["imported_items"].append({
@@ -380,9 +416,24 @@ def poll_for_user(
                                 "auto_confirmed": True,
                                 "needs_confirmation": False,
                             })
+                            db.log_gmail_import(
+                                user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                                source=source, kind="SO", filename=filename, doc_no=doc_no, party_name=party_name,
+                                outcome="auto_confirmed", tracking_id=confirmed_tracking_id, email_date=email_date,
+                            )
                         elif preview.get("is_duplicate"):
                             summary["duplicates"] += 1
+                            db.log_gmail_import(
+                                user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                                source=source, kind="SO", filename=filename, doc_no=doc_no, party_name=party_name,
+                                outcome="duplicate", email_date=email_date,
+                            )
                         else:
+                            reason = (
+                                "Buyer code / GST signals don't agree — pick distributor"
+                                if preview.get("matched_by_buyer_code") or preview.get("matched_by_gst")
+                                else "No distributor match found — pick distributor"
+                            )
                             db.save_gmail_pending_import(
                                 user_id=user_id,
                                 workspace_id=workspace_id,
@@ -391,14 +442,15 @@ def poll_for_user(
                                 filename=filename,
                                 doc_no=doc_no,
                                 party_name=party_name,
-                                reason=(
-                                    "Buyer code / GST signals don't agree — pick distributor"
-                                    if preview.get("matched_by_buyer_code") or preview.get("matched_by_gst")
-                                    else "No distributor match found — pick distributor"
-                                ),
+                                reason=reason,
                                 file_bytes=data,
                             )
                             summary["pending_review"] += 1
+                            db.log_gmail_import(
+                                user_id=user_id, workspace_id=workspace_id, message_id=message_id,
+                                source=source, kind="SO", filename=filename, doc_no=doc_no, party_name=party_name,
+                                outcome="pending_review", detail=reason, email_date=email_date,
+                            )
             if not handled_any:
                 summary["skipped"] += 1
             db.mark_gmail_message_processed(
