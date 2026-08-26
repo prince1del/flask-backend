@@ -97,10 +97,14 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
     user — it reuses that request's Authorization header/session to call the
     existing upload endpoints exactly as the founder's own device would.
     """
+    import os
+    import tempfile
+
     from flask import current_app, request
     from werkzeug.datastructures import FileStorage
     from centralized_db_system.db import CentralizedDB
     from app.routes.data import _upload_invoice_v2_impl, _db_path
+    from app.three_step_verification import _extract_pdf_text
 
     db = CentralizedDB(_db_path())
     account = db.get_storage_account(
@@ -139,7 +143,22 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
             subject, attachments = _extract_pdf_attachments(service, message_id)
             handled_any = False
             for filename, data in attachments:
-                text_sample = data[:4000].decode("latin-1", errors="ignore")
+                text_sample = ""
+                tmp_path = None
+                try:
+                    fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
+                    with os.fdopen(fd, "wb") as tmp_f:
+                        tmp_f.write(data)
+                    text_sample = _extract_pdf_text(tmp_path)
+                except Exception:
+                    logger.exception("PDF text extraction failed for %s (message %s)", filename, message_id)
+                finally:
+                    if tmp_path:
+                        try:
+                            os.remove(tmp_path)
+                        except OSError:
+                            pass
+
                 kind = _classify_pdf(subject, filename, text_sample)
                 if kind is None:
                     continue
