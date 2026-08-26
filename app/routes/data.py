@@ -4069,14 +4069,29 @@ def so_pack_match_filled_order() -> Response:
         ]
         other_fo_conflicts = [c for c in conflicts if c not in fo_conflicts]
         if other_fo_conflicts and not confirm_action:
+            samples = []
+            for c in other_fo_conflicts[:3]:
+                so = c.get("so_number") or "?"
+                party = c.get("distributor_name") or "Unknown party"
+                cat = c.get("category") or "?"
+                fo_file = c.get("fo_source_filename") or "FO"
+                samples.append(f"{so} → {party} · {cat} · {fo_file} (run #{c.get('run_id')})")
+            detail = "; ".join(samples)
+            extra = (
+                f" (+{len(other_fo_conflicts) - 3} more)"
+                if len(other_fo_conflicts) > 3
+                else ""
+            )
             return _json_response(
                 {
                     "success": False,
                     "error": {
                         "code": "duplicate_sales_order",
                         "message": (
-                            "Sales Order already matched to a different Filled Order. "
-                            "Delete it from Order Match first, then upload again."
+                            "Sales Order already matched to a different Filled Order: "
+                            f"{detail}{extra}. "
+                            "If it was auto-matched to the wrong category (e.g. towel→Bed), "
+                            "strip it from that Order Match run, then upload again."
                         ),
                         "conflicts": other_fo_conflicts,
                     },
@@ -4347,7 +4362,70 @@ def order_match_delete(run_id: int) -> Response:
                 {"success": False, "error": {"message": "Match run not found"}},
                 404,
             )
-        return _json_response({"success": True, "data": {"deleted": True}})
+        return _json_response(
+            {"success": True, "data": {"deleted_run_id": run_id}, "message": "Match run deleted"}
+        )
+    finally:
+        conn.close()
+
+
+@data_blueprint.route(
+    "/api/v1/order-fulfillment/order-match/<int:run_id>/strip-so",
+    methods=["POST"],
+)
+@require_jwt_auth
+def order_match_strip_so(run_id: int) -> Response:
+    """Remove specific SO numbers from a match run (frees global SO index).
+
+    Repair path when an SO was auto-matched onto the wrong FO category.
+    Body: { "so_numbers": ["102876586", ...] }
+    """
+    from app.services import fo_so_match_db as matchdb
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+    body = request.get_json(silent=True) or {}
+    so_numbers = body.get("so_numbers") or body.get("so_number") or []
+    if isinstance(so_numbers, str):
+        so_numbers = [so_numbers]
+    if not isinstance(so_numbers, list) or not so_numbers:
+        return _json_response(
+            {"success": False, "error": {"message": "so_numbers list is required"}},
+            400,
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        result = matchdb.strip_so_numbers_from_run(
+            conn,
+            run_id=run_id,
+            user_id=user_id,
+            so_numbers=[str(x) for x in so_numbers],
+        )
+        return _json_response(
+            {
+                "success": True,
+                "data": result,
+                "message": (
+                    "Stripped SO "
+                    + ", ".join(result.get("stripped_so_numbers") or [])
+                    + f" from match run #{run_id}"
+                ),
+            }
+        )
+    except ValueError as exc:
+        return _json_response(
+            {"success": False, "error": {"message": str(exc)}},
+            404 if "not found" in str(exc).lower() else 400,
+        )
     finally:
         conn.close()
 

@@ -252,8 +252,14 @@ def find_so_number_conflicts(
         if not key:
             continue
         row = conn.execute(
-            "SELECT so_number, run_id, user_id, filled_order_id, created_at "
-            "FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
+            """
+            SELECT i.so_number, i.run_id, i.user_id, i.filled_order_id, i.created_at,
+                   r.distributor_name, r.category, r.season, r.fo_source_filename,
+                   r.so_source_filename
+            FROM fo_so_match_so_index i
+            LEFT JOIN fo_so_match_runs r ON r.id = i.run_id
+            WHERE UPPER(i.so_number) = UPPER(?)
+            """,
             (key,),
         ).fetchone()
         if not row:
@@ -268,9 +274,136 @@ def find_so_number_conflicts(
                 "user_id": row[2],
                 "filled_order_id": row[3],
                 "created_at": row[4],
+                "distributor_name": row[5],
+                "category": row[6],
+                "season": row[7],
+                "fo_source_filename": row[8],
+                "so_source_filename": row[9],
             }
         )
     return conflicts
+
+
+def strip_so_numbers_from_run(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    user_id: int,
+    so_numbers: list[str],
+) -> dict[str, Any]:
+    """Remove specific SO# from a match run + free the global SO index.
+
+    Used to repair accidental cross-category locks (e.g. towel SO auto-matched
+    onto a Bed FO because buyer matched).
+    """
+    ensure_schema(conn)
+    run = get_match_run(conn, int(run_id), user_id=int(user_id))
+    if not run:
+        raise ValueError("Match run not found")
+
+    want = {
+        (normalize_so_number(n) or "").upper()
+        for n in so_numbers
+        if normalize_so_number(n)
+    }
+    if not want:
+        raise ValueError("No valid SO numbers to strip")
+
+    def keep_so(raw: Any) -> bool:
+        key = (normalize_so_number(raw) or "").upper()
+        return bool(key) and key not in want
+
+    detail = run.get("so_line_detail") or []
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail)
+        except Exception:
+            detail = []
+    if not isinstance(detail, list):
+        detail = []
+    new_detail = [
+        row for row in detail
+        if isinstance(row, dict) and keep_so(row.get("so_number"))
+    ]
+
+    rows = run.get("rows") or []
+    if isinstance(rows, str):
+        try:
+            rows = json.loads(rows)
+        except Exception:
+            rows = []
+    if not isinstance(rows, list):
+        rows = []
+    new_rows: list[dict[str, Any]] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        nums = [n for n in (r.get("so_numbers") or []) if keep_so(n)]
+        breakdown = [
+            c for c in (r.get("so_breakdown") or [])
+            if isinstance(c, dict) and keep_so(c.get("so_number"))
+        ]
+        # Drop FO match rows that only existed for stripped SOs and have no leftover.
+        if (r.get("so_numbers") or r.get("so_breakdown")) and not nums and not breakdown:
+            # Keep FO-only missing rows; drop pure-SO extras tied to stripped numbers.
+            status = str(r.get("status") or r.get("match_status") or "").upper()
+            if "EXTRA" in status or not (r.get("fo_qty") or r.get("fo_design")):
+                continue
+        r2 = dict(r)
+        if "so_numbers" in r2:
+            r2["so_numbers"] = nums
+        if "so_breakdown" in r2:
+            r2["so_breakdown"] = breakdown
+        new_rows.append(r2)
+
+    so_qty = 0.0
+    so_net = 0.0
+    for row in new_detail:
+        try:
+            so_qty += float(row.get("qty") or 0)
+        except (TypeError, ValueError):
+            pass
+        try:
+            so_net += float(row.get("net") or row.get("net_amount") or 0)
+        except (TypeError, ValueError):
+            pass
+
+    fo_qty = float(run.get("fo_qty") or 0)
+    fo_exmill = float(run.get("fo_exmill_value") or 0)
+    conn.execute(
+        """
+        UPDATE fo_so_match_runs
+        SET so_line_detail_json = ?,
+            rows_json = ?,
+            so_qty = ?,
+            so_net_amount = ?,
+            delta_qty = ?,
+            delta_value = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            json.dumps(new_detail, default=str),
+            json.dumps(new_rows, default=str),
+            so_qty,
+            so_net,
+            fo_qty - so_qty,
+            fo_exmill - so_net,
+            int(run_id),
+            int(user_id),
+        ),
+    )
+    for key in want:
+        conn.execute(
+            "DELETE FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?) AND run_id = ?",
+            (key, int(run_id)),
+        )
+    conn.commit()
+    stripped = sorted(want)
+    return {
+        "run_id": int(run_id),
+        "stripped_so_numbers": stripped,
+        "run": get_match_run(conn, int(run_id), user_id=int(user_id)),
+    }
 
 
 def _clear_so_index_for_run(conn: sqlite3.Connection, run_id: int) -> None:
