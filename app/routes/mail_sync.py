@@ -195,8 +195,14 @@ def poll():
         user_id = user['user_id']
         workspace_id = get_workspace_id()
         max_messages = request.args.get('max_messages', default=15, type=int) or 15
+        reset_history = request.args.get('reset', default='false').lower() in ('1', 'true', 'yes')
 
-        summary = poll_for_user(user_id=user_id, workspace_id=workspace_id, max_messages=max_messages)
+        summary = poll_for_user(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            max_messages=max_messages,
+            reset_history=reset_history,
+        )
         return jsonify({'success': True, 'data': summary}), 200
     except RuntimeError as e:
         return jsonify({'success': False, 'error': {'code': 'NOT_CONNECTED', 'message': str(e)}}), 400

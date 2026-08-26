@@ -115,7 +115,9 @@ def _extract_message_content(
     return subject, email_date, "\n".join(body_chunks), attachments
 
 
-def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> dict[str, Any]:
+def poll_for_user(
+    user_id: int, workspace_id: str, max_messages: int = 15, reset_history: bool = False
+) -> dict[str, Any]:
     """Scan the connected Gmail inbox for CI/SO PDFs and import them.
 
     Must be called from inside a Flask request for this same authenticated
@@ -148,6 +150,9 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
     )
     if not account or account.get("sync_status") != "connected" or not account.get("oauth_token"):
         raise RuntimeError("Gmail is not connected for this account.")
+
+    if reset_history:
+        db.clear_processed_gmail_messages(user_id=user_id, workspace_id=workspace_id)
 
     service = build_gmail_service(account["oauth_token"])
     processed_ids = db.get_processed_gmail_message_ids(user_id=user_id, workspace_id=workspace_id)

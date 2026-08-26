@@ -380,6 +380,18 @@ class CentralizedDB:
             )
             conn.commit()
 
+    def clear_processed_gmail_messages(self, user_id: int, workspace_id: str) -> int:
+        """Wipe the dedup log so the next poll re-scans/re-evaluates every
+        matching message again (e.g. after a classification-logic fix)."""
+        self.ensure_gmail_sync_table()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM gmail_sync_processed_messages WHERE user_id = ? AND workspace_id = ?",
+                (user_id, str(workspace_id or "default")),
+            )
+            conn.commit()
+            return cursor.rowcount
+
     def upsert_file_index_records(
         self,
         workspace_id: str,
