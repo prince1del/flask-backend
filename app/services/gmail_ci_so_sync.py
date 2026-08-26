@@ -175,6 +175,7 @@ def poll_for_user(
         "skipped": 0,
         "errors": [],
         "imported_items": [],
+        "debug": [],
     }
 
     auth_header = request.headers.get("Authorization")
@@ -238,6 +239,22 @@ def poll_for_user(
                 header = _parse_sales_order_header_fields(text_sample)
                 all_gsts = [g for g in (header.get("all_gst_numbers") or "").split(",") if g]
                 buyer_gst = _identify_buyer_gst(all_gsts, own_gst)
+                distributor_hit = (
+                    db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
+                    if buyer_gst else None
+                )
+                summary["debug"].append({
+                    "message_id": message_id,
+                    "subject": subject,
+                    "filename": filename,
+                    "classified_kind": kind,
+                    "own_gst": own_gst,
+                    "all_gsts_found": all_gsts,
+                    "buyer_gst": buyer_gst,
+                    "matched_known_distributor": bool(distributor_hit),
+                    "distributor_name": (distributor_hit or {}).get("firm_name") if distributor_hit else None,
+                    "accepted": bool(buyer_gst),
+                })
                 if not buyer_gst:
                     continue
 
