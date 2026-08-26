@@ -65,14 +65,26 @@ def _classify_pdf(subject: str, filename: str, text_sample: str) -> str | None:
 
 def _extract_message_content(
     service, message_id: str
-) -> tuple[str, str, list[tuple[str, bytes]]]:
-    """Returns (subject, body_text_for_link_scanning, [(filename, pdf_bytes), ...])."""
+) -> tuple[str, str, str, list[tuple[str, bytes]]]:
+    """Returns (subject, email_date_iso, body_text_for_link_scanning, [(filename, pdf_bytes), ...])."""
     msg = service.users().messages().get(userId="me", id=message_id, format="full").execute()
     subject = ""
     for header in (msg.get("payload", {}) or {}).get("headers") or []:
         if str(header.get("name", "")).lower() == "subject":
             subject = header.get("value", "") or ""
             break
+
+    email_date = ""
+    internal_date_ms = msg.get("internalDate")
+    if internal_date_ms:
+        try:
+            import datetime
+
+            email_date = datetime.datetime.fromtimestamp(
+                int(internal_date_ms) / 1000, tz=datetime.timezone.utc
+            ).isoformat()
+        except (TypeError, ValueError):
+            email_date = ""
 
     attachments: list[tuple[str, bytes]] = []
     body_chunks: list[str] = []
@@ -100,7 +112,7 @@ def _extract_message_content(
             walk(sub_part)
 
     walk(msg.get("payload") or {})
-    return subject, "\n".join(body_chunks), attachments
+    return subject, email_date, "\n".join(body_chunks), attachments
 
 
 def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> dict[str, Any]:
@@ -155,7 +167,7 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
             continue
         summary["scanned"] += 1
         try:
-            subject, body_text, attachments = _extract_message_content(service, message_id)
+            subject, email_date, body_text, attachments = _extract_message_content(service, message_id)
 
             for link in wetransfer_fetch.find_links(f"{subject}\n{body_text}"):
                 try:
@@ -206,6 +218,7 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
                         summary["imported_items"].append({
                             "kind": "CI",
                             "filename": filename,
+                            "email_date": email_date,
                             "doc_no": item_data.get("invoice_no") or item_data.get("order_ref_no"),
                             "party_name": item_data.get("buyer_name"),
                             "is_duplicate": bool(item_data.get("is_duplicate")),
@@ -230,6 +243,7 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
                         summary["imported_items"].append({
                             "kind": "SO",
                             "filename": filename,
+                            "email_date": email_date,
                             "doc_no": item_data.get("order_ref_no") or item_data.get("buyer_code"),
                             "party_name": item_data.get("buyer_name"),
                             "needs_confirmation": bool(item_data.get("requires_confirmation")),
@@ -247,4 +261,5 @@ def poll_for_user(user_id: int, workspace_id: str, max_messages: int = 15) -> di
             logger.exception("Gmail CI/SO poll failed for message %s", message_id)
             summary["errors"].append({"message_id": message_id, "error": str(exc)})
 
+    summary["imported_items"].sort(key=lambda item: item.get("email_date") or "", reverse=True)
     return summary
