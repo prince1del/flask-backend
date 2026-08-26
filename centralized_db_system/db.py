@@ -58,13 +58,17 @@ class CentralizedDB:
     def ensure_tenancy_tables(self) -> None:
         """Company/tenant registry — Phase 1 of multi-tenant SaaS conversion.
 
-        Purely additive: no existing table or query is touched here. Every
-        workspace_id that predates this table (every existing exec_<user>
-        silo, zone workspace, 'default', etc.) belongs to House of Prizm —
-        enforced by get_company_id_for_workspace() treating an unregistered
-        workspace_id as company_id 1 (the seeded default), so nothing needs
-        a backfill/migration pass. Only a NEW paying customer's workspace_id
-        gets an explicit row here, at their signup.
+        Purely additive: no existing table or query is touched here.
+
+        House of Prizm ("house_of_prizm") and Bombay Dyeing
+        ("bombay_dyeing_gt_north") are two genuinely separate businesses —
+        confirmed against the actual app architecture, NOT a founder-owns-
+        both assumption. Both known workspace_ids are explicitly seeded to
+        their own company row here. Anything else (ad-hoc exec_<user>
+        silos not yet classified) falls into a third "Unclassified /
+        Legacy" bucket via get_company_id_for_workspace()'s fallback —
+        deliberately NOT labeled as either real business, so nothing gets
+        mis-attributed the way the first version of this migration did.
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -90,26 +94,48 @@ class CentralizedDB:
                 )
                 """
             )
-            row = conn.execute("SELECT id FROM companies WHERE id = 1").fetchone()
-            if not row:
-                now = datetime.now(timezone.utc).isoformat()
-                conn.execute(
-                    "INSERT INTO companies (id, name, slug, plan, status, created_at, updated_at) "
-                    "VALUES (1, 'House of Prizm', 'house-of-prizm', 'legacy', 'active', ?, ?)",
-                    (now, now),
-                )
+            now = datetime.now(timezone.utc).isoformat()
+            seed_companies = (
+                (1, "House of Prizm", "house-of-prizm"),
+                (2, "Bombay Dyeing (employer workspace)", "bombay-dyeing"),
+                (3, "Unclassified / Legacy", "unclassified"),
+            )
+            for company_id, name, slug in seed_companies:
+                row = conn.execute("SELECT id FROM companies WHERE id = ?", (company_id,)).fetchone()
+                if not row:
+                    conn.execute(
+                        "INSERT INTO companies (id, name, slug, plan, status, created_at, updated_at) "
+                        "VALUES (?, ?, ?, 'legacy', 'active', ?, ?)",
+                        (company_id, name, slug, now, now),
+                    )
+            seed_workspaces = (
+                ("house_of_prizm", 1),
+                ("bombay_dyeing_gt_north", 2),
+            )
+            for workspace_id, company_id in seed_workspaces:
+                existing = conn.execute(
+                    "SELECT company_id FROM workspace_registry WHERE workspace_id = ?", (workspace_id,)
+                ).fetchone()
+                if not existing:
+                    conn.execute(
+                        "INSERT INTO workspace_registry (workspace_id, company_id, created_at) VALUES (?, ?, ?)",
+                        (workspace_id, company_id, now),
+                    )
             conn.commit()
 
     def get_company_id_for_workspace(self, workspace_id: str) -> int:
-        """Every pre-Phase-1 workspace_id (no registry row) belongs to
-        company 1 (House of Prizm) — see ensure_tenancy_tables() docstring."""
+        """Registered workspace_ids (house_of_prizm, bombay_dyeing_gt_north,
+        and anything added via register_workspace_for_company) resolve to
+        their real company. Anything unregistered falls into company 3
+        ("Unclassified / Legacy") — never silently assumed to be either
+        real business. See ensure_tenancy_tables() docstring."""
         self.ensure_tenancy_tables()
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT company_id FROM workspace_registry WHERE workspace_id = ?",
                 (str(workspace_id or "default"),),
             ).fetchone()
-            return int(row[0]) if row else 1
+            return int(row[0]) if row else 3
 
     def register_workspace_for_company(
         self, workspace_id: str, company_id: int
