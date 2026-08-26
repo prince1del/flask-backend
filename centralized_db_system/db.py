@@ -55,6 +55,99 @@ class CentralizedDB:
             )
             conn.commit()
 
+    def ensure_tenancy_tables(self) -> None:
+        """Company/tenant registry — Phase 1 of multi-tenant SaaS conversion.
+
+        Purely additive: no existing table or query is touched here. Every
+        workspace_id that predates this table (every existing exec_<user>
+        silo, zone workspace, 'default', etc.) belongs to House of Prizm —
+        enforced by get_company_id_for_workspace() treating an unregistered
+        workspace_id as company_id 1 (the seeded default), so nothing needs
+        a backfill/migration pass. Only a NEW paying customer's workspace_id
+        gets an explicit row here, at their signup.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS companies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    slug TEXT UNIQUE,
+                    plan TEXT DEFAULT 'trial',
+                    status TEXT DEFAULT 'active',
+                    owner_user_id INTEGER,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS workspace_registry (
+                    workspace_id TEXT PRIMARY KEY,
+                    company_id INTEGER NOT NULL REFERENCES companies(id),
+                    created_at TEXT
+                )
+                """
+            )
+            row = conn.execute("SELECT id FROM companies WHERE id = 1").fetchone()
+            if not row:
+                now = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    "INSERT INTO companies (id, name, slug, plan, status, created_at, updated_at) "
+                    "VALUES (1, 'House of Prizm', 'house-of-prizm', 'legacy', 'active', ?, ?)",
+                    (now, now),
+                )
+            conn.commit()
+
+    def get_company_id_for_workspace(self, workspace_id: str) -> int:
+        """Every pre-Phase-1 workspace_id (no registry row) belongs to
+        company 1 (House of Prizm) — see ensure_tenancy_tables() docstring."""
+        self.ensure_tenancy_tables()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT company_id FROM workspace_registry WHERE workspace_id = ?",
+                (str(workspace_id or "default"),),
+            ).fetchone()
+            return int(row[0]) if row else 1
+
+    def register_workspace_for_company(
+        self, workspace_id: str, company_id: int
+    ) -> None:
+        """Explicitly bind a workspace_id to a company — used at a new
+        tenant's signup (Phase 2), never for legacy/existing workspaces."""
+        self.ensure_tenancy_tables()
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO workspace_registry (workspace_id, company_id, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(workspace_id) DO UPDATE SET company_id = excluded.company_id
+                """,
+                (str(workspace_id), company_id, now),
+            )
+            conn.commit()
+
+    def create_company(self, name: str, owner_user_id: int | None = None) -> int:
+        """Register a brand-new tenant company (Phase 2 signup flow)."""
+        self.ensure_tenancy_tables()
+        slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-") or "company"
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            base_slug = slug
+            suffix = 1
+            while conn.execute("SELECT 1 FROM companies WHERE slug = ?", (slug,)).fetchone():
+                suffix += 1
+                slug = f"{base_slug}-{suffix}"
+            cursor = conn.execute(
+                "INSERT INTO companies (name, slug, plan, status, owner_user_id, created_at, updated_at) "
+                "VALUES (?, ?, 'trial', 'active', ?, ?, ?)",
+                (name.strip(), slug, owner_user_id, now, now),
+            )
+            conn.commit()
+            return int(cursor.lastrowid or 0)
+
     def ensure_storage_tables(self) -> None:
         """Create storage account and file index tables if they do not exist."""
         with sqlite3.connect(self.db_path) as conn:
