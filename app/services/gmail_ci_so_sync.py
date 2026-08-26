@@ -10,9 +10,17 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Bombay Dyeing's own CI numbering scheme — every real one so far is a
+# 10-digit number starting "140001" (e.g. 1400010167, 1400010223). Courier/
+# shipment receipts also carry a real Indian GST (their own, on the
+# consignee block), so the GST check alone can't tell them apart from a
+# genuine CI — this pins CI acceptance to the actual numbering pattern too.
+CI_NUMBER_PATTERN = re.compile(r"\b140001\d{4}\b")
 
 CI_KEYWORDS = (
     "commercial invoice",
@@ -248,19 +256,23 @@ def poll_for_user(
                     db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
                     if buyer_gst else None
                 )
+                ci_number_hit = bool(CI_NUMBER_PATTERN.search(text_sample or ""))
+                accepted = bool(buyer_gst) and (kind != "CI" or ci_number_hit)
+
                 summary["debug"].append({
                     "message_id": message_id,
                     "subject": subject,
                     "filename": filename,
                     "classified_kind": kind,
+                    "ci_number_pattern_matched": ci_number_hit,
                     "own_gst": own_gst,
                     "all_gsts_found": all_gsts,
                     "buyer_gst": buyer_gst,
                     "matched_known_distributor": bool(distributor_hit),
                     "distributor_name": (distributor_hit or {}).get("firm_name") if distributor_hit else None,
-                    "accepted": bool(buyer_gst),
+                    "accepted": accepted,
                 })
-                if not buyer_gst:
+                if not accepted:
                     continue
 
                 handled_any = True
