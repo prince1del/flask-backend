@@ -228,16 +228,17 @@ def poll_for_user(
                 # words like "invoice" also match personal SaaS receipts
                 # (Stripe, subscriptions, etc.), which then get uploaded as
                 # if they were a real distributor CI/SO. Require the PDF to
-                # actually carry a GSTIN belonging to one of THIS workspace's
-                # registered distributors before importing it at all.
+                # carry a GSTIN at all (excluding our own company's) — real
+                # Indian B2B tax documents always have one, personal/US SaaS
+                # receipts never do. Deliberately NOT requiring it to match
+                # an already-registered distributor: CI-only historical
+                # sales (no prior SO/distributor record) are a supported
+                # case in this app, and would wrongly get rejected by that
+                # stricter check.
                 header = _parse_sales_order_header_fields(text_sample)
                 all_gsts = [g for g in (header.get("all_gst_numbers") or "").split(",") if g]
                 buyer_gst = _identify_buyer_gst(all_gsts, own_gst)
-                known_distributor = (
-                    db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
-                    if buyer_gst else None
-                )
-                if not known_distributor:
+                if not buyer_gst:
                     continue
 
                 handled_any = True
