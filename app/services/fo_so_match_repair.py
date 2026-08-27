@@ -5,7 +5,12 @@ several match runs because a re-upload created a rival run instead of merging,
 so the UI read a run that only knew the re-uploaded SO → spurious MISSING_ON_SO
 rows and a wrong / zero order value. `fo_so_match_so_index` could also still
 claim SO numbers whose run is gone, which makes a clean re-upload fail with
-409 "Sales Order already uploaded".
+409 "Sales Order already uploaded". The third shape is a run that still claims
+Sales Orders while holding no usable SO line detail at all (FO side intact, SO
+qty / net 0, everything MISSING_ON_SO): the claim makes a fresh upload of that
+SO look like a *revision* of an empty old SO, so the match never fills again.
+That one is restored from `order_desk_archive` when a snapshot exists, else the
+unusable claims are freed so the next upload attaches cleanly.
 
 The repair consolidates all runs of one FO into the newest run (deduplicating SO
 lines by SO number, newest wins), rematches the surviving lines against that FO
@@ -141,25 +146,69 @@ def duplicate_run_groups(
     return [(int(r[0]), int(r[1])) for r in conn.execute(sql, params).fetchall()]
 
 
+def empty_so_detail_runs(
+    conn: sqlite3.Connection,
+    *,
+    user_filter: int | None,
+    filled_order_id: int | None = None,
+) -> list[tuple[int, int, int]]:
+    """(run_id, user_id, filled_order_id) of runs that claim SOs but hold none.
+
+    This is the Bernina re-upload shape: the Filled Order side is intact (full
+    qty and ExMill value) while the SO side is completely empty — no SO line
+    detail, SO qty 0, SO net 0, every FO bucket MISSING_ON_SO — yet an SO number
+    is still claimed for the run, so the run reports a Sales Order it cannot
+    show and a re-upload of that SO is treated as a revision instead of a fresh
+    attach.
+
+    Legacy runs that never stored line detail but do carry a real SO qty / value
+    are healthy and deliberately not matched here.
+    """
+    sql = (
+        "SELECT r.id, r.user_id, r.filled_order_id FROM fo_so_match_runs r "
+        "WHERE r.filled_order_id IS NOT NULL AND r.user_id IS NOT NULL "
+        "  AND COALESCE(r.so_qty, 0) = 0 AND COALESCE(r.so_net_amount, 0) = 0 "
+        "  AND (r.so_line_detail_json IS NULL "
+        "       OR TRIM(r.so_line_detail_json) = '' "
+        "       OR TRIM(r.so_line_detail_json) = '[]') "
+        "  AND EXISTS (SELECT 1 FROM fo_so_match_so_index i WHERE i.run_id = r.id)"
+    )
+    params: list[Any] = []
+    if user_filter is not None:
+        sql += " AND r.user_id = ?"
+        params.append(int(user_filter))
+    if filled_order_id is not None:
+        sql += " AND r.filled_order_id = ?"
+        params.append(int(filled_order_id))
+    return [
+        (int(r[0]), int(r[1]), int(r[2])) for r in conn.execute(sql, params).fetchall()
+    ]
+
+
 def damage_probe(
     conn: sqlite3.Connection,
     *,
     scope: RepairScope,
     filled_order_id: int | None = None,
 ) -> dict[str, Any]:
-    """Two cheap aggregate queries — no rematching, no writes.
+    """Three cheap aggregate queries — no rematching, no writes.
 
-    Returns {"damaged": bool, "duplicate_run_groups": [...], "orphan_so_numbers": [...]}.
+    Returns {"damaged": bool, "duplicate_run_groups": [...],
+             "orphan_so_numbers": [...], "empty_so_runs": [...]}.
     """
     matchdb.ensure_schema(conn)
     dupes = duplicate_run_groups(
         conn, user_filter=scope.user_filter, filled_order_id=filled_order_id
     )
     orphans = orphan_index_so_numbers(conn, user_filter=scope.user_filter)
+    empties = empty_so_detail_runs(
+        conn, user_filter=scope.user_filter, filled_order_id=filled_order_id
+    )
     return {
-        "damaged": bool(dupes or orphans),
+        "damaged": bool(dupes or orphans or empties),
         "duplicate_run_groups": dupes,
         "orphan_so_numbers": orphans,
+        "empty_so_runs": empties,
     }
 
 
@@ -294,6 +343,109 @@ def drop_orphan_index_rows(
     return len(stale)
 
 
+def clear_stale_so_claims(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    so_numbers: list[str],
+    apply: bool = True,
+) -> list[str]:
+    """Free claims on these SO numbers whose owning run holds no line for them.
+
+    A claim without any SO line behind it is data the user can neither see nor
+    delete, and it makes a fresh upload of that Sales Order look like a revision
+    of something ("old qty 0") instead of a first attach. Only this user's own
+    claims are ever touched.
+    """
+    matchdb.ensure_schema(conn)
+    freed: list[str] = []
+    for raw in so_numbers or []:
+        key = matchdb.normalize_so_number(raw)
+        if not key:
+            continue
+        row = conn.execute(
+            "SELECT i.so_number, i.run_id FROM fo_so_match_so_index i "
+            "JOIN fo_so_match_runs r ON r.id = i.run_id "
+            "WHERE UPPER(i.so_number) = UPPER(?) AND r.user_id = ?",
+            (key, int(user_id)),
+        ).fetchone()
+        if not row:
+            continue
+        if matchdb.lines_for_so_in_run(
+            conn, run_id=int(row[1]), so_number=str(row[0])
+        ):
+            continue
+        freed.append(str(row[0]))
+        if apply:
+            conn.execute(
+                "DELETE FROM fo_so_match_so_index WHERE run_id = ? "
+                "AND UPPER(so_number) = UPPER(?)",
+                (int(row[1]), str(row[0])),
+            )
+    if apply and freed:
+        conn.commit()
+    return freed
+
+
+def repair_empty_so_run(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    run_id: int,
+    filled_order_id: int,
+    apply: bool,
+) -> dict[str, Any]:
+    """Heal one run that claims Sales Orders but holds no SO line detail.
+
+    Restores the SO lines from `order_desk_archive` when a snapshot exists,
+    otherwise frees the unusable SO claims so the next upload is accepted as a
+    fresh attach. The Filled Order side is never touched.
+    """
+    report: dict[str, Any] = {
+        "run_id": int(run_id),
+        "user_id": int(user_id),
+        "filled_order_id": int(filled_order_id),
+        "restored_so_numbers": [],
+        "cleared_claims": 0,
+        "changed": False,
+    }
+    if not apply:
+        return report
+
+    run = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
+    if not run:
+        return report
+    try:
+        from app.services import order_desk_archive as archive
+
+        restored = archive.restore_match_for_fo(
+            conn,
+            user_id=int(user_id),
+            filled_order_id=int(filled_order_id),
+            fo_key=archive.fo_key_for(
+                run.get("distributor_id"), run.get("category"), run.get("season")
+            ),
+            incoming_so_numbers=[],
+        )
+    except Exception:
+        logger.debug("empty-SO heal: archive restore failed", exc_info=True)
+        restored = None
+    if restored and _lines_of(restored.get("run")):
+        report["restored_so_numbers"] = restored.get("restored_so_numbers") or []
+        report["changed"] = True
+        return report
+
+    # Nothing to bring back — drop the claims the run cannot honour.
+    fresh = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
+    if not fresh or _lines_of(fresh):
+        return report
+    report["cleared_claims"] = matchdb.clear_so_claims_for_run(
+        conn, run_id=int(run_id), user_id=int(user_id)
+    )
+    report["changed"] = bool(report["cleared_claims"])
+    return report
+
+
 def repair(
     conn: sqlite3.Connection,
     *,
@@ -307,6 +459,18 @@ def repair(
     orphans = drop_orphan_index_rows(
         conn, apply=apply, user_filter=scope.user_filter
     )
+    empty_runs = [
+        repair_empty_so_run(
+            conn,
+            user_id=uid,
+            run_id=rid,
+            filled_order_id=foid,
+            apply=apply,
+        )
+        for rid, uid, foid in empty_so_detail_runs(
+            conn, user_filter=scope.user_filter, filled_order_id=filled_order_id
+        )
+    ]
     targets = find_targets(
         conn,
         filled_order_id=filled_order_id,
@@ -318,14 +482,18 @@ def repair(
         for uid, foid in targets
     ]
     merged_runs = sum(len(o.get("dropped_run_ids") or []) for o in orders)
+    empty_healed = sum(1 for e in empty_runs if e.get("changed"))
     return {
         "scope": scope.describe(),
         "applied": bool(apply),
         "processed_orders": len(orders),
         "orphan_index_rows": orphans,
         "runs_merged": merged_runs,
-        "changed": bool(apply) and (bool(orphans) or bool(merged_runs)),
+        "empty_so_runs_healed": empty_healed,
+        "changed": bool(apply)
+        and (bool(orphans) or bool(merged_runs) or bool(empty_healed)),
         "orders": orders,
+        "empty_so_runs": empty_runs,
     }
 
 
@@ -362,19 +530,22 @@ def autoheal(
             return None
         logger.warning(
             "Order Match autoheal (%s, reason=%s): duplicate run groups=%s, "
-            "orphan SO index rows=%s",
+            "orphan SO index rows=%s, runs claiming SOs without SO lines=%s",
             scope.describe(),
             reason or "read",
             probe["duplicate_run_groups"],
             len(probe["orphan_so_numbers"]),
+            [rid for rid, _uid, _foid in probe["empty_so_runs"]],
         )
         # Only the FOs the probe flagged (plus the one being touched) need work.
         fo_ids = {foid for _uid, foid in probe["duplicate_run_groups"]}
+        fo_ids |= {foid for _rid, _uid, foid in probe["empty_so_runs"]}
         if filled_order_id is not None:
             fo_ids.add(int(filled_order_id))
         summary: dict[str, Any]
         if fo_ids:
             merged: list[dict[str, Any]] = []
+            empties: list[dict[str, Any]] = []
             orphans = drop_orphan_index_rows(
                 conn, apply=True, user_filter=scope.user_filter
             )
@@ -383,6 +554,7 @@ def autoheal(
                     conn, scope=scope, filled_order_id=foid, apply=True
                 )
                 merged.extend(part["orders"])
+                empties.extend(part.get("empty_so_runs") or [])
             summary = {
                 "scope": scope.describe(),
                 "applied": True,
@@ -391,15 +563,21 @@ def autoheal(
                 "runs_merged": sum(
                     len(o.get("dropped_run_ids") or []) for o in merged
                 ),
+                "empty_so_runs_healed": sum(
+                    1 for e in empties if e.get("changed")
+                ),
                 "orders": merged,
+                "empty_so_runs": empties,
             }
         else:
             summary = repair(conn, scope=scope, apply=True)
         logger.info(
-            "Order Match autoheal done (%s): %s runs merged, %s orphan index rows cleared",
+            "Order Match autoheal done (%s): %s runs merged, %s orphan index rows "
+            "cleared, %s empty-SO runs healed",
             scope.describe(),
             summary.get("runs_merged"),
             summary.get("orphan_index_rows"),
+            summary.get("empty_so_runs_healed"),
         )
         return summary
     except Exception:

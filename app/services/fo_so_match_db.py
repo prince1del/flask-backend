@@ -406,6 +406,83 @@ def strip_so_numbers_from_run(
     }
 
 
+def lines_for_so_in_run(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    so_number: str,
+) -> int:
+    """How many SO line detail rows a run actually holds for one SO number.
+
+    A claim in `fo_so_match_so_index` with zero lines behind it is stale: the
+    run reports a Sales Order it cannot show, which blocks a clean re-upload.
+    """
+    run = get_match_run(conn, int(run_id), user_id=None)
+    if not run:
+        return 0
+    want = (normalize_so_number(so_number) or "").upper()
+    if not want:
+        return 0
+    return sum(
+        1
+        for row in run.get("so_line_detail") or []
+        if isinstance(row, dict)
+        and (normalize_so_number(row.get("so_number")) or "").upper() == want
+    )
+
+
+def clear_so_claims_for_run(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    user_id: int,
+) -> int:
+    """Free every SO claim of a run whose SO side is empty, keeping the FO side.
+
+    Used by the self-heal path: the run's Filled Order rows, quantities and
+    ExMill value stay exactly as they are (FO lines are never deleted), only the
+    unusable SO claims go — so re-uploading the SO pack is accepted cleanly.
+    """
+    ensure_schema(conn)
+    run = get_match_run(conn, int(run_id), user_id=int(user_id))
+    if not run:
+        return 0
+    rows = run.get("rows") or []
+    cleaned: list[dict[str, Any]] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        r2 = dict(r)
+        r2["so_numbers"] = []
+        r2["so_breakdown"] = []
+        cleaned.append(r2)
+    fo_qty = float(run.get("fo_qty") or 0)
+    fo_exmill = float(run.get("fo_exmill_value") or 0)
+    conn.execute(
+        """
+        UPDATE fo_so_match_runs
+        SET rows_json = ?, so_line_detail_json = NULL,
+            so_qty = 0, so_net_amount = 0,
+            delta_qty = ?, delta_value = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            json.dumps(cleaned, default=str),
+            -fo_qty,
+            -fo_exmill,
+            int(run_id),
+            int(user_id),
+        ),
+    )
+    cur = conn.execute(
+        "DELETE FROM fo_so_match_so_index WHERE run_id = ? "
+        "AND (user_id IS NULL OR user_id = ?)",
+        (int(run_id), int(user_id)),
+    )
+    conn.commit()
+    return int(cur.rowcount or 0)
+
+
 def _clear_so_index_for_run(conn: sqlite3.Connection, run_id: int) -> None:
     conn.execute("DELETE FROM fo_so_match_so_index WHERE run_id = ?", (int(run_id),))
 

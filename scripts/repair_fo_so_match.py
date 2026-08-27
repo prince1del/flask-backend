@@ -76,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
             f"stale SO index rows: {summary['orphan_index_rows']}"
             f"{'' if args.apply else ' (dry run)'}"
         )
+        print(
+            "runs claiming SOs without SO lines healed: "
+            f"{summary.get('empty_so_runs_healed', 0)}"
+        )
         print(f"FO groups to repair: {summary['processed_orders']}")
         for report in summary["orders"]:
             print(json.dumps(report, indent=2, default=str))

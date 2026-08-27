@@ -3977,6 +3977,25 @@ def fo_so_match_lab() -> Response:
                 pass
 
 
+def _so_pack_usable_lines(so_pack: dict) -> list[dict]:
+    """SO line_detail rows the matcher can actually use (qty / value / product)."""
+    out: list[dict] = []
+    for row in so_pack.get("line_detail") or []:
+        if not isinstance(row, dict):
+            continue
+        has_number = bool(str(row.get("so_number") or "").strip())
+        has_product = bool(
+            str(row.get("product_detail") or row.get("product_name") or "").strip()
+        )
+        has_amount = any(
+            row.get(k) not in (None, "", 0)
+            for k in ("qty", "quantity", "net_amount", "total_amount")
+        )
+        if has_number or has_product or has_amount:
+            out.append(row)
+    return out
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/so-pack/match-filled-order", methods=["POST"])
 @require_jwt_auth
 def so_pack_match_filled_order() -> Response:
@@ -4011,13 +4030,22 @@ def so_pack_match_filled_order() -> Response:
             {"success": False, "error": {"message": "filled_order_id is required"}},
             400,
         )
-    if not isinstance(so_pack, dict) or not (
-        so_pack.get("line_detail") or so_pack.get("consolidated")
-    ):
+    # Only `line_detail` carries the per-line SO data the matcher consumes, so a
+    # pack without it can produce nothing but an empty SO side (SO qty 0, every
+    # FO bucket MISSING_ON_SO) while still claiming SO numbers. Refuse it here
+    # instead of persisting that state.
+    if not isinstance(so_pack, dict) or not _so_pack_usable_lines(so_pack):
         return _json_response(
             {
                 "success": False,
-                "error": {"message": "so_pack analyze payload with line_detail is required"},
+                "error": {
+                    "code": "so_pack_missing_line_detail",
+                    "message": (
+                        "This SO pack has no readable Sales Order lines "
+                        "(line_detail is empty) — analyze the SO files again "
+                        "and retry."
+                    ),
+                },
             },
             400,
         )
@@ -4073,6 +4101,18 @@ def so_pack_match_filled_order() -> Response:
         existing = sorev.get_latest_run_for_fo(
             conn, user_id=user_id, filled_order_id=filled_order_id
         )
+        # A claim on an SO whose run holds no line for it is unusable data: it
+        # would turn this fresh upload into a "revision of an empty SO" (replace
+        # confirmation) or a false duplicate. Free those claims first — same rule
+        # and same shared service as the silent auto-heal.
+        try:
+            from app.services import fo_so_match_repair as repairsvc
+
+            repairsvc.clear_stale_so_claims(
+                conn, user_id=user_id, so_numbers=new_numbers
+            )
+        except Exception:
+            pass
         conflicts = matchdb.find_so_number_conflicts(conn, new_numbers)
         # SO index is global — only revise when the conflicting run is this same FO.
         fo_conflicts = [
