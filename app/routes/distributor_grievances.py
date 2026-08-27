@@ -174,6 +174,64 @@ def _truncate_title(text: str, max_len: int = 80) -> str:
     return t[: max_len - 1].rstrip() + "…"
 
 
+def _adopt_existing_todo(
+    conn: sqlite3.Connection,
+    *,
+    workspace_id: str,
+    user_id: int,
+    todo_id: int,
+    grievance_id: int,
+    distributor_id: int,
+    distributor_name: str,
+) -> int | None:
+    """Turn a note the user already wrote into this grievance's linked todo.
+
+    Used when a grievance is raised from an existing To-Do entry, so the user
+    keeps one item instead of the note plus a duplicate grievance todo.
+    Returns the todo id, or None when the note is not this user's or is
+    already linked to another grievance.
+    """
+    _ensure_personal_todos_columns(conn)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        """
+        SELECT id, linked_grievance_id FROM personal_todos
+        WHERE id = ? AND workspace_id = ? AND user_id = ?
+        """,
+        (todo_id, workspace_id, user_id),
+    ).fetchone()
+    if row is None:
+        return None
+    existing_link = row["linked_grievance_id"]
+    if existing_link is not None and int(existing_link) != grievance_id:
+        return None
+
+    conn.execute(
+        """
+        UPDATE personal_todos
+        SET category = 'Grievance',
+            person_party = ?,
+            priority = 'important',
+            status = CASE WHEN status = 'completed' THEN 'pending' ELSE status END,
+            completed_at = CASE WHEN status = 'completed' THEN NULL ELSE completed_at END,
+            linked_distributor_id = ?,
+            linked_grievance_id = ?,
+            updated_at = ?
+        WHERE id = ? AND workspace_id = ? AND user_id = ?
+        """,
+        (
+            distributor_name,
+            distributor_id,
+            grievance_id,
+            _now_iso(),
+            todo_id,
+            workspace_id,
+            user_id,
+        ),
+    )
+    return int(todo_id)
+
+
 def _create_linked_todo(
     conn: sqlite3.Connection,
     *,
@@ -345,6 +403,14 @@ def create_grievance():
     if complaint_mode and complaint_mode.lower() == "mail" and not email_subject:
         email_subject = None
 
+    # Raised from a note the user already has in My To-Do: adopt that note
+    # instead of adding a second one.
+    try:
+        raw_link_todo = data.get("link_todo_id", data.get("todo_id"))
+        link_todo_id = int(raw_link_todo) if raw_link_todo is not None else None
+    except (TypeError, ValueError):
+        link_todo_id = None
+
     db = CentralizedDB(_db_path())
     dist = db.get_master_distributor(distributor_id, workspace_id=workspace_id, user_id=uid)
     if not dist:
@@ -381,17 +447,29 @@ def create_grievance():
             ),
         )
         grievance_id = int(cur.lastrowid)
-        todo_id = _create_linked_todo(
-            conn,
-            workspace_id=workspace_id,
-            user_id=uid,
-            username=user.get("username"),
-            grievance_id=grievance_id,
-            distributor_id=distributor_id,
-            distributor_name=distributor_name,
-            problem_text=problem_text,
-            problem_date=problem_date,
-        )
+        todo_id = None
+        if link_todo_id is not None:
+            todo_id = _adopt_existing_todo(
+                conn,
+                workspace_id=workspace_id,
+                user_id=uid,
+                todo_id=link_todo_id,
+                grievance_id=grievance_id,
+                distributor_id=distributor_id,
+                distributor_name=distributor_name,
+            )
+        if todo_id is None:
+            todo_id = _create_linked_todo(
+                conn,
+                workspace_id=workspace_id,
+                user_id=uid,
+                username=user.get("username"),
+                grievance_id=grievance_id,
+                distributor_id=distributor_id,
+                distributor_name=distributor_name,
+                problem_text=problem_text,
+                problem_date=problem_date,
+            )
         conn.execute(
             """
             UPDATE distributor_grievances
