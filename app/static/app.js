@@ -9685,8 +9685,26 @@ async function deleteOrderMatchSelectedRun() {
   );
   if (!ok) return;
   try {
-    const response = await fetchWithAuth(`/api/v1/order-fulfillment/order-match/${runId}`, { method: 'DELETE' });
-    const data = await parseApiJson(response);
+    let response = await fetchWithAuth(`/api/v1/order-fulfillment/order-match/${runId}`, { method: 'DELETE' });
+    let data = await parseApiJson(response);
+    // One match holds every SO of that FO — deleting it drops them all, so the
+    // server asks for an explicit confirmation when more than one SO is inside.
+    if (response.status === 409 && data.error && data.error.code === 'match_run_has_multiple_so') {
+      const soList = (data.error.so_numbers || []).join(', ');
+      const confirmAll = await showSimpleConfirmModal(
+        'Delete all Sales Orders of this FO?',
+        `This match holds ${(data.error.so_numbers || []).length} Sales Orders (${soList}). `
+          + 'Deleting it removes all of them. To drop just one SO, delete it from the match detail.',
+        'Delete all',
+        'Cancel',
+      );
+      if (!confirmAll) return;
+      response = await fetchWithAuth(
+        `/api/v1/order-fulfillment/order-match/${runId}?confirm_all=1`,
+        { method: 'DELETE' },
+      );
+      data = await parseApiJson(response);
+    }
     if (!response.ok || !data.success) {
       throw new Error((data.error && data.error.message) || 'Delete failed');
     }

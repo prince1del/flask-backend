@@ -374,6 +374,91 @@ def merge_lines_for_additional(
     return list(existing_lines) + incoming
 
 
+def rebuild_run_from_lines(
+    conn,
+    *,
+    user_id: int,
+    run_id: int,
+    lines: list[dict[str, Any]],
+    source_filename: str | None = None,
+) -> dict[str, Any] | None:
+    """Rematch a run's surviving SO lines against its own FO, in place.
+
+    Used when a single SO is removed from a run that holds several SOs: the
+    other SOs' lines, match rows and totals must stay intact.
+    """
+    import filled_orders_db as fodb
+    from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
+
+    run = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
+    if not run:
+        raise ValueError("Match run not found")
+    filled_order_id = run.get("filled_order_id")
+    if filled_order_id is None:
+        raise ValueError("Match run has no filled order to rematch against")
+
+    fodb.ensure_schema(conn)
+    fo = fodb.get_filled_order(conn, int(user_id), int(filled_order_id))
+    if not fo:
+        raise ValueError("Filled order not found")
+    items = fodb.get_filled_order_items(conn, int(filled_order_id))
+
+    pack = pack_from_lines(
+        lines, source_filename=source_filename or run.get("so_source_filename")
+    )
+    result = run_match_saved_fo_vs_so_pack(
+        fo_meta=fo, fo_items=items, so_pack_payload=pack
+    )
+    return matchdb.update_run_from_match(
+        conn,
+        run_id=int(run_id),
+        user_id=int(user_id),
+        match_payload=result,
+        so_line_detail=lines,
+        so_pack=pack,
+    )
+
+
+def remove_so_from_run(
+    conn,
+    *,
+    user_id: int,
+    run_id: int,
+    so_numbers: list[str],
+) -> dict[str, Any]:
+    """Delete only these SO numbers from a run; keep the FO's other SOs.
+
+    Returns {"deleted_run": bool, "run": <run or None>, "removed": [...]}.
+    """
+    run = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
+    if not run:
+        raise ValueError("Match run not found")
+    drop = {
+        (matchdb.normalize_so_number(n) or "").upper()
+        for n in so_numbers
+        if matchdb.normalize_so_number(n)
+    }
+    if not drop:
+        raise ValueError("No valid SO numbers to remove")
+
+    existing_lines = [
+        r for r in (run.get("so_line_detail") or []) if isinstance(r, dict)
+    ]
+    remaining = remove_so_numbers(existing_lines, drop)
+    survivors = {
+        (so_number_of(r) or "").upper() for r in remaining if so_number_of(r)
+    }
+    if not remaining or not survivors:
+        # Last SO on this FO — the run itself has nothing left to show.
+        matchdb.delete_match_run(conn, int(user_id), int(run_id))
+        return {"deleted_run": True, "run": None, "removed": sorted(drop)}
+
+    updated = rebuild_run_from_lines(
+        conn, user_id=int(user_id), run_id=int(run_id), lines=remaining
+    )
+    return {"deleted_run": False, "run": updated, "removed": sorted(drop)}
+
+
 def pack_from_lines(lines: list[dict[str, Any]], *, source_filename: str | None = None) -> dict[str, Any]:
     """Minimal so_pack payload for rematch from merged line_detail."""
     qty = sum(_f(r.get("qty") or r.get("quantity")) for r in lines)

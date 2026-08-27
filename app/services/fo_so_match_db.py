@@ -434,7 +434,11 @@ def _insert_so_index_for_run(
 
 
 def _cleanup_duplicate_runs_by_filled_order(conn: sqlite3.Connection) -> int:
-    """Keep only the latest match run per filled_order_id (team-wide)."""
+    """Keep only the latest match run per (user_id, filled_order_id).
+
+    Scoped by user_id: one BD user's re-upload must never delete another
+    user's saved run for the same FO id.
+    """
     try:
         stale = conn.execute(
             """
@@ -443,7 +447,7 @@ def _cleanup_duplicate_runs_by_filled_order(conn: sqlite3.Connection) -> int:
               AND id NOT IN (
                 SELECT MAX(id) FROM fo_so_match_runs
                 WHERE filled_order_id IS NOT NULL
-                GROUP BY filled_order_id
+                GROUP BY user_id, filled_order_id
               )
             """
         ).fetchall()
@@ -587,6 +591,106 @@ def save_match_run(
             find_so_number_conflicts(conn, so_numbers) or [{"so_number": "unknown"}]
         ) from exc
     return get_match_run(conn, run_id, user_id=user_id)
+
+
+def so_numbers_for_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    user_id: int | None = None,
+) -> list[str]:
+    """Every Sales Order number saved inside one match run."""
+    run = get_match_run(conn, int(run_id), user_id=user_id)
+    if not run:
+        return []
+    numbers = extract_so_numbers_from_run_row(run)
+    for row in conn.execute(
+        "SELECT so_number FROM fo_so_match_so_index WHERE run_id = ?",
+        (int(run_id),),
+    ).fetchall():
+        n = normalize_so_number(row[0])
+        if n and n.upper() not in {x.upper() for x in numbers}:
+            numbers.append(n)
+    return numbers
+
+
+def update_run_from_match(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    user_id: int,
+    match_payload: dict[str, Any],
+    so_line_detail: list[Any] | None,
+    so_pack: dict[str, Any] | None = None,
+    so_source_filename: str | None = None,
+) -> dict[str, Any] | None:
+    """Rewrite one existing run in place from a fresh match result.
+
+    Keeps the run id stable (clients hold it) and re-claims exactly the SO
+    numbers that survive, so the global SO index never keeps a stale claim.
+    """
+    ensure_schema(conn)
+    if not get_match_run(conn, int(run_id), user_id=int(user_id)):
+        raise ValueError("Match run not found")
+
+    match = match_payload.get("match") or {}
+    totals = match.get("totals") or {}
+    counts = match.get("counts") or {}
+    rows = match.get("rows") or []
+    mismatch = int(counts.get("QTY_MISMATCH") or 0) + int(counts.get("VALUE_MISMATCH") or 0)
+
+    so_numbers = extract_so_numbers_from_pack(so_pack) if so_pack else []
+    if not so_numbers and so_line_detail:
+        so_numbers = extract_so_numbers_from_pack({"line_detail": so_line_detail})
+    if not so_numbers:
+        so_numbers = extract_so_numbers_from_run_row({"rows": rows})
+
+    conflicts = find_so_number_conflicts(conn, so_numbers, exclude_run_id=int(run_id))
+    if conflicts:
+        raise DuplicateSalesOrderError(conflicts)
+
+    conn.execute(
+        """
+        UPDATE fo_so_match_runs
+        SET fo_qty = ?, so_qty = ?, delta_qty = ?,
+            fo_exmill_value = ?, so_net_amount = ?, delta_value = ?,
+            match_count = ?, fuzzy_count = ?, mismatch_count = ?,
+            missing_count = ?, extra_count = ?,
+            rows_json = ?, so_line_detail_json = ?,
+            so_source_filename = COALESCE(?, so_source_filename)
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            totals.get("fo_qty"),
+            totals.get("so_qty"),
+            totals.get("delta_qty"),
+            totals.get("fo_exmill_value"),
+            totals.get("so_net_amount"),
+            totals.get("delta_value"),
+            int(counts.get("MATCH") or 0),
+            int(counts.get("MATCH_FUZZY_BRAND") or 0),
+            mismatch,
+            int(counts.get("MISSING_ON_SO") or 0),
+            int(counts.get("EXTRA_ON_SO") or 0),
+            json.dumps(rows, default=str),
+            json.dumps(so_line_detail, default=str) if so_line_detail else None,
+            so_source_filename,
+            int(run_id),
+            int(user_id),
+        ),
+    )
+    _clear_so_index_for_run(conn, int(run_id))
+    row = conn.execute(
+        "SELECT filled_order_id FROM fo_so_match_runs WHERE id = ?", (int(run_id),)
+    ).fetchone()
+    _insert_so_index_for_run(
+        conn,
+        run_id=int(run_id),
+        user_id=int(user_id),
+        filled_order_id=row[0] if row else None,
+        so_numbers=so_numbers,
+    )
+    conn.commit()
+    return get_match_run(conn, int(run_id), user_id=int(user_id))
 
 
 def get_match_run(

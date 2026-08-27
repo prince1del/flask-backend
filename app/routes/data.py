@@ -4052,6 +4052,12 @@ def so_pack_match_filled_order() -> Response:
                 {"success": False, "error": {"message": "Filled order not found"}},
                 404,
             )
+        _autoheal_order_match(
+            conn,
+            user_id=user_id,
+            filled_order_id=filled_order_id,
+            reason="so_pack_match",
+        )
         items = fodb.get_filled_order_items(conn, filled_order_id)
         existing = sorev.get_latest_run_for_fo(
             conn, user_id=user_id, filled_order_id=filled_order_id
@@ -4174,6 +4180,7 @@ def so_pack_match_filled_order() -> Response:
         # Build merged line_detail when revising an existing FO match.
         working_pack = so_pack
         replaced_note = None
+        revise_run_id: int | None = None
         # New SO that fits FO leftover (after replace) merges as Additional —
         # including when materials still overlap the reduced parent (Balaji 543).
         effective_action = confirm_action
@@ -4230,28 +4237,44 @@ def so_pack_match_filled_order() -> Response:
             working_pack = sorev.pack_from_lines(
                 merged, source_filename=so_source_filename
             )
-            # Free SO index + drop previous FO run before saving the merged match.
-            matchdb.delete_match_run(conn, user_id, int(existing["id"]))
+            revise_run_id = int(existing["id"])
+            # Other runs on this FO that claim the same SO numbers are folded in.
             for c in conflicts:
                 rid = c.get("run_id")
-                if rid and int(rid) != int(existing["id"]):
+                if rid and int(rid) != revise_run_id:
                     matchdb.delete_match_run(conn, user_id, int(rid))
 
         result = run_match_saved_fo_vs_so_pack(
             fo_meta=fo, fo_items=items, so_pack_payload=working_pack,
         )
+        working_lines = (
+            working_pack.get("line_detail")
+            if isinstance(working_pack.get("line_detail"), list)
+            else None
+        )
         try:
-            run = matchdb.save_match_run(
-                conn,
-                user_id=user_id,
-                match_payload=result,
-                so_buyer_label=so_buyer_label,
-                so_source_filename=so_source_filename,
-                so_line_detail=working_pack.get("line_detail")
-                if isinstance(working_pack.get("line_detail"), list)
-                else None,
-                so_pack=working_pack,
-            )
+            if revise_run_id is not None:
+                # Update the FO's existing run in place: the run id stays stable
+                # and the surviving SOs keep their rows even if this save fails.
+                run = matchdb.update_run_from_match(
+                    conn,
+                    run_id=revise_run_id,
+                    user_id=user_id,
+                    match_payload=result,
+                    so_line_detail=working_lines,
+                    so_pack=working_pack,
+                    so_source_filename=so_source_filename,
+                )
+            else:
+                run = matchdb.save_match_run(
+                    conn,
+                    user_id=user_id,
+                    match_payload=result,
+                    so_buyer_label=so_buyer_label,
+                    so_source_filename=so_source_filename,
+                    so_line_detail=working_lines,
+                    so_pack=working_pack,
+                )
         except matchdb.DuplicateSalesOrderError as dup:
             return _json_response(
                 {
@@ -4279,6 +4302,35 @@ def so_pack_match_filled_order() -> Response:
         conn.close()
 
 
+def _autoheal_order_match(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int | None,
+    filled_order_id: int | None = None,
+    reason: str = "",
+) -> None:
+    """Silently self-heal damaged FO ↔ SO match data on the normal Order Desk paths.
+
+    Cheap probe (duplicate runs for one FO / orphan SO index rows) runs first, so
+    a healthy workspace pays two aggregate queries and writes nothing. Scope comes
+    from the signed JWT: own rows for a normal user, workspace-wide for the
+    workspace owner. Never raises and never surfaces anything to the user.
+    """
+    if user_id is None:
+        return
+    try:
+        from app.services import fo_so_match_repair as repairsvc
+
+        repairsvc.autoheal_for_request(
+            conn,
+            user_id=int(user_id),
+            filled_order_id=filled_order_id,
+            reason=reason,
+        )
+    except Exception:
+        pass
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/list", methods=["GET"])
 @require_jwt_auth
 def order_match_list() -> Response:
@@ -4302,6 +4354,7 @@ def order_match_list() -> Response:
         )
     conn = sqlite3.connect(_db_path())
     try:
+        _autoheal_order_match(conn, user_id=user_id, reason="order_match_list")
         runs = matchdb.list_match_runs(conn, user_id=user_id)
         return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
     finally:
@@ -4328,6 +4381,23 @@ def order_match_get(run_id: int) -> Response:
     conn = sqlite3.connect(_db_path())
     try:
         run = matchdb.get_match_run(conn, run_id, user_id=user_id)
+        fo_id = (run or {}).get("filled_order_id")
+        _autoheal_order_match(
+            conn,
+            user_id=user_id,
+            filled_order_id=int(fo_id) if fo_id is not None else None,
+            reason="order_match_get",
+        )
+        healed = matchdb.get_match_run(conn, run_id, user_id=user_id)
+        if healed is None and fo_id is not None:
+            # This run was a duplicate of the FO and got consolidated away —
+            # serve the surviving consolidated run instead of a 404.
+            from app.services import fo_so_revision as sorev
+
+            healed = sorev.get_latest_run_for_fo(
+                conn, user_id=user_id, filled_order_id=int(fo_id)
+            )
+        run = healed or run
         if not run:
             return _json_response(
                 {"success": False, "error": {"message": "Match run not found"}},
@@ -4341,7 +4411,16 @@ def order_match_get(run_id: int) -> Response:
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["DELETE"])
 @require_jwt_auth
 def order_match_delete(run_id: int) -> Response:
+    """Delete a whole FO match run, or only one SO inside it.
+
+    One match run holds every SO matched against that Filled Order, so a
+    blind whole-run delete would wipe the FO's other SOs (their match rows
+    and totals) as well. Therefore:
+      ?so_number=…  → remove just that SO, rematch the survivors in place
+      no so_number  → allowed only for single-SO runs, or with confirm_all=1
+    """
     from app.services import fo_so_match_db as matchdb
+    from app.services import fo_so_revision as sorev
 
     user = getattr(request, "user", None)
     user_id = (
@@ -4354,8 +4433,74 @@ def order_match_delete(run_id: int) -> Response:
             {"success": False, "error": {"message": "Authentication required"}},
             401,
         )
+    body = request.get_json(silent=True) or {}
+    so_number = (
+        request.args.get("so_number") or body.get("so_number") or ""
+    ).strip() or None
+    confirm_all = str(
+        request.args.get("confirm_all") or body.get("confirm_all") or ""
+    ).strip().lower() in ("1", "true", "yes")
+
     conn = sqlite3.connect(_db_path())
     try:
+        pre = matchdb.get_match_run(conn, run_id, user_id=user_id)
+        pre_fo_id = (pre or {}).get("filled_order_id")
+        _autoheal_order_match(
+            conn,
+            user_id=user_id,
+            filled_order_id=int(pre_fo_id) if pre_fo_id is not None else None,
+            reason="order_match_delete",
+        )
+        if pre is not None and pre_fo_id is not None and not matchdb.get_match_run(
+            conn, run_id, user_id=user_id
+        ):
+            surviving = sorev.get_latest_run_for_fo(
+                conn, user_id=user_id, filled_order_id=int(pre_fo_id)
+            )
+            if surviving and surviving.get("id"):
+                run_id = int(surviving["id"])
+        if so_number:
+            try:
+                result = sorev.remove_so_from_run(
+                    conn, user_id=user_id, run_id=run_id, so_numbers=[so_number]
+                )
+            except ValueError as exc:
+                return _json_response(
+                    {"success": False, "error": {"message": str(exc)}},
+                    404 if "not found" in str(exc).lower() else 400,
+                )
+            return _json_response(
+                {
+                    "success": True,
+                    "data": {
+                        "removed_so_numbers": result["removed"],
+                        "deleted_run_id": run_id if result["deleted_run"] else None,
+                        "run": result["run"],
+                    },
+                    "message": f"Deleted SO {so_number}",
+                }
+            )
+
+        so_numbers = matchdb.so_numbers_for_run(conn, run_id, user_id=user_id)
+        if len(so_numbers) > 1 and not confirm_all:
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "match_run_has_multiple_so",
+                        "message": (
+                            f"This match holds {len(so_numbers)} Sales Orders "
+                            f"({', '.join(so_numbers)}). Delete a single SO from the "
+                            "match detail, or confirm deleting the whole FO match."
+                        ),
+                        "so_numbers": so_numbers,
+                        "filled_order_id": (
+                            matchdb.get_match_run(conn, run_id, user_id=user_id) or {}
+                        ).get("filled_order_id"),
+                    },
+                },
+                409,
+            )
         ok = matchdb.delete_match_run(conn, user_id, run_id)
         if not ok:
             return _json_response(
