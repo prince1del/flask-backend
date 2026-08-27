@@ -4059,6 +4059,17 @@ def so_pack_match_filled_order() -> Response:
             reason="so_pack_match",
         )
         items = fodb.get_filled_order_items(conn, filled_order_id)
+        # Bring back anything this user previously deleted from this FO's match
+        # (archived SO lines) BEFORE matching, so the incoming pack merges on
+        # top of the restored state instead of replacing it. SO numbers present
+        # in this upload are never restored — the file is the newer truth.
+        restored_note = _restore_order_desk_archive_for_fo(
+            conn,
+            user_id=user_id,
+            fo=fo,
+            filled_order_id=filled_order_id,
+            incoming_so_numbers=new_numbers,
+        )
         existing = sorev.get_latest_run_for_fo(
             conn, user_id=user_id, filled_order_id=filled_order_id
         )
@@ -4201,6 +4212,23 @@ def so_pack_match_filled_order() -> Response:
 
         if existing and effective_action in ("replace", "split", "additional"):
             existing_lines = list(existing.get("so_line_detail") or [])
+            if effective_action in ("replace", "split"):
+                # Keep an audit snapshot of the SO lines this revision drops or
+                # reduces. Scope stays 'entity', so a deliberate replacement is
+                # never silently resurrected by a later upload.
+                doomed = (
+                    [str(c.get("so_number") or "") for c in conflicts]
+                    if effective_action == "replace"
+                    else [parent_so_number or ""]
+                )
+                _archive_match_before_delete(
+                    conn,
+                    user_id=user_id,
+                    run_id=int(existing["id"]),
+                    so_numbers=[n for n in doomed if n],
+                    whole_run=False,
+                    reason=f"so_revision_{effective_action}",
+                )
             if effective_action == "replace":
                 replace_nums = {
                     str(c.get("so_number") or "")
@@ -4292,6 +4320,8 @@ def so_pack_match_filled_order() -> Response:
         if replaced_note:
             result["revision_note"] = replaced_note
             result["confirm_action"] = effective_action
+        if restored_note and restored_note.get("restored_so_numbers"):
+            result["restored_so_numbers"] = restored_note["restored_so_numbers"]
         return _json_response({"success": True, "data": result})
     except Exception as exc:
         return _json_response(
@@ -4355,6 +4385,13 @@ def order_match_list() -> Response:
     conn = sqlite3.connect(_db_path())
     try:
         _autoheal_order_match(conn, user_id=user_id, reason="order_match_list")
+        try:
+            # Throttled retention cleanup for the Order Desk recycle store.
+            from app.services import order_desk_archive as archive
+
+            archive.maybe_purge(conn)
+        except Exception:
+            pass
         runs = matchdb.list_match_runs(conn, user_id=user_id)
         return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
     finally:
@@ -4406,6 +4443,97 @@ def order_match_get(run_id: int) -> Response:
         return _json_response({"success": True, "data": {"run": run}})
     finally:
         conn.close()
+
+
+def _restore_order_desk_archive_for_fo(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int | None,
+    fo: dict | None,
+    filled_order_id: int,
+    incoming_so_numbers: list[str] | None = None,
+) -> dict | None:
+    """Restore archived match content for one FO on an SO Pack (re-)upload.
+
+    This is the mandatory "same data dubara upload karne se wapas aa jaaye"
+    path: whatever a previous delete removed from this Filled Order's match is
+    merged back before the incoming pack is matched. Strictly this user's own
+    archive rows, and never the SO numbers being uploaded right now.
+    """
+    if user_id is None:
+        return None
+    try:
+        from app.services import order_desk_archive as archive
+
+        # A re-uploaded FO gets a new row id — re-point archives by FO identity.
+        archive.relink_archives_to_new_filled_order(
+            conn,
+            user_id=int(user_id),
+            filled_order_id=int(filled_order_id),
+            distributor_id=(fo or {}).get("distributor_id"),
+            category=(fo or {}).get("category"),
+            season=(fo or {}).get("season"),
+        )
+        return archive.restore_match_for_fo(
+            conn,
+            user_id=int(user_id),
+            filled_order_id=int(filled_order_id),
+            fo_key=archive.fo_key_for(
+                (fo or {}).get("distributor_id"),
+                (fo or {}).get("category"),
+                (fo or {}).get("season"),
+            ),
+            incoming_so_numbers=incoming_so_numbers or [],
+        )
+    except Exception:
+        return None
+
+
+def _archive_match_before_delete(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int | None,
+    run_id: int,
+    so_numbers: list[str] | None = None,
+    whole_run: bool = False,
+    reason: str = "",
+) -> None:
+    """Snapshot FO↔SO match content into the Order Desk recycle store.
+
+    Best-effort by design: a failing snapshot must not block the delete the
+    user asked for, but every normal delete becomes recoverable by re-uploading
+    the same source file (see app/services/order_desk_archive.py).
+    """
+    if user_id is None:
+        return
+    try:
+        from app.services import fo_so_match_db as matchdb
+        from app.services import order_desk_archive as archive
+
+        run = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
+        if not run:
+            return
+        workspace_id = get_workspace_id()
+        if whole_run:
+            archive.archive_match_run(
+                conn,
+                user_id=int(user_id),
+                run=run,
+                reason=reason or "order_match_delete_run",
+                workspace_id=workspace_id,
+            )
+        else:
+            archive.archive_match_so(
+                conn,
+                user_id=int(user_id),
+                run=run,
+                so_numbers=so_numbers or [],
+                reason=reason or "order_match_delete_so",
+                restore_scope=archive.SCOPE_ENTITY,
+                workspace_id=workspace_id,
+            )
+    except Exception:
+        pass
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["DELETE"])
@@ -4461,6 +4589,16 @@ def order_match_delete(run_id: int) -> Response:
                 run_id = int(surviving["id"])
         if so_number:
             try:
+                # Recycle first: a deliberate single-SO delete must still be
+                # recoverable by re-uploading that same SO file.
+                _archive_match_before_delete(
+                    conn,
+                    user_id=user_id,
+                    run_id=run_id,
+                    so_numbers=[so_number],
+                    whole_run=False,
+                    reason="order_match_delete_so",
+                )
                 result = sorev.remove_so_from_run(
                     conn, user_id=user_id, run_id=run_id, so_numbers=[so_number]
                 )
@@ -4501,6 +4639,14 @@ def order_match_delete(run_id: int) -> Response:
                 },
                 409,
             )
+        _archive_match_before_delete(
+            conn,
+            user_id=user_id,
+            run_id=run_id,
+            so_numbers=so_numbers,
+            whole_run=True,
+            reason="order_match_delete_run",
+        )
         ok = matchdb.delete_match_run(conn, user_id, run_id)
         if not ok:
             return _json_response(
@@ -4508,7 +4654,13 @@ def order_match_delete(run_id: int) -> Response:
                 404,
             )
         return _json_response(
-            {"success": True, "data": {"deleted_run_id": run_id}, "message": "Match run deleted"}
+            {
+                "success": True,
+                "data": {"deleted_run_id": run_id, "recoverable": True},
+                "message": (
+                    "Match run deleted — re-upload the same SO file(s) to restore it."
+                ),
+            }
         )
     finally:
         conn.close()
@@ -4549,6 +4701,14 @@ def order_match_strip_so(run_id: int) -> Response:
         )
     conn = sqlite3.connect(_db_path())
     try:
+        _archive_match_before_delete(
+            conn,
+            user_id=user_id,
+            run_id=run_id,
+            so_numbers=[str(x) for x in so_numbers],
+            whole_run=False,
+            reason="order_match_strip_so",
+        )
         result = matchdb.strip_so_numbers_from_run(
             conn,
             run_id=run_id,
@@ -4606,11 +4766,42 @@ def order_match_delete_selected() -> Response:
                 run_id = int(raw)
             except (TypeError, ValueError):
                 continue
+            _archive_match_before_delete(
+                conn,
+                user_id=user_id,
+                run_id=run_id,
+                whole_run=True,
+                reason="order_match_delete_selected",
+            )
             if matchdb.delete_match_run(conn, user_id, run_id):
                 deleted += 1
         return _json_response({"success": True, "data": {"deleted": deleted}})
     finally:
         conn.close()
+
+
+def _restore_tracking_archive_after_upload(
+    *,
+    user_id: int | None,
+    workspace_id: str | None,
+    order_ref_no: str | None,
+    tracking_id: int | None,
+) -> dict | None:
+    """Restore an archived tracking row's derived data onto a fresh upload."""
+    if user_id is None or tracking_id is None or not order_ref_no:
+        return None
+    try:
+        from app.services import order_desk_archive as archive
+
+        return archive.restore_tracking_for_upload(
+            _db_path(),
+            user_id=user_id,
+            workspace_id=workspace_id,
+            order_ref_no=order_ref_no,
+            tracking_id=int(tracking_id),
+        )
+    except Exception:
+        return None
 
 
 def _archive_order_pdf_to_drive(
@@ -4751,6 +4942,15 @@ def upload_sales_order_v2() -> Response:
                     sales_order_file_reference=str(target_path),
                     sales_order_parsed=parsed_sales_order,
                     workspace_id=workspace_id,
+                )
+                # Re-uploading a deleted SO restores everything that hung off
+                # its old tracking row (reconciliation items, achievements,
+                # payment entries, the CI that was linked to it).
+                _restore_tracking_archive_after_upload(
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    order_ref_no=order_ref_no,
+                    tracking_id=tracking_id,
                 )
                 _archive_order_pdf_to_drive(
                     db=db,
@@ -6345,14 +6545,28 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
     user_id = _current_user_id()
+    _archive_tracking_before_delete(
+        db,
+        tracking_id=tracking_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        reason="tracking_delete",
+    )
     file_references = db.delete_order_lifecycle_tracking(
         tracking_id, workspace_id=workspace_id, user_id=user_id
     )
     if file_references is None:
         return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
 
-    _cleanup_order_fulfillment_files(file_references)
-    return _json_response({"success": True, "data": {"deleted_tracking_id": tracking_id}})
+    _cleanup_order_fulfillment_files(
+        file_references, user_id=user_id, workspace_id=workspace_id
+    )
+    return _json_response(
+        {
+            "success": True,
+            "data": {"deleted_tracking_id": tracking_id, "recoverable": True},
+        }
+    )
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/tracking/delete-selected", methods=["POST"])
@@ -6375,19 +6589,88 @@ def delete_selected_order_fulfillment_tracking() -> Response:
             tracking_id = int(raw)
         except (TypeError, ValueError):
             continue
+        _archive_tracking_before_delete(
+            db,
+            tracking_id=tracking_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            reason="tracking_delete_selected",
+        )
         file_references = db.delete_order_lifecycle_tracking(
             tracking_id, workspace_id=workspace_id, user_id=user_id
         )
         if file_references is None:
             continue
-        _cleanup_order_fulfillment_files(file_references)
+        _cleanup_order_fulfillment_files(
+            file_references, user_id=user_id, workspace_id=workspace_id
+        )
         deleted += 1
-    return _json_response({"success": True, "data": {"deleted": deleted}})
+    return _json_response({"success": True, "data": {"deleted": deleted, "recoverable": True}})
 
 
-def _cleanup_order_fulfillment_files(file_references) -> None:
+def _archive_tracking_before_delete(
+    db: CentralizedDB,
+    *,
+    tracking_id: int,
+    workspace_id: str | None,
+    user_id: int | None,
+    reason: str,
+) -> None:
+    """Snapshot an SO/CI tracking row (+ items, achievements, payment entries).
+
+    Without this, deleting one row of the Sales Orders / Commercial Invoices
+    table also destroyed its reconciliation items, achievements and distributor
+    payment entries permanently. Now re-uploading the same SO PDF restores them.
+    """
+    if user_id is None:
+        return
+    try:
+        from app.services import order_desk_archive as archive
+
+        tracking = db.get_order_lifecycle_tracking(
+            int(tracking_id), workspace_id=workspace_id, user_id=user_id
+        )
+        if not tracking:
+            return
+        archive.archive_tracking(
+            _db_path(),
+            user_id=user_id,
+            workspace_id=workspace_id,
+            tracking=tracking,
+            reason=reason,
+        )
+    except Exception:
+        pass
+
+
+def _cleanup_order_fulfillment_files(
+    file_references,
+    *,
+    user_id: int | None = None,
+    workspace_id: str | None = None,
+) -> None:
+    """Retire a deleted record's uploaded files into the recycle area.
+
+    These files are the source a restore needs, so a user delete moves them to
+    `<upload root>/_nexora_recycle/<user_id>/…` instead of unlinking them. The
+    retention sweep deletes them for real once the archive row expires. Files
+    outside the upload root are still left untouched (same guard as before).
+    """
     if not file_references:
         return
+    try:
+        from app.services import order_desk_archive as archive
+
+        archive.recycle_file_references(
+            file_references,
+            db_path=_db_path(),
+            user_id=user_id,
+            workspace_id=workspace_id,
+            reason="order_fulfillment_cleanup",
+        )
+        return
+    except Exception:
+        pass
     upload_root = (
         Path("app/instance/order_fulfillment_files")
         if Path("app/instance").exists()
@@ -6599,8 +6882,32 @@ def order_fulfillment_delete_file() -> Response:
     if not candidate.exists() or not candidate.is_file():
         return _json_response({"success": False, "error": {"message": "File not found"}}, 404)
 
-    candidate.unlink()
-    return _json_response({"success": True, "data": {"deleted": requested_path}})
+    # Recycled, not unlinked: the file is the source a restore would need.
+    recycled = None
+    try:
+        from app.services import order_desk_archive as archive
+
+        conn = sqlite3.connect(_db_path())
+        try:
+            recycled = archive.recycle_file(
+                str(candidate),
+                conn=conn,
+                user_id=_current_user_id(),
+                workspace_id=get_workspace_id(),
+                reason="order_fulfillment_delete_file",
+            )
+        finally:
+            conn.close()
+    except Exception:
+        recycled = None
+    if recycled is None and candidate.exists():
+        candidate.unlink()
+    return _json_response(
+        {
+            "success": True,
+            "data": {"deleted": requested_path, "recoverable": bool(recycled)},
+        }
+    )
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/confirm-ci-link", methods=["POST"])

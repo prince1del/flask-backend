@@ -43,6 +43,50 @@ filled_orders_bp = Blueprint("filled_orders", __name__, url_prefix="/api/v1/fill
 DEFAULT_KEY_FIELDS = ["brand", "size"]
 
 
+def _relink_filled_order_archives(
+    conn, user_id, filled_order_id, distributor_id, category, season
+):
+    if user_id is None or not filled_order_id:
+        return
+    try:
+        from app.services import order_desk_archive as archive
+
+        archive.relink_archives_to_new_filled_order(
+            conn,
+            user_id=int(user_id),
+            filled_order_id=int(filled_order_id),
+            distributor_id=distributor_id,
+            category=category,
+            season=season,
+        )
+    except Exception:
+        pass
+
+
+def _archive_filled_order_before_delete(conn, user_id, filled_order_id, reason):
+    """Snapshot an FO (header + lines) into the Order Desk recycle store.
+
+    Best-effort: never blocks the delete the user asked for. Re-uploading the
+    same workbook restores the FO's SO match through
+    `app/services/order_desk_archive.py` (archives are re-pointed at the new FO
+    row id, since a re-upload creates a new one).
+    """
+    if user_id is None or not filled_order_id:
+        return
+    try:
+        from app.services import order_desk_archive as archive
+
+        archive.archive_filled_order(
+            conn,
+            user_id=int(user_id),
+            filled_order_id=int(filled_order_id),
+            reason=reason,
+            workspace_id=get_workspace_id(),
+        )
+    except Exception:
+        pass
+
+
 def _sanitize_for_json(value):
     if isinstance(value, dict):
         return {k: _sanitize_for_json(v) for k, v in value.items()}
@@ -387,6 +431,9 @@ def upload_filled_order():
             }), 200
 
         if existing_now and confirm_replace:
+            _archive_filled_order_before_delete(
+                conn, user_id, existing_now["id"], "filled_order_replace"
+            )
             fodb.delete_filled_order(conn, user_id, existing_now["id"])
 
         try:
@@ -408,6 +455,11 @@ def upload_filled_order():
         for item in matched_items:
             fodb.insert_filled_order_item(conn, order_id, item)
 
+        # A re-uploaded FO is a new row id — re-point this user's archived
+        # match snapshots so the next SO upload can restore them.
+        _relink_filled_order_archives(
+            conn, user_id, order_id, distributor_id, category, season
+        )
         order = fodb.get_filled_order(conn, user_id, order_id)
         return jsonify({
             "status": "success",
@@ -715,6 +767,13 @@ def delete_selected_filled_orders():
     user_id = _get_current_user_id()
     conn = _get_db_connection()
     try:
+        for raw in raw_ids:
+            try:
+                _archive_filled_order_before_delete(
+                    conn, user_id, int(raw), "filled_order_delete_selected"
+                )
+            except (TypeError, ValueError):
+                continue
         deleted = fodb.delete_filled_orders_by_ids(conn, user_id, raw_ids)
     finally:
         conn.close()
@@ -727,6 +786,9 @@ def delete_filled_order_route(filled_order_id):
     user_id = _get_current_user_id()
     conn = _get_db_connection()
     try:
+        _archive_filled_order_before_delete(
+            conn, user_id, filled_order_id, "filled_order_delete"
+        )
         fodb.delete_filled_order(conn, user_id, filled_order_id)
     except ValueError as exc:
         conn.close()
@@ -756,6 +818,11 @@ def filled_order_item_route(filled_order_id, item_id):
         return jsonify({"status": "success", "item": item, "filled_order": order}), 200
 
     try:
+        # Snapshot the whole FO before removing a line: the re-upload of the
+        # same workbook is what brings the FO's match back.
+        _archive_filled_order_before_delete(
+            conn, user_id, filled_order_id, "filled_order_item_delete"
+        )
         fodb.delete_filled_order_item(conn, user_id, filled_order_id, item_id)
     except ValueError as exc:
         conn.close()
