@@ -233,6 +233,33 @@ def _extract_pdf_text(path: Path) -> str:
     return "\n".join(chunks)
 
 
+def _pdf_shape(path: Path) -> dict[str, Any]:
+    """Page count / image count / open error of one PDF, for diagnostics.
+
+    Lets a failed upload be debugged from the stored record alone — an
+    image-only (scanned or photographed) PDF looks completely different here
+    from an encrypted one or a layout the table parser does not know.
+    """
+    shape: dict[str, Any] = {"pages": 0, "images": 0, "open_error": None}
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            shape["pages"] = len(pdf.pages)
+            for page in pdf.pages:
+                shape["images"] += len(page.images or [])
+    except Exception as exc:  # encrypted / corrupt / not a PDF
+        shape["open_error"] = f"{type(exc).__name__}: {exc}"[:300]
+    return shape
+
+
+def _file_reject_reason(shape: dict[str, Any], text: str) -> str:
+    """Why one SO PDF produced no line items — the debuggable part."""
+    if shape.get("open_error"):
+        return "pdf_unreadable"
+    if len((text or "").strip()) < 20:
+        return "no_text_layer" if shape.get("images") else "empty_pdf"
+    return "layout_not_recognised"
+
+
 def _parse_so_header_rich(text: str, source_name: str) -> dict[str, Any]:
     base = _parse_sales_order_header_fields(text) or {}
     contract = None
@@ -432,6 +459,49 @@ def _unpack_archive(file_bytes: bytes, filename: str) -> list[tuple[str, bytes]]
     return pdfs
 
 
+def describe_pack_contents(file_bytes: bytes, filename: str) -> dict[str, Any]:
+    """What an upload actually contains — used when nothing could be parsed.
+
+    Never raises: this runs on the failure path, where the goal is to explain
+    the upload (archive type, inner names, extensions, sizes) well enough to
+    debug it later without asking the user for the file again.
+    """
+    short = Path(filename or "pack").name
+    info: dict[str, Any] = {
+        "filename": short,
+        "bytes": len(file_bytes or b""),
+        "container": "unknown",
+        "entries": [],
+        "pdf_entries": 0,
+    }
+    head = (file_bytes or b"")[:8]
+    if head[:4] == b"%PDF" or short.lower().endswith(".pdf"):
+        info["container"] = "pdf"
+        info["entries"] = [{"name": short, "ext": "pdf", "bytes": info["bytes"]}]
+        info["pdf_entries"] = 1
+        return info
+    if head[:4] == b"Rar!":
+        info["container"] = "rar"
+    elif head[:2] == b"PK":
+        info["container"] = "zip"
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+            for entry in zf.infolist():
+                if entry.is_dir():
+                    continue
+                name = Path(entry.filename.replace("\\", "/")).name
+                ext = (Path(name).suffix or "").lower().lstrip(".") or "none"
+                info["entries"].append(
+                    {"name": name, "ext": ext, "bytes": int(entry.file_size or 0)}
+                )
+                if ext == "pdf":
+                    info["pdf_entries"] += 1
+    except Exception:
+        pass
+    info["entries"] = info["entries"][:200]
+    return info
+
+
 def _load_pack_pdfs(file_bytes: bytes, filename: str) -> list[tuple[str, bytes]]:
     """Load PDFs from a ZIP/RAR archive or a single PDF upload."""
     name = (filename or "").lower()
@@ -480,6 +550,7 @@ def _iter_analyze_pdf_list(
 
     line_detail: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    file_reports: list[dict[str, Any]] = []
     so_map: dict[str, dict[str, Any]] = {}
 
     with tempfile.TemporaryDirectory(prefix="so_pack_") as tmp:
@@ -490,16 +561,35 @@ def _iter_analyze_pdf_list(
             safe_name = source_name.replace("/", "_").replace("\\", "_")
             pdf_path = tmp_path / safe_name
             pdf_path.write_bytes(raw)
+            shape = _pdf_shape(pdf_path)
             text = _extract_pdf_text(pdf_path)
+            report: dict[str, Any] = {
+                "source_pdf": pdf_label,
+                "bytes": len(raw or b""),
+                "pages": shape.get("pages"),
+                "images": shape.get("images"),
+                "text_chars": len((text or "").strip()),
+                "open_error": shape.get("open_error"),
+                "so_number": None,
+                "lines": 0,
+                "qty": 0.0,
+                "reason": None,
+            }
+            file_reports.append(report)
             yield ("progress", f"PDF {idx}/{total_pdfs}: header — {pdf_label}")
             header = _parse_so_header_rich(text, source_name)
+            report["so_number"] = header.get("so_number")
             yield ("progress", f"PDF {idx}/{total_pdfs}: line items — {pdf_label}")
             lines = _parse_so_table_rich(pdf_path)
             if not lines:
+                report["reason"] = _file_reject_reason(shape, text)
                 errors.append({"source_pdf": source_name, "error": "No line items parsed"})
                 yield ("progress", f"PDF {idx}/{total_pdfs}: no lines in {pdf_label}")
                 continue
             so_number = header.get("so_number") or Path(source_name).stem
+            report["so_number"] = so_number
+            report["lines"] = len(lines)
+            report["qty"] = round(sum(float(ln.get("qty") or 0) for ln in lines), 3)
             buyer = (header.get("buyer_name") or "").strip()
             so_hint = f"SO {so_number}" + (f" · {buyer}" if buyer else "")
             yield (
@@ -611,6 +701,20 @@ def _iter_analyze_pdf_list(
         "gst_amount": round(sum(r["gst_amount"] for r in so_summary), 2),
         "total_amount": round(sum(r["total_amount"] for r in so_summary), 2),
         "errors": errors,
+        # Per-file outcome, so a pack that reads badly on some other user's
+        # phone can be diagnosed from the stored record without their files.
+        "file_reports": file_reports,
+        "files_total": total_pdfs,
+        "files_parsed": sum(1 for r in file_reports if r.get("lines")),
+        "files_failed": [
+            {
+                "source_pdf": r.get("source_pdf"),
+                "so_number": r.get("so_number"),
+                "reason": r.get("reason"),
+            }
+            for r in file_reports
+            if not r.get("lines")
+        ],
     }
     yield (
         "progress",

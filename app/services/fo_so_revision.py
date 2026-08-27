@@ -261,6 +261,44 @@ def get_latest_run_for_fo(
     return matchdb.get_match_run(conn, int(row[0]), user_id=user_id)
 
 
+def run_reflects_so_lines(
+    existing_run: dict[str, Any] | None,
+    so_numbers: list[str],
+) -> bool:
+    """True when the saved match actually shows these SOs' qty / value.
+
+    An SO can sit in `so_line_detail` and still be invisible in the match: if
+    its lines never reached the Brand × Size compare, the run stores SO qty 0,
+    SO net 0 and every FO bucket as MISSING_ON_SO. Treating that as "already in
+    system — no change detected" leaves the user with a permanently empty order,
+    so the upload must be allowed to rebuild it.
+    """
+    if not existing_run:
+        return False
+    if _f(existing_run.get("so_qty")) <= 0.05 and _f(
+        existing_run.get("so_net_amount")
+    ) <= 0.5:
+        return False
+    want = {(matchdb.normalize_so_number(n) or "").upper() for n in so_numbers}
+    want.discard("")
+    if not want:
+        return True
+    seen: set[str] = set()
+    for row in existing_run.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        for n in row.get("so_numbers") or []:
+            key = (matchdb.normalize_so_number(n) or "").upper()
+            if key:
+                seen.add(key)
+        for cell in row.get("so_breakdown") or []:
+            if isinstance(cell, dict):
+                key = (matchdb.normalize_so_number(cell.get("so_number")) or "").upper()
+                if key:
+                    seen.add(key)
+    return want.issubset(seen)
+
+
 def analyze_incoming_against_existing(
     *,
     existing_run: dict[str, Any] | None,
@@ -297,6 +335,14 @@ def analyze_incoming_against_existing(
             compares.append(cmp)
             if not cmp["same_content"]:
                 all_same = False
+        if all_same and not run_reflects_so_lines(existing_run, new_numbers):
+            # Same content, but the saved match does not show it — rebuild it
+            # from these lines instead of reporting "no change detected".
+            return {
+                "action": "rebuild",
+                "compares": compares,
+                "so_numbers": new_numbers,
+            }
         return {
             "action": "already_in_system" if all_same else "replace_confirm",
             "compares": compares,

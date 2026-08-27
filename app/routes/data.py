@@ -3646,17 +3646,92 @@ def _so_pack_collect_uploads():
     return "pdfs", label, pdfs
 
 
+def _so_pack_diagnose_upload(
+    data: dict,
+    *,
+    source_filename: str,
+    file_bytes: bytes | None,
+) -> dict:
+    """Assess a freshly parsed pack, persist a record, keep the file for support.
+
+    Runs only for the authenticated user of the current request and only writes
+    when the pack read badly — a healthy pack leaves no trace. Never raises: a
+    diagnostics failure must not break an otherwise good upload.
+    """
+    from app.services import so_pack_diagnostics as diag
+    from app.services.so_pack_consolidate import describe_pack_contents
+
+    meta = (data or {}).get("meta") or {}
+    usable = len(_so_pack_usable_lines(data or {}))
+    contents = (
+        describe_pack_contents(file_bytes, source_filename) if file_bytes else None
+    )
+    assessment = diag.assess(meta, usable_lines=usable, contents=contents)
+    assessment["message"] = diag.message_for(assessment)
+    if assessment["outcome"] == diag.OK:
+        return assessment
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    workspace_id = get_workspace_id()
+    if user_id is None:
+        return assessment
+    conn = sqlite3.connect(_db_path())
+    try:
+        kept = None
+        if file_bytes:
+            from app.services import order_desk_archive as archive
+
+            archive.ensure_schema(conn)
+            kept = archive.keep_upload_for_support(
+                conn,
+                user_id=int(user_id),
+                workspace_id=workspace_id,
+                filename=source_filename,
+                file_bytes=file_bytes,
+                reason=f"so_pack_{assessment['outcome']}",
+            )
+        assessment["diagnostic_id"] = diag.record(
+            conn,
+            user_id=int(user_id),
+            workspace_id=workspace_id,
+            source_filename=source_filename,
+            source_bytes=len(file_bytes or b""),
+            pack_meta=meta,
+            assessment=assessment,
+            contents=contents,
+            kept_file_path=kept,
+        )
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return assessment
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/so-pack/analyze", methods=["POST"])
 @require_jwt_auth
 def so_pack_analyze() -> Response:
     """Unpack ZIP/RAR or accept PDF(s) → consolidated product qty/amount JSON."""
+    from app.services import so_pack_diagnostics as diag
     from app.services.so_pack_consolidate import analyze_so_pack, analyze_so_pack_pdfs
 
+    raw_bytes: bytes | None = None
+    label = ""
     try:
         mode, label, payload = _so_pack_collect_uploads()
         if mode == "pdfs":
+            raw_bytes = None
             data = analyze_so_pack_pdfs(payload, label)
         else:
+            raw_bytes = payload
             data = analyze_so_pack(payload, label)
     except ValueError as exc:
         return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
@@ -3665,7 +3740,78 @@ def so_pack_analyze() -> Response:
             {"success": False, "error": {"message": f"SO pack analyze failed: {exc}"}},
             500,
         )
+
+    assessment = _so_pack_diagnose_upload(
+        data, source_filename=label, file_bytes=raw_bytes
+    )
+    if assessment["outcome"] != diag.OK:
+        # Attach the honest verdict to the payload the app already reads, so a
+        # pack that read badly can never look like a clean analyze.
+        data.setdefault("meta", {})["upload_diagnosis"] = assessment
+    if assessment["outcome"] in (diag.NO_FILES, diag.SCANNED, diag.UNREADABLE):
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "code": assessment["outcome"],
+                    "message": assessment["message"],
+                    "diagnosis": assessment,
+                },
+            },
+            400,
+        )
     return _json_response({"success": True, "data": data})
+
+
+@data_blueprint.route(
+    "/api/v1/order-fulfillment/so-pack/upload-diagnostics", methods=["GET"]
+)
+@require_jwt_auth
+def so_pack_upload_diagnostics() -> Response:
+    """Records of SO packs that read badly — own rows; owner sees the workspace.
+
+    Read-only API for support (no new screen): the workspace owner fields these
+    complaints, so the same owner-global rule as the Order Match auto-heal
+    applies, taken from the signed JWT and never from request input.
+    """
+    from app.services import so_pack_diagnostics as diag
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}}, 401
+        )
+    try:
+        from app.routes.auth import is_request_workspace_owner
+
+        is_owner = bool(is_request_workspace_owner())
+    except Exception:
+        is_owner = False
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        rows = diag.list_recent(
+            conn,
+            user_id=user_id,
+            workspace_wide=is_owner,
+            limit=int(request.args.get("limit") or 50),
+        )
+    finally:
+        conn.close()
+    return _json_response(
+        {
+            "success": True,
+            "data": {
+                "records": rows,
+                "scope": "workspace" if is_owner else "mine",
+            },
+        }
+    )
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/so-pack/analyze-stream", methods=["POST"])
@@ -3694,6 +3840,31 @@ def so_pack_analyze_stream() -> Response:
                 if kind == "progress":
                     yield json.dumps({"type": "progress", "message": str(item)}) + "\n"
                 elif kind == "done":
+                    from app.services import so_pack_diagnostics as diag
+
+                    assessment = _so_pack_diagnose_upload(
+                        item if isinstance(item, dict) else {},
+                        source_filename=label,
+                        file_bytes=payload if mode != "pdfs" else None,
+                    )
+                    if assessment["outcome"] != diag.OK and isinstance(item, dict):
+                        item.setdefault("meta", {})["upload_diagnosis"] = assessment
+                    if assessment["outcome"] in (
+                        diag.NO_FILES,
+                        diag.SCANNED,
+                        diag.UNREADABLE,
+                    ):
+                        # Nothing readable: an "error" event, never a quiet done.
+                        yield json.dumps(
+                            {
+                                "type": "error",
+                                "code": assessment["outcome"],
+                                "message": assessment["message"],
+                                "diagnosis": assessment,
+                            },
+                            default=str,
+                        ) + "\n"
+                        return
                     yield json.dumps({"type": "done", "data": item}, default=str) + "\n"
         except ValueError as exc:
             yield json.dumps({"type": "error", "message": str(exc)}) + "\n"
@@ -3978,20 +4149,31 @@ def fo_so_match_lab() -> Response:
 
 
 def _so_pack_usable_lines(so_pack: dict) -> list[dict]:
-    """SO line_detail rows the matcher can actually use (qty / value / product)."""
+    """SO line_detail rows the matcher can actually use.
+
+    A usable row needs product wording *and* a quantity or a value — a pack of
+    rows with neither cannot produce a match and must be reported as
+    unreadable instead of saved as an empty SO side.
+    """
     out: list[dict] = []
     for row in so_pack.get("line_detail") or []:
         if not isinstance(row, dict):
             continue
-        has_number = bool(str(row.get("so_number") or "").strip())
-        has_product = bool(
-            str(row.get("product_detail") or row.get("product_name") or "").strip()
+        has_text = bool(
+            str(
+                row.get("product_detail")
+                or row.get("product_name")
+                or row.get("material_code")
+                or ""
+            ).strip()
         )
-        has_amount = any(
-            row.get(k) not in (None, "", 0)
-            for k in ("qty", "quantity", "net_amount", "total_amount")
-        )
-        if has_number or has_product or has_amount:
+        amount = 0.0
+        for key in ("qty", "quantity", "net_amount", "total_amount"):
+            try:
+                amount += abs(float(row.get(key) or 0))
+            except (TypeError, ValueError):
+                continue
+        if has_text and amount > 0:
             out.append(row)
     return out
 
@@ -4035,16 +4217,31 @@ def so_pack_match_filled_order() -> Response:
     # FO bucket MISSING_ON_SO) while still claiming SO numbers. Refuse it here
     # instead of persisting that state.
     if not isinstance(so_pack, dict) or not _so_pack_usable_lines(so_pack):
+        # Explain it and keep the evidence — the user must never be left with an
+        # empty match and no reason for it.
+        from app.services import so_pack_diagnostics as diag
+
+        assessment = _so_pack_diagnose_upload(
+            so_pack if isinstance(so_pack, dict) else {},
+            source_filename=str(
+                ((so_pack or {}).get("meta") or {}).get("source_filename")
+                or "so_pack"
+            ),
+            file_bytes=None,
+        )
         return _json_response(
             {
                 "success": False,
                 "error": {
-                    "code": "so_pack_missing_line_detail",
-                    "message": (
-                        "This SO pack has no readable Sales Order lines "
-                        "(line_detail is empty) — analyze the SO files again "
-                        "and retry."
+                    "code": assessment.get("outcome")
+                    if assessment.get("outcome") != diag.OK
+                    else "so_pack_missing_line_detail",
+                    "message": assessment.get("message")
+                    or (
+                        "This SO pack has no readable Sales Order lines — "
+                        "analyze the SO files again and retry."
                     ),
+                    "diagnosis": assessment,
                 },
             },
             400,
@@ -4080,12 +4277,13 @@ def so_pack_match_filled_order() -> Response:
                 {"success": False, "error": {"message": "Filled order not found"}},
                 404,
             )
-        _autoheal_order_match(
+        heal_summary = _autoheal_order_match(
             conn,
             user_id=user_id,
             filled_order_id=filled_order_id,
             reason="so_pack_match",
         )
+        healed_this_request = bool((heal_summary or {}).get("changed"))
         items = fodb.get_filled_order_items(conn, filled_order_id)
         # Bring back anything this user previously deleted from this FO's match
         # (archived SO lines) BEFORE matching, so the incoming pack merges on
@@ -4162,6 +4360,30 @@ def so_pack_match_filled_order() -> Response:
             so_pack=so_pack,
             conflicts=conflicts,
         )
+
+        # "Already in system" is only an honest answer when nothing had to be
+        # repaired. If the silent heal just rebuilt this FO's match (its SO qty /
+        # value were missing), report that success with the repaired run instead.
+        if decision["action"] == "already_in_system" and healed_this_request:
+            repaired = sorev.get_latest_run_for_fo(
+                conn, user_id=user_id, filled_order_id=filled_order_id
+            )
+            if repaired and float(repaired.get("so_qty") or 0) > 0:
+                return _json_response(
+                    {
+                        "success": True,
+                        "data": {
+                            "run": {
+                                k: v for k, v in repaired.items() if k != "rows"
+                            },
+                            "run_id": repaired.get("id"),
+                            "revision_note": (
+                                "Match rebuilt from the Sales Orders already saved "
+                                "for this Filled Order"
+                            ),
+                        },
+                    }
+                )
 
         if confirm_action and decision["action"] == "already_in_system":
             return _json_response(
@@ -4249,6 +4471,22 @@ def so_pack_match_filled_order() -> Response:
                 )
             else:
                 replaced_note = "Additional order SO added"
+
+        if (
+            not effective_action
+            and existing
+            and decision["action"] == "rebuild"
+            and new_lines
+        ):
+            # Same SO content as stored, but the saved match does not show it
+            # (SO qty / value 0, everything MISSING_ON_SO). Rebuild it from this
+            # upload instead of answering "no change detected". Replacing exactly
+            # these SO numbers keeps it idempotent — nothing doubles.
+            effective_action = "replace"
+            replaced_note = (
+                "Match rebuilt from SO "
+                + ", ".join(sorted(str(n) for n in (decision.get("so_numbers") or [])))
+            )
 
         if existing and effective_action in ("replace", "split", "additional"):
             existing_lines = list(existing.get("so_line_detail") or [])
@@ -4362,6 +4600,29 @@ def so_pack_match_filled_order() -> Response:
             result["confirm_action"] = effective_action
         if restored_note and restored_note.get("restored_so_numbers"):
             result["restored_so_numbers"] = restored_note["restored_so_numbers"]
+        # A pack where only some Sales Orders could be read must say so now,
+        # instead of letting the user discover it later as MISSING_ON_SO lines.
+        try:
+            from app.services import so_pack_diagnostics as diag
+
+            partial = diag.assess(
+                so_pack.get("meta") or {},
+                usable_lines=len(_so_pack_usable_lines(so_pack)),
+            )
+            if partial["outcome"] == diag.PARTIAL:
+                partial["message"] = diag.message_for(partial)
+                result["so_pack_diagnosis"] = partial
+                diag.record(
+                    conn,
+                    user_id=user_id,
+                    workspace_id=get_workspace_id(),
+                    source_filename=so_source_filename,
+                    source_bytes=0,
+                    pack_meta=so_pack.get("meta") or {},
+                    assessment=partial,
+                )
+        except Exception:
+            pass
         return _json_response({"success": True, "data": result})
     except Exception as exc:
         return _json_response(
@@ -4378,27 +4639,28 @@ def _autoheal_order_match(
     user_id: int | None,
     filled_order_id: int | None = None,
     reason: str = "",
-) -> None:
+) -> dict | None:
     """Silently self-heal damaged FO ↔ SO match data on the normal Order Desk paths.
 
-    Cheap probe (duplicate runs for one FO / orphan SO index rows) runs first, so
-    a healthy workspace pays two aggregate queries and writes nothing. Scope comes
-    from the signed JWT: own rows for a normal user, workspace-wide for the
-    workspace owner. Never raises and never surfaces anything to the user.
+    The cheap probe runs first, so a healthy workspace pays a few aggregate
+    queries and writes nothing. Scope comes from the signed JWT: own rows for a
+    normal user, workspace-wide for the workspace owner. Never raises. Returns
+    the repair summary when something was healed, so the upload path can report
+    a truthful result instead of "no change detected".
     """
     if user_id is None:
-        return
+        return None
     try:
         from app.services import fo_so_match_repair as repairsvc
 
-        repairsvc.autoheal_for_request(
+        return repairsvc.autoheal_for_request(
             conn,
             user_id=int(user_id),
             filled_order_id=filled_order_id,
             reason=reason,
         )
     except Exception:
-        pass
+        return None
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/list", methods=["GET"])

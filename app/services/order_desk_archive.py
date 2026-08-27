@@ -948,6 +948,54 @@ def recycle_file(
     return str(target)
 
 
+def keep_upload_for_support(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    workspace_id: str | None,
+    filename: str,
+    file_bytes: bytes,
+    reason: str = "",
+    max_bytes: int = 25 * 1024 * 1024,
+) -> str | None:
+    """Park an uploaded pack in the recycle area so support can re-read it.
+
+    Uploads that fail to parse used to be thrown away with the request, which
+    left nothing to debug unless the user still had the file and was willing to
+    send it. Storing it here reuses the existing retention: `purge_expired()`
+    deletes it with its archive row after `RETENTION_DAYS`.
+    """
+    if not file_bytes or not filename:
+        return None
+    if len(file_bytes) > int(max_bytes):
+        return None
+    safe = Path(str(filename).replace("\\", "/")).name or "so_pack"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    relative = Path("so_pack_support") / f"{stamp}_{safe}"
+    target = recycle_root() / str(int(user_id)) / relative
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(file_bytes)
+    except OSError:
+        return None
+    _insert(
+        conn,
+        user_id=int(user_id),
+        workspace_id=workspace_id,
+        kind=KIND_FILE,
+        entity_key=str(relative).replace("\\", "/"),
+        restore_scope=SCOPE_ENTITY,
+        source_filename=safe,
+        payload={
+            "recycled_path": str(target),
+            "relative_path": str(relative).replace("\\", "/"),
+            "bytes": len(file_bytes),
+        },
+        reason=reason or "so_pack_upload_kept_for_support",
+    )
+    return str(target)
+
+
 def restore_recycled_file(file_reference: Any) -> str | None:
     """Move a recycled file back to its original location, if it is still there."""
     if not file_reference:
