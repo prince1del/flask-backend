@@ -37,6 +37,13 @@ def client(app):
     return app.test_client()
 
 
+def list_response_data(client):
+    """Users currently visible through the admin list endpoint."""
+    response = client.get("/api/v1/admin/users")
+    assert response.status_code == 200
+    return response.get_json()["data"]
+
+
 def create_test_user(client, username="testuser", email="test@example.com", password="password123"):
     """Helper to create a test user"""
     response = client.post(
@@ -45,7 +52,7 @@ def create_test_user(client, username="testuser", email="test@example.com", pass
             "username": username,
             "email": email,
             "password": password,
-            "role": "admin"
+            "role": "sales_executive"
         }
     )
     return response.get_json().get("data", {})
@@ -61,7 +68,7 @@ def test_create_user_success(client):
             "username": "newuser",
             "email": "new@example.com",
             "password": "password123",
-            "role": "admin"
+            "role": "sales_executive"
         }
     )
     
@@ -70,7 +77,7 @@ def test_create_user_success(client):
     assert data["success"] is True
     assert data["data"]["username"] == "newuser"
     assert data["data"]["email"] == "new@example.com"
-    assert data["data"]["role"] == "admin"
+    assert data["data"]["role"] == "sales_executive"
     assert data["data"]["status"] == "active"
 
 
@@ -112,7 +119,7 @@ def test_create_user_duplicate_username(client):
             "username": "duplicate",
             "email": "email1@example.com",
             "password": "password123",
-            "role": "admin"
+            "role": "sales_executive"
         }
     )
     
@@ -123,7 +130,7 @@ def test_create_user_duplicate_username(client):
             "username": "duplicate",
             "email": "email2@example.com",
             "password": "password123",
-            "role": "admin"
+            "role": "sales_executive"
         }
     )
     
@@ -133,14 +140,14 @@ def test_create_user_duplicate_username(client):
 
 
 def test_list_users_empty(client):
-    """Test GET /api/v1/admin/users - List users (empty database)"""
+    """Test GET /api/v1/admin/users - only the boot-seeded admin exists."""
     response = client.get("/api/v1/admin/users")
     
     assert response.status_code == 200
     data = response.get_json()
     assert data["success"] is True
-    assert data["data"] == []
-    assert data["pagination"]["total"] == 0
+    assert len(data["data"]) == 1
+    assert data["pagination"]["total"] == 1
 
 
 def test_list_users_with_pagination(client):
@@ -156,7 +163,8 @@ def test_list_users_with_pagination(client):
     data = response.get_json()
     assert data["success"] is True
     assert len(data["data"]) == 2
-    assert data["pagination"]["total"] == 5
+    # 5 created here + the boot-seeded admin.
+    assert data["pagination"]["total"] == 6
     assert data["pagination"]["pages"] == 3
 
 
@@ -273,9 +281,9 @@ def test_delete_user_success(client):
     data = response.get_json()
     assert data["success"] is True
     
-    # Verify user is deleted
-    list_response = client.get("/api/v1/admin/users")
-    assert len(list_response.get_json()["data"]) == 0
+    # Verify user is deleted (the boot-seeded admin remains)
+    remaining = [u["username"] for u in list_response_data(client)]
+    assert "to_delete" not in remaining
 
 
 def test_delete_user_not_found(client):

@@ -8,16 +8,23 @@ from app.web_app import create_app
 
 def setup_auth_app(tmp_path, monkeypatch):
     db_path = tmp_path / "workspace_isolation.sqlite3"
-    monkeypatch.setenv("DATABASE_PATH", str(db_path))
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-    monkeypatch.setenv("SECRET_KEY", "workspace-isolation-test-key")
+
+    def _apply_env():
+        monkeypatch.setenv("DATABASE_PATH", str(db_path))
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+        monkeypatch.setenv("AUTH_ENABLED", "true")
+        monkeypatch.setenv("SECRET_KEY", "workspace-isolation-test-key")
+
+    _apply_env()
 
     import app.init_db as init_db_module
     import app.web_app as web_app_module
 
     importlib.reload(init_db_module)
+    # Reloading web_app re-runs its top-level load_env_file(), which reads the
+    # real .env and overwrites these overrides — re-apply them afterwards.
     importlib.reload(web_app_module)
+    _apply_env()
 
     app = web_app_module.create_app()
     app.config["TESTING"] = True
@@ -27,6 +34,17 @@ def setup_auth_app(tmp_path, monkeypatch):
     db.create_user("workspace_user_b", "pass123", role="sales_executive", workspace_id="ws-2")
 
     return app.test_client()
+
+
+def _user_id(db: CentralizedDB, username: str) -> int:
+    import sqlite3
+
+    with sqlite3.connect(db.db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+    assert row is not None, f"user {username} not found"
+    return int(row[0])
 
 
 def login(client, username: str, password: str) -> str:
@@ -137,17 +155,23 @@ def test_master_tables_workspace_isolation_and_analytics_dashboard(tmp_path, mon
 
     db = CentralizedDB(str(tmp_path / "workspace_isolation.sqlite3"))
 
+    # Party rows are owned by a user_id, not just a workspace.
+    user_a_id = _user_id(db, "workspace_user_a")
+    user_b_id = _user_id(db, "workspace_user_b")
+
     dist_a_id = db.add_master_distributor(
         name="Master WS1 Distributor",
         firm_name="Master WS1",
         gst_no="GST-WS1-MASTER",
         workspace_id="ws-1",
+        user_id=user_a_id,
     )
     dist_b_id = db.add_master_distributor(
         name="Master WS2 Distributor",
         firm_name="Master WS2",
         gst_no="GST-WS2-MASTER",
         workspace_id="ws-2",
+        user_id=user_b_id,
     )
 
     retailer_a_id = db.add_master_retailer(
@@ -156,6 +180,7 @@ def test_master_tables_workspace_isolation_and_analytics_dashboard(tmp_path, mon
         location="Mumbai",
         gst_no="GST-RT-WS1-MASTER",
         workspace_id="ws-1",
+        user_id=user_a_id,
     )
     retailer_b_id = db.add_master_retailer(
         name="Master WS2 Retailer",
@@ -163,17 +188,18 @@ def test_master_tables_workspace_isolation_and_analytics_dashboard(tmp_path, mon
         location="Pune",
         gst_no="GST-RT-WS2-MASTER",
         workspace_id="ws-2",
+        user_id=user_b_id,
     )
 
-    distributors_ws1 = db.list_master_distributors(workspace_id="ws-1")
-    distributors_ws2 = db.list_master_distributors(workspace_id="ws-2")
+    distributors_ws1 = db.list_master_distributors(workspace_id="ws-1", user_id=user_a_id)
+    distributors_ws2 = db.list_master_distributors(workspace_id="ws-2", user_id=user_b_id)
     assert len(distributors_ws1) == 1
     assert distributors_ws1[0]["id"] == dist_a_id
     assert len(distributors_ws2) == 1
     assert distributors_ws2[0]["id"] == dist_b_id
 
-    retailers_ws1 = db.list_master_retailers(workspace_id="ws-1")
-    retailers_ws2 = db.list_master_retailers(workspace_id="ws-2")
+    retailers_ws1 = db.list_master_retailers(workspace_id="ws-1", user_id=user_a_id)
+    retailers_ws2 = db.list_master_retailers(workspace_id="ws-2", user_id=user_b_id)
     assert len(retailers_ws1) == 1
     assert retailers_ws1[0]["id"] == retailer_a_id
     assert len(retailers_ws2) == 1

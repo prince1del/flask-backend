@@ -64,7 +64,10 @@ class ArticleMasterService:
         }
 
     def save_article(
-        self, payload: dict[str, Any], conn: sqlite3.Connection | None = None
+        self,
+        payload: dict[str, Any],
+        conn: sqlite3.Connection | None = None,
+        workspace_id: str = "default",
     ) -> int:
         connection = conn or sqlite3.connect(self.db_path)
         should_close = conn is None
@@ -72,7 +75,9 @@ class ArticleMasterService:
             existing_categories = [
                 row[0]
                 for row in connection.execute(
-                    "SELECT category_name FROM article_master WHERE status != 'inactive'"
+                    "SELECT category_name FROM article_master_legacy "
+                    "WHERE status != 'inactive' AND workspace_id = ?",
+                    (workspace_id,),
                 ).fetchall()
             ]
             sanitized = self.sanitize_article_payload(payload, existing_categories)
@@ -82,9 +87,10 @@ class ArticleMasterService:
             created_at = datetime.now(timezone.utc).isoformat()
             cursor = connection.execute(
                 """
-                INSERT INTO article_master (
-                    article_id, category_name, design_name, color_way, base_rate, gst_percentage, pcs_per_bale, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO article_master_legacy (
+                    article_id, category_name, design_name, color_way, base_rate,
+                    gst_percentage, pcs_per_bale, status, created_at, workspace_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     article_id,
@@ -96,6 +102,7 @@ class ArticleMasterService:
                     sanitized["pcs_per_bale"],
                     sanitized["status"],
                     created_at,
+                    workspace_id,
                 ),
             )
             connection.commit()
@@ -104,11 +111,20 @@ class ArticleMasterService:
             if should_close:
                 connection.close()
 
-    def list_articles_by_category(self) -> list[dict[str, Any]]:
+    def list_articles_by_category(
+        self, workspace_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT article_id, category_name, design_name, color_way, base_rate, "
+            "gst_percentage, pcs_per_bale, status FROM article_master_legacy"
+        )
+        params: tuple[Any, ...] = ()
+        if workspace_id:
+            sql += " WHERE workspace_id = ?"
+            params = (workspace_id,)
+        sql += " ORDER BY category_name, design_name, color_way"
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT article_id, category_name, design_name, color_way, base_rate, gst_percentage, pcs_per_bale, status FROM article_master ORDER BY category_name, design_name, color_way"
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
 
         return [
             {

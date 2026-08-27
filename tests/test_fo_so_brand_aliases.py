@@ -80,6 +80,8 @@ def test_value_tol_plus_minus_10_is_match():
     assert result["counts"]["MATCH"] == 1
     assert result["counts"]["VALUE_MISMATCH"] == 0
 
-    so[("blumen", "db bs")]["value"] = 100010.01
+    # Large lines allow ±0.5% (FO bale→pcs ExMill rounding); beyond that the
+    # line is a real value mismatch.
+    so[("blumen", "db bs")]["value"] = 100000.0 * 1.006
     result2 = compare_fo_so_buckets(fo, so)
     assert result2["counts"]["VALUE_MISMATCH"] == 1

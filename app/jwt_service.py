@@ -17,7 +17,13 @@ class JWTService:
         self.refresh_token_expiry = 86400 * 7  # 7 days
 
     def create_tokens(
-        self, user_id, username, role, workspace_id, is_workspace_owner: bool = False
+        self,
+        user_id,
+        username,
+        role,
+        workspace_id,
+        is_workspace_owner: bool = False,
+        session_id: str | None = None,
     ):
         """Create access token + refresh token"""
         now = datetime.now(timezone.utc)
@@ -29,6 +35,7 @@ class JWTService:
             "role": role,
             "workspace_id": workspace_id,
             "is_workspace_owner": bool(is_workspace_owner),
+            "sid": session_id,
             "iat": now,
             "exp": now + timedelta(seconds=self.access_token_expiry),
             "type": "access",
@@ -41,6 +48,7 @@ class JWTService:
             "role": role,
             "workspace_id": workspace_id,
             "is_workspace_owner": bool(is_workspace_owner),
+            "sid": session_id,
             "iat": now,
             "exp": now + timedelta(seconds=self.refresh_token_expiry),
             "type": "refresh",
@@ -137,6 +145,53 @@ class JWTService:
                         request.user = payload
                 except Exception:
                     pass
+            if not session_is_current(payload):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": {
+                                "code": "SESSION_REVOKED",
+                                "message": (
+                                    "Signed out — this account was opened on "
+                                    "another device."
+                                ),
+                            },
+                        }
+                    ),
+                    401,
+                )
             return f(*args, **kwargs)
 
         return decorated_function
+
+
+def session_is_current(payload: dict) -> bool:
+    """One live device per account unless the owner granted an exception.
+
+    Old tokens minted before this feature carry no `sid`; they stay valid until
+    the user logs in again (which then pins a session id).
+    """
+    if not isinstance(payload, dict):
+        return True
+    if payload.get("is_workspace_owner"):
+        return True
+    token_sid = payload.get("sid")
+    if not token_sid:
+        return True
+    try:
+        from centralized_db_system.db import CentralizedDB
+        from flask import current_app
+
+        db_path = current_app.config.get("DATABASE_PATH")
+        db = CentralizedDB(str(db_path)) if db_path else CentralizedDB()
+        user_id = payload.get("user_id")
+        if db.is_multi_device_allowed(user_id):
+            return True
+        active = db.get_active_session(user_id)
+    except Exception:
+        # Never lock users out because of a DB hiccup.
+        return True
+    if not active:
+        return True
+    return str(active) == str(token_sid)

@@ -1,4 +1,5 @@
 import sqlite3
+import uuid
 from functools import wraps
 
 from flask import (
@@ -15,7 +16,7 @@ from flask import (
 )
 
 from centralized_db_system.db import CentralizedDB
-from app.jwt_service import JWTService
+from app.jwt_service import JWTService, session_is_current
 from app.utils import auth_enabled
 
 auth_blueprint = Blueprint("auth", __name__)
@@ -141,6 +142,10 @@ def require_role(*allowed_roles):
     def decorator(fn):
         @wraps(fn)
         def wrapped(*args, **kwargs):
+            if not auth_enabled():
+                # No identity exists at all in this mode, so there is no role
+                # to check — matching require_jwt_auth, which also steps aside.
+                return fn(*args, **kwargs)
             user = getattr(request, "user", None)
             if not isinstance(user, dict):
                 return (
@@ -328,12 +333,24 @@ def api_login() -> tuple[Response, int]:
 
     service = get_jwt_service()
     is_owner = bool(user_row.get("is_workspace_owner"))
+    user_id = user_row.get("id", 1)
+    # One live device per account: this login takes over and the previous
+    # device's tokens stop working on their next call. Owner is exempt.
+    session_id = uuid.uuid4().hex
+    device_label = None
+    if isinstance(data, dict):
+        device_label = (data.get("device_label") or data.get("device_id") or None)
+    try:
+        db.set_active_session(user_id, session_id, device_label)
+    except Exception:
+        session_id = None
     access_token, refresh_token = service.create_tokens(
-        user_id=user_row.get("id", 1),
+        user_id=user_id,
         username=user_row.get("username", username),
         role=user_row.get("role", "unassigned"),
         workspace_id=user_row.get("workspace_id", "default"),
         is_workspace_owner=is_owner,
+        session_id=session_id,
     )
     ui_theme = db.get_user_ui_theme(user_row.get("id"))
     return (
@@ -797,15 +814,32 @@ def api_refresh() -> tuple[Response, int]:
             401,
         )
 
+    is_owner = bool(
+        payload.get("is_workspace_owner")
+        or _get_auth_db().is_workspace_owner_user(payload.get("user_id"))
+    )
+    payload["is_workspace_owner"] = is_owner
+    if not session_is_current(payload):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "SESSION_REVOKED",
+                        "message": "Signed out — this account was opened on another device.",
+                    },
+                }
+            ),
+            401,
+        )
+
     access_token, _ = get_jwt_service().create_tokens(
         user_id=payload.get("user_id", 1),
         username=payload.get("username", "admin"),
         role=payload.get("role", "unassigned"),
         workspace_id=payload.get("workspace_id", "default"),
-        is_workspace_owner=bool(
-            payload.get("is_workspace_owner")
-            or _get_auth_db().is_workspace_owner_user(payload.get("user_id"))
-        ),
+        is_workspace_owner=is_owner,
+        session_id=payload.get("sid"),
     )
     return (
         jsonify(
@@ -824,6 +858,23 @@ def api_refresh() -> tuple[Response, int]:
 
 @auth_blueprint.route("/api/v1/auth/logout", methods=["POST"], endpoint="api_logout")
 def api_logout() -> tuple[Response, int]:
+    # Best-effort release of the device slot so the next login is instant.
+    token = None
+    header = request.headers.get("Authorization") or ""
+    if header.startswith("Bearer "):
+        token = header.split(" ", 1)[1].strip()
+    if not token:
+        data = request.get_json(silent=True) or {}
+        token = data.get("refresh_token") or data.get("access_token")
+    if token:
+        payload = get_jwt_service().verify_token(token)
+        if isinstance(payload, dict) and "error" not in payload and payload.get("sid"):
+            try:
+                _get_auth_db().clear_active_session(
+                    int(payload.get("user_id")), str(payload.get("sid"))
+                )
+            except Exception:
+                pass
     return (
         jsonify({"success": True, "data": {"message": "Logged out successfully"}}),
         200,

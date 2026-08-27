@@ -5,8 +5,18 @@ from app.web_app import create_app
 from centralized_db_system.db import CentralizedDB
 
 
-def test_ai_assistant_query_parses_visit_and_alert_questions(tmp_path: Path) -> None:
-    db = CentralizedDB(str(tmp_path / "assistant.sqlite3"))
+def _use_temp_db(monkeypatch, db_path: Path) -> None:
+    """The assistant reads through the app, so both must share one database."""
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+
+
+
+def test_ai_assistant_query_parses_visit_and_alert_questions(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "assistant.sqlite3"
+    _use_temp_db(monkeypatch, db_path)
+    db = CentralizedDB(str(db_path))
     distributor_id = db.add_master_distributor(
         name="Prince Enterprises",
         gst_no="27AAAAA0000A1Z5",
@@ -54,8 +64,10 @@ def test_ai_assistant_query_parses_visit_and_alert_questions(tmp_path: Path) -> 
     assert alert_payload["intent"] == "alerts"
 
 
-def test_ai_assistant_query_resolves_pjp_and_purchase_trends(tmp_path: Path) -> None:
-    db = CentralizedDB(str(tmp_path / "assistant_pjp.sqlite3"))
+def test_ai_assistant_query_resolves_pjp_and_purchase_trends(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "assistant_pjp.sqlite3"
+    _use_temp_db(monkeypatch, db_path)
+    db = CentralizedDB(str(db_path))
     db.create_weekly_pjp_plan("2026-06-26", "Monday", [1], [2])
     db.add_master_distributor(
         name="Alpha Traders", gst_no="27BBBBB0000A1Z5", zone="West", region="Pune"
@@ -89,9 +101,11 @@ def test_ai_assistant_query_resolves_pjp_and_purchase_trends(tmp_path: Path) -> 
 
 
 def test_ai_assistant_query_handles_google_assistant_deep_link_payload(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch
 ) -> None:
-    db = CentralizedDB(str(tmp_path / "assistant_deeplink.sqlite3"))
+    db_path = tmp_path / "assistant_deeplink.sqlite3"
+    _use_temp_db(monkeypatch, db_path)
+    db = CentralizedDB(str(db_path))
     db.process_data_entry(
         "Order Sheet",
         {
@@ -114,4 +128,6 @@ def test_ai_assistant_query_handles_google_assistant_deep_link_payload(
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["intent"] == "alerts"
-    assert payload["answer"].startswith("Ask Nexora:")
+    # Answers are plain sentences now; the deep link only has to reach the
+    # same intent resolution as a POSTed query.
+    assert payload["answer"]

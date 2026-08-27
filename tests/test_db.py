@@ -121,6 +121,7 @@ def test_master_distributor_stores_distributor_code_and_exposes_it(tmp_path):
         firm_name="Alpha Group",
         firm_nick_name="AG",
         distributor_code="DC-001",
+        user_id=1,
     )
 
     stored = db.get_master_distributor(distributor_id)
@@ -128,7 +129,8 @@ def test_master_distributor_stores_distributor_code_and_exposes_it(tmp_path):
     assert stored["distributor_code"] == "DC-001"
     assert stored["firm_name"] == "Alpha Group"
 
-    listed = db.list_master_distributors(limit=10)
+    # Party data is per-user: listing always needs the owning user_id.
+    listed = db.list_master_distributors(limit=10, user_id=1)
     assert any(item["distributor_code"] == "DC-001" for item in listed)
 
 
@@ -207,30 +209,34 @@ def test_clear_distributor_contacts_keeps_retailer_contacts(tmp_path):
     db = CentralizedDB(str(tmp_path / "clear_distributor_contacts.sqlite3"))
 
     db.add_master_distributor(
-        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG"
+        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG", user_id=1
     )
-    db.add_master_retailer(name="Shop One", distributor_id=1, location="Andheri")
+    db.add_master_retailer(
+        name="Shop One", distributor_id=1, location="Andheri", user_id=1
+    )
 
     removed = db.clear_distributor_contacts()
 
     assert removed == 1
-    assert db.list_master_distributors(limit=10) == []
-    assert db.list_master_retailers(limit=10) != []
+    assert db.list_master_distributors(limit=10, user_id=1) == []
+    assert db.list_master_retailers(limit=10, user_id=1) != []
 
 
 def test_clear_retailer_contacts_keeps_distributor_contacts(tmp_path):
     db = CentralizedDB(str(tmp_path / "clear_retailer_contacts.sqlite3"))
 
     db.add_master_distributor(
-        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG"
+        name="Alpha Traders", firm_name="Alpha Group", firm_nick_name="AG", user_id=1
     )
-    db.add_master_retailer(name="Shop One", distributor_id=1, location="Andheri")
+    db.add_master_retailer(
+        name="Shop One", distributor_id=1, location="Andheri", user_id=1
+    )
 
     removed = db.clear_retailer_contacts()
 
     assert removed == 1
-    assert db.list_master_distributors(limit=10) != []
-    assert db.list_master_retailers(limit=10) == []
+    assert db.list_master_distributors(limit=10, user_id=1) != []
+    assert db.list_master_retailers(limit=10, user_id=1) == []
 
 
 def test_known_distributor_aliases_are_resolved_to_canonical_names(tmp_path):

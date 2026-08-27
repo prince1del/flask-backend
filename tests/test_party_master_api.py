@@ -10,6 +10,8 @@ def app(tmp_path, monkeypatch):
     db_path = tmp_path / "party_master_api.sqlite3"
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+    # This file covers party CRUD, not the auth gate.
+    monkeypatch.setenv("AUTH_ENABLED", "false")
     app = create_app()
     app.config["TESTING"] = True
     with app.app_context():

@@ -14,6 +14,8 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD", "password123")
+    # The seeded founder in these tests is "admin".
+    monkeypatch.setenv("WORKSPACE_OWNER_USERNAME", "admin")
 
     app = create_app()
     app.config["TESTING"] = True
@@ -59,10 +61,15 @@ def test_admin_can_create_user_and_access_database(client, app):
     token = make_token(app, role="admin", username="admin")
     response = client.post(
         "/api/v1/admin/users",
-        json={"username": "newadmin2", "email": "newadmin2@example.com", "password": "pass1234", "role": "admin"},
+        json={
+            "username": "newbd2",
+            "email": "newbd2@example.com",
+            "password": "pass1234",
+            "role": "sales_executive",
+        },
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == 201
+    assert response.status_code == 201, response.get_data(as_text=True)
     assert response.get_json()["success"] is True
 
     response = client.post(
@@ -71,6 +78,23 @@ def test_admin_can_create_user_and_access_database(client, app):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code in (200, 302)
+
+
+def test_admin_api_cannot_mint_a_second_admin(client, app):
+    """Sole-platform-admin policy: only the founder holds admin powers."""
+    token = make_token(app, role="admin", username="admin")
+    response = client.post(
+        "/api/v1/admin/users",
+        json={
+            "username": "second_admin",
+            "email": "second@example.com",
+            "password": "pass1234",
+            "role": "admin",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "FORBIDDEN"
 
 
 def _seed_founder(app):
@@ -94,7 +118,23 @@ def _seed_founder(app):
         return {"id": int(founder.id), "username": founder.username}
 
 
-def test_secondary_admin_cannot_delete_founder(client, app):
+def _create_bd_user(client, founder_token, username, email):
+    created = client.post(
+        "/api/v1/admin/users",
+        json={
+            "username": username,
+            "email": email,
+            "password": "pass1234",
+            "role": "sales_executive",
+        },
+        headers={"Authorization": f"Bearer {founder_token}"},
+    )
+    assert created.status_code == 201, created.get_data(as_text=True)
+    return created.get_json()["data"]
+
+
+def test_legacy_admin_token_cannot_delete_founder(client, app):
+    """A stray role=admin JWT (legacy or forged) still can't remove the founder."""
     founder = _seed_founder(app)
     from app.jwt_service import JWTService
 
@@ -102,19 +142,7 @@ def test_secondary_admin_cannot_delete_founder(client, app):
     founder_token, _ = service.create_tokens(
         user_id=founder["id"], username="admin", role="admin", workspace_id="default"
     )
-
-    created = client.post(
-        "/api/v1/admin/users",
-        json={
-            "username": "second_admin",
-            "email": "second@example.com",
-            "password": "pass1234",
-            "role": "admin",
-        },
-        headers={"Authorization": f"Bearer {founder_token}"},
-    )
-    assert created.status_code == 201, created.get_data(as_text=True)
-    second = created.get_json()["data"]
+    second = _create_bd_user(client, founder_token, "second_admin", "second@example.com")
     second_token, _ = service.create_tokens(
         user_id=second["id"],
         username="second_admin",
@@ -139,18 +167,7 @@ def test_admin_cannot_self_delete(client, app):
     founder_token, _ = service.create_tokens(
         user_id=founder["id"], username="admin", role="admin", workspace_id="default"
     )
-    created = client.post(
-        "/api/v1/admin/users",
-        json={
-            "username": "selfdel_admin",
-            "email": "selfdel@example.com",
-            "password": "pass1234",
-            "role": "admin",
-        },
-        headers={"Authorization": f"Bearer {founder_token}"},
-    )
-    assert created.status_code == 201
-    second = created.get_json()["data"]
+    second = _create_bd_user(client, founder_token, "selfdel_admin", "selfdel@example.com")
     second_token, _ = service.create_tokens(
         user_id=second["id"],
         username="selfdel_admin",
@@ -166,7 +183,7 @@ def test_admin_cannot_self_delete(client, app):
     assert "own account" in response.get_json()["error"]["message"]
 
 
-def test_secondary_admin_cannot_delete_other_admin(client, app):
+def test_non_founder_cannot_delete_an_admin_user(client, app):
     founder = _seed_founder(app)
     from app.jwt_service import JWTService
 
@@ -175,26 +192,14 @@ def test_secondary_admin_cannot_delete_other_admin(client, app):
         user_id=founder["id"], username="admin", role="admin", workspace_id="default"
     )
 
-    a = client.post(
-        "/api/v1/admin/users",
-        json={
-            "username": "admin_a",
-            "email": "a@example.com",
-            "password": "pass1234",
-            "role": "admin",
-        },
-        headers={"Authorization": f"Bearer {founder_token}"},
-    ).get_json()["data"]
-    b = client.post(
-        "/api/v1/admin/users",
-        json={
-            "username": "admin_b",
-            "email": "b@example.com",
-            "password": "pass1234",
-            "role": "admin",
-        },
-        headers={"Authorization": f"Bearer {founder_token}"},
-    ).get_json()["data"]
+    a = _create_bd_user(client, founder_token, "admin_a", "a@example.com")
+    b = _create_bd_user(client, founder_token, "admin_b", "b@example.com")
+
+    # Legacy admin row: the API refuses to mint one, so write it directly.
+    import sqlite3
+
+    with sqlite3.connect(app.config["DATABASE_PATH"]) as conn:
+        conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (int(b["id"]),))
 
     a_token, _ = service.create_tokens(
         user_id=a["id"], username="admin_a", role="admin", workspace_id="default"

@@ -3,12 +3,13 @@ from app.web_app import create_app
 
 def test_phase2_8_endpoints(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "false")
+    db_path = str(tmp_path / "p28api.db")
+    monkeypatch.setenv("DATABASE_PATH", db_path)
     app = create_app()
     client = app.test_client()
 
     from centralized_db_system.db import CentralizedDB
 
-    db_path = str(tmp_path / "p28api.db")
     db = CentralizedDB(db_path)
     distributor_id = db.add_master_distributor(name="D28api", buyer_code="B28API")
     tracking_id = db.create_order_lifecycle_tracking(order_ref_no="SO-910", distributor_id=distributor_id)

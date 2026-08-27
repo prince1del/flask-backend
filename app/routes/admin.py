@@ -114,14 +114,16 @@ def create_user():
     if not username or not email or not password:
         return jsonify({'success': False, 'data': None, 'message': 'username, email, password required'}), 400
 
-    if role not in ['sales_executive', 'distributor', 'retailer', 'unassigned', 'hop_admin']:
-        return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
-
+    # Checked before the generic role validation so callers get the real reason
+    # instead of a bare "Invalid role".
     if role == 'admin':
         return _forbidden(
             'role=admin is disabled; only '
             f'{_founder_username()} holds platform admin powers via is_workspace_owner'
         )
+
+    if role not in ['sales_executive', 'distributor', 'retailer', 'unassigned', 'hop_admin']:
+        return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
 
     try:
         from app.workspace_tenancy import resolve_workspace_id_for_new_user
@@ -145,7 +147,21 @@ def create_user():
             return jsonify({'success': False, 'data': None, 'message': str(exc)}), 409
 
         profile = cdb.get_user_profile(int(created["id"])) or created
-        
+
+        try:
+            db.session.add(
+                AuditLog(
+                    user_id=int(created["id"]),
+                    action='user_created',
+                    resource_type='user',
+                    resource_id=int(created["id"]),
+                    details=f'User {username} created with role {role}',
+                )
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
         return jsonify({
             'success': True,
             'data': profile,
@@ -443,6 +459,52 @@ def delete_tenancy_orphans():
         return jsonify({'success': True, 'data': {'deleted': deleted, 'count': len(deleted)}}), 200
     except Exception as e:
         return jsonify({'success': False, 'data': None, 'message': f'Error deleting tenancy orphans: {str(e)}'}), 500
+
+
+# ========== ADMIN 4c: MULTI-DEVICE APPROVAL ==========
+# Every account is single-device by default: a new login kicks the previous
+# phone/desktop out. Only the founder may grant a parallel-login exception.
+@admin_bp.route('/users/<int:user_id>/multi-device', methods=['POST'])
+@require_jwt_auth
+@require_role('admin')
+def set_user_multi_device(user_id):
+    if not _is_founder_requester():
+        return _forbidden('Only the owner can approve multi-device login')
+    data = request.get_json(silent=True) or {}
+    allowed = bool(data.get('allowed'))
+    try:
+        result = _auth_db().set_multi_device_allowed(int(user_id), allowed)
+    except ValueError as exc:
+        return jsonify({'success': False, 'data': None, 'message': str(exc)}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error updating device policy: {str(e)}'}), 500
+    try:
+        audit = AuditLog(
+            user_id=_requester().get('user_id'),
+            action='multi_device_allowed' if allowed else 'multi_device_revoked',
+            resource_type='user',
+            resource_id=int(user_id),
+            details=f"multi_device_allowed={allowed} for {result.get('username')}"
+        )
+        db.session.add(audit)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return jsonify({'success': True, 'data': result}), 200
+
+
+@admin_bp.route('/users/<int:user_id>/sessions', methods=['DELETE'])
+@require_jwt_auth
+@require_role('admin')
+def revoke_user_sessions(user_id):
+    """Force-logout a user everywhere (owner only)."""
+    if not _is_founder_requester():
+        return _forbidden('Only the owner can revoke sessions')
+    try:
+        _auth_db().clear_active_session(int(user_id))
+    except Exception as e:
+        return jsonify({'success': False, 'data': None, 'message': f'Error revoking sessions: {str(e)}'}), 500
+    return jsonify({'success': True, 'data': {'user_id': int(user_id), 'revoked': True}}), 200
 
 
 # ========== ADMIN 5: VIEW AUDIT LOGS ==========

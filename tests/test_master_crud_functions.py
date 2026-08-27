@@ -23,10 +23,11 @@ def test_distributor_contact_person_role_roundtrip(tmp_path):
         firm_name="Choice Corner",
         contact_person_role="Partner",
         workspace_id="ws-1",
+        user_id=1,
     )
     record = db.get_master_distributor(dist_id, workspace_id="ws-1")
     assert record["contact_person_role"] == "Partner"
-    listed = db.list_master_distributors(workspace_id="ws-1")
+    listed = db.list_master_distributors(workspace_id="ws-1", user_id=1)
     assert listed[0]["contact_person_role"] == "Partner"
     updated = db.update_master_distributor(
         dist_id, "ws-1", contact_person_role="Managing Director"

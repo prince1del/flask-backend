@@ -50,7 +50,6 @@ def setup_app(tmp_path, monkeypatch):
     conn = sqlite3.connect(db_path)
     with open(schema_path, encoding="utf-8") as f:
         conn.executescript(f.read())
-    amdb.create_category(conn, 1, "Bed", ["brand", "TC", "size"], is_confirmed=True, workspace_id="ws-1")
     conn.close()
 
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
@@ -70,7 +69,15 @@ def setup_app(tmp_path, monkeypatch):
 
     from centralized_db_system.db import CentralizedDB
     db = CentralizedDB(str(db_path))
-    db.create_user("am_upload_user", "pass123", role="sales_executive", workspace_id="ws-1")
+    user = db.create_user("am_upload_user", "pass123", role="sales_executive", workspace_id="ws-1")
+
+    # Categories and articles are per-user, so seed them for this login.
+    user_id = int(user["id"])
+    conn = sqlite3.connect(db_path)
+    amdb.create_category(
+        conn, user_id, "Bed", ["brand", "TC", "size"], is_confirmed=True, workspace_id="ws-1"
+    )
+    conn.close()
 
     login = client.post(
         "/api/v1/auth/login",
@@ -78,11 +85,11 @@ def setup_app(tmp_path, monkeypatch):
     )
     assert login.status_code == 200, login.get_data(as_text=True)
     token = login.get_json()["data"]["access_token"]
-    return client, token
+    return client, token, user_id
 
 
 def test_article_master_upload_returns_json(tmp_path, monkeypatch):
-    client, token = setup_app(tmp_path, monkeypatch)
+    client, token, user_id = setup_app(tmp_path, monkeypatch)
     data = {
         "file": (io.BytesIO(_make_workbook_bytes().read()), "bedsheet_test.xlsx"),
     }
@@ -116,7 +123,7 @@ def test_article_master_upload_returns_json(tmp_path, monkeypatch):
 
 
 def test_delete_one_and_delete_all(tmp_path, monkeypatch):
-    client, token = setup_app(tmp_path, monkeypatch)
+    client, token, user_id = setup_app(tmp_path, monkeypatch)
     # seed one article via confirmed upload
     client.post(
         "/api/v1/article-master/upload",
@@ -166,7 +173,7 @@ def test_delete_one_and_delete_all(tmp_path, monkeypatch):
 
 
 def test_upload_skips_duplicate_with_same_prices(tmp_path, monkeypatch):
-    client, token = setup_app(tmp_path, monkeypatch)
+    client, token, user_id = setup_app(tmp_path, monkeypatch)
     buf = _make_workbook_bytes()
     first = _upload_confirmed(client, token, buf, category="Bed")
     assert first.status_code == 200
@@ -183,7 +190,7 @@ def test_upload_skips_duplicate_with_same_prices(tmp_path, monkeypatch):
 
 
 def test_upload_price_mismatch_requires_confirmation(tmp_path, monkeypatch):
-    client, token = setup_app(tmp_path, monkeypatch)
+    client, token, user_id = setup_app(tmp_path, monkeypatch)
     buf = _make_workbook_bytes(mrp=1049, ptr=719.31, ex_mill=625.49)
     first = _upload_confirmed(client, token, buf, category="Bed")
     assert first.get_json()["created"] == 1
@@ -205,7 +212,7 @@ def test_upload_price_mismatch_requires_confirmation(tmp_path, monkeypatch):
 
 
 def test_upload_price_mismatch_replace_updates_existing(tmp_path, monkeypatch):
-    client, token = setup_app(tmp_path, monkeypatch)
+    client, token, user_id = setup_app(tmp_path, monkeypatch)
     buf = _make_workbook_bytes(mrp=1049, ptr=719.31, ex_mill=625.49)
     _upload_confirmed(client, token, buf, category="Bed")
 
@@ -232,12 +239,12 @@ def test_upload_price_mismatch_replace_updates_existing(tmp_path, monkeypatch):
 
 
 def test_upload_item_key_drift_can_create_new(tmp_path, monkeypatch):
-    client, token = setup_app(tmp_path, monkeypatch)
+    client, token, user_id = setup_app(tmp_path, monkeypatch)
     db_path = tmp_path / "am_upload.sqlite3"
     conn = sqlite3.connect(db_path)
     amdb.insert_article(
         conn,
-        1,
+        user_id,
         {
             "category": "Bed",
             "brand": "ASTER",

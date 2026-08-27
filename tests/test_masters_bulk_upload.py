@@ -51,6 +51,18 @@ def setup_auth_app(tmp_path, monkeypatch):
     return app.test_client(), db, db_path
 
 
+def _user_id(db: CentralizedDB, username: str) -> int:
+    """Master rows are owned by a user_id, not just a workspace."""
+    import sqlite3
+
+    with sqlite3.connect(db.db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+    assert row is not None, f"user {username} not found"
+    return int(row[0])
+
+
 def login(client, username: str, password: str) -> str:
     response = client.post(
         "/api/v1/auth/login",
@@ -91,8 +103,12 @@ def test_bulk_upload_distributors_respects_workspace_id(tmp_path, monkeypatch):
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert resp.get_json()["data"]["inserted"] == 1
 
-    ws1_distributors = db.list_master_distributors(workspace_id="ws-1")
-    default_distributors = db.list_master_distributors(workspace_id="default")
+    ws1_distributors = db.list_master_distributors(
+        workspace_id="ws-1", user_id=_user_id(db, "masters_user_a")
+    )
+    default_distributors = db.list_master_distributors(
+        workspace_id="default", user_id=_user_id(db, "masters_user_a")
+    )
     assert any(d["name"] == "Test Distributor WS1" for d in ws1_distributors), (
         "Uploaded distributor should land in the CALLER's workspace (ws-1)"
     )
@@ -109,7 +125,9 @@ def test_retailer_fuzzy_matches_distributor_nickname_with_typo(tmp_path, monkeyp
     token = login(client, "masters_user_a", "pass123")
 
     db.add_master_distributor(
-        name="Bernina International P Ltd", workspace_id="ws-1",
+        name="Bernina International P Ltd",
+        workspace_id="ws-1",
+        user_id=_user_id(db, "masters_user_a"),
     )
 
     xlsx_bytes = _make_xlsx(
@@ -129,7 +147,9 @@ def test_retailer_fuzzy_matches_distributor_nickname_with_typo(tmp_path, monkeyp
         f"Typo 'Benrina' should have fuzzy-matched to Bernina, not gone Unassigned: {result}"
     )
 
-    retailers = db.list_master_retailers(workspace_id="ws-1")
+    retailers = db.list_master_retailers(
+        workspace_id="ws-1", user_id=_user_id(db, "masters_user_a")
+    )
     assert len(retailers) == 1
     assert retailers[0]["distributor_id"] is not None
 
@@ -158,13 +178,17 @@ def test_retailer_with_no_distributor_match_is_unassigned_not_discarded(tmp_path
     assert result["inserted"] == 1, "Retailer must still be saved, not discarded"
     assert result["unassigned"] == 1
 
-    retailers = db.list_master_retailers(workspace_id="ws-1")
+    retailers = db.list_master_retailers(
+        workspace_id="ws-1", user_id=_user_id(db, "masters_user_a")
+    )
     assert len(retailers) == 1
     assert retailers[0]["name"] == "Orphan Shop"
     assert retailers[0]["distributor_id"] is None, "Should be Unassigned, not auto-linked/created"
 
     # No new distributor should have been silently created either.
-    distributors = db.list_master_distributors(workspace_id="ws-1")
+    distributors = db.list_master_distributors(
+        workspace_id="ws-1", user_id=_user_id(db, "masters_user_a")
+    )
     assert not any("Unknown Xyz" in (d.get("name") or "") for d in distributors), (
         "BUG REPRODUCED: a new distributor was silently auto-created from free text"
     )
@@ -175,8 +199,16 @@ def test_export_distributors_is_workspace_isolated(tmp_path, monkeypatch):
     token_a = login(client, "masters_user_a", "pass123")
     token_b = login(client, "masters_user_b", "pass123")
 
-    db.add_master_distributor(name="WS1 Only Distributor", workspace_id="ws-1")
-    db.add_master_distributor(name="WS2 Only Distributor", workspace_id="ws-2")
+    db.add_master_distributor(
+        name="WS1 Only Distributor",
+        workspace_id="ws-1",
+        user_id=_user_id(db, "masters_user_a"),
+    )
+    db.add_master_distributor(
+        name="WS2 Only Distributor",
+        workspace_id="ws-2",
+        user_id=_user_id(db, "masters_user_b"),
+    )
 
     resp_a = client.get(
         "/api/v1/masters/distributors/export?format=csv",
@@ -202,10 +234,25 @@ def test_export_retailers_distributor_wise_filter(tmp_path, monkeypatch):
     client, db, _db_path = setup_auth_app(tmp_path, monkeypatch)
     token = login(client, "masters_user_a", "pass123")
 
-    dist_a = db.add_master_distributor(name="Distributor A", workspace_id="ws-1")
-    dist_b = db.add_master_distributor(name="Distributor B", workspace_id="ws-1")
-    db.add_master_retailer(name="Retailer Under A", distributor_id=dist_a, workspace_id="ws-1")
-    db.add_master_retailer(name="Retailer Under B", distributor_id=dist_b, workspace_id="ws-1")
+    user_a_id = _user_id(db, "masters_user_a")
+    dist_a = db.add_master_distributor(
+        name="Distributor A", workspace_id="ws-1", user_id=user_a_id
+    )
+    dist_b = db.add_master_distributor(
+        name="Distributor B", workspace_id="ws-1", user_id=user_a_id
+    )
+    db.add_master_retailer(
+        name="Retailer Under A",
+        distributor_id=dist_a,
+        workspace_id="ws-1",
+        user_id=user_a_id,
+    )
+    db.add_master_retailer(
+        name="Retailer Under B",
+        distributor_id=dist_b,
+        workspace_id="ws-1",
+        user_id=user_a_id,
+    )
 
     resp = client.get(
         f"/api/v1/masters/retailers/export?format=csv&distributor_id={dist_a}",

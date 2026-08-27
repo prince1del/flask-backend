@@ -3,10 +3,20 @@ import os
 import uuid
 
 import pandas as pd
+import pytest
 
 import app.routes.auth as app_auth
 from app.web_app import create_app
 from centralized_db_system.db import CentralizedDB
+
+
+@pytest.fixture(autouse=True)
+def _disable_auth(monkeypatch):
+    """These cover the upload/workflow pages themselves, not the login gate."""
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    # Patched (not assigned) so the override is undone after each test — a bare
+    # assignment here leaked auth-off into every later test in the session.
+    monkeypatch.setattr(app_auth, "auth_enabled", lambda: False)
 
 
 def _build_test_pdf(content: str) -> bytes:
@@ -34,7 +44,7 @@ def test_upload_page_runs_three_step_verification():
     app.config["TESTING"] = True
     client = app.test_client()
 
-    response = client.get("/")
+    response = client.get("/legacy")
     assert response.status_code == 200
 
     order_buffer = io.BytesIO()
@@ -66,8 +76,10 @@ def test_upload_page_runs_three_step_verification():
     filled_buffer.seek(0)
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (order_buffer, "order.xlsx"),
             "filled_file": (filled_buffer, "filled.xlsx"),
             "sales_order_file": (
@@ -139,8 +151,10 @@ def test_partial_uploads_show_clear_verification_message():
     filled_buffer.seek(0)
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (order_buffer, "order.xlsx"),
             "filled_file": (filled_buffer, "filled.xlsx"),
         },
@@ -158,8 +172,10 @@ def test_upload_page_shows_error_for_unreadable_files():
     client = app.test_client()
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (io.BytesIO(b"not an excel file"), "order.xlsx"),
             "filled_file": (io.BytesIO(b"not an excel file"), "filled.xlsx"),
         },
@@ -196,8 +212,10 @@ def test_order_upload_rejects_pdf_file_type():
     client = app.test_client()
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (io.BytesIO(b"%PDF-1.4\n%test pdf"), "order.pdf"),
         },
         content_type="multipart/form-data",
@@ -228,8 +246,10 @@ def test_stage2_requires_filled_and_order_files():
     order_buffer.seek(0)
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (order_buffer, "order.xlsx"),
             "workflow_action": "stage2",
         },
@@ -265,7 +285,7 @@ def test_uploads_show_recognized_file_types_and_stages():
     )
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
             "filled_file": (filled_buffer, "filled.xlsx"),
             "sales_order_file": (sales_order_pdf, "sales_order.pdf"),
@@ -322,9 +342,11 @@ def test_run_all_persists_distributor_wise_upload_records(tmp_path):
     invoice_pdf = io.BytesIO(b"Product: Milk Powder\nQuantity: 10\nRate: 100\nGST: 5")
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
             "distributor_name": "Alpha Traders",
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (order_buffer, "order.xlsx"),
             "filled_file": (filled_buffer, "alpha_traders_filled.xlsx"),
             "sales_order_file": (sales_order_pdf, "sales_order.pdf"),
@@ -346,7 +368,6 @@ def test_run_all_persists_distributor_wise_upload_records(tmp_path):
 
 
 def test_sales_order_upload_with_selected_distributor_creates_order_lifecycle_link(tmp_path):
-    app_auth.auth_enabled = lambda: False
     app = create_app()
     app.config["TESTING"] = True
     app.config["DATABASE_PATH"] = str(tmp_path / "web_so_link.sqlite3")
@@ -365,7 +386,7 @@ def test_sales_order_upload_with_selected_distributor_creates_order_lifecycle_li
     )
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
             "sales_order_distributor_id": str(distributor_id),
             "sales_order_file": (sales_order_pdf, "sales_order.pdf"),
@@ -384,7 +405,6 @@ def test_sales_order_upload_with_selected_distributor_creates_order_lifecycle_li
 
 
 def test_sales_order_upload_with_buyer_code_match_does_not_auto_link_without_selection(tmp_path):
-    app_auth.auth_enabled = lambda: False
     app = create_app()
     app.config["TESTING"] = True
     app.config["DATABASE_PATH"] = str(tmp_path / "web_so_auto_no_link.sqlite3")
@@ -403,7 +423,7 @@ def test_sales_order_upload_with_buyer_code_match_does_not_auto_link_without_sel
     )
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
             "sales_order_file": (sales_order_pdf, "sales_order.pdf"),
             "workflow_action": "stage3",
@@ -437,8 +457,12 @@ def test_single_uploads_are_accumulated_across_requests():
     order_buffer.seek(0)
 
     first_response = client.post(
-        "/",
-        data={"order_file": (order_buffer, "order.xlsx")},
+        "/legacy",
+        data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
+            "order_file": (order_buffer, "order.xlsx"),
+        },
         content_type="multipart/form-data",
     )
     assert first_response.status_code == 200
@@ -458,7 +482,7 @@ def test_single_uploads_are_accumulated_across_requests():
     filled_buffer.seek(0)
 
     second_response = client.post(
-        "/",
+        "/legacy",
         data={"filled_file": (filled_buffer, "filled.xlsx")},
         content_type="multipart/form-data",
     )
@@ -504,8 +528,10 @@ def test_reuploading_order_sheet_clears_stale_session_files():
     filled_buffer.seek(0)
 
     first_response = client.post(
-        "/",
+        "/legacy",
         data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (order_buffer, "order.xlsx"),
             "filled_file": (filled_buffer, "filled.xlsx"),
         },
@@ -522,8 +548,12 @@ def test_reuploading_order_sheet_clears_stale_session_files():
     fresh_order.seek(0)
 
     second_response = client.post(
-        "/",
-        data={"order_file": (fresh_order, "order.xlsx")},
+        "/legacy",
+        data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
+            "order_file": (fresh_order, "order.xlsx"),
+        },
         content_type="multipart/form-data",
     )
 
@@ -558,8 +588,12 @@ def test_verification_progress_shows_step_by_step_capture():
     order_buffer.seek(0)
 
     response = client.post(
-        "/",
-        data={"order_file": (order_buffer, "order.xlsx")},
+        "/legacy",
+        data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
+            "order_file": (order_buffer, "order.xlsx"),
+        },
         content_type="multipart/form-data",
     )
 
@@ -596,8 +630,10 @@ def test_step1_inferred_mapping_is_shown_on_verification_page():
     filled_buffer.seek(0)
 
     response = client.post(
-        "/",
+        "/legacy",
         data={
+            "order_sheet_name": "Test Order Sheet",
+            "order_sheet_category": "Bedsheet",
             "order_file": (order_buffer, "order.xlsx"),
             "filled_file": (filled_buffer, "filled.xlsx"),
         },
@@ -824,7 +860,7 @@ def test_bulk_upload_endpoint_persists_distributor_info_from_pdf():
     assert payload["status"] == "success"
     assert payload["inserted"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(
+    stored = CentralizedDB(app.config["DATABASE_PATH"]).get_master_distributor_by_name(
         distributor_name
     )
     assert stored is not None
@@ -884,7 +920,7 @@ def test_bulk_upload_endpoint_persists_retailer_info_from_pdf():
     assert payload["status"] == "success"
     assert payload["inserted"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_retailer_by_name(
+    stored = CentralizedDB(app.config["DATABASE_PATH"]).get_master_retailer_by_name(
         retailer_name
     )
     assert stored is not None
@@ -953,7 +989,7 @@ def test_bulk_upload_endpoint_persists_distributors_to_database():
     assert payload["status"] == "success"
     assert payload["inserted"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(
+    stored = CentralizedDB(app.config["DATABASE_PATH"]).get_master_distributor_by_name(
         distributor_name
     )
     assert stored is not None
@@ -1059,7 +1095,7 @@ def test_contacts_import_updates_existing_distributor_from_excel():
     assert payload["status"] == "success"
     assert payload["updated"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_distributor_by_name(
+    stored = CentralizedDB(app.config["DATABASE_PATH"]).get_master_distributor_by_name(
         distributor_name
     )
     assert stored is not None
@@ -1153,7 +1189,7 @@ def test_contacts_import_updates_existing_retailer_from_excel():
     assert payload["master_type"] == "retailers"
     assert payload["updated"] >= 1
 
-    stored = CentralizedDB("centralized_db.sqlite3").get_master_retailer_by_name(
+    stored = CentralizedDB(app.config["DATABASE_PATH"]).get_master_retailer_by_name(
         retailer_name
     )
     assert stored is not None

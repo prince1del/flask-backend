@@ -2559,6 +2559,29 @@ class CentralizedDB:
 
         return Path("centralized_db.sqlite3").expanduser()
 
+    def _migrate_legacy_article_master(self, conn: sqlite3.Connection) -> None:
+        """Rename a legacy design/colour `article_master` to article_master_legacy.
+
+        The live Article Master (per-user, item_key based) owns the plain name;
+        a legacy-shaped table there makes article_master_schema.sql fail with
+        "no such column: user_id" on boot.
+        """
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='article_master'"
+        ).fetchone()
+        if not exists:
+            return
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(article_master)").fetchall()}
+        if "user_id" in cols or "design_name" not in cols:
+            return
+        legacy_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='article_master_legacy'"
+        ).fetchone()
+        if legacy_exists:
+            conn.execute("DROP TABLE article_master")
+            return
+        conn.execute("ALTER TABLE article_master RENAME TO article_master_legacy")
+
     def _table_has_column(self, table_name: str, column_name: str) -> bool:
         if table_name not in self._table_columns:
             with sqlite3.connect(self.db_path) as conn:
@@ -3032,10 +3055,14 @@ class CentralizedDB:
         "amethyst_glass", "rose_glass", "snow_glass",
     })
 
+    # Old theme ids still sent by legacy clients (web CSS keeps the alias too).
+    _RETIRED_UI_THEMES = {"nexora": "emerald"}
+
     @classmethod
     def _normalize_ui_theme(cls, theme_id: str | None) -> str:
         """Normalize unknown UI themes to default."""
         t = (theme_id or cls._DEFAULT_UI_THEME).strip() or cls._DEFAULT_UI_THEME
+        t = cls._RETIRED_UI_THEMES.get(t, t)
         if t not in cls._KNOWN_UI_THEMES:
             return cls._DEFAULT_UI_THEME
         return t
@@ -3078,6 +3105,7 @@ class CentralizedDB:
         custom_colors: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         raw = (theme_id or self._DEFAULT_UI_THEME).strip() or self._DEFAULT_UI_THEME
+        raw = self._RETIRED_UI_THEMES.get(raw, raw)
         if raw not in self._KNOWN_UI_THEMES:
             raise ValueError("Unknown theme")
         theme = raw
@@ -3664,6 +3692,120 @@ class CentralizedDB:
             self._ensure_column_exists(
                 conn, "users", "password_reset_fail_count", "INTEGER NOT NULL DEFAULT 0"
             )
+            # Single-active-session: id of the device holding the live session.
+            self._ensure_column_exists(conn, "users", "active_session_id", "TEXT")
+            self._ensure_column_exists(conn, "users", "active_session_device", "TEXT")
+            self._ensure_column_exists(conn, "users", "active_session_at", "TEXT")
+            # Owner-granted exception allowing parallel logins.
+            self._ensure_column_exists(
+                conn, "users", "multi_device_allowed", "INTEGER NOT NULL DEFAULT 0"
+            )
+
+    # --- Single active session (one device per user unless owner approves) ---
+
+    def set_active_session(
+        self,
+        user_id: int,
+        session_id: str,
+        device_label: str | None = None,
+    ) -> None:
+        """Make [session_id] the only live session for this user."""
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE users
+                   SET active_session_id = ?,
+                       active_session_device = ?,
+                       active_session_at = ?
+                 WHERE id = ?
+                """,
+                (
+                    str(session_id),
+                    (device_label or None),
+                    datetime.now().isoformat(),
+                    int(user_id),
+                ),
+            )
+
+    def get_active_session(self, user_id: int | None) -> str | None:
+        if user_id is None:
+            return None
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT active_session_id FROM users WHERE id = ?", (int(user_id),)
+            ).fetchone()
+        value = str(row[0]).strip() if row and row[0] else ""
+        return value or None
+
+    def clear_active_session(self, user_id: int, session_id: str | None = None) -> None:
+        """Logout. With [session_id], only clears when it still owns the session."""
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            if session_id:
+                conn.execute(
+                    """
+                    UPDATE users
+                       SET active_session_id = NULL,
+                           active_session_device = NULL
+                     WHERE id = ? AND active_session_id = ?
+                    """,
+                    (int(user_id), str(session_id)),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE users
+                       SET active_session_id = NULL,
+                           active_session_device = NULL
+                     WHERE id = ?
+                    """,
+                    (int(user_id),),
+                )
+
+    def is_multi_device_allowed(self, user_id: int | None) -> bool:
+        """Workspace owner is always exempt; others need an owner grant."""
+        if user_id is None:
+            return False
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT multi_device_allowed, is_workspace_owner FROM users WHERE id = ?",
+                (int(user_id),),
+            ).fetchone()
+        if not row:
+            return False
+        return bool(int(row[0] or 0)) or bool(int(row[1] or 0))
+
+    def set_multi_device_allowed(self, user_id: int, allowed: bool) -> dict[str, Any]:
+        self.ensure_user_profile_columns()
+        uid = int(user_id)
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT username FROM users WHERE id = ?", (uid,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("User not found")
+            conn.execute(
+                "UPDATE users SET multi_device_allowed = ? WHERE id = ?",
+                (1 if allowed else 0, uid),
+            )
+            if not allowed:
+                conn.execute(
+                    """
+                    UPDATE users
+                       SET active_session_id = NULL,
+                           active_session_device = NULL
+                     WHERE id = ?
+                    """,
+                    (uid,),
+                )
+        return {
+            "user_id": uid,
+            "username": str(row[0] or ""),
+            "multi_device_allowed": bool(allowed),
+        }
 
     def is_workspace_owner_user(self, user_id: int | None) -> bool:
         if user_id is None:
@@ -4578,9 +4720,14 @@ class CentralizedDB:
                 )
                 """
             )
+            # `article_master` belongs to the per-user Article Master schema
+            # (article_master_schema.sql). Older DBs created the design/colour
+            # table under that name, which then broke ensure_schema — move it
+            # aside so both can coexist.
+            self._migrate_legacy_article_master(conn)
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS article_master (
+                CREATE TABLE IF NOT EXISTS article_master_legacy (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     article_id TEXT UNIQUE,
                     category_name TEXT NOT NULL,
@@ -6401,7 +6548,7 @@ class CentralizedDB:
             ).fetchall()
 
             receipt_rows = conn.execute(
-                "SELECT drl.tracking_id, drl.article_id, drl.physically_received_qty, drl.invoiced_qty, am.category_name, am.design_name, am.color_way FROM delivery_receipt_logs drl LEFT JOIN article_master am ON am.id = drl.article_id WHERE drl.tracking_id IN (SELECT tracking_id FROM order_lifecycle_tracking WHERE distributor_id = ?)",
+                "SELECT drl.tracking_id, drl.article_id, drl.physically_received_qty, drl.invoiced_qty, am.category_name, am.design_name, am.color_way FROM delivery_receipt_logs drl LEFT JOIN article_master_legacy am ON am.id = drl.article_id WHERE drl.tracking_id IN (SELECT tracking_id FROM order_lifecycle_tracking WHERE distributor_id = ?)",
                 (distributor_id,),
             ).fetchall()
 
@@ -12342,7 +12489,7 @@ class CentralizedDB:
                     + user_clause,
                     (workspace_id, *user_params),
                 ).fetchall()
-                distributors_by_exact_key: dict[str, dict[str, Any]] = {}
+                distributors_by_exact_key: dict[str, list[dict[str, Any]]] = {}
                 distributor_cache: dict[int, dict[str, Any]] = {}
                 for d_id, d_dist_id, d_name, d_firm_name, d_firm_nick, d_gst in distributor_rows:
                     record = {
@@ -12350,19 +12497,29 @@ class CentralizedDB:
                         "firm_name": d_firm_name, "firm_nick_name": d_firm_nick, "gst_no": d_gst,
                     }
                     distributor_cache[d_id] = record
-                    for key_text in (d_name, d_firm_name, d_firm_nick):
+                    for key_text in (d_name, d_firm_name, d_firm_nick, d_gst):
                         if key_text:
-                            distributors_by_exact_key[self._normalize_text(key_text).lower()] = record
-                    if d_gst:
-                        distributors_by_exact_key[self._normalize_text(d_gst).lower()] = record
+                            distributors_by_exact_key.setdefault(
+                                self._normalize_text(key_text).lower(), []
+                            ).append(record)
 
-                def _match_distributor_in_memory(reference: str) -> dict[str, Any] | None:
+                def _match_distributor_in_memory(reference: str) -> dict[str, Any]:
+                    """Mirror of _fuzzy_match_distributor, but scored against the
+                    pre-fetched rows so a 2000-row upload stays a single query.
+
+                    Returns {"status": "matched"|"ambiguous"|"none", ...}.
+                    """
                     ref_key = self._normalize_text(reference).lower()
                     if not ref_key:
-                        return None
-                    exact = distributors_by_exact_key.get(ref_key)
-                    if exact:
-                        return exact
+                        return {"status": "none"}
+                    exact = distributors_by_exact_key.get(ref_key) or []
+                    if len(exact) == 1 and not any(
+                        record is not exact[0]
+                        and ref_key
+                        in self._normalize_text(record["name"] or "").lower()
+                        for record in distributor_cache.values()
+                    ):
+                        return {"status": "matched", "distributor": exact[0]}
                     # In-memory fuzzy match (no DB round-trip per row).
                     # Uses the BEST of two algorithms, since each
                     # catches a different real-world abbreviation
@@ -12378,9 +12535,10 @@ class CentralizedDB:
                     #     "shriram" and "shri"/"ram" are different
                     #     tokens, even though character-wise they are
                     #     clearly the same reference).
-                    best_score = 0
-                    best_match = None
+                    ref_phon = self._party_name_phonetic(ref_key)
+                    scored: list[tuple[dict[str, Any], int]] = []
                     for record in distributor_cache.values():
+                        best_score = 0
                         for candidate_text in (record["name"], record["firm_name"], record["firm_nick_name"]):
                             if not candidate_text:
                                 continue
@@ -12416,13 +12574,48 @@ class CentralizedDB:
                                 if len(ref_key) >= 5
                                 else 0
                             )
-                            score = max(token_score, partial_score, despaced_score)
-                            if score > best_score:
-                                best_score = score
-                                best_match = record
-                    if best_score >= 88:
-                        return best_match
-                    return None
+                            best_score = max(
+                                best_score, token_score, partial_score, despaced_score
+                            )
+
+                        # Word-level comparison — a short nickname or typo
+                        # often matches just ONE word of a longer firm name
+                        # ("Benrina" vs the "Bernina" in "Bernina
+                        # International P Ltd").
+                        for candidate_text in (
+                            record["name"], record["firm_name"], record["firm_nick_name"]
+                        ):
+                            if not candidate_text:
+                                continue
+                            for word in self._normalize_text(candidate_text).lower().split():
+                                if len(word) < 3:
+                                    continue
+                                word_score = fuzz.ratio(ref_key, word)
+                                if word_score >= 85:
+                                    best_score = max(best_score, word_score)
+                                # Indic spelling: nitin/niten, sunil/suneel
+                                if (
+                                    ref_phon
+                                    and len(ref_phon) >= 3
+                                    and self._party_name_phonetic(word) == ref_phon
+                                ):
+                                    best_score = max(best_score, 94)
+
+                        if best_score >= 85:
+                            scored.append((record, best_score))
+
+                    if not scored:
+                        return {"status": "none"}
+
+                    scored.sort(key=lambda item: -item[1])
+                    # Two near-equal candidates means we cannot tell them
+                    # apart — surface both instead of guessing silently.
+                    if len(scored) > 1 and (scored[0][1] - scored[1][1]) < 10:
+                        return {
+                            "status": "ambiguous",
+                            "candidates": [record for record, _score in scored[:3]],
+                        }
+                    return {"status": "matched", "distributor": scored[0][0]}
 
                 for row in rows:
                     try:
@@ -12572,7 +12765,17 @@ class CentralizedDB:
                         if distributor_reference:
                             # In-memory match (exact, then fuzzy) —
                             # no per-row database round-trips.
-                            distributor = _match_distributor_in_memory(distributor_reference)
+                            match = _match_distributor_in_memory(distributor_reference)
+                            if match["status"] == "matched":
+                                distributor = match["distributor"]
+                            elif match["status"] == "ambiguous":
+                                ambiguous_distributor_refs.append(
+                                    {
+                                        "retailer_name": name,
+                                        "reference": distributor_reference,
+                                        "candidates": match["candidates"],
+                                    }
+                                )
                         # If no confident match was found (or the
                         # reference was blank), the retailer is saved
                         # as UNASSIGNED — it must still appear in the
@@ -12826,7 +13029,10 @@ class CentralizedDB:
         }
 
     def build_article_master_from_order_sheet(
-        self, path: str | Path, template_config: dict[str, Any] | None = None
+        self,
+        path: str | Path,
+        template_config: dict[str, Any] | None = None,
+        workspace_id: str = "default",
     ) -> dict[str, Any]:
         dataframe = self._load_order_sheet_dataframe(path)
         rows = dataframe.to_dict(orient="records")
@@ -12882,7 +13088,11 @@ class CentralizedDB:
 
         with sqlite3.connect(self.db_path) as conn:
             existing_rows = conn.execute(
-                "SELECT category_name, design_name, COALESCE(color_way, ''), COALESCE(base_rate, 0), COALESCE(gst_percentage, 0), COALESCE(pcs_per_bale, 0) FROM article_master"
+                "SELECT category_name, design_name, COALESCE(color_way, ''), "
+                "COALESCE(base_rate, 0), COALESCE(gst_percentage, 0), "
+                "COALESCE(pcs_per_bale, 0) FROM article_master_legacy "
+                "WHERE workspace_id = ?",
+                (workspace_id,),
             ).fetchall()
             seen_keys = {
                 _article_key(

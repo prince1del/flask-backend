@@ -12,12 +12,12 @@ import article_master_db as amdb
 import article_master_parser as amparser
 
 
-def _schema_conn(db_path):
+def _schema_conn(db_path, user_id: int = 1):
     schema_path = Path(__file__).resolve().parent.parent / "article_master_schema.sql"
     conn = sqlite3.connect(db_path)
     with open(schema_path, encoding="utf-8") as f:
         conn.executescript(f.read())
-    amdb.create_category(conn, 1, "Bed", ["brand", "TC", "size"], is_confirmed=True)
+    amdb.create_category(conn, user_id, "Bed", ["brand", "TC", "size"], is_confirmed=True)
     return conn
 
 
@@ -114,13 +114,6 @@ def test_classify_flags_duplicate_blumen_bluemen_rows(tmp_path):
 
 def test_upload_applies_alias_before_conflict(tmp_path, monkeypatch):
     db_path = tmp_path / "upload_alias.sqlite3"
-    conn = _schema_conn(db_path)
-    amdb.insert_article(conn, 1, {
-        "category": "Bed", "brand": "Blumen", "size": "DB BS", "product_type": "Sheet Sets",
-        "mrp": 1129, "ptr": 790.3, "ex_mill_price": 621, "bale_pack_size": 18,
-        "item_key": "BLUMEN|104|DB BS", "extra_attributes": {"TC": "104"},
-    }, workspace_id="ws-1")
-    conn.close()
 
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
@@ -137,7 +130,17 @@ def test_upload_applies_alias_before_conflict(tmp_path, monkeypatch):
 
     from centralized_db_system.db import CentralizedDB
     db = CentralizedDB(str(db_path))
-    db.create_user("alias_user", "pass123", role="sales_executive", workspace_id="ws-1")
+    user = db.create_user("alias_user", "pass123", role="sales_executive", workspace_id="ws-1")
+
+    # Article Master rows belong to a user, so seed them for this login.
+    conn = _schema_conn(db_path, user_id=int(user["id"]))
+    amdb.insert_article(conn, int(user["id"]), {
+        "category": "Bed", "brand": "Blumen", "size": "DB BS", "product_type": "Sheet Sets",
+        "mrp": 1129, "ptr": 790.3, "ex_mill_price": 621, "bale_pack_size": 18,
+        "item_key": "BLUMEN|104|DB BS", "extra_attributes": {"TC": "104"},
+    }, workspace_id="ws-1")
+    conn.close()
+
     token = client.post(
         "/api/v1/auth/login",
         json={"username": "alias_user", "password": "pass123"},

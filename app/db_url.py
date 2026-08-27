@@ -60,6 +60,25 @@ def resolve_sqlalchemy_url(project_root: Path | None = None) -> str:
     return "sqlite:///centralized_db.sqlite3"
 
 
+def _sqlite_path_from_env() -> str | None:
+    """SQLite file behind CLOUD_DATABASE_URL / DATABASE_URL, if either is SQLite.
+
+    Postgres URLs (Render) are ignored — CentralizedDB is SQLite-only.
+    """
+    for env_name in ("CLOUD_DATABASE_URL", "DATABASE_URL"):
+        value = (os.getenv(env_name) or "").strip().strip('"').strip("'")
+        if not value.startswith("sqlite://"):
+            continue
+        path_value = value.removeprefix("sqlite:///")
+        if not path_value or path_value == "centralized_db.sqlite3":
+            continue
+        # sqlite:////C:/... → C:/...
+        if path_value.startswith("/") and len(path_value) >= 3 and path_value[2] == ":":
+            path_value = path_value[1:]
+        return str(Path(path_value).expanduser())
+    return None
+
+
 def resolve_centralized_db_path(project_root: Path | None = None) -> str:
     """Path for CentralizedDB (SQLite). Prefer Render persistent disk when mounted."""
     project_root = project_root or Path(__file__).resolve().parent.parent
@@ -68,6 +87,14 @@ def resolve_centralized_db_path(project_root: Path | None = None) -> str:
     if explicit:
         Path(explicit).parent.mkdir(parents=True, exist_ok=True)
         return explicit
+
+    # Match CentralizedDB._resolve_db_path: a SQLite URL must win here too,
+    # otherwise app.config["DATABASE_PATH"] and CentralizedDB() open two
+    # different files (auth reads one, writes land in the other).
+    sqlite_path = _sqlite_path_from_env()
+    if sqlite_path:
+        Path(sqlite_path).parent.mkdir(parents=True, exist_ok=True)
+        return sqlite_path
 
     # Render persistent disk — attach at /var/data in the dashboard
     for candidate in (

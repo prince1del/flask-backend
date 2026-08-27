@@ -57,7 +57,9 @@ def test_login_page_uses_branded_approved_ui(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert b"Nexora Login" in response.data
-    assert b"Sign in" not in response.data
+    # Approved branded shell, not the old plain login page.
+    assert b"HOUSE OF PRIZM" in response.data
+    assert b"login-brand-sub" in response.data
 
 
 def test_jwt_login_allows_access_to_protected_api(monkeypatch, tmp_path):

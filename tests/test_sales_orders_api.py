@@ -17,7 +17,7 @@ def app(tmp_path, monkeypatch):
     app = create_app()
     app.config["TESTING"] = True
     with app.app_context():
-        db.create_all()
+        sqlalchemy_db.create_all()
         yield app
 
 

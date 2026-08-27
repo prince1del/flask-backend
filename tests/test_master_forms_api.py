@@ -13,9 +13,11 @@ from centralized_db_system.db import CentralizedDB
 
 
 @pytest.fixture()
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     db_path = tmp_path / "master-forms.sqlite3"
-    os.environ["DATABASE_PATH"] = str(db_path)
+    # monkeypatch (not os.environ) so this temp path does not leak into the
+    # rest of the session and redirect other tests' database writes.
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
     app = create_app()
     app.config.update(TESTING=True)
     app.config["WTF_CSRF_ENABLED"] = False
@@ -118,10 +120,10 @@ def test_bulk_upload_reinstates_ambiguous_match_detection(tmp_path):
     db = CentralizedDB(str(db_path))
     # Disable fuzzy matching during creation so we can create similar-named distributors
     d1_id = db.add_master_distributor(
-        name="ABC Traders", firm_name="ABC Pvt Ltd", workspace_id="ws-1", allow_fuzzy=False
+        name="ABC Traders", firm_name="ABC Pvt Ltd", workspace_id="ws-1", user_id=1, allow_fuzzy=False
     )
     d2_id = db.add_master_distributor(
-        name="ABC Traders 2", firm_name="ABC Pvt Ltd", workspace_id="ws-1", allow_fuzzy=False
+        name="ABC Traders 2", firm_name="ABC Pvt Ltd", workspace_id="ws-1", user_id=1, allow_fuzzy=False
     )
 
     # Verify distributors were created as separate records
@@ -138,7 +140,7 @@ def test_bulk_upload_reinstates_ambiguous_match_detection(tmp_path):
         encoding="utf-8",
     )
 
-    result = db.bulk_upload_masters("retailers", csv_path, workspace_id="ws-1")
+    result = db.bulk_upload_masters("retailers", csv_path, workspace_id="ws-1", user_id=1)
 
     assert result["ambiguous_distributor_matches"], f"Expected ambiguous matches but got: {result}"
     assert result["unassigned"] >= 1
@@ -162,16 +164,16 @@ def test_typo_and_short_code_matching_still_works_alongside_ambiguous_detection(
 
     # A representative slice of genuinely distinct real distributor
     # names (mirrors the real 10-distributor production dataset).
-    db.add_master_distributor(name="DCA Marketing", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Shri Ram & Co", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Parnami Textiles", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Kalra Agencies", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Goyal Enterprises", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Balaji Homedecor", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Savitri Steel Cement Traders", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Sain International", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Choice Corner Bombay Dyeing", workspace_id="ws-1", allow_fuzzy=False)
-    db.add_master_distributor(name="Bernina International P Ltd", workspace_id="ws-1", allow_fuzzy=False)
+    db.add_master_distributor(name="DCA Marketing", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Shri Ram & Co", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Parnami Textiles", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Kalra Agencies", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Goyal Enterprises", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Balaji Homedecor", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Savitri Steel Cement Traders", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Sain International", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Choice Corner Bombay Dyeing", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
+    db.add_master_distributor(name="Bernina International P Ltd", workspace_id="ws-1", user_id=1, allow_fuzzy=False)
 
     csv_path = tmp_path / "retailers_typo_test.csv"
     csv_path.write_text(
@@ -182,7 +184,7 @@ def test_typo_and_short_code_matching_still_works_alongside_ambiguous_detection(
         encoding="utf-8",
     )
 
-    result = db.bulk_upload_masters("retailers", csv_path, workspace_id="ws-1")
+    result = db.bulk_upload_masters("retailers", csv_path, workspace_id="ws-1", user_id=1)
 
     assert result["ambiguous_distributor_matches"] == [], (
         f"REGRESSION: genuinely distinct short-code matches should not "
@@ -193,7 +195,7 @@ def test_typo_and_short_code_matching_still_works_alongside_ambiguous_detection(
         f"none should be unassigned. Got: {result}"
     )
 
-    retailers = db.list_master_retailers(workspace_id="ws-1")
+    retailers = db.list_master_retailers(workspace_id="ws-1", user_id=1)
     by_name = {r["name"]: r for r in retailers}
 
     savitri_dist = db.get_master_distributor(by_name["Test Shop A"]["distributor_id"], workspace_id="ws-1")

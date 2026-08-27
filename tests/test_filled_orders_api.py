@@ -30,13 +30,6 @@ def setup_app(tmp_path, monkeypatch):
     conn = sqlite3.connect(db_path)
     with open(schema_path, encoding="utf-8") as f:
         conn.executescript(f.read())
-    amdb.create_category(conn, 1, "Bed", ["brand", "size"], is_confirmed=True, workspace_id="ws-1")
-    # One pre-existing Article Master entry so uploaded rows can match.
-    amdb.upsert_article(conn, 1, {
-        "category": "Bed", "product_type": "Bedsheet", "brand": "ASTER", "size": "DB BS",
-        "mrp": 999, "ptr": 450, "ex_mill_price": 400, "bale_pack_size": 12,
-        "item_key": "ASTER|DB BS", "extra_attributes": {},
-    }, workspace_id="ws-1")
     conn.close()
 
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
@@ -56,7 +49,19 @@ def setup_app(tmp_path, monkeypatch):
 
     from centralized_db_system.db import CentralizedDB
     db = CentralizedDB(str(db_path))
-    db.create_user("fo_test_user", "pass123", role="sales_executive", workspace_id="ws-1")
+    user = db.create_user("fo_test_user", "pass123", role="sales_executive", workspace_id="ws-1")
+
+    # Article Master is per-user, so seed it for the login that uploads.
+    user_id = int(user["id"])
+    conn = sqlite3.connect(db_path)
+    amdb.create_category(conn, user_id, "Bed", ["brand", "size"], is_confirmed=True, workspace_id="ws-1")
+    amdb.upsert_article(conn, user_id, {
+        "category": "Bed", "product_type": "Bedsheet", "brand": "ASTER", "size": "DB BS",
+        "mrp": 999, "ptr": 450, "ex_mill_price": 400, "bale_pack_size": 12,
+        "item_key": "ASTER|DB BS", "extra_attributes": {},
+    }, workspace_id="ws-1")
+    conn.close()
+
     distributor_id = db.add_master_distributor(
         "Bernina Textiles",
         firm_name="Bernina International P Ltd",

@@ -85,5 +85,7 @@ def test_admin_api_rejects_creating_role_admin(app):
         },
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 400
-    assert "Invalid role" in (resp.get_json().get("message") or "")
+    assert resp.status_code == 403
+    body = resp.get_json()
+    assert body["error"]["code"] == "FORBIDDEN"
+    assert "role=admin is disabled" in body["error"]["message"]
