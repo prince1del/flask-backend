@@ -37,14 +37,22 @@ SO_KEYWORDS = (
     "buyer code",
 )
 
+MAIL_WINDOW_DAYS = 60
+
+# Sales Orders arrive as often in a ZIP/RAR pack as they do as a loose PDF, so
+# the search must not be restricted to `filename:pdf` — that alone made every
+# zipped SO pack invisible to this poller.
 GMAIL_QUERY = (
-    'newer_than:60d ('
-    'has:attachment filename:pdf '
-    '(subject:(invoice OR "sales order" OR "purchase order" OR "commercial invoice") '
-    'OR filename:(invoice OR order)) '
+    f"newer_than:{MAIL_WINDOW_DAYS}d ("
+    "has:attachment "
+    '(subject:(invoice OR "sales order" OR "purchase order" OR "commercial invoice" '
+    "OR order OR so) "
+    "OR filename:(invoice OR order OR so)) "
     'OR "wetransfer.com" OR "we.tl"'
-    ')'
+    ")"
 )
+
+ATTACHMENT_EXTENSIONS = (".pdf", ".zip", ".rar")
 
 GMAIL_READONLY_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -60,7 +68,12 @@ def build_gmail_service(oauth_token: dict[str, Any]):
     return build("gmail", "v1", credentials=creds)
 
 
-def _classify_pdf(subject: str, filename: str, text_sample: str) -> str | None:
+def _classify_pdf(
+    subject: str,
+    filename: str,
+    text_sample: str,
+    header: dict[str, str] | None = None,
+) -> str | None:
     """Best-effort CI vs SO guess from subject/filename/PDF text. Returns
     None when neither looks like a match (email gets skipped, not imported)."""
     haystack = f"{subject}\n{filename}\n{text_sample}".lower()
@@ -68,7 +81,55 @@ def _classify_pdf(subject: str, filename: str, text_sample: str) -> str | None:
     so_hits = sum(1 for kw in SO_KEYWORDS if kw in haystack)
     if ci_hits == 0 and so_hits == 0:
         return None
-    return "CI" if ci_hits >= so_hits else "SO"
+    # A real Sales Order prints an order reference and/or a buyer code, and it
+    # never carries a Bombay Dyeing CI number. Structural fields beat keyword
+    # counting: a genuine SO that happens to say "Invoice To"/"Tax Invoice"
+    # anywhere on the page used to tip the keyword tie to CI, and was then
+    # thrown away by the CI-number gate below — silently losing the SO.
+    fields = header or {}
+    looks_structurally_like_so = bool(
+        fields.get("order_ref_no") or fields.get("buyer_code")
+    )
+    if looks_structurally_like_so and not CI_NUMBER_PATTERN.search(text_sample or ""):
+        return "SO"
+    return "CI" if ci_hits > so_hits else "SO"
+
+
+def accept_document(
+    kind: str,
+    *,
+    text_sample: str,
+    header: dict[str, str],
+    buyer_gst: str | None,
+    all_gsts: list[str],
+    ci_number_hit: bool,
+) -> tuple[bool, str | None]:
+    """Should this attachment be handed to the normal upload flow?
+
+    Returns (accepted, reason_when_rejected). The bar must be no higher than
+    the manual upload path a founder uses, otherwise mail sync silently drops
+    documents the app would happily have accepted by hand.
+
+    The anti-noise guard stays: a real Indian B2B document always prints a
+    GSTIN somewhere, personal/US SaaS receipts never do. What it no longer
+    does is demand a *uniquely identified* buyer GSTIN — `_identify_buyer_gst`
+    returns None whenever the page shows anything other than exactly one
+    non-own GSTIN (consignee, transporter, or simply no Company Profile GST on
+    file), and requiring it here rejected practically every real Sales Order.
+    Distributor matching is the upload endpoint's job, and it already falls
+    back to Buyer Code and then to a human confirmation.
+    """
+    if not all_gsts:
+        return False, "no_gstin_on_document"
+    if kind == "CI":
+        if not buyer_gst:
+            return False, "ci_buyer_gst_not_identified"
+        if not ci_number_hit:
+            return False, "ci_number_pattern_not_matched"
+        return True, None
+    if not (buyer_gst or header.get("buyer_code") or header.get("order_ref_no")):
+        return False, "so_has_no_order_ref_buyer_code_or_gst"
+    return True, None
 
 
 def _extract_message_content(
@@ -101,7 +162,7 @@ def _extract_message_content(
         filename = part.get("filename") or ""
         mime_type = str(part.get("mimeType") or "")
         body = part.get("body") or {}
-        if filename.lower().endswith(".pdf") and body.get("attachmentId"):
+        if filename.lower().endswith(ATTACHMENT_EXTENSIONS) and body.get("attachmentId"):
             att = (
                 service.users()
                 .messages()
@@ -140,6 +201,7 @@ def poll_for_user(
     from werkzeug.datastructures import FileStorage
     from centralized_db_system.db import CentralizedDB
     from app.routes.data import (
+        _db_path,
         _upload_invoice_v2_impl,
         _expand_ci_upload_items,
         _so_pack_sniff_kind,
@@ -151,16 +213,43 @@ def poll_for_user(
     from app.three_step_verification import _extract_pdf_text
     from app.services import wetransfer_fetch
 
-    # Same no-arg CentralizedDB() as connect/status/disconnect in
-    # app/routes/mail_sync.py — using data.py's _db_path() here instead
-    # previously pointed at a different resolved DB file, so a freshly
-    # connected Gmail account looked "not connected" the moment you polled.
-    db = CentralizedDB()
+    # Must be the same database as the rest of the app (see `_db()` in
+    # app/routes/mail_sync.py). An earlier fix aligned this with the *bare*
+    # CentralizedDB() used by connect/status, which cured the "looks not
+    # connected" symptom by moving the poller onto a file that has no
+    # distributors, no company profile and no Order Desk — so it then found
+    # and imported nothing. Both sides now resolve DATABASE_PATH like
+    # app/routes/data.py does.
+    db = CentralizedDB(_db_path())
     account = db.get_storage_account(
         user_id=user_id, provider_type="gmail", workspace_id=workspace_id
     )
     if not account or account.get("sync_status") != "connected" or not account.get("oauth_token"):
-        raise RuntimeError("Gmail is not connected for this account.")
+        # Not an error the user should meet as a bare failure — it is the most
+        # common reason "nothing came from email", and it is fixable by him.
+        return _finish(
+            db,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            summary={
+                "connected": False,
+                "scanned": 0,
+                "ci_imported": 0,
+                "so_staged": 0,
+                "skipped": 0,
+                "errors": [],
+                "imported_items": [],
+                "pending_review": 0,
+                "duplicates": 0,
+                "debug": [],
+                "messages_matched": 0,
+                "attachments_seen": 0,
+                "attachments_unreadable": 0,
+                "unreadable_files": [],
+                "skipped_reasons": [],
+                "window_days": MAIL_WINDOW_DAYS,
+            },
+        )
 
     if reset_history:
         db.clear_processed_gmail_messages(user_id=user_id, workspace_id=workspace_id)
@@ -180,6 +269,7 @@ def poll_for_user(
     messages = listing.get("messages") or []
 
     summary: dict[str, Any] = {
+        "connected": True,
         "scanned": 0,
         "ci_imported": 0,
         "so_staged": 0,
@@ -189,6 +279,14 @@ def poll_for_user(
         "pending_review": 0,
         "duplicates": 0,
         "debug": [],
+        # Everything below exists so "0 CI, 0 SO" can never again mean four
+        # different things the user cannot tell apart.
+        "messages_matched": len(messages),
+        "attachments_seen": 0,
+        "attachments_unreadable": 0,
+        "unreadable_files": [],
+        "skipped_reasons": [],
+        "window_days": MAIL_WINDOW_DAYS,
     }
 
     auth_header = request.headers.get("Authorization")
@@ -200,9 +298,37 @@ def poll_for_user(
         summary["scanned"] += 1
         try:
             subject, email_date, body_text, raw_attachments = _extract_message_content(service, message_id)
-            attachments: list[tuple[str, bytes, str]] = [
-                (fn, data, "gmail_attachment") for fn, data in raw_attachments
-            ]
+            attachments: list[tuple[str, bytes, str]] = []
+            for fn, data in raw_attachments:
+                kind_sniff = _so_pack_sniff_kind(data, fn)
+                if kind_sniff == "pdf":
+                    attachments.append((fn, data, "gmail_attachment"))
+                    continue
+                if kind_sniff in ("zip", "rar"):
+                    # A zipped SO pack is the normal shape for Sales Orders —
+                    # unpack it with the very same expander the manual CI/SO
+                    # upload uses.
+                    try:
+                        for inner_name, inner_data in _expand_ci_upload_items([(fn, data)]):
+                            attachments.append((inner_name, inner_data, "gmail_attachment"))
+                    except Exception as exc:
+                        summary["attachments_seen"] += 1
+                        summary["attachments_unreadable"] += 1
+                        summary["unreadable_files"].append({
+                            "message_id": message_id,
+                            "subject": subject,
+                            "filename": fn,
+                            "reason": str(exc),
+                        })
+                    continue
+                summary["attachments_seen"] += 1
+                summary["attachments_unreadable"] += 1
+                summary["unreadable_files"].append({
+                    "message_id": message_id,
+                    "subject": subject,
+                    "filename": fn,
+                    "reason": "unsupported_file_type",
+                })
 
             for link in wetransfer_fetch.find_links(f"{subject}\n{body_text}"):
                 try:
@@ -221,6 +347,7 @@ def poll_for_user(
 
             handled_any = False
             for filename, data, source in attachments:
+                summary["attachments_seen"] += 1
                 text_sample = ""
                 tmp_path = None
                 try:
@@ -237,8 +364,28 @@ def poll_for_user(
                         except OSError:
                             pass
 
-                kind = _classify_pdf(subject, filename, text_sample)
+                header = _parse_sales_order_header_fields(text_sample)
+
+                if not (text_sample or "").strip():
+                    # A scanned/photographed PDF has no text layer at all, so
+                    # nothing downstream can read it. Say which file, and why.
+                    summary["attachments_unreadable"] += 1
+                    summary["unreadable_files"].append({
+                        "message_id": message_id,
+                        "subject": subject,
+                        "filename": filename,
+                        "reason": "no_text_layer",
+                    })
+                    continue
+
+                kind = _classify_pdf(subject, filename, text_sample, header)
                 if kind is None:
+                    summary["skipped_reasons"].append({
+                        "message_id": message_id,
+                        "subject": subject,
+                        "filename": filename,
+                        "reason": "not_a_sales_order_or_invoice",
+                    })
                     continue
 
                 # Keyword classification alone is too loose — subject/filename
@@ -252,7 +399,6 @@ def poll_for_user(
                 # sales (no prior SO/distributor record) are a supported
                 # case in this app, and would wrongly get rejected by that
                 # stricter check.
-                header = _parse_sales_order_header_fields(text_sample)
                 all_gsts = [g for g in (header.get("all_gst_numbers") or "").split(",") if g]
                 buyer_gst = (
                     _extract_ci_buyer_gst(text_sample, own_gst)
@@ -264,7 +410,14 @@ def poll_for_user(
                     if buyer_gst else None
                 )
                 ci_number_hit = bool(CI_NUMBER_PATTERN.search(text_sample or ""))
-                accepted = bool(buyer_gst) and (kind != "CI" or ci_number_hit)
+                accepted, reject_reason = accept_document(
+                    kind,
+                    text_sample=text_sample,
+                    header=header,
+                    buyer_gst=buyer_gst,
+                    all_gsts=all_gsts,
+                    ci_number_hit=ci_number_hit,
+                )
 
                 summary["debug"].append({
                     "message_id": message_id,
@@ -278,8 +431,15 @@ def poll_for_user(
                     "matched_known_distributor": bool(distributor_hit),
                     "distributor_name": (distributor_hit or {}).get("firm_name") if distributor_hit else None,
                     "accepted": accepted,
+                    "reject_reason": reject_reason,
                 })
                 if not accepted:
+                    summary["skipped_reasons"].append({
+                        "message_id": message_id,
+                        "subject": subject,
+                        "filename": filename,
+                        "reason": reject_reason,
+                    })
                     continue
 
                 handled_any = True
@@ -382,7 +542,21 @@ def poll_for_user(
                         doc_no = preview.get("order_ref_no") or preview.get("buyer_code")
                         party_name = preview.get("buyer_name")
                         matched_by_code = preview.get("matched_by_buyer_code") or {}
-                        distributor_id = matched_by_code.get("id") if preview.get("signals_agree") else None
+                        matched_by_gst = preview.get("matched_by_gst") or {}
+                        # Auto-confirm only when the signals cannot disagree:
+                        # both present and agreeing, or exactly one present.
+                        # Previously this required `signals_agree`, which is
+                        # None unless BOTH matched — so an SO identified by
+                        # buyer code alone (the common case) was never
+                        # auto-imported.
+                        if preview.get("signals_agree") is True:
+                            distributor_id = matched_by_code.get("id")
+                        elif matched_by_code and not matched_by_gst:
+                            distributor_id = matched_by_code.get("id")
+                        elif matched_by_gst and not matched_by_code:
+                            distributor_id = matched_by_gst.get("id")
+                        else:
+                            distributor_id = None
                         auto_confirmed = False
                         confirmed_tracking_id = None
                         if distributor_id and preview.get("order_ref_no"):
@@ -461,4 +635,38 @@ def poll_for_user(
             summary["errors"].append({"message_id": message_id, "error": str(exc)})
 
     summary["imported_items"].sort(key=lambda item: item.get("email_date") or "", reverse=True)
+    return _finish(db, user_id=user_id, workspace_id=workspace_id, summary=summary)
+
+
+def _finish(db, *, user_id: int, workspace_id: str, summary: dict[str, Any]) -> dict[str, Any]:
+    """Attach the plain-language outcome and leave a support record behind.
+
+    Same contract as the SO pack upload diagnostics: the outcome code is the
+    app's i18n key, rows are written per `user_id`, and a clean import writes
+    nothing at all.
+    """
+    import sqlite3
+
+    from app.services import mail_sync_diagnostics as diag
+
+    assessment = diag.assess(summary)
+    summary["outcome"] = assessment["outcome"]
+    summary["message"] = diag.message_for(assessment)
+    summary["diagnosis"] = assessment
+
+    try:
+        conn = sqlite3.connect(str(db.db_path))
+        try:
+            diag.record(
+                conn,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                query=GMAIL_QUERY,
+                summary=summary,
+                assessment=assessment,
+            )
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("Failed to record mail sync diagnostics for user %s", user_id)
     return summary

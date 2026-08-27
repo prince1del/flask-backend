@@ -1,4 +1,4 @@
-import io
+﻿import io
 
 from flask import Blueprint, current_app, request, jsonify, render_template_string
 
@@ -44,6 +44,23 @@ _GMAIL_CONNECTED_HTML = """
 </body>
 </html>
 """
+
+
+def _db() -> CentralizedDB:
+    """The same database every other route uses.
+
+    A bare `CentralizedDB()` resolves only CLOUD_DATABASE_URL/DATABASE_URL and
+    otherwise falls back to a relative `centralized_db.sqlite3` â€” it ignores
+    `DATABASE_PATH` and `current_app.config["DATABASE_PATH"]`, which is what
+    `app/routes/data.py` and `app/routes/auth.py` actually run on. Mail sync
+    used to construct it bare, so the Gmail token, the processed-message log and
+    the pending imports lived in a file that held no distributors, no company
+    profile and no Order Desk â€” every poll therefore matched nothing and
+    imported nothing into the user's real workspace.
+    """
+    from app.routes.data import _db_path
+
+    return CentralizedDB(_db_path())
 
 
 def _get_request_user():
@@ -125,7 +142,7 @@ def oauth_callback():
         except RuntimeError as exc:
             return render_template_string('<h1>Gmail Connect Failed</h1><p>{{ message }}</p>', message=str(exc)), 500
 
-        db = CentralizedDB()
+        db = _db()
         db.save_storage_account(
             user_id=int(user_id),
             workspace_id=str(workspace_id),
@@ -150,7 +167,7 @@ def status():
         user_id = user['user_id']
         workspace_id = get_workspace_id()
 
-        db = CentralizedDB()
+        db = _db()
         account = db.get_storage_account(user_id=user_id, provider_type='gmail', workspace_id=workspace_id)
         connected = bool(account and account.get('sync_status') == 'connected' and account.get('oauth_token'))
         return jsonify({
@@ -172,7 +189,7 @@ def disconnect():
         user_id = user['user_id']
         workspace_id = get_workspace_id()
 
-        db = CentralizedDB()
+        db = _db()
         disconnected = db.disconnect_storage_account(user_id=user_id, workspace_id=workspace_id, provider_type='gmail')
         if not disconnected:
             return jsonify({'success': False, 'error': 'No connected Gmail account found.'}), 404
@@ -186,7 +203,7 @@ def disconnect():
 def poll():
     """Manually trigger a Gmail scan for new CI/SO PDF attachments.
 
-    No scheduler runs this automatically yet — call it from the app (e.g. a
+    No scheduler runs this automatically yet â€” call it from the app (e.g. a
     'Check Mail' button, or on app-open) until a decision is made on cron vs
     app-triggered polling.
     """
@@ -212,18 +229,60 @@ def poll():
         return jsonify({'success': False, 'error': {'code': 'POLL_FAILED', 'message': str(e)}}), 500
 
 
+@mail_sync_bp.route('/diagnostics', methods=['GET'])
+@require_jwt_auth
+def poll_diagnostics():
+    """Why recent polls produced nothing â€” own rows; the owner sees the workspace.
+
+    Read-only support API (no new screen), mirroring
+    /api/v1/order-fulfillment/so-pack/upload-diagnostics: the owner flag comes
+    from the signed JWT, never from request input.
+    """
+    import sqlite3
+
+    from app.services import mail_sync_diagnostics as diag
+
+    try:
+        user = _get_request_user()
+        user_id = int(user['user_id'])
+        try:
+            from app.routes.auth import is_request_workspace_owner
+
+            is_owner = bool(is_request_workspace_owner())
+        except Exception:
+            is_owner = False
+
+        db = _db()
+        conn = sqlite3.connect(str(db.db_path))
+        try:
+            rows = diag.list_recent(
+                conn,
+                user_id=user_id,
+                workspace_wide=is_owner,
+                limit=request.args.get('limit', default=50, type=int) or 50,
+            )
+        finally:
+            conn.close()
+        return jsonify({
+            'success': True,
+            'data': {'records': rows, 'scope': 'workspace' if is_owner else 'mine'},
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mail_sync_bp.route('/log', methods=['GET'])
 @require_jwt_auth
 def get_import_log():
     """Permanent history of every CI/SO the poller ever classified from
-    Gmail/WeTransfer — source, outcome, and (if it became a real Order
+    Gmail/WeTransfer â€” source, outcome, and (if it became a real Order
     Desk record) the tracking_id to cross-reference there."""
     try:
         user = _get_request_user()
         user_id = user['user_id']
         workspace_id = get_workspace_id()
 
-        db = CentralizedDB()
+        db = _db()
         limit = request.args.get('limit', default=200, type=int) or 200
         rows = db.list_gmail_import_log(user_id=user_id, workspace_id=workspace_id, limit=limit)
         return jsonify({'success': True, 'data': {'items': rows}}), 200
@@ -235,13 +294,13 @@ def get_import_log():
 @require_jwt_auth
 def list_pending():
     """CI/SO the poller found but couldn't safely auto-confirm (ambiguous
-    match) — needs a human to pick a distributor or dismiss it."""
+    match) â€” needs a human to pick a distributor or dismiss it."""
     try:
         user = _get_request_user()
         user_id = user['user_id']
         workspace_id = get_workspace_id()
 
-        db = CentralizedDB()
+        db = _db()
         rows = db.list_gmail_pending_imports(user_id=user_id, workspace_id=workspace_id, status='pending')
         return jsonify({'success': True, 'data': {'items': rows}}), 200
     except Exception as e:
@@ -262,7 +321,7 @@ def confirm_pending(pending_id: int):
         body = request.get_json(silent=True) or {}
         distributor_id = body.get('distributor_id')
 
-        db = CentralizedDB()
+        db = _db()
         row = db.get_gmail_pending_import(pending_id, user_id=user_id, workspace_id=workspace_id)
         if not row or row.get('status') != 'pending':
             return jsonify({'success': False, 'error': {'message': 'Pending import not found'}}), 404
@@ -340,7 +399,7 @@ def reject_pending(pending_id: int):
         user_id = user['user_id']
         workspace_id = get_workspace_id()
 
-        db = CentralizedDB()
+        db = _db()
         row = db.get_gmail_pending_import(pending_id, user_id=user_id, workspace_id=workspace_id)
         if not row:
             return jsonify({'success': False, 'error': {'message': 'Pending import not found'}}), 404
