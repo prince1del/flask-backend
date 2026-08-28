@@ -386,7 +386,7 @@ def get_filled_order_items(conn, filled_order_id):
 
 def list_filled_orders(conn, user_id, distributor_id=None, category=None, season=None):
     cols = ", ".join(FILLED_ORDER_COLUMNS)
-    query = f"SELECT {cols} FROM filled_orders WHERE user_id = ?"
+    query = f"SELECT {cols} FROM filled_orders WHERE (user_id = ? OR user_id IS NULL)"
     params = [user_id]
     if distributor_id:
         query += " AND distributor_id = ?"
