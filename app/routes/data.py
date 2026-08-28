@@ -5196,6 +5196,22 @@ def upload_sales_order_v2() -> Response:
         if buyer_gst
         else None
     )
+
+    # When both are present but disagree (e.g. buyer code is BHD001 for Balaji Home Decor,
+    # but the printed GST belongs to another entity), check buyer_name to break the tie
+    # and not leave matched_by_gst pointing to the wrong entity.
+    if matched_by_buyer_code and matched_by_gst and matched_by_buyer_code["id"] != matched_by_gst["id"]:
+        from rapidfuzz import fuzz
+        b_name = (buyer_name or "").lower()
+        name_code = (matched_by_buyer_code.get("firm_name") or matched_by_buyer_code.get("name") or "").lower()
+        name_gst = (matched_by_gst.get("firm_name") or matched_by_gst.get("name") or "").lower()
+        score_code = fuzz.token_set_ratio(b_name, name_code) if b_name and name_code else 0
+        score_gst = fuzz.token_set_ratio(b_name, name_gst) if b_name and name_gst else 0
+        if score_code >= 80 and score_code > score_gst + 15:
+            matched_by_gst = None
+        elif score_gst >= 80 and score_gst > score_code + 15:
+            matched_by_buyer_code = None
+
     signals_agree = None
     if matched_by_buyer_code and matched_by_gst:
         signals_agree = matched_by_buyer_code["id"] == matched_by_gst["id"]

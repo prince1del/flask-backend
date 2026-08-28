@@ -624,6 +624,40 @@ class CentralizedDB:
         self.ensure_gmail_pending_imports_table()
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
+            # Deduplicate pending imports: if the same document/SO or message attachment is already pending review, update it instead of inserting duplicates!
+            existing = None
+            if doc_no:
+                existing = conn.execute(
+                    """
+                    SELECT id FROM gmail_pending_imports
+                    WHERE user_id = ? AND workspace_id = ? AND doc_no = ? AND status = 'pending'
+                    LIMIT 1
+                    """,
+                    (user_id, str(workspace_id or "default"), doc_no),
+                ).fetchone()
+            if not existing and message_id and filename:
+                existing = conn.execute(
+                    """
+                    SELECT id FROM gmail_pending_imports
+                    WHERE user_id = ? AND workspace_id = ? AND message_id = ? AND filename = ? AND status = 'pending'
+                    LIMIT 1
+                    """,
+                    (user_id, str(workspace_id or "default"), message_id, filename),
+                ).fetchone()
+
+            if existing:
+                pending_id = existing[0]
+                conn.execute(
+                    """
+                    UPDATE gmail_pending_imports
+                    SET party_name = ?, reason = ?, preview_json = ?, file_bytes = COALESCE(?, file_bytes), created_at = ?
+                    WHERE id = ?
+                    """,
+                    (party_name, reason, preview_json, file_bytes, now, pending_id),
+                )
+                conn.commit()
+                return int(pending_id)
+
             cursor = conn.execute(
                 """
                 INSERT INTO gmail_pending_imports (

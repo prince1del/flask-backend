@@ -208,6 +208,8 @@ def poll():
     app-triggered polling.
     """
     try:
+        import sqlite3
+
         from app.services.gmail_ci_so_sync import poll_for_user
 
         user = _get_request_user()
@@ -215,6 +217,17 @@ def poll():
         workspace_id = get_workspace_id()
         max_messages = request.args.get('max_messages', default=15, type=int) or 15
         reset_history = request.args.get('reset', default='false').lower() in ('1', 'true', 'yes')
+
+        if reset_history:
+            # Clear old pending imports when user asks to rescan from scratch so stale unconfirmed items don't accumulate
+            db_inst = _db()
+            db_inst.ensure_gmail_pending_imports_table()
+            with sqlite3.connect(str(db_inst.db_path)) as conn:
+                conn.execute(
+                    "DELETE FROM gmail_pending_imports WHERE user_id = ? AND workspace_id = ?",
+                    (user_id, str(workspace_id or "default")),
+                )
+                conn.commit()
 
         summary = poll_for_user(
             user_id=user_id,
@@ -304,10 +317,16 @@ def list_pending():
 
         db = _db()
         rows = db.list_gmail_pending_imports(user_id=user_id, workspace_id=workspace_id, status='pending')
-        # Parse preview_json so client gets structured metadata (suggestions, confidence, extracted fields)
+        # Parse preview_json and deduplicate rows by doc_no / filename in case historical duplicate rows exist
         enriched = []
+        seen_keys = set()
         for r in rows:
             item = dict(r)
+            dedup_key = (item.get('kind'), item.get('doc_no') or item.get('filename'))
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+
             if item.get('preview_json'):
                 try:
                     item['preview'] = _json.loads(item['preview_json'])
