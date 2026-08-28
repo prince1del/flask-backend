@@ -9099,10 +9099,12 @@ class CentralizedDB:
                 "AND ("
                 "  (olt.sales_order_file_reference IS NOT NULL AND TRIM(olt.sales_order_file_reference) != '') "
                 "  OR (olt.sales_order_parsed IS NOT NULL AND TRIM(olt.sales_order_parsed) != '') "
+                "  OR (olt.commercial_invoice_file_reference IS NOT NULL AND TRIM(olt.commercial_invoice_file_reference) != '') "
+                "  OR (olt.commercial_invoice_parsed IS NOT NULL AND TRIM(olt.commercial_invoice_parsed) != '') "
                 "  OR EXISTS ("
                 "    SELECT 1 FROM order_fulfillment_items ofi "
                 "    WHERE ofi.order_lifecycle_id = olt.tracking_id "
-                "      AND COALESCE(ofi.so_qty, 0) > 0"
+                "      AND (COALESCE(ofi.so_qty, 0) > 0 OR COALESCE(ofi.fulfilled_qty, 0) > 0)"
                 "  )"
                 ") "
             )

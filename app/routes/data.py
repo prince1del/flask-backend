@@ -760,6 +760,7 @@ def _match_ci_buyer_to_customers(
     buyer_name: str | None,
     buyer_gst: str | None,
     workspace_id: str | None,
+    user_id: int | None = None,
     allow_fuzzy: bool = True,
 ) -> dict[str, Any]:
     """
@@ -771,7 +772,9 @@ def _match_ci_buyer_to_customers(
     candidates: list[dict[str, Any]] = []
 
     if buyer_gst:
-        matched = db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
+        matched = db.get_master_distributor_by_gst(
+            buyer_gst, workspace_id=workspace_id, user_id=user_id
+        )
         if matched:
             match_method = "gst"
 
@@ -5833,6 +5836,7 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
             buyer_name=buyer_name,
             buyer_gst=buyer_gst,
             workspace_id=workspace_id,
+            user_id=_current_user_id(),
             allow_fuzzy=not bool(buyer_gst),  # GST hit is enough; skip slow fuzzy scan
         )
         party_match = _build_ci_party_match_summary(
