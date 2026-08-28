@@ -7,6 +7,14 @@ from typing import Any
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+# get_auth_url() below passes include_granted_scopes="true", which makes
+# Google return every scope the user has ever granted this app (not just
+# cls.SCOPES) — oauthlib's default strict check then rejects the token
+# exchange with "Scope has changed from ... to ...". This is a superset,
+# not a downgrade, so relaxing the client-side check is safe: Google's
+# server already decided what was granted.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_LOADED = False
 
