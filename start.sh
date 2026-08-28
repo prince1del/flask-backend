@@ -126,6 +126,44 @@ try:
         except Exception as e:
             print("SO BACKLOG CLEANUP err:", e)
 
+    # One-time, opt-in repair: auto_attach_so_to_filled_order() used to call
+    # link_filled_order_to_tracking() BEFORE the match/merge computation,
+    # not after — so a tracking_id whose match attempt failed partway
+    # (exception swallowed by the function's own outer except) still got
+    # permanently marked "linked" in filled_order_so_link, since that
+    # insert commits immediately and unconditionally. A permanently
+    # "linked" tracking_id is invisible to every future self-heal retry
+    # (list_candidate_sales_orders_for_filled_order excludes it), even
+    # though its FO<->SO match run was never actually created/updated —
+    # this is exactly why Sain International's and Shri Ram & Co's freshly
+    # re-imported SOs kept showing candidates=0 with stale old totals.
+    # Fixed at the source (link now only happens after success) — this
+    # just clears the already-bad links so the self-heal can retry them
+    # for real. OFF by default — set RUN_FO_SO_LINK_REPAIR=1, redeploy
+    # once, then unset it (idempotent either way: an already-correct link
+    # just gets harmlessly re-created by the next self-heal pass).
+    if os.getenv("RUN_FO_SO_LINK_REPAIR") == "1":
+        try:
+            import sqlite3 as _sqlite3
+
+            _conn = _sqlite3.connect(db_path)
+            cdb.ensure_gmail_import_log_table()
+            _deleted_links = _conn.execute(
+                "DELETE FROM filled_order_so_link WHERE order_lifecycle_tracking_id IN ("
+                "  SELECT DISTINCT tracking_id FROM gmail_import_log "
+                "  WHERE kind = 'SO' AND outcome = 'auto_confirmed' AND tracking_id IS NOT NULL"
+                ")"
+            ).rowcount
+            _conn.commit()
+            _conn.close()
+            print(
+                f"FO<->SO LINK REPAIR: cleared {_deleted_links} filled_order_so_link row(s) "
+                f"for mail-imported SOs so the next self-heal (Order Desk load) retries them "
+                f"for real instead of skipping them as already-linked"
+            )
+        except Exception as e:
+            print("FO<->SO LINK REPAIR err:", e)
+
     # Free peak RAM before gunicorn starts (same shell, sequential).
     del cdb, app, db
     gc.collect()

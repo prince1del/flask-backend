@@ -461,3 +461,65 @@ def test_auto_sync_falls_back_to_drive_when_local_file_is_gone(monkeypatch):
         assert attach_calls[0]["tracking_id"] == tracking_id
     finally:
         conn.close()
+
+
+def test_failed_match_does_not_permanently_link_tracking_id(monkeypatch):
+    """Regression test: link_filled_order_to_tracking() used to run BEFORE
+    the match/merge computation, so a mid-match exception still left a
+    permanent filled_order_so_link row — hiding that tracking_id from every
+    future self-heal retry forever, even though no match run was ever
+    actually created for it. This is the confirmed root cause of Sain
+    International's and Shri Ram & Co's freshly re-imported SOs staying
+    stuck at their stale old totals (production logs: candidates=0 for
+    their FOs, with no "Auto-created/updated match run" line for either)."""
+    conn, db_path = _setup_db()
+    try:
+        user_id, dist_id = 1, 101
+
+        fo_id = fodb.create_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            distributor_name_raw="Balaji Homedecor", category="Bath", season="AW26",
+        )
+        fodb.insert_filled_order_item(
+            conn, fo_id,
+            {
+                "item_key": "santino_ladies_towel", "brand": "Santino", "size": "Ladies Towel",
+                "product_type": "Towel", "raw_qty_value": 100, "detected_unit": "pcs",
+                "final_piece_qty": 100, "is_clean_bale_multiple": True, "matched": True,
+                "mrp": 500, "ptr": 350, "ex_mill_price": 300,
+            },
+        )
+
+        pack = {
+            "line_detail": [{
+                "so_number": "102876568",
+                "product_name": "SANTINO PRE DYED 2PC",
+                "product_detail": "SANTINO PRE DYED 2PC 40X60CM ASST12 AW26",
+                "material_code": "MT12345",
+                "qty": 50,
+                "net_amount": 17500,
+            }],
+            "meta": {"order_date": "18.08.2026", "source_filename": "so_1.pdf"},
+        }
+
+        import app.services.fo_so_match_lab as match_lab
+
+        def boom(**kwargs):
+            raise RuntimeError("simulated match computation failure")
+
+        monkeypatch.setattr(match_lab, "run_match_saved_fo_vs_so_pack", boom)
+
+        tracking_id = 999
+        res = auto_match.auto_attach_so_to_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            filename="so_1.pdf", pre_analyzed_pack=pack, tracking_id=tracking_id,
+        )
+
+        assert res is None
+        links = fodb.list_tracking_links_for_filled_order(conn, fo_id)
+        assert links == [], (
+            "tracking_id got permanently linked despite the match never "
+            "succeeding — it will never be offered as a self-heal candidate again"
+        )
+    finally:
+        conn.close()

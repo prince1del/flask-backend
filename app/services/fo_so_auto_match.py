@@ -197,11 +197,20 @@ def auto_attach_so_to_filled_order(
         if not items:
             return None
 
-        if tracking_id:
-            try:
-                fodb.link_filled_order_to_tracking(conn, fo_id, tracking_id)
-            except Exception:
-                pass
+        def _link_now() -> None:
+            # Only ever called after a match genuinely succeeded (or was
+            # confirmed already-matched) below — linking BEFORE that point
+            # used to mean a mid-match exception still permanently marked
+            # this tracking_id "linked" (filled_order_so_link is an
+            # unconditional INSERT ... ON CONFLICT DO NOTHING with an
+            # immediate commit), so a failed attempt could never be
+            # retried: list_candidate_sales_orders_for_filled_order
+            # excludes anything already in that table.
+            if tracking_id:
+                try:
+                    fodb.link_filled_order_to_tracking(conn, fo_id, tracking_id)
+                except Exception:
+                    pass
 
         existing = sorev.get_latest_run_for_fo(
             conn, user_id=user_id, filled_order_id=fo_id
@@ -221,6 +230,7 @@ def auto_attach_so_to_filled_order(
 
             if action == "already_in_system":
                 if sorev.run_reflects_so_lines(existing, lines):
+                    _link_now()
                     return {"status": "already_matched", "run_id": existing.get("id")}
                 merged = new_lines
             elif action == "replace":
@@ -257,6 +267,7 @@ def auto_attach_so_to_filled_order(
                 fo_id,
                 fo.get("category"),
             )
+            _link_now()
             return {"status": "updated", "run_id": run.get("id")}
         else:
             result = run_match_saved_fo_vs_so_pack(
@@ -282,6 +293,7 @@ def auto_attach_so_to_filled_order(
                 fo_id,
                 fo.get("category"),
             )
+            _link_now()
             return {"status": "created", "run_id": run.get("id")}
     except Exception as exc:
         logger.warning("Error auto-attaching SO to filled order: %s", exc, exc_info=True)
