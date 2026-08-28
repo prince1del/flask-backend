@@ -2570,6 +2570,25 @@ class CentralizedDB:
         if db_path:
             return Path(db_path).expanduser()
 
+        # Must match app/db_url.py's resolve_centralized_db_path() exactly —
+        # that module's own comment already warned about this: a bare
+        # CentralizedDB() (no db_path) used to fall through to
+        # `return Path(value).expanduser()` for a Postgres DATABASE_URL,
+        # turning the connection string itself into a bogus, non-persistent
+        # SQLite path instead of honoring DATABASE_PATH / Render's /var/data
+        # persistent disk like every Flask-request-scoped CentralizedDB()
+        # correctly does. Any caller using the bare constructor (Google
+        # Drive OAuth connect/status, mail-sync polling from outside a
+        # request, etc.) was silently reading/writing a throwaway file that
+        # evaporates on every redeploy — e.g. Drive would show "connected"
+        # until the next deploy wiped that separate, wrong database file.
+        try:
+            from app.db_url import resolve_centralized_db_path
+
+            return Path(resolve_centralized_db_path()).expanduser()
+        except Exception:
+            pass
+
         for env_name in ("CLOUD_DATABASE_URL", "DATABASE_URL"):
             value = os.getenv(env_name)
             if not value:
@@ -2588,8 +2607,6 @@ class CentralizedDB:
 
             if parsed.scheme in {"file", ""}:
                 return Path(parsed.path or value).expanduser()
-
-            return Path(value).expanduser()
 
         return Path("centralized_db.sqlite3").expanduser()
 
