@@ -91,6 +91,41 @@ try:
     except Exception as e:
         print("LOGIN INDEX err:", e)
 
+    # One-time, opt-in cleanup: delete mail-sync-imported Sales Orders whose
+    # local PDF was lost to the web dyno's ephemeral disk (before Google
+    # Drive backup was connected) so they can be genuinely re-fetched from
+    # Gmail instead of being permanently stuck behind the duplicate check.
+    # OFF by default — set RUN_SO_BACKLOG_CLEANUP=1 in the Render env vars,
+    # redeploy once, then UNSET it (this must not run on every boot, or it
+    # would delete every future mail-imported SO too).
+    if os.getenv("RUN_SO_BACKLOG_CLEANUP") == "1":
+        try:
+            import sqlite3 as _sqlite3
+
+            _conn = _sqlite3.connect(db_path)
+            cdb.ensure_gmail_import_log_table()
+            _rows = _conn.execute(
+                "SELECT DISTINCT tracking_id, user_id, workspace_id FROM gmail_import_log "
+                "WHERE kind = 'SO' AND outcome = 'auto_confirmed' AND tracking_id IS NOT NULL"
+            ).fetchall()
+            _conn.close()
+            _deleted = 0
+            _cleared: set[tuple[int, str]] = set()
+            for _tid, _uid, _wsid in _rows:
+                _wsid = _wsid or "default"
+                if cdb.delete_order_lifecycle_tracking(int(_tid), workspace_id=_wsid, user_id=_uid) is not None:
+                    _deleted += 1
+                _cleared.add((_uid, _wsid))
+            for _uid, _wsid in _cleared:
+                cdb.clear_processed_gmail_messages(user_id=_uid, workspace_id=_wsid)
+            print(
+                f"SO BACKLOG CLEANUP: deleted {_deleted}/{len(_rows)} mail-imported SO tracking "
+                f"records; cleared Gmail history for {len(_cleared)} user/workspace pair(s) "
+                f"so the next 'Rescan all mail' genuinely re-fetches them"
+            )
+        except Exception as e:
+            print("SO BACKLOG CLEANUP err:", e)
+
     # Free peak RAM before gunicorn starts (same shell, sequential).
     del cdb, app, db
     gc.collect()
