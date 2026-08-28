@@ -45,6 +45,15 @@ SO_KEYWORDS = (
 
 MAIL_WINDOW_DAYS = 60
 
+# gunicorn's worker timeout is 120s (start.sh) — a reset/rescan asking for
+# up to 100 messages can each need a full content fetch, attachment
+# download/unzip, PDF text extraction, and (now Drive is connected) a Drive
+# upload, so processing all of them can outrun that easily. Stop scanning
+# with margin to spare and let the caller re-run to pick up where it left
+# off (already-processed messages are skipped via processed_ids either way)
+# instead of the request timing out with no results reported at all.
+POLL_TIME_BUDGET_SECONDS = 90
+
 # Sales Orders arrive as often in a ZIP/RAR pack as they do as a loose PDF, so
 # the search must not be restricted to `filename:pdf` — that alone made every
 # zipped SO pack invisible to this poller.
@@ -221,6 +230,7 @@ def poll_for_user(
     import json
     import os
     import tempfile
+    import time
 
     from flask import current_app, request
     from werkzeug.datastructures import FileStorage
@@ -312,11 +322,22 @@ def poll_for_user(
         "unreadable_files": [],
         "skipped_reasons": [],
         "window_days": MAIL_WINDOW_DAYS,
+        "stopped_early": False,
     }
 
     auth_header = request.headers.get("Authorization")
+    poll_started_at = time.monotonic()
 
     for m in messages:
+        if time.monotonic() - poll_started_at > POLL_TIME_BUDGET_SECONDS:
+            summary["stopped_early"] = True
+            logger.warning(
+                "poll_for_user: stopped early at %.0fs (budget %ss) — "
+                "%s/%s messages scanned; run again to continue",
+                time.monotonic() - poll_started_at, POLL_TIME_BUDGET_SECONDS,
+                summary["scanned"], len(messages),
+            )
+            break
         message_id = m["id"]
         if message_id in processed_ids:
             continue
