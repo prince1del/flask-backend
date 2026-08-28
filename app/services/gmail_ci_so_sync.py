@@ -661,6 +661,7 @@ def poll_for_user(
 
                         auto_confirmed = False
                         confirmed_tracking_id = None
+                        confirm_data: dict[str, Any] = {}
                         if distributor_id and preview.get("order_ref_no"):
                             confirm_resp = client.post(
                                 "/api/v1/order-fulfillment/upload/sales-order",
@@ -673,6 +674,12 @@ def poll_for_user(
                             )
                             confirm_payload = confirm_resp.get_json(silent=True) or {}
                             confirm_data = confirm_payload.get("data") or {}
+                            if not confirm_payload.get("success") and confirm_payload.get("error"):
+                                err = confirm_payload.get("error")
+                                confirm_data.setdefault(
+                                    "link_error",
+                                    err.get("message") if isinstance(err, dict) else str(err),
+                                )
                             if (
                                 confirm_payload.get("success")
                                 and confirm_data.get("tracking_id")
@@ -697,7 +704,7 @@ def poll_for_user(
                                 source=source, kind="SO", filename=filename, doc_no=doc_no, party_name=party_name,
                                 outcome="auto_confirmed", tracking_id=confirmed_tracking_id, email_date=email_date,
                             )
-                        elif preview.get("is_duplicate"):
+                        elif confirm_data.get("is_duplicate") or preview.get("is_duplicate"):
                             summary["duplicates"] += 1
                             db.log_gmail_import(
                                 user_id=user_id, workspace_id=workspace_id, message_id=message_id,
@@ -705,15 +712,20 @@ def poll_for_user(
                                 outcome="duplicate", email_date=email_date,
                             )
                         else:
-                            reason = (
-                                "Buyer code / GST signals don't agree — pick distributor"
-                                if preview.get("matched_by_buyer_code") or preview.get("matched_by_gst")
-                                else "No distributor match found — pick distributor"
-                            )
-                            if preview.get("link_error"):
-                                reason = str(preview.get("link_error"))
-                            elif preview.get("is_duplicate"):
-                                reason = "This Sales Order is already in the system"
+                            # Prefer the real failure from the distributor-confirmed
+                            # attempt (confirm_data) — the no-distributor preview
+                            # call never runs the linking code, so its is_duplicate/
+                            # link_error are always empty and previously masked the
+                            # actual reason behind a generic "pick distributor" ask
+                            # even when a distributor had already been resolved.
+                            if confirm_data.get("link_error"):
+                                reason = str(confirm_data.get("link_error"))
+                            elif distributor_id:
+                                reason = "Distributor matched but saving failed — needs review"
+                            elif preview.get("matched_by_buyer_code") or preview.get("matched_by_gst"):
+                                reason = "Buyer code / GST signals don't agree — pick distributor"
+                            else:
+                                reason = "No distributor match found — pick distributor"
                             import json as _json
                             meta_preview = {
                                 "suggested_distributor_id": suggested_distributor_id,
