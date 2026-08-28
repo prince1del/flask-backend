@@ -4688,6 +4688,12 @@ def order_match_list() -> Response:
     try:
         _autoheal_order_match(conn, user_id=user_id, reason="order_match_list")
         try:
+            from app.services.fo_so_auto_match import auto_sync_all_unmatched_sos_for_user
+
+            auto_sync_all_unmatched_sos_for_user(conn, user_id=user_id, workspace_id="default")
+        except Exception:
+            pass
+        try:
             # Throttled retention cleanup for the Order Desk recycle store.
             from app.services import order_desk_archive as archive
 
@@ -5446,6 +5452,25 @@ def upload_sales_order_v2() -> Response:
                         pass
 
                 db.mark_document_processed(workspace_id, "SO", order_ref_no, tracking_id)
+
+                if confirmed_distributor_id and tracking_id and user_id:
+                    try:
+                        fo_conn_auto = sqlite3.connect(_db_path())
+                        try:
+                            from app.services.fo_so_auto_match import auto_attach_so_to_filled_order
+
+                            auto_attach_so_to_filled_order(
+                                conn=fo_conn_auto,
+                                user_id=user_id,
+                                distributor_id=confirmed_distributor_id,
+                                file_path=target_path,
+                                filename=distributor_name_for_folder,
+                                tracking_id=tracking_id,
+                            )
+                        finally:
+                            fo_conn_auto.close()
+                    except Exception as exc:
+                        logger.warning("Auto match SO to filled order failed: %s", exc)
             except Exception as exc:
                 link_error = str(exc)
 
