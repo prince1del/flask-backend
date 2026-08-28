@@ -13501,9 +13501,13 @@ class CentralizedDB:
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
-        user_clause, user_params = self._user_id_sql("user_id", user_id)
-        query += f" AND {user_clause}"
-        params.extend(user_params)
+        if user_id is not None:
+            query += " AND (user_id = ? OR user_id IS NULL) ORDER BY user_id IS NOT NULL DESC"
+            params.append(user_id)
+        else:
+            user_clause, user_params = self._user_id_sql("user_id", user_id)
+            query += f" AND {user_clause}"
+            params.extend(user_params)
         query += " LIMIT 1"
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
@@ -13556,9 +13560,13 @@ class CentralizedDB:
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
-        user_clause, user_params = self._user_id_sql("user_id", user_id)
-        query += f" AND {user_clause}"
-        params.extend(user_params)
+        if user_id is not None:
+            query += " AND (user_id = ? OR user_id IS NULL) ORDER BY user_id IS NOT NULL DESC"
+            params.append(user_id)
+        else:
+            user_clause, user_params = self._user_id_sql("user_id", user_id)
+            query += f" AND {user_clause}"
+            params.extend(user_params)
         query += " LIMIT 1"
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()
@@ -13965,9 +13973,13 @@ class CentralizedDB:
         if workspace_id:
             query += " AND workspace_id = ?"
             params.append(workspace_id)
-        user_clause, user_params = self._user_id_sql("user_id", user_id)
-        query += f" AND {user_clause}"
-        params.extend(user_params)
+        if user_id is not None:
+            query += " AND (user_id = ? OR user_id IS NULL) ORDER BY user_id IS NOT NULL DESC"
+            params.append(user_id)
+        else:
+            user_clause, user_params = self._user_id_sql("user_id", user_id)
+            query += f" AND {user_clause}"
+            params.extend(user_params)
         query += " LIMIT 1"
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(query, tuple(params)).fetchone()

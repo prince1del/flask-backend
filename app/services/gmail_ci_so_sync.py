@@ -35,6 +35,12 @@ SO_KEYWORDS = (
     "order ref",
     "po number",
     "buyer code",
+    "retail sale contract",
+    "sale contract",
+    "contract no",
+    "we the undersigned",
+    "shedule delivery",
+    "schedule delivery",
 )
 
 MAIL_WINDOW_DAYS = 60
@@ -46,8 +52,8 @@ GMAIL_QUERY = (
     f"newer_than:{MAIL_WINDOW_DAYS}d ("
     "has:attachment "
     '(subject:(invoice OR "sales order" OR "purchase order" OR "commercial invoice" '
-    "OR order OR so) "
-    "OR filename:(invoice OR order OR so)) "
+    'OR order OR orders OR so OR rfa OR contract OR towel OR bedsheet OR bnd OR "retail sale") '
+    'OR filename:(invoice OR order OR orders OR so OR rfa OR contract OR towel OR bedsheet OR bnd)) '
     'OR "wetransfer.com" OR "we.tl"'
     ")"
 )
@@ -77,6 +83,25 @@ def _classify_pdf(
     """Best-effort CI vs SO guess from subject/filename/PDF text. Returns
     None when neither looks like a match (email gets skipped, not imported)."""
     haystack = f"{subject}\n{filename}\n{text_sample}".lower()
+
+    # Definite CI patterns (Bombay Dyeing CI 10-digit number starting 140001...)
+    is_ci_number = bool(CI_NUMBER_PATTERN.search(text_sample or ""))
+    is_ci_explicit = "commercial invoice" in haystack or ("invoice no" in haystack and is_ci_number)
+
+    # Definite SO patterns (Bombay Dyeing Retail Sale Contract, PO, Contract No)
+    is_so_explicit = (
+        "retail sale contract" in haystack
+        or "we the undersigned" in haystack
+        or "shedule delivery" in haystack
+        or "schedule delivery" in haystack
+        or ("contract no" in haystack and not is_ci_number)
+    )
+
+    if is_so_explicit and not is_ci_number:
+        return "SO"
+    if is_ci_explicit:
+        return "CI"
+
     ci_hits = sum(1 for kw in CI_KEYWORDS if kw in haystack)
     so_hits = sum(1 for kw in SO_KEYWORDS if kw in haystack)
     if ci_hits == 0 and so_hits == 0:
@@ -90,7 +115,7 @@ def _classify_pdf(
     looks_structurally_like_so = bool(
         fields.get("order_ref_no") or fields.get("buyer_code")
     )
-    if looks_structurally_like_so and not CI_NUMBER_PATTERN.search(text_sample or ""):
+    if looks_structurally_like_so and not is_ci_number:
         return "SO"
     return "CI" if ci_hits > so_hits else "SO"
 
@@ -406,9 +431,18 @@ def poll_for_user(
                     else _identify_buyer_gst(all_gsts, own_gst)
                 )
                 distributor_hit = (
-                    db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
-                    if buyer_gst else None
+                    db.get_master_distributor_by_gst(
+                        buyer_gst, workspace_id=workspace_id, user_id=user_id
+                    )
+                    if buyer_gst
+                    else None
                 )
+                if not distributor_hit and header.get("buyer_code"):
+                    distributor_hit = db.get_master_distributor_by_buyer_code(
+                        header.get("buyer_code"),
+                        workspace_id=workspace_id,
+                        user_id=user_id,
+                    )
                 ci_number_hit = bool(CI_NUMBER_PATTERN.search(text_sample or ""))
                 accepted, reject_reason = accept_document(
                     kind,
@@ -555,6 +589,8 @@ def poll_for_user(
                             distributor_id = matched_by_code.get("id")
                         elif matched_by_gst and not matched_by_code:
                             distributor_id = matched_by_gst.get("id")
+                        elif distributor_hit:
+                            distributor_id = distributor_hit.get("id")
                         else:
                             distributor_id = None
                         auto_confirmed = False

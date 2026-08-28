@@ -273,8 +273,9 @@ def resolve_so_line_brand_size(
     first so towel SKUs keep resolving exactly as before.
     """
     best_partial: tuple[str | None, str | None, str] = (None, None, "")
+    mat_code = str(row.get("material_code") or "").strip() or None
     for text in so_line_texts(row):
-        enriched = enrich_bd_product(text)
+        enriched = enrich_bd_product(text, material_code=mat_code)
         brand = enriched.get("collection")
         size = enriched.get("product_type")
         if brand and size:

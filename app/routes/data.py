@@ -5161,15 +5161,21 @@ def upload_sales_order_v2() -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
 
+    user = getattr(request, "user", None)
+    user_id = int(user["user_id"]) if isinstance(user, dict) and user.get("user_id") is not None else None
+
     try:
         extracted_text = _extract_pdf_text(target_path)
     except Exception:
         extracted_text = ""
 
     header = _parse_sales_order_header_fields(extracted_text)
-    buyer_code = header.get("buyer_code")
-    order_ref_no = header.get("order_ref_no")
-    buyer_name = header.get("buyer_name")
+    from app.services.so_pack_consolidate import _parse_so_header_rich
+
+    rich_header = _parse_so_header_rich(extracted_text, uploaded_file.filename or "")
+    buyer_code = header.get("buyer_code") or rich_header.get("buyer_code")
+    order_ref_no = header.get("order_ref_no") or rich_header.get("so_number")
+    buyer_name = header.get("buyer_name") or rich_header.get("buyer_name")
 
     all_gst_numbers = [g for g in (header.get("all_gst_numbers") or "").split(",") if g]
     own_profile = db.get_company_profile(workspace_id)
@@ -5177,12 +5183,18 @@ def upload_sales_order_v2() -> Response:
     buyer_gst = _identify_buyer_gst(all_gst_numbers, own_gst)
 
     matched_by_buyer_code = (
-        db.get_master_distributor_by_buyer_code(buyer_code, workspace_id=workspace_id)
-        if buyer_code else None
+        db.get_master_distributor_by_buyer_code(
+            buyer_code, workspace_id=workspace_id, user_id=user_id
+        )
+        if buyer_code
+        else None
     )
     matched_by_gst = (
-        db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
-        if buyer_gst else None
+        db.get_master_distributor_by_gst(
+            buyer_gst, workspace_id=workspace_id, user_id=user_id
+        )
+        if buyer_gst
+        else None
     )
     signals_agree = None
     if matched_by_buyer_code and matched_by_gst:
@@ -5199,8 +5211,6 @@ def upload_sales_order_v2() -> Response:
     filled_order_linked = False
     merged_from_ci_only = False
     so_ci_rematch = None
-    user = getattr(request, "user", None)
-    user_id = int(user["user_id"]) if isinstance(user, dict) and user.get("user_id") is not None else None
     if confirmed_distributor_id and order_ref_no:
         if db.is_document_already_processed(workspace_id, "SO", order_ref_no):
             is_duplicate = True
