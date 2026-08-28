@@ -3,6 +3,7 @@ import difflib
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -77,6 +78,7 @@ from app.verification import (
 
 
 data_blueprint = Blueprint("data", __name__)
+logger = logging.getLogger(__name__)
 
 
 @data_blueprint.route("/api/v1/utils/scan-visiting-card", methods=["POST"])
@@ -4693,9 +4695,20 @@ def order_match_list() -> Response:
         try:
             from app.services.fo_so_auto_match import auto_sync_all_unmatched_sos_for_user
 
-            auto_sync_all_unmatched_sos_for_user(conn, user_id=user_id, workspace_id="default")
+            _self_heal_matched = auto_sync_all_unmatched_sos_for_user(
+                conn, user_id=user_id, workspace_id="default"
+            )
+            # WARNING (not INFO) so this is visible without relying on the
+            # app having configured an INFO-level log handler in prod.
+            logger.warning(
+                "order_match_list self-heal: user_id=%s matched=%s",
+                user_id, _self_heal_matched,
+            )
         except Exception:
-            pass
+            logger.exception(
+                "order_match_list self-heal (auto_sync_all_unmatched_sos_for_user) "
+                "failed for user_id=%s", user_id,
+            )
         try:
             # Throttled retention cleanup for the Order Desk recycle store.
             from app.services import order_desk_archive as archive
