@@ -179,7 +179,7 @@ def auto_attach_so_to_filled_order(
             conn, user_id, distributor_id, category_candidates, season
         )
         if not fo:
-            logger.info(
+            logger.warning(
                 "No matching filled order found for distributor %s, categories %s, season %s",
                 distributor_id,
                 category_candidates,
@@ -251,7 +251,7 @@ def auto_attach_so_to_filled_order(
                 so_pack=working_pack,
                 so_source_filename=filename,
             )
-            logger.info(
+            logger.warning(
                 "Auto-updated match run %s for FO %s (%s)",
                 run.get("id"),
                 fo_id,
@@ -276,7 +276,7 @@ def auto_attach_so_to_filled_order(
                 so_line_detail=working_lines,
                 so_pack=pack,
             )
-            logger.info(
+            logger.warning(
                 "Auto-created match run %s for FO %s (%s)",
                 run.get("id"),
                 fo_id,
@@ -300,11 +300,20 @@ def auto_sync_all_unmatched_sos_for_user(
     fodb.ensure_schema(conn)
     all_fos = fodb.list_filled_orders(conn, user_id=user_id)
     matched_count = 0
+    # Temporary step-by-step trace — the last three self-heal fixes each
+    # left matched=0 with no exception, so guessing at the next hypothesis
+    # blind isn't good enough; this pins down exactly which stage empties
+    # out for this user/workspace next time the logs are pulled.
+    logger.warning(
+        "auto_sync_all_unmatched_sos_for_user: user_id=%s workspace_id=%r fo_count=%s",
+        user_id, workspace_id, len(all_fos),
+    )
 
     for fo in all_fos:
         fo_id = int(fo["id"])
         dist_id = fo.get("distributor_id")
         if not dist_id:
+            logger.warning("  fo_id=%s skipped: no distributor_id", fo_id)
             continue
 
         # Every candidate is tried regardless of whether this FO already has
@@ -317,9 +326,15 @@ def auto_sync_all_unmatched_sos_for_user(
         candidates = fodb.list_candidate_sales_orders_for_filled_order(
             conn, fo_id, workspace_id
         )
+        logger.warning(
+            "  fo_id=%s distributor_id=%s category=%s season=%s candidates=%s",
+            fo_id, dist_id, fo.get("category"), fo.get("season"), len(candidates),
+        )
         for cand in candidates:
+            tid = cand.get("tracking_id")
             so_ref = cand.get("sales_order_file_reference")
             if not so_ref:
+                logger.warning("    tracking_id=%s skipped: no sales_order_file_reference", tid)
                 continue
             path = Path(so_ref)
             file_bytes = None
@@ -332,6 +347,10 @@ def auto_sync_all_unmatched_sos_for_user(
                 # Drive first, then local upload file").
                 drive_file_id = cand.get("sales_order_drive_file_id")
                 if not drive_file_id:
+                    logger.warning(
+                        "    tracking_id=%s skipped: local file missing (%s) and no drive_file_id",
+                        tid, so_ref,
+                    )
                     continue
                 try:
                     from app.storage.manager import StorageManager
@@ -351,6 +370,7 @@ def auto_sync_all_unmatched_sos_for_user(
                     )
                     continue
                 if not file_bytes:
+                    logger.warning("    tracking_id=%s skipped: drive download returned no bytes", tid)
                     continue
 
             res = auto_attach_so_to_filled_order(
@@ -362,6 +382,7 @@ def auto_sync_all_unmatched_sos_for_user(
                 filename=filename,
                 tracking_id=cand.get("tracking_id"),
             )
+            logger.warning("    tracking_id=%s attach result=%s", tid, res)
             if res and res.get("status") in ("created", "updated"):
                 matched_count += 1
 
