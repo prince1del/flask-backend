@@ -4695,8 +4695,14 @@ def order_match_list() -> Response:
         try:
             from app.services.fo_so_auto_match import auto_sync_all_unmatched_sos_for_user
 
+            # Tracked SO/CI rows live under this request's real workspace_id
+            # (from the JWT), not the literal string "default" — a mismatch
+            # here means list_candidate_sales_orders_for_filled_order's
+            # `WHERE olt.workspace_id = ?` never finds anything, which is
+            # exactly why matched=0 kept showing up even after every other
+            # self-heal fix landed.
             _self_heal_matched = auto_sync_all_unmatched_sos_for_user(
-                conn, user_id=user_id, workspace_id="default"
+                conn, user_id=user_id, workspace_id=get_workspace_id()
             )
             # WARNING (not INFO) so this is visible without relying on the
             # app having configured an INFO-level log handler in prod.
