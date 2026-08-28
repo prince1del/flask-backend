@@ -583,16 +583,76 @@ def poll_for_user(
                         # None unless BOTH matched — so an SO identified by
                         # buyer code alone (the common case) was never
                         # auto-imported.
+                        # Smart Confidence Matching:
+                        # 1. Exact buyer_code or buyer_gst match
+                        # 2. Strong buyer_name fuzzy match to distributor firm_name
+                        distributor_id = None
+                        suggested_distributor_id = None
+                        suggested_distributor_name = None
+                        suggested_confidence_pct = None
+
                         if preview.get("signals_agree") is True:
                             distributor_id = matched_by_code.get("id")
+                            suggested_confidence_pct = 99
                         elif matched_by_code and not matched_by_gst:
                             distributor_id = matched_by_code.get("id")
+                            suggested_confidence_pct = 95
                         elif matched_by_gst and not matched_by_code:
                             distributor_id = matched_by_gst.get("id")
+                            suggested_confidence_pct = 90
                         elif distributor_hit:
                             distributor_id = distributor_hit.get("id")
-                        else:
-                            distributor_id = None
+                            suggested_confidence_pct = 92
+                        elif matched_by_code and matched_by_gst and matched_by_code.get("id") != matched_by_gst.get("id"):
+                            # Ambiguous signals: buyer code points to one, GST to another.
+                            # Check buyer_name to break tie with high confidence!
+                            dist_code_name = (matched_by_code.get("firm_name") or "").lower()
+                            dist_gst_name = (matched_by_gst.get("firm_name") or "").lower()
+                            raw_pname = (party_name or "").lower()
+
+                            from rapidfuzz import fuzz
+                            code_score = fuzz.token_set_ratio(raw_pname, dist_code_name) if raw_pname and dist_code_name else 0
+                            gst_score = fuzz.token_set_ratio(raw_pname, dist_gst_name) if raw_pname and dist_gst_name else 0
+
+                            if code_score >= 80 and code_score > gst_score + 15:
+                                distributor_id = matched_by_code.get("id")
+                                suggested_confidence_pct = max(88, code_score)
+                            elif gst_score >= 80 and gst_score > code_score + 15:
+                                distributor_id = matched_by_gst.get("id")
+                                suggested_confidence_pct = max(88, gst_score)
+                            else:
+                                # Pick higher as suggestion
+                                if code_score >= gst_score:
+                                    suggested_distributor_id = matched_by_code.get("id")
+                                    suggested_distributor_name = matched_by_code.get("firm_name")
+                                    suggested_confidence_pct = code_score
+                                else:
+                                    suggested_distributor_id = matched_by_gst.get("id")
+                                    suggested_distributor_name = matched_by_gst.get("firm_name")
+                                    suggested_confidence_pct = gst_score
+
+                        if not distributor_id and not suggested_distributor_id and party_name:
+                            # Fuzzy match against all known distributors for this user
+                            known_dists = db.list_master_distributors(
+                                limit=100, workspace_id=workspace_id, user_id=user_id
+                            )
+                            from rapidfuzz import fuzz
+                            best_d = None
+                            best_s = 0
+                            for d in known_dists:
+                                fn = (d.get("firm_name") or d.get("name") or "").lower()
+                                s = fuzz.token_set_ratio(party_name.lower(), fn)
+                                if s > best_s:
+                                    best_s = s
+                                    best_d = d
+                            if best_d and best_s >= 88:
+                                distributor_id = best_d.get("id")
+                                suggested_confidence_pct = best_s
+                            elif best_d and best_s >= 60:
+                                suggested_distributor_id = best_d.get("id")
+                                suggested_distributor_name = best_d.get("firm_name") or best_d.get("name")
+                                suggested_confidence_pct = best_s
+
                         auto_confirmed = False
                         confirmed_tracking_id = None
                         if distributor_id and preview.get("order_ref_no"):
@@ -644,6 +704,16 @@ def poll_for_user(
                                 if preview.get("matched_by_buyer_code") or preview.get("matched_by_gst")
                                 else "No distributor match found — pick distributor"
                             )
+                            import json as _json
+                            meta_preview = {
+                                "suggested_distributor_id": suggested_distributor_id,
+                                "suggested_distributor_name": suggested_distributor_name,
+                                "suggested_confidence_pct": suggested_confidence_pct,
+                                "buyer_code": preview.get("buyer_code") or header.get("buyer_code"),
+                                "buyer_name": preview.get("buyer_name") or header.get("buyer_name") or party_name,
+                                "buyer_gst": preview.get("buyer_gst") or buyer_gst,
+                                "order_ref_no": doc_no,
+                            }
                             db.save_gmail_pending_import(
                                 user_id=user_id,
                                 workspace_id=workspace_id,
@@ -653,6 +723,7 @@ def poll_for_user(
                                 doc_no=doc_no,
                                 party_name=party_name,
                                 reason=reason,
+                                preview_json=_json.dumps(meta_preview),
                                 file_bytes=data,
                             )
                             summary["pending_review"] += 1

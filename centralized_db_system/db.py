@@ -656,7 +656,7 @@ class CentralizedDB:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
-                SELECT id, message_id, kind, filename, doc_no, party_name, reason, status, created_at
+                SELECT id, message_id, kind, filename, doc_no, party_name, reason, preview_json, status, created_at
                 FROM gmail_pending_imports
                 WHERE user_id = ? AND workspace_id = ? AND status = ?
                 ORDER BY created_at DESC

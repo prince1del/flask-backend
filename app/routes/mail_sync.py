@@ -294,15 +294,27 @@ def get_import_log():
 @require_jwt_auth
 def list_pending():
     """CI/SO the poller found but couldn't safely auto-confirm (ambiguous
-    match) â€” needs a human to pick a distributor or dismiss it."""
+    match) — needs a human to pick a distributor or dismiss it."""
     try:
+        import json as _json
+
         user = _get_request_user()
         user_id = user['user_id']
         workspace_id = get_workspace_id()
 
         db = _db()
         rows = db.list_gmail_pending_imports(user_id=user_id, workspace_id=workspace_id, status='pending')
-        return jsonify({'success': True, 'data': {'items': rows}}), 200
+        # Parse preview_json so client gets structured metadata (suggestions, confidence, extracted fields)
+        enriched = []
+        for r in rows:
+            item = dict(r)
+            if item.get('preview_json'):
+                try:
+                    item['preview'] = _json.loads(item['preview_json'])
+                except Exception:
+                    item['preview'] = None
+            enriched.append(item)
+        return jsonify({'success': True, 'data': {'items': enriched}}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
