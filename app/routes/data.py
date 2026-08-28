@@ -5207,9 +5207,13 @@ def upload_sales_order_v2() -> Response:
         name_gst = (matched_by_gst.get("firm_name") or matched_by_gst.get("name") or "").lower()
         score_code = fuzz.token_set_ratio(b_name, name_code) if b_name and name_code else 0
         score_gst = fuzz.token_set_ratio(b_name, name_gst) if b_name and name_gst else 0
-        if score_code >= 80 and score_code > score_gst + 15:
+        if score_code >= 80:
             matched_by_gst = None
-        elif score_gst >= 80 and score_gst > score_code + 15:
+        elif score_gst >= 80:
+            matched_by_buyer_code = None
+        elif score_code >= 60 and score_code > score_gst + 15:
+            matched_by_gst = None
+        elif score_gst >= 60 and score_gst > score_code + 15:
             matched_by_buyer_code = None
 
     signals_agree = None

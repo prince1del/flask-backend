@@ -614,10 +614,16 @@ def poll_for_user(
                             code_score = fuzz.token_set_ratio(raw_pname, dist_code_name) if raw_pname and dist_code_name else 0
                             gst_score = fuzz.token_set_ratio(raw_pname, dist_gst_name) if raw_pname and dist_gst_name else 0
 
-                            if code_score >= 80 and code_score > gst_score + 15:
+                            if code_score >= 80:
+                                distributor_id = matched_by_code.get("id")
+                                suggested_confidence_pct = max(90, code_score)
+                            elif gst_score >= 80:
+                                distributor_id = matched_by_gst.get("id")
+                                suggested_confidence_pct = max(90, gst_score)
+                            elif code_score >= 60 and code_score > gst_score + 15:
                                 distributor_id = matched_by_code.get("id")
                                 suggested_confidence_pct = max(88, code_score)
-                            elif gst_score >= 80 and gst_score > code_score + 15:
+                            elif gst_score >= 60 and gst_score > code_score + 15:
                                 distributor_id = matched_by_gst.get("id")
                                 suggested_confidence_pct = max(88, gst_score)
                             else:
@@ -704,6 +710,10 @@ def poll_for_user(
                                 if preview.get("matched_by_buyer_code") or preview.get("matched_by_gst")
                                 else "No distributor match found — pick distributor"
                             )
+                            if preview.get("link_error"):
+                                reason = str(preview.get("link_error"))
+                            elif preview.get("is_duplicate"):
+                                reason = "This Sales Order is already in the system"
                             import json as _json
                             meta_preview = {
                                 "suggested_distributor_id": suggested_distributor_id,
