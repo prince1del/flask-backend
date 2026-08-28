@@ -296,7 +296,6 @@ def auto_sync_all_unmatched_sos_for_user(
     """Scans all saved filled orders for user_id that lack a match run or have pending SOs,
     and automatically matches them from tracked SO files."""
     import filled_orders_db as fodb
-    from app.services import fo_so_revision as sorev
 
     fodb.ensure_schema(conn)
     all_fos = fodb.list_filled_orders(conn, user_id=user_id)
@@ -308,16 +307,13 @@ def auto_sync_all_unmatched_sos_for_user(
         if not dist_id:
             continue
 
-        existing_run = sorev.get_latest_run_for_fo(
-            conn, user_id=user_id, filled_order_id=fo_id
-        )
-        if existing_run:
-            # Check if existing run has lines
-            existing_lines = existing_run.get("so_line_detail") or []
-            if existing_lines:
-                continue
-
-        # Look for tracked SO files for this distributor
+        # Every candidate is tried regardless of whether this FO already has
+        # a match run with lines — a partially-matched FO (e.g. 24 SOs
+        # matched the normal way) still needs to pick up SOs that arrived
+        # later (mail-sync) and never got attached. auto_attach_so_to_filled_order
+        # already no-ops safely ("already_matched") for an SO number that's
+        # already reflected in the existing run, so re-trying every
+        # candidate every time is safe, not just for brand-new FOs.
         candidates = fodb.list_candidate_sales_orders_for_filled_order(
             conn, fo_id, workspace_id
         )
@@ -339,6 +335,5 @@ def auto_sync_all_unmatched_sos_for_user(
             )
             if res and res.get("status") in ("created", "updated"):
                 matched_count += 1
-                break
 
     return matched_count
