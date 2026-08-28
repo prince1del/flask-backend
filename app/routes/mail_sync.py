@@ -215,8 +215,19 @@ def poll():
         user = _get_request_user()
         user_id = user['user_id']
         workspace_id = get_workspace_id()
-        max_messages = request.args.get('max_messages', default=15, type=int) or 15
         reset_history = request.args.get('reset', default='false').lower() in ('1', 'true', 'yes')
+        # A reset/rescan is an explicit "go back through everything" ask —
+        # Gmail's search still only returns the newest `max_messages`
+        # matches, so the routine-poll default of 15 silently misses older
+        # target emails once 15+ newer matching messages (any subject with
+        # "order"/"invoice"/etc.) have arrived since. Clearing "seen"
+        # history alone does nothing if the message never enters the
+        # fetched window in the first place.
+        # 100, not higher — a reset also re-does full attachment fetch/parse
+        # for every now-unseen message, and gunicorn's request timeout is
+        # 120s; pass ?max_messages= explicitly for a bigger one-off catch-up.
+        default_max_messages = 100 if reset_history else 15
+        max_messages = request.args.get('max_messages', default=default_max_messages, type=int) or default_max_messages
 
         if reset_history:
             # Clear old pending imports when user asks to rescan from scratch so stale unconfirmed items don't accumulate
