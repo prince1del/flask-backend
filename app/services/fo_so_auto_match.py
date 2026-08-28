@@ -322,15 +322,44 @@ def auto_sync_all_unmatched_sos_for_user(
             if not so_ref:
                 continue
             path = Path(so_ref)
+            file_bytes = None
+            filename = path.name
             if not path.exists():
-                continue
+                # The local upload path is on the web dyno's ephemeral disk
+                # and does not survive a redeploy — fall back to the durable
+                # Drive copy (same source download_order_fulfillment_tracking_file
+                # in app/routes/data.py already uses for "SO/CI PDF: Google
+                # Drive first, then local upload file").
+                drive_file_id = cand.get("sales_order_drive_file_id")
+                if not drive_file_id:
+                    continue
+                try:
+                    from app.storage.manager import StorageManager
+                    from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+                    manager = StorageManager()
+                    manager.register_provider("google_drive", GoogleDriveProvider)
+                    payload = manager.download_file_bytes(
+                        user_id=user_id, file_id=drive_file_id, workspace_id=workspace_id
+                    )
+                    file_bytes = payload.get("content")
+                    filename = payload.get("file_name") or filename
+                except Exception as exc:
+                    logger.warning(
+                        "Drive fallback download failed for tracking %s: %s",
+                        cand.get("tracking_id"), exc,
+                    )
+                    continue
+                if not file_bytes:
+                    continue
 
             res = auto_attach_so_to_filled_order(
                 conn=conn,
                 user_id=user_id,
                 distributor_id=int(dist_id),
-                file_path=path,
-                filename=path.name,
+                file_path=path if file_bytes is None else None,
+                file_bytes=file_bytes,
+                filename=filename,
                 tracking_id=cand.get("tracking_id"),
             )
             if res and res.get("status") in ("created", "updated"):

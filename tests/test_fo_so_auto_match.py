@@ -206,6 +206,7 @@ def _create_order_lifecycle_tracking_table(conn):
             order_ref_no TEXT NOT NULL,
             distributor_id INTEGER NOT NULL,
             sales_order_file_reference TEXT,
+            sales_order_drive_file_id TEXT,
             sales_order_parsed TEXT,
             commercial_invoice_file_reference TEXT,
             commercial_invoice_parsed TEXT,
@@ -384,5 +385,79 @@ def test_auto_sync_retries_partially_matched_fo_for_new_candidates(monkeypatch):
         assert matched_count == 1
         assert len(calls) == 1
         assert calls[0]["tracking_id"] == new_tracking_id
+    finally:
+        conn.close()
+
+
+def test_auto_sync_falls_back_to_drive_when_local_file_is_gone(monkeypatch):
+    """Regression test: the SO's local upload path lives on the web dyno's
+    ephemeral disk and does not survive a redeploy (confirmed by the same
+    "Google Drive first, then local upload file" fallback already used in
+    download_order_fulfillment_tracking_file, app/routes/data.py). Before
+    this fix, a missing local file made the self-heal silently skip the
+    candidate forever, even right after a fresh deploy wiped the disk."""
+    conn, db_path = _setup_db()
+    try:
+        user_id, dist_id = 1, 101
+        _create_order_lifecycle_tracking_table(conn)
+
+        fo_id = fodb.create_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            distributor_name_raw="Balaji Homedecor", category="Bath", season="AW26",
+        )
+        fodb.insert_filled_order_item(
+            conn, fo_id,
+            {
+                "item_key": "santino_ladies_towel", "brand": "Santino", "size": "Ladies Towel",
+                "product_type": "Towel", "raw_qty_value": 100, "detected_unit": "pcs",
+                "final_piece_qty": 100, "is_clean_bale_multiple": True, "matched": True,
+                "mrp": 500, "ptr": 350, "ex_mill_price": 300,
+            },
+        )
+
+        # Local path recorded in the DB, but the file itself is gone
+        # (simulates a redeploy having wiped the ephemeral disk) — only
+        # the Drive file id can still produce bytes.
+        missing_path = Path(db_path).parent / "does_not_exist_anymore.pdf"
+        cur = conn.execute(
+            "INSERT INTO order_lifecycle_tracking "
+            "(order_ref_no, distributor_id, sales_order_file_reference, "
+            " sales_order_drive_file_id, created_at, workspace_id) "
+            "VALUES (?, ?, ?, ?, datetime('now'), 'default')",
+            ("102876568", dist_id, str(missing_path), "drive-file-abc123"),
+        )
+        conn.commit()
+        tracking_id = cur.lastrowid
+        assert not missing_path.exists()
+
+        from app.storage.manager import StorageManager
+
+        downloaded_with = {}
+
+        def fake_download_file_bytes(self, user_id, file_id, workspace_id=None):
+            downloaded_with["user_id"] = user_id
+            downloaded_with["file_id"] = file_id
+            return {"content": b"%PDF-1.4 fake bytes", "file_name": "102876568.pdf"}
+
+        monkeypatch.setattr(StorageManager, "download_file_bytes", fake_download_file_bytes)
+
+        attach_calls = []
+
+        def fake_attach(**kwargs):
+            attach_calls.append(kwargs)
+            return {"status": "created", "run_id": 999}
+
+        monkeypatch.setattr(auto_match, "auto_attach_so_to_filled_order", fake_attach)
+
+        matched_count = auto_match.auto_sync_all_unmatched_sos_for_user(
+            conn, user_id=user_id, workspace_id="default"
+        )
+
+        assert downloaded_with == {"user_id": user_id, "file_id": "drive-file-abc123"}
+        assert matched_count == 1
+        assert len(attach_calls) == 1
+        assert attach_calls[0]["file_bytes"] == b"%PDF-1.4 fake bytes"
+        assert attach_calls[0]["file_path"] is None
+        assert attach_calls[0]["tracking_id"] == tracking_id
     finally:
         conn.close()

@@ -865,9 +865,8 @@ def list_candidate_sales_orders_for_filled_order(conn, filled_order_id, workspac
     if not row or not row[0]:
         return []
     distributor_id = row[0]
-    rows = conn.execute(
-        """
-        SELECT olt.tracking_id, olt.order_ref_no, olt.sales_order_file_reference
+    base_query = """
+        SELECT olt.tracking_id, olt.order_ref_no, olt.sales_order_file_reference{drive_col}
         FROM order_lifecycle_tracking olt
         WHERE olt.workspace_id = ?
           AND olt.distributor_id = ?
@@ -879,14 +878,27 @@ def list_candidate_sales_orders_for_filled_order(conn, filled_order_id, workspac
           )
         ORDER BY olt.tracking_id DESC
         LIMIT ?
-        """,
-        (workspace_id, distributor_id, filled_order_id, limit),
-    ).fetchall()
+        """
+    params = (workspace_id, distributor_id, filled_order_id, limit)
+    try:
+        # The local SO file usually doesn't survive a redeploy on an
+        # ephemeral filesystem — sales_order_drive_file_id is the durable
+        # copy (see download_order_fulfillment_tracking_file in
+        # app/routes/data.py, "Google Drive first, then local upload
+        # file"), so callers need it to actually retrieve bytes.
+        rows = conn.execute(
+            base_query.format(drive_col=", olt.sales_order_drive_file_id"), params
+        ).fetchall()
+        has_drive_col = True
+    except sqlite3.OperationalError:
+        rows = conn.execute(base_query.format(drive_col=""), params).fetchall()
+        has_drive_col = False
     return [
         {
             "tracking_id": r[0],
             "order_ref_no": r[1],
             "sales_order_file_reference": r[2],
+            "sales_order_drive_file_id": (r[3] if has_drive_col else None),
         }
         for r in rows
     ]
