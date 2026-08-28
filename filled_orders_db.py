@@ -851,6 +851,47 @@ def link_filled_order_to_tracking(conn, filled_order_id, tracking_id):
     conn.commit()
 
 
+def list_candidate_sales_orders_for_filled_order(conn, filled_order_id, workspace_id="default", limit=20):
+    """
+    Tracked Sales Orders (order_lifecycle_tracking rows with a real SO file)
+    for this Filled Order's distributor that aren't linked to it yet — lets
+    auto_sync_all_unmatched_sos_for_user() retry attaching an SO that was
+    already uploaded/mail-synced before this Filled Order existed, or before
+    the FO↔SO auto-match could find it (e.g. a user_id scoping mismatch).
+    """
+    row = conn.execute(
+        "SELECT distributor_id FROM filled_orders WHERE id = ?", (filled_order_id,)
+    ).fetchone()
+    if not row or not row[0]:
+        return []
+    distributor_id = row[0]
+    rows = conn.execute(
+        """
+        SELECT olt.tracking_id, olt.order_ref_no, olt.sales_order_file_reference
+        FROM order_lifecycle_tracking olt
+        WHERE olt.workspace_id = ?
+          AND olt.distributor_id = ?
+          AND olt.sales_order_file_reference IS NOT NULL
+          AND TRIM(olt.sales_order_file_reference) != ''
+          AND olt.tracking_id NOT IN (
+              SELECT order_lifecycle_tracking_id FROM filled_order_so_link
+              WHERE filled_order_id = ?
+          )
+        ORDER BY olt.tracking_id DESC
+        LIMIT ?
+        """,
+        (workspace_id, distributor_id, filled_order_id, limit),
+    ).fetchall()
+    return [
+        {
+            "tracking_id": r[0],
+            "order_ref_no": r[1],
+            "sales_order_file_reference": r[2],
+        }
+        for r in rows
+    ]
+
+
 def get_filled_order_id_for_tracking(conn, tracking_id):
     row = conn.execute(
         """SELECT filled_order_id FROM filled_order_so_link

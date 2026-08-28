@@ -196,3 +196,114 @@ def test_auto_attach_so_to_filled_order_creates_and_updates_run():
         assert sorted(so_nums2) == ["102876568", "102876598"]
     finally:
         conn.close()
+
+
+def _create_order_lifecycle_tracking_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS order_lifecycle_tracking (
+            tracking_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_ref_no TEXT NOT NULL,
+            distributor_id INTEGER NOT NULL,
+            sales_order_file_reference TEXT,
+            sales_order_parsed TEXT,
+            commercial_invoice_file_reference TEXT,
+            commercial_invoice_parsed TEXT,
+            transit_status TEXT NOT NULL DEFAULT 'ORDERED',
+            created_at TEXT NOT NULL,
+            workspace_id TEXT NOT NULL DEFAULT 'default'
+        )
+        """
+    )
+    conn.commit()
+
+
+def test_list_candidate_sales_orders_for_filled_order():
+    """A SO already saved to order_lifecycle_tracking (e.g. mail-synced,
+    genuinely a duplicate on re-scan) but never attached to any FO↔SO match
+    run must still surface as a retry candidate for its distributor's FO."""
+    conn, db_path = _setup_db()
+    try:
+        user_id, dist_id = 1, 101
+        _create_order_lifecycle_tracking_table(conn)
+
+        fo_id = fodb.create_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            distributor_name_raw="Balaji Homedecor", category="Bath", season="AW26",
+        )
+
+        cur = conn.execute(
+            "INSERT INTO order_lifecycle_tracking "
+            "(order_ref_no, distributor_id, sales_order_file_reference, created_at, workspace_id) "
+            "VALUES (?, ?, ?, datetime('now'), 'default')",
+            ("102876568", dist_id, "/uploads/SO/102876568.pdf"),
+        )
+        conn.commit()
+        tracking_id = cur.lastrowid
+
+        # A row with no SO file at all must not show up as a candidate.
+        conn.execute(
+            "INSERT INTO order_lifecycle_tracking "
+            "(order_ref_no, distributor_id, sales_order_file_reference, created_at, workspace_id) "
+            "VALUES (?, ?, NULL, datetime('now'), 'default')",
+            ("102876599", dist_id),
+        )
+        conn.commit()
+
+        candidates = fodb.list_candidate_sales_orders_for_filled_order(conn, fo_id, "default")
+        assert [c["tracking_id"] for c in candidates] == [tracking_id]
+        assert candidates[0]["sales_order_file_reference"] == "/uploads/SO/102876568.pdf"
+
+        # Once linked to this FO, it must drop out of the candidate list.
+        fodb.link_filled_order_to_tracking(conn, fo_id, tracking_id)
+        candidates_after = fodb.list_candidate_sales_orders_for_filled_order(conn, fo_id, "default")
+        assert candidates_after == []
+    finally:
+        conn.close()
+
+
+def test_auto_sync_all_unmatched_sos_does_not_raise_on_missing_helper():
+    """Regression test: auto_sync_all_unmatched_sos_for_user() called
+    fodb.list_candidate_sales_orders_for_filled_order(), a function that did
+    not exist — every call silently AttributeError'd inside the caller's
+    bare except Exception: pass (order_match_list in app/routes/data.py),
+    so the FO↔SO auto-match "self-heal" on every Order Desk load never ran
+    for anyone. Must complete cleanly and find the untracked SO."""
+    conn, db_path = _setup_db()
+    try:
+        user_id, dist_id = 1, 101
+        _create_order_lifecycle_tracking_table(conn)
+
+        fo_id = fodb.create_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            distributor_name_raw="Balaji Homedecor", category="Bath", season="AW26",
+        )
+        fodb.insert_filled_order_item(
+            conn, fo_id,
+            {
+                "item_key": "santino_ladies_towel", "brand": "Santino", "size": "Ladies Towel",
+                "product_type": "Towel", "raw_qty_value": 100, "detected_unit": "pcs",
+                "final_piece_qty": 100, "is_clean_bale_multiple": True, "matched": True,
+                "mrp": 500, "ptr": 350, "ex_mill_price": 300,
+            },
+        )
+
+        # Points at a real (non-PDF) file so the candidate is at least found —
+        # parsing it will fail, which auto_attach_so_to_filled_order already
+        # handles internally; what this test guards is the AttributeError.
+        so_path = Path(db_path).with_suffix(".so.txt")
+        so_path.write_text("not a real SO pdf")
+        conn.execute(
+            "INSERT INTO order_lifecycle_tracking "
+            "(order_ref_no, distributor_id, sales_order_file_reference, created_at, workspace_id) "
+            "VALUES (?, ?, ?, datetime('now'), 'default')",
+            ("102876568", dist_id, str(so_path)),
+        )
+        conn.commit()
+
+        matched_count = auto_match.auto_sync_all_unmatched_sos_for_user(
+            conn, user_id=user_id, workspace_id="default"
+        )
+        assert isinstance(matched_count, int)
+    finally:
+        conn.close()
