@@ -8714,7 +8714,7 @@ class CentralizedDB:
             clauses.append("olt.workspace_id = ?")
             params.append(workspace_id)
         if user_id is not None:
-            clauses.append("md.user_id = ?")
+            clauses.append("(md.user_id = ? OR md.user_id IS NULL)")
             params.append(user_id)
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
@@ -9108,7 +9108,7 @@ class CentralizedDB:
             )
             params: list[Any] = [ws]
             if user_id is not None:
-                sql += "AND md.user_id = ? "
+                sql += "AND (md.user_id = ? OR md.user_id IS NULL) "
                 params.append(int(user_id))
             if distributor_id is not None:
                 sql += "AND olt.distributor_id = ? "
@@ -9131,7 +9131,7 @@ class CentralizedDB:
                     " AND tracking_id IN ("
                     "SELECT olt2.tracking_id FROM order_lifecycle_tracking olt2 "
                     "JOIN master_distributors md2 ON olt2.distributor_id = md2.id "
-                    "WHERE olt2.workspace_id = ? AND md2.user_id = ?"
+                    "WHERE olt2.workspace_id = ? AND (md2.user_id = ? OR md2.user_id IS NULL)"
                     ")"
                 )
                 pay_params.extend([ws, int(user_id)])
@@ -10623,7 +10623,7 @@ class CentralizedDB:
                 )
                 order_params: list[Any] = list(ids_by_category["orders"])
                 if user_id is not None:
-                    order_sql += " AND md.user_id = ?"
+                    order_sql += " AND (md.user_id = ? OR md.user_id IS NULL)"
                     order_params.append(user_id)
                 order_rows = conn.execute(order_sql, tuple(order_params)).fetchall()
                 enriched_orders = []
@@ -10668,7 +10668,7 @@ class CentralizedDB:
                     order_like_sql += " AND olt.workspace_id = ?"
                     order_like_params.append(workspace_id)
                 if user_id is not None:
-                    order_like_sql += " AND md.user_id = ?"
+                    order_like_sql += " AND (md.user_id = ? OR md.user_id IS NULL)"
                     order_like_params.append(user_id)
                 order_like_sql += " LIMIT 50"
                 order_like_rows = conn.execute(order_like_sql, tuple(order_like_params)).fetchall()
