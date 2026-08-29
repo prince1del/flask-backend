@@ -149,6 +149,8 @@ def get_account():
         backup_ready = False
         folders: list[str] = []
         backup_error = None
+        nexora_folder_url = None
+        drive_account_email = None
         if connected:
             try:
                 from app.storage.manager import StorageManager
@@ -163,6 +165,22 @@ def get_account():
                 workspace = provider.ensure_nexora_workspace()
                 folders = sorted((workspace.get("folders") or {}).keys())
                 backup_ready = True
+
+                # Which Google account these actually landed in, and a direct
+                # link to the folder. A folder created in a different account
+                # than the one the person is browsing looks exactly like no
+                # folder at all — this says which, instead of leaving them to
+                # hunt through Drive.
+                root_id = workspace.get("root_id")
+                if root_id:
+                    nexora_folder_url = (
+                        f"https://drive.google.com/drive/folders/{root_id}"
+                    )
+                try:
+                    about = provider.service.about().get(fields="user").execute()
+                    drive_account_email = (about.get("user") or {}).get("emailAddress")
+                except Exception:
+                    drive_account_email = None
             except Exception as exc:
                 backup_error = str(exc)
 
@@ -178,6 +196,8 @@ def get_account():
                     "backup_ready": backup_ready,
                     "folders": folders,
                     "backup_error": backup_error,
+                    "nexora_folder_url": nexora_folder_url,
+                    "drive_account_email": drive_account_email,
                 },
             }
         ), 200
