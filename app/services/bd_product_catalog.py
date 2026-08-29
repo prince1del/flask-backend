@@ -201,3 +201,179 @@ def brand_wise_only_label(short_code: str) -> str | None:
 
 # Back-compat alias
 brand_wise_summary_label = brand_wise_size_wise_label
+
+
+# --- Towel / Bath SO PDF lines (long product_name text, not bedsheet short codes) ---
+
+TOWEL_COLLECTION_ALIASES: list[tuple[str, str]] = [
+    ("FLORA BATHROBE", "Flora Bathrobe"),
+    ("FLORA", "Flora"),
+    ("FLR", "Flora"),
+    ("NATURE'S BQT", "Bamboo"),
+    ("NATURES BQT", "Bamboo"),
+    ("NATURE S BQT", "Bamboo"),
+    ("SUPER ULTRX", "Super Ultrx"),
+    ("SUPER ULTRA", "Super Ultrx"),
+    ("RIMZIM COOLTEX", "Rimzim Cooltex"),
+    ("RIMZIM PRINTED", "Rimzim Printed"),
+    ("HUCK A BUCK", "Huk A Buk"),
+    ("HUK A BUK", "Huk A Buk"),
+    ("BD WHITE", "BD White"),
+    ("GYM TOWEL", "Gym Towel"),
+    ("SANTINO", "Santino"),
+    ("COOLTEX", "Rimzim Cooltex"),
+    ("TULIP", "Tulip"),
+    ("BAMBOO", "Bamboo"),
+]
+
+TOWEL_SIZE_RULES: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bR4\b.*\bSET\b|\bR4\s*SET\b|\bR4\b", re.I), "Towel Set"),
+    (re.compile(r"BATHROBE|FRBR|FLBR", re.I), "Bathrobe"),
+    (re.compile(r"BATHMAT|50\s*CM\s*[X×]\s*70|50CMX70|50\s*[X×]\s*70", re.I), "Bathmat"),
+    (re.compile(r"50\s*CM\s*[X×]\s*100|50CMX100|50\s*[X×]\s*100|\bGYM\b", re.I), "Gym Towel"),
+    (
+        re.compile(
+            r"90\s*CM\s*[X×]\s*1\.?\s*8\s*M?|90CMX1\.8|90\s*[X×]\s*180|90CM\s*X1\.8|90\s*CM\s*X|90\s*CM\b|90\s*[X×]\s*180",
+            re.I,
+        ),
+        "Pool Towel",
+    ),
+    (re.compile(r"40\s*CM\s*[X×]\s*60|40CMX60|40\s*[X×]\s*60|40X\s*60", re.I), "Hand Towel"),
+    (
+        re.compile(
+            r"60\s*CM\s*[X×]\s*1\.?\s*2\s*0?\s*M?|60CMX1\.20|60CMX1\.2|60\s*[X×]\s*120|60CM\s*X\s*1\.2|60\s*CM\s*X|60\s*CM\b",
+            re.I,
+        ),
+        "Ladies Towel",
+    ),
+    (
+        re.compile(
+            r"75\s*CM\s*[X×]\s*1\.?\s*5\s*0?\s*M?|75CMX150|75CMX1\.5|75\s*[X×]\s*150|75CM\s*X\s*1\.5|75CM\s*X1\.5|75\s*[X×]\s*1\.5|75\s*CM\s*X|75\s*CM\b",
+            re.I,
+        ),
+        "Bath Towel",
+    ),
+    (
+        re.compile(
+            r"72\s*CM\s*C?\s*[X×]?\s*C?\s*1\.?\s*44\s*M?|72CMX?C?1\.44|72\s*[X×]\s*144|72.*?1\.44\s*M?|72\s*CM\b",
+            re.I,
+        ),
+        "Bath Towel",
+    ),
+    (
+        re.compile(
+            r"30\s*CM\s*[X×]\s*30|30CMX30|30\s*[X×]\s*30|30X\s*30|30\s*CM\b|3\s*PC\s*SET|3PCSET|3\s*PC|3PC",
+            re.I,
+        ),
+        "Face Towel Set of 3",
+    ),
+    (re.compile(r"2\s*PC\s*SET|2PCSET|2\s*PC|2PC", re.I), "Hand Towel Set of 2"),
+]
+
+
+def _towel_fold_key(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9]+", " ", (text or "").upper())).strip()
+
+
+def lookup_towel_collection(short_code: str | None) -> str | None:
+    key = _norm_space(short_code or "").upper()
+    if not key:
+        return None
+    key_folded = _towel_fold_key(key)
+    for alias, display in TOWEL_COLLECTION_ALIASES:
+        alias_key = _norm_space(alias).upper()
+        alias_folded = _towel_fold_key(alias_key)
+        if (
+            key == alias_key
+            or key.startswith(alias_key + " ")
+            or key_folded == alias_folded
+            or key_folded.startswith(alias_folded + " ")
+        ):
+            return display
+    return None
+
+
+def lookup_towel_product_type(short_code: str | None, material_code: str | None = None) -> str | None:
+    text = _norm_space(short_code or "")
+    upper = text.upper()
+    if text:
+        if re.search(r"\bGYM\b", upper) and "TOWEL" in upper:
+            for pat, label in TOWEL_SIZE_RULES:
+                if pat.search(text):
+                    return label
+            return "Gym Towel"
+        for pat, label in TOWEL_SIZE_RULES:
+            if not pat.search(text):
+                continue
+            if label == "Hand Towel" and re.search(r"2\s*PC|2PC|SET\s*OF\s*2|\b2\s*PC\b", upper):
+                return "Hand Towel Set of 2"
+            return label
+        if re.search(r"\bR4\b", upper):
+            return "Towel Set"
+
+    code = (material_code or "").strip().upper()
+    if code:
+        if "R4" in code:
+            return "Towel Set"
+        if "BR" in code or "BATHROBE" in code:
+            return "Bathrobe"
+        if "030030" in code:
+            return "Face Towel Set of 3"
+        if "040060" in code:
+            return "Hand Towel Set of 2" if ("2PC" in code or "S2" in code) else "Hand Towel"
+        if "050070" in code:
+            return "Bathmat"
+        if "0500100" in code:
+            return "Gym Towel"
+        if "0600120" in code or "060120" in code:
+            return "Ladies Towel"
+        if "0720144" in code or "0750150" in code or "075150" in code:
+            return "Bath Towel"
+        if "0900180" in code:
+            return "Pool Towel"
+    return None
+
+
+def enrich_towel_so_product(
+    product_name: str | None,
+    *,
+    material_code: str | None = None,
+) -> dict[str, Any]:
+    """Parse towel SO PDF product_name → collection + FO-compatible size label."""
+    code = _norm_space(product_name or "")
+    collection = lookup_towel_collection(code) or lookup_towel_collection(material_code or "")
+    product_type = lookup_towel_product_type(code, material_code=material_code)
+    if not collection or not product_type:
+        return {
+            "collection": collection,
+            "product_type": product_type,
+            "matched": False,
+        }
+    size_label = "Large" if product_type == "Bathrobe" else product_type
+    return {
+        "collection": collection,
+        "product_type": size_label,
+        "matched": True,
+    }
+
+
+def resolve_so_brand_size(
+    product_name: str | None,
+    *,
+    material_code: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Bedsheet short codes first, then towel SO PDF teaching."""
+    short = _norm_space(product_name or "")
+    if not short and material_code:
+        short = _norm_space(material_code)
+    enriched = enrich_bd_product(short) if short else {}
+    brand = enriched.get("collection")
+    size = enriched.get("product_type")
+    if brand and size:
+        return str(brand), str(size)
+    towel = enrich_towel_so_product(product_name, material_code=material_code)
+    if towel.get("matched"):
+        return towel.get("collection"), towel.get("product_type")
+    if brand and not size:
+        return str(brand), None
+    return None, None

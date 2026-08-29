@@ -15,7 +15,7 @@ import article_master_parser as amparser
 import filled_orders_parser as foparser
 import pandas as pd
 
-from app.services.bd_product_catalog import enrich_bd_product
+from app.services.bd_product_catalog import enrich_bd_product, resolve_so_brand_size
 from app.services.so_pack_consolidate import (
     analyze_so_pack,
     analyze_so_pack_pdfs,
@@ -243,9 +243,14 @@ def build_so_buckets_from_line_detail(line_detail: list[dict[str, Any]]) -> dict
         short = str(row.get("product_name") or "").strip()
         if not short and row.get("product_detail"):
             short = product_short_name(str(row.get("product_detail") or ""))
-        enriched = enrich_bd_product(short) if short else {}
-        brand = enriched.get("collection")
-        size = enriched.get("product_type")
+        brand, size = resolve_so_brand_size(
+            short or str(row.get("product_detail") or ""),
+            material_code=str(row.get("material_code") or "") or None,
+        )
+        if not brand or not size:
+            enriched = enrich_bd_product(short) if short else {}
+            brand = enriched.get("collection")
+            size = enriched.get("product_type")
         qty = _safe_float(row.get("qty")) or 0.0
         net = _safe_float(row.get("net_amount")) or 0.0
         gst = _safe_float(row.get("gst_amount")) or 0.0

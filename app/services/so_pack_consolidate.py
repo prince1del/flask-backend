@@ -20,7 +20,7 @@ from app.routes.data import (
     _clean_pdf_cell_text,
     _parse_sales_order_header_fields,
 )
-from app.services.bd_product_catalog import brand_wise_only_label, enrich_bd_product
+from app.services.bd_product_catalog import brand_wise_only_label, enrich_bd_product, resolve_so_brand_size
 from app.services.order_stream import annotate_so_pack_meta
 
 _PRODUCT_SET_RE = re.compile(r"^(.+?\bSET)\b", re.I)
@@ -1009,9 +1009,14 @@ def build_consolidated_xlsx(payload: dict[str, Any]) -> bytes:
 
         for idx, row in enumerate(line_rows):
             short = _line_short(row)
-            enriched = enrich_bd_product(short) if short else {}
-            brand = enriched.get("collection")
-            sheet_opt = enriched.get("product_type")
+            brand, sheet_opt = resolve_so_brand_size(
+                short,
+                material_code=str(row.get("material_code") or "") or None,
+            )
+            if not brand or not sheet_opt:
+                enriched = enrich_bd_product(short) if short else {}
+                brand = brand or enriched.get("collection")
+                sheet_opt = sheet_opt or enriched.get("product_type")
 
             # Always re-parse from material/detail so ASSORT meaning stays correct.
             variant = parse_bd_variant_meta(
