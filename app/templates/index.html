@@ -2145,6 +2145,10 @@
                             </div>
                         </div>
                         <div class="of-saved-stats" id="of-match-detail-meta" aria-live="polite">Match a Filled Order from SO Pack, then open results here.</div>
+                        <!-- Filled by renderAutoMatchAttentionNotice(): Sales Orders the
+                             automatic matcher deliberately would NOT place. Without this
+                             they are invisible — the SO simply never appears anywhere. -->
+                        <div id="of-auto-match-attention" style="display:none;"></div>
                     </div>
                     <div class="of-saved-table-wrap">
                         <table class="of-saved-detail-table" id="of-match-detail-table">

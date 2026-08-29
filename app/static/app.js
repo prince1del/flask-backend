@@ -9619,9 +9619,51 @@ async function loadOrderMatchRunDetail(runId) {
   }
 }
 
+function openAutoMatchLog() {
+  openJsonPage(
+    'Automatic SO Matching — activity',
+    '/api/v1/order-fulfillment/auto-match-log'
+  );
+}
+
+async function renderAutoMatchAttentionNotice() {
+  // The automatic matcher refuses to guess when it cannot identify an SO's
+  // category (it used to guess, and merged towel lines into a Bed order —
+  // real data loss on 2026-08-28). Refusing is right, but silent refusal
+  // just makes the SO vanish, so say so here and link to the reasons.
+  const host = document.getElementById('of-auto-match-attention');
+  if (!host) return;
+  try {
+    const response = await fetchWithAuth(
+      '/api/v1/order-fulfillment/auto-match-log?needs_attention=1&limit=1'
+    );
+    const data = await parseApiJson(response);
+    const count = Number(
+      (data && data.data && data.data.needs_attention_count) || 0
+    );
+    if (!response.ok || !data.success || count <= 0) {
+      host.style.display = 'none';
+      host.innerHTML = '';
+      return;
+    }
+    host.style.display = '';
+    host.innerHTML =
+      `<div style="margin-top:8px;padding:10px 12px;border-radius:10px;`
+      + `background:rgba(255,176,32,0.10);border:1px solid rgba(255,176,32,0.45);">`
+      + `<strong>${count} Sales Order${count === 1 ? '' : 's'} could not be matched automatically.</strong> `
+      + `They are not attached to any Filled Order yet. `
+      + `<button type="button" class="nx-btn" style="margin-left:8px;padding:2px 10px;font-size:0.85rem;" `
+      + `onclick="openAutoMatchLog()">See why</button></div>`;
+  } catch (err) {
+    host.style.display = 'none';
+    host.innerHTML = '';
+  }
+}
+
 async function openOrderMatchWorkspace(focusRunId) {
   const tbody = document.getElementById('of-match-detail-tbody');
   const meta = document.getElementById('of-match-detail-meta');
+  renderAutoMatchAttentionNotice();
   if (meta) meta.textContent = 'Loading matches…';
   if (tbody) tbody.innerHTML = '<tr><td colspan="10">Loading matches…</td></tr>';
 
