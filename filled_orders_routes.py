@@ -21,6 +21,7 @@ Only after both are resolved does the endpoint return the final
 
 import io
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -39,6 +40,7 @@ import filled_orders_parser as foparser
 from app.routes.auth import get_workspace_id, require_jwt_auth, get_request_user_id
 
 filled_orders_bp = Blueprint("filled_orders", __name__, url_prefix="/api/v1/filled-orders")
+logger = logging.getLogger(__name__)
 
 DEFAULT_KEY_FIELDS = ["brand", "size"]
 
@@ -114,6 +116,44 @@ def _duplicate_order_response(
 
 def _detect_category_from_upload_file(tmp_path: str, filename: str) -> str | None:
     return foparser.detect_category_from_order_file(tmp_path, filename=filename)
+
+
+def _backup_filled_order_to_drive(
+    *,
+    user_id,
+    workspace_id,
+    tmp_path,
+    suffix,
+    filename,
+    distributor_name_raw,
+    category,
+    season,
+    order_id,
+) -> None:
+    """Copy the uploaded Filled Order workbook into Drive/NEXORA/Filled Orders.
+
+    Named so the founder can find it by eye later — "Balaji Homedecor Bath
+    AW26.xlsx" rather than a temp filename. Never raises: the order row is
+    already committed by the time this runs, so a Drive problem must not turn
+    a successful upload into an error.
+    """
+    try:
+        from app.storage.nexora_docs import push_file_to_nexora_drive
+
+        readable = " ".join(
+            part for part in (distributor_name_raw or "", category or "", season or "")
+            if part
+        ).strip()
+        stem = readable or Path(filename or "filled_order").stem
+        push_file_to_nexora_drive(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            local_path=tmp_path,
+            subfolder="Filled Orders",
+            display_name=f"{stem}{suffix}",
+        )
+    except Exception:
+        logger.exception("Filled Order Drive backup failed for order %s", order_id)
 
 
 @filled_orders_bp.route("/preview", methods=["POST"])
@@ -409,6 +449,25 @@ def upload_filled_order():
             fodb.insert_filled_order_item(conn, order_id, item)
 
         order = fodb.get_filled_order(conn, user_id, order_id)
+
+        # Keep the distributor's original workbook in Drive. Only its parsed
+        # rows were ever stored — the uploaded file itself goes to a tempfile
+        # that is deleted in the `finally` below, so without this the start of
+        # the whole order chain has no copy anywhere. Runs only on the
+        # committed-success path, and is best-effort: Drive being down, or not
+        # connected, must never fail an upload that is already saved.
+        _backup_filled_order_to_drive(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            tmp_path=tmp_path,
+            suffix=suffix,
+            filename=file.filename,
+            distributor_name_raw=distributor_name_raw,
+            category=category,
+            season=season,
+            order_id=order_id,
+        )
+
         return jsonify({
             "status": "success",
             "filled_order": order,

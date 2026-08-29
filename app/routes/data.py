@@ -3,6 +3,7 @@ import difflib
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -77,6 +78,7 @@ from app.verification import (
 
 
 data_blueprint = Blueprint("data", __name__)
+logger = logging.getLogger(__name__)
 
 
 @data_blueprint.route("/api/v1/utils/scan-visiting-card", methods=["POST"])
@@ -3485,6 +3487,28 @@ def upload_order_sheet_v2() -> Response:
         content_fingerprint=fingerprint,
         user_id=_current_user_id(),
     )
+    # Order Sheets were only ever written to the local upload folder, which is
+    # on an ephemeral disk. Push to Drive, record where it landed, then drop
+    # the server copy — no-op unless Drive confirmed it.
+    try:
+        from app.storage.nexora_docs import push_file_to_nexora_drive
+
+        uploaded = push_file_to_nexora_drive(
+            user_id=_current_user_id(),
+            workspace_id=workspace_id,
+            local_path=target_path,
+            subfolder="Order Sheets",
+            display_name=f"{name} {category}{Path(str(target_path)).suffix}",
+        )
+        sheet_drive_file_id = (uploaded or {}).get("id")
+        if sheet_drive_file_id:
+            db.set_order_sheet_drive_file_id(
+                sheet_id, str(sheet_drive_file_id), workspace_id=workspace_id
+            )
+            _drop_local_after_drive_backup(target_path, str(sheet_drive_file_id))
+    except Exception:
+        logger.exception("Order Sheet Drive backup failed for sheet %s", sheet_id)
+
     sheet = db.get_order_sheet(
         sheet_id, workspace_id=workspace_id, user_id=_current_user_id()
     )
@@ -4397,10 +4421,14 @@ def _archive_order_pdf_to_drive(
     kind: str,
     local_path: str | Path | None,
     display_name: str,
-) -> None:
-    """Best-effort: copy SO/CI PDF into Drive/NEXORA (does not fail the upload)."""
+) -> str | None:
+    """Best-effort: copy SO/CI PDF into Drive/NEXORA (does not fail the upload).
+
+    Returns the Drive file id when the upload is confirmed, so the caller can
+    then drop the server-side copy — see _drop_local_after_drive_backup().
+    """
     if not tracking_id or not local_path:
-        return
+        return None
     from app.storage.nexora_docs import push_pdf_to_nexora_drive
 
     subfolder = "Sales Orders" if kind == "so" else "Commercial Invoices"
@@ -4418,7 +4446,42 @@ def _archive_order_pdf_to_drive(
                 int(tracking_id), kind, str(file_id), workspace_id=workspace_id
             )
         except Exception:
-            pass
+            # Without the stored id nothing can find the Drive copy later, so
+            # the local file must stay as the only way to reach this document.
+            return None
+    return str(file_id) if file_id else None
+
+
+def _drop_local_after_drive_backup(
+    local_path: str | Path | None, drive_file_id: str | None
+) -> bool:
+    """Delete the server-side copy once Drive holds it.
+
+    Drive is the durable store; the server disk is small and is wiped on every
+    redeploy anyway, so keeping a second copy there only fills it up.
+
+    Deletes ONLY when Drive returned a file id AND that id was recorded — if
+    Drive is not connected, or the upload failed, the local file is the only
+    copy in existence and is left alone. Also refuses to touch anything
+    outside the upload root, so a bad path can never delete something else.
+    """
+    if not drive_file_id or not local_path:
+        return False
+    try:
+        target = Path(str(local_path)).resolve()
+        root = (
+            Path("app/instance/order_fulfillment_files")
+            if Path("app/instance").exists()
+            else Path("instance/order_fulfillment_files")
+        ).resolve()
+        if root not in target.parents:
+            return False
+        if not target.is_file():
+            return False
+        target.unlink()
+        return True
+    except OSError:
+        return False
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/upload/sales-order", methods=["POST"])
@@ -4481,6 +4544,7 @@ def upload_sales_order_v2() -> Response:
     filled_order_linked = False
     merged_from_ci_only = False
     so_ci_rematch = None
+    so_drive_file_id: str | None = None
     user = getattr(request, "user", None)
     user_id = int(user["user_id"]) if isinstance(user, dict) and user.get("user_id") is not None else None
     if confirmed_distributor_id and order_ref_no:
@@ -4527,7 +4591,10 @@ def upload_sales_order_v2() -> Response:
                     sales_order_parsed=parsed_sales_order,
                     workspace_id=workspace_id,
                 )
-                _archive_order_pdf_to_drive(
+                # Backed up now, but the local file is still needed below for
+                # line-item parsing — it is dropped at the very end of the
+                # request instead (see so_drive_file_id).
+                so_drive_file_id = _archive_order_pdf_to_drive(
                     db=db,
                     user_id=user_id,
                     workspace_id=workspace_id,
@@ -4691,6 +4758,10 @@ def upload_sales_order_v2() -> Response:
                 db.mark_document_processed(workspace_id, "SO", order_ref_no, tracking_id)
             except Exception as exc:
                 link_error = str(exc)
+
+    # All parsing is done — Drive now holds this PDF, so free the server disk.
+    # No-op unless Drive confirmed the upload and stored its file id.
+    _drop_local_after_drive_backup(target_path, so_drive_file_id)
 
     return _json_response({
         "success": True,
@@ -6546,7 +6617,9 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
             if isinstance(ci_user, dict) and ci_user.get("user_id") is not None
             else None
         )
-        _archive_order_pdf_to_drive(
+        # Dropped after _apply_ci_line_items_and_achievement below, which
+        # still reads this file.
+        ci_drive_file_id = _archive_order_pdf_to_drive(
             db=db,
             user_id=ci_user_id,
             workspace_id=workspace_id,
@@ -6575,6 +6648,9 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
             user_id=ci_user_id,
         )
     )
+
+    _drop_local_after_drive_backup(commercial_invoice_file_reference, ci_drive_file_id)
+
     if achievement_error and achievement_id is None and amount is not None:
         return Response(
             json.dumps({
@@ -6822,7 +6898,9 @@ def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
         if isinstance(ci_user, dict) and ci_user.get("user_id") is not None
         else None
     )
-    _archive_order_pdf_to_drive(
+    # Local copy is still read by _apply_ci_line_items_and_achievement below,
+    # so it is dropped after that, not here.
+    ci_drive_file_id = _archive_order_pdf_to_drive(
         db=db,
         user_id=ci_user_id,
         workspace_id=workspace_id,
@@ -6845,6 +6923,8 @@ def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
             user_id=ci_user_id,
         )
     )
+
+    _drop_local_after_drive_backup(commercial_invoice_file_reference, ci_drive_file_id)
 
     return _json_response({
         "success": True,

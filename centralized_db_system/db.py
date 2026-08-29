@@ -5141,6 +5141,12 @@ class CentralizedDB:
                 """
             )
             self._ensure_column_exists(conn, "order_sheet_master", "user_id", "INTEGER")
+            # Drive is where the uploaded sheet actually lives — the local
+            # upload folder is on an ephemeral disk and is dropped once Drive
+            # confirms the copy, so without this id the file is unreachable.
+            self._ensure_column_exists(
+                conn, "order_sheet_master", "drive_file_id", "TEXT"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_order_sheet_master_user "
                 "ON order_sheet_master(workspace_id, user_id)"
@@ -14601,6 +14607,21 @@ class CentralizedDB:
             return digest.hexdigest()
         except Exception:
             return None
+
+    def set_order_sheet_drive_file_id(
+        self, sheet_id: int, drive_file_id: str, workspace_id: str = "default"
+    ) -> None:
+        """Record where Drive keeps this Order Sheet, so the local copy can go."""
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_column_exists(
+                conn, "order_sheet_master", "drive_file_id", "TEXT"
+            )
+            conn.execute(
+                "UPDATE order_sheet_master SET drive_file_id = ? "
+                "WHERE id = ? AND workspace_id = ?",
+                (drive_file_id, int(sheet_id), workspace_id),
+            )
+            conn.commit()
 
     def add_order_sheet(
         self,
