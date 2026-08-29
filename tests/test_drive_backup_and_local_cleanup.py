@@ -180,6 +180,109 @@ def test_drive_outage_returns_none_rather_than_raising(tmp_path, monkeypatch):
     ) is None
 
 
+# ------------------------------------ the right account must be selected
+
+
+class _FakeAccountsDb:
+    """storage_accounts is UNIQUE(user_id, workspace_id, provider_type), so a
+    user can legitimately hold several — this returns them the way the real
+    query does: first match wins unless a provider_type is asked for."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def get_storage_account(self, user_id, provider_type=None, workspace_id=None):
+        for row in self.rows:
+            if row["user_id"] != user_id:
+                continue
+            if workspace_id and row["workspace_id"] != workspace_id:
+                continue
+            if provider_type and row["provider_type"] != provider_type:
+                continue
+            return row
+        return None
+
+
+def _accounts(*provider_types):
+    return [
+        {
+            "id": i + 1,
+            "user_id": 1,
+            "workspace_id": "ws",
+            "provider_type": p,
+            "oauth_token": {"token": f"{p}-token"},
+        }
+        for i, p in enumerate(provider_types)
+    ]
+
+
+def test_a_leftover_gmail_account_does_not_shadow_google_drive(monkeypatch):
+    """The bug behind "Drive says Connected but nothing is ever backed up".
+
+    The Gmail import stored its own storage_accounts row. Resolving the
+    provider without naming one returned that gmail row first; 'gmail' is not
+    a registered provider, so this raised KeyError — which the Drive backup
+    swallowed silently. No file, no log, and the UI still said Connected.
+    """
+    from app.storage.manager import StorageManager
+    from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+    manager = StorageManager()
+    manager.register_provider("google_drive", GoogleDriveProvider)
+    # gmail row first, exactly as the failing production account was ordered.
+    manager.db = _FakeAccountsDb(_accounts("gmail", "google_drive"))
+    monkeypatch.setattr(GoogleDriveProvider, "authenticate", lambda self, token: object())
+
+    provider = manager._get_user_provider(
+        1, workspace_id="ws", provider_type="google_drive"
+    )
+    assert isinstance(provider, GoogleDriveProvider)
+
+
+def test_cached_connection_is_not_reused_across_providers(monkeypatch):
+    """user_connections is keyed by user id alone, so a cached gmail
+    connection would otherwise be handed to a Drive caller."""
+    from app.storage.manager import StorageManager
+    from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+    manager = StorageManager()
+    manager.register_provider("google_drive", GoogleDriveProvider)
+    manager.db = _FakeAccountsDb(_accounts("google_drive"))
+    monkeypatch.setattr(GoogleDriveProvider, "authenticate", lambda self, token: object())
+
+    manager.user_connections[1] = {
+        "provider_type": "gmail",
+        "workspace_id": "ws",
+        "provider": object(),
+    }
+    provider = manager._get_user_provider(
+        1, workspace_id="ws", provider_type="google_drive"
+    )
+    assert isinstance(provider, GoogleDriveProvider)
+
+
+def test_drive_backup_says_why_it_skipped(monkeypatch, tmp_path, caplog):
+    """A skipped backup used to be a bare `return None`. Not being connected
+    is normal; being unable to tell that apart from a silent malfunction is
+    what cost a day."""
+    class NoAccountManager:
+        def register_provider(self, *_a, **_k):
+            pass
+
+        def _get_user_provider(self, *_a, **_k):
+            raise KeyError("No storage provider connected for user")
+
+    monkeypatch.setattr("app.storage.manager.StorageManager", lambda: NoAccountManager())
+    doc = tmp_path / "so.pdf"
+    doc.write_bytes(b"%PDF")
+
+    with caplog.at_level("WARNING"):
+        assert nexora_docs.push_file_to_nexora_drive(
+            user_id=1, workspace_id="ws", local_path=doc, subfolder="Sales Orders"
+        ) is None
+    assert "NEXORA Drive backup skipped" in caplog.text
+
+
 # ------------------------------------------- uploads wire the cleanup in
 
 

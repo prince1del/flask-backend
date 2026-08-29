@@ -80,16 +80,31 @@ class StorageManager:
         return {"user_id": user_id, "disconnected": True}
 
     def _get_persisted_connection(
-        self, user_id: int, workspace_id: str | None = None
+        self, user_id: int, workspace_id: str | None = None,
+        provider_type: str | None = None,
     ) -> dict[str, Any] | None:
-        account = self.db.get_storage_account(user_id, workspace_id=workspace_id)
+        """Load the connected account, optionally pinned to one provider.
+
+        storage_accounts is UNIQUE(user_id, workspace_id, provider_type), so a
+        user can hold several rows at once — a Google Drive account and, from
+        the Gmail import that once existed, a 'gmail' one. Asking without a
+        provider_type returns whichever row comes back first: if that was the
+        gmail row, self.providers has no 'gmail' entry, this raised
+        KeyError("Unknown provider type: gmail"), and every Drive upload
+        silently did nothing while the app still reported Drive as connected.
+        Callers that want Drive must say so.
+        """
+        account = self.db.get_storage_account(
+            user_id, provider_type=provider_type, workspace_id=workspace_id
+        )
         if account is None:
             return None
 
-        provider_type = account["provider_type"]
-        provider_class = self.providers.get(provider_type)
+        found_type = account["provider_type"]
+        provider_class = self.providers.get(found_type)
         if provider_class is None:
-            raise KeyError(f"Unknown provider type: {provider_type}")
+            raise KeyError(f"Unknown provider type: {found_type}")
+        provider_type = found_type
 
         if isinstance(provider_class, StorageProvider):
             provider = provider_class
@@ -107,13 +122,21 @@ class StorageManager:
         return connection
 
     def _get_user_provider(
-        self, user_id: int, workspace_id: str | None = None
+        self, user_id: int, workspace_id: str | None = None,
+        provider_type: str | None = None,
     ) -> StorageProvider:
         connection = self.user_connections.get(user_id)
+        # The cache is keyed by user alone, so it can hold a connection for a
+        # different workspace — or a different provider than the caller wants.
+        # Both must miss, or one feature's account gets served to another.
         if connection is None or (
             workspace_id and connection.get("workspace_id") != workspace_id
+        ) or (
+            provider_type and connection.get("provider_type") != provider_type
         ):
-            connection = self._get_persisted_connection(user_id, workspace_id)
+            connection = self._get_persisted_connection(
+                user_id, workspace_id, provider_type=provider_type
+            )
             if connection:
                 self.user_connections[user_id] = connection
         if not connection:

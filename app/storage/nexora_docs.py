@@ -43,7 +43,9 @@ def push_file_to_nexora_drive(
 
         manager = StorageManager()
         manager.register_provider("google_drive", GoogleDriveProvider)
-        provider = manager._get_user_provider(int(user_id), workspace_id=workspace_id)
+        provider = manager._get_user_provider(
+            int(user_id), workspace_id=workspace_id, provider_type="google_drive"
+        )
         workspace = provider.ensure_nexora_workspace()
         folder_id = workspace["folders"].get(subfolder) or workspace["root_id"]
         uploaded = provider.upload(
@@ -52,7 +54,16 @@ def push_file_to_nexora_drive(
             display_name=display_name or path.name,
         )
         return uploaded
-    except KeyError:
+    except KeyError as exc:
+        # Was a bare `return None`. Google Drive not being connected is a
+        # normal state, but so is "connected, yet every backup silently does
+        # nothing" — which is exactly what happened when a leftover 'gmail'
+        # storage account shadowed the Drive one. Say which, either way.
+        logger.warning(
+            "NEXORA Drive backup skipped for %s — no usable Google Drive "
+            "account for user %s in workspace %r (%s)",
+            local_path, user_id, workspace_id, exc,
+        )
         return None
     except Exception:
         logger.exception("NEXORA Drive upload failed for %s", local_path)
