@@ -4534,7 +4534,10 @@ def _backup_so_pack_upload_to_drive(
     if not user_id:
         return
     from app.services.so_pack_consolidate import _load_pack_pdfs
-    from app.storage.nexora_docs import push_file_to_nexora_drive
+    from app.storage.nexora_docs import push_file_to_nexora_drive, remove_file_from_nexora_drive
+
+    archive_name = Path(label).name
+    is_archive = archive_name.lower().endswith((".zip", ".rar"))
 
     def _push_bytes(raw: bytes, display_name: str) -> None:
         suffix = Path(display_name).suffix or ".pdf"
@@ -4574,6 +4577,13 @@ def _backup_so_pack_upload_to_drive(
             if not safe_name.lower().endswith(".pdf"):
                 continue
             _push_bytes(raw, safe_name)
+        if is_archive:
+            remove_file_from_nexora_drive(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                subfolder="Sales Orders",
+                display_name=archive_name,
+            )
     except Exception:
         logging.getLogger(__name__).exception("SO Pack Drive backup failed")
 

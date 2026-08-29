@@ -23,6 +23,7 @@ class _FakeProvider:
     def __init__(self, file_id="drive-file-1"):
         self.file_id = file_id
         self.uploaded = []
+        self.deleted = []
         self._files: dict[tuple[str, str], str] = {}
 
     def ensure_nexora_workspace(self):
@@ -50,6 +51,17 @@ class _FakeProvider:
             }
         )
         return {"id": file_id, "name": display_name}
+
+    def _find_file_by_name(self, name, parent_id):
+        return self._files.get((parent_id, name))
+
+    def delete(self, file_id):
+        for key, fid in list(self._files.items()):
+            if fid == file_id:
+                del self._files[key]
+                self.deleted.append({"file_id": file_id, "name": key[1]})
+                return {"file_id": file_id, "deleted": True}
+        return {"file_id": file_id, "deleted": False}
 
 
 def _install_fake_drive(monkeypatch, provider):
@@ -202,6 +214,29 @@ def test_so_pack_zip_backup_uploads_separate_pdfs_not_archive(tmp_path, monkeypa
     assert names == {"BND 102876593.pdf", "BND SPL 102876664.pdf"}
     assert "bnd.zip" not in names
     assert all(u["folder_id"] == "Sales Orders-id" for u in provider.uploaded)
+
+
+def test_so_pack_zip_backup_removes_stale_archive_from_drive(tmp_path, monkeypatch):
+    import io
+    import zipfile
+
+    from app.routes.data import _backup_so_pack_upload_to_drive
+
+    provider = _FakeProvider()
+    provider._files[("Sales Orders-id", "bnd.zip")] = "old-zip-id"
+    _install_fake_drive(monkeypatch, provider)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("BND 102876593.pdf", b"%PDF-1.4 one")
+    _backup_so_pack_upload_to_drive(
+        user_id=1,
+        workspace_id="ws",
+        mode="single",
+        label="bnd.zip",
+        payload=buf.getvalue(),
+    )
+    assert provider.deleted == [{"file_id": "old-zip-id", "name": "bnd.zip"}]
+    assert ("Sales Orders-id", "bnd.zip") not in provider._files
 
 
 def test_drive_outage_returns_none_rather_than_raising(tmp_path, monkeypatch):

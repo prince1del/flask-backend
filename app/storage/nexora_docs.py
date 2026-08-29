@@ -75,5 +75,41 @@ def push_file_to_nexora_drive(
         return None
 
 
+def remove_file_from_nexora_drive(
+    *,
+    user_id: int | None,
+    workspace_id: str | None,
+    subfolder: str,
+    display_name: str,
+) -> bool:
+    """Remove a same-named file from NEXORA/<subfolder> (best-effort).
+
+    Used when an old SO Pack backup stored the whole zip — re-upload should
+    leave only unpacked PDFs in Sales Orders.
+    """
+    name = (display_name or "").strip()
+    if not user_id or not name:
+        return False
+    try:
+        from app.storage.manager import StorageManager
+        from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+        manager = StorageManager()
+        manager.register_provider("google_drive", GoogleDriveProvider)
+        provider = manager._get_user_provider(
+            int(user_id), workspace_id=workspace_id, provider_type="google_drive"
+        )
+        workspace = provider.ensure_nexora_workspace()
+        folder_id = workspace["folders"].get(subfolder) or workspace["root_id"]
+        existing_id = provider._find_file_by_name(name, folder_id)
+        if not existing_id:
+            return False
+        provider.delete(existing_id)
+        return True
+    except Exception:
+        logger.exception("NEXORA Drive delete failed for %s", name)
+        return False
+
+
 # Original name, kept so existing SO/CI callers keep working unchanged.
 push_pdf_to_nexora_drive = push_file_to_nexora_drive
