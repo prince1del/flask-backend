@@ -26,11 +26,15 @@ def push_file_to_nexora_drive(
     local_path: str | Path | None,
     subfolder: str,
     display_name: str | None = None,
+    replace_if_exists: bool = False,
 ) -> dict[str, Any] | None:
     """Upload any local file into NEXORA/<subfolder>. Returns Drive metadata or None.
 
     Not PDF-specific: Drive detects the type from the file itself, so
     workbooks (.xlsx) upload exactly the same way.
+
+    replace_if_exists: when True, overwrite a same-named file in that subfolder
+    instead of creating a duplicate (used for rolling JSON snapshots).
     """
     if not user_id or not local_path:
         return None
@@ -48,7 +52,8 @@ def push_file_to_nexora_drive(
         )
         workspace = provider.ensure_nexora_workspace()
         folder_id = workspace["folders"].get(subfolder) or workspace["root_id"]
-        uploaded = provider.upload(
+        upload_fn = provider.upload_or_replace if replace_if_exists else provider.upload
+        uploaded = upload_fn(
             str(path),
             folder_id,
             display_name=display_name or path.name,

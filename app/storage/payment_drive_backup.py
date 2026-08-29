@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 PAYMENT_RECEIVING_SUBFOLDER = "Payment Receiving"
 
 
-def _stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H%M%S")
+def _stable_backup_name(username: str | None, label: str) -> str:
+    return f"{_safe_stem(username)} {label}.json"
 
 
 def _safe_stem(label: str | None) -> str:
@@ -63,6 +63,7 @@ def _push_snapshot(
             local_path=local_path,
             subfolder=PAYMENT_RECEIVING_SUBFOLDER,
             display_name=display_name,
+            replace_if_exists=True,
         )
     finally:
         try:
@@ -106,7 +107,7 @@ def backup_so_payment_collection_to_drive(
         path = _write_json_snapshot(payload)
         if not path:
             return
-        name = f"{_safe_stem(username)} SO Payment Receiving {_stamp()}.json"
+        name = _stable_backup_name(username, "SO Payment Receiving")
         _push_snapshot(
             user_id=user_id,
             workspace_id=workspace_id,
@@ -139,7 +140,7 @@ def backup_category_payment_status_to_drive(
         path = _write_json_snapshot(payload)
         if not path:
             return
-        name = f"{_safe_stem(username)} Distributor Payment Status {_stamp()}.json"
+        name = _stable_backup_name(username, "Distributor Payment Status")
         _push_snapshot(
             user_id=user_id,
             workspace_id=workspace_id,

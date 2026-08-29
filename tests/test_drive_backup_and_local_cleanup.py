@@ -23,6 +23,7 @@ class _FakeProvider:
     def __init__(self, file_id="drive-file-1"):
         self.file_id = file_id
         self.uploaded = []
+        self._files: dict[tuple[str, str], str] = {}
 
     def ensure_nexora_workspace(self):
         return {
@@ -33,6 +34,22 @@ class _FakeProvider:
     def upload(self, path, folder_id, display_name=None):
         self.uploaded.append({"path": path, "folder_id": folder_id, "name": display_name})
         return {"id": self.file_id, "name": display_name}
+
+    def upload_or_replace(self, path, folder_id, display_name=None):
+        key = (folder_id, display_name or "")
+        replaced = key in self._files
+        file_id = self._files.get(key, self.file_id)
+        if not replaced:
+            self._files[key] = file_id
+        self.uploaded.append(
+            {
+                "path": path,
+                "folder_id": folder_id,
+                "name": display_name,
+                "replaced": replaced,
+            }
+        )
+        return {"id": file_id, "name": display_name}
 
 
 def _install_fake_drive(monkeypatch, provider):
@@ -362,9 +379,20 @@ def test_payment_receiving_backup_pushes_json_snapshot(monkeypatch, tmp_path):
     assert len(fake.uploaded) == 1
     up = fake.uploaded[0]
     assert up["folder_id"] == f"{PAYMENT_RECEIVING_SUBFOLDER}-id"
-    assert up["name"].startswith("kunwar1del SO Payment Receiving")
+    assert up["name"] == "kunwar1del SO Payment Receiving.json"
     assert up["name"].endswith(".json")
     assert Path(up["path"]).suffix == ".json"
+    assert up.get("replaced") is False
+
+    payment_drive_backup.backup_so_payment_collection_to_drive(
+        db=FakeDB(),
+        user_id=1,
+        workspace_id="default",
+        username="kunwar1del",
+    )
+    assert len(fake.uploaded) == 2
+    assert fake.uploaded[1]["name"] == "kunwar1del SO Payment Receiving.json"
+    assert fake.uploaded[1].get("replaced") is True
 
 
 def test_payment_collection_routes_trigger_backup():

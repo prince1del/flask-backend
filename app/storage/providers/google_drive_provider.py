@@ -187,6 +187,62 @@ class GoogleDriveProvider(StorageProvider):
         files = response.get("files") or []
         return str(files[0]["id"]) if files else None
 
+    def _find_file_by_name(self, name: str, parent_id: str) -> str | None:
+        q = (
+            f"name = '{self._escape_drive_query(name)}' and "
+            f"mimeType != 'application/vnd.google-apps.folder' and "
+            f"'{parent_id}' in parents and trashed = false"
+        )
+        response = (
+            self.service.files()
+            .list(q=q, pageSize=1, fields="files(id,name)", orderBy="modifiedTime desc")
+            .execute()
+        )
+        files = response.get("files") or []
+        return str(files[0]["id"]) if files else None
+
+    def upload_or_replace(
+        self, file_path: str, target_folder: str, display_name: str | None = None
+    ) -> dict[str, Any]:
+        """Upload a file, replacing same-named file in the folder if it already exists."""
+        name = display_name or os.path.basename(file_path)
+        parent = target_folder
+        if not parent:
+            workspace = self.ensure_nexora_workspace()
+            parent = workspace["folders"].get("Downloads") or workspace["root_id"]
+        existing_id = self._find_file_by_name(name, parent) if parent else None
+        from googleapiclient.http import MediaFileUpload
+
+        media = MediaFileUpload(file_path, resumable=True)
+        try:
+            if existing_id:
+                file = (
+                    self.service.files()
+                    .update(
+                        fileId=existing_id,
+                        body={"name": name},
+                        media_body=media,
+                        fields="id,name,mimeType,size,modifiedTime",
+                    )
+                    .execute()
+                )
+                return file
+            metadata: dict[str, Any] = {"name": name}
+            if parent:
+                metadata["parents"] = [parent]
+            file = (
+                self.service.files()
+                .create(
+                    body=metadata,
+                    media_body=media,
+                    fields="id,name,mimeType,size,modifiedTime",
+                )
+                .execute()
+            )
+            return file
+        except Exception as exc:
+            raise RuntimeError(f"Google Drive upload_or_replace failed: {exc}") from exc
+
     def ensure_nexora_workspace(self) -> dict[str, Any]:
         """Create Drive/NEXORA with Downloads, Invoices, Reports, Backups if missing."""
         if self.nexora_root_id and self.nexora_root_id in self.folder_cache:
