@@ -273,7 +273,7 @@ def streams_compatible(fo_stream: str | None, so_stream: str | None) -> bool:
 def stream_display_label(stream: str | None) -> str:
     st = (stream or STREAM_REGULAR).lower()
     if st == STREAM_SPECIAL:
-        return "Special"
+        return "Special Order"
     if st == STREAM_MIXED:
         return "Mixed"
     return "Regular"
