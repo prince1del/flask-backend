@@ -164,6 +164,65 @@ try:
         except Exception as e:
             print("FO<->SO LINK REPAIR err:", e)
 
+    # One-time, READ-ONLY report (writes nothing): lists every order_lifecycle_tracking
+    # row for Shri Ram & Co (distributor_id 9) and Sain International
+    # (distributor_id 3) that is NOT currently linked to any Filled Order,
+    # along with whatever SO/CI item-level data (order_fulfillment_items)
+    # is still stored against it. Their original Bed match runs were wiped
+    # by a since-fixed bug (Bath SOs force-merged into their only FO,
+    # 2026-08-28) — this surfaces exactly what recoverable data survives
+    # (order_lifecycle_tracking / order_fulfillment_items were never
+    # deleted, only the match run's cached summary was corrupted) so a
+    # targeted rebuild can be reviewed before anything is written back.
+    # OFF by default — set RECOVERY_REPORT=1, redeploy once to print it in
+    # the boot logs, then unset it.
+    if os.getenv("RECOVERY_REPORT") == "1":
+        try:
+            import sqlite3 as _sqlite3
+
+            _conn = _sqlite3.connect(db_path)
+            _conn.row_factory = _sqlite3.Row
+            _rows = _conn.execute(
+                """
+                SELECT olt.tracking_id, olt.order_ref_no, olt.distributor_id,
+                       CASE WHEN olt.sales_order_file_reference IS NOT NULL
+                            AND TRIM(olt.sales_order_file_reference) != '' THEN 1 ELSE 0 END has_so_file,
+                       CASE WHEN olt.sales_order_parsed IS NOT NULL
+                            AND TRIM(olt.sales_order_parsed) != '' THEN 1 ELSE 0 END has_so_parsed,
+                       CASE WHEN olt.commercial_invoice_parsed IS NOT NULL
+                            AND TRIM(olt.commercial_invoice_parsed) != '' THEN 1 ELSE 0 END has_ci_parsed,
+                       olt.created_at
+                FROM order_lifecycle_tracking olt
+                WHERE olt.distributor_id IN (3, 9)
+                  AND olt.tracking_id NOT IN (
+                      SELECT order_lifecycle_tracking_id FROM filled_order_so_link
+                  )
+                ORDER BY olt.distributor_id, olt.tracking_id
+                """
+            ).fetchall()
+            print(f"RECOVERY REPORT: {len(_rows)} unlinked tracking row(s) for distributor_id in (3, 9)")
+            for _r in _rows:
+                _items = _conn.execute(
+                    "SELECT item_key, item_name, so_qty, so_value, ci_qty, ci_value "
+                    "FROM order_fulfillment_items WHERE order_lifecycle_id = ?",
+                    (_r["tracking_id"],),
+                ).fetchall()
+                print(
+                    f"  tracking_id={_r['tracking_id']} distributor_id={_r['distributor_id']} "
+                    f"order_ref_no={_r['order_ref_no']!r} has_so_file={_r['has_so_file']} "
+                    f"has_so_parsed={_r['has_so_parsed']} has_ci_parsed={_r['has_ci_parsed']} "
+                    f"created_at={_r['created_at']} items={len(_items)}"
+                )
+                for _it in _items:
+                    print(
+                        f"      item_key={_it['item_key']!r} item_name={_it['item_name']!r} "
+                        f"so_qty={_it['so_qty']} so_value={_it['so_value']} "
+                        f"ci_qty={_it['ci_qty']} ci_value={_it['ci_value']}"
+                    )
+            _conn.close()
+        except Exception as e:
+            print("RECOVERY REPORT err:", e)
+
     # Free peak RAM before gunicorn starts (same shell, sequential).
     del cdb, app, db
     gc.collect()
