@@ -4347,6 +4347,13 @@ def so_pack_match_filled_order() -> Response:
             filled_order_id,
             new_numbers,
         )
+        oda.restore_match_run_archives_after_save(
+            conn,
+            user_id,
+            int(run["id"]),
+            filled_order_id,
+            new_numbers,
+        )
         result["run"] = {k: v for k, v in run.items() if k != "rows"}
         result["run_id"] = run.get("id")
         if replaced_note:
@@ -4601,6 +4608,55 @@ def order_match_delete_selected() -> Response:
                 deleted += 1
         conn.commit()
         return _json_response({"success": True, "data": {"deleted": deleted}})
+    finally:
+        conn.close()
+
+
+@data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>/strip-so", methods=["POST"])
+@require_jwt_auth
+def order_match_strip_so(run_id: int) -> Response:
+    """Delete one SO from a match run (alias for DELETE with so_number)."""
+    from app.services import fo_so_match_db as matchdb
+    from app.services import order_desk_archive as oda
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+    body = request.get_json(silent=True) or {}
+    so_number = (body.get("so_number") or request.args.get("so_number") or "").strip()
+    if not so_number:
+        return _json_response(
+            {"success": False, "error": {"message": "so_number is required"}},
+            400,
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        run = matchdb.get_match_run(conn, run_id, user_id=user_id)
+        if not run:
+            return _json_response(
+                {"success": False, "error": {"message": "Match run not found"}},
+                404,
+            )
+        oda.archive_match_so(conn, user_id, run, so_number, restore_scope="entity")
+        result = matchdb.delete_match_so_from_run(conn, user_id, run_id, so_number)
+        if result is None:
+            return _json_response(
+                {"success": False, "error": {"message": "Match run not found"}},
+                404,
+            )
+        conn.commit()
+        data: dict[str, Any] = {"deleted": True, "so_number": so_number}
+        if result.get("deleted_run"):
+            data["deleted_run_id"] = run_id
+        return _json_response({"success": True, "data": data})
     finally:
         conn.close()
 
@@ -6529,7 +6585,12 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
     if file_references is None:
         return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
 
-    _cleanup_order_fulfillment_files(file_references, user_id=user_id)
+    _cleanup_order_fulfillment_files(
+        file_references,
+        user_id=user_id,
+        order_ref_no=str(tracking.get("order_ref_no") or ""),
+        tracking_id=tracking_id,
+    )
     return _json_response({"success": True, "data": {"deleted_tracking_id": tracking_id}})
 
 
@@ -6584,31 +6645,53 @@ def delete_selected_order_fulfillment_tracking() -> Response:
         )
         if file_references is None:
             continue
-        _cleanup_order_fulfillment_files(file_references, user_id=user_id)
+        _cleanup_order_fulfillment_files(
+            file_references,
+            user_id=user_id,
+            order_ref_no=str(tracking.get("order_ref_no") or ""),
+            tracking_id=tracking_id,
+        )
         deleted += 1
     return _json_response({"success": True, "data": {"deleted": deleted}})
 
 
-def _cleanup_order_fulfillment_files(file_references, user_id: int | None = None) -> None:
+def _cleanup_order_fulfillment_files(
+    file_references,
+    user_id: int | None = None,
+    order_ref_no: str | None = None,
+    tracking_id: int | None = None,
+) -> None:
     if not file_references:
         return
     from app.services import order_desk_archive as oda
 
     upload_root = oda.upload_root()
-    values = (
-        file_references.values()
-        if isinstance(file_references, dict)
-        else list(file_references)
-    )
-    for file_ref in values:
+    if isinstance(file_references, dict):
+        pairs = list(file_references.items())
+    else:
+        pairs = [(None, ref) for ref in file_references]
+    for key, file_ref in pairs:
         if not file_ref:
             continue
+        kind_hint = None
+        if key and "sales_order" in str(key):
+            kind_hint = "so"
+        elif key and "commercial_invoice" in str(key):
+            kind_hint = "ci"
         if user_id is not None:
             rel = oda.move_file_to_recycle(user_id, str(file_ref))
             if rel:
                 conn = sqlite3.connect(_db_path())
                 try:
-                    oda.archive_file_reference(conn, user_id, rel)
+                    oda.archive_file_reference(
+                        conn,
+                        user_id,
+                        rel,
+                        tracking_id=tracking_id,
+                        kind_hint=kind_hint,
+                        order_ref_no=order_ref_no,
+                        original_path=str(file_ref),
+                    )
                     conn.commit()
                 finally:
                     conn.close()
@@ -6810,6 +6893,31 @@ def order_fulfillment_delete_file() -> Response:
         return _json_response({"success": False, "error": {"message": "Invalid path"}}, 400)
     if not candidate.exists() or not candidate.is_file():
         return _json_response({"success": False, "error": {"message": "File not found"}}, 404)
+
+    from app.services import order_desk_archive as oda
+
+    user_id = _current_user_id()
+    if user_id is not None:
+        rel = oda.move_file_to_recycle(user_id, str(candidate))
+        if rel:
+            conn = sqlite3.connect(_db_path())
+            try:
+                path_norm = requested_path.replace("\\", "/")
+                kind_hint = (
+                    "so" if "/SO" in path_norm.upper() else
+                    "ci" if "/CI" in path_norm.upper() else None
+                )
+                oda.archive_file_reference(
+                    conn,
+                    user_id,
+                    rel,
+                    original_path=str(candidate),
+                    kind_hint=kind_hint,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return _json_response({"success": True, "data": {"deleted": requested_path, "recycled": True}})
 
     candidate.unlink()
     return _json_response({"success": True, "data": {"deleted": requested_path}})
@@ -7014,6 +7122,22 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
             user_id=ci_user_id,
         )
     )
+
+    if ci_user_id and tracking_id:
+        from app.services import order_desk_archive as oda
+
+        restore_conn = sqlite3.connect(_db_path())
+        try:
+            oda.restore_tracking_after_upload(
+                restore_conn,
+                ci_user_id,
+                order_ref_no,
+                int(tracking_id),
+                workspace_id or "default",
+                upload_kind="ci",
+            )
+        finally:
+            restore_conn.close()
 
     _drop_local_after_drive_backup(commercial_invoice_file_reference, ci_drive_file_id)
 
@@ -7289,6 +7413,22 @@ def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
             user_id=ci_user_id,
         )
     )
+
+    if ci_user_id and tracking_id and order_ref_no:
+        from app.services import order_desk_archive as oda
+
+        restore_conn = sqlite3.connect(_db_path())
+        try:
+            oda.restore_tracking_after_upload(
+                restore_conn,
+                ci_user_id,
+                order_ref_no,
+                int(tracking_id),
+                workspace_id or "default",
+                upload_kind="ci",
+            )
+        finally:
+            restore_conn.close()
 
     _drop_local_after_drive_backup(commercial_invoice_file_reference, ci_drive_file_id)
 

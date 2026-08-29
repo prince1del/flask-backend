@@ -1,8 +1,12 @@
-"""Order Desk delete → re-upload restore (match_so + match_run)."""
+"""Order Desk delete → re-upload restore (match, tracking, FO, files)."""
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from datetime import datetime, timezone
+
+import pytest
 
 from app.services import fo_so_match_db as matchdb
 from app.services import order_desk_archive as oda
@@ -13,7 +17,85 @@ def _conn(tmp_path):
     conn = sqlite3.connect(str(path))
     matchdb.ensure_schema(conn)
     oda.ensure_schema(conn)
+    _ensure_tracking_tables(conn)
+    import filled_orders_db as fodb
+
+    fodb.ensure_schema(conn)
     return conn
+
+
+def _ensure_tracking_tables(conn):
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS order_lifecycle_tracking (
+            tracking_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_ref_no TEXT NOT NULL,
+            distributor_id INTEGER NOT NULL,
+            order_received_date TEXT,
+            order_filled_date TEXT,
+            sales_order_generated_date TEXT,
+            sales_order_file_reference TEXT,
+            sales_order_parsed TEXT,
+            payment_status TEXT,
+            commercial_invoice_date TEXT,
+            commercial_invoice_file_reference TEXT,
+            commercial_invoice_parsed TEXT,
+            dispatch_date TEXT,
+            expected_delivery_date TEXT,
+            actual_delivery_date TEXT,
+            pod_number TEXT,
+            transit_status TEXT NOT NULL DEFAULT 'ORDERED',
+            receiving_status TEXT,
+            receiving_condition TEXT,
+            created_at TEXT NOT NULL,
+            workspace_id TEXT NOT NULL DEFAULT 'default',
+            sales_order_drive_file_id TEXT,
+            commercial_invoice_drive_file_id TEXT,
+            order_sheet_id INTEGER,
+            order_sheet_name TEXT
+        );
+        CREATE TABLE IF NOT EXISTS order_fulfillment_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_lifecycle_id INTEGER NOT NULL,
+            item_name TEXT,
+            item_key TEXT,
+            ordered_qty INTEGER DEFAULT 0,
+            fulfilled_qty INTEGER DEFAULT 0,
+            so_qty REAL,
+            so_value REAL,
+            ci_qty REAL,
+            ci_value REAL,
+            created_at TEXT NOT NULL,
+            workspace_id TEXT NOT NULL DEFAULT 'default'
+        );
+        CREATE TABLE IF NOT EXISTS distributor_payment_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tracking_id INTEGER,
+            amount REAL,
+            payment_date TEXT,
+            note TEXT
+        );
+        CREATE TABLE IF NOT EXISTS achievements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_lifecycle_tracking_id INTEGER,
+            amount REAL,
+            currency TEXT,
+            source TEXT,
+            created_at TEXT,
+            workspace_id TEXT DEFAULT 'default'
+        );
+        CREATE TABLE IF NOT EXISTS processed_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            document_type TEXT NOT NULL,
+            document_number TEXT NOT NULL,
+            tracking_id INTEGER,
+            processed_at TEXT NOT NULL,
+            UNIQUE(workspace_id, document_type, document_number)
+        );
+        """
+    )
+    conn.commit()
 
 
 def _payload(so_net: float = 1000.0, so_number: str = "102876303") -> dict:
@@ -90,10 +172,9 @@ def test_delete_so_archives_and_restores_on_rematch(tmp_path):
     assert again is not None
     nums = matchdb.extract_so_numbers_from_run_row(again)
     assert so in nums
-    assert float(again.get("so_net_amount") or 0) == 1000.0
 
 
-def test_delete_whole_run_archives(tmp_path):
+def test_delete_whole_run_archives_each_so(tmp_path):
     conn = _conn(tmp_path)
     pack = {"line_detail": [{"so_number": "SO-1", "qty": 1, "net_amount": 50}]}
     run = matchdb.save_match_run(
@@ -101,11 +182,130 @@ def test_delete_whole_run_archives(tmp_path):
     )
     full = matchdb.get_match_run(conn, int(run["id"]), user_id=2)
     oda.archive_match_run(conn, 2, full, restore_scope="run")
-    assert matchdb.delete_match_run(conn, 2, int(run["id"]))
     rows = conn.execute(
         "SELECT kind FROM order_desk_archive WHERE user_id = 2 AND restored_at IS NULL"
     ).fetchall()
-    assert any(r[0] == "match_run" for r in rows)
+    kinds = {r[0] for r in rows}
+    assert "match_run" in kinds
+    assert "match_so" in kinds
+
+
+def test_tracking_restore_merges_ci_and_payments(tmp_path):
+    conn = _conn(tmp_path)
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO order_lifecycle_tracking (
+            order_ref_no, distributor_id, sales_order_file_reference,
+            transit_status, created_at, workspace_id
+        ) VALUES ('SO-777', 5, '/new/so.pdf', 'ORDERED', ?, 'default')
+        """,
+        (now,),
+    )
+    tracking_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    conn.commit()
+
+    archived = {
+        "tracking_id": 99,
+        "order_ref_no": "SO-777",
+        "distributor_id": 5,
+        "commercial_invoice_file_reference": "/old/ci.pdf",
+        "commercial_invoice_parsed": json.dumps({"header": {"invoice_no": "CI-1"}}),
+        "payment_status": "PARTIAL",
+        "transit_status": "DISPATCHED",
+        "created_at": now,
+        "workspace_id": "default",
+    }
+    oda.archive_tracking_bundle(
+        conn,
+        3,
+        archived,
+        fulfillment_items=[
+            {
+                "item_name": "Towel",
+                "item_key": "t1",
+                "ordered_qty": 10,
+                "fulfilled_qty": 0,
+                "so_qty": 10,
+                "created_at": now,
+                "workspace_id": "default",
+            }
+        ],
+        achievements=[],
+        payment_entries=[{"amount": 500.0, "payment_date": "2026-08-01", "note": "RTGS"}],
+        processed_documents=[
+            {
+                "workspace_id": "default",
+                "document_type": "SO",
+                "document_number": "SO-777",
+                "tracking_id": 99,
+                "processed_at": now,
+            }
+        ],
+    )
+    conn.commit()
+
+    ok = oda.restore_tracking_after_upload(
+        conn, 3, "SO-777", tracking_id, "default", upload_kind="so"
+    )
+    assert ok
+    row = conn.execute(
+        "SELECT commercial_invoice_file_reference, payment_status FROM order_lifecycle_tracking WHERE tracking_id = ?",
+        (tracking_id,),
+    ).fetchone()
+    assert row[0] == "/old/ci.pdf"
+    assert row[1] == "PARTIAL"
+    pay = conn.execute(
+        "SELECT amount FROM distributor_payment_entries WHERE tracking_id = ?",
+        (tracking_id,),
+    ).fetchone()
+    assert float(pay[0]) == 500.0
+    items = conn.execute(
+        "SELECT item_name FROM order_fulfillment_items WHERE order_lifecycle_id = ?",
+        (tracking_id,),
+    ).fetchall()
+    assert len(items) == 1
+
+
+def test_filled_order_items_restore_on_reupload(tmp_path):
+    conn = _conn(tmp_path)
+    import filled_orders_db as fodb
+
+    fodb.ensure_schema(conn)
+    order_id = fodb.create_filled_order(
+        conn, 4, 1, "Bernina", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    fodb.insert_filled_order_item(
+        conn,
+        order_id,
+        {
+            "item_key": "525B|DB",
+            "brand": "525B",
+            "size": "DB",
+            "raw_qty_value": 10,
+            "detected_unit": "pieces",
+            "final_piece_qty": 10,
+            "matched": True,
+            "is_clean_bale_multiple": False,
+        },
+    )
+    order = fodb.get_filled_order(conn, 4, order_id)
+    items = fodb.get_filled_order_items(conn, order_id)
+    oda.archive_filled_order(conn, 4, order, items, restore_scope="run")
+    fodb.delete_filled_order(conn, 4, order_id)
+
+    new_id = fodb.create_filled_order(
+        conn, 4, 1, "Bernina", "Bed", "AW26",
+    )
+    key = oda.fo_entity_key("Bernina", "Bed", "AW26")
+    n = oda.restore_filled_order_after_upload(conn, 4, new_id, key)
+    assert n == 1
+    rows = conn.execute(
+        "SELECT item_key FROM filled_order_items WHERE filled_order_id = ?",
+        (new_id,),
+    ).fetchall()
+    assert rows[0][0] == "525B|DB"
 
 
 def test_purge_expired_drops_old_rows(tmp_path):

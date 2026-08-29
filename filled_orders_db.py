@@ -772,12 +772,22 @@ def delete_filled_order_item(conn, user_id, filled_order_id, item_id):
     ).fetchone()
     if order_row is None:
         raise ValueError("Filled order not found")
+    cols = ", ".join(FILLED_ORDER_ITEM_COLUMNS)
     item_row = conn.execute(
-        "SELECT id FROM filled_order_items WHERE id = ? AND filled_order_id = ?",
+        f"SELECT {cols} FROM filled_order_items WHERE id = ? AND filled_order_id = ?",
         (item_id, filled_order_id),
     ).fetchone()
     if item_row is None:
         raise ValueError("Item not found")
+    order = get_filled_order(conn, user_id, filled_order_id)
+    item = _row_to_item_dict(item_row)
+    try:
+        from app.services import order_desk_archive as oda
+
+        if order:
+            oda.archive_filled_order_item(conn, user_id, order, item, restore_scope="entity")
+    except Exception:
+        pass
     conn.execute(
         "DELETE FROM filled_order_items WHERE id = ? AND filled_order_id = ?",
         (item_id, filled_order_id),

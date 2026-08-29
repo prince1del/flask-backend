@@ -495,6 +495,7 @@ def upload_filled_order():
 
             entity_key = oda.fo_entity_key(distributor_name_raw, category, season)
             oda.repoint_filled_order_archives(conn, user_id, entity_key, order_id)
+            oda.restore_filled_order_after_upload(conn, user_id, order_id, entity_key)
             conn.commit()
         except Exception:
             pass
