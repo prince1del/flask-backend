@@ -18,6 +18,20 @@ def test_towel_size_display_names():
     assert amparser.normalize_size_code("L") == "Large"
     assert amparser.size_display_name("40x60") == "Hand Towel"
     assert amparser.size_display_name("Hand Towel") == "Hand Towel"
+    # Bath special-order sheet uses * dimensions and R4SET labels
+    assert amparser.normalize_size_code("40*60") == "Hand Towel"
+    assert amparser.normalize_size_code("75*150") == "Bath Towel"
+    assert amparser.normalize_size_code("60*120") == "Ladies Towel"
+    assert amparser.normalize_size_code("90*180") == "Pool Towel"
+    assert amparser.normalize_size_code("30*30 - 3 PCS") == "Face Towel Set of 3"
+    assert amparser.normalize_size_code("40*60 - 2 PCS") == "Hand Towel Set of 2"
+    assert amparser.normalize_size_code("R4SET") == "Towel Set"
+    assert amparser.towel_physical_size_code("40*60") == "40x60"
+    assert amparser.towel_physical_size_code("30*30 - 3 PCS") == "30x30(3pc)"
+    assert amparser.towel_physical_size_code("R4SET") == "R4"
+    b, s = amparser.normalize_brand_and_size("FLORA", "BATHROBE")
+    assert b == "Flora Bathrobe"
+    assert s == "Large"
 
 
 def test_towel_brand_spelling():

@@ -724,6 +724,12 @@ def test_bath_linen_special_sheet_maps_quality_exmill_and_total_qty(tmp_path):
     flora = next(r for r in rows if str(r["core_fields"].get("brand")).upper() == "FLORA")
     assert float(flora["raw_qty_value"]) == 2700
     assert float(flora["core_fields"]["ex_mill_price"]) == 77
+    core, extra = foparser.prepare_filled_order_identity(
+        flora["core_fields"], flora["extra_attributes"], category="Bath",
+    )
+    assert core["brand"].upper() == "FLORA"
+    assert amparser.normalize_key_part_value("size", core["size"]) == "HAND TOWEL"
+    assert extra.get("BS Size") == "40x60"
 
 
 def test_addon_filename_detected():

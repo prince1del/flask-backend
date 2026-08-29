@@ -317,6 +317,23 @@ def _size_lookup_key(size) -> str:
     return re.sub(r"\s+", " ", str(size or "").strip()).upper()
 
 
+def _preprocess_towel_size_raw(raw_size):
+    """
+    Bath special-order sheets use * dimensions (40*60), R4SET, and BATHROBE rows.
+    Normalize before towel_physical_size_code / normalize_size_code.
+    """
+    if is_blank_attr_value(raw_size):
+        return raw_size
+    s = re.sub(r"\s+", " ", str(raw_size).strip())
+    compact = re.sub(r"\s+", "", s).upper()
+    if compact in {"R4SET", "R4"}:
+        return "R4"
+    if compact == "BATHROBE":
+        return "BATHROBE"
+    s = re.sub(r"(\d+)\s*\*\s*(\d+)", r"\1x\2", s)
+    return s
+
+
 def normalize_size_code(size, *, force_king_bs: bool = False):
     """
     Canonical short size code for merge identity (DB BS, KS BS, DB FS, …).
@@ -327,6 +344,7 @@ def normalize_size_code(size, *, force_king_bs: bool = False):
         if force_king_bs:
             return "KS BS"
         return size
+    size = _preprocess_towel_size_raw(size)
     s = re.sub(r"\s+", " ", str(size).strip())
     key = s.upper()
     if key in SIZE_CODE_ALIASES:
@@ -442,6 +460,13 @@ def normalize_brand_and_size(brand, size):
             force_king = True
         else:
             brand = normalize_brand_spelling(brand)
+    if not is_blank_attr_value(size):
+        size_key = re.sub(r"\s+", "", str(size).strip()).upper()
+        if size_key == "BATHROBE":
+            if brand and "bathrobe" not in str(brand).lower():
+                base = str(brand).strip().title()
+                brand = normalize_brand_spelling(f"{base} Bathrobe")
+            size = "L"
     size = normalize_size_code(size, force_king_bs=force_king)
     return brand, size
 
@@ -740,6 +765,7 @@ def towel_physical_size_code(raw_size):
     """
     if is_blank_attr_value(raw_size):
         return None
+    raw_size = _preprocess_towel_size_raw(raw_size)
     s = re.sub(r"\s+", " ", str(raw_size).strip())
     key = re.sub(r"\s+", "", s).upper()
     lookup = _size_lookup_key(s)
@@ -757,7 +783,7 @@ def towel_physical_size_code(raw_size):
         or re.search(r"30X30.*3PC|30X30\(3", key)
     ):
         return "30x30(3pc)"
-    m = re.fullmatch(r"(\d+)\s*[xX×]\s*(\d+)", s)
+    m = re.fullmatch(r"(\d+)\s*[xX×*]\s*(\d+)(?:\s*[-–]?\s*\d+\s*PCS)?", s, flags=re.IGNORECASE)
     if m:
         return f"{int(m.group(1))}x{int(m.group(2))}"
     if key in {"R4", "L", "XL", "XXL"}:
@@ -770,6 +796,8 @@ def towel_physical_size_code(raw_size):
         return "91x100"
     if key == "50X70":
         return "50x70"
+    if key == "BATHROBE":
+        return "L"
     return s
 
 
