@@ -340,3 +340,38 @@ def test_upload_paths_drop_their_local_copy_after_backup():
     assert first_commit < first_backup, (
         "the workbook must only be backed up once the order is actually committed"
     )
+
+
+def test_payment_receiving_backup_pushes_json_snapshot(monkeypatch, tmp_path):
+    from app.storage import payment_drive_backup
+    from app.storage.payment_drive_backup import PAYMENT_RECEIVING_SUBFOLDER
+
+    fake = _FakeProvider()
+    _install_fake_drive(monkeypatch, fake)
+
+    class FakeDB:
+        def list_distributor_payment_collection(self, workspace_id, user_id=None):
+            return [{"distributor_name": "Bernina", "orders": [], "paid_total": 1000}]
+
+    payment_drive_backup.backup_so_payment_collection_to_drive(
+        db=FakeDB(),
+        user_id=1,
+        workspace_id="default",
+        username="kunwar1del",
+    )
+    assert len(fake.uploaded) == 1
+    up = fake.uploaded[0]
+    assert up["folder_id"] == f"{PAYMENT_RECEIVING_SUBFOLDER}-id"
+    assert up["name"].startswith("kunwar1del SO Payment Receiving")
+    assert up["name"].endswith(".json")
+    assert Path(up["path"]).suffix == ".json"
+
+
+def test_payment_collection_routes_trigger_backup():
+    import inspect
+    from app.routes import payment_collection as pc
+
+    create_src = inspect.getsource(pc.create_payment_entry)
+    delete_src = inspect.getsource(pc.delete_payment_entry)
+    assert "backup_so_payment_collection_to_drive" in create_src
+    assert "backup_so_payment_collection_to_drive" in delete_src

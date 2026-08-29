@@ -37,6 +37,7 @@ from centralized_db_system.db import CentralizedDB
 from centralized_db_system.drive_storage import GoogleDriveStorage
 from app.fiscal_year import normalize_fiscal_year
 from app.routes.auth import get_workspace_id, require_jwt_auth, get_request_user_id
+from app.storage.payment_drive_backup import backup_category_payment_status_to_drive
 from app.routes.ask_nexora_troubleshoot import log_unresolved_query, resolve_query as resolve_unresolved_query
 from app.three_step_verification import (
     _extract_pdf_text,
@@ -5446,6 +5447,14 @@ def _current_user_id() -> int | None:
     )
 
 
+def _request_username() -> str | None:
+    user = getattr(request, "user", None)
+    if not isinstance(user, dict):
+        return None
+    raw = user.get("username") or user.get("email")
+    return str(raw).strip() if raw else None
+
+
 @data_blueprint.route("/api/v1/statement-of-account/from-ledger", methods=["POST"])
 @require_jwt_auth
 def statement_of_account_from_ledger() -> Response:
@@ -5560,6 +5569,12 @@ def add_distributor_payment_deposit() -> Response:
         user_id, distributor_id, season, category, amount, payment_date,
         note=str(note).strip() if note else None,
     )
+    backup_category_payment_status_to_drive(
+        db=db,
+        user_id=user_id,
+        workspace_id=get_workspace_id(),
+        username=_request_username(),
+    )
     return _json_response({"success": True, "data": {"entry": entry}})
 
 
@@ -5600,6 +5615,12 @@ def delete_distributor_payment_deposit(deposit_id: int) -> Response:
         return _json_response(
             {"success": False, "error": {"message": "Deposit not found"}}, 404
         )
+    backup_category_payment_status_to_drive(
+        db=db,
+        user_id=user_id,
+        workspace_id=get_workspace_id(),
+        username=_request_username(),
+    )
     return _json_response({"success": True})
 
 

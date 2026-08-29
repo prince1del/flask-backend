@@ -25,6 +25,7 @@ class GoogleDriveProvider(StorageProvider):
         "Invoices",
         "Reports",
         "Backups",
+        "Payment Receiving",
     )
 
     def __init__(self, oauth_token: Any):

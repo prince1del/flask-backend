@@ -10,6 +10,7 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, request
 
 from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.storage.payment_drive_backup import backup_so_payment_collection_to_drive
 from centralized_db_system.db import CentralizedDB
 
 payment_collection_bp = Blueprint(
@@ -30,6 +31,12 @@ def _user_id() -> int | None:
         return int(raw) if raw is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _username() -> str | None:
+    user = getattr(request, "user", None) or {}
+    raw = user.get("username") or user.get("email")
+    return str(raw).strip() if raw else None
 
 
 @payment_collection_bp.route("", methods=["GET"])
@@ -82,6 +89,12 @@ def create_payment_entry():
         )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+    backup_so_payment_collection_to_drive(
+        db=_db(),
+        user_id=_user_id(),
+        workspace_id=workspace_id,
+        username=_username(),
+    )
     return jsonify({"ok": True, "entry": entry}), 201
 
 
@@ -92,4 +105,10 @@ def delete_payment_entry(entry_id: int):
     deleted = _db().delete_distributor_payment_entry(entry_id, workspace_id)
     if deleted is None:
         return jsonify({"ok": False, "error": "Payment entry not found"}), 404
+    backup_so_payment_collection_to_drive(
+        db=_db(),
+        user_id=_user_id(),
+        workspace_id=workspace_id,
+        username=_username(),
+    )
     return jsonify({"ok": True, "deleted": deleted})
