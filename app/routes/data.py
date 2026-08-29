@@ -4379,6 +4379,66 @@ def order_match_list() -> Response:
         conn.close()
 
 
+def _collect_order_match_so_numbers(run: dict) -> set[str]:
+    nums: set[str] = set()
+    for r in run.get("rows") or []:
+        if not isinstance(r, dict):
+            continue
+        for n in r.get("so_numbers") or []:
+            s = str(n or "").strip()
+            if s:
+                nums.add(s)
+        for cell in r.get("so_breakdown") or []:
+            if isinstance(cell, dict):
+                s = str(cell.get("so_number") or "").strip()
+                if s:
+                    nums.add(s)
+    return nums
+
+
+def _enrich_order_match_so_documents(
+    run: dict,
+    *,
+    db: CentralizedDB,
+    workspace_id: str,
+    user_id: int | None,
+) -> None:
+    """Per-SO Drive / lifecycle links so mobile can open SO & CI PDFs."""
+    docs: dict[str, dict[str, Any]] = {}
+    for so in _collect_order_match_so_numbers(run):
+        entry: dict[str, Any] = {"so_number": so}
+        tracking = db.get_order_lifecycle_by_order_ref_no(so, workspace_id=workspace_id)
+        if tracking:
+            tid = tracking.get("tracking_id")
+            entry["tracking_id"] = tid
+            try:
+                with sqlite3.connect(db.db_path) as conn:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        """
+                        SELECT sales_order_drive_file_id, commercial_invoice_drive_file_id,
+                               sales_order_file_reference, commercial_invoice_file_reference
+                        FROM order_lifecycle_tracking WHERE tracking_id = ?
+                        """,
+                        (int(tid),),
+                    ).fetchone()
+                if row:
+                    so_drive = (row["sales_order_drive_file_id"] or "").strip() or None
+                    ci_drive = (row["commercial_invoice_drive_file_id"] or "").strip() or None
+                    entry["so_drive_file_id"] = so_drive
+                    entry["ci_drive_file_id"] = ci_drive
+                    entry["has_so_pdf"] = bool(
+                        so_drive or (row["sales_order_file_reference"] or "").strip()
+                    )
+                    entry["has_ci_pdf"] = bool(
+                        ci_drive or (row["commercial_invoice_file_reference"] or "").strip()
+                    )
+            except Exception:
+                pass
+        docs[so] = entry
+    run["so_documents"] = docs
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["GET"])
 @require_jwt_auth
 def order_match_get(run_id: int) -> Response:
@@ -4404,6 +4464,13 @@ def order_match_get(run_id: int) -> Response:
                 {"success": False, "error": {"message": "Match run not found"}},
                 404,
             )
+        db = CentralizedDB(_db_path())
+        _enrich_order_match_so_documents(
+            run,
+            db=db,
+            workspace_id=get_workspace_id() or "default",
+            user_id=user_id,
+        )
         return _json_response({"success": True, "data": {"run": run}})
     finally:
         conn.close()

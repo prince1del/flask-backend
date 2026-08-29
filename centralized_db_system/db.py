@@ -6791,6 +6791,7 @@ class CentralizedDB:
             "dispatch_date", "expected_delivery_date", "actual_delivery_date",
             "pod_number", "transit_status", "receiving_status", "receiving_condition",
             "created_at", "order_sheet_id", "order_sheet_name",
+            "sales_order_drive_file_id", "commercial_invoice_drive_file_id",
         ]
         query = f"SELECT {', '.join(columns)} FROM order_lifecycle_tracking WHERE tracking_id = ?"
         params: list[Any] = [tracking_id]
