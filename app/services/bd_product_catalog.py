@@ -129,6 +129,16 @@ BD_TOWEL_COLLECTION_ALIASES: tuple[tuple[str, str], ...] = (
     ("BAMBOO", "Bamboo"),
 )
 
+# Bombay Dyeing bed/bedsheet material codes ("BS03DBEPGRM8129LBR",
+# "MB..."). The towel material-code rules below read a towel code's
+# structure and must never be applied to one of these.
+_BED_MATERIAL_CODE_RE = re.compile(r"^(?:BS|MB)\d", re.I)
+
+# Bathrobe short forms as they actually appear (matching _TOWEL_SIZE_RULES
+# below), NOT a bare "BR" substring — that also matches colour codes like
+# LBR (Light Brown) and BRN, which is how bedsheets became bathrobes.
+_BATHROBE_CODE_RE = re.compile(r"BATHROBE|FRBR|FLBR|(?:^|[^A-Z])BR(?:$|[^A-Z])", re.I)
+
 # Physical size / set cues on towel SO lines → FO size labels.
 _TOWEL_SIZE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bR4\b.*\bSET\b|\bR4\s*SET\b|\bR4\b", re.I), "Towel Set"),
@@ -234,9 +244,26 @@ def lookup_towel_product_type(
 
     # Material code structural fallback (e.g. MT030030, MT040060, MT0600120)
     c = (material_code or "").upper().strip()
+
+    # These rules read a TOWEL material code's structure, so they must not be
+    # applied to a bedsheet/bed SKU. enrich_bd_product() falls back here
+    # whenever its bed maps come up short, which sent real bedsheet codes
+    # through these towel patterns: BS03DBEPGRM8129LBR ("...8129 Light BRown")
+    # matched the bare "BR" substring below and was labelled a Bathrobe. On
+    # Shri Ram & Co's SO 102876191 that pulled 14 of 252 SETs out of the DB
+    # and KS buckets into a product the order did not contain, turning a
+    # clean match into two false shortages.
+    if _BED_MATERIAL_CODE_RE.match(c):
+        return None
+
     if "R4" in c:
         return "Towel Set"
-    if "BR" in c or "BATHROBE" in c:
+    # Anchored, not a bare substring: "BR" inside a colour code (LBR, BRN)
+    # is not a bathrobe. FRBR/FLBR are the real short forms, matching the
+    # collection rules above. A bathrobe that fails to auto-classify merely
+    # shows as unmatched for a human to place; a bedsheet misread AS a
+    # bathrobe silently corrupts an order's match.
+    if _BATHROBE_CODE_RE.search(c):
         return "Bathrobe"
     if "030030" in c:
         return "Face Towel Set of 3"
