@@ -239,6 +239,23 @@ def test_a_leftover_gmail_account_does_not_shadow_google_drive(monkeypatch):
     assert isinstance(provider, GoogleDriveProvider)
 
 
+def test_callers_that_name_no_provider_still_get_a_usable_one(monkeypatch):
+    """upload_file, download_file, download_file_bytes and list_files all ask
+    without naming a provider — so viewing an SO/CI PDF hit this too, not just
+    the backup. Resolving without a name must prefer an account this manager
+    can actually drive, rather than whichever row happens to come first."""
+    from app.storage.manager import StorageManager
+    from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+    manager = StorageManager()
+    manager.register_provider("google_drive", GoogleDriveProvider)
+    manager.db = _FakeAccountsDb(_accounts("gmail", "google_drive"))
+    monkeypatch.setattr(GoogleDriveProvider, "authenticate", lambda self, token: object())
+
+    provider = manager._get_user_provider(1, workspace_id="ws")
+    assert isinstance(provider, GoogleDriveProvider)
+
+
 def test_cached_connection_is_not_reused_across_providers(monkeypatch):
     """user_connections is keyed by user id alone, so a cached gmail
     connection would otherwise be handed to a Drive caller."""

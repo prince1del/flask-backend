@@ -124,7 +124,9 @@ def get_account():
         workspace_id = get_workspace_id()
 
         db = CentralizedDB()
-        account = db.get_storage_account(user_id=user_id, workspace_id=workspace_id)
+        account = db.get_storage_account(
+            user_id=user_id, provider_type="google_drive", workspace_id=workspace_id
+        )
         connected = bool(
             account
             and account.get("sync_status") == "connected"
@@ -138,6 +140,32 @@ def get_account():
                 if key != "oauth_token"
             }
             safe_account["nexora_folder"] = "NEXORA"
+
+        # Prove the connection actually works instead of only reporting that a
+        # row exists — a stored account said "Connected" for a whole day while
+        # every upload silently failed. Ensuring the workspace here also
+        # creates the NEXORA folders, so opening this screen is what makes
+        # them appear in the user's Drive.
+        backup_ready = False
+        folders: list[str] = []
+        backup_error = None
+        if connected:
+            try:
+                from app.storage.manager import StorageManager
+                from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+                manager = StorageManager()
+                manager.register_provider("google_drive", GoogleDriveProvider)
+                provider = manager._get_user_provider(
+                    int(user_id), workspace_id=workspace_id,
+                    provider_type="google_drive",
+                )
+                workspace = provider.ensure_nexora_workspace()
+                folders = sorted((workspace.get("folders") or {}).keys())
+                backup_ready = True
+            except Exception as exc:
+                backup_error = str(exc)
+
         return jsonify(
             {
                 "success": True,
@@ -145,6 +173,11 @@ def get_account():
                     "connected": connected,
                     "account": safe_account,
                     "nexora_folder": "NEXORA" if connected else None,
+                    # Connected means an account is stored; backup_ready means
+                    # documents can actually reach Drive right now.
+                    "backup_ready": backup_ready,
+                    "folders": folders,
+                    "backup_error": backup_error,
                 },
             }
         ), 200

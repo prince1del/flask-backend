@@ -88,15 +88,35 @@ class StorageManager:
         storage_accounts is UNIQUE(user_id, workspace_id, provider_type), so a
         user can hold several rows at once — a Google Drive account and, from
         the Gmail import that once existed, a 'gmail' one. Asking without a
-        provider_type returns whichever row comes back first: if that was the
+        provider_type returned whichever row came back first: if that was the
         gmail row, self.providers has no 'gmail' entry, this raised
-        KeyError("Unknown provider type: gmail"), and every Drive upload
-        silently did nothing while the app still reported Drive as connected.
-        Callers that want Drive must say so.
+        KeyError("Unknown provider type: gmail"), and every Drive operation
+        failed while the app still reported Drive as connected.
+
+        So when the caller does not name a provider, prefer an account this
+        manager can actually drive. That fixes every call site at once —
+        upload_file, download_file, download_file_bytes and list_files all
+        ask without naming one — instead of leaving each free to pick up an
+        account for a feature it has no provider for.
         """
-        account = self.db.get_storage_account(
-            user_id, provider_type=provider_type, workspace_id=workspace_id
-        )
+        account = None
+        if provider_type:
+            account = self.db.get_storage_account(
+                user_id, provider_type=provider_type, workspace_id=workspace_id
+            )
+        else:
+            for candidate in self.providers:
+                account = self.db.get_storage_account(
+                    user_id, provider_type=candidate, workspace_id=workspace_id
+                )
+                if account is not None:
+                    break
+            else:
+                # Nothing registered matched — fall back so the caller still
+                # gets the real "unknown provider" error rather than silence.
+                account = self.db.get_storage_account(
+                    user_id, workspace_id=workspace_id
+                )
         if account is None:
             return None
 
