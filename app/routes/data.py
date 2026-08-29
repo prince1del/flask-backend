@@ -4302,6 +4302,9 @@ def so_pack_match_filled_order() -> Response:
                 merged, source_filename=so_source_filename
             )
             # Free SO index + drop previous FO run before saving the merged match.
+            from app.services import order_desk_archive as oda
+
+            oda.archive_match_run(conn, user_id, existing, restore_scope="entity")
             matchdb.delete_match_run(conn, user_id, int(existing["id"]))
             for c in conflicts:
                 rid = c.get("run_id")
@@ -4335,6 +4338,15 @@ def so_pack_match_filled_order() -> Response:
                 },
                 409,
             )
+        from app.services import order_desk_archive as oda
+
+        oda.restore_match_archives_after_save(
+            conn,
+            user_id,
+            int(run["id"]),
+            filled_order_id,
+            new_numbers,
+        )
         result["run"] = {k: v for k, v in run.items() if k != "rows"}
         result["run_id"] = run.get("id")
         if replaced_note:
@@ -4373,6 +4385,9 @@ def order_match_list() -> Response:
         )
     conn = sqlite3.connect(_db_path())
     try:
+        from app.services import order_desk_archive as oda
+
+        oda.maybe_purge(conn)
         runs = matchdb.list_match_runs(conn, user_id=user_id)
         return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
     finally:
@@ -4480,6 +4495,7 @@ def order_match_get(run_id: int) -> Response:
 @require_jwt_auth
 def order_match_delete(run_id: int) -> Response:
     from app.services import fo_so_match_db as matchdb
+    from app.services import order_desk_archive as oda
 
     user = getattr(request, "user", None)
     user_id = (
@@ -4492,14 +4508,54 @@ def order_match_delete(run_id: int) -> Response:
             {"success": False, "error": {"message": "Authentication required"}},
             401,
         )
+    so_number = (request.args.get("so_number") or "").strip() or None
+    confirm_all = request.args.get("confirm_all") == "1"
     conn = sqlite3.connect(_db_path())
     try:
+        run = matchdb.get_match_run(conn, run_id, user_id=user_id)
+        if not run:
+            return _json_response(
+                {"success": False, "error": {"message": "Match run not found"}},
+                404,
+            )
+        if so_number:
+            oda.archive_match_so(conn, user_id, run, so_number, restore_scope="entity")
+            result = matchdb.delete_match_so_from_run(conn, user_id, run_id, so_number)
+            if result is None:
+                return _json_response(
+                    {"success": False, "error": {"message": "Match run not found"}},
+                    404,
+                )
+            conn.commit()
+            data: dict[str, Any] = {"deleted": True, "so_number": so_number}
+            if result.get("deleted_run"):
+                data["deleted_run_id"] = run_id
+            return _json_response({"success": True, "data": data})
+
+        so_numbers = matchdb.extract_so_numbers_from_run_row(run)
+        if len(so_numbers) > 1 and not confirm_all:
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "match_run_has_multiple_so",
+                        "message": (
+                            "This match holds multiple Sales Orders. "
+                            "Confirm delete all, or delete one SO at a time."
+                        ),
+                        "so_numbers": so_numbers,
+                    },
+                },
+                409,
+            )
+        oda.archive_match_run(conn, user_id, run, restore_scope="run")
         ok = matchdb.delete_match_run(conn, user_id, run_id)
         if not ok:
             return _json_response(
                 {"success": False, "error": {"message": "Match run not found"}},
                 404,
             )
+        conn.commit()
         return _json_response({"success": True, "data": {"deleted": True}})
     finally:
         conn.close()
@@ -4509,6 +4565,7 @@ def order_match_delete(run_id: int) -> Response:
 @require_jwt_auth
 def order_match_delete_selected() -> Response:
     from app.services import fo_so_match_db as matchdb
+    from app.services import order_desk_archive as oda
 
     user = getattr(request, "user", None)
     user_id = (
@@ -4536,8 +4593,13 @@ def order_match_delete_selected() -> Response:
                 run_id = int(raw)
             except (TypeError, ValueError):
                 continue
+            run = matchdb.get_match_run(conn, run_id, user_id=user_id)
+            if not run:
+                continue
+            oda.archive_match_run(conn, user_id, run, restore_scope="run")
             if matchdb.delete_match_run(conn, user_id, run_id):
                 deleted += 1
+        conn.commit()
         return _json_response({"success": True, "data": {"deleted": deleted}})
     finally:
         conn.close()
@@ -4794,6 +4856,20 @@ def upload_sales_order_v2() -> Response:
                     sales_order_parsed=parsed_sales_order,
                     workspace_id=workspace_id,
                 )
+                if user_id and tracking_id and order_ref_no:
+                    from app.services import order_desk_archive as oda
+
+                    restore_conn = sqlite3.connect(_db_path())
+                    try:
+                        oda.restore_tracking_after_so_upload(
+                            restore_conn,
+                            user_id,
+                            order_ref_no,
+                            int(tracking_id),
+                            workspace_id or "default",
+                        )
+                    finally:
+                        restore_conn.close()
                 # Backed up now, but the local file is still needed below for
                 # line-item parsing — it is dropped at the very end of the
                 # request instead (see so_drive_file_id).
@@ -6418,16 +6494,42 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
     removes the physical SO/CI files from disk if they're inside the
     upload root (same path-traversal safeguard as the file endpoints).
     """
+    from app.services import order_desk_archive as oda
+
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
     user_id = _current_user_id()
+    tracking = db.get_order_lifecycle_tracking(
+        tracking_id, workspace_id=workspace_id, user_id=user_id
+    )
+    if tracking is None:
+        return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
+    if user_id is not None:
+        conn = sqlite3.connect(_db_path())
+        try:
+            items, achievements, payments, processed = oda.collect_tracking_bundle(
+                conn, tracking_id
+            )
+            oda.archive_tracking_bundle(
+                conn,
+                user_id,
+                tracking,
+                fulfillment_items=items,
+                achievements=achievements,
+                payment_entries=payments,
+                processed_documents=processed,
+                restore_scope="run",
+            )
+            conn.commit()
+        finally:
+            conn.close()
     file_references = db.delete_order_lifecycle_tracking(
         tracking_id, workspace_id=workspace_id, user_id=user_id
     )
     if file_references is None:
         return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
 
-    _cleanup_order_fulfillment_files(file_references)
+    _cleanup_order_fulfillment_files(file_references, user_id=user_id)
     return _json_response({"success": True, "data": {"deleted_tracking_id": tracking_id}})
 
 
@@ -6435,6 +6537,8 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
 @require_jwt_auth
 def delete_selected_order_fulfillment_tracking() -> Response:
     """Bulk-delete SO/CI tracking rows (and linked files when under upload root)."""
+    from app.services import order_desk_archive as oda
+
     data = request.get_json(silent=True) or {}
     raw_ids = data.get("ids") or data.get("tracking_ids") or []
     if not isinstance(raw_ids, list) or not raw_ids:
@@ -6451,24 +6555,46 @@ def delete_selected_order_fulfillment_tracking() -> Response:
             tracking_id = int(raw)
         except (TypeError, ValueError):
             continue
+        tracking = db.get_order_lifecycle_tracking(
+            tracking_id, workspace_id=workspace_id, user_id=user_id
+        )
+        if tracking is None:
+            continue
+        if user_id is not None:
+            conn = sqlite3.connect(_db_path())
+            try:
+                items, achievements, payments, processed = oda.collect_tracking_bundle(
+                    conn, tracking_id
+                )
+                oda.archive_tracking_bundle(
+                    conn,
+                    user_id,
+                    tracking,
+                    fulfillment_items=items,
+                    achievements=achievements,
+                    payment_entries=payments,
+                    processed_documents=processed,
+                    restore_scope="run",
+                )
+                conn.commit()
+            finally:
+                conn.close()
         file_references = db.delete_order_lifecycle_tracking(
             tracking_id, workspace_id=workspace_id, user_id=user_id
         )
         if file_references is None:
             continue
-        _cleanup_order_fulfillment_files(file_references)
+        _cleanup_order_fulfillment_files(file_references, user_id=user_id)
         deleted += 1
     return _json_response({"success": True, "data": {"deleted": deleted}})
 
 
-def _cleanup_order_fulfillment_files(file_references) -> None:
+def _cleanup_order_fulfillment_files(file_references, user_id: int | None = None) -> None:
     if not file_references:
         return
-    upload_root = (
-        Path("app/instance/order_fulfillment_files")
-        if Path("app/instance").exists()
-        else Path("instance/order_fulfillment_files")
-    ).resolve()
+    from app.services import order_desk_archive as oda
+
+    upload_root = oda.upload_root()
     values = (
         file_references.values()
         if isinstance(file_references, dict)
@@ -6476,6 +6602,16 @@ def _cleanup_order_fulfillment_files(file_references) -> None:
     )
     for file_ref in values:
         if not file_ref:
+            continue
+        if user_id is not None:
+            rel = oda.move_file_to_recycle(user_id, str(file_ref))
+            if rel:
+                conn = sqlite3.connect(_db_path())
+                try:
+                    oda.archive_file_reference(conn, user_id, rel)
+                    conn.commit()
+                finally:
+                    conn.close()
             continue
         try:
             file_path = Path(file_ref).resolve()

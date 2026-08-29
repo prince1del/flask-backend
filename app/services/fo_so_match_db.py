@@ -738,6 +738,164 @@ def list_match_runs(
     return [_row_to_dict(r, keys) for r in rows]
 
 
+def _strip_so_from_run(run: dict[str, Any], so_number: str) -> dict[str, Any] | None:
+    """Remove one SO from a match run. Returns None when no SOs remain."""
+    key = normalize_so_number(so_number)
+    if not key:
+        return None
+    want = key.upper()
+
+    line_detail = [
+        l
+        for l in (run.get("so_line_detail") or [])
+        if not (
+            isinstance(l, dict)
+            and (normalize_so_number(l.get("so_number")) or "").upper() == want
+        )
+    ]
+
+    rows_out: list[dict[str, Any]] = []
+    for r in run.get("rows") or []:
+        if not isinstance(r, dict):
+            continue
+        row = dict(r)
+        nums = [
+            n
+            for n in (row.get("so_numbers") or [])
+            if (normalize_so_number(n) or "").upper() != want
+        ]
+        breakdown = row.get("so_breakdown") or []
+        new_breakdown = [
+            dict(c)
+            for c in breakdown
+            if isinstance(c, dict)
+            and (normalize_so_number(c.get("so_number")) or "").upper() != want
+        ]
+        if not nums and not new_breakdown:
+            if any(
+                isinstance(c, dict)
+                and (normalize_so_number(c.get("so_number")) or "").upper() == want
+                for c in breakdown
+            ):
+                continue
+            if not breakdown and not row.get("so_numbers"):
+                rows_out.append(row)
+            continue
+        row["so_numbers"] = nums
+        row["so_breakdown"] = new_breakdown
+        if new_breakdown:
+            row["so_qty"] = round(sum(float(c.get("qty") or 0) for c in new_breakdown), 4)
+            row["so_net_amount"] = round(
+                sum(float(c.get("net") or 0) for c in new_breakdown), 2
+            )
+        rows_out.append(row)
+
+    remaining = extract_so_numbers_from_run_row({"rows": rows_out})
+    if not remaining:
+        return None
+
+    updated = dict(run)
+    updated["so_line_detail"] = line_detail
+    updated["rows"] = rows_out
+    updated["so_totals"] = _compute_so_totals_from_rows(rows_out)
+    fo_qty = so_qty = fo_ex = so_net = 0.0
+    match_count = fuzzy_count = mismatch_count = missing_count = extra_count = 0
+    for r in rows_out:
+        fo_qty += float(r.get("fo_qty") or 0)
+        so_qty += float(r.get("so_qty") or 0)
+        fo_ex += float(r.get("fo_exmill_value") or 0)
+        so_net += float(r.get("so_net_amount") or 0)
+        status = str(r.get("status") or "").upper()
+        if status == "MATCH":
+            match_count += 1
+        elif status == "MATCH_FUZZY_BRAND":
+            fuzzy_count += 1
+        elif status in ("QTY_MISMATCH", "VALUE_MISMATCH"):
+            mismatch_count += 1
+        elif status == "MISSING_ON_SO":
+            missing_count += 1
+        elif status == "EXTRA_ON_SO":
+            extra_count += 1
+    updated.update(
+        {
+            "fo_qty": round(fo_qty, 4),
+            "so_qty": round(so_qty, 4),
+            "delta_qty": round(fo_qty - so_qty, 4),
+            "fo_exmill_value": round(fo_ex, 2),
+            "so_net_amount": round(so_net, 2),
+            "delta_value": round(fo_ex - so_net, 2),
+            "match_count": match_count,
+            "fuzzy_count": fuzzy_count,
+            "mismatch_count": mismatch_count,
+            "missing_count": missing_count,
+            "extra_count": extra_count,
+        }
+    )
+    return updated
+
+
+def delete_match_so_from_run(
+    conn: sqlite3.Connection,
+    user_id: int,
+    run_id: int,
+    so_number: str,
+) -> dict[str, Any] | None:
+    """Delete one SO from a match run. Returns {deleted_run: bool} or None if not found."""
+    ensure_schema(conn)
+    run = get_match_run(conn, run_id, user_id=user_id)
+    if not run:
+        return None
+    key = normalize_so_number(so_number)
+    if not key:
+        return None
+    updated = _strip_so_from_run(run, key)
+    conn.execute(
+        "DELETE FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
+        (key,),
+    )
+    if updated is None:
+        cur = conn.execute(
+            "DELETE FROM fo_so_match_runs WHERE id = ? AND user_id = ?",
+            (run_id, user_id),
+        )
+        if cur.rowcount > 0:
+            _clear_so_index_for_run(conn, run_id)
+            conn.commit()
+            return {"deleted_run": True, "run_id": run_id}
+        conn.commit()
+        return None
+    conn.execute(
+        """
+        UPDATE fo_so_match_runs SET
+            fo_qty = ?, so_qty = ?, delta_qty = ?,
+            fo_exmill_value = ?, so_net_amount = ?, delta_value = ?,
+            match_count = ?, fuzzy_count = ?, mismatch_count = ?,
+            missing_count = ?, extra_count = ?,
+            rows_json = ?, so_line_detail_json = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            updated["fo_qty"],
+            updated["so_qty"],
+            updated["delta_qty"],
+            updated["fo_exmill_value"],
+            updated["so_net_amount"],
+            updated["delta_value"],
+            updated["match_count"],
+            updated["fuzzy_count"],
+            updated["mismatch_count"],
+            updated["missing_count"],
+            updated["extra_count"],
+            json.dumps(updated.get("rows") or [], default=str),
+            json.dumps(updated.get("so_line_detail") or [], default=str),
+            run_id,
+            user_id,
+        ),
+    )
+    conn.commit()
+    return {"deleted_run": False, "run_id": run_id}
+
+
 def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> bool:
     ensure_schema(conn)
     cur = conn.execute(

@@ -490,6 +490,15 @@ def upload_filled_order():
 
         order = fodb.get_filled_order(conn, user_id, order_id)
 
+        try:
+            from app.services import order_desk_archive as oda
+
+            entity_key = oda.fo_entity_key(distributor_name_raw, category, season)
+            oda.repoint_filled_order_archives(conn, user_id, entity_key, order_id)
+            conn.commit()
+        except Exception:
+            pass
+
         # Keep the distributor's original workbook in Drive. Only its parsed
         # rows were ever stored — the uploaded file itself goes to a tempfile
         # that is deleted in the `finally` below, so without this the start of

@@ -734,6 +734,15 @@ def delete_filled_order(conn, user_id, filled_order_id):
     ).fetchone()
     if row is None:
         raise ValueError("Filled order not found")
+    order = get_filled_order(conn, user_id, filled_order_id)
+    items = get_filled_order_items(conn, filled_order_id) if order else []
+    try:
+        from app.services import order_desk_archive as oda
+
+        if order:
+            oda.archive_filled_order(conn, user_id, order, items, restore_scope="run")
+    except Exception:
+        pass
     conn.execute("DELETE FROM filled_order_items WHERE filled_order_id = ?", (filled_order_id,))
     conn.execute("DELETE FROM filled_orders WHERE id = ? AND user_id = ?", (filled_order_id, user_id))
     conn.commit()
