@@ -235,6 +235,44 @@ def test_match_and_normalize_matched_uses_article_master_values(tmp_path):
     assert result["is_clean_bale_multiple"] is True  # 30 % 10 == 0
 
 
+def test_special_order_matched_uses_sheet_exmill_not_am(tmp_path):
+    """Special shade-block FO keeps distributor EXMILL for value; AM only for identity."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["QUALITY", "SIZE", "GSM", "NO.SHADES", "SKU", "DELHI", "", "MRP", "EXMILL", "value at exmill"])
+    ws.append(["", "", "", "", "", "Per Color", "total qty", "", "", ""])
+    ws.append(["TULIP", "75*150", 450, 11, 1, 255, 2805, 825, 450, 1262250])
+    path = tmp_path / "special.xlsx"
+    wb.save(path)
+
+    parsed = foparser.parse_filled_order_workbook(path, "Bath")
+    conn = _make_am_conn(tmp_path)
+    amdb.create_category(conn, 1, "Bath", ["brand", "size", "color", "product"], is_confirmed=True)
+    amdb.upsert_article(conn, 1, {
+        "category": "Bath",
+        "product_type": "Terry Towel",
+        "brand": "Tulip",
+        "size": "Bath Towel",
+        "mrp": 999,
+        "ptr": 500,
+        "ex_mill_price": 999,
+        "bale_pack_size": 12,
+        "item_key": "TULIP|BATH TOWEL|TERRY TOWEL",
+        "extra_attributes": {"Color": "White"},
+    })
+    result = foparser.match_and_normalize(
+        conn, amdb, 1, parsed["parsed_rows"][0],
+        ["brand", "size", "color", "product"], category="Bath",
+        qty_column_label=parsed["quantity_column_used"],
+        order_stream="special",
+    )
+    conn.close()
+    assert result["matched"] is True
+    assert result["ex_mill_price"] == 450
+    assert result["line_value"] == 1262250
+    assert result["sheet_line_value"] == 1262250
+
+
 def test_dbl_bs_matches_db_bs_in_article_master(tmp_path):
     """Locked teaching: distributor 'DBL BS' == Article Master 'DB BS' (Double)."""
     header = ["Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size", "Qnty"]

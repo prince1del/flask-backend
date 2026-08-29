@@ -1136,6 +1136,7 @@ def match_and_normalize(
     key_fields,
     category=None,
     qty_column_label: str | None = None,
+    order_stream: str | None = "regular",
 ):
     """
     Matches one parsed row against Article Master and normalizes its
@@ -1159,6 +1160,9 @@ def match_and_normalize(
     parsed_row["core_fields"] = core_fields
     parsed_row["extra_attributes"] = extra_attributes
 
+    sheet_pricing = capture_sheet_pricing(core_fields, extra_attributes)
+    prefer_sheet_value = use_sheet_pricing_for_stream(order_stream, sheet_pricing)
+
     item_key = amparser.build_item_key(core_fields, extra_attributes, key_fields)
     if category:
         article = amdb.resolve_article_match(
@@ -1169,9 +1173,18 @@ def match_and_normalize(
 
     if article:
         bale_size = article.get("bale_pack_size")
-        mrp, ptr, ex_mill = article.get("mrp"), article.get("ptr"), article.get("ex_mill_price")
         matched = True
         article_id = article["id"]
+        if prefer_sheet_value:
+            mrp = sheet_pricing.get("mrp") if _safe_float(sheet_pricing.get("mrp")) else article.get("mrp")
+            ptr = sheet_pricing.get("ptr") if _safe_float(sheet_pricing.get("ptr")) else article.get("ptr")
+            ex_mill = (
+                sheet_pricing.get("ex_mill_price")
+                if _safe_float(sheet_pricing.get("ex_mill_price"))
+                else article.get("ex_mill_price")
+            )
+        else:
+            mrp, ptr, ex_mill = article.get("mrp"), article.get("ptr"), article.get("ex_mill_price")
     else:
         fill_ex_mill_from_line_value(
             core_fields, extra_attributes, parsed_row.get("raw_qty_value"),
@@ -1196,6 +1209,9 @@ def match_and_normalize(
         qty_column_label=qty_column_label,
         category=category,
     )
+    if prefer_sheet_value and sheet_pricing.get("line_value") is not None:
+        resolved = dict(resolved)
+        resolved["line_value"] = sheet_pricing["line_value"]
 
     return {
         "line_number": parsed_row.get("line_number"),
@@ -1219,6 +1235,8 @@ def match_and_normalize(
         "mrp": _safe_float(mrp),
         "ptr": _safe_float(ptr),
         "ex_mill_price": ex_f,
+        "sheet_ex_mill_price": sheet_pricing.get("ex_mill_price"),
+        "sheet_line_value": sheet_pricing.get("line_value"),
     }
 
 
@@ -1260,14 +1278,39 @@ def fill_ex_mill_from_line_value(core_fields: dict, extra_attributes: dict, raw_
     qty = _safe_float(raw_qty)
     if not qty:
         return
+    amount = extract_sheet_line_value(extra_attributes)
+    if amount:
+        core_fields["ex_mill_price"] = round(amount / qty, 4)
+
+
+def extract_sheet_line_value(extra_attributes: dict) -> float | None:
+    """Distributor 'value at exmill' column total for one FO line."""
     for key, val in (extra_attributes or {}).items():
         norm = amparser._norm(key)
         compact = norm.replace("-", "").replace(" ", "")
         if "value" in compact and "exmill" in compact:
             amount = _safe_float(val)
-            if amount:
-                core_fields["ex_mill_price"] = round(amount / qty, 4)
-                return
+            if amount is not None:
+                return amount
+    return None
+
+
+def capture_sheet_pricing(core_fields: dict, extra_attributes: dict) -> dict:
+    """Snapshot distributor sheet rates before Article Master may override them."""
+    return {
+        "mrp": core_fields.get("mrp"),
+        "ptr": core_fields.get("ptr"),
+        "ex_mill_price": core_fields.get("ex_mill_price"),
+        "line_value": extract_sheet_line_value(extra_attributes),
+    }
+
+
+def use_sheet_pricing_for_stream(order_stream: str | None, sheet_pricing: dict) -> bool:
+    """Special shade-block FOs carry authoritative ex-mill totals on the sheet."""
+    if (order_stream or "").strip().lower() != "special":
+        return False
+    sp = sheet_pricing or {}
+    return _safe_float(sp.get("ex_mill_price")) is not None or sp.get("line_value") is not None
 
 
 def looks_like_special_order_stream(filename: str | None) -> bool:

@@ -24,7 +24,8 @@ FILLED_ORDER_COLUMNS = [
 FILLED_ORDER_ITEM_COLUMNS = [
     "id", "filled_order_id", "article_id", "item_key", "brand", "size", "product_type",
     "raw_qty_value", "detected_unit", "final_piece_qty", "bale_size_used",
-    "is_clean_bale_multiple", "matched", "mrp", "ptr", "ex_mill_price", "created_at",
+    "is_clean_bale_multiple", "matched", "mrp", "ptr", "ex_mill_price",
+    "sheet_ex_mill_price", "sheet_line_value", "created_at",
 ]
 
 
@@ -43,6 +44,7 @@ def ensure_schema(conn):
             _schema_sql_cache = f.read()
     conn.executescript(_schema_sql_cache)
     _ensure_order_stream_column(conn)
+    _ensure_sheet_pricing_columns(conn)
     _ensure_filled_orders_unique_slot(conn)
     _schema_ensured = True
 
@@ -54,6 +56,15 @@ def _ensure_order_stream_column(conn):
             "ALTER TABLE filled_orders ADD COLUMN order_stream TEXT NOT NULL DEFAULT 'regular'"
         )
         conn.commit()
+
+
+def _ensure_sheet_pricing_columns(conn):
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(filled_order_items)")}
+    if "sheet_ex_mill_price" not in cols:
+        conn.execute("ALTER TABLE filled_order_items ADD COLUMN sheet_ex_mill_price REAL")
+    if "sheet_line_value" not in cols:
+        conn.execute("ALTER TABLE filled_order_items ADD COLUMN sheet_line_value REAL")
+    conn.commit()
 
 
 def _normalize_slot_value(value):
@@ -143,8 +154,8 @@ def insert_filled_order_item(conn, filled_order_id, item):
         """INSERT INTO filled_order_items
            (filled_order_id, article_id, item_key, brand, size, product_type, raw_qty_value,
             detected_unit, final_piece_qty, bale_size_used, is_clean_bale_multiple, matched,
-            mrp, ptr, ex_mill_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            mrp, ptr, ex_mill_price, sheet_ex_mill_price, sheet_line_value)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             filled_order_id,
             item.get("article_id"),
@@ -161,6 +172,8 @@ def insert_filled_order_item(conn, filled_order_id, item):
             item.get("mrp"),
             item.get("ptr"),
             item.get("ex_mill_price"),
+            item.get("sheet_ex_mill_price"),
+            item.get("sheet_line_value"),
         ),
     )
     conn.commit()
@@ -263,8 +276,12 @@ def summarize_filled_order_totals(conn, filled_order_id: int) -> dict[str, float
         """
         SELECT
             COALESCE(SUM(COALESCE(final_piece_qty, 0)), 0) AS total_piece_qty,
-            COALESCE(SUM(COALESCE(final_piece_qty, 0) * COALESCE(ex_mill_price, 0)), 0)
-                AS total_ex_mill_value,
+            COALESCE(SUM(
+                CASE
+                    WHEN COALESCE(sheet_line_value, 0) > 0 THEN sheet_line_value
+                    ELSE COALESCE(final_piece_qty, 0) * COALESCE(ex_mill_price, 0)
+                END
+            ), 0) AS total_ex_mill_value,
             COALESCE(SUM(
                 CASE
                     WHEN LOWER(COALESCE(detected_unit, '')) = 'bales'
@@ -642,22 +659,28 @@ def rematch_filled_order_items(conn, user_id, filled_order_id):
     key_fields_lookup = {c["category_name"]: c["key_fields"] for c in categories}
     key_fields = key_fields_lookup.get(category, default_key_fields)
     qty_col_label = order.get("quantity_column_used")
+    order_stream = order.get("order_stream")
     items = conn.execute(
-        """SELECT id, brand, size, product_type, raw_qty_value, ex_mill_price
+        """SELECT id, brand, size, product_type, raw_qty_value, ex_mill_price,
+                  sheet_ex_mill_price, sheet_line_value
            FROM filled_order_items WHERE filled_order_id = ? ORDER BY id""",
         (filled_order_id,),
     ).fetchall()
     for row in items:
-        item_id, brand, size, product_type, raw_qty, ex_mill = row
+        item_id, brand, size, product_type, raw_qty, ex_mill, sheet_ex_mill, sheet_line_value = row
+        sheet_ex = sheet_ex_mill if foparser._safe_float(sheet_ex_mill) else ex_mill
+        extra = {}
+        if foparser._safe_float(sheet_line_value):
+            extra["value at exmill"] = sheet_line_value
         parsed_row = {
             "line_number": item_id,
             "core_fields": {
                 "brand": brand,
                 "size": size,
                 "product_type": product_type,
-                "ex_mill_price": ex_mill,
+                "ex_mill_price": sheet_ex,
             },
-            "extra_attributes": {},
+            "extra_attributes": extra,
             "raw_qty_value": raw_qty,
             "sheet_bales": None,
         }
@@ -669,11 +692,13 @@ def rematch_filled_order_items(conn, user_id, filled_order_id):
             key_fields,
             category=category,
             qty_column_label=qty_col_label,
+            order_stream=order_stream,
         )
         conn.execute(
             """UPDATE filled_order_items
                SET article_id = ?, item_key = ?, brand = ?, size = ?, product_type = ?,
                    matched = ?, mrp = ?, ptr = ?, ex_mill_price = ?,
+                   sheet_ex_mill_price = ?, sheet_line_value = ?,
                    bale_size_used = ?, is_clean_bale_multiple = ?,
                    final_piece_qty = ?, detected_unit = ?
                WHERE id = ? AND filled_order_id = ?""",
@@ -687,6 +712,8 @@ def rematch_filled_order_items(conn, user_id, filled_order_id):
                 result.get("mrp"),
                 result.get("ptr"),
                 result.get("ex_mill_price"),
+                result.get("sheet_ex_mill_price"),
+                result.get("sheet_line_value"),
                 result.get("bale_size_used"),
                 1 if result.get("is_clean_bale_multiple") else 0,
                 result.get("final_piece_qty"),

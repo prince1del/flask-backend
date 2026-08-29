@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS filled_order_items (
     is_clean_bale_multiple INTEGER NOT NULL DEFAULT 1,
     matched INTEGER NOT NULL DEFAULT 0,
     mrp REAL, ptr REAL, ex_mill_price REAL,
+    sheet_ex_mill_price REAL,
+    sheet_line_value REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

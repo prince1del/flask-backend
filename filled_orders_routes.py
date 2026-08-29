@@ -337,6 +337,7 @@ def upload_filled_order():
             foparser.match_and_normalize(
                 conn, amdb, user_id, row, key_fields, category=category,
                 qty_column_label=qty_col_label,
+                order_stream=order_stream,
             )
             for row in parsed_rows
         ]
