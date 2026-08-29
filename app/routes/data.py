@@ -3,7 +3,6 @@ import difflib
 import hashlib
 import io
 import json
-import logging
 import os
 import re
 import shutil
@@ -78,7 +77,6 @@ from app.verification import (
 
 
 data_blueprint = Blueprint("data", __name__)
-logger = logging.getLogger(__name__)
 
 
 @data_blueprint.route("/api/v1/utils/scan-visiting-card", methods=["POST"])
@@ -762,7 +760,6 @@ def _match_ci_buyer_to_customers(
     buyer_name: str | None,
     buyer_gst: str | None,
     workspace_id: str | None,
-    user_id: int | None = None,
     allow_fuzzy: bool = True,
 ) -> dict[str, Any]:
     """
@@ -774,9 +771,7 @@ def _match_ci_buyer_to_customers(
     candidates: list[dict[str, Any]] = []
 
     if buyer_gst:
-        matched = db.get_master_distributor_by_gst(
-            buyer_gst, workspace_id=workspace_id, user_id=user_id
-        )
+        matched = db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
         if matched:
             match_method = "gst"
 
@@ -2210,9 +2205,7 @@ def index() -> str:
 
     if search_query:
         search_results = json.dumps(
-            CentralizedDB(_db_path()).global_search(
-                search_query, workspace_id=get_workspace_id(), user_id=get_request_user_id()
-            ),
+            CentralizedDB(_db_path()).global_search(search_query),
             indent=2,
         )
 
@@ -3495,23 +3488,6 @@ def upload_order_sheet_v2() -> Response:
     sheet = db.get_order_sheet(
         sheet_id, workspace_id=workspace_id, user_id=_current_user_id()
     )
-
-    # Order Sheets were only ever written to the local upload folder, which
-    # is on an ephemeral disk and is wiped on every redeploy. Best-effort:
-    # a Drive problem must not fail an upload that is already saved.
-    try:
-        from app.storage.nexora_docs import push_file_to_nexora_drive
-
-        push_file_to_nexora_drive(
-            user_id=_current_user_id(),
-            workspace_id=workspace_id,
-            local_path=target_path,
-            subfolder="Order Sheets",
-            display_name=f"{name} {category}{Path(str(target_path)).suffix}",
-        )
-    except Exception:
-        logger.exception("Order Sheet Drive backup failed for sheet %s", sheet_id)
-
     return _json_response({"success": True, "data": sheet})
 
 
@@ -3668,92 +3644,17 @@ def _so_pack_collect_uploads():
     return "pdfs", label, pdfs
 
 
-def _so_pack_diagnose_upload(
-    data: dict,
-    *,
-    source_filename: str,
-    file_bytes: bytes | None,
-) -> dict:
-    """Assess a freshly parsed pack, persist a record, keep the file for support.
-
-    Runs only for the authenticated user of the current request and only writes
-    when the pack read badly — a healthy pack leaves no trace. Never raises: a
-    diagnostics failure must not break an otherwise good upload.
-    """
-    from app.services import so_pack_diagnostics as diag
-    from app.services.so_pack_consolidate import describe_pack_contents
-
-    meta = (data or {}).get("meta") or {}
-    usable = len(_so_pack_usable_lines(data or {}))
-    contents = (
-        describe_pack_contents(file_bytes, source_filename) if file_bytes else None
-    )
-    assessment = diag.assess(meta, usable_lines=usable, contents=contents)
-    assessment["message"] = diag.message_for(assessment)
-    if assessment["outcome"] == diag.OK:
-        return assessment
-
-    user = getattr(request, "user", None)
-    user_id = (
-        int(user["user_id"])
-        if isinstance(user, dict) and user.get("user_id") is not None
-        else None
-    )
-    workspace_id = get_workspace_id()
-    if user_id is None:
-        return assessment
-    conn = sqlite3.connect(_db_path())
-    try:
-        kept = None
-        if file_bytes:
-            from app.services import order_desk_archive as archive
-
-            archive.ensure_schema(conn)
-            kept = archive.keep_upload_for_support(
-                conn,
-                user_id=int(user_id),
-                workspace_id=workspace_id,
-                filename=source_filename,
-                file_bytes=file_bytes,
-                reason=f"so_pack_{assessment['outcome']}",
-            )
-        assessment["diagnostic_id"] = diag.record(
-            conn,
-            user_id=int(user_id),
-            workspace_id=workspace_id,
-            source_filename=source_filename,
-            source_bytes=len(file_bytes or b""),
-            pack_meta=meta,
-            assessment=assessment,
-            contents=contents,
-            kept_file_path=kept,
-        )
-    except Exception:
-        pass
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-    return assessment
-
-
 @data_blueprint.route("/api/v1/order-fulfillment/so-pack/analyze", methods=["POST"])
 @require_jwt_auth
 def so_pack_analyze() -> Response:
     """Unpack ZIP/RAR or accept PDF(s) → consolidated product qty/amount JSON."""
-    from app.services import so_pack_diagnostics as diag
     from app.services.so_pack_consolidate import analyze_so_pack, analyze_so_pack_pdfs
 
-    raw_bytes: bytes | None = None
-    label = ""
     try:
         mode, label, payload = _so_pack_collect_uploads()
         if mode == "pdfs":
-            raw_bytes = None
             data = analyze_so_pack_pdfs(payload, label)
         else:
-            raw_bytes = payload
             data = analyze_so_pack(payload, label)
     except ValueError as exc:
         return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
@@ -3762,78 +3663,7 @@ def so_pack_analyze() -> Response:
             {"success": False, "error": {"message": f"SO pack analyze failed: {exc}"}},
             500,
         )
-
-    assessment = _so_pack_diagnose_upload(
-        data, source_filename=label, file_bytes=raw_bytes
-    )
-    if assessment["outcome"] != diag.OK:
-        # Attach the honest verdict to the payload the app already reads, so a
-        # pack that read badly can never look like a clean analyze.
-        data.setdefault("meta", {})["upload_diagnosis"] = assessment
-    if assessment["outcome"] in (diag.NO_FILES, diag.SCANNED, diag.UNREADABLE):
-        return _json_response(
-            {
-                "success": False,
-                "error": {
-                    "code": assessment["outcome"],
-                    "message": assessment["message"],
-                    "diagnosis": assessment,
-                },
-            },
-            400,
-        )
     return _json_response({"success": True, "data": data})
-
-
-@data_blueprint.route(
-    "/api/v1/order-fulfillment/so-pack/upload-diagnostics", methods=["GET"]
-)
-@require_jwt_auth
-def so_pack_upload_diagnostics() -> Response:
-    """Records of SO packs that read badly — own rows; owner sees the workspace.
-
-    Read-only API for support (no new screen): the workspace owner fields these
-    complaints, so the same owner-global rule as the Order Match auto-heal
-    applies, taken from the signed JWT and never from request input.
-    """
-    from app.services import so_pack_diagnostics as diag
-
-    user = getattr(request, "user", None)
-    user_id = (
-        int(user["user_id"])
-        if isinstance(user, dict) and user.get("user_id") is not None
-        else None
-    )
-    if user_id is None:
-        return _json_response(
-            {"success": False, "error": {"message": "Authentication required"}}, 401
-        )
-    try:
-        from app.routes.auth import is_request_workspace_owner
-
-        is_owner = bool(is_request_workspace_owner())
-    except Exception:
-        is_owner = False
-
-    conn = sqlite3.connect(_db_path())
-    try:
-        rows = diag.list_recent(
-            conn,
-            user_id=user_id,
-            workspace_wide=is_owner,
-            limit=int(request.args.get("limit") or 50),
-        )
-    finally:
-        conn.close()
-    return _json_response(
-        {
-            "success": True,
-            "data": {
-                "records": rows,
-                "scope": "workspace" if is_owner else "mine",
-            },
-        }
-    )
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/so-pack/analyze-stream", methods=["POST"])
@@ -3862,31 +3692,6 @@ def so_pack_analyze_stream() -> Response:
                 if kind == "progress":
                     yield json.dumps({"type": "progress", "message": str(item)}) + "\n"
                 elif kind == "done":
-                    from app.services import so_pack_diagnostics as diag
-
-                    assessment = _so_pack_diagnose_upload(
-                        item if isinstance(item, dict) else {},
-                        source_filename=label,
-                        file_bytes=payload if mode != "pdfs" else None,
-                    )
-                    if assessment["outcome"] != diag.OK and isinstance(item, dict):
-                        item.setdefault("meta", {})["upload_diagnosis"] = assessment
-                    if assessment["outcome"] in (
-                        diag.NO_FILES,
-                        diag.SCANNED,
-                        diag.UNREADABLE,
-                    ):
-                        # Nothing readable: an "error" event, never a quiet done.
-                        yield json.dumps(
-                            {
-                                "type": "error",
-                                "code": assessment["outcome"],
-                                "message": assessment["message"],
-                                "diagnosis": assessment,
-                            },
-                            default=str,
-                        ) + "\n"
-                        return
                     yield json.dumps({"type": "done", "data": item}, default=str) + "\n"
         except ValueError as exc:
             yield json.dumps({"type": "error", "message": str(exc)}) + "\n"
@@ -4170,36 +3975,6 @@ def fo_so_match_lab() -> Response:
                 pass
 
 
-def _so_pack_usable_lines(so_pack: dict) -> list[dict]:
-    """SO line_detail rows the matcher can actually use.
-
-    A usable row needs product wording *and* a quantity or a value — a pack of
-    rows with neither cannot produce a match and must be reported as
-    unreadable instead of saved as an empty SO side.
-    """
-    out: list[dict] = []
-    for row in so_pack.get("line_detail") or []:
-        if not isinstance(row, dict):
-            continue
-        has_text = bool(
-            str(
-                row.get("product_detail")
-                or row.get("product_name")
-                or row.get("material_code")
-                or ""
-            ).strip()
-        )
-        amount = 0.0
-        for key in ("qty", "quantity", "net_amount", "total_amount"):
-            try:
-                amount += abs(float(row.get(key) or 0))
-            except (TypeError, ValueError):
-                continue
-        if has_text and amount > 0:
-            out.append(row)
-    return out
-
-
 @data_blueprint.route("/api/v1/order-fulfillment/so-pack/match-filled-order", methods=["POST"])
 @require_jwt_auth
 def so_pack_match_filled_order() -> Response:
@@ -4234,37 +4009,13 @@ def so_pack_match_filled_order() -> Response:
             {"success": False, "error": {"message": "filled_order_id is required"}},
             400,
         )
-    # Only `line_detail` carries the per-line SO data the matcher consumes, so a
-    # pack without it can produce nothing but an empty SO side (SO qty 0, every
-    # FO bucket MISSING_ON_SO) while still claiming SO numbers. Refuse it here
-    # instead of persisting that state.
-    if not isinstance(so_pack, dict) or not _so_pack_usable_lines(so_pack):
-        # Explain it and keep the evidence — the user must never be left with an
-        # empty match and no reason for it.
-        from app.services import so_pack_diagnostics as diag
-
-        assessment = _so_pack_diagnose_upload(
-            so_pack if isinstance(so_pack, dict) else {},
-            source_filename=str(
-                ((so_pack or {}).get("meta") or {}).get("source_filename")
-                or "so_pack"
-            ),
-            file_bytes=None,
-        )
+    if not isinstance(so_pack, dict) or not (
+        so_pack.get("line_detail") or so_pack.get("consolidated")
+    ):
         return _json_response(
             {
                 "success": False,
-                "error": {
-                    "code": assessment.get("outcome")
-                    if assessment.get("outcome") != diag.OK
-                    else "so_pack_missing_line_detail",
-                    "message": assessment.get("message")
-                    or (
-                        "This SO pack has no readable Sales Order lines — "
-                        "analyze the SO files again and retry."
-                    ),
-                    "diagnosis": assessment,
-                },
+                "error": {"message": "so_pack analyze payload with line_detail is required"},
             },
             400,
         )
@@ -4299,40 +4050,10 @@ def so_pack_match_filled_order() -> Response:
                 {"success": False, "error": {"message": "Filled order not found"}},
                 404,
             )
-        heal_summary = _autoheal_order_match(
-            conn,
-            user_id=user_id,
-            filled_order_id=filled_order_id,
-            reason="so_pack_match",
-        )
-        healed_this_request = bool((heal_summary or {}).get("changed"))
         items = fodb.get_filled_order_items(conn, filled_order_id)
-        # Bring back anything this user previously deleted from this FO's match
-        # (archived SO lines) BEFORE matching, so the incoming pack merges on
-        # top of the restored state instead of replacing it. SO numbers present
-        # in this upload are never restored — the file is the newer truth.
-        restored_note = _restore_order_desk_archive_for_fo(
-            conn,
-            user_id=user_id,
-            fo=fo,
-            filled_order_id=filled_order_id,
-            incoming_so_numbers=new_numbers,
-        )
         existing = sorev.get_latest_run_for_fo(
             conn, user_id=user_id, filled_order_id=filled_order_id
         )
-        # A claim on an SO whose run holds no line for it is unusable data: it
-        # would turn this fresh upload into a "revision of an empty SO" (replace
-        # confirmation) or a false duplicate. Free those claims first — same rule
-        # and same shared service as the silent auto-heal.
-        try:
-            from app.services import fo_so_match_repair as repairsvc
-
-            repairsvc.clear_stale_so_claims(
-                conn, user_id=user_id, so_numbers=new_numbers
-            )
-        except Exception:
-            pass
         conflicts = matchdb.find_so_number_conflicts(conn, new_numbers)
         # SO index is global — only revise when the conflicting run is this same FO.
         fo_conflicts = [
@@ -4346,29 +4067,14 @@ def so_pack_match_filled_order() -> Response:
         ]
         other_fo_conflicts = [c for c in conflicts if c not in fo_conflicts]
         if other_fo_conflicts and not confirm_action:
-            samples = []
-            for c in other_fo_conflicts[:3]:
-                so = c.get("so_number") or "?"
-                party = c.get("distributor_name") or "Unknown party"
-                cat = c.get("category") or "?"
-                fo_file = c.get("fo_source_filename") or "FO"
-                samples.append(f"{so} → {party} · {cat} · {fo_file} (run #{c.get('run_id')})")
-            detail = "; ".join(samples)
-            extra = (
-                f" (+{len(other_fo_conflicts) - 3} more)"
-                if len(other_fo_conflicts) > 3
-                else ""
-            )
             return _json_response(
                 {
                     "success": False,
                     "error": {
                         "code": "duplicate_sales_order",
                         "message": (
-                            "Sales Order already matched to a different Filled Order: "
-                            f"{detail}{extra}. "
-                            "If it was auto-matched to the wrong category (e.g. towel→Bed), "
-                            "strip it from that Order Match run, then upload again."
+                            "Sales Order already matched to a different Filled Order. "
+                            "Delete it from Order Match first, then upload again."
                         ),
                         "conflicts": other_fo_conflicts,
                     },
@@ -4382,30 +4088,6 @@ def so_pack_match_filled_order() -> Response:
             so_pack=so_pack,
             conflicts=conflicts,
         )
-
-        # "Already in system" is only an honest answer when nothing had to be
-        # repaired. If the silent heal just rebuilt this FO's match (its SO qty /
-        # value were missing), report that success with the repaired run instead.
-        if decision["action"] == "already_in_system" and healed_this_request:
-            repaired = sorev.get_latest_run_for_fo(
-                conn, user_id=user_id, filled_order_id=filled_order_id
-            )
-            if repaired and float(repaired.get("so_qty") or 0) > 0:
-                return _json_response(
-                    {
-                        "success": True,
-                        "data": {
-                            "run": {
-                                k: v for k, v in repaired.items() if k != "rows"
-                            },
-                            "run_id": repaired.get("id"),
-                            "revision_note": (
-                                "Match rebuilt from the Sales Orders already saved "
-                                "for this Filled Order"
-                            ),
-                        },
-                    }
-                )
 
         if confirm_action and decision["action"] == "already_in_system":
             return _json_response(
@@ -4475,7 +4157,6 @@ def so_pack_match_filled_order() -> Response:
         # Build merged line_detail when revising an existing FO match.
         working_pack = so_pack
         replaced_note = None
-        revise_run_id: int | None = None
         # New SO that fits FO leftover (after replace) merges as Additional —
         # including when materials still overlap the reduced parent (Balaji 543).
         effective_action = confirm_action
@@ -4494,41 +4175,8 @@ def so_pack_match_filled_order() -> Response:
             else:
                 replaced_note = "Additional order SO added"
 
-        if (
-            not effective_action
-            and existing
-            and decision["action"] == "rebuild"
-            and new_lines
-        ):
-            # Same SO content as stored, but the saved match does not show it
-            # (SO qty / value 0, everything MISSING_ON_SO). Rebuild it from this
-            # upload instead of answering "no change detected". Replacing exactly
-            # these SO numbers keeps it idempotent — nothing doubles.
-            effective_action = "replace"
-            replaced_note = (
-                "Match rebuilt from SO "
-                + ", ".join(sorted(str(n) for n in (decision.get("so_numbers") or [])))
-            )
-
         if existing and effective_action in ("replace", "split", "additional"):
             existing_lines = list(existing.get("so_line_detail") or [])
-            if effective_action in ("replace", "split"):
-                # Keep an audit snapshot of the SO lines this revision drops or
-                # reduces. Scope stays 'entity', so a deliberate replacement is
-                # never silently resurrected by a later upload.
-                doomed = (
-                    [str(c.get("so_number") or "") for c in conflicts]
-                    if effective_action == "replace"
-                    else [parent_so_number or ""]
-                )
-                _archive_match_before_delete(
-                    conn,
-                    user_id=user_id,
-                    run_id=int(existing["id"]),
-                    so_numbers=[n for n in doomed if n],
-                    whole_run=False,
-                    reason=f"so_revision_{effective_action}",
-                )
             if effective_action == "replace":
                 replace_nums = {
                     str(c.get("so_number") or "")
@@ -4565,44 +4213,28 @@ def so_pack_match_filled_order() -> Response:
             working_pack = sorev.pack_from_lines(
                 merged, source_filename=so_source_filename
             )
-            revise_run_id = int(existing["id"])
-            # Other runs on this FO that claim the same SO numbers are folded in.
+            # Free SO index + drop previous FO run before saving the merged match.
+            matchdb.delete_match_run(conn, user_id, int(existing["id"]))
             for c in conflicts:
                 rid = c.get("run_id")
-                if rid and int(rid) != revise_run_id:
+                if rid and int(rid) != int(existing["id"]):
                     matchdb.delete_match_run(conn, user_id, int(rid))
 
         result = run_match_saved_fo_vs_so_pack(
             fo_meta=fo, fo_items=items, so_pack_payload=working_pack,
         )
-        working_lines = (
-            working_pack.get("line_detail")
-            if isinstance(working_pack.get("line_detail"), list)
-            else None
-        )
         try:
-            if revise_run_id is not None:
-                # Update the FO's existing run in place: the run id stays stable
-                # and the surviving SOs keep their rows even if this save fails.
-                run = matchdb.update_run_from_match(
-                    conn,
-                    run_id=revise_run_id,
-                    user_id=user_id,
-                    match_payload=result,
-                    so_line_detail=working_lines,
-                    so_pack=working_pack,
-                    so_source_filename=so_source_filename,
-                )
-            else:
-                run = matchdb.save_match_run(
-                    conn,
-                    user_id=user_id,
-                    match_payload=result,
-                    so_buyer_label=so_buyer_label,
-                    so_source_filename=so_source_filename,
-                    so_line_detail=working_lines,
-                    so_pack=working_pack,
-                )
+            run = matchdb.save_match_run(
+                conn,
+                user_id=user_id,
+                match_payload=result,
+                so_buyer_label=so_buyer_label,
+                so_source_filename=so_source_filename,
+                so_line_detail=working_pack.get("line_detail")
+                if isinstance(working_pack.get("line_detail"), list)
+                else None,
+                so_pack=working_pack,
+            )
         except matchdb.DuplicateSalesOrderError as dup:
             return _json_response(
                 {
@@ -4620,31 +4252,6 @@ def so_pack_match_filled_order() -> Response:
         if replaced_note:
             result["revision_note"] = replaced_note
             result["confirm_action"] = effective_action
-        if restored_note and restored_note.get("restored_so_numbers"):
-            result["restored_so_numbers"] = restored_note["restored_so_numbers"]
-        # A pack where only some Sales Orders could be read must say so now,
-        # instead of letting the user discover it later as MISSING_ON_SO lines.
-        try:
-            from app.services import so_pack_diagnostics as diag
-
-            partial = diag.assess(
-                so_pack.get("meta") or {},
-                usable_lines=len(_so_pack_usable_lines(so_pack)),
-            )
-            if partial["outcome"] == diag.PARTIAL:
-                partial["message"] = diag.message_for(partial)
-                result["so_pack_diagnosis"] = partial
-                diag.record(
-                    conn,
-                    user_id=user_id,
-                    workspace_id=get_workspace_id(),
-                    source_filename=so_source_filename,
-                    source_bytes=0,
-                    pack_meta=so_pack.get("meta") or {},
-                    assessment=partial,
-                )
-        except Exception:
-            pass
         return _json_response({"success": True, "data": result})
     except Exception as exc:
         return _json_response(
@@ -4653,36 +4260,6 @@ def so_pack_match_filled_order() -> Response:
         )
     finally:
         conn.close()
-
-
-def _autoheal_order_match(
-    conn: sqlite3.Connection,
-    *,
-    user_id: int | None,
-    filled_order_id: int | None = None,
-    reason: str = "",
-) -> dict | None:
-    """Silently self-heal damaged FO ↔ SO match data on the normal Order Desk paths.
-
-    The cheap probe runs first, so a healthy workspace pays a few aggregate
-    queries and writes nothing. Scope comes from the signed JWT: own rows for a
-    normal user, workspace-wide for the workspace owner. Never raises. Returns
-    the repair summary when something was healed, so the upload path can report
-    a truthful result instead of "no change detected".
-    """
-    if user_id is None:
-        return None
-    try:
-        from app.services import fo_so_match_repair as repairsvc
-
-        return repairsvc.autoheal_for_request(
-            conn,
-            user_id=int(user_id),
-            filled_order_id=filled_order_id,
-            reason=reason,
-        )
-    except Exception:
-        return None
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/list", methods=["GET"])
@@ -4708,136 +4285,8 @@ def order_match_list() -> Response:
         )
     conn = sqlite3.connect(_db_path())
     try:
-        _autoheal_order_match(conn, user_id=user_id, reason="order_match_list")
-        # DELIBERATELY NOT calling auto_sync_all_unmatched_sos_for_user() here.
-        #
-        # It was added to this GET on 2026-08-28 (3ad4d0f) and re-matched
-        # EVERY Filled Order for the user on every plain screen load — so
-        # merely opening Order Desk silently rewrote saved match data. On
-        # 2026-08-28 that destroyed Shri Ram & Co's and Sain International's
-        # Bed match runs: their Bath SOs were force-merged into their only
-        # (Bed) Filled Order and overwrote 31 real bedsheet lines. Reading a
-        # screen must never mutate records — a bulk re-match is a deliberate
-        # action, not a side effect of looking at the list.
-        #
-        # Nothing is lost by removing it: upload_sales_order_v2() and the
-        # mail-sync import path each still call auto_attach_so_to_filled_order()
-        # at the moment an SO actually arrives, which is the useful half of
-        # 3ad4d0f. This only removes the blind bulk retry-everything sweep,
-        # restoring the behaviour this endpoint had before that commit.
-        try:
-            # Throttled retention cleanup for the Order Desk recycle store.
-            from app.services import order_desk_archive as archive
-
-            archive.maybe_purge(conn)
-        except Exception:
-            pass
         runs = matchdb.list_match_runs(conn, user_id=user_id)
         return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
-    finally:
-        conn.close()
-
-
-@data_blueprint.route("/api/v1/order-fulfillment/auto-match-log", methods=["GET"])
-@require_jwt_auth
-def order_match_auto_log() -> Response:
-    """What the automatic FO ↔ SO matching has done, and what it could not do.
-
-    Automation is only trustworthy when it is visible. The rows that matter
-    most are `needs_attention`: Sales Orders the matcher deliberately would
-    NOT place (no Filled Order of that category, unreadable file, …). Those
-    would otherwise just silently never appear anywhere.
-
-    ?needs_attention=1  → only the ones waiting on a human
-    ?limit=             → default 200
-    """
-    from app.services import fo_so_auto_match_log as matchlog
-
-    user_id = _current_user_id()
-    if user_id is None:
-        return _json_response(
-            {"success": False, "error": {"message": "Authentication required"}}, 401
-        )
-    workspace_id = get_workspace_id()
-    attention_only = str(
-        request.args.get("needs_attention") or ""
-    ).strip().lower() in ("1", "true", "yes")
-    limit = request.args.get("limit", default=200, type=int) or 200
-
-    conn = sqlite3.connect(_db_path())
-    try:
-        entries = matchlog.list_decisions(
-            conn,
-            user_id=user_id,
-            workspace_id=workspace_id,
-            needs_attention_only=attention_only,
-            limit=limit,
-        )
-        return _json_response({
-            "success": True,
-            "data": {
-                "entries": entries,
-                "count": len(entries),
-                "needs_attention_count": matchlog.count_needs_attention(
-                    conn, user_id=user_id, workspace_id=workspace_id
-                ),
-            },
-        })
-    finally:
-        conn.close()
-
-
-@data_blueprint.route(
-    "/api/v1/order-fulfillment/auto-match-log/<int:entry_id>/dismiss", methods=["POST"]
-)
-@require_jwt_auth
-def order_match_auto_log_dismiss(entry_id: int) -> Response:
-    """Stop asking about a Sales Order that has no Filled Order and never will.
-
-    A real case: verbal/top-up orders, or an SO the company raised directly,
-    where no FO was ever filled. Nothing is deleted — the Sales Order stays
-    in Order Desk, still takes its Commercial Invoices and payments. Only the
-    reminder is silenced, and ?restore=1 brings it back.
-    """
-    from app.services import fo_so_auto_match_log as matchlog
-
-    user_id = _current_user_id()
-    if user_id is None:
-        return _json_response(
-            {"success": False, "error": {"message": "Authentication required"}}, 401
-        )
-    body = request.get_json(silent=True) or {}
-    restore = str(
-        request.args.get("restore") or body.get("restore") or ""
-    ).strip().lower() in ("1", "true", "yes")
-    reason = (body.get("reason") or "").strip() or None
-
-    conn = sqlite3.connect(_db_path())
-    try:
-        if restore:
-            changed = matchlog.restore(conn, entry_id=entry_id, user_id=user_id)
-        else:
-            changed = matchlog.dismiss(
-                conn, entry_id=entry_id, user_id=user_id, reason=reason
-            )
-        if not changed:
-            return _json_response(
-                {
-                    "success": False,
-                    "error": {"message": "Entry not found, or already in that state"},
-                },
-                404,
-            )
-        return _json_response({
-            "success": True,
-            "data": {
-                "entry_id": entry_id,
-                "dismissed": not restore,
-                "needs_attention_count": matchlog.count_needs_attention(
-                    conn, user_id=user_id, workspace_id=get_workspace_id()
-                ),
-            },
-        })
     finally:
         conn.close()
 
@@ -4862,23 +4311,6 @@ def order_match_get(run_id: int) -> Response:
     conn = sqlite3.connect(_db_path())
     try:
         run = matchdb.get_match_run(conn, run_id, user_id=user_id)
-        fo_id = (run or {}).get("filled_order_id")
-        _autoheal_order_match(
-            conn,
-            user_id=user_id,
-            filled_order_id=int(fo_id) if fo_id is not None else None,
-            reason="order_match_get",
-        )
-        healed = matchdb.get_match_run(conn, run_id, user_id=user_id)
-        if healed is None and fo_id is not None:
-            # This run was a duplicate of the FO and got consolidated away —
-            # serve the surviving consolidated run instead of a 404.
-            from app.services import fo_so_revision as sorev
-
-            healed = sorev.get_latest_run_for_fo(
-                conn, user_id=user_id, filled_order_id=int(fo_id)
-            )
-        run = healed or run
         if not run:
             return _json_response(
                 {"success": False, "error": {"message": "Match run not found"}},
@@ -4889,110 +4321,10 @@ def order_match_get(run_id: int) -> Response:
         conn.close()
 
 
-def _restore_order_desk_archive_for_fo(
-    conn: sqlite3.Connection,
-    *,
-    user_id: int | None,
-    fo: dict | None,
-    filled_order_id: int,
-    incoming_so_numbers: list[str] | None = None,
-) -> dict | None:
-    """Restore archived match content for one FO on an SO Pack (re-)upload.
-
-    This is the mandatory "same data dubara upload karne se wapas aa jaaye"
-    path: whatever a previous delete removed from this Filled Order's match is
-    merged back before the incoming pack is matched. Strictly this user's own
-    archive rows, and never the SO numbers being uploaded right now.
-    """
-    if user_id is None:
-        return None
-    try:
-        from app.services import order_desk_archive as archive
-
-        # A re-uploaded FO gets a new row id — re-point archives by FO identity.
-        archive.relink_archives_to_new_filled_order(
-            conn,
-            user_id=int(user_id),
-            filled_order_id=int(filled_order_id),
-            distributor_id=(fo or {}).get("distributor_id"),
-            category=(fo or {}).get("category"),
-            season=(fo or {}).get("season"),
-        )
-        return archive.restore_match_for_fo(
-            conn,
-            user_id=int(user_id),
-            filled_order_id=int(filled_order_id),
-            fo_key=archive.fo_key_for(
-                (fo or {}).get("distributor_id"),
-                (fo or {}).get("category"),
-                (fo or {}).get("season"),
-            ),
-            incoming_so_numbers=incoming_so_numbers or [],
-        )
-    except Exception:
-        return None
-
-
-def _archive_match_before_delete(
-    conn: sqlite3.Connection,
-    *,
-    user_id: int | None,
-    run_id: int,
-    so_numbers: list[str] | None = None,
-    whole_run: bool = False,
-    reason: str = "",
-) -> None:
-    """Snapshot FO↔SO match content into the Order Desk recycle store.
-
-    Best-effort by design: a failing snapshot must not block the delete the
-    user asked for, but every normal delete becomes recoverable by re-uploading
-    the same source file (see app/services/order_desk_archive.py).
-    """
-    if user_id is None:
-        return
-    try:
-        from app.services import fo_so_match_db as matchdb
-        from app.services import order_desk_archive as archive
-
-        run = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
-        if not run:
-            return
-        workspace_id = get_workspace_id()
-        if whole_run:
-            archive.archive_match_run(
-                conn,
-                user_id=int(user_id),
-                run=run,
-                reason=reason or "order_match_delete_run",
-                workspace_id=workspace_id,
-            )
-        else:
-            archive.archive_match_so(
-                conn,
-                user_id=int(user_id),
-                run=run,
-                so_numbers=so_numbers or [],
-                reason=reason or "order_match_delete_so",
-                restore_scope=archive.SCOPE_ENTITY,
-                workspace_id=workspace_id,
-            )
-    except Exception:
-        pass
-
-
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["DELETE"])
 @require_jwt_auth
 def order_match_delete(run_id: int) -> Response:
-    """Delete a whole FO match run, or only one SO inside it.
-
-    One match run holds every SO matched against that Filled Order, so a
-    blind whole-run delete would wipe the FO's other SOs (their match rows
-    and totals) as well. Therefore:
-      ?so_number=…  → remove just that SO, rematch the survivors in place
-      no so_number  → allowed only for single-SO runs, or with confirm_all=1
-    """
     from app.services import fo_so_match_db as matchdb
-    from app.services import fo_so_revision as sorev
 
     user = getattr(request, "user", None)
     user_id = (
@@ -5005,176 +4337,15 @@ def order_match_delete(run_id: int) -> Response:
             {"success": False, "error": {"message": "Authentication required"}},
             401,
         )
-    body = request.get_json(silent=True) or {}
-    so_number = (
-        request.args.get("so_number") or body.get("so_number") or ""
-    ).strip() or None
-    confirm_all = str(
-        request.args.get("confirm_all") or body.get("confirm_all") or ""
-    ).strip().lower() in ("1", "true", "yes")
-
     conn = sqlite3.connect(_db_path())
     try:
-        pre = matchdb.get_match_run(conn, run_id, user_id=user_id)
-        pre_fo_id = (pre or {}).get("filled_order_id")
-        _autoheal_order_match(
-            conn,
-            user_id=user_id,
-            filled_order_id=int(pre_fo_id) if pre_fo_id is not None else None,
-            reason="order_match_delete",
-        )
-        if pre is not None and pre_fo_id is not None and not matchdb.get_match_run(
-            conn, run_id, user_id=user_id
-        ):
-            surviving = sorev.get_latest_run_for_fo(
-                conn, user_id=user_id, filled_order_id=int(pre_fo_id)
-            )
-            if surviving and surviving.get("id"):
-                run_id = int(surviving["id"])
-        if so_number:
-            try:
-                # Recycle first: a deliberate single-SO delete must still be
-                # recoverable by re-uploading that same SO file.
-                _archive_match_before_delete(
-                    conn,
-                    user_id=user_id,
-                    run_id=run_id,
-                    so_numbers=[so_number],
-                    whole_run=False,
-                    reason="order_match_delete_so",
-                )
-                result = sorev.remove_so_from_run(
-                    conn, user_id=user_id, run_id=run_id, so_numbers=[so_number]
-                )
-            except ValueError as exc:
-                return _json_response(
-                    {"success": False, "error": {"message": str(exc)}},
-                    404 if "not found" in str(exc).lower() else 400,
-                )
-            return _json_response(
-                {
-                    "success": True,
-                    "data": {
-                        "removed_so_numbers": result["removed"],
-                        "deleted_run_id": run_id if result["deleted_run"] else None,
-                        "run": result["run"],
-                    },
-                    "message": f"Deleted SO {so_number}",
-                }
-            )
-
-        so_numbers = matchdb.so_numbers_for_run(conn, run_id, user_id=user_id)
-        if len(so_numbers) > 1 and not confirm_all:
-            return _json_response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "match_run_has_multiple_so",
-                        "message": (
-                            f"This match holds {len(so_numbers)} Sales Orders "
-                            f"({', '.join(so_numbers)}). Delete a single SO from the "
-                            "match detail, or confirm deleting the whole FO match."
-                        ),
-                        "so_numbers": so_numbers,
-                        "filled_order_id": (
-                            matchdb.get_match_run(conn, run_id, user_id=user_id) or {}
-                        ).get("filled_order_id"),
-                    },
-                },
-                409,
-            )
-        _archive_match_before_delete(
-            conn,
-            user_id=user_id,
-            run_id=run_id,
-            so_numbers=so_numbers,
-            whole_run=True,
-            reason="order_match_delete_run",
-        )
         ok = matchdb.delete_match_run(conn, user_id, run_id)
         if not ok:
             return _json_response(
                 {"success": False, "error": {"message": "Match run not found"}},
                 404,
             )
-        return _json_response(
-            {
-                "success": True,
-                "data": {"deleted_run_id": run_id, "recoverable": True},
-                "message": (
-                    "Match run deleted — re-upload the same SO file(s) to restore it."
-                ),
-            }
-        )
-    finally:
-        conn.close()
-
-
-@data_blueprint.route(
-    "/api/v1/order-fulfillment/order-match/<int:run_id>/strip-so",
-    methods=["POST"],
-)
-@require_jwt_auth
-def order_match_strip_so(run_id: int) -> Response:
-    """Remove specific SO numbers from a match run (frees global SO index).
-
-    Repair path when an SO was auto-matched onto the wrong FO category.
-    Body: { "so_numbers": ["102876586", ...] }
-    """
-    from app.services import fo_so_match_db as matchdb
-
-    user = getattr(request, "user", None)
-    user_id = (
-        int(user["user_id"])
-        if isinstance(user, dict) and user.get("user_id") is not None
-        else None
-    )
-    if user_id is None:
-        return _json_response(
-            {"success": False, "error": {"message": "Authentication required"}},
-            401,
-        )
-    body = request.get_json(silent=True) or {}
-    so_numbers = body.get("so_numbers") or body.get("so_number") or []
-    if isinstance(so_numbers, str):
-        so_numbers = [so_numbers]
-    if not isinstance(so_numbers, list) or not so_numbers:
-        return _json_response(
-            {"success": False, "error": {"message": "so_numbers list is required"}},
-            400,
-        )
-    conn = sqlite3.connect(_db_path())
-    try:
-        _archive_match_before_delete(
-            conn,
-            user_id=user_id,
-            run_id=run_id,
-            so_numbers=[str(x) for x in so_numbers],
-            whole_run=False,
-            reason="order_match_strip_so",
-        )
-        result = matchdb.strip_so_numbers_from_run(
-            conn,
-            run_id=run_id,
-            user_id=user_id,
-            so_numbers=[str(x) for x in so_numbers],
-        )
-        return _json_response(
-            {
-                "success": True,
-                "data": result,
-                "message": (
-                    "Stripped SO "
-                    + ", ".join(result.get("stripped_so_numbers") or [])
-                    + f" from match run #{run_id}"
-                ),
-            }
-        )
-    except ValueError as exc:
-        return _json_response(
-            {"success": False, "error": {"message": str(exc)}},
-            404 if "not found" in str(exc).lower() else 400,
-        )
+        return _json_response({"success": True, "data": {"deleted": True}})
     finally:
         conn.close()
 
@@ -5210,42 +4381,11 @@ def order_match_delete_selected() -> Response:
                 run_id = int(raw)
             except (TypeError, ValueError):
                 continue
-            _archive_match_before_delete(
-                conn,
-                user_id=user_id,
-                run_id=run_id,
-                whole_run=True,
-                reason="order_match_delete_selected",
-            )
             if matchdb.delete_match_run(conn, user_id, run_id):
                 deleted += 1
         return _json_response({"success": True, "data": {"deleted": deleted}})
     finally:
         conn.close()
-
-
-def _restore_tracking_archive_after_upload(
-    *,
-    user_id: int | None,
-    workspace_id: str | None,
-    order_ref_no: str | None,
-    tracking_id: int | None,
-) -> dict | None:
-    """Restore an archived tracking row's derived data onto a fresh upload."""
-    if user_id is None or tracking_id is None or not order_ref_no:
-        return None
-    try:
-        from app.services import order_desk_archive as archive
-
-        return archive.restore_tracking_for_upload(
-            _db_path(),
-            user_id=user_id,
-            workspace_id=workspace_id,
-            order_ref_no=order_ref_no,
-            tracking_id=int(tracking_id),
-        )
-    except Exception:
-        return None
 
 
 def _archive_order_pdf_to_drive(
@@ -5303,21 +4443,15 @@ def upload_sales_order_v2() -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
 
-    user = getattr(request, "user", None)
-    user_id = int(user["user_id"]) if isinstance(user, dict) and user.get("user_id") is not None else None
-
     try:
         extracted_text = _extract_pdf_text(target_path)
     except Exception:
         extracted_text = ""
 
     header = _parse_sales_order_header_fields(extracted_text)
-    from app.services.so_pack_consolidate import _parse_so_header_rich
-
-    rich_header = _parse_so_header_rich(extracted_text, uploaded_file.filename or "")
-    buyer_code = header.get("buyer_code") or rich_header.get("buyer_code")
-    order_ref_no = header.get("order_ref_no") or rich_header.get("so_number")
-    buyer_name = header.get("buyer_name") or rich_header.get("buyer_name")
+    buyer_code = header.get("buyer_code")
+    order_ref_no = header.get("order_ref_no")
+    buyer_name = header.get("buyer_name")
 
     all_gst_numbers = [g for g in (header.get("all_gst_numbers") or "").split(",") if g]
     own_profile = db.get_company_profile(workspace_id)
@@ -5325,39 +4459,13 @@ def upload_sales_order_v2() -> Response:
     buyer_gst = _identify_buyer_gst(all_gst_numbers, own_gst)
 
     matched_by_buyer_code = (
-        db.get_master_distributor_by_buyer_code(
-            buyer_code, workspace_id=workspace_id, user_id=user_id
-        )
-        if buyer_code
-        else None
+        db.get_master_distributor_by_buyer_code(buyer_code, workspace_id=workspace_id)
+        if buyer_code else None
     )
     matched_by_gst = (
-        db.get_master_distributor_by_gst(
-            buyer_gst, workspace_id=workspace_id, user_id=user_id
-        )
-        if buyer_gst
-        else None
+        db.get_master_distributor_by_gst(buyer_gst, workspace_id=workspace_id)
+        if buyer_gst else None
     )
-
-    # When both are present but disagree (e.g. buyer code is BHD001 for Balaji Home Decor,
-    # but the printed GST belongs to another entity), check buyer_name to break the tie
-    # and not leave matched_by_gst pointing to the wrong entity.
-    if matched_by_buyer_code and matched_by_gst and matched_by_buyer_code["id"] != matched_by_gst["id"]:
-        from rapidfuzz import fuzz
-        b_name = (buyer_name or "").lower()
-        name_code = (matched_by_buyer_code.get("firm_name") or matched_by_buyer_code.get("name") or "").lower()
-        name_gst = (matched_by_gst.get("firm_name") or matched_by_gst.get("name") or "").lower()
-        score_code = fuzz.token_set_ratio(b_name, name_code) if b_name and name_code else 0
-        score_gst = fuzz.token_set_ratio(b_name, name_gst) if b_name and name_gst else 0
-        if score_code >= 80:
-            matched_by_gst = None
-        elif score_gst >= 80:
-            matched_by_buyer_code = None
-        elif score_code >= 60 and score_code > score_gst + 15:
-            matched_by_gst = None
-        elif score_gst >= 60 and score_gst > score_code + 15:
-            matched_by_buyer_code = None
-
     signals_agree = None
     if matched_by_buyer_code and matched_by_gst:
         signals_agree = matched_by_buyer_code["id"] == matched_by_gst["id"]
@@ -5373,6 +4481,8 @@ def upload_sales_order_v2() -> Response:
     filled_order_linked = False
     merged_from_ci_only = False
     so_ci_rematch = None
+    user = getattr(request, "user", None)
+    user_id = int(user["user_id"]) if isinstance(user, dict) and user.get("user_id") is not None else None
     if confirmed_distributor_id and order_ref_no:
         if db.is_document_already_processed(workspace_id, "SO", order_ref_no):
             is_duplicate = True
@@ -5416,15 +4526,6 @@ def upload_sales_order_v2() -> Response:
                     sales_order_file_reference=str(target_path),
                     sales_order_parsed=parsed_sales_order,
                     workspace_id=workspace_id,
-                )
-                # Re-uploading a deleted SO restores everything that hung off
-                # its old tracking row (reconciliation items, achievements,
-                # payment entries, the CI that was linked to it).
-                _restore_tracking_archive_after_upload(
-                    user_id=user_id,
-                    workspace_id=workspace_id,
-                    order_ref_no=order_ref_no,
-                    tracking_id=tracking_id,
                 )
                 _archive_order_pdf_to_drive(
                     db=db,
@@ -5588,27 +4689,6 @@ def upload_sales_order_v2() -> Response:
                         pass
 
                 db.mark_document_processed(workspace_id, "SO", order_ref_no, tracking_id)
-
-                if confirmed_distributor_id and tracking_id and user_id:
-                    try:
-                        fo_conn_auto = sqlite3.connect(_db_path())
-                        try:
-                            from app.services.fo_so_auto_match import auto_attach_so_to_filled_order
-
-                            auto_attach_so_to_filled_order(
-                                conn=fo_conn_auto,
-                                user_id=user_id,
-                                distributor_id=confirmed_distributor_id,
-                                file_path=target_path,
-                                filename=distributor_name_for_folder,
-                                tracking_id=tracking_id,
-                                workspace_id=workspace_id,
-                                source="so_upload",
-                            )
-                        finally:
-                            fo_conn_auto.close()
-                    except Exception as exc:
-                        logger.warning("Auto match SO to filled order failed: %s", exc)
             except Exception as exc:
                 link_error = str(exc)
 
@@ -5971,7 +5051,6 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
             buyer_name=buyer_name,
             buyer_gst=buyer_gst,
             workspace_id=workspace_id,
-            user_id=_current_user_id(),
             allow_fuzzy=not bool(buyer_gst),  # GST hit is enough; skip slow fuzzy scan
         )
         party_match = _build_ci_party_match_summary(
@@ -7041,28 +6120,14 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
     db = CentralizedDB(_db_path())
     workspace_id = get_workspace_id()
     user_id = _current_user_id()
-    _archive_tracking_before_delete(
-        db,
-        tracking_id=tracking_id,
-        workspace_id=workspace_id,
-        user_id=user_id,
-        reason="tracking_delete",
-    )
     file_references = db.delete_order_lifecycle_tracking(
         tracking_id, workspace_id=workspace_id, user_id=user_id
     )
     if file_references is None:
         return _json_response({"success": False, "error": {"message": "Tracking record not found"}}, 404)
 
-    _cleanup_order_fulfillment_files(
-        file_references, user_id=user_id, workspace_id=workspace_id
-    )
-    return _json_response(
-        {
-            "success": True,
-            "data": {"deleted_tracking_id": tracking_id, "recoverable": True},
-        }
-    )
+    _cleanup_order_fulfillment_files(file_references)
+    return _json_response({"success": True, "data": {"deleted_tracking_id": tracking_id}})
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/tracking/delete-selected", methods=["POST"])
@@ -7085,88 +6150,19 @@ def delete_selected_order_fulfillment_tracking() -> Response:
             tracking_id = int(raw)
         except (TypeError, ValueError):
             continue
-        _archive_tracking_before_delete(
-            db,
-            tracking_id=tracking_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-            reason="tracking_delete_selected",
-        )
         file_references = db.delete_order_lifecycle_tracking(
             tracking_id, workspace_id=workspace_id, user_id=user_id
         )
         if file_references is None:
             continue
-        _cleanup_order_fulfillment_files(
-            file_references, user_id=user_id, workspace_id=workspace_id
-        )
+        _cleanup_order_fulfillment_files(file_references)
         deleted += 1
-    return _json_response({"success": True, "data": {"deleted": deleted, "recoverable": True}})
+    return _json_response({"success": True, "data": {"deleted": deleted}})
 
 
-def _archive_tracking_before_delete(
-    db: CentralizedDB,
-    *,
-    tracking_id: int,
-    workspace_id: str | None,
-    user_id: int | None,
-    reason: str,
-) -> None:
-    """Snapshot an SO/CI tracking row (+ items, achievements, payment entries).
-
-    Without this, deleting one row of the Sales Orders / Commercial Invoices
-    table also destroyed its reconciliation items, achievements and distributor
-    payment entries permanently. Now re-uploading the same SO PDF restores them.
-    """
-    if user_id is None:
-        return
-    try:
-        from app.services import order_desk_archive as archive
-
-        tracking = db.get_order_lifecycle_tracking(
-            int(tracking_id), workspace_id=workspace_id, user_id=user_id
-        )
-        if not tracking:
-            return
-        archive.archive_tracking(
-            _db_path(),
-            user_id=user_id,
-            workspace_id=workspace_id,
-            tracking=tracking,
-            reason=reason,
-        )
-    except Exception:
-        pass
-
-
-def _cleanup_order_fulfillment_files(
-    file_references,
-    *,
-    user_id: int | None = None,
-    workspace_id: str | None = None,
-) -> None:
-    """Retire a deleted record's uploaded files into the recycle area.
-
-    These files are the source a restore needs, so a user delete moves them to
-    `<upload root>/_nexora_recycle/<user_id>/…` instead of unlinking them. The
-    retention sweep deletes them for real once the archive row expires. Files
-    outside the upload root are still left untouched (same guard as before).
-    """
+def _cleanup_order_fulfillment_files(file_references) -> None:
     if not file_references:
         return
-    try:
-        from app.services import order_desk_archive as archive
-
-        archive.recycle_file_references(
-            file_references,
-            db_path=_db_path(),
-            user_id=user_id,
-            workspace_id=workspace_id,
-            reason="order_fulfillment_cleanup",
-        )
-        return
-    except Exception:
-        pass
     upload_root = (
         Path("app/instance/order_fulfillment_files")
         if Path("app/instance").exists()
@@ -7378,32 +6374,8 @@ def order_fulfillment_delete_file() -> Response:
     if not candidate.exists() or not candidate.is_file():
         return _json_response({"success": False, "error": {"message": "File not found"}}, 404)
 
-    # Recycled, not unlinked: the file is the source a restore would need.
-    recycled = None
-    try:
-        from app.services import order_desk_archive as archive
-
-        conn = sqlite3.connect(_db_path())
-        try:
-            recycled = archive.recycle_file(
-                str(candidate),
-                conn=conn,
-                user_id=_current_user_id(),
-                workspace_id=get_workspace_id(),
-                reason="order_fulfillment_delete_file",
-            )
-        finally:
-            conn.close()
-    except Exception:
-        recycled = None
-    if recycled is None and candidate.exists():
-        candidate.unlink()
-    return _json_response(
-        {
-            "success": True,
-            "data": {"deleted": requested_path, "recoverable": bool(recycled)},
-        }
-    )
+    candidate.unlink()
+    return _json_response({"success": True, "data": {"deleted": requested_path}})
 
 
 @data_blueprint.route("/api/v1/order-fulfillment/confirm-ci-link", methods=["POST"])

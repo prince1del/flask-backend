@@ -23,16 +23,12 @@ from app.services.so_pack_consolidate import (
 )
 
 QTY_TOL = 0.01
-VALUE_TOL = 10.0  # ₹ floor — FO ExMill vs SO Net
-VALUE_TOL_RATE = 0.005  # ±0.5% on large lines (FO bale→pcs exmill float vs SO net)
+VALUE_TOL = 10.0  # ₹ ±10 FO ExMill vs SO Net is MATCH (teaching)
 
 # Taught FO ↔ SO brand families (distributor wording vs BD collection name).
 # Soft keys only — e.g. "Florentine / Allure" and "Allure" share "allure".
 BRAND_ALIAS_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"allure", "florentine allure"}),
-    frozenset({"bamboo", "nature s bqt", "natures bqt", "nature bqt"}),
-    frozenset({"huk a buk", "huck a buck"}),
-    frozenset({"rimzim cooltex", "cooltex"}),
 )
 
 
@@ -239,108 +235,46 @@ def build_fo_buckets_from_workbook(
     }
 
 
-def so_line_texts(row: dict[str, Any]) -> list[str]:
-    """Every product wording of one SO line, best teaching candidate first.
-
-    Bed SO PDFs carry the resolvable wording in `product_name`
-    ("BLUMEN 1+2 DB SET") while `product_detail` appends size / design / colour
-    / TC ("… 224X254 8136LBL 104TC"), which breaks the set-type lookup. Towel SO
-    PDFs are the other way round — the size only exists in the detail
-    ("SANTINO PRE DYED 2PC" vs "… 40X60CM ASST12 AW26"). So try both wordings
-    (plus their short forms) instead of guessing from string length.
-    """
-    detail = str(row.get("product_detail") or "").strip()
-    name = str(row.get("product_name") or "").strip()
-    out: list[str] = []
-    for text in (
-        detail,
-        product_short_name(detail) if detail else "",
-        name,
-        product_short_name(name) if name else "",
-    ):
-        candidate = (text or "").strip()
-        if candidate and candidate not in out:
-            out.append(candidate)
-    return out
-
-
-def resolve_so_line_brand_size(
-    row: dict[str, Any]
-) -> tuple[str | None, str | None, str]:
-    """Resolve (brand, size, source_text) for one SO line via the teaching maps.
-
-    A fully resolved wording always wins; the longer detail wording is tried
-    first so towel SKUs keep resolving exactly as before.
-    """
-    best_partial: tuple[str | None, str | None, str] = (None, None, "")
-    mat_code = str(row.get("material_code") or "").strip() or None
-    for text in so_line_texts(row):
-        enriched = enrich_bd_product(text, material_code=mat_code)
-        brand = enriched.get("collection")
-        size = enriched.get("product_type")
-        if brand and size:
-            return str(brand), str(size), text
-        if (brand or size) and not (best_partial[0] or best_partial[1]):
-            best_partial = (brand, size, text)
-    return best_partial
-
-
-def _unmapped_so_key(row: dict[str, Any], brand: str | None) -> tuple[str, str]:
-    """Readable Brand × Size label for an SO line the teaching maps do not know.
-
-    Such a line must still reach the compare: silently folding it into "Others"
-    is what made a whole SO Pack report SO qty 0 with every FO bucket
-    MISSING_ON_SO while the lines were sitting in the run.
-    """
-    texts = so_line_texts(row)
-    shortest = min(texts, key=len) if texts else ""
-    label = str(brand or "").strip() or shortest or str(
-        row.get("material_code") or ""
-    ).strip() or "Unknown"
-    size_code = amparser.normalize_size_code(shortest) or ""
-    return label, str(size_code or "Unmapped")
-
-
 def build_so_buckets_from_line_detail(line_detail: list[dict[str, Any]]) -> dict[str, Any]:
     buckets: dict[tuple[str, str], dict[str, Any]] = {}
-    unmapped_qty = 0.0
-    unmapped_net = 0.0
-    unmapped_lines = 0
+    others_qty = 0.0
+    others_net = 0.0
     for row in line_detail or []:
-        brand, size, _source = resolve_so_line_brand_size(row)
+        short = str(row.get("product_name") or "").strip()
+        if not short and row.get("product_detail"):
+            short = product_short_name(str(row.get("product_detail") or ""))
+        enriched = enrich_bd_product(short) if short else {}
+        brand = enriched.get("collection")
+        size = enriched.get("product_type")
         qty = _safe_float(row.get("qty")) or 0.0
         net = _safe_float(row.get("net_amount")) or 0.0
         gst = _safe_float(row.get("gst_amount")) or 0.0
         total = _safe_float(row.get("total_amount"))
         if total is None:
             total = round(net + gst, 2)
-        if not (brand and size):
-            # Keep the line in the compare under its own wording, flagged as
-            # unmapped, so its qty and value are never lost.
-            brand, size = _unmapped_so_key(row, brand)
-            unmapped_qty += qty
-            unmapped_net += net
-            unmapped_lines += 1
-        _bucket_add(
-            buckets,
-            brand=str(brand),
-            size=str(size),
-            qty=qty,
-            value=net,
-            so_number=row.get("so_number"),
-            gst_amount=gst,
-            total_amount=total,
-        )
+        if brand and size:
+            _bucket_add(
+                buckets,
+                brand=str(brand),
+                size=str(size),
+                qty=qty,
+                value=net,
+                so_number=row.get("so_number"),
+                gst_amount=gst,
+                total_amount=total,
+            )
+        else:
+            others_qty += qty
+            others_net += net
 
     return {
         "status": "ok",
         "buckets": buckets,
-        "others_qty": round(unmapped_qty, 3),
-        "others_net": round(unmapped_net, 2),
-        "unmapped_line_count": unmapped_lines,
+        "others_qty": round(others_qty, 3),
+        "others_net": round(others_net, 2),
         "line_count": len(buckets),
-        "total_qty": round(sum(b["qty"] for b in buckets.values()), 3),
-        "total_value": round(sum(b["value"] for b in buckets.values()), 2),
+        "total_qty": round(sum(b["qty"] for b in buckets.values()) + others_qty, 3),
+        "total_value": round(sum(b["value"] for b in buckets.values()) + others_net, 2),
     }
 
 
@@ -517,9 +451,7 @@ def compare_fo_so_buckets(
             status = "EXTRA_ON_SO"
         elif abs(d_qty) > QTY_TOL:
             status = "QTY_MISMATCH"
-        elif abs(d_val) > max(
-            VALUE_TOL, VALUE_TOL_RATE * max(abs(fo_val), abs(so_val), 1.0)
-        ):
+        elif abs(d_val) > VALUE_TOL:
             status = "VALUE_MISMATCH"
         elif key in fuzzy_flags or (
             fo_brand_raw
