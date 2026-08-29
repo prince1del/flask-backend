@@ -236,16 +236,23 @@ class StorageManager:
         items = provider.sync(incremental=incremental)
         storage_account_id = connection.get("storage_account_id")
         synced = 0
+        removed = 0
         if storage_account_id:
-            synced = self.db.upsert_file_index_records(
+            result = self.db.upsert_file_index_records(
                 resolved_workspace,
                 storage_account_id,
                 items,
                 user_id=user_id,
             )
+            if isinstance(result, dict):
+                synced = int(result.get("upserted") or 0)
+                removed = int(result.get("removed") or 0)
+            else:
+                synced = int(result or 0)
         return {
             "user_id": user_id,
             "synced_items": synced,
+            "removed_items": removed,
             "files_found": len(items),
             "workspace_id": resolved_workspace,
         }

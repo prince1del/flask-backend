@@ -530,12 +530,17 @@ def sync_files():
             incremental=False,
         )
         synced = int(result.get('synced_items') or 0)
+        removed = int(result.get('removed_items') or 0)
         found = int(result.get('files_found') or synced)
+        msg = f'Synced {synced} file(s) from Google Drive.'
+        if removed:
+            msg = f'{msg} Removed {removed} deleted from Drive.'
         return jsonify({
             'success': True,
             'data': {
-                'message': f'Synced {synced} file(s) from Google Drive.',
+                'message': msg,
                 'files_synced': synced,
+                'files_removed': removed,
                 'files_found': found,
                 'workspace_id': workspace_id,
             },

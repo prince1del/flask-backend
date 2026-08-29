@@ -932,14 +932,28 @@ class CentralizedDB:
                         values,
                     )
                 count += 1
+            removed = 0
             if "sync_status" in cols:
-                conn.execute(
+                cur = conn.execute(
                     """
                     DELETE FROM file_index
                     WHERE storage_account_id = ? AND sync_status = 'stale'
                     """,
                     (storage_account_id,),
                 )
+                removed += int(cur.rowcount or 0)
+            seen_ids = [str(item.get("id")) for item in items if item.get("id")]
+            if seen_ids:
+                placeholders = ", ".join("?" for _ in seen_ids)
+                cur = conn.execute(
+                    f"""
+                    DELETE FROM file_index
+                    WHERE storage_account_id = ?
+                      AND file_id NOT IN ({placeholders})
+                    """,
+                    (storage_account_id, *seen_ids),
+                )
+                removed += int(cur.rowcount or 0)
             conn.execute(
                 """
                 UPDATE storage_accounts
@@ -949,7 +963,7 @@ class CentralizedDB:
                 (now, now, storage_account_id),
             )
             conn.commit()
-        return count
+        return {"upserted": count, "removed": removed}
 
     def search_file_index(
         self,
