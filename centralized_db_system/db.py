@@ -414,6 +414,8 @@ class CentralizedDB:
                     ("sync_status", "TEXT"),
                     ("storage_account_id", "INTEGER"),
                     ("workspace_id", "TEXT DEFAULT 'default'"),
+                    ("user_id", "INTEGER"),
+                    ("owner_id", "INTEGER"),
                 ):
                     if col not in file_cols:
                         conn.execute(f"ALTER TABLE file_index ADD COLUMN {col} {ddl}")
@@ -871,48 +873,48 @@ class CentralizedDB:
                 )
                 size_val = int(item.get("size")) if item.get("size") else None
                 modified = item.get("modifiedTime")
+                row_data: dict[str, Any] = {
+                    "workspace_id": workspace_id,
+                    "storage_account_id": storage_account_id,
+                    "file_id": file_id,
+                    "file_name": name,
+                    "file_type": item.get("fileType") or mime,
+                    "mime_type": mime,
+                    "folder_path": folder,
+                    "file_size_bytes": size_val,
+                    "file_size": size_val,
+                    "modified_at": modified,
+                    "indexed_at": now,
+                    "last_synced": now,
+                    "sync_status": "synced",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                if "user_id" in cols:
+                    row_data["user_id"] = owner_id
+                if "owner_id" in cols:
+                    row_data["owner_id"] = owner_id
+                insert_cols = [c for c in row_data if c in cols]
+                placeholders = ", ".join("?" for _ in insert_cols)
+                col_names = ", ".join(insert_cols)
+                values = tuple(row_data[c] for c in insert_cols)
                 # Prefer upsert when unique index exists; otherwise delete+insert.
                 if "updated_at" in cols:
+                    update_cols = [
+                        c for c in insert_cols
+                        if c not in ("storage_account_id", "file_id", "created_at")
+                    ]
+                    update_clause = ", ".join(
+                        f"{c} = excluded.{c}" for c in update_cols
+                    )
                     conn.execute(
-                        """
-                            INSERT INTO file_index (
-                                user_id, workspace_id, storage_account_id, file_id, file_name,
-                                file_type, mime_type, folder_path, file_size_bytes, file_size,
-                                modified_at, indexed_at, last_synced, sync_status,
-                                created_at, updated_at, owner_id
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        f"""
+                            INSERT INTO file_index ({col_names})
+                            VALUES ({placeholders})
                             ON CONFLICT(storage_account_id, file_id) DO UPDATE SET
-                                file_name = excluded.file_name,
-                                file_type = excluded.file_type,
-                                mime_type = excluded.mime_type,
-                                folder_path = excluded.folder_path,
-                                file_size_bytes = excluded.file_size_bytes,
-                                file_size = excluded.file_size,
-                                modified_at = excluded.modified_at,
-                                indexed_at = excluded.indexed_at,
-                                last_synced = excluded.last_synced,
-                                sync_status = excluded.sync_status,
-                                updated_at = excluded.updated_at
+                                {update_clause}
                         """,
-                        (
-                            owner_id,
-                            workspace_id,
-                            storage_account_id,
-                            file_id,
-                            name,
-                            item.get("fileType") or mime,
-                            mime,
-                            folder,
-                            size_val,
-                            size_val,
-                            modified,
-                            now,
-                            now,
-                            "synced",
-                            now,
-                            now,
-                            owner_id,
-                        ),
+                        values,
                     )
                 else:
                     conn.execute(
@@ -923,32 +925,11 @@ class CentralizedDB:
                         (storage_account_id, file_id),
                     )
                     conn.execute(
-                        """
-                            INSERT INTO file_index (
-                                user_id, workspace_id, storage_account_id, file_id, file_name,
-                                file_type, mime_type, folder_path, file_size_bytes, file_size,
-                                modified_at, indexed_at, last_synced, sync_status,
-                                created_at, owner_id
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        f"""
+                            INSERT INTO file_index ({col_names})
+                            VALUES ({placeholders})
                         """,
-                        (
-                            owner_id,
-                            workspace_id,
-                            storage_account_id,
-                            file_id,
-                            name,
-                            item.get("fileType") or mime,
-                            mime,
-                            folder,
-                            size_val,
-                            size_val,
-                            modified,
-                            now,
-                            now,
-                            "synced",
-                            now,
-                            owner_id,
-                        ),
+                        values,
                     )
                 count += 1
             if "sync_status" in cols:
