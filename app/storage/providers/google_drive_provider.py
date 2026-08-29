@@ -13,6 +13,13 @@ class GoogleDriveProvider(StorageProvider):
     NEXORA_FOLDER_NAME = "NEXORA"
     NEXORA_SUBFOLDERS = (
         "Downloads",
+        # One folder per stage of the order chain, so the whole trail is
+        # kept somewhere durable: the distributor's Filled Order, the
+        # company's Sales Order against it, and the Commercial Invoice
+        # against that. Local upload storage is on an ephemeral disk that
+        # is wiped on every redeploy — Drive is the only copy that lasts.
+        "Filled Orders",
+        "Order Sheets",
         "Sales Orders",
         "Commercial Invoices",
         "Invoices",

@@ -1,4 +1,14 @@
-"""Push Nexora order PDFs into the user's Drive/NEXORA folder."""
+"""Push Nexora order documents into the user's Drive/NEXORA folder.
+
+Local upload storage lives on an ephemeral disk that is wiped on every
+redeploy, so Drive is the only copy of an uploaded document that lasts.
+Every stage of the order chain belongs here — the distributor's Filled
+Order workbook, the company's Sales Order, and the Commercial Invoice —
+otherwise the trail cannot be reconstructed later.
+
+Uploads are always best-effort: a Drive outage, or Drive simply not being
+connected, must never fail the upload the user is doing.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +19,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def push_pdf_to_nexora_drive(
+def push_file_to_nexora_drive(
     *,
     user_id: int | None,
     workspace_id: str | None,
@@ -17,7 +27,11 @@ def push_pdf_to_nexora_drive(
     subfolder: str,
     display_name: str | None = None,
 ) -> dict[str, Any] | None:
-    """Upload a local PDF into NEXORA/<subfolder>. Returns Drive metadata or None."""
+    """Upload any local file into NEXORA/<subfolder>. Returns Drive metadata or None.
+
+    Not PDF-specific: Drive detects the type from the file itself, so
+    workbooks (.xlsx) upload exactly the same way.
+    """
     if not user_id or not local_path:
         return None
     path = Path(str(local_path))
@@ -43,3 +57,7 @@ def push_pdf_to_nexora_drive(
     except Exception:
         logger.exception("NEXORA Drive upload failed for %s", local_path)
         return None
+
+
+# Original name, kept so existing SO/CI callers keep working unchanged.
+push_pdf_to_nexora_drive = push_file_to_nexora_drive

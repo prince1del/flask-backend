@@ -21,6 +21,7 @@ Only after both are resolved does the endpoint return the final
 
 import io
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -39,6 +40,7 @@ import filled_orders_parser as foparser
 from app.routes.auth import get_workspace_id, require_jwt_auth, get_request_user_id
 
 filled_orders_bp = Blueprint("filled_orders", __name__, url_prefix="/api/v1/filled-orders")
+logger = logging.getLogger(__name__)
 
 DEFAULT_KEY_FIELDS = ["brand", "size"]
 
@@ -461,6 +463,33 @@ def upload_filled_order():
             conn, user_id, order_id, distributor_id, category, season
         )
         order = fodb.get_filled_order(conn, user_id, order_id)
+
+        # Keep the distributor's original workbook. Only its parsed contents
+        # were ever stored — the uploaded file itself went to a temp path and
+        # was lost, so the start of the whole order chain had no durable copy
+        # anywhere. Runs only on the committed-success path, and is
+        # best-effort: Drive being down, or not connected, must never fail an
+        # upload that has already been saved.
+        try:
+            from app.storage.nexora_docs import push_file_to_nexora_drive
+
+            drive_name = " ".join(
+                part for part in (
+                    distributor_name_raw or "",
+                    category or "",
+                    season or "",
+                ) if part
+            ).strip()
+            push_file_to_nexora_drive(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                local_path=tmp_path,
+                subfolder="Filled Orders",
+                display_name=f"{drive_name or Path(file.filename or 'filled_order').stem}{suffix}",
+            )
+        except Exception:
+            logger.exception("Filled Order Drive backup failed for order %s", order_id)
+
         return jsonify({
             "status": "success",
             "filled_order": order,

@@ -3495,6 +3495,23 @@ def upload_order_sheet_v2() -> Response:
     sheet = db.get_order_sheet(
         sheet_id, workspace_id=workspace_id, user_id=_current_user_id()
     )
+
+    # Order Sheets were only ever written to the local upload folder, which
+    # is on an ephemeral disk and is wiped on every redeploy. Best-effort:
+    # a Drive problem must not fail an upload that is already saved.
+    try:
+        from app.storage.nexora_docs import push_file_to_nexora_drive
+
+        push_file_to_nexora_drive(
+            user_id=_current_user_id(),
+            workspace_id=workspace_id,
+            local_path=target_path,
+            subfolder="Order Sheets",
+            display_name=f"{name} {category}{Path(str(target_path)).suffix}",
+        )
+    except Exception:
+        logger.exception("Order Sheet Drive backup failed for sheet %s", sheet_id)
+
     return _json_response({"success": True, "data": sheet})
 
 
