@@ -135,10 +135,7 @@ def test_filled_order_workbook_is_pushed_to_drive(tmp_path, monkeypatch):
     assert len(provider.uploaded) == 1
     sent = provider.uploaded[0]
     assert sent["folder_id"] == "Filled Orders-id"
-    # Named so it can be found by eye in Drive later, with a date so that
-    # re-uploads and merged-in files stay distinguishable.
-    assert sent["name"].startswith("Balaji Homedecor Bath AW26 (")
-    assert sent["name"].endswith(".xlsx")
+    assert sent["name"] == "Balaji Homedecor Bath AW26 Regular.xlsx"
 
 
 def test_filled_order_drive_failure_never_breaks_the_upload(tmp_path, monkeypatch):
@@ -359,7 +356,7 @@ def test_upload_paths_drop_their_local_copy_after_backup():
     )
 
 
-def test_payment_receiving_backup_pushes_json_snapshot(monkeypatch, tmp_path):
+def test_payment_receiving_backup_pushes_excel_snapshot(monkeypatch, tmp_path):
     from app.storage import payment_drive_backup
     from app.storage.payment_drive_backup import PAYMENT_RECEIVING_SUBFOLDER
 
@@ -368,7 +365,30 @@ def test_payment_receiving_backup_pushes_json_snapshot(monkeypatch, tmp_path):
 
     class FakeDB:
         def list_distributor_payment_collection(self, workspace_id, user_id=None):
-            return [{"distributor_name": "Bernina", "orders": [], "paid_total": 1000}]
+            return [
+                {
+                    "distributor_name": "Bernina",
+                    "so_bill_total": 5000,
+                    "paid_total": 1000,
+                    "outstanding_total": 4000,
+                    "orders": [
+                        {
+                            "order_ref_no": "SO-100",
+                            "so_bill_amount": 5000,
+                            "paid_amount": 1000,
+                            "outstanding": 4000,
+                            "payments": [
+                                {
+                                    "payment_date": "2026-08-01",
+                                    "amount": 1000,
+                                    "note": "NEFT",
+                                    "created_at": "2026-08-01T10:00:00Z",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
 
     payment_drive_backup.backup_so_payment_collection_to_drive(
         db=FakeDB(),
@@ -379,10 +399,20 @@ def test_payment_receiving_backup_pushes_json_snapshot(monkeypatch, tmp_path):
     assert len(fake.uploaded) == 1
     up = fake.uploaded[0]
     assert up["folder_id"] == f"{PAYMENT_RECEIVING_SUBFOLDER}-id"
-    assert up["name"] == "kunwar1del SO Payment Receiving.json"
-    assert up["name"].endswith(".json")
-    assert Path(up["path"]).suffix == ".json"
+    assert up["name"] == "kunwar1del SO Payment Receiving.xlsx"
+    assert Path(up["path"]).suffix == ".xlsx"
     assert up.get("replaced") is False
+
+    wb = payment_drive_backup._build_so_payment_workbook(
+        FakeDB().list_distributor_payment_collection("default"),
+        exported_at="2026-08-29",
+        workspace_id="default",
+        user_id=1,
+    )
+    lines = wb["Payment lines"]
+    assert lines.cell(1, 1).value == "Distributor"
+    assert lines.cell(2, 1).value == "Bernina"
+    assert float(lines.cell(2, 4).value) == 1000
 
     payment_drive_backup.backup_so_payment_collection_to_drive(
         db=FakeDB(),
@@ -391,7 +421,7 @@ def test_payment_receiving_backup_pushes_json_snapshot(monkeypatch, tmp_path):
         username="kunwar1del",
     )
     assert len(fake.uploaded) == 2
-    assert fake.uploaded[1]["name"] == "kunwar1del SO Payment Receiving.json"
+    assert fake.uploaded[1]["name"] == "kunwar1del SO Payment Receiving.xlsx"
     assert fake.uploaded[1].get("replaced") is True
 
 

@@ -47,6 +47,13 @@ def list_payment_collection():
     distributors = _db().list_distributor_payment_collection(
         workspace_id, distributor_id=distributor_id, user_id=_user_id()
     )
+    backup_so_payment_collection_to_drive(
+        db=_db(),
+        user_id=_user_id(),
+        workspace_id=workspace_id,
+        username=_username(),
+        allow_read_cooldown=True,
+    )
     so_bill_total = round(sum(d.get("so_bill_total") or 0 for d in distributors), 2)
     paid_total = round(sum(d.get("paid_total") or 0 for d in distributors), 2)
     outstanding_total = round(sum(d.get("outstanding_total") or 0 for d in distributors), 2)

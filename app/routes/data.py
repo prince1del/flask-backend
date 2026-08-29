@@ -3500,6 +3500,7 @@ def upload_order_sheet_v2() -> Response:
             local_path=target_path,
             subfolder="Order Sheets",
             display_name=f"{name} {category}{Path(str(target_path)).suffix}",
+            replace_if_exists=True,
         )
         sheet_drive_file_id = (uploaded or {}).get("id")
         if sheet_drive_file_id:
@@ -4478,6 +4479,7 @@ def _archive_order_pdf_to_drive(
         local_path=local_path,
         subfolder=subfolder,
         display_name=display_name,
+        replace_if_exists=True,
     )
     file_id = (uploaded or {}).get("id")
     if file_id:
@@ -5533,6 +5535,13 @@ def get_distributor_payment_status() -> Response:
     db = CentralizedDB(_db_path())
     user_id = _current_user_id()
     distributors = db.list_distributor_category_payment_status(user_id)
+    backup_category_payment_status_to_drive(
+        db=db,
+        user_id=user_id,
+        workspace_id=get_workspace_id(),
+        username=_request_username(),
+        allow_read_cooldown=True,
+    )
     return _json_response({"success": True, "data": {"distributors": distributors}})
 
 

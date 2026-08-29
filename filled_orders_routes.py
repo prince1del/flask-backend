@@ -133,32 +133,39 @@ def _backup_filled_order_to_drive(
     category,
     season,
     order_id,
+    order_stream=None,
+    merge_upload=False,
 ) -> None:
     """Copy the uploaded Filled Order workbook into Drive/NEXORA/Filled Orders.
 
-    Named so the founder can find it by eye later — "Balaji Homedecor Bath
-    AW26.xlsx" rather than a temp filename. Never raises: the order row is
-    already committed by the time this runs, so a Drive problem must not turn
-    a successful upload into an error.
+    One stable file per distributor/category/season/stream (replaced on
+    re-upload). Additional-order merges use the upload filename stem so
+    different addon files stay separate without date-stamped duplicates.
     """
     try:
         from app.storage.nexora_docs import push_file_to_nexora_drive
 
+        stream_label = (
+            "Special"
+            if str(order_stream or "").strip().lower() == "special"
+            else "Regular"
+        )
         readable = " ".join(
-            part for part in (distributor_name_raw or "", category or "", season or "")
+            part for part in (distributor_name_raw or "", category or "", season or "", stream_label)
             if part
         ).strip()
         stem = readable or Path(filename or "filled_order").stem
-        # Date keeps re-uploads, replacements and merged-in files apart —
-        # otherwise several versions of one order all carry the same name and
-        # there is no telling them apart in the folder.
-        stamp = datetime.now().strftime("%Y-%m-%d")
+        if merge_upload:
+            file_stem = Path(filename or "additional").stem.strip()
+            if file_stem:
+                stem = f"{stem} - {file_stem}"
         push_file_to_nexora_drive(
             user_id=user_id,
             workspace_id=workspace_id,
             local_path=tmp_path,
             subfolder="Filled Orders",
-            display_name=f"{stem} ({stamp}){suffix}",
+            display_name=f"{stem}{suffix}",
+            replace_if_exists=True,
         )
     except Exception:
         logger.exception("Filled Order Drive backup failed for order %s", order_id)
@@ -446,6 +453,8 @@ def upload_filled_order():
                 category=category,
                 season=season,
                 order_id=existing_now["id"],
+                order_stream=order_stream,
+                merge_upload=True,
             )
             return jsonify({
                 "status": "success",
@@ -496,6 +505,7 @@ def upload_filled_order():
             category=category,
             season=season,
             order_id=order_id,
+            order_stream=order_stream,
         )
 
         return jsonify({
