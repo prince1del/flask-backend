@@ -1089,6 +1089,10 @@ def prepare_filled_order_identity(core_fields, extra_attributes, *, category=Non
     brand, size_norm = amparser.normalize_brand_and_size(core.get("brand"), core.get("size"))
     if brand is not None:
         core["brand"] = brand
+    if size_norm is not None and not amparser.is_blank_attr_value(size_norm):
+        raw_size_key = re.sub(r"\s+", "", str(raw_size_cell or "").strip()).upper()
+        if raw_size_key == "BATHROBE":
+            core["size"] = size_norm
 
     cat = str(category or "").strip()
     product_type = core.get("product_type")

@@ -370,6 +370,8 @@ def normalize_size_code(size, *, force_king_bs: bool = False):
     }
     if compact_key in compact_alias:
         return compact_alias[compact_key]
+    if compact_key == "BATHROBE":
+        return "Large"
 
     # Towel set forms before generic compact lookup
     compact = re.sub(r"[^0-9A-Z]", "", key)
