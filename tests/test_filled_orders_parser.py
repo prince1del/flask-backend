@@ -815,6 +815,43 @@ def test_bath_special_bathrobe_matches_flora_bathrobe_am(tmp_path):
     assert result["size"] == "Large"
 
 
+def test_tulip_bathrobe_matches_am_tulip_all_bathrobe(tmp_path):
+    """User manual entry brand=Tulip size=ALL must match special-sheet BATHROBE row."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["QUALITY", "SIZE", "GSM", "NO.SHADES", "SKU", "DELHI", "", "MRP", "EXMILL", "value at exmill"])
+    ws.append(["", "", "", "", "", "Per Color", "total qty", "", "", ""])
+    ws.append(["TULIP", "BATHROBE", 450, 11, 1, 18, 198, 2699, 1376, 272448])
+    path = tmp_path / "special.xlsx"
+    wb.save(path)
+
+    parsed = foparser.parse_filled_order_workbook(path, "Bath")
+    conn = _make_am_conn(tmp_path)
+    amdb.create_category(
+        conn, 1, "Bath", ["brand", "size", "color", "product"], is_confirmed=True,
+    )
+    amdb.upsert_article(conn, 1, {
+        "category": "Bath",
+        "product_type": "Bathrobe",
+        "brand": "Tulip",
+        "size": "ALL",
+        "mrp": 2699,
+        "ex_mill_price": 1376,
+        "season_tag": "AW-26",
+        "item_key": "TULIP|ALL||BATHROBE",
+        "extra_attributes": {},
+    })
+    result = foparser.match_and_normalize(
+        conn, amdb, 1, parsed["parsed_rows"][0],
+        ["brand", "size", "color", "product"], category="Bath",
+        qty_column_label=parsed["quantity_column_used"],
+    )
+    conn.close()
+    assert result["matched"] is True
+    assert result["brand"] == "Tulip Bathrobe"
+    assert result["size"] == "Large"
+
+
 def test_addon_filename_detected():
     assert foparser.looks_like_special_order_stream("BND Bath linen special order.xlsx")
     assert not foparser.looks_like_addon_order_filename("BND Bath linen special order.xlsx")

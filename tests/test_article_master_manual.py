@@ -39,6 +39,27 @@ def test_manual_entry_creates_tulip_bathrobe(tmp_path):
     conn.close()
 
 
+def test_manual_entry_normalizes_tulip_all_bathrobe(tmp_path):
+    conn = _conn(tmp_path)
+    article, created = amdb.create_manual_article(
+        conn,
+        1,
+        {
+            "category": "Bath",
+            "product_type": "Bathrobe",
+            "brand": "Tulip",
+            "size": "ALL",
+            "mrp": 2699,
+            "ex_mill_price": 1376,
+            "season_tag": "AW-26",
+        },
+    )
+    assert created is True
+    assert article["brand"] == "Tulip Bathrobe"
+    assert article["size"] == "Large"
+    conn.close()
+
+
 def test_manual_entry_upserts_same_key(tmp_path):
     conn = _conn(tmp_path)
     payload = {

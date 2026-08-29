@@ -473,6 +473,54 @@ def normalize_brand_and_size(brand, size):
     return brand, size
 
 
+def bathrobe_base_brand(brand):
+    """Strip trailing 'Bathrobe' so Tulip Bathrobe and Tulip compare equal."""
+    text = str(brand or "").strip()
+    return re.sub(r"(?i)\s*bathrobe\s*$", "", text).strip()
+
+
+def is_bathrobe_product(core_fields):
+    product = str((core_fields or {}).get("product_type") or "").strip().lower()
+    brand = str((core_fields or {}).get("brand") or "").strip().lower()
+    return product == "bathrobe" or "bathrobe" in brand
+
+
+def normalize_manual_bathrobe_core(core_fields, *, category=None):
+    """
+    Manual AM entry often uses brand=Tulip, size=ALL for a bathrobe row.
+    Teach to Tulip Bathrobe + Large so special-order FO (SIZE=BATHROBE) matches.
+    """
+    if str(category or "").strip() != "Bath":
+        return dict(core_fields or {})
+    core = dict(core_fields or {})
+    if not is_bathrobe_product(core):
+        return core
+    brand = str(core.get("brand") or "").strip()
+    if brand and "bathrobe" not in brand.lower():
+        core["brand"] = normalize_brand_spelling(f"{brand} Bathrobe")
+    size_key = re.sub(r"\s+", "", str(core.get("size") or "")).upper()
+    if size_key in {"ALL", "BATHROBE", ""}:
+        core["size"] = "Large"
+    core["product_type"] = "Bathrobe"
+    return core
+
+
+def bathrobe_sizes_compatible(am_size, fo_size):
+    """AM size ALL is a wildcard for FO bathrobe rows keyed as Large."""
+    am_norm = normalize_key_part_value("size", am_size)
+    fo_norm = normalize_key_part_value("size", fo_size)
+    if am_norm in ("ALL", ""):
+        return True
+    return am_norm == fo_norm
+
+
+def bathrobe_brands_compatible(am_brand, fo_brand):
+    """Tulip AM row can match Tulip Bathrobe FO identity."""
+    if not am_brand or not fo_brand:
+        return False
+    return bathrobe_base_brand(am_brand).lower() == bathrobe_base_brand(fo_brand).lower()
+
+
 # Season tags for last-3 price columns (SS-25 / SS-26 / AW-26 …).
 SEASON_RANK = {
     "SS-24": 20240,

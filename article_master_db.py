@@ -605,6 +605,27 @@ def resolve_article_match(conn, user_id, category, core_fields, extra_attributes
         # Same product stored twice (e.g. Blumen + Bluemen) — use oldest row.
         fuzzy_candidates.sort(key=lambda c: c["id"])
         return fuzzy_candidates[0]
+
+    # Bathrobe special-order: FO Tulip Bathrobe|Large vs AM Tulip|ALL entered by hand.
+    if amparser.is_bathrobe_product(core_fields):
+        robe_matches = []
+        fo_brand = core_fields.get("brand")
+        fo_size = core_fields.get("size")
+        for candidate in candidates_in_category:
+            cand_core = {f: candidate.get(f) for f in article_core_fields}
+            if not amparser.is_bathrobe_product(cand_core):
+                continue
+            if not amparser.bathrobe_brands_compatible(candidate.get("brand"), fo_brand):
+                continue
+            if not amparser.bathrobe_sizes_compatible(candidate.get("size"), fo_size):
+                continue
+            robe_matches.append(candidate)
+        if len(robe_matches) == 1:
+            return robe_matches[0]
+        if len(robe_matches) > 1:
+            robe_matches.sort(key=lambda c: c["id"])
+            return robe_matches[0]
+
     return None
 
 
@@ -1307,6 +1328,7 @@ def create_manual_article(
         "ex_mill_price": payload.get("ex_mill_price"),
         "bale_pack_size": payload.get("bale_pack_size"),
     }
+    core = amparser.normalize_manual_bathrobe_core(core, category=category)
     extra = dict(payload.get("extra_attributes") or {})
     flat_extra_map = (
         ("color", "Color"),
