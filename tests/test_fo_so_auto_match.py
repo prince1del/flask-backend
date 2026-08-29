@@ -581,3 +581,79 @@ def test_bath_so_is_not_forced_onto_a_distributors_only_bed_fo():
         assert links == []
     finally:
         conn.close()
+
+
+def test_is_confident_category():
+    """The all-categories list means "couldn't tell", not "matches anything"."""
+    assert auto_match.is_confident_category(["Bath", "Towel", "Bath linen"]) is True
+    assert auto_match.is_confident_category(["Bed", "Bedsheet", "Bed linen"]) is True
+    # The exact catch-all infer_so_category_and_season() returns when unsure.
+    assert auto_match.is_confident_category(["Bath", "Bed", "Towel", "Bedsheet"]) is False
+
+
+def test_find_matching_filled_order_refuses_cross_category_fallback():
+    """Regression test for the 2026-08-28 data loss, upload-path half.
+
+    find_matching_filled_order()'s last resort was an unconditional "just
+    take this distributor's latest Filled Order". For a distributor with a
+    single (Bed) FO, a confidently-Bath SO therefore resolved to that Bed FO
+    and its towel lines were merged into the Bed match run, overwriting real
+    bedsheet data. When the family IS known and no FO of it exists, the
+    answer must be None — leave it for a human, never guess into another
+    category's records. (The self-heal path is covered separately by
+    test_bath_so_is_not_forced_onto_a_distributors_only_bed_fo.)
+    """
+    conn, db_path = _setup_db()
+    try:
+        user_id, dist_id = 1, 101
+
+        bed_fo_id = fodb.create_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            distributor_name_raw="Shri Ram & Co", category="Bed", season="AW26",
+        )
+
+        # Confidently Bath, but this distributor only has a Bed FO.
+        assert auto_match.find_matching_filled_order(
+            conn, user_id=user_id, distributor_id=dist_id,
+            category_candidates=["Bath", "Towel"], season="AW26",
+        ) is None, "a confidently-Bath SO must not resolve to a Bed-only distributor's FO"
+
+        # Genuinely undetermined category may still fall back, so a
+        # single-category distributor keeps working for unparseable packs.
+        assert auto_match.find_matching_filled_order(
+            conn, user_id=user_id, distributor_id=dist_id,
+            category_candidates=["Bath", "Bed", "Towel", "Bedsheet"], season="AW26",
+        )["id"] == bed_fo_id
+
+        # And the normal case is untouched: a matching category still resolves.
+        assert auto_match.find_matching_filled_order(
+            conn, user_id=user_id, distributor_id=dist_id,
+            category_candidates=["Bed", "Bedsheet"], season="AW26",
+        )["id"] == bed_fo_id
+    finally:
+        conn.close()
+
+
+def test_order_match_list_get_does_not_bulk_rematch():
+    """A GET must never mutate saved records.
+
+    auto_sync_all_unmatched_sos_for_user() was called from
+    order_match_list() (a plain GET), so merely opening Order Desk
+    re-matched every Filled Order the user has — which is how the bad
+    Bath-into-Bed merges reached production on 2026-08-28. Reading a list
+    must stay read-only; attaching happens when an SO actually arrives.
+    """
+    import inspect
+
+    from app.routes import data as data_routes
+
+    source = inspect.getsource(data_routes.order_match_list)
+    call_lines = [
+        line for line in source.splitlines()
+        if "auto_sync_all_unmatched_sos_for_user(" in line
+        and not line.strip().startswith("#")
+    ]
+    assert not call_lines, (
+        "order_match_list is a GET and must not trigger a bulk re-match: "
+        f"found {call_lines}"
+    )

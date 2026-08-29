@@ -102,6 +102,20 @@ def infer_so_category_and_season(pack: dict[str, Any]) -> tuple[list[str], str |
     return category_candidates, season
 
 
+def is_confident_category(category_candidates: list[str]) -> bool:
+    """Did infer_so_category_and_season() actually recognise the family?
+
+    It returns every category (["Bath", "Bed", "Towel", "Bedsheet"]) when it
+    could NOT tell — that means "unknown", not "matches anything". Callers
+    must not treat that catch-all as licence to pick a Filled Order of any
+    category. Shared by both attach paths so the two can never drift apart.
+    """
+    lower = {str(c).strip().lower() for c in category_candidates}
+    bath_family = {"bath", "towel"} <= lower
+    bed_family = {"bed", "bedsheet"} <= lower
+    return not (bath_family and bed_family)
+
+
 def find_matching_filled_order(
     conn: sqlite3.Connection,
     user_id: int,
@@ -131,7 +145,25 @@ def find_matching_filled_order(
         if fo_list:
             return fo_list[0]
 
-    # 3. Fallback to latest filled order for this distributor
+    # 3. Last resort — ONLY when the category was genuinely undetermined.
+    #
+    # This used to run unconditionally: "no category match? just take this
+    # distributor's latest Filled Order." For a distributor with a single FO
+    # (the common case) that silently routed EVERY SO into it regardless of
+    # category — a Bath/towel SO merged into a Bed-only FO and overwrote its
+    # real bedsheet lines. That is what destroyed Shri Ram & Co's and Sain
+    # International's Bed match runs on 2026-08-28.
+    #
+    # If we positively identified the family and this distributor has no FO
+    # of it, the correct answer is "no match" — leave the SO unattached for a
+    # human to place, never guess into the wrong category's records.
+    if is_confident_category(category_candidates):
+        logger.warning(
+            "No %s Filled Order for distributor %s — refusing to fall back to "
+            "an FO of another category (would corrupt its match run)",
+            category_candidates, distributor_id,
+        )
+        return None
     return fodb.get_latest_filled_order(conn, user_id, distributor_id, season=season)
 
 
@@ -212,13 +244,13 @@ def auto_attach_so_to_filled_order(
             # the FO's Bed match run, corrupting it. Confirmed root cause
             # of real production data loss on Shri Ram & Co's and Sain
             # International's Bed runs, 2026-08-28.
-            candidates_lower = {c.lower() for c in category_candidates}
-            is_confident_detection = not (
-                {"bath", "towel"} <= candidates_lower
-                and {"bed", "bedsheet"} <= candidates_lower
-            )
+            candidates_lower = {str(c).strip().lower() for c in category_candidates}
             fo_category = str(fo.get("category") or "").strip().lower()
-            if is_confident_detection and fo_category and fo_category not in candidates_lower:
+            if (
+                is_confident_category(category_candidates)
+                and fo_category
+                and fo_category not in candidates_lower
+            ):
                 logger.warning(
                     "Category mismatch: SO inferred as %s but expected_fo_id=%s "
                     "is category=%s — skipping instead of merging mismatched "
@@ -303,6 +335,29 @@ def auto_attach_so_to_filled_order(
                 if isinstance(working_pack.get("line_detail"), list)
                 else None
             )
+            # Snapshot the run as it stands BEFORE overwriting it.
+            # update_run_from_match() is a straight UPDATE of rows_json /
+            # so_line_detail_json — the previous match is gone the moment it
+            # runs, with no undo. Deletes already archive first
+            # (_archive_match_before_delete in app/routes/data.py); an
+            # automatic merge is at least as destructive and had no such
+            # net, which is why the bad Bath-into-Bed merges on 2026-08-28
+            # were unrecoverable. Best-effort: a failed snapshot must not
+            # block a legitimate match.
+            try:
+                from app.services import order_desk_archive as _archive
+
+                _archive.archive_match_run(
+                    conn,
+                    user_id=user_id,
+                    run=existing,
+                    reason="auto_match_pre_merge",
+                )
+            except Exception as _exc:
+                logger.warning(
+                    "Pre-merge snapshot failed for run %s (FO %s): %s",
+                    existing.get("id"), fo_id, _exc,
+                )
             run = matchdb.update_run_from_match(
                 conn,
                 run_id=int(existing["id"]),

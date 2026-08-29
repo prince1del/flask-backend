@@ -4692,29 +4692,22 @@ def order_match_list() -> Response:
     conn = sqlite3.connect(_db_path())
     try:
         _autoheal_order_match(conn, user_id=user_id, reason="order_match_list")
-        try:
-            from app.services.fo_so_auto_match import auto_sync_all_unmatched_sos_for_user
-
-            # Tracked SO/CI rows live under this request's real workspace_id
-            # (from the JWT), not the literal string "default" — a mismatch
-            # here means list_candidate_sales_orders_for_filled_order's
-            # `WHERE olt.workspace_id = ?` never finds anything, which is
-            # exactly why matched=0 kept showing up even after every other
-            # self-heal fix landed.
-            _self_heal_matched = auto_sync_all_unmatched_sos_for_user(
-                conn, user_id=user_id, workspace_id=get_workspace_id()
-            )
-            # WARNING (not INFO) so this is visible without relying on the
-            # app having configured an INFO-level log handler in prod.
-            logger.warning(
-                "order_match_list self-heal: user_id=%s matched=%s",
-                user_id, _self_heal_matched,
-            )
-        except Exception:
-            logger.exception(
-                "order_match_list self-heal (auto_sync_all_unmatched_sos_for_user) "
-                "failed for user_id=%s", user_id,
-            )
+        # DELIBERATELY NOT calling auto_sync_all_unmatched_sos_for_user() here.
+        #
+        # It was added to this GET on 2026-08-28 (3ad4d0f) and re-matched
+        # EVERY Filled Order for the user on every plain screen load — so
+        # merely opening Order Desk silently rewrote saved match data. On
+        # 2026-08-28 that destroyed Shri Ram & Co's and Sain International's
+        # Bed match runs: their Bath SOs were force-merged into their only
+        # (Bed) Filled Order and overwrote 31 real bedsheet lines. Reading a
+        # screen must never mutate records — a bulk re-match is a deliberate
+        # action, not a side effect of looking at the list.
+        #
+        # Nothing is lost by removing it: upload_sales_order_v2() and the
+        # mail-sync import path each still call auto_attach_so_to_filled_order()
+        # at the moment an SO actually arrives, which is the useful half of
+        # 3ad4d0f. This only removes the blind bulk retry-everything sweep,
+        # restoring the behaviour this endpoint had before that commit.
         try:
             # Throttled retention cleanup for the Order Desk recycle store.
             from app.services import order_desk_archive as archive
