@@ -4525,17 +4525,19 @@ def _backup_so_pack_upload_to_drive(
     label: str,
     payload: Any,
 ) -> None:
-    """Best-effort: copy SO Pack zip/rar or PDF(s) into Drive/NEXORA/Sales Orders.
+    """Best-effort: push each SO PDF into Drive/NEXORA/Sales Orders (never the zip).
 
-    Order Desk analyze only parses in memory — without this hook the original
-    upload never reaches Drive (unlike Filled Order Excel which backs up on save).
+    Order Desk analyze parses in memory — without this hook uploads never reach
+    Drive. Archives are unpacked so Drive holds the same separate PDFs the user
+    would get from loose uploads.
     """
     if not user_id:
         return
+    from app.services.so_pack_consolidate import _load_pack_pdfs
     from app.storage.nexora_docs import push_file_to_nexora_drive
 
     def _push_bytes(raw: bytes, display_name: str) -> None:
-        suffix = Path(display_name).suffix or ".bin"
+        suffix = Path(display_name).suffix or ".pdf"
         tmp_path: str | None = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -4561,11 +4563,17 @@ def _backup_so_pack_upload_to_drive(
                     pass
 
     try:
-        if mode == "single":
-            _push_bytes(payload, label)
-        elif mode == "pdfs":
-            for name, raw in payload:
-                _push_bytes(raw, name)
+        if mode == "pdfs":
+            pdfs = [(Path(name).name, raw) for name, raw in payload]
+        elif mode == "single":
+            pdfs = _load_pack_pdfs(payload, label)
+        else:
+            pdfs = []
+        for name, raw in pdfs:
+            safe_name = Path(name).name
+            if not safe_name.lower().endswith(".pdf"):
+                continue
+            _push_bytes(raw, safe_name)
     except Exception:
         logging.getLogger(__name__).exception("SO Pack Drive backup failed")
 

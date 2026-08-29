@@ -178,22 +178,30 @@ def test_push_helper_takes_any_file_type(tmp_path, monkeypatch):
     assert provider.uploaded[0]["folder_id"] == "Order Sheets-id"
 
 
-def test_so_pack_zip_backup_to_sales_orders(tmp_path, monkeypatch):
+def test_so_pack_zip_backup_uploads_separate_pdfs_not_archive(tmp_path, monkeypatch):
+    import io
+    import zipfile
+
     from app.routes.data import _backup_so_pack_upload_to_drive
 
     provider = _FakeProvider()
     _install_fake_drive(monkeypatch, provider)
-    raw = b"PK\x03\x04fake zip"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("BND 102876593.pdf", b"%PDF-1.4 one")
+        zf.writestr("BND SPL 102876664.pdf", b"%PDF-1.4 two")
     _backup_so_pack_upload_to_drive(
         user_id=1,
         workspace_id="ws",
         mode="single",
         label="bnd.zip",
-        payload=raw,
+        payload=buf.getvalue(),
     )
-    assert len(provider.uploaded) == 1
-    assert provider.uploaded[0]["folder_id"] == "Sales Orders-id"
-    assert provider.uploaded[0]["name"] == "bnd.zip"
+    assert len(provider.uploaded) == 2
+    names = {u["name"] for u in provider.uploaded}
+    assert names == {"BND 102876593.pdf", "BND SPL 102876664.pdf"}
+    assert "bnd.zip" not in names
+    assert all(u["folder_id"] == "Sales Orders-id" for u in provider.uploaded)
 
 
 def test_drive_outage_returns_none_rather_than_raising(tmp_path, monkeypatch):
