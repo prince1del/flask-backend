@@ -118,8 +118,10 @@ def test_filled_order_workbook_is_pushed_to_drive(tmp_path, monkeypatch):
     assert len(provider.uploaded) == 1
     sent = provider.uploaded[0]
     assert sent["folder_id"] == "Filled Orders-id"
-    # Named so it can be found by eye in Drive later.
-    assert sent["name"] == "Balaji Homedecor Bath AW26.xlsx"
+    # Named so it can be found by eye in Drive later, with a date so that
+    # re-uploads and merged-in files stay distinguishable.
+    assert sent["name"].startswith("Balaji Homedecor Bath AW26 (")
+    assert sent["name"].endswith(".xlsx")
 
 
 def test_filled_order_drive_failure_never_breaks_the_upload(tmp_path, monkeypatch):
@@ -200,8 +202,21 @@ def test_upload_paths_drop_their_local_copy_after_backup():
     assert '"Order Sheets"' in sheet
     assert "_drop_local_after_drive_backup" in sheet
 
+    # The Filled Order has two success paths — a brand new order, and a file
+    # merged into an existing one. Both are the distributor's document and
+    # both must reach Drive; the merge path returns early, so it needs its
+    # own call rather than relying on the one further down.
     fo = inspect.getsource(filled_orders_routes.upload_filled_order)
-    assert "_backup_filled_order_to_drive" in fo
-    assert fo.index("fodb.create_filled_order") < fo.index("_backup_filled_order_to_drive"), (
+    assert fo.count("_backup_filled_order_to_drive(") == 2, (
+        "both the new-order and merged-into-existing paths must back up"
+    )
+    # Neither backup may run before something is actually committed — the
+    # confirmation-required branches above return without saving anything.
+    first_backup = fo.index("_backup_filled_order_to_drive(")
+    first_commit = min(
+        fo.index("fodb.create_filled_order"),
+        fo.index("fodb.merge_items_into_filled_order"),
+    )
+    assert first_commit < first_backup, (
         "the workbook must only be backed up once the order is actually committed"
     )

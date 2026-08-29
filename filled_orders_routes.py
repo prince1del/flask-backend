@@ -145,12 +145,16 @@ def _backup_filled_order_to_drive(
             if part
         ).strip()
         stem = readable or Path(filename or "filled_order").stem
+        # Date keeps re-uploads, replacements and merged-in files apart —
+        # otherwise several versions of one order all carry the same name and
+        # there is no telling them apart in the folder.
+        stamp = datetime.now().strftime("%Y-%m-%d")
         push_file_to_nexora_drive(
             user_id=user_id,
             workspace_id=workspace_id,
             local_path=tmp_path,
             subfolder="Filled Orders",
-            display_name=f"{stem}{suffix}",
+            display_name=f"{stem} ({stamp}){suffix}",
         )
     except Exception:
         logger.exception("Filled Order Drive backup failed for order %s", order_id)
@@ -418,6 +422,20 @@ def upload_filled_order():
             order = fodb.merge_items_into_filled_order(
                 conn, user_id, existing_now["id"], matched_items,
                 extra_filename=file.filename,
+            )
+            # A merged-in file is just as much the distributor's document as
+            # the first one — it needs its own Drive copy, and this path
+            # returns before the create path's backup below.
+            _backup_filled_order_to_drive(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                tmp_path=tmp_path,
+                suffix=suffix,
+                filename=file.filename,
+                distributor_name_raw=distributor_name_raw,
+                category=category,
+                season=season,
+                order_id=existing_now["id"],
             )
             return jsonify({
                 "status": "success",
