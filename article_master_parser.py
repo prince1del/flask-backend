@@ -539,6 +539,9 @@ def is_season_newer_or_equal(incoming_tag, existing_tag) -> bool:
 PRODUCT_SPELLING_CANONICAL = {
     "sheet sets": "Bedsheet",
     "sheet set": "Bedsheet",
+    "towel": "Terry Towel",
+    "terry towel": "Terry Towel",
+    "bathrobe": "Bathrobe",
     "bathmat": "Bathmat Antiskid",
     "bath mat": "Bathmat Antiskid",
     "bathmat (anti skid)": "Bathmat Antiskid",
@@ -990,7 +993,7 @@ CORE_FIELD_ALIASES = {
 # Default Product label when a booking sheet has no Product column (e.g. GT SS-25).
 DEFAULT_PRODUCT_BY_CATEGORY = {
     "Bed": "Bedsheet",
-    "Bath": "Towel",
+    "Bath": "Terry Towel",
     "TOB": "Blanket",
     "Pillow": "Pillow",
 }
@@ -1050,6 +1053,11 @@ def normalize_key_part_value(field_name, value):
         if code is None or str(code).strip() == "":
             return ""
         return str(code).strip().upper()
+    if field_l in {"product", "product_type"}:
+        canon = normalize_product_spelling(s)
+        if canon is None or str(canon).strip() == "":
+            return ""
+        return str(canon).strip().upper()
     return s.upper()
 
 

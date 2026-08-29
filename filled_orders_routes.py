@@ -708,6 +708,18 @@ def list_filled_orders():
         category=request.args.get("category") or None,
         season=request.args.get("season") or None,
     )
+    for order in orders:
+        if int(order.get("unmatched_lines") or 0) > 0:
+            try:
+                fodb.rematch_filled_order_items(conn, user_id, int(order["id"]))
+            except Exception:
+                logger.exception("FO rematch failed for order %s", order.get("id"))
+    orders = fodb.list_filled_orders(
+        conn, user_id,
+        distributor_id=request.args.get("distributor_id", type=int),
+        category=request.args.get("category") or None,
+        season=request.args.get("season") or None,
+    )
     enriched = []
     for order in orders:
         totals = fodb.summarize_filled_order_totals(conn, int(order["id"]))
@@ -741,6 +753,11 @@ def get_filled_order_detail(filled_order_id):
     if not order:
         conn.close()
         return jsonify({"error": "Filled order not found"}), 404
+    if int(order.get("unmatched_lines") or 0) > 0:
+        try:
+            order = fodb.rematch_filled_order_items(conn, user_id, filled_order_id)
+        except Exception:
+            logger.exception("FO rematch failed for order %s", filled_order_id)
     items = fodb.get_filled_order_items(conn, filled_order_id)
     conn.close()
     return jsonify({"filled_order": order, "items": items}), 200

@@ -628,6 +628,78 @@ def recompute_order_counts(conn, filled_order_id):
     conn.commit()
 
 
+def rematch_filled_order_items(conn, user_id, filled_order_id):
+    """Re-run Article Master matching for every line (e.g. after parser/AM fixes)."""
+    import filled_orders_parser as foparser
+
+    default_key_fields = ["brand", "size"]
+
+    order = get_filled_order(conn, user_id, filled_order_id)
+    if not order:
+        raise ValueError("Filled order not found")
+    category = order.get("category")
+    categories = amdb.get_all_categories(conn, user_id)
+    key_fields_lookup = {c["category_name"]: c["key_fields"] for c in categories}
+    key_fields = key_fields_lookup.get(category, default_key_fields)
+    qty_col_label = order.get("quantity_column_used")
+    items = conn.execute(
+        """SELECT id, brand, size, product_type, raw_qty_value, ex_mill_price
+           FROM filled_order_items WHERE filled_order_id = ? ORDER BY id""",
+        (filled_order_id,),
+    ).fetchall()
+    for row in items:
+        item_id, brand, size, product_type, raw_qty, ex_mill = row
+        parsed_row = {
+            "line_number": item_id,
+            "core_fields": {
+                "brand": brand,
+                "size": size,
+                "product_type": product_type,
+                "ex_mill_price": ex_mill,
+            },
+            "extra_attributes": {},
+            "raw_qty_value": raw_qty,
+            "sheet_bales": None,
+        }
+        result = foparser.match_and_normalize(
+            conn,
+            amdb,
+            user_id,
+            parsed_row,
+            key_fields,
+            category=category,
+            qty_column_label=qty_col_label,
+        )
+        conn.execute(
+            """UPDATE filled_order_items
+               SET article_id = ?, item_key = ?, brand = ?, size = ?, product_type = ?,
+                   matched = ?, mrp = ?, ptr = ?, ex_mill_price = ?,
+                   bale_size_used = ?, is_clean_bale_multiple = ?,
+                   final_piece_qty = ?, detected_unit = ?
+               WHERE id = ? AND filled_order_id = ?""",
+            (
+                result.get("article_id"),
+                result.get("item_key"),
+                result.get("brand"),
+                result.get("size"),
+                result.get("product_type"),
+                1 if result.get("matched") else 0,
+                result.get("mrp"),
+                result.get("ptr"),
+                result.get("ex_mill_price"),
+                result.get("bale_size_used"),
+                1 if result.get("is_clean_bale_multiple") else 0,
+                result.get("final_piece_qty"),
+                result.get("detected_unit"),
+                item_id,
+                filled_order_id,
+            ),
+        )
+    recompute_order_counts(conn, filled_order_id)
+    conn.commit()
+    return get_filled_order(conn, user_id, filled_order_id)
+
+
 def delete_filled_order(conn, user_id, filled_order_id):
     row = conn.execute(
         "SELECT id FROM filled_orders WHERE id = ? AND user_id = ?",

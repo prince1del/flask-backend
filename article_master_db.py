@@ -591,9 +591,9 @@ def resolve_article_match(conn, user_id, category, core_fields, extra_attributes
             if n_file and not n_cand:
                 matches = False
                 break
-            # Distributor FO often omits TC / Color when brand+size(+product) are enough.
-            # Bath AM keys include Color; booking sheets may leave Shade blank.
-            if not n_file and n_cand and field_l not in {"tc", "color", "colour"}:
+            # Distributor FO often omits TC / Color / Product when brand+size are enough.
+            # Bath special-order sheets omit Shade; default product is Terry Towel.
+            if not n_file and n_cand and field_l not in {"tc", "color", "colour", "product", "product_type"}:
                 matches = False
                 break
         if matches:

@@ -1094,6 +1094,8 @@ def prepare_filled_order_identity(core_fields, extra_attributes, *, category=Non
     product_type = core.get("product_type")
     if product_type in (None, ""):
         product_type = amparser.DEFAULT_PRODUCT_BY_CATEGORY.get(cat)
+    if cat == "Bath" and brand and "bathrobe" in str(brand).lower():
+        product_type = "Bathrobe"
     product_type = amparser.normalize_product_spelling(product_type)
     product_type = amparser.resolve_product_type(product_type, size_norm or raw_size_cell)
     core["product_type"] = product_type

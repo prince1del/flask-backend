@@ -732,6 +732,52 @@ def test_bath_linen_special_sheet_maps_quality_exmill_and_total_qty(tmp_path):
     assert extra.get("BS Size") == "40x60"
 
 
+def test_bath_special_sheet_matches_am_when_product_is_terry_towel(tmp_path):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["QUALITY", "SIZE", "GSM", "NO.SHADES", "SKU", "DELHI", "", "MRP", "EXMILL", "value at exmill"])
+    ws.append(["", "", "", "", "", "Per Color", "total qty", "", "", ""])
+    ws.append(["FLORA", "40*60", 400, 9, 1, 300, 2700, 142, 77, 207900])
+    ws.append(["TULIP", "75*150", 450, 11, 1, 255, 2805, 825, 450, 1262250])
+    path = tmp_path / "BND Bath linen special order.xlsx"
+    wb.save(path)
+
+    parsed = foparser.parse_filled_order_workbook(path, "Bath")
+    conn = _make_am_conn(tmp_path)
+    amdb.create_category(
+        conn, 1, "Bath", ["brand", "size", "color", "product"], is_confirmed=True,
+    )
+    for brand, size, color, physical in (
+        ("Flora", "Hand Towel", "Assorted 12", "40x60"),
+        ("Tulip", "Bath Towel", "White", "75x150"),
+    ):
+        amdb.upsert_article(conn, 1, {
+            "category": "Bath",
+            "product_type": "Terry Towel",
+            "brand": brand,
+            "size": size,
+            "mrp": 100,
+            "ptr": 80,
+            "ex_mill_price": 50,
+            "bale_pack_size": 24,
+            "item_key": f"{brand.upper()}|{size.upper()}|{color.upper()}|TERRY TOWEL",
+            "extra_attributes": {"Color": color, "BS Size": physical},
+        })
+
+    key_fields = ["brand", "size", "color", "product"]
+    results = [
+        foparser.match_and_normalize(
+            conn, amdb, 1, row, key_fields, category="Bath",
+            qty_column_label=parsed["quantity_column_used"],
+        )
+        for row in parsed["parsed_rows"]
+    ]
+    conn.close()
+    assert all(r["matched"] for r in results), [r.get("brand") for r in results if not r["matched"]]
+    assert results[0]["product_type"] == "Terry Towel"
+    assert results[1]["product_type"] == "Terry Towel"
+
+
 def test_addon_filename_detected():
     assert foparser.looks_like_special_order_stream("BND Bath linen special order.xlsx")
     assert not foparser.looks_like_addon_order_filename("BND Bath linen special order.xlsx")
