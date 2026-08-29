@@ -709,6 +709,64 @@ def confirm_new_category():
     return jsonify({"status": "success", "category": category}), 200
 
 
+def _optional_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid number: {value}") from exc
+
+
+@article_master_bp.route("/manual", methods=["POST"])
+@require_jwt_auth
+def create_manual_article_route():
+    """Add one Article Master SKU by hand (mobile manual entry)."""
+    data = request.get_json(silent=True) or {}
+    user_id = _get_current_user_id()
+    workspace_id = get_workspace_id()
+    conn = _get_db_connection()
+    try:
+        payload = {
+            "category": data.get("category"),
+            "product_type": data.get("product_type"),
+            "brand": data.get("brand"),
+            "size": data.get("size"),
+            "mrp": _optional_float(data.get("mrp")),
+            "ptr": _optional_float(data.get("ptr")),
+            "ex_mill_price": _optional_float(data.get("ex_mill_price")),
+            "bale_pack_size": data.get("bale_pack_size"),
+            "season_tag": data.get("season_tag"),
+            "color": data.get("color"),
+            "tc": data.get("tc"),
+            "bs_size": data.get("bs_size"),
+            "packing": data.get("packing"),
+            "blend": data.get("blend"),
+            "units": data.get("units"),
+            "print_style": data.get("print_style"),
+            "pillow_stitching_style": data.get("pillow_stitching_style"),
+            "pillow_size": data.get("pillow_size"),
+            "bedset_size": data.get("bedset_size"),
+            "extra_attributes": data.get("extra_attributes") if isinstance(data.get("extra_attributes"), dict) else {},
+        }
+        article, created = amdb.create_manual_article(
+            conn,
+            user_id,
+            payload,
+            workspace_id=workspace_id,
+            changed_by=_get_changed_by(),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    finally:
+        conn.close()
+    return jsonify({
+        "status": "success",
+        "created": created,
+        "article": article,
+    }), 201 if created else 200
+
+
 @article_master_bp.route("/list", methods=["GET"])
 @require_jwt_auth
 def list_articles():

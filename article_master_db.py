@@ -1270,6 +1270,91 @@ def manual_edit_article(conn, user_id, article_id, field, new_value, changed_by=
     return get_article_by_item_key(conn, user_id, existing["item_key"])
 
 
+def create_manual_article(
+    conn,
+    user_id,
+    payload,
+    *,
+    workspace_id="default",
+    changed_by="manual_entry",
+):
+    """Create or upsert one Article Master row from mobile/desktop manual entry."""
+    from article_master_parser import build_item_key, normalize_brand_and_size
+    from filled_orders_parser import prepare_filled_order_identity
+
+    category = (payload.get("category") or "").strip()
+    brand = (payload.get("brand") or "").strip()
+    size = (payload.get("size") or "").strip()
+    if not category:
+        raise ValueError("category is required")
+    if not brand or not size:
+        raise ValueError("brand and size are required")
+
+    ensure_default_categories(conn, user_id, workspace_id=workspace_id)
+    categories = get_all_categories(conn, user_id)
+    key_fields_lookup = {c["category_name"]: c["key_fields"] for c in categories}
+    key_fields = key_fields_lookup.get(
+        category,
+        DEFAULT_CATEGORY_KEY_FIELDS.get(category, ["brand", "size"]),
+    )
+
+    core = {
+        "brand": brand,
+        "size": size,
+        "product_type": payload.get("product_type"),
+        "mrp": payload.get("mrp"),
+        "ptr": payload.get("ptr"),
+        "ex_mill_price": payload.get("ex_mill_price"),
+        "bale_pack_size": payload.get("bale_pack_size"),
+    }
+    extra = dict(payload.get("extra_attributes") or {})
+    flat_extra_map = (
+        ("color", "Color"),
+        ("tc", "TC"),
+        ("bs_size", "BS Size"),
+        ("packing", "Packing"),
+        ("blend", "Blend"),
+        ("units", "Units"),
+        ("print_style", "Print Style"),
+        ("pillow_stitching_style", "Pillow Stitching Style"),
+        ("pillow_size", "Pillow Size"),
+        ("bedset_size", "Bedset Size (Cms)"),
+    )
+    for src, dest in flat_extra_map:
+        val = payload.get(src)
+        if val not in (None, "") and dest not in extra:
+            extra[dest] = val
+
+    core, extra = prepare_filled_order_identity(core, extra, category=category)
+    brand, size = normalize_brand_and_size(core.get("brand"), core.get("size"))
+    core["brand"] = brand
+    core["size"] = size
+    core["product_type"] = amparser.resolve_product_type(core.get("product_type"), size)
+    item_key = build_item_key(core, extra, key_fields)
+    article_data = {
+        "category": category,
+        "product_type": core.get("product_type"),
+        "brand": core.get("brand"),
+        "size": core.get("size"),
+        "mrp": core.get("mrp"),
+        "ptr": core.get("ptr"),
+        "ex_mill_price": core.get("ex_mill_price"),
+        "bale_pack_size": core.get("bale_pack_size") or payload.get("bale_pack_size"),
+        "season_tag": payload.get("season_tag"),
+        "item_key": item_key,
+        "extra_attributes": extra,
+    }
+    article, created, _changed = upsert_article(
+        conn,
+        user_id,
+        article_data,
+        source_filename="manual_entry",
+        workspace_id=workspace_id,
+        changed_by=changed_by,
+    )
+    return article, created
+
+
 FULL_EDITABLE_FIELDS = ("brand", "size", "product_type", "mrp", "ptr", "ex_mill_price", "bale_pack_size")
 PRICE_HISTORY_FIELDS = {"mrp", "ptr", "ex_mill_price", "bale_pack_size"}
 
