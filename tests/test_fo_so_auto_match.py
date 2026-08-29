@@ -7,6 +7,7 @@ from pathlib import Path
 import filled_orders_db as fodb
 from app.services import fo_so_auto_match as auto_match
 from app.services import fo_so_match_db as matchdb
+from app.services import fo_so_revision as sorev
 
 
 def _setup_db():
@@ -521,5 +522,62 @@ def test_failed_match_does_not_permanently_link_tracking_id(monkeypatch):
             "tracking_id got permanently linked despite the match never "
             "succeeding — it will never be offered as a self-heal candidate again"
         )
+    finally:
+        conn.close()
+
+
+def test_bath_so_is_not_forced_onto_a_distributors_only_bed_fo():
+    """Regression test for real production data loss (2026-08-28): Shri Ram
+    & Co and Sain International each have only ONE Filled Order (Bed).
+    list_candidate_sales_orders_for_filled_order only filters by
+    distributor_id, not category, so every tracked SO for that distributor
+    — including Bath/towel ones — became a "candidate" for their one Bed
+    FO. find_matching_filled_order()'s last-resort fallback ("just use
+    this distributor's latest FO") then merged Bath towel lines straight
+    into the Bed match run, wiping out its 31 legitimate bedsheet items
+    from the visible match summary. expected_fo_id + a category-confidence
+    check must reject this instead of merging it in."""
+    conn, db_path = _setup_db()
+    try:
+        user_id, dist_id = 1, 101
+
+        bed_fo_id = fodb.create_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            distributor_name_raw="Shri Ram & Co", category="Bed", season="AW26",
+        )
+        fodb.insert_filled_order_item(
+            conn, bed_fo_id,
+            {
+                "item_key": "aster_db_bs", "brand": "Aster", "size": "DB BS",
+                "product_type": "Bedsheet", "raw_qty_value": 432, "detected_unit": "pcs",
+                "final_piece_qty": 432, "is_clean_bale_multiple": True, "matched": True,
+                "mrp": 2000, "ptr": 1500, "ex_mill_price": 1200,
+            },
+        )
+
+        # A Bath/towel SO pack — same shape infer_so_category_and_season
+        # confidently classifies as Bath, never Bed.
+        bath_pack = {
+            "line_detail": [{
+                "so_number": "102876566",
+                "product_name": "RIMZIM COOLTEX BATH TOWEL",
+                "product_detail": "RIMZIM COOLTEX BATH TOWEL DYED 1 DESIGN",
+                "material_code": "MT99999",
+                "qty": 360,
+                "net_amount": 61920,
+            }],
+            "meta": {"order_date": "18.08.2026", "source_filename": "bath_so.pdf"},
+        }
+
+        res = auto_match.auto_attach_so_to_filled_order(
+            conn=conn, user_id=user_id, distributor_id=dist_id,
+            filename="bath_so.pdf", pre_analyzed_pack=bath_pack,
+            tracking_id=555, expected_fo_id=bed_fo_id,
+        )
+
+        assert res is None, "Bath SO must not be force-merged into the distributor's only (Bed) FO"
+        assert sorev.get_latest_run_for_fo(conn, user_id=user_id, filled_order_id=bed_fo_id) is None
+        links = fodb.list_tracking_links_for_filled_order(conn, bed_fo_id)
+        assert links == []
     finally:
         conn.close()

@@ -144,8 +144,23 @@ def auto_attach_so_to_filled_order(
     filename: str = "sales_order.pdf",
     tracking_id: int | None = None,
     pre_analyzed_pack: dict[str, Any] | None = None,
+    expected_fo_id: int | None = None,
 ) -> dict[str, Any] | None:
-    """Auto-parses and matches an SO to its corresponding saved Filled Order."""
+    """Auto-parses and matches an SO to its corresponding saved Filled Order.
+
+    expected_fo_id: when the caller already knows exactly which Filled
+    Order this SO belongs to (the self-heal loop iterates candidates PER
+    FO), pass it here to use that FO directly instead of re-deriving one
+    from the SO's own inferred category/season. Without this, a
+    distributor with only one FO overall got EVERY SO auto-attached to
+    it regardless of category — e.g. Bath/towel SOs merged into a
+    distributor's only (Bed) FO's match run, because
+    find_matching_filled_order()'s last-resort fallback ("just use this
+    distributor's latest FO") doesn't know the self-heal loop already had
+    a specific, correct FO in hand. This is what corrupted Shri Ram &
+    Co's and Sain International's Bed match runs on 2026-08-28 — real
+    production data loss, not just a theoretical risk.
+    """
     if not user_id or not distributor_id:
         return None
 
@@ -173,22 +188,58 @@ def auto_attach_so_to_filled_order(
         if not lines:
             return None
 
+        import filled_orders_db as fodb
+
         category_candidates, season = infer_so_category_and_season(pack)
 
-        fo = find_matching_filled_order(
-            conn, user_id, distributor_id, category_candidates, season
-        )
-        if not fo:
-            logger.warning(
-                "No matching filled order found for distributor %s, categories %s, season %s",
-                distributor_id,
-                category_candidates,
-                season,
+        if expected_fo_id is not None:
+            fo = fodb.get_filled_order(conn, user_id, expected_fo_id)
+            if not fo or int(fo.get("distributor_id") or -1) != int(distributor_id):
+                logger.warning(
+                    "expected_fo_id=%s not found or distributor mismatch for distributor %s",
+                    expected_fo_id, distributor_id,
+                )
+                return None
+            # infer_so_category_and_season falls back to listing every
+            # category (["Bath", "Bed", "Towel", "Bedsheet"]) when it
+            # genuinely can't tell — that means "unknown", not "matches
+            # anything", so only a CONFIDENT single-family detection
+            # (bath/towel-only, or bed/bedsheet-only) is trusted to veto
+            # the FO the self-heal loop already knows is correct. Without
+            # this, a distributor with only one FO overall (the common
+            # case) had every SO for that distributor forced onto it
+            # regardless of category — Bath/towel SOs merged straight into
+            # the FO's Bed match run, corrupting it. Confirmed root cause
+            # of real production data loss on Shri Ram & Co's and Sain
+            # International's Bed runs, 2026-08-28.
+            candidates_lower = {c.lower() for c in category_candidates}
+            is_confident_detection = not (
+                {"bath", "towel"} <= candidates_lower
+                and {"bed", "bedsheet"} <= candidates_lower
             )
-            return None
+            fo_category = str(fo.get("category") or "").strip().lower()
+            if is_confident_detection and fo_category and fo_category not in candidates_lower:
+                logger.warning(
+                    "Category mismatch: SO inferred as %s but expected_fo_id=%s "
+                    "is category=%s — skipping instead of merging mismatched "
+                    "items into the wrong FO's match run",
+                    category_candidates, expected_fo_id, fo.get("category"),
+                )
+                return None
+        else:
+            fo = find_matching_filled_order(
+                conn, user_id, distributor_id, category_candidates, season
+            )
+            if not fo:
+                logger.warning(
+                    "No matching filled order found for distributor %s, categories %s, season %s",
+                    distributor_id,
+                    category_candidates,
+                    season,
+                )
+                return None
 
         fo_id = int(fo["id"])
-        import filled_orders_db as fodb
         from app.services import fo_so_match_db as matchdb
         from app.services import fo_so_revision as sorev
         from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
@@ -393,6 +444,7 @@ def auto_sync_all_unmatched_sos_for_user(
                 file_bytes=file_bytes,
                 filename=filename,
                 tracking_id=cand.get("tracking_id"),
+                expected_fo_id=fo_id,
             )
             logger.warning("    tracking_id=%s attach result=%s", tid, res)
             if res and res.get("status") in ("created", "updated"):
