@@ -261,44 +261,6 @@ def get_latest_run_for_fo(
     return matchdb.get_match_run(conn, int(row[0]), user_id=user_id)
 
 
-def run_reflects_so_lines(
-    existing_run: dict[str, Any] | None,
-    so_numbers: list[str],
-) -> bool:
-    """True when the saved match actually shows these SOs' qty / value.
-
-    An SO can sit in `so_line_detail` and still be invisible in the match: if
-    its lines never reached the Brand × Size compare, the run stores SO qty 0,
-    SO net 0 and every FO bucket as MISSING_ON_SO. Treating that as "already in
-    system — no change detected" leaves the user with a permanently empty order,
-    so the upload must be allowed to rebuild it.
-    """
-    if not existing_run:
-        return False
-    if _f(existing_run.get("so_qty")) <= 0.05 and _f(
-        existing_run.get("so_net_amount")
-    ) <= 0.5:
-        return False
-    want = {(matchdb.normalize_so_number(n) or "").upper() for n in so_numbers}
-    want.discard("")
-    if not want:
-        return True
-    seen: set[str] = set()
-    for row in existing_run.get("rows") or []:
-        if not isinstance(row, dict):
-            continue
-        for n in row.get("so_numbers") or []:
-            key = (matchdb.normalize_so_number(n) or "").upper()
-            if key:
-                seen.add(key)
-        for cell in row.get("so_breakdown") or []:
-            if isinstance(cell, dict):
-                key = (matchdb.normalize_so_number(cell.get("so_number")) or "").upper()
-                if key:
-                    seen.add(key)
-    return want.issubset(seen)
-
-
 def analyze_incoming_against_existing(
     *,
     existing_run: dict[str, Any] | None,
@@ -335,14 +297,6 @@ def analyze_incoming_against_existing(
             compares.append(cmp)
             if not cmp["same_content"]:
                 all_same = False
-        if all_same and not run_reflects_so_lines(existing_run, new_numbers):
-            # Same content, but the saved match does not show it — rebuild it
-            # from these lines instead of reporting "no change detected".
-            return {
-                "action": "rebuild",
-                "compares": compares,
-                "so_numbers": new_numbers,
-            }
         return {
             "action": "already_in_system" if all_same else "replace_confirm",
             "compares": compares,
@@ -418,91 +372,6 @@ def merge_lines_for_additional(
 ) -> list[dict[str, Any]]:
     incoming = tag_additional([r for r in new_lines if isinstance(r, dict)])
     return list(existing_lines) + incoming
-
-
-def rebuild_run_from_lines(
-    conn,
-    *,
-    user_id: int,
-    run_id: int,
-    lines: list[dict[str, Any]],
-    source_filename: str | None = None,
-) -> dict[str, Any] | None:
-    """Rematch a run's surviving SO lines against its own FO, in place.
-
-    Used when a single SO is removed from a run that holds several SOs: the
-    other SOs' lines, match rows and totals must stay intact.
-    """
-    import filled_orders_db as fodb
-    from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
-
-    run = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
-    if not run:
-        raise ValueError("Match run not found")
-    filled_order_id = run.get("filled_order_id")
-    if filled_order_id is None:
-        raise ValueError("Match run has no filled order to rematch against")
-
-    fodb.ensure_schema(conn)
-    fo = fodb.get_filled_order(conn, int(user_id), int(filled_order_id))
-    if not fo:
-        raise ValueError("Filled order not found")
-    items = fodb.get_filled_order_items(conn, int(filled_order_id))
-
-    pack = pack_from_lines(
-        lines, source_filename=source_filename or run.get("so_source_filename")
-    )
-    result = run_match_saved_fo_vs_so_pack(
-        fo_meta=fo, fo_items=items, so_pack_payload=pack
-    )
-    return matchdb.update_run_from_match(
-        conn,
-        run_id=int(run_id),
-        user_id=int(user_id),
-        match_payload=result,
-        so_line_detail=lines,
-        so_pack=pack,
-    )
-
-
-def remove_so_from_run(
-    conn,
-    *,
-    user_id: int,
-    run_id: int,
-    so_numbers: list[str],
-) -> dict[str, Any]:
-    """Delete only these SO numbers from a run; keep the FO's other SOs.
-
-    Returns {"deleted_run": bool, "run": <run or None>, "removed": [...]}.
-    """
-    run = matchdb.get_match_run(conn, int(run_id), user_id=int(user_id))
-    if not run:
-        raise ValueError("Match run not found")
-    drop = {
-        (matchdb.normalize_so_number(n) or "").upper()
-        for n in so_numbers
-        if matchdb.normalize_so_number(n)
-    }
-    if not drop:
-        raise ValueError("No valid SO numbers to remove")
-
-    existing_lines = [
-        r for r in (run.get("so_line_detail") or []) if isinstance(r, dict)
-    ]
-    remaining = remove_so_numbers(existing_lines, drop)
-    survivors = {
-        (so_number_of(r) or "").upper() for r in remaining if so_number_of(r)
-    }
-    if not remaining or not survivors:
-        # Last SO on this FO — the run itself has nothing left to show.
-        matchdb.delete_match_run(conn, int(user_id), int(run_id))
-        return {"deleted_run": True, "run": None, "removed": sorted(drop)}
-
-    updated = rebuild_run_from_lines(
-        conn, user_id=int(user_id), run_id=int(run_id), lines=remaining
-    )
-    return {"deleted_run": False, "run": updated, "removed": sorted(drop)}
 
 
 def pack_from_lines(lines: list[dict[str, Any]], *, source_filename: str | None = None) -> dict[str, Any]:

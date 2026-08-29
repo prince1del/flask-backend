@@ -386,7 +386,7 @@ def get_filled_order_items(conn, filled_order_id):
 
 def list_filled_orders(conn, user_id, distributor_id=None, category=None, season=None):
     cols = ", ".join(FILLED_ORDER_COLUMNS)
-    query = f"SELECT {cols} FROM filled_orders WHERE (user_id = ? OR user_id IS NULL)"
+    query = f"SELECT {cols} FROM filled_orders WHERE user_id = ?"
     params = [user_id]
     if distributor_id:
         query += " AND distributor_id = ?"
@@ -849,59 +849,6 @@ def link_filled_order_to_tracking(conn, filled_order_id, tracking_id):
         (filled_order_id, tracking_id),
     )
     conn.commit()
-
-
-def list_candidate_sales_orders_for_filled_order(conn, filled_order_id, workspace_id="default", limit=20):
-    """
-    Tracked Sales Orders (order_lifecycle_tracking rows with a real SO file)
-    for this Filled Order's distributor that aren't linked to it yet — lets
-    auto_sync_all_unmatched_sos_for_user() retry attaching an SO that was
-    already uploaded/mail-synced before this Filled Order existed, or before
-    the FO↔SO auto-match could find it (e.g. a user_id scoping mismatch).
-    """
-    row = conn.execute(
-        "SELECT distributor_id FROM filled_orders WHERE id = ?", (filled_order_id,)
-    ).fetchone()
-    if not row or not row[0]:
-        return []
-    distributor_id = row[0]
-    base_query = """
-        SELECT olt.tracking_id, olt.order_ref_no, olt.sales_order_file_reference{drive_col}
-        FROM order_lifecycle_tracking olt
-        WHERE olt.workspace_id = ?
-          AND olt.distributor_id = ?
-          AND olt.sales_order_file_reference IS NOT NULL
-          AND TRIM(olt.sales_order_file_reference) != ''
-          AND olt.tracking_id NOT IN (
-              SELECT order_lifecycle_tracking_id FROM filled_order_so_link
-              WHERE filled_order_id = ?
-          )
-        ORDER BY olt.tracking_id DESC
-        LIMIT ?
-        """
-    params = (workspace_id, distributor_id, filled_order_id, limit)
-    try:
-        # The local SO file usually doesn't survive a redeploy on an
-        # ephemeral filesystem — sales_order_drive_file_id is the durable
-        # copy (see download_order_fulfillment_tracking_file in
-        # app/routes/data.py, "Google Drive first, then local upload
-        # file"), so callers need it to actually retrieve bytes.
-        rows = conn.execute(
-            base_query.format(drive_col=", olt.sales_order_drive_file_id"), params
-        ).fetchall()
-        has_drive_col = True
-    except sqlite3.OperationalError:
-        rows = conn.execute(base_query.format(drive_col=""), params).fetchall()
-        has_drive_col = False
-    return [
-        {
-            "tracking_id": r[0],
-            "order_ref_no": r[1],
-            "sales_order_file_reference": r[2],
-            "sales_order_drive_file_id": (r[3] if has_drive_col else None),
-        }
-        for r in rows
-    ]
 
 
 def get_filled_order_id_for_tracking(conn, tracking_id):

@@ -5,7 +5,6 @@ from .gdrive import gdrive_bp
 from .reports import reports_bp
 from .schemas import schemas_blueprint
 from .storage import storage_bp
-from .mail_sync import mail_sync_bp
 from .signup import signup_bp
 from .target_achievement import target_achievement_bp
 from .workspaces import workspaces_blueprint
@@ -41,7 +40,6 @@ __all__ = [
     'party_matching_bp',
     'storage_bp',
     'gdrive_bp',
-    'mail_sync_bp',
     'signup_bp',
     'analytics_blueprint',
     'auth_blueprint',
