@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS fo_so_auto_match_log (
     fo_category TEXT,
     fo_season TEXT,
     run_id INTEGER,
-    archive_ids TEXT
+    archive_ids TEXT,
+    dismissed_at TEXT,
+    dismissed_reason TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_fo_so_auto_match_log_user
@@ -75,6 +77,14 @@ CREATE INDEX IF NOT EXISTS idx_fo_so_auto_match_log_user
 CREATE INDEX IF NOT EXISTS idx_fo_so_auto_match_log_attention
     ON fo_so_auto_match_log(user_id, needs_attention, created_at);
 """
+
+# Columns added after the table first shipped. CREATE TABLE IF NOT EXISTS
+# does nothing to a table that already exists, so they are applied
+# separately — an already-deployed log must not be dropped or recreated.
+_ADDED_COLUMNS = {
+    "dismissed_at": "TEXT",
+    "dismissed_reason": "TEXT",
+}
 
 _COLUMNS = [
     "user_id", "workspace_id", "created_at", "source", "outcome",
@@ -86,6 +96,14 @@ _COLUMNS = [
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
+    existing = {
+        row[1] for row in conn.execute("PRAGMA table_info(fo_so_auto_match_log)")
+    }
+    for column, column_type in _ADDED_COLUMNS.items():
+        if column not in existing:
+            conn.execute(
+                f"ALTER TABLE fo_so_auto_match_log ADD COLUMN {column} {column_type}"
+            )
     conn.commit()
 
 
@@ -188,7 +206,8 @@ def list_decisions(
         "l.detail, l.distributor_id, "
         f"{name_select}, "
         "l.tracking_id, l.so_numbers, l.so_category, l.filled_order_id, "
-        "l.fo_category, l.fo_season, l.run_id, l.archive_ids "
+        "l.fo_category, l.fo_season, l.run_id, l.archive_ids, "
+        "l.dismissed_at, l.dismissed_reason "
         "FROM fo_so_auto_match_log l"
         f"{join_clause}"
         " WHERE l.user_id = ?"
@@ -198,7 +217,10 @@ def list_decisions(
         sql += " AND l.workspace_id = ?"
         params.append(str(workspace_id))
     if needs_attention_only:
-        sql += " AND l.needs_attention = 1"
+        # Dismissed rows stay in the full log — dismissing means "stop
+        # reminding me", never "delete this". They only drop out of the
+        # outstanding list and the badge.
+        sql += " AND l.needs_attention = 1 AND l.dismissed_at IS NULL"
     sql += " ORDER BY l.id DESC LIMIT ?"
     params.append(max(1, int(limit)))
 
@@ -213,6 +235,7 @@ def list_decisions(
     for row in rows:
         item = dict(row)
         item["needs_attention"] = bool(item.get("needs_attention"))
+        item["dismissed"] = bool(item.get("dismissed_at"))
         raw_ids = item.pop("archive_ids", None)
         try:
             item["archive_ids"] = json.loads(raw_ids) if raw_ids else []
@@ -222,15 +245,57 @@ def list_decisions(
     return out
 
 
+def dismiss(
+    conn: sqlite3.Connection,
+    *,
+    entry_id: int,
+    user_id: int,
+    reason: str | None = None,
+) -> bool:
+    """Stop asking about one un-matchable Sales Order.
+
+    For the legitimate case where no Filled Order exists and none ever
+    will (a verbal/top-up order, an SO the company raised directly). The
+    row is NOT deleted — the SO keeps working exactly as before: it stays
+    in Order Desk, still accepts its Commercial Invoices, still tracks
+    payment. Only the "needs attention" reminder is silenced, and even
+    that is reversible via restore().
+
+    Scoped by user_id so one user can never dismiss another's row.
+    Returns False when nothing matched.
+    """
+    ensure_schema(conn)
+    cursor = conn.execute(
+        "UPDATE fo_so_auto_match_log SET dismissed_at = ?, dismissed_reason = ? "
+        "WHERE id = ? AND user_id = ? AND dismissed_at IS NULL",
+        (_now(), reason, int(entry_id), int(user_id)),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def restore(conn: sqlite3.Connection, *, entry_id: int, user_id: int) -> bool:
+    """Undo a dismiss — the SO shows up as outstanding again."""
+    ensure_schema(conn)
+    cursor = conn.execute(
+        "UPDATE fo_so_auto_match_log SET dismissed_at = NULL, dismissed_reason = NULL "
+        "WHERE id = ? AND user_id = ?",
+        (int(entry_id), int(user_id)),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
 def count_needs_attention(
     conn: sqlite3.Connection, *, user_id: int, workspace_id: str | None = None
 ) -> int:
     """How many SOs automation could not place on its own — the number
-    worth showing as a badge so these never sit unnoticed."""
+    worth showing as a badge so these never sit unnoticed. Dismissed rows
+    are excluded: the user has said those need nothing further."""
     ensure_schema(conn)
     sql = (
         "SELECT COUNT(*) FROM fo_so_auto_match_log "
-        "WHERE user_id = ? AND needs_attention = 1"
+        "WHERE user_id = ? AND needs_attention = 1 AND dismissed_at IS NULL"
     )
     params: list[Any] = [int(user_id)]
     if workspace_id:

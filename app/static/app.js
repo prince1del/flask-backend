@@ -9626,6 +9626,31 @@ function openAutoMatchLog() {
   );
 }
 
+async function dismissAutoMatchEntry(entryId) {
+  // "No Filled Order is coming for this one." Silences the reminder only —
+  // the Sales Order itself keeps working (stays in Order Desk, still takes
+  // its CIs and payments). Nothing is deleted.
+  if (!confirm(
+    'Stop asking about this Sales Order?\n\n'
+    + 'Use this when no Filled Order exists for it and none is expected.\n'
+    + 'The Sales Order itself is NOT deleted — it stays in Order Desk and '
+    + 'still matches its Commercial Invoices.'
+  )) return;
+  try {
+    const response = await fetchWithAuth(
+      `/api/v1/order-fulfillment/auto-match-log/${Number(entryId)}/dismiss`,
+      { method: 'POST' }
+    );
+    const data = await parseApiJson(response);
+    if (!response.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || 'Could not update');
+    }
+    renderAutoMatchAttentionNotice();
+  } catch (err) {
+    alert(err.message || 'Could not update this entry.');
+  }
+}
+
 async function renderAutoMatchAttentionNotice() {
   // The automatic matcher refuses to guess when it cannot identify an SO's
   // category (it used to guess, and merged towel lines into a Bed order —
@@ -9635,9 +9660,10 @@ async function renderAutoMatchAttentionNotice() {
   if (!host) return;
   try {
     const response = await fetchWithAuth(
-      '/api/v1/order-fulfillment/auto-match-log?needs_attention=1&limit=1'
+      '/api/v1/order-fulfillment/auto-match-log?needs_attention=1&limit=50'
     );
     const data = await parseApiJson(response);
+    const entries = (data && data.data && data.data.entries) || [];
     const count = Number(
       (data && data.data && data.data.needs_attention_count) || 0
     );
@@ -9646,6 +9672,18 @@ async function renderAutoMatchAttentionNotice() {
       host.innerHTML = '';
       return;
     }
+    const rows = entries.map((entry) => {
+      const who = [
+        entry.so_numbers ? `SO ${entry.so_numbers}` : '',
+        entry.distributor_name || ''
+      ].filter(Boolean).join(' · ') || 'Sales Order';
+      return `<div style="padding:6px 0;border-top:1px solid rgba(255,176,32,0.25);">`
+        + `<div style="font-weight:600;">${foEscapeText(who)}</div>`
+        + `<div style="opacity:0.85;font-size:0.85rem;">${foEscapeText(entry.detail || '')}</div>`
+        + `<button type="button" class="nx-btn" style="margin-top:4px;padding:1px 8px;font-size:0.8rem;" `
+        + `onclick="dismissAutoMatchEntry(${Number(entry.id)})">No FO expected — stop asking</button>`
+        + `</div>`;
+    }).join('');
     host.style.display = '';
     host.innerHTML =
       `<div style="margin-top:8px;padding:10px 12px;border-radius:10px;`
@@ -9653,7 +9691,9 @@ async function renderAutoMatchAttentionNotice() {
       + `<strong>${count} Sales Order${count === 1 ? '' : 's'} could not be matched automatically.</strong> `
       + `They are not attached to any Filled Order yet. `
       + `<button type="button" class="nx-btn" style="margin-left:8px;padding:2px 10px;font-size:0.85rem;" `
-      + `onclick="openAutoMatchLog()">See why</button></div>`;
+      + `onclick="openAutoMatchLog()">Full activity</button>`
+      + rows
+      + `</div>`;
   } catch (err) {
     host.style.display = 'none';
     host.innerHTML = '';

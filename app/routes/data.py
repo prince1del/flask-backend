@@ -4770,6 +4770,61 @@ def order_match_auto_log() -> Response:
         conn.close()
 
 
+@data_blueprint.route(
+    "/api/v1/order-fulfillment/auto-match-log/<int:entry_id>/dismiss", methods=["POST"]
+)
+@require_jwt_auth
+def order_match_auto_log_dismiss(entry_id: int) -> Response:
+    """Stop asking about a Sales Order that has no Filled Order and never will.
+
+    A real case: verbal/top-up orders, or an SO the company raised directly,
+    where no FO was ever filled. Nothing is deleted — the Sales Order stays
+    in Order Desk, still takes its Commercial Invoices and payments. Only the
+    reminder is silenced, and ?restore=1 brings it back.
+    """
+    from app.services import fo_so_auto_match_log as matchlog
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}}, 401
+        )
+    body = request.get_json(silent=True) or {}
+    restore = str(
+        request.args.get("restore") or body.get("restore") or ""
+    ).strip().lower() in ("1", "true", "yes")
+    reason = (body.get("reason") or "").strip() or None
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        if restore:
+            changed = matchlog.restore(conn, entry_id=entry_id, user_id=user_id)
+        else:
+            changed = matchlog.dismiss(
+                conn, entry_id=entry_id, user_id=user_id, reason=reason
+            )
+        if not changed:
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {"message": "Entry not found, or already in that state"},
+                },
+                404,
+            )
+        return _json_response({
+            "success": True,
+            "data": {
+                "entry_id": entry_id,
+                "dismissed": not restore,
+                "needs_attention_count": matchlog.count_needs_attention(
+                    conn, user_id=user_id, workspace_id=get_workspace_id()
+                ),
+            },
+        })
+    finally:
+        conn.close()
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["GET"])
 @require_jwt_auth
 def order_match_get(run_id: int) -> Response:
