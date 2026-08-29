@@ -4721,6 +4721,55 @@ def order_match_list() -> Response:
         conn.close()
 
 
+@data_blueprint.route("/api/v1/order-fulfillment/auto-match-log", methods=["GET"])
+@require_jwt_auth
+def order_match_auto_log() -> Response:
+    """What the automatic FO ↔ SO matching has done, and what it could not do.
+
+    Automation is only trustworthy when it is visible. The rows that matter
+    most are `needs_attention`: Sales Orders the matcher deliberately would
+    NOT place (no Filled Order of that category, unreadable file, …). Those
+    would otherwise just silently never appear anywhere.
+
+    ?needs_attention=1  → only the ones waiting on a human
+    ?limit=             → default 200
+    """
+    from app.services import fo_so_auto_match_log as matchlog
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}}, 401
+        )
+    workspace_id = get_workspace_id()
+    attention_only = str(
+        request.args.get("needs_attention") or ""
+    ).strip().lower() in ("1", "true", "yes")
+    limit = request.args.get("limit", default=200, type=int) or 200
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        entries = matchlog.list_decisions(
+            conn,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            needs_attention_only=attention_only,
+            limit=limit,
+        )
+        return _json_response({
+            "success": True,
+            "data": {
+                "entries": entries,
+                "count": len(entries),
+                "needs_attention_count": matchlog.count_needs_attention(
+                    conn, user_id=user_id, workspace_id=workspace_id
+                ),
+            },
+        })
+    finally:
+        conn.close()
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/<int:run_id>", methods=["GET"])
 @require_jwt_auth
 def order_match_get(run_id: int) -> Response:
@@ -5481,6 +5530,8 @@ def upload_sales_order_v2() -> Response:
                                 file_path=target_path,
                                 filename=distributor_name_for_folder,
                                 tracking_id=tracking_id,
+                                workspace_id=workspace_id,
+                                source="so_upload",
                             )
                         finally:
                             fo_conn_auto.close()

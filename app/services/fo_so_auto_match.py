@@ -177,6 +177,8 @@ def auto_attach_so_to_filled_order(
     tracking_id: int | None = None,
     pre_analyzed_pack: dict[str, Any] | None = None,
     expected_fo_id: int | None = None,
+    workspace_id: str | None = None,
+    source: str | None = None,
 ) -> dict[str, Any] | None:
     """Auto-parses and matches an SO to its corresponding saved Filled Order.
 
@@ -196,6 +198,25 @@ def auto_attach_so_to_filled_order(
     if not user_id or not distributor_id:
         return None
 
+    from app.services import fo_so_auto_match_log as matchlog
+
+    def _log(outcome: str, detail: str, **extra: Any) -> None:
+        """Every exit from this function is recorded. A refusal that leaves
+        an SO unattached is invisible otherwise — the user would just see
+        the SO missing, with no way to find out why (exactly the failure
+        this whole module keeps producing)."""
+        matchlog.record(
+            conn,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            source=source,
+            outcome=outcome,
+            detail=detail,
+            distributor_id=distributor_id,
+            tracking_id=tracking_id,
+            **extra,
+        )
+
     try:
         pack = pre_analyzed_pack
         if pack is None:
@@ -205,6 +226,11 @@ def auto_attach_so_to_filled_order(
                     file_bytes = p.read_bytes()
 
             if not file_bytes:
+                _log(
+                    matchlog.OUTCOME_SKIPPED_UNREADABLE,
+                    f"Sales Order file could not be read ({filename}) — "
+                    "the PDF is missing from storage.",
+                )
                 return None
 
             from app.services.so_pack_consolidate import analyze_so_pack
@@ -214,15 +240,30 @@ def auto_attach_so_to_filled_order(
         from app.routes.data import _so_pack_usable_lines
 
         if not pack or not _so_pack_usable_lines(pack):
+            _log(
+                matchlog.OUTCOME_SKIPPED_UNREADABLE,
+                f"No usable order lines could be read from {filename}.",
+            )
             return None
 
         lines = [r for r in (pack.get("line_detail") or []) if isinstance(r, dict)]
         if not lines:
+            _log(
+                matchlog.OUTCOME_SKIPPED_UNREADABLE,
+                f"No line items found in {filename}.",
+            )
             return None
 
         import filled_orders_db as fodb
 
         category_candidates, season = infer_so_category_and_season(pack)
+
+        from app.services import fo_so_match_db as matchdb
+
+        so_numbers_for_log = matchdb.extract_so_numbers_from_pack(pack)
+        so_category_for_log = (
+            category_candidates[0] if is_confident_category(category_candidates) else "unknown"
+        )
 
         if expected_fo_id is not None:
             fo = fodb.get_filled_order(conn, user_id, expected_fo_id)
@@ -257,6 +298,18 @@ def auto_attach_so_to_filled_order(
                     "items into the wrong FO's match run",
                     category_candidates, expected_fo_id, fo.get("category"),
                 )
+                _log(
+                    matchlog.OUTCOME_SKIPPED_CATEGORY_MISMATCH,
+                    f"This looks like a {so_category_for_log} Sales Order, but the "
+                    f"Filled Order it would attach to is {fo.get('category')}. "
+                    "Left unattached so it cannot overwrite that order's data — "
+                    "please attach it to the right Filled Order.",
+                    so_numbers=so_numbers_for_log,
+                    so_category=so_category_for_log,
+                    filled_order_id=expected_fo_id,
+                    fo_category=fo.get("category"),
+                    fo_season=fo.get("season"),
+                )
                 return None
         else:
             fo = find_matching_filled_order(
@@ -269,15 +322,35 @@ def auto_attach_so_to_filled_order(
                     category_candidates,
                     season,
                 )
+                _log(
+                    matchlog.OUTCOME_SKIPPED_NO_FO,
+                    f"No {so_category_for_log} Filled Order found for this "
+                    f"distributor{f' for season {season}' if season else ''}. "
+                    "Upload the matching Filled Order, then attach this Sales Order.",
+                    so_numbers=so_numbers_for_log,
+                    so_category=so_category_for_log,
+                )
                 return None
 
         fo_id = int(fo["id"])
-        from app.services import fo_so_match_db as matchdb
         from app.services import fo_so_revision as sorev
         from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
 
+        fo_context = {
+            "so_numbers": so_numbers_for_log,
+            "so_category": so_category_for_log,
+            "filled_order_id": fo_id,
+            "fo_category": fo.get("category"),
+            "fo_season": fo.get("season"),
+        }
+
         items = fodb.get_filled_order_items(conn, fo_id)
         if not items:
+            _log(
+                matchlog.OUTCOME_SKIPPED_NO_FO,
+                "The matching Filled Order has no saved items to match against.",
+                **fo_context,
+            )
             return None
 
         def _link_now() -> None:
@@ -314,6 +387,12 @@ def auto_attach_so_to_filled_order(
             if action == "already_in_system":
                 if sorev.run_reflects_so_lines(existing, lines):
                     _link_now()
+                    _log(
+                        matchlog.OUTCOME_ALREADY_MATCHED,
+                        "Already matched — no change made.",
+                        run_id=existing.get("id"),
+                        **fo_context,
+                    )
                     return {"status": "already_matched", "run_id": existing.get("id")}
                 merged = new_lines
             elif action == "replace":
@@ -344,15 +423,17 @@ def auto_attach_so_to_filled_order(
             # net, which is why the bad Bath-into-Bed merges on 2026-08-28
             # were unrecoverable. Best-effort: a failed snapshot must not
             # block a legitimate match.
+            snapshot_ids: list[int] = []
             try:
                 from app.services import order_desk_archive as _archive
 
-                _archive.archive_match_run(
+                snapshot_ids = _archive.archive_match_run(
                     conn,
                     user_id=user_id,
                     run=existing,
                     reason="auto_match_pre_merge",
-                )
+                    workspace_id=workspace_id,
+                ) or []
             except Exception as _exc:
                 logger.warning(
                     "Pre-merge snapshot failed for run %s (FO %s): %s",
@@ -374,6 +455,14 @@ def auto_attach_so_to_filled_order(
                 fo.get("category"),
             )
             _link_now()
+            _log(
+                matchlog.OUTCOME_MATCHED_UPDATED,
+                f"Added Sales Order {', '.join(so_numbers_for_log) or filename} to "
+                f"this Filled Order's match ({action}).",
+                run_id=run.get("id"),
+                archive_ids=snapshot_ids,
+                **fo_context,
+            )
             return {"status": "updated", "run_id": run.get("id")}
         else:
             result = run_match_saved_fo_vs_so_pack(
@@ -400,9 +489,20 @@ def auto_attach_so_to_filled_order(
                 fo.get("category"),
             )
             _link_now()
+            _log(
+                matchlog.OUTCOME_MATCHED_NEW,
+                f"Matched Sales Order {', '.join(so_numbers_for_log) or filename} "
+                "to this Filled Order.",
+                run_id=run.get("id"),
+                **fo_context,
+            )
             return {"status": "created", "run_id": run.get("id")}
     except Exception as exc:
         logger.warning("Error auto-attaching SO to filled order: %s", exc, exc_info=True)
+        _log(
+            matchlog.OUTCOME_ERROR,
+            f"Could not be matched automatically: {exc}",
+        )
         return None
 
 
@@ -500,6 +600,8 @@ def auto_sync_all_unmatched_sos_for_user(
                 filename=filename,
                 tracking_id=cand.get("tracking_id"),
                 expected_fo_id=fo_id,
+                workspace_id=workspace_id,
+                source="self_heal",
             )
             logger.warning("    tracking_id=%s attach result=%s", tid, res)
             if res and res.get("status") in ("created", "updated"):
