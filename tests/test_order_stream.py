@@ -120,6 +120,35 @@ def test_annotate_so_pack_meta_mixed():
     assert pack["meta"]["mixed_streams"] is True
 
 
+def test_infer_so_pack_dominant_category_towel_lines():
+    from app.services.order_stream import infer_so_pack_dominant_category
+
+    pack = {
+        "line_detail": [
+            {
+                "product_name": "TULIP DYED 40CM X 60CM",
+                "product_detail": "HAND TOWEL",
+                "qty": 100,
+            },
+            {
+                "product_name": "TULIP R4 SET",
+                "qty": 50,
+            },
+        ],
+        "so_summary": [
+            {
+                "so_number": "1",
+                "buyer_name": "BERNINA INTERNATIONAL P LTD",
+                "source_pdf": "bnd_towel_regular.pdf",
+            }
+        ],
+    }
+    assert infer_so_pack_dominant_category(pack) == "Bath"
+    annotated = annotate_so_pack_meta({**pack, "meta": {}, "consolidated": []})
+    assert annotated["meta"]["dominant_category"] == "Bath"
+    assert annotated["meta"]["primary_buyer_name"] == "BERNINA INTERNATIONAL P LTD"
+
+
 @pytest.mark.skipif(
     not Path(r"G:\My Drive\2026-2027\Oder Management\AW26 order\Towel\SO\bnd.zip").exists(),
     reason="BND AW26 towel fixtures on G: drive not available",

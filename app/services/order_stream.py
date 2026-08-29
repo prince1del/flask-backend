@@ -232,6 +232,65 @@ def filter_so_pack_by_stream(so_pack: dict[str, Any], stream: str) -> dict[str, 
     }
 
 
+_BATH_TOKENS = (
+    "TOWEL", "BATH", "LINEN", "ROBE", "ECOSOFT", "ECOSTRIPE", "HAND TOWEL", "BATHMAT",
+)
+_BED_TOKENS = (
+    "BEDSHEET", "BED SHEET", "FITTED SHEET", "SHEET SET", "DBSET", "SBSET", "KSSET",
+    "TROUSSEAU", "BED IN BAG",
+)
+_BATH_DIM_RE = re.compile(r"\d+\s*CM", re.I)
+_BATH_QUAL_RE = re.compile(r"DYED|ASST|WHITE|SET|PKG|PRE", re.I)
+
+
+def _so_line_category_label(row: dict[str, Any]) -> str:
+    blob = " ".join(
+        str(row.get(k) or "") for k in ("product_name", "product_detail", "material_code")
+    ).upper()
+    if any(t in blob for t in _BATH_TOKENS):
+        return "Bath"
+    if _BATH_DIM_RE.search(blob) and _BATH_QUAL_RE.search(blob):
+        return "Bath"
+    if "PILLOW" in blob:
+        return "Pillow"
+    if any(t in blob for t in ("DOHAR", "COMFORTER", "BLANKET", "QUILT", "TOB")):
+        return "TOB"
+    if any(t in blob for t in _BED_TOKENS):
+        return "Bed"
+    return "Others"
+
+
+def infer_so_pack_dominant_category(so_pack: dict[str, Any]) -> str | None:
+    """Qty-weighted Bed/Bath/… from SO line_detail (fallback: consolidated / PDF names)."""
+    counts: dict[str, float] = {}
+    for row in so_pack.get("line_detail") or []:
+        if not isinstance(row, dict):
+            continue
+        cat = _so_line_category_label(row)
+        qty = float(row.get("qty") or 1)
+        counts[cat] = counts.get(cat, 0.0) + qty
+    if not counts:
+        for row in so_pack.get("consolidated") or []:
+            if not isinstance(row, dict):
+                continue
+            cat = _so_line_category_label({"product_name": row.get("product_name")})
+            qty = float(row.get("total_qty") or 1)
+            counts[cat] = counts.get(cat, 0.0) + qty
+    if not counts:
+        pdf_blob = " ".join(
+            str(r.get("source_pdf") or "")
+            for r in (so_pack.get("so_summary") or [])
+            if isinstance(r, dict)
+        ).upper()
+        if any(t in pdf_blob for t in ("TOWEL", "BATH", "LINEN", "ROBE")):
+            return "Bath"
+        if any(t in pdf_blob for t in ("BED", "SHEET", "BEDSHEET")):
+            return "Bed"
+        return None
+    best_cat, _best_qty = max(counts.items(), key=lambda item: item[1])
+    return best_cat if best_cat != "Others" else None
+
+
 def annotate_so_pack_meta(so_pack: dict[str, Any]) -> dict[str, Any]:
     """Add order_stream / po_family / mixed flag to meta (in-place copy)."""
     out = dict(so_pack)
@@ -258,6 +317,14 @@ def annotate_so_pack_meta(so_pack: dict[str, Any]) -> dict[str, Any]:
     ]
     if pos:
         meta["po_family"] = normalize_po_family(pos[0])
+    meta["dominant_category"] = infer_so_pack_dominant_category(out)
+    buyers = {
+        str(r.get("buyer_name")).strip()
+        for r in (out.get("so_summary") or [])
+        if isinstance(r, dict) and r.get("buyer_name")
+    }
+    if len(buyers) == 1:
+        meta["primary_buyer_name"] = next(iter(buyers))
     out["meta"] = meta
     return out
 
