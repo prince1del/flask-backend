@@ -35,6 +35,16 @@ def test_classify_fo_stream_from_filename():
     assert classify_fo_stream("BND regular towel orders.xlsx") == STREAM_REGULAR
 
 
+def test_streams_compatible():
+    from app.services.order_stream import streams_compatible
+
+    assert streams_compatible("regular", "regular") is True
+    assert streams_compatible("special", "special") is True
+    assert streams_compatible("regular", "special") is False
+    assert streams_compatible("special", "regular") is False
+    assert streams_compatible("special", "mixed") is True  # caller filters before match
+
+
 def test_mixed_so_pack_filters_to_regular():
     pack = {
         "meta": {"source_filename": "bnd.zip"},
