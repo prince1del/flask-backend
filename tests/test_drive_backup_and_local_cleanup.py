@@ -178,6 +178,24 @@ def test_push_helper_takes_any_file_type(tmp_path, monkeypatch):
     assert provider.uploaded[0]["folder_id"] == "Order Sheets-id"
 
 
+def test_so_pack_zip_backup_to_sales_orders(tmp_path, monkeypatch):
+    from app.routes.data import _backup_so_pack_upload_to_drive
+
+    provider = _FakeProvider()
+    _install_fake_drive(monkeypatch, provider)
+    raw = b"PK\x03\x04fake zip"
+    _backup_so_pack_upload_to_drive(
+        user_id=1,
+        workspace_id="ws",
+        mode="single",
+        label="bnd.zip",
+        payload=raw,
+    )
+    assert len(provider.uploaded) == 1
+    assert provider.uploaded[0]["folder_id"] == "Sales Orders-id"
+    assert provider.uploaded[0]["name"] == "bnd.zip"
+
+
 def test_drive_outage_returns_none_rather_than_raising(tmp_path, monkeypatch):
     class ExplodingManager:
         def register_provider(self, *_a, **_k):

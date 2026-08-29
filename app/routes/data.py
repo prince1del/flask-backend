@@ -3689,6 +3689,13 @@ def so_pack_analyze() -> Response:
             {"success": False, "error": {"message": f"SO pack analyze failed: {exc}"}},
             500,
         )
+    _backup_so_pack_upload_to_drive(
+        user_id=get_request_user_id(),
+        workspace_id=get_workspace_id(),
+        mode=mode,
+        label=label,
+        payload=payload,
+    )
     return _json_response({"success": True, "data": data})
 
 
@@ -3706,6 +3713,9 @@ def so_pack_analyze_stream() -> Response:
     except ValueError as exc:
         return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
 
+    user_id = get_request_user_id()
+    workspace_id = get_workspace_id()
+
     @stream_with_context
     def generate():
         try:
@@ -3718,6 +3728,13 @@ def so_pack_analyze_stream() -> Response:
                 if kind == "progress":
                     yield json.dumps({"type": "progress", "message": str(item)}) + "\n"
                 elif kind == "done":
+                    _backup_so_pack_upload_to_drive(
+                        user_id=user_id,
+                        workspace_id=workspace_id,
+                        mode=mode,
+                        label=label,
+                        payload=payload,
+                    )
                     yield json.dumps({"type": "done", "data": item}, default=str) + "\n"
         except ValueError as exc:
             yield json.dumps({"type": "error", "message": str(exc)}) + "\n"
@@ -4498,6 +4515,59 @@ def _archive_order_pdf_to_drive(
             # the local file must stay as the only way to reach this document.
             return None
     return str(file_id) if file_id else None
+
+
+def _backup_so_pack_upload_to_drive(
+    *,
+    user_id: int | None,
+    workspace_id: str | None,
+    mode: str,
+    label: str,
+    payload: Any,
+) -> None:
+    """Best-effort: copy SO Pack zip/rar or PDF(s) into Drive/NEXORA/Sales Orders.
+
+    Order Desk analyze only parses in memory — without this hook the original
+    upload never reaches Drive (unlike Filled Order Excel which backs up on save).
+    """
+    if not user_id:
+        return
+    from app.storage.nexora_docs import push_file_to_nexora_drive
+
+    def _push_bytes(raw: bytes, display_name: str) -> None:
+        suffix = Path(display_name).suffix or ".bin"
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(raw)
+                tmp_path = tmp.name
+            push_file_to_nexora_drive(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                local_path=tmp_path,
+                subfolder="Sales Orders",
+                display_name=display_name,
+                replace_if_exists=True,
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "SO Pack Drive backup failed for %s", display_name
+            )
+        finally:
+            if tmp_path:
+                try:
+                    Path(tmp_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    try:
+        if mode == "single":
+            _push_bytes(payload, label)
+        elif mode == "pdfs":
+            for name, raw in payload:
+                _push_bytes(raw, name)
+    except Exception:
+        logging.getLogger(__name__).exception("SO Pack Drive backup failed")
 
 
 def _drop_local_after_drive_backup(
