@@ -1264,12 +1264,23 @@ def fill_ex_mill_from_line_value(core_fields: dict, extra_attributes: dict, raw_
                 return
 
 
+def looks_like_special_order_stream(filename: str | None) -> bool:
+    """Special / SPL booking files get their own FO stream — never merge into regular."""
+    stem = Path(filename or "").stem.lower()
+    if not stem:
+        return False
+    special_tokens = ("special", " spl", "_spl", "-spl", "spl ", "spl_")
+    return any(tok in stem for tok in special_tokens) or "spl" in stem.split()
+
+
 def looks_like_addon_order_filename(filename: str | None) -> bool:
-    """Special / additional booking files should add to an existing FO, not replace it."""
+    """Additional booking files (non-special) add to an existing FO in the same stream."""
+    if looks_like_special_order_stream(filename):
+        return False
     stem = Path(filename or "").stem.lower()
     return any(
         token in stem
-        for token in ("special", "additional", "addnl", "extra order", "addon")
+        for token in ("additional", "addnl", "extra order", "addon")
     )
 
 

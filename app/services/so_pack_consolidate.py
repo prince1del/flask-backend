@@ -21,6 +21,7 @@ from app.routes.data import (
     _parse_sales_order_header_fields,
 )
 from app.services.bd_product_catalog import brand_wise_only_label, enrich_bd_product
+from app.services.order_stream import annotate_so_pack_meta
 
 _PRODUCT_SET_RE = re.compile(r"^(.+?\bSET)\b", re.I)
 # Fitted sheet / size glued to dimension: KSFST183X198+30 → KS FST
@@ -618,12 +619,12 @@ def _iter_analyze_pdf_list(
     )
     yield (
         "done",
-        {
+        annotate_so_pack_meta({
             "meta": meta,
             "consolidated": consolidated,
             "so_summary": so_summary,
             "line_detail": line_detail,
-        },
+        }),
     )
 
 

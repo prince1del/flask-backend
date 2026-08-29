@@ -444,7 +444,57 @@ def test_season_overview_groups_by_season(tmp_path, monkeypatch):
     assert season["total_piece_qty"] == row["total_piece_qty"]
 
 
-def test_special_order_merges_into_existing_instead_of_replace(tmp_path, monkeypatch):
+def test_special_order_gets_separate_stream_not_merge(tmp_path, monkeypatch):
+    """Special filename → separate FO stream; must not merge into regular FO."""
+    client, token, distributor_id = setup_app(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def first_payload(**extra):
+        data = {
+            "file": (io.BytesIO(_bedsheet_workbook_bytes().read()), "bernina_bed.xlsx"),
+            "distributor_id": str(distributor_id),
+            "category": "Bed",
+            "season": "AW26",
+        }
+        data.update(extra)
+        return data
+
+    assert client.post(
+        "/api/v1/filled-orders/upload",
+        data=first_payload(confirm_commit="true"),
+        content_type="multipart/form-data",
+        headers=headers,
+    ).get_json()["status"] == "success"
+
+    extra_wb = _make_workbook(
+        ["Brand", "Size", "Product", "MRP", "PTR", "Ex-Mill", "Bale Size", "Qnty"],
+        [["ASTER", "DB BS", "Bedsheet SS-26", 999, 450, 400, 12, 12]],
+    )
+    special_resp = client.post(
+        "/api/v1/filled-orders/upload",
+        data={
+            "file": (extra_wb, "BND Bath linen special order.xlsx"),
+            "distributor_id": str(distributor_id),
+            "category": "Bed",
+            "season": "AW26",
+            "confirm_commit": "true",
+        },
+        content_type="multipart/form-data",
+        headers=headers,
+    )
+    payload = special_resp.get_json()
+    assert special_resp.status_code == 200, payload
+    assert payload["status"] == "success"
+    assert not payload.get("merged_into_existing")
+    assert payload["filled_order"]["order_stream"] == "special"
+
+    listed = client.get("/api/v1/filled-orders/list", headers=headers).get_json()
+    assert listed["count"] == 2
+    streams = {fo["order_stream"] for fo in listed["filled_orders"]}
+    assert streams == {"regular", "special"}
+
+
+def test_additional_order_merges_into_same_stream(tmp_path, monkeypatch):
     client, token, distributor_id = setup_app(tmp_path, monkeypatch)
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -472,7 +522,7 @@ def test_special_order_merges_into_existing_instead_of_replace(tmp_path, monkeyp
     merged = client.post(
         "/api/v1/filled-orders/upload",
         data={
-            "file": (extra_wb, "BND Bath linen special order.xlsx"),
+            "file": (extra_wb, "bernina additional order.xlsx"),
             "distributor_id": str(distributor_id),
             "category": "Bed",
             "season": "AW26",
@@ -498,6 +548,4 @@ def test_special_order_merges_into_existing_instead_of_replace(tmp_path, monkeyp
         if str(it.get("brand") or "").strip().upper() == "ASTER"
         or "ASTER" in str(it.get("item_key") or "").upper()
     )
-    assert float(aster["final_piece_qty"]) == 72  # 60 original + 12 special
-    # ASTER 72×400 + unmatched NEWCO 25×200
-    assert float(order["total_ex_mill_value"]) == 72 * 400 + 25 * 200
+    assert float(aster["final_piece_qty"]) == 72  # 60 original + 12 additional

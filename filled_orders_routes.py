@@ -38,6 +38,7 @@ import filled_orders_db as fodb
 import filled_orders_distributor as fodist
 import filled_orders_parser as foparser
 from app.routes.auth import get_workspace_id, require_jwt_auth, get_request_user_id
+from app.services.order_stream import classify_fo_stream, stream_display_label
 
 filled_orders_bp = Blueprint("filled_orders", __name__, url_prefix="/api/v1/filled-orders")
 logger = logging.getLogger(__name__)
@@ -93,13 +94,15 @@ def _bool_form(value):
 
 def _duplicate_order_response(
     conn, user_id, distributor_id, category, season, distributor_name_raw, message=None,
+    order_stream="regular",
 ):
     existing = fodb.find_filled_order_by_distributor_category_season(
-        conn, user_id, distributor_id, category, season,
+        conn, user_id, distributor_id, category, season, order_stream=order_stream,
     )
     uploaded_on = (existing or {}).get("created_at", "")[:10] if existing else ""
+    stream_label = stream_display_label(order_stream)
     default_message = (
-        f"{distributor_name_raw} already has a {category} filled order for season "
+        f"{distributor_name_raw} already has a {stream_label} {category} filled order for season "
         f"{season}{f' (uploaded {uploaded_on})' if uploaded_on else ''}. "
         "Add this file into that order, or replace it?"
     )
@@ -111,6 +114,7 @@ def _duplicate_order_response(
         "season": season,
         "distributor_id": distributor_id,
         "distributor_name": distributor_name_raw,
+        "order_stream": order_stream,
     }), 200
 
 
@@ -273,6 +277,8 @@ def upload_filled_order():
                     "error": "Could not detect category — send 'category' as Bed, Bath, TOB, or Pillow.",
                 }), 400
 
+        order_stream = classify_fo_stream(file.filename, tmp_path)
+
         categories = amdb.get_all_categories(conn, user_id)
         key_fields_lookup = {c["category_name"]: c["key_fields"] for c in categories}
         key_fields = key_fields_lookup.get(category, DEFAULT_KEY_FIELDS)
@@ -355,7 +361,7 @@ def upload_filled_order():
             distributor_name_raw = firm_name or contact_name or distributor_name_raw
 
         existing_order = fodb.find_filled_order_by_distributor_category_season(
-            conn, user_id, distributor_id, category, season,
+            conn, user_id, distributor_id, category, season, order_stream=order_stream,
         )
 
         if not confirm_commit:
@@ -364,6 +370,8 @@ def upload_filled_order():
                 "message": "Preview ready — confirm to save.",
                 "category": category,
                 "season": season,
+                "order_stream": order_stream,
+                "order_stream_label": stream_display_label(order_stream),
                 "distributor_id": distributor_id,
                 "distributor_name": distributor_name_raw,
                 "quantity_column_used": qty_col_label,
@@ -391,6 +399,7 @@ def upload_filled_order():
             else:
                 return _duplicate_order_response(
                     conn, user_id, distributor_id, category, season, distributor_name_raw,
+                    order_stream=order_stream,
                 )
 
         skip_keys_raw = request.form.get("skip_item_keys") or "[]"
@@ -408,7 +417,7 @@ def upload_filled_order():
         category = (category or "").strip()
         season = (season or "").strip()
         existing_now = fodb.find_filled_order_by_distributor_category_season(
-            conn, user_id, distributor_id, category, season,
+            conn, user_id, distributor_id, category, season, order_stream=order_stream,
         )
         if existing_now and not confirm_replace and not confirm_merge:
             if foparser.looks_like_addon_order_filename(file.filename):
@@ -416,6 +425,7 @@ def upload_filled_order():
             else:
                 return _duplicate_order_response(
                     conn, user_id, distributor_id, category, season, distributor_name_raw,
+                    order_stream=order_stream,
                 )
 
         if existing_now and confirm_merge and not confirm_replace:
@@ -457,10 +467,12 @@ def upload_filled_order():
                 matched_lines=matched_count,
                 unmatched_lines=unmatched_count,
                 flagged_lines=flagged_count,
+                order_stream=order_stream,
             )
         except sqlite3.IntegrityError:
             return _duplicate_order_response(
                 conn, user_id, distributor_id, category, season, distributor_name_raw,
+                order_stream=order_stream,
             )
 
         for item in matched_items:
@@ -501,6 +513,10 @@ def upload_filled_order():
         distributor_name_raw = (request.form.get("distributor_name_raw") or "").strip() or "This distributor"
         return _duplicate_order_response(
             conn, user_id, distributor_id, category, season, distributor_name_raw,
+            order_stream=classify_fo_stream(
+                request.files.get("file").filename if request.files.get("file") else None,
+                tmp_path if os.path.exists(tmp_path) else None,
+            ),
         )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

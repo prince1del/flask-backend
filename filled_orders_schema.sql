@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS filled_orders (
     matched_lines INTEGER,
     unmatched_lines INTEGER,
     flagged_lines INTEGER,
+    order_stream TEXT NOT NULL DEFAULT 'regular',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

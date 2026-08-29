@@ -4020,6 +4020,12 @@ def so_pack_match_filled_order() -> Response:
     from app.services import fo_so_match_db as matchdb
     from app.services import fo_so_revision as sorev
     from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
+    from app.services.order_stream import (
+        classify_so_pack_stream,
+        filter_so_pack_by_stream,
+        streams_compatible,
+        stream_display_label,
+    )
 
     body = request.get_json(silent=True, force=True) or {}
     filled_order_id = body.get("filled_order_id")
@@ -4062,9 +4068,6 @@ def so_pack_match_filled_order() -> Response:
         meta = so_pack.get("meta") or {}
         so_source_filename = meta.get("source_filename")
 
-    new_lines = [r for r in (so_pack.get("line_detail") or []) if isinstance(r, dict)]
-    new_numbers = matchdb.extract_so_numbers_from_pack(so_pack)
-
     conn = sqlite3.connect(_db_path())
     try:
         fodb.ensure_schema(conn)
@@ -4074,6 +4077,42 @@ def so_pack_match_filled_order() -> Response:
                 {"success": False, "error": {"message": "Filled order not found"}},
                 404,
             )
+        fo_stream = (fo.get("order_stream") or "regular").strip().lower()
+        pack_stream = classify_so_pack_stream(so_pack)
+        if pack_stream == "mixed":
+            so_pack = filter_so_pack_by_stream(so_pack, fo_stream)
+            if not (so_pack.get("line_detail") or so_pack.get("consolidated")):
+                return _json_response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "stream_mismatch",
+                            "message": (
+                                f"This zip contains both Regular and Special SOs. "
+                                f"No {stream_display_label(fo_stream)} SO lines found for this Filled Order."
+                            ),
+                        },
+                    },
+                    409,
+                )
+            pack_stream = fo_stream
+        elif not streams_compatible(fo_stream, pack_stream):
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "stream_mismatch",
+                        "message": (
+                            f"Filled Order is {stream_display_label(fo_stream)} but this SO pack is "
+                            f"{stream_display_label(pack_stream)}. Upload the matching stream "
+                            "(Regular FO ↔ Regular SO, Special FO ↔ Special/SPL SO)."
+                        ),
+                    },
+                },
+                409,
+            )
+        new_lines = [r for r in (so_pack.get("line_detail") or []) if isinstance(r, dict)]
+        new_numbers = matchdb.extract_so_numbers_from_pack(so_pack)
         items = fodb.get_filled_order_items(conn, filled_order_id)
         existing = sorev.get_latest_run_for_fo(
             conn, user_id=user_id, filled_order_id=filled_order_id

@@ -17,7 +17,8 @@ _schema_ensured = False
 FILLED_ORDER_COLUMNS = [
     "id", "user_id", "distributor_id", "distributor_name_raw", "category", "season",
     "source_filename", "quantity_column_used", "quantity_unit_used",
-    "total_lines", "matched_lines", "unmatched_lines", "flagged_lines", "created_at",
+    "total_lines", "matched_lines", "unmatched_lines", "flagged_lines",
+    "order_stream", "created_at",
 ]
 
 FILLED_ORDER_ITEM_COLUMNS = [
@@ -41,19 +42,39 @@ def ensure_schema(conn):
         with open(_SCHEMA_PATH, encoding="utf-8") as f:
             _schema_sql_cache = f.read()
     conn.executescript(_schema_sql_cache)
+    _ensure_order_stream_column(conn)
     _ensure_filled_orders_unique_slot(conn)
     _schema_ensured = True
+
+
+def _ensure_order_stream_column(conn):
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(filled_orders)")}
+    if "order_stream" not in cols:
+        conn.execute(
+            "ALTER TABLE filled_orders ADD COLUMN order_stream TEXT NOT NULL DEFAULT 'regular'"
+        )
+        conn.commit()
 
 
 def _normalize_slot_value(value):
     return (value or "").strip()
 
 
+def _normalize_order_stream(value):
+    stream = (value or "regular").strip().lower()
+    return stream if stream in ("regular", "special") else "regular"
+
+
 def _ensure_filled_orders_unique_slot(conn):
-    """One filled order per user + distributor + category + season. Dedupe legacy rows."""
+    """One filled order per user + distributor + category + season + stream. Dedupe legacy rows."""
+    try:
+        conn.execute("DROP INDEX IF EXISTS idx_filled_orders_unique_slot")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     index_sql = """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_filled_orders_unique_slot
-        ON filled_orders(user_id, distributor_id, category, season)
+        ON filled_orders(user_id, distributor_id, category, season, order_stream)
         WHERE distributor_id IS NOT NULL
     """
     try:
@@ -64,13 +85,14 @@ def _ensure_filled_orders_unique_slot(conn):
         pass
 
     dup_groups = conn.execute(
-        """SELECT user_id, distributor_id, category, season, GROUP_CONCAT(id) AS ids
+        """SELECT user_id, distributor_id, category, season, order_stream, GROUP_CONCAT(id) AS ids
            FROM filled_orders
            WHERE distributor_id IS NOT NULL
-           GROUP BY user_id, distributor_id, category, season
+           GROUP BY user_id, distributor_id, category, season, order_stream
            HAVING COUNT(*) > 1"""
     ).fetchall()
-    for _user_id, _dist_id, _cat, _season, ids_csv in dup_groups:
+    for row in dup_groups:
+        ids_csv = row[-1]
         ids = sorted(int(x) for x in (ids_csv or "").split(",") if x)
         for order_id in ids[:-1]:
             conn.execute("DELETE FROM filled_order_items WHERE filled_order_id = ?", (order_id,))
@@ -95,19 +117,21 @@ def create_filled_order(
     conn, user_id, distributor_id, distributor_name_raw, category, season,
     source_filename=None, quantity_column_used=None, quantity_unit_used=None,
     total_lines=0, matched_lines=0, unmatched_lines=0, flagged_lines=0,
+    order_stream="regular",
 ):
     category = _normalize_slot_value(category)
     season = _normalize_slot_value(season)
+    order_stream = _normalize_order_stream(order_stream)
     cursor = conn.execute(
         """INSERT INTO filled_orders
            (user_id, distributor_id, distributor_name_raw, category, season, source_filename,
             quantity_column_used, quantity_unit_used, total_lines, matched_lines,
-            unmatched_lines, flagged_lines)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            unmatched_lines, flagged_lines, order_stream)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             user_id, distributor_id, distributor_name_raw, category, season, source_filename,
             quantity_column_used, quantity_unit_used, total_lines, matched_lines,
-            unmatched_lines, flagged_lines,
+            unmatched_lines, flagged_lines, order_stream,
         ),
     )
     conn.commit()
@@ -384,7 +408,7 @@ def get_filled_order_items(conn, filled_order_id):
     return [_row_to_item_dict(r) for r in rows]
 
 
-def list_filled_orders(conn, user_id, distributor_id=None, category=None, season=None):
+def list_filled_orders(conn, user_id, distributor_id=None, category=None, season=None, order_stream=None):
     cols = ", ".join(FILLED_ORDER_COLUMNS)
     query = f"SELECT {cols} FROM filled_orders WHERE user_id = ?"
     params = [user_id]
@@ -397,6 +421,9 @@ def list_filled_orders(conn, user_id, distributor_id=None, category=None, season
     if season:
         query += " AND season = ?"
         params.append(season)
+    if order_stream:
+        query += " AND order_stream = ?"
+        params.append(_normalize_order_stream(order_stream))
     query += " ORDER BY id DESC"
     rows = conn.execute(query, params).fetchall()
     for row in rows:
@@ -406,15 +433,17 @@ def list_filled_orders(conn, user_id, distributor_id=None, category=None, season
 
 
 def find_filled_order_by_distributor_category_season(
-    conn, user_id, distributor_id, category, season,
+    conn, user_id, distributor_id, category, season, order_stream="regular",
 ):
-    """Return the latest saved order for this distributor + category + season, if any."""
+    """Return the latest saved order for this distributor + category + season + stream, if any."""
     category = _normalize_slot_value(category)
     season = _normalize_slot_value(season)
+    order_stream = _normalize_order_stream(order_stream)
     if not distributor_id or not category or not season:
         return None
     orders = list_filled_orders(
         conn, user_id, distributor_id=distributor_id, category=category, season=season,
+        order_stream=order_stream,
     )
     return orders[0] if orders else None
 

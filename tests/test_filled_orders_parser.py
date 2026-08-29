@@ -727,6 +727,7 @@ def test_bath_linen_special_sheet_maps_quality_exmill_and_total_qty(tmp_path):
 
 
 def test_addon_filename_detected():
-    assert foparser.looks_like_addon_order_filename("BND Bath linen special order.xlsx")
+    assert foparser.looks_like_special_order_stream("BND Bath linen special order.xlsx")
+    assert not foparser.looks_like_addon_order_filename("BND Bath linen special order.xlsx")
     assert foparser.looks_like_addon_order_filename("bernina additional order.xlsx")
     assert not foparser.looks_like_addon_order_filename("bernina_bed.xlsx")
