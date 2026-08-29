@@ -45,6 +45,45 @@ def test_streams_compatible():
     assert streams_compatible("special", "mixed") is True  # caller filters before match
 
 
+def test_build_mixed_zip_retry_hint_points_to_sibling_fo():
+    import sqlite3
+
+    import filled_orders_db as fodb
+    from app.services import fo_so_match_db as matchdb
+    from app.services.order_stream import build_mixed_zip_retry_hint
+
+    conn = sqlite3.connect(":memory:")
+    fodb.ensure_schema(conn)
+    matchdb.ensure_schema(conn)
+    special_id = fodb.create_filled_order(
+        conn, 1, 10, "BND", "Bath", "AW-26",
+        source_filename="special.xlsx", order_stream="special",
+    )
+    regular_id = fodb.create_filled_order(
+        conn, 1, 10, "BND", "Bath", "AW-26",
+        source_filename="regular.xlsx", order_stream="regular",
+    )
+    conn.execute(
+        """INSERT INTO fo_so_match_runs (
+            id, user_id, filled_order_id, so_source_filename, rows_json, created_at
+        ) VALUES (1, 1, ?, 'bnd.zip', '[]', '2026-01-01')""",
+        (special_id,),
+    )
+    conn.commit()
+    fo = fodb.get_filled_order(conn, 1, special_id)
+    hint = build_mixed_zip_retry_hint(
+        conn,
+        user_id=1,
+        fo=fo,
+        so_source_filename="bnd.zip",
+        pack_was_mixed=True,
+    )
+    assert hint is not None
+    assert hint["hint_code"] == "match_other_stream_fo"
+    assert hint["other_filled_order_id"] == regular_id
+    assert "Regular" in hint["message"]
+
+
 def test_mixed_so_pack_filters_to_regular():
     pack = {
         "meta": {"source_filename": "bnd.zip"},

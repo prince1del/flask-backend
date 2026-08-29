@@ -277,3 +277,51 @@ def stream_display_label(stream: str | None) -> str:
     if st == STREAM_MIXED:
         return "Mixed"
     return "Regular"
+
+
+def build_mixed_zip_retry_hint(
+    conn,
+    *,
+    user_id: int,
+    fo: dict[str, Any],
+    so_source_filename: str | None,
+    pack_was_mixed: bool,
+) -> dict[str, Any] | None:
+    """When one stream from a mixed zip is already saved, point user to the sibling FO."""
+    if not pack_was_mixed:
+        return None
+    import filled_orders_db as fodb
+
+    fo_stream = (fo.get("order_stream") or STREAM_REGULAR).strip().lower()
+    other_stream = STREAM_SPECIAL if fo_stream == STREAM_REGULAR else STREAM_REGULAR
+    sibling = fodb.find_filled_order_by_distributor_category_season(
+        conn,
+        int(user_id),
+        fo.get("distributor_id"),
+        fo.get("category"),
+        fo.get("season"),
+        order_stream=other_stream,
+    )
+    if not sibling or not sibling.get("id"):
+        return None
+    from app.services import fo_so_match_db as matchdb
+
+    sibling_id = int(sibling["id"])
+    if matchdb.fo_has_match_for_so_zip(
+        conn, int(user_id), sibling_id, so_source_filename
+    ):
+        return None
+    cur_label = stream_display_label(fo_stream)
+    other_label = stream_display_label(other_stream)
+    zip_ref = (so_source_filename or "this zip").strip()
+    fo_name = sibling.get("source_filename") or sibling.get("distributor_name_raw") or "saved FO"
+    return {
+        "hint_code": "match_other_stream_fo",
+        "other_filled_order_id": sibling_id,
+        "other_stream": other_stream,
+        "other_stream_label": other_label,
+        "message": (
+            f"{cur_label} SOs from {zip_ref} are already on this Filled Order. "
+            f"Choose {other_label} FO ({fo_name}) to match the other SO lines from the same zip."
+        ),
+    }

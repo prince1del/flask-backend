@@ -4023,6 +4023,7 @@ def so_pack_match_filled_order() -> Response:
     from app.services import fo_so_revision as sorev
     from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
     from app.services.order_stream import (
+        build_mixed_zip_retry_hint,
         classify_so_pack_stream,
         filter_so_pack_by_stream,
         streams_compatible,
@@ -4081,7 +4082,8 @@ def so_pack_match_filled_order() -> Response:
             )
         fo_stream = (fo.get("order_stream") or "regular").strip().lower()
         pack_stream = classify_so_pack_stream(so_pack)
-        if pack_stream == "mixed":
+        pack_was_mixed = pack_stream == "mixed"
+        if pack_was_mixed:
             so_pack = filter_so_pack_by_stream(so_pack, fo_stream)
             if not (so_pack.get("line_detail") or so_pack.get("consolidated")):
                 return _json_response(
@@ -4154,30 +4156,34 @@ def so_pack_match_filled_order() -> Response:
             conflicts=conflicts,
         )
 
+        def _already_in_system_error() -> dict[str, Any]:
+            err: dict[str, Any] = {
+                "code": "so_already_in_system",
+                "message": "SO already in system — no change detected.",
+                "compares": decision.get("compares") or [],
+            }
+            hint = build_mixed_zip_retry_hint(
+                conn,
+                user_id=user_id,
+                fo=fo,
+                so_source_filename=so_source_filename,
+                pack_was_mixed=pack_was_mixed,
+            )
+            if hint:
+                err.update(hint)
+                err["message"] = hint.get("message") or err["message"]
+            return err
+
         if confirm_action and decision["action"] == "already_in_system":
             return _json_response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "so_already_in_system",
-                        "message": "SO already in system — no change detected.",
-                        "compares": decision.get("compares") or [],
-                    },
-                },
+                {"success": False, "error": _already_in_system_error()},
                 409,
             )
 
         if not confirm_action:
             if decision["action"] == "already_in_system":
                 return _json_response(
-                    {
-                        "success": False,
-                        "error": {
-                            "code": "so_already_in_system",
-                            "message": "SO already in system — no change detected.",
-                            "compares": decision.get("compares") or [],
-                        },
-                    },
+                    {"success": False, "error": _already_in_system_error()},
                     409,
                 )
             if decision["action"] == "replace_confirm":

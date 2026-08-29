@@ -238,6 +238,29 @@ def extract_so_numbers_from_run_row(run: dict[str, Any]) -> list[str]:
     return found
 
 
+def fo_has_match_for_so_zip(
+    conn: sqlite3.Connection,
+    user_id: int,
+    filled_order_id: int,
+    so_source_filename: str | None,
+) -> bool:
+    """True if this FO already has a saved match run from the same SO pack file."""
+    name = (so_source_filename or "").strip()
+    if not name or not filled_order_id:
+        return False
+    ensure_schema(conn)
+    row = conn.execute(
+        """
+        SELECT id FROM fo_so_match_runs
+        WHERE user_id = ? AND filled_order_id = ?
+          AND LOWER(COALESCE(so_source_filename, '')) = LOWER(?)
+        ORDER BY id DESC LIMIT 1
+        """,
+        (int(user_id), int(filled_order_id), name),
+    ).fetchone()
+    return row is not None
+
+
 def find_so_number_conflicts(
     conn: sqlite3.Connection,
     so_numbers: list[str],
