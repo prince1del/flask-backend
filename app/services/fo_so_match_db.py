@@ -1232,13 +1232,40 @@ def rematch_run_against_fo(
     return True
 
 
-def relink_orphan_match_runs_to_filled_order(
+def _run_matches_fo_upload(
+    *,
+    upload_key: str,
+    fo_dist_id: int | None,
+    fo_cat: str,
+    fo_season: str,
+    run_dist_id: int | None,
+    run_name: str | None,
+    run_cat: str | None,
+    run_season: str | None,
+    fo_entity_key_fn,
+) -> bool:
+    """Match a stored SO pack run to the FO being uploaded (name or distributor_id)."""
+    run_key = fo_entity_key_fn(run_name, run_cat, run_season).strip().lower()
+    if run_key and run_key == upload_key:
+        return True
+    if fo_dist_id and run_dist_id and int(fo_dist_id) == int(run_dist_id):
+        if (run_cat or "").strip().lower() != fo_cat:
+            return False
+        run_s = (run_season or "").strip().lower()
+        if not run_s or not fo_season or run_s == fo_season:
+            return True
+    return False
+
+
+def rematch_runs_for_fo_upload(
     conn: sqlite3.Connection,
     user_id: int,
     filled_order_id: int,
     entity_key: str,
 ) -> int:
-    """Re-attach detached SO match runs when the same FO is uploaded again."""
+    """Re-link detached + refresh linked Order Match runs after FO upload."""
+    import filled_orders_db as fodb
+
     ensure_schema(conn)
     key_lower = str(entity_key or "").strip().lower()
     if not key_lower:
@@ -1250,36 +1277,61 @@ def relink_orphan_match_runs_to_filled_order(
     except Exception:
         return 0
 
-    existing = conn.execute(
-        "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ? LIMIT 1",
-        (user_id, filled_order_id),
-    ).fetchone()
-    if existing:
+    fo = fodb.get_filled_order(conn, user_id, filled_order_id)
+    if not fo:
         return 0
+    fo_dist_id = fo.get("distributor_id")
+    fo_cat = (fo.get("category") or "").strip().lower()
+    fo_season = (fo.get("season") or "").strip().lower()
 
     rows = conn.execute(
         """
-        SELECT r.id, r.distributor_name, r.category, r.season
+        SELECT r.id, r.filled_order_id, r.distributor_id,
+               r.distributor_name, r.category, r.season
         FROM fo_so_match_runs r
         LEFT JOIN filled_orders fo
           ON fo.id = r.filled_order_id AND fo.user_id = r.user_id
         WHERE r.user_id = ?
-          AND (r.filled_order_id IS NULL OR fo.id IS NULL)
+          AND (
+            r.filled_order_id IS NULL
+            OR fo.id IS NULL
+            OR r.filled_order_id = ?
+          )
         ORDER BY r.id DESC
         """,
-        (user_id,),
+        (user_id, filled_order_id),
     ).fetchall()
-    relinked = 0
+
+    rematched = 0
     for row in rows:
         run_id = int(row[0])
-        run_key = fo_entity_key(row[1], row[2], row[3]).strip().lower()
-        if run_key != key_lower:
+        if not _run_matches_fo_upload(
+            upload_key=key_lower,
+            fo_dist_id=fo_dist_id,
+            fo_cat=fo_cat,
+            fo_season=fo_season,
+            run_dist_id=row[2],
+            run_name=row[3],
+            run_cat=row[4],
+            run_season=row[5],
+            fo_entity_key_fn=fo_entity_key,
+        ):
             continue
         if rematch_run_against_fo(conn, user_id, run_id, filled_order_id):
-            relinked += 1
-    if relinked:
+            rematched += 1
+    if rematched:
         conn.commit()
-    return relinked
+    return rematched
+
+
+def relink_orphan_match_runs_to_filled_order(
+    conn: sqlite3.Connection,
+    user_id: int,
+    filled_order_id: int,
+    entity_key: str,
+) -> int:
+    """Re-attach detached SO match runs when the same FO is uploaded again."""
+    return rematch_runs_for_fo_upload(conn, user_id, filled_order_id, entity_key)
 
 
 def purge_orphan_match_runs(conn: sqlite3.Connection, user_id: int) -> int:

@@ -451,6 +451,11 @@ def upload_filled_order():
                 )
                 conn.commit()
             except Exception:
+                logger.exception(
+                    "match restore failed after FO merge user=%s fo=%s",
+                    user_id,
+                    existing_now["id"],
+                )
                 match_restored = 0
             # A merged-in file is just as much the distributor's document as
             # the first one — it needs its own Drive copy, and this path
@@ -514,8 +519,12 @@ def upload_filled_order():
             )
             conn.commit()
         except Exception:
+            logger.exception(
+                "match restore failed after FO upload user=%s fo=%s",
+                user_id,
+                order_id,
+            )
             match_restored = 0
-            pass
 
         # Keep the distributor's original workbook in Drive. Only its parsed
         # rows were ever stored — the uploaded file itself goes to a tempfile

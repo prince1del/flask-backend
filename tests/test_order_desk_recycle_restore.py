@@ -433,6 +433,77 @@ def test_fo_reupload_restores_archived_match(tmp_path):
     assert all(row.get("fo_qty") is not None for row in (detail.get("rows") or []))
 
 
+def test_fo_reupload_rematches_by_distributor_id_when_name_differs(tmp_path):
+    """SO buyer label on run may differ from FO upload distributor_name_raw."""
+    conn = _conn(tmp_path)
+    import filled_orders_db as fodb
+
+    fo_id = fodb.create_filled_order(
+        conn, 9, 1, "Balaji Homedecor Pvt Ltd", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    fodb.insert_filled_order_item(
+        conn,
+        fo_id,
+        {
+            "item_key": "525B|DB",
+            "brand": "525B",
+            "size": "DB",
+            "raw_qty_value": 72,
+            "detected_unit": "pieces",
+            "final_piece_qty": 72,
+            "matched": True,
+            "is_clean_bale_multiple": False,
+        },
+    )
+    pack = {
+        "line_detail": [
+            {
+                "so_number": "102876310",
+                "product_name": "525B DB BS",
+                "qty": 72,
+                "net_amount": 5000,
+            }
+        ]
+    }
+    payload = _payload(5000, "102876310")
+    payload["fo"]["id"] = fo_id
+    payload["fo"]["distributor_id"] = 1
+    payload["fo"]["distributor_name_raw"] = "Balaji Homedecor"
+    payload["fo"]["category"] = "Bed"
+    run = matchdb.save_match_run(
+        conn, user_id=9, match_payload=payload, so_pack=pack,
+        so_line_detail=pack["line_detail"],
+        so_buyer_label="Balaji Homedecor",
+    )
+    fodb.delete_filled_order(conn, 9, fo_id)
+    new_fo_id = fodb.create_filled_order(
+        conn, 9, 1, "Balaji Homedecor Pvt Ltd", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    fodb.insert_filled_order_item(
+        conn,
+        new_fo_id,
+        {
+            "item_key": "525B|DB",
+            "brand": "525B",
+            "size": "DB",
+            "raw_qty_value": 72,
+            "detected_unit": "pieces",
+            "final_piece_qty": 72,
+            "matched": True,
+            "is_clean_bale_multiple": False,
+        },
+    )
+    entity_key = oda.fo_entity_key("Balaji Homedecor Pvt Ltd", "Bed", "AW26")
+    restored = oda.restore_match_after_fo_upload(conn, 9, new_fo_id, entity_key)
+    assert restored == 1
+    detail = matchdb.get_match_run(conn, int(run["id"]), user_id=9)
+    assert detail is not None
+    assert detail.get("filled_order_id") == new_fo_id
+    assert (detail.get("fo_qty") or 0) > 0
+
+
 def test_purge_expired_drops_old_rows(tmp_path):
     conn = _conn(tmp_path)
     conn.execute(

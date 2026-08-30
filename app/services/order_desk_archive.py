@@ -1139,7 +1139,7 @@ def restore_match_after_fo_upload(
     if not fo:
         return 0
 
-    relinked = matchdb.relink_orphan_match_runs_to_filled_order(
+    relinked = matchdb.rematch_runs_for_fo_upload(
         conn, user_id, filled_order_id, entity_key
     )
     if relinked:
@@ -1150,6 +1150,7 @@ def restore_match_after_fo_upload(
         (user_id, filled_order_id),
     ).fetchone()
     if existing:
+        # Run is linked but rematch found nothing to update — do not duplicate.
         return 0
 
     key_lower = entity_key.strip().lower()
