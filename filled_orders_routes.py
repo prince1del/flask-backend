@@ -267,6 +267,7 @@ def upload_filled_order():
         }), 200
 
     conn = _get_db_connection()
+    match_restored = 0
     suffix = Path(file.filename or "upload.xlsx").suffix or ".xlsx"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp_path = tmp.name
@@ -441,6 +442,21 @@ def upload_filled_order():
                 conn, user_id, existing_now["id"], matched_items,
                 extra_filename=file.filename,
             )
+            try:
+                from app.services import order_desk_archive as oda
+
+                entity_key = oda.fo_entity_key(
+                    distributor_name_raw, category, season
+                )
+                oda.repoint_filled_order_archives(
+                    conn, user_id, entity_key, int(existing_now["id"])
+                )
+                match_restored = oda.restore_match_after_fo_upload(
+                    conn, user_id, int(existing_now["id"]), entity_key
+                )
+                conn.commit()
+            except Exception:
+                match_restored = 0
             # A merged-in file is just as much the distributor's document as
             # the first one — it needs its own Drive copy, and this path
             # returns before the create path's backup below.
@@ -462,6 +478,8 @@ def upload_filled_order():
                 "filled_order": order,
                 "replaced_existing": False,
                 "merged_into_existing": True,
+                "match_restored": bool(match_restored),
+                "match_restored_count": match_restored,
             }), 200
 
         if existing_now and confirm_replace:
@@ -496,8 +514,12 @@ def upload_filled_order():
             entity_key = oda.fo_entity_key(distributor_name_raw, category, season)
             oda.repoint_filled_order_archives(conn, user_id, entity_key, order_id)
             oda.restore_filled_order_after_upload(conn, user_id, order_id, entity_key)
+            match_restored = oda.restore_match_after_fo_upload(
+                conn, user_id, order_id, entity_key
+            )
             conn.commit()
         except Exception:
+            match_restored = 0
             pass
 
         # Keep the distributor's original workbook in Drive. Only its parsed
@@ -523,6 +545,8 @@ def upload_filled_order():
             "status": "success",
             "filled_order": order,
             "replaced_existing": bool(existing_now and confirm_replace),
+            "match_restored": bool(match_restored),
+            "match_restored_count": match_restored,
         }), 200
 
     except ValueError as exc:

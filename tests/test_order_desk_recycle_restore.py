@@ -341,6 +341,83 @@ def test_filled_order_delete_cascades_match_run(tmp_path):
     assert matchdb.purge_orphan_match_runs(conn, 7) == 0
 
 
+def test_fo_reupload_restores_archived_match(tmp_path):
+    conn = _conn(tmp_path)
+    import filled_orders_db as fodb
+
+    fo_id = fodb.create_filled_order(
+        conn, 8, 1, "Balaji Homedecor", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    fodb.insert_filled_order_item(
+        conn,
+        fo_id,
+        {
+            "item_key": "525B|DB",
+            "brand": "525B",
+            "size": "DB",
+            "raw_qty_value": 72,
+            "detected_unit": "pieces",
+            "final_piece_qty": 72,
+            "matched": True,
+            "is_clean_bale_multiple": False,
+        },
+    )
+    pack = {
+        "line_detail": [
+            {
+                "so_number": "102876310",
+                "product_name": "525B",
+                "qty": 72,
+                "net_amount": 5000,
+            }
+        ]
+    }
+    payload = _payload(5000, "102876310")
+    payload["fo"]["id"] = fo_id
+    payload["fo"]["distributor_name_raw"] = "Balaji Homedecor"
+    payload["fo"]["category"] = "Bed"
+    run = matchdb.save_match_run(
+        conn, user_id=8, match_payload=payload, so_pack=pack,
+        so_line_detail=pack["line_detail"],
+    )
+    assert matchdb.get_match_run(conn, int(run["id"]), user_id=8) is not None
+
+    fodb.delete_filled_order(conn, 8, fo_id)
+    assert matchdb.get_match_run(conn, int(run["id"]), user_id=8) is None
+
+    new_fo_id = fodb.create_filled_order(
+        conn, 8, 1, "Balaji Homedecor", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    fodb.insert_filled_order_item(
+        conn,
+        new_fo_id,
+        {
+            "item_key": "525B|DB",
+            "brand": "525B",
+            "size": "DB",
+            "raw_qty_value": 72,
+            "detected_unit": "pieces",
+            "final_piece_qty": 72,
+            "matched": True,
+            "is_clean_bale_multiple": False,
+        },
+    )
+    entity_key = oda.fo_entity_key("Balaji Homedecor", "Bed", "AW26")
+    oda.repoint_filled_order_archives(conn, 8, entity_key, new_fo_id)
+    restored = oda.restore_match_after_fo_upload(conn, 8, new_fo_id, entity_key)
+    assert restored == 1
+    runs = conn.execute(
+        "SELECT id FROM fo_so_match_runs WHERE user_id = 8 AND filled_order_id = ?",
+        (new_fo_id,),
+    ).fetchall()
+    assert len(runs) == 1
+    detail = matchdb.get_match_run(conn, int(runs[0][0]), user_id=8)
+    assert detail is not None
+    assert "102876310" in matchdb.extract_so_numbers_from_run_row(detail)
+
+
 def test_purge_expired_drops_old_rows(tmp_path):
     conn = _conn(tmp_path)
     conn.execute(

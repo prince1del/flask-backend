@@ -164,15 +164,22 @@ def archive_match_run(
     if not run_id:
         return
     so_numbers = matchdb.extract_so_numbers_from_run_row(run)
+    fo_key = fo_entity_key(
+        run.get("distributor_name"),
+        run.get("category"),
+        run.get("season"),
+    )
     payload = {
         "run": run,
         "so_numbers": so_numbers,
+        "fo_entity_key": fo_key,
     }
+    entity_key = fo_key if restore_scope == "run" and fo_key.strip("|") else f"run:{run_id}"
     _insert_archive(
         conn,
         user_id=user_id,
         kind="match_run",
-        entity_key=f"run:{run_id}",
+        entity_key=entity_key,
         restore_scope=restore_scope,
         payload=payload,
         filled_order_id=int(run["filled_order_id"]) if run.get("filled_order_id") else None,
@@ -1114,6 +1121,130 @@ def restore_filled_order_after_upload(
         conn.commit()
     elif fo_archives or item_archives:
         conn.commit()
+    return restored
+
+
+def restore_match_after_fo_upload(
+    conn: sqlite3.Connection,
+    user_id: int,
+    filled_order_id: int,
+    entity_key: str,
+) -> int:
+    """Re-create FO↔SO Order Match from archive when the same FO is re-uploaded."""
+    import filled_orders_db as fodb
+    from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
+
+    fodb.ensure_schema(conn)
+    fo = fodb.get_filled_order(conn, user_id, filled_order_id)
+    if not fo:
+        return 0
+
+    existing = conn.execute(
+        "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ? LIMIT 1",
+        (user_id, filled_order_id),
+    ).fetchone()
+    if existing:
+        return 0
+
+    key_lower = entity_key.strip().lower()
+    archives = _pending_archives(conn, user_id, "match_run", entity_key=entity_key)
+    if not archives:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, payload_json FROM order_desk_archive
+            WHERE user_id = ? AND kind = 'match_run' AND restored_at IS NULL
+              AND restore_scope = 'run' AND datetime(expires_at) > datetime('now')
+            ORDER BY id DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            snap = payload.get("run") if isinstance(payload.get("run"), dict) else {}
+            snap_key = (
+                payload.get("fo_entity_key")
+                or fo_entity_key(
+                    snap.get("distributor_name"),
+                    snap.get("category"),
+                    snap.get("season"),
+                )
+            )
+            if str(snap_key).strip().lower() != key_lower:
+                continue
+            archives.append({"id": int(row["id"]), "payload": payload})
+
+    if not archives:
+        return 0
+
+    restored = 0
+    for archive_row in sorted(archives, key=lambda a: a["id"], reverse=True):
+        payload = archive_row["payload"]
+        snap = payload.get("run")
+        if not isinstance(snap, dict):
+            continue
+        line_detail = [
+            dict(l)
+            for l in (snap.get("so_line_detail") or [])
+            if isinstance(l, dict)
+        ]
+        if not line_detail:
+            continue
+        so_numbers = list(payload.get("so_numbers") or [])
+        if not so_numbers:
+            so_numbers = matchdb.extract_so_numbers_from_run_row(snap)
+        conflicts = matchdb.find_so_number_conflicts(conn, so_numbers)
+        if conflicts:
+            continue
+
+        fo_items = fodb.get_filled_order_items(conn, filled_order_id)
+        so_pack: dict[str, Any] = {
+            "line_detail": line_detail,
+            "meta": {
+                "source_filename": snap.get("so_source_filename"),
+                "primary_buyer_name": snap.get("so_buyer_label"),
+            },
+        }
+        match_payload = run_match_saved_fo_vs_so_pack(
+            fo_meta={**fo, "id": filled_order_id},
+            fo_items=fo_items,
+            so_pack_payload=so_pack,
+        )
+        try:
+            run = matchdb.save_match_run(
+                conn,
+                user_id=user_id,
+                match_payload=match_payload,
+                so_buyer_label=snap.get("so_buyer_label"),
+                so_source_filename=snap.get("so_source_filename"),
+                so_line_detail=line_detail,
+                so_pack=so_pack,
+            )
+        except matchdb.DuplicateSalesOrderError:
+            continue
+
+        run_id = int(run["id"])
+        restore_match_archives_after_save(
+            conn, user_id, run_id, filled_order_id, so_numbers
+        )
+        restore_match_run_archives_after_save(
+            conn, user_id, run_id, filled_order_id, so_numbers
+        )
+        _mark_restored(conn, archive_row["id"])
+        for so in so_numbers:
+            so_key = matchdb.normalize_so_number(so)
+            if not so_key:
+                continue
+            for so_archive in _pending_archives(
+                conn, user_id, "match_so", entity_key=so_key, filled_order_id=filled_order_id
+            ):
+                _mark_restored(conn, so_archive["id"])
+        restored += 1
+        break
+
     return restored
 
 
