@@ -9,6 +9,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -3690,7 +3691,11 @@ def so_pack_analyze() -> Response:
             {"success": False, "error": {"message": f"SO pack analyze failed: {exc}"}},
             500,
         )
-    drive_pushed = _backup_so_pack_upload_to_drive(
+    if isinstance(data, dict):
+        data = dict(data)
+        # Drive backup runs async — do not block the analyze response.
+        data["drive_backup_count"] = -1
+    _schedule_so_pack_drive_backup(
         user_id=get_request_user_id(),
         workspace_id=get_workspace_id(),
         mode=mode,
@@ -3698,9 +3703,6 @@ def so_pack_analyze() -> Response:
         payload=payload,
         analyze_data=data if isinstance(data, dict) else None,
     )
-    if isinstance(data, dict):
-        data = dict(data)
-        data["drive_backup_count"] = drive_pushed
     return _json_response({"success": True, "data": data})
 
 
@@ -3733,7 +3735,11 @@ def so_pack_analyze_stream() -> Response:
                 if kind == "progress":
                     yield json.dumps({"type": "progress", "message": str(item)}) + "\n"
                 elif kind == "done":
-                    drive_pushed = _backup_so_pack_upload_to_drive(
+                    if isinstance(item, dict):
+                        item = dict(item)
+                        item["drive_backup_count"] = -1
+                    yield json.dumps({"type": "done", "data": item}, default=str) + "\n"
+                    _schedule_so_pack_drive_backup(
                         user_id=user_id,
                         workspace_id=workspace_id,
                         mode=mode,
@@ -3741,10 +3747,6 @@ def so_pack_analyze_stream() -> Response:
                         payload=payload,
                         analyze_data=item if isinstance(item, dict) else None,
                     )
-                    if isinstance(item, dict):
-                        item = dict(item)
-                        item["drive_backup_count"] = drive_pushed
-                    yield json.dumps({"type": "done", "data": item}, default=str) + "\n"
         except ValueError as exc:
             yield json.dumps({"type": "error", "message": str(exc)}) + "\n"
         except Exception as exc:
@@ -5024,6 +5026,44 @@ def _backup_so_pack_upload_to_drive(
     except Exception:
         logging.getLogger(__name__).exception("SO Pack Drive backup failed")
     return pushed
+
+
+def _schedule_so_pack_drive_backup(
+    *,
+    user_id: int | None,
+    workspace_id: str | None,
+    mode: str,
+    label: str,
+    payload: Any,
+    analyze_data: dict | None,
+) -> None:
+    """Push SO PDFs to Drive without blocking analyze HTTP/stream responses.
+
+    Large zips (20+ PDFs) could keep the NDJSON stream silent for many minutes
+    while uploading to Google Drive — mobile readTimeout then drops the
+    connection and analyze looks failed even though parsing already finished.
+    """
+    if not user_id:
+        return
+    app = current_app._get_current_object()
+
+    def _run() -> None:
+        with app.app_context():
+            try:
+                _backup_so_pack_upload_to_drive(
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    mode=mode,
+                    label=label,
+                    payload=payload,
+                    analyze_data=analyze_data,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Background SO Pack Drive backup failed for %s", label
+                )
+
+    threading.Thread(target=_run, daemon=True, name="so-pack-drive-backup").start()
 
 
 def _drop_local_after_drive_backup(
