@@ -574,6 +574,22 @@ def get_match_run(
                 ]
     data["rows"] = rows
     data["so_totals"] = _compute_so_totals_from_rows(rows if isinstance(rows, list) else [])
+    if user_id is not None and data.get("filled_order_id") is None:
+        fo = _find_fo_for_detached_run(
+            conn,
+            user_id,
+            data.get("distributor_id"),
+            data.get("distributor_name"),
+            data.get("category"),
+            data.get("season"),
+        )
+        if fo:
+            try:
+                if rematch_run_against_fo(conn, user_id, int(data["id"]), int(fo["id"])):
+                    conn.commit()
+                    return get_match_run(conn, run_id, user_id=user_id)
+            except Exception:
+                pass
     _mask_fo_fields_if_detached(data)
     return data
 
@@ -782,6 +798,7 @@ def list_match_runs(
     if user_id is not None:
         resurrect_so_runs_orphaned_by_fo_delete(conn, user_id)
         repair_stale_detached_match_rows(conn, user_id)
+        auto_relink_detached_runs_for_user(conn, user_id)
     cols = ", ".join(
         c for c in RUN_COLUMNS if c not in ("rows_json", "so_line_detail_json")
     )
@@ -1306,6 +1323,119 @@ def rematch_run_against_fo(
     return True
 
 
+def _norm_match_category(value: str | None) -> str:
+    text = (value or "").strip().lower()
+    if text.startswith("bath") or "towel" in text:
+        return "bath"
+    if text.startswith("bed"):
+        return "bed"
+    if text.startswith("pillow"):
+        return "pillow"
+    if text in ("tob", "top of bed") or "dohar" in text:
+        return "tob"
+    return text
+
+
+def _distributor_names_compatible(run_name: str | None, upload_key: str) -> bool:
+    run_n = (run_name or "").strip().lower()
+    upload_dist = (str(upload_key or "").split("|")[0] or "").strip().lower()
+    if not run_n or not upload_dist:
+        return False
+    if run_n == upload_dist or run_n in upload_dist or upload_dist in run_n:
+        return True
+    run_tokens = {t for t in run_n.replace(",", " ").split() if len(t) >= 4}
+    upload_tokens = {t for t in upload_dist.replace(",", " ").split() if len(t) >= 4}
+    return bool(run_tokens & upload_tokens)
+
+
+def _seasons_compatible(run_season: str | None, fo_season: str | None) -> bool:
+    run_s = (run_season or "").strip().lower()
+    fo_s = (fo_season or "").strip().lower()
+    if not run_s or not fo_s:
+        return True
+    if run_s == fo_s:
+        return True
+    return run_s.startswith(fo_s) or fo_s.startswith(run_s)
+
+
+def _find_fo_for_detached_run(
+    conn: sqlite3.Connection,
+    user_id: int,
+    distributor_id: int | None,
+    distributor_name: str | None,
+    category: str | None,
+    season: str | None,
+) -> dict[str, Any] | None:
+    """Find a live FO row that should re-link to a detached SO match run."""
+    import filled_orders_db as fodb
+
+    fodb.ensure_schema(conn)
+    cat = (category or "").strip()
+    seas = (season or "").strip()
+    if not cat or not seas:
+        return None
+    if distributor_id:
+        for stream in ("regular", "special"):
+            fo = fodb.find_filled_order_by_distributor_category_season(
+                conn,
+                user_id,
+                int(distributor_id),
+                cat,
+                seas,
+                order_stream=stream,
+            )
+            if fo:
+                return fo
+    name_lower = (distributor_name or "").strip().lower()
+    if not name_lower:
+        return None
+    orders = fodb.list_filled_orders(conn, user_id, category=cat, season=seas)
+    for fo in orders:
+        fo_name = (fo.get("distributor_name_raw") or "").strip().lower()
+        if not fo_name:
+            continue
+        if name_lower in fo_name or fo_name in name_lower:
+            return fo
+        name_tokens = {t for t in name_lower.replace(",", " ").split() if len(t) >= 4}
+        fo_tokens = {t for t in fo_name.replace(",", " ").split() if len(t) >= 4}
+        if name_tokens & fo_tokens:
+            return fo
+    return None
+
+
+def auto_relink_detached_runs_for_user(conn: sqlite3.Connection, user_id: int) -> int:
+    """Repair pass: detached SO packs re-link when a matching FO exists."""
+    ensure_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT id, distributor_id, distributor_name, category, season
+        FROM fo_so_match_runs
+        WHERE user_id = ? AND filled_order_id IS NULL
+        ORDER BY id DESC
+        """,
+        (user_id,),
+    ).fetchall()
+    relinked = 0
+    for run_id, dist_id, dist_name, cat, season in rows:
+        fo = _find_fo_for_detached_run(
+            conn, user_id, dist_id, dist_name, cat, season
+        )
+        if not fo:
+            continue
+        try:
+            if rematch_run_against_fo(conn, user_id, int(run_id), int(fo["id"])):
+                relinked += 1
+        except Exception:
+            try:
+                _link_run_to_filled_order(conn, user_id, int(run_id), int(fo["id"]))
+                relinked += 1
+            except Exception:
+                continue
+    if relinked:
+        conn.commit()
+    return relinked
+
+
 def _run_matches_fo_upload(
     *,
     upload_key: str,
@@ -1322,26 +1452,15 @@ def _run_matches_fo_upload(
     run_key = fo_entity_key_fn(run_name, run_cat, run_season).strip().lower()
     if run_key and run_key == upload_key:
         return True
+    if _distributor_names_compatible(run_name, upload_key):
+        if _norm_match_category(run_cat) == _norm_match_category(fo_cat):
+            if _seasons_compatible(run_season, fo_season):
+                return True
     if fo_dist_id and run_dist_id and int(fo_dist_id) == int(run_dist_id):
-        if _norm_match_category(run_cat) != _norm_match_category(fo_cat):
-            return False
-        run_s = (run_season or "").strip().lower()
-        if not run_s or not fo_season or run_s == fo_season:
-            return True
+        if _norm_match_category(run_cat) == _norm_match_category(fo_cat):
+            if _seasons_compatible(run_season, fo_season):
+                return True
     return False
-
-
-def _norm_match_category(value: str | None) -> str:
-    text = (value or "").strip().lower()
-    if text.startswith("bath") or "towel" in text:
-        return "bath"
-    if text.startswith("bed"):
-        return "bed"
-    if text.startswith("pillow"):
-        return "pillow"
-    if text in ("tob", "top of bed") or "dohar" in text:
-        return "tob"
-    return text
 
 
 def rematch_runs_for_fo_upload(

@@ -1142,6 +1142,8 @@ def restore_match_after_fo_upload(
     relinked = matchdb.rematch_runs_for_fo_upload(
         conn, user_id, filled_order_id, entity_key
     )
+    if not relinked:
+        relinked = matchdb.auto_relink_detached_runs_for_user(conn, user_id)
     if relinked:
         return relinked
 

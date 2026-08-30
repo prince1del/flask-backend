@@ -504,6 +504,46 @@ def test_fo_reupload_rematches_by_distributor_id_when_name_differs(tmp_path):
     assert (detail.get("fo_qty") or 0) > 0
 
 
+def test_auto_relink_when_fo_upload_name_differs(tmp_path):
+    """Detached run re-links when distributor_id matches but names differ."""
+    conn = _conn(tmp_path)
+    import filled_orders_db as fodb
+
+    fo_id = fodb.create_filled_order(
+        conn, 10, 1, "Balaji Homedecor Pvt Ltd", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    pack = {
+        "line_detail": [
+            {
+                "so_number": "102876310",
+                "product_name": "525B DB BS",
+                "qty": 72,
+                "net_amount": 5000,
+            }
+        ]
+    }
+    payload = _payload(5000, "102876310")
+    payload["fo"]["id"] = fo_id
+    payload["fo"]["distributor_id"] = 1
+    payload["fo"]["distributor_name_raw"] = "Balaji Homedecor"
+    run = matchdb.save_match_run(
+        conn, user_id=10, match_payload=payload, so_pack=pack,
+        so_line_detail=pack["line_detail"],
+        so_buyer_label="Balaji Homedecor",
+    )
+    fodb.delete_filled_order(conn, 10, fo_id)
+    fodb.create_filled_order(
+        conn, 10, 1, "Balaji Homedecor Pvt Ltd", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    relinked = matchdb.auto_relink_detached_runs_for_user(conn, 10)
+    assert relinked == 1
+    detail = matchdb.get_match_run(conn, int(run["id"]), user_id=10)
+    assert detail is not None
+    assert detail.get("filled_order_id") is not None
+
+
 def test_purge_expired_drops_old_rows(tmp_path):
     conn = _conn(tmp_path)
     conn.execute(
