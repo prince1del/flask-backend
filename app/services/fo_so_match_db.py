@@ -574,6 +574,7 @@ def get_match_run(
                 ]
     data["rows"] = rows
     data["so_totals"] = _compute_so_totals_from_rows(rows if isinstance(rows, list) else [])
+    _mask_fo_fields_if_detached(data)
     return data
 
 
@@ -779,14 +780,13 @@ def list_match_runs(
     """List match runs. user_id=None → all runs (shared with BD app / team)."""
     ensure_schema(conn)
     if user_id is not None:
-        purge_orphan_match_runs(conn, user_id)
+        resurrect_so_runs_orphaned_by_fo_delete(conn, user_id)
     cols = ", ".join(
         c for c in RUN_COLUMNS if c not in ("rows_json", "so_line_detail_json")
     )
     if user_id is None:
         rows = conn.execute(
             f"""SELECT {cols} FROM fo_so_match_runs
-                WHERE filled_order_id IS NOT NULL
                 ORDER BY id DESC
                 LIMIT ?""",
             (limit,),
@@ -794,13 +794,16 @@ def list_match_runs(
     else:
         rows = conn.execute(
             f"""SELECT {cols} FROM fo_so_match_runs
-                WHERE user_id = ? AND filled_order_id IS NOT NULL
+                WHERE user_id = ?
                 ORDER BY id DESC
                 LIMIT ?""",
             (user_id, limit),
         ).fetchall()
     keys = [c for c in RUN_COLUMNS if c not in ("rows_json", "so_line_detail_json")]
-    return [_row_to_dict(r, keys) for r in rows]
+    out = [_row_to_dict(r, keys) for r in rows]
+    for item in out:
+        _mask_fo_fields_if_detached(item)
+    return out
 
 
 def _strip_so_from_run(run: dict[str, Any], so_number: str) -> dict[str, Any] | None:
@@ -975,40 +978,17 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
     return False
 
 
-def delete_match_runs_for_filled_order(
-    conn: sqlite3.Connection,
-    user_id: int,
-    filled_order_id: int,
-    *,
-    archive: bool = True,
-) -> int:
-    """FO deleted → match deleted. Recycle archive still restores if the same FO is re-uploaded."""
-    ensure_schema(conn)
-    rows = conn.execute(
-        "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ?",
-        (user_id, filled_order_id),
-    ).fetchall()
-    deleted = 0
-    oda = None
-    if archive and rows:
-        try:
-            from app.services import order_desk_archive as oda_mod
-
-            oda = oda_mod
-        except Exception:
-            oda = None
-    for row in rows:
-        run_id = int(row[0])
-        if oda is not None:
-            run = get_match_run(conn, run_id, user_id=user_id)
-            if run:
-                try:
-                    oda.archive_match_run(conn, user_id, run, restore_scope="run")
-                except Exception:
-                    pass
-        if delete_match_run(conn, user_id, run_id):
-            deleted += 1
-    return deleted
+def _mask_fo_fields_if_detached(data: dict[str, Any]) -> None:
+    """FO gone → keep SO pack, drop FO match numbers so UI cannot look matched."""
+    if data.get("filled_order_id") is not None:
+        return
+    data["fo_qty"] = None
+    data["fo_exmill_value"] = None
+    data["fo_source_filename"] = None
+    data["match_count"] = 0
+    data["fuzzy_count"] = 0
+    data["delta_qty"] = data.get("so_qty")
+    data["delta_value"] = data.get("so_net_amount")
 
 
 def detach_match_runs_from_filled_order(
@@ -1018,10 +998,7 @@ def detach_match_runs_from_filled_order(
     *,
     archive: bool = True,
 ) -> int:
-    """Legacy unlink. FO delete now removes the match entirely."""
-    return delete_match_runs_for_filled_order(
-        conn, user_id, filled_order_id, archive=archive
-    )
+    """FO deleted → unlink match. Sales Order pack stays on Order Desk unmatched."""
     ensure_schema(conn)
     rows = conn.execute(
         "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ?",
@@ -1046,7 +1023,18 @@ def detach_match_runs_from_filled_order(
                 except Exception:
                     pass
         conn.execute(
-            "UPDATE fo_so_match_runs SET filled_order_id = NULL WHERE id = ? AND user_id = ?",
+            """
+            UPDATE fo_so_match_runs SET
+                filled_order_id = NULL,
+                fo_qty = NULL,
+                fo_exmill_value = NULL,
+                fo_source_filename = NULL,
+                match_count = 0,
+                fuzzy_count = 0,
+                delta_qty = so_qty,
+                delta_value = so_net_amount
+            WHERE id = ? AND user_id = ?
+            """,
             (run_id, user_id),
         )
         conn.execute(
@@ -1117,28 +1105,113 @@ def relink_orphan_match_runs_to_filled_order(
 
 
 def purge_orphan_match_runs(conn: sqlite3.Connection, user_id: int) -> int:
-    """Drop match runs whose FO row is gone (safety net after FO delete)."""
+    """Do not drop SO packs when FO is gone — they stay unmatched until FO returns."""
+    ensure_schema(conn)
+    return 0
+
+
+def resurrect_so_runs_orphaned_by_fo_delete(
+    conn: sqlite3.Connection, user_id: int
+) -> int:
+    """Bring back SO packs archived when FO delete used to wipe the match row."""
     ensure_schema(conn)
     try:
-        conn.execute("SELECT 1 FROM filled_orders LIMIT 1")
+        from app.services import order_desk_archive as oda
+
+        oda.ensure_schema(conn)
+    except Exception:
+        return 0
+    try:
+        rows = conn.execute(
+            """
+            SELECT payload_json FROM order_desk_archive
+            WHERE user_id = ? AND kind = 'match_run' AND restored_at IS NULL
+              AND datetime(expires_at) > datetime('now')
+            ORDER BY id DESC
+            """,
+            (user_id,),
+        ).fetchall()
     except sqlite3.OperationalError:
         return 0
-    rows = conn.execute(
-        """
-        SELECT r.id
-        FROM fo_so_match_runs r
-        LEFT JOIN filled_orders fo
-          ON fo.id = r.filled_order_id AND fo.user_id = r.user_id
-        WHERE r.user_id = ?
-          AND (r.filled_order_id IS NULL OR fo.id IS NULL)
-        """,
-        (user_id,),
-    ).fetchall()
-    purged = 0
-    for row in rows:
-        if delete_match_run(conn, user_id, int(row[0])):
-            purged += 1
-    return purged
+    restored = 0
+    for (payload_json,) in rows:
+        try:
+            payload = json.loads(payload_json or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        snap = payload.get("run") if isinstance(payload.get("run"), dict) else {}
+        if not snap:
+            continue
+        so_numbers = list(payload.get("so_numbers") or [])
+        if not so_numbers:
+            so_numbers = extract_so_numbers_from_run_row(snap)
+        if not so_numbers:
+            continue
+        if find_so_number_conflicts(conn, so_numbers):
+            continue
+        fo_id = snap.get("filled_order_id")
+        if fo_id:
+            try:
+                live_fo = conn.execute(
+                    "SELECT id FROM filled_orders WHERE id = ? AND user_id = ?",
+                    (int(fo_id), user_id),
+                ).fetchone()
+            except (TypeError, ValueError, sqlite3.OperationalError):
+                live_fo = None
+            if live_fo:
+                continue
+        line_detail = [
+            dict(l) for l in (snap.get("so_line_detail") or []) if isinstance(l, dict)
+        ]
+        rows_json = json.dumps(snap.get("rows") or [], default=str)
+        line_json = json.dumps(line_detail, default=str) if line_detail else None
+        conn.execute(
+            """INSERT INTO fo_so_match_runs (
+                user_id, filled_order_id, distributor_id, distributor_name,
+                category, season, fo_source_filename, so_buyer_label, so_source_filename,
+                fo_qty, so_qty, delta_qty, fo_exmill_value, so_net_amount, delta_value,
+                match_count, fuzzy_count, mismatch_count, missing_count, extra_count,
+                rows_json, so_line_detail_json, created_at
+            ) VALUES (?, NULL, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, NULL, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id,
+                snap.get("distributor_id"),
+                snap.get("distributor_name"),
+                snap.get("category"),
+                snap.get("season"),
+                snap.get("so_buyer_label"),
+                snap.get("so_source_filename"),
+                snap.get("so_qty"),
+                snap.get("so_qty"),
+                snap.get("so_net_amount"),
+                snap.get("so_net_amount"),
+                int(snap.get("mismatch_count") or 0),
+                int(snap.get("missing_count") or 0),
+                int(snap.get("extra_count") or 0),
+                rows_json,
+                line_json,
+                snap.get("created_at") or _now(),
+            ),
+        )
+        run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        try:
+            _insert_so_index_for_run(
+                conn,
+                run_id=run_id,
+                user_id=user_id,
+                filled_order_id=None,
+                so_numbers=so_numbers,
+            )
+        except sqlite3.IntegrityError:
+            conn.execute(
+                "DELETE FROM fo_so_match_runs WHERE id = ? AND user_id = ?",
+                (run_id, user_id),
+            )
+            continue
+        restored += 1
+    if restored:
+        conn.commit()
+    return restored
 
 
 def lookup_so_in_order_match(

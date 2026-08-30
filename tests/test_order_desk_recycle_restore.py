@@ -308,7 +308,7 @@ def test_filled_order_items_restore_on_reupload(tmp_path):
     assert rows[0][0] == "525B|DB"
 
 
-def test_filled_order_delete_removes_match_run(tmp_path):
+def test_filled_order_delete_keeps_so_unmatched(tmp_path):
     conn = _conn(tmp_path)
     import filled_orders_db as fodb
 
@@ -337,8 +337,13 @@ def test_filled_order_delete_removes_match_run(tmp_path):
     fodb.delete_filled_order(conn, 7, fo_id)
 
     assert fodb.get_filled_order(conn, 7, fo_id) is None
-    assert matchdb.get_match_run(conn, run_id, user_id=7) is None
-    assert matchdb.purge_orphan_match_runs(conn, 7) == 0
+    detail = matchdb.get_match_run(conn, run_id, user_id=7)
+    assert detail is not None
+    assert detail.get("filled_order_id") is None
+    assert "102876310" in matchdb.extract_so_numbers_from_run_row(detail)
+    assert detail.get("fo_qty") is None
+    listed = matchdb.list_match_runs(conn, user_id=7)
+    assert any(int(r["id"]) == run_id for r in listed)
 
 
 def test_fo_reupload_restores_archived_match(tmp_path):
@@ -384,7 +389,9 @@ def test_fo_reupload_restores_archived_match(tmp_path):
     assert matchdb.get_match_run(conn, int(run["id"]), user_id=8) is not None
 
     fodb.delete_filled_order(conn, 8, fo_id)
-    assert matchdb.get_match_run(conn, int(run["id"]), user_id=8) is None
+    detached = matchdb.get_match_run(conn, int(run["id"]), user_id=8)
+    assert detached is not None
+    assert detached.get("filled_order_id") is None
 
     new_fo_id = fodb.create_filled_order(
         conn, 8, 1, "Balaji Homedecor", "Bed", "AW26",
