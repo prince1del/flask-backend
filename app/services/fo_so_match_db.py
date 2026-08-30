@@ -357,10 +357,17 @@ def _rebuild_so_index_if_empty(conn: sqlite3.Connection) -> None:
     if int(count or 0) > 0:
         return
     # Prefer newest run when the same SO appears in multiple historical rows.
-    rows = conn.execute(
-        "SELECT id, user_id, filled_order_id, rows_json, so_line_detail_json "
-        "FROM fo_so_match_runs ORDER BY id DESC"
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT id, user_id, filled_order_id, rows_json, so_line_detail_json "
+            "FROM fo_so_match_runs ORDER BY id DESC"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = conn.execute(
+            "SELECT id, user_id, filled_order_id, rows_json "
+            "FROM fo_so_match_runs ORDER BY id DESC"
+        ).fetchall()
+        rows = [(r[0], r[1], r[2], r[3], None) for r in rows]
     claimed: set[str] = set()
     now = _now()
     for row in rows:

@@ -22,6 +22,7 @@ import article_master_parser as amparser
 from flask import (
     Blueprint,
     Response,
+    current_app,
     jsonify,
     redirect,
     render_template_string,
@@ -4380,11 +4381,14 @@ def order_match_list() -> Response:
     from app.services import fo_so_match_db as matchdb
 
     user = getattr(request, "user", None)
-    user_id = (
-        int(user["user_id"])
-        if isinstance(user, dict) and user.get("user_id") is not None
-        else None
-    )
+    try:
+        user_id = (
+            int(user["user_id"])
+            if isinstance(user, dict) and user.get("user_id") is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        user_id = None
     if user_id is None:
         return _json_response(
             {"success": False, "error": {"message": "Authentication required"}},
@@ -4392,11 +4396,20 @@ def order_match_list() -> Response:
         )
     conn = sqlite3.connect(_db_path())
     try:
-        from app.services import order_desk_archive as oda
-
-        oda.maybe_purge(conn)
         runs = matchdb.list_match_runs(conn, user_id=user_id)
+        try:
+            from app.services import order_desk_archive as oda
+
+            oda.maybe_purge(conn)
+        except Exception:
+            current_app.logger.exception("order_match_list: archive purge skipped")
         return _json_response({"success": True, "data": {"runs": runs, "count": len(runs)}})
+    except Exception as exc:
+        current_app.logger.exception("order_match_list failed for user_id=%s", user_id)
+        return _json_response(
+            {"success": False, "error": {"message": f"Could not load Order Match list: {exc}"}},
+            500,
+        )
     finally:
         conn.close()
 
