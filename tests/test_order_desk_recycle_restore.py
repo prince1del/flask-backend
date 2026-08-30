@@ -427,6 +427,10 @@ def test_fo_reupload_restores_archived_match(tmp_path):
     detail = matchdb.get_match_run(conn, int(runs[0][0]), user_id=8)
     assert detail is not None
     assert "102876310" in matchdb.extract_so_numbers_from_run_row(detail)
+    assert detail.get("filled_order_id") == new_fo_id
+    assert (detail.get("fo_qty") or 0) > 0
+    assert all(row.get("status") != "UNMATCHED" for row in (detail.get("rows") or []))
+    assert all(row.get("fo_qty") is not None for row in (detail.get("rows") or []))
 
 
 def test_purge_expired_drops_old_rows(tmp_path):

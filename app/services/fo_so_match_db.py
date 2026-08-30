@@ -1147,6 +1147,91 @@ def detach_match_runs_from_filled_order(
     return detached
 
 
+def rematch_run_against_fo(
+    conn: sqlite3.Connection,
+    user_id: int,
+    run_id: int,
+    filled_order_id: int,
+) -> bool:
+    """Re-run FO vs saved SO pack for an existing match run."""
+    import filled_orders_db as fodb
+    from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
+
+    ensure_schema(conn)
+    run = get_match_run(conn, run_id, user_id=user_id)
+    if not run:
+        return False
+    line_detail = run.get("so_line_detail") or []
+    if not line_detail:
+        return False
+    fo = fodb.get_filled_order(conn, user_id, filled_order_id)
+    if not fo:
+        return False
+    fo_items = fodb.get_filled_order_items(conn, filled_order_id)
+    so_pack: dict[str, Any] = {
+        "line_detail": line_detail,
+        "meta": {
+            "source_filename": run.get("so_source_filename"),
+            "primary_buyer_name": run.get("so_buyer_label"),
+        },
+    }
+    match_payload = run_match_saved_fo_vs_so_pack(
+        fo_meta={**fo, "id": filled_order_id},
+        fo_items=fo_items,
+        so_pack_payload=so_pack,
+    )
+    fo_meta = match_payload.get("fo") or {}
+    match = match_payload.get("match") or {}
+    totals = match.get("totals") or {}
+    counts = match.get("counts") or {}
+    rows = match.get("rows") or []
+    mismatch = int(counts.get("QTY_MISMATCH") or 0) + int(counts.get("VALUE_MISMATCH") or 0)
+    conn.execute(
+        """
+        UPDATE fo_so_match_runs SET
+            filled_order_id = ?,
+            distributor_id = ?,
+            distributor_name = ?,
+            category = ?,
+            season = ?,
+            fo_source_filename = ?,
+            fo_qty = ?, so_qty = ?, delta_qty = ?,
+            fo_exmill_value = ?, so_net_amount = ?, delta_value = ?,
+            match_count = ?, fuzzy_count = ?, mismatch_count = ?,
+            missing_count = ?, extra_count = ?,
+            rows_json = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            filled_order_id,
+            fo_meta.get("distributor_id"),
+            fo_meta.get("distributor_name_raw") or run.get("distributor_name"),
+            fo_meta.get("category"),
+            fo_meta.get("season"),
+            fo_meta.get("source_filename"),
+            totals.get("fo_qty"),
+            totals.get("so_qty"),
+            totals.get("delta_qty"),
+            totals.get("fo_exmill_value"),
+            totals.get("so_net_amount"),
+            totals.get("delta_value"),
+            int(counts.get("MATCH") or 0),
+            int(counts.get("MATCH_FUZZY_BRAND") or 0),
+            mismatch,
+            int(counts.get("MISSING_ON_SO") or 0),
+            int(counts.get("EXTRA_ON_SO") or 0),
+            json.dumps(rows, default=str),
+            run_id,
+            user_id,
+        ),
+    )
+    conn.execute(
+        "UPDATE fo_so_match_so_index SET filled_order_id = ? WHERE run_id = ?",
+        (filled_order_id, run_id),
+    )
+    return True
+
+
 def relink_orphan_match_runs_to_filled_order(
     conn: sqlite3.Connection,
     user_id: int,
@@ -1190,15 +1275,8 @@ def relink_orphan_match_runs_to_filled_order(
         run_key = fo_entity_key(row[1], row[2], row[3]).strip().lower()
         if run_key != key_lower:
             continue
-        conn.execute(
-            "UPDATE fo_so_match_runs SET filled_order_id = ? WHERE id = ? AND user_id = ?",
-            (filled_order_id, run_id, user_id),
-        )
-        conn.execute(
-            "UPDATE fo_so_match_so_index SET filled_order_id = ? WHERE run_id = ?",
-            (filled_order_id, run_id),
-        )
-        relinked += 1
+        if rematch_run_against_fo(conn, user_id, run_id, filled_order_id):
+            relinked += 1
     if relinked:
         conn.commit()
     return relinked
