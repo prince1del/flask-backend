@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS order_desk_archive (
     expires_at TEXT NOT NULL,
     restored_at TEXT
 );
+"""
+
+INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_order_desk_archive_user_kind_key
     ON order_desk_archive(user_id, kind, entity_key);
 CREATE INDEX IF NOT EXISTS idx_order_desk_archive_expires
@@ -40,15 +43,50 @@ CREATE INDEX IF NOT EXISTS idx_order_desk_archive_fo
 _schema_ensured = False
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    except sqlite3.OperationalError:
+        return set()
+    return {str(r[1]) for r in rows}
+
+
+def _migrate_archive_columns(conn: sqlite3.Connection) -> None:
+    """Upgrade older order_desk_archive tables missing recycle columns."""
+    cols = _table_columns(conn, "order_desk_archive")
+    if not cols:
+        return
+    default_exp = _expires_at()
+    if "expires_at" not in cols:
+        conn.execute(
+            "ALTER TABLE order_desk_archive ADD COLUMN expires_at TEXT NOT NULL "
+            f"DEFAULT '{default_exp}'"
+        )
+        conn.execute(
+            "UPDATE order_desk_archive SET expires_at = ? "
+            "WHERE expires_at IS NULL OR TRIM(expires_at) = ''",
+            (default_exp,),
+        )
+    if "restored_at" not in cols:
+        conn.execute(
+            "ALTER TABLE order_desk_archive ADD COLUMN restored_at TEXT"
+        )
+    if "filled_order_id" not in cols:
+        conn.execute(
+            "ALTER TABLE order_desk_archive ADD COLUMN filled_order_id INTEGER"
+        )
+    if "restore_scope" not in cols:
+        conn.execute(
+            "ALTER TABLE order_desk_archive ADD COLUMN restore_scope TEXT NOT NULL "
+            "DEFAULT 'run'"
+        )
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     global _schema_ensured
-    if _schema_ensured:
-        try:
-            conn.execute("SELECT 1 FROM order_desk_archive LIMIT 1")
-            return
-        except sqlite3.OperationalError:
-            _schema_ensured = False
     conn.executescript(SCHEMA_SQL)
+    _migrate_archive_columns(conn)
+    conn.executescript(INDEX_SQL)
     conn.commit()
     _schema_ensured = True
 
