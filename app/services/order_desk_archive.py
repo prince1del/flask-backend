@@ -86,6 +86,13 @@ def _migrate_archive_columns(conn: sqlite3.Connection) -> None:
         "WHERE expires_at IS NULL OR TRIM(expires_at) = ''",
         (default_exp,),
     )
+    cols = _table_columns(conn, "order_desk_archive")
+    if "payload" in cols and "payload_json" in cols:
+        conn.execute(
+            "UPDATE order_desk_archive SET payload_json = payload "
+            "WHERE (payload_json IS NULL OR TRIM(payload_json) = '' OR payload_json = '{}') "
+            "AND payload IS NOT NULL AND TRIM(payload) != ''"
+        )
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -140,7 +147,22 @@ def _insert_archive(
         global _schema_ensured
         _schema_ensured = False
         ensure_schema(conn)
-        conn.execute(sql, values)
+        try:
+            conn.execute(sql, values)
+        except sqlite3.OperationalError:
+            cols = _table_columns(conn, "order_desk_archive")
+            if "payload" in cols and "payload_json" not in cols:
+                conn.execute(
+                    """
+                    INSERT INTO order_desk_archive (
+                        user_id, kind, entity_key, restore_scope, payload,
+                        filled_order_id, created_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+            else:
+                raise
 
 
 def fo_entity_key(

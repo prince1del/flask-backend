@@ -80,3 +80,55 @@ def test_order_match_list_survives_expired_archive_purge(tmp_path, monkeypatch):
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert resp.get_json()["success"] is True
+
+
+def test_delete_single_so_survives_archive_failure(tmp_path, monkeypatch):
+    """Recycle archive must not block SO delete (same as replace/split)."""
+    client, token, db_path = _setup_app(tmp_path, monkeypatch)
+    conn = sqlite3.connect(str(db_path))
+    matchdb.ensure_schema(conn)
+    user_row = conn.execute("SELECT id FROM users WHERE username = 'om_user'").fetchone()
+    uid = int(user_row[0])
+    payload = {
+        "fo": {"id": 1},
+        "match": {
+            "totals": {"fo_qty": 10, "so_qty": 10},
+            "counts": {"MATCH": 1},
+            "rows": [
+                {
+                    "status": "MATCH",
+                    "fo_qty": 10,
+                    "so_qty": 10,
+                    "so_numbers": ["555444333"],
+                    "so_breakdown": [
+                        {"so_number": "555444333", "qty": 10, "net": 100}
+                    ],
+                }
+            ],
+        },
+    }
+    pack = {"line_detail": [{"so_number": "555444333", "qty": 10, "net_amount": 100}]}
+    run = matchdb.save_match_run(conn, user_id=uid, match_payload=payload, so_pack=pack)
+    run_id = int(run["id"])
+    conn.commit()
+    conn.close()
+
+    import app.services.order_desk_archive as oda
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("archive down")
+
+    monkeypatch.setattr(oda, "archive_match_so", _boom)
+
+    resp = client.delete(
+        f"/api/v1/order-fulfillment/order-match/{run_id}?so_number=555444333",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["success"] is True
+    assert body["data"]["deleted"] is True
+
+    conn = sqlite3.connect(str(db_path))
+    assert matchdb.get_match_run(conn, run_id, user_id=uid) is None
+    conn.close()

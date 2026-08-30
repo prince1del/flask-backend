@@ -4727,7 +4727,15 @@ def order_match_delete(run_id: int) -> Response:
                 404,
             )
         if so_number:
-            oda.archive_match_so(conn, user_id, run, so_number, restore_scope="entity")
+            try:
+                oda.archive_match_so(conn, user_id, run, so_number, restore_scope="entity")
+            except Exception:
+                logger.exception(
+                    "archive before delete SO %s failed user=%s run=%s",
+                    so_number,
+                    user_id,
+                    run_id,
+                )
             result = matchdb.delete_match_so_from_run(conn, user_id, run_id, so_number)
             if result is None:
                 return _json_response(
@@ -4756,7 +4764,14 @@ def order_match_delete(run_id: int) -> Response:
                 },
                 409,
             )
-        oda.archive_match_run(conn, user_id, run, restore_scope="run")
+        try:
+            oda.archive_match_run(conn, user_id, run, restore_scope="run")
+        except Exception:
+            logger.exception(
+                "archive before delete match run failed user=%s run=%s",
+                user_id,
+                run_id,
+            )
         ok = matchdb.delete_match_run(conn, user_id, run_id)
         if not ok:
             return _json_response(
@@ -4765,6 +4780,12 @@ def order_match_delete(run_id: int) -> Response:
             )
         conn.commit()
         return _json_response({"success": True, "data": {"deleted": True}})
+    except Exception as exc:
+        logger.exception("order_match_delete failed run=%s so=%s", run_id, so_number)
+        return _json_response(
+            {"success": False, "error": {"message": f"Delete failed: {exc}"}},
+            500,
+        )
     finally:
         conn.close()
 
@@ -4859,7 +4880,15 @@ def order_match_strip_so(run_id: int) -> Response:
                 {"success": False, "error": {"message": "Match run not found"}},
                 404,
             )
-        oda.archive_match_so(conn, user_id, run, so_number, restore_scope="entity")
+        try:
+            oda.archive_match_so(conn, user_id, run, so_number, restore_scope="entity")
+        except Exception:
+            logger.exception(
+                "archive before strip SO %s failed user=%s run=%s",
+                so_number,
+                user_id,
+                run_id,
+            )
         result = matchdb.delete_match_so_from_run(conn, user_id, run_id, so_number)
         if result is None:
             return _json_response(
@@ -4871,6 +4900,12 @@ def order_match_strip_so(run_id: int) -> Response:
         if result.get("deleted_run"):
             data["deleted_run_id"] = run_id
         return _json_response({"success": True, "data": data})
+    except Exception as exc:
+        logger.exception("order_match_strip_so failed run=%s so=%s", run_id, so_number)
+        return _json_response(
+            {"success": False, "error": {"message": f"Delete failed: {exc}"}},
+            500,
+        )
     finally:
         conn.close()
 
@@ -6868,20 +6903,27 @@ def delete_order_fulfillment_tracking(tracking_id: int) -> Response:
     if user_id is not None:
         conn = sqlite3.connect(_db_path())
         try:
-            items, achievements, payments, processed = oda.collect_tracking_bundle(
-                conn, tracking_id
-            )
-            oda.archive_tracking_bundle(
-                conn,
-                user_id,
-                tracking,
-                fulfillment_items=items,
-                achievements=achievements,
-                payment_entries=payments,
-                processed_documents=processed,
-                restore_scope="run",
-            )
-            conn.commit()
+            try:
+                items, achievements, payments, processed = oda.collect_tracking_bundle(
+                    conn, tracking_id
+                )
+                oda.archive_tracking_bundle(
+                    conn,
+                    user_id,
+                    tracking,
+                    fulfillment_items=items,
+                    achievements=achievements,
+                    payment_entries=payments,
+                    processed_documents=processed,
+                    restore_scope="run",
+                )
+                conn.commit()
+            except Exception:
+                logger.exception(
+                    "archive before tracking delete failed user=%s tracking=%s",
+                    user_id,
+                    tracking_id,
+                )
         finally:
             conn.close()
     file_references = db.delete_order_lifecycle_tracking(
