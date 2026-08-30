@@ -544,6 +544,125 @@ def test_auto_relink_when_fo_upload_name_differs(tmp_path):
     assert detail.get("filled_order_id") is not None
 
 
+def test_full_delete_reupload_then_fo_delete_and_reupload(tmp_path):
+    """User flow: delete FO+SO, re-upload both, delete FO, re-upload FO → relink."""
+    conn = _conn(tmp_path)
+    import filled_orders_db as fodb
+    from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
+
+    def save_pair(uid: int, dist_name: str = "Balaji Homedecor") -> tuple[int, dict]:
+        fo_id = fodb.create_filled_order(
+            conn, uid, 1, dist_name, "Bed", "AW26", total_lines=1, matched_lines=1,
+        )
+        item = {
+            "item_key": "525B|DB BS",
+            "brand": "525B",
+            "size": "DB BS",
+            "raw_qty_value": 360,
+            "detected_unit": "pieces",
+            "final_piece_qty": 360,
+            "matched": True,
+            "is_clean_bale_multiple": False,
+        }
+        fodb.insert_filled_order_item(conn, fo_id, item)
+        line_detail = [
+            {
+                "so_number": "102876310",
+                "product_name": "525B DB BS",
+                "brand": "525B",
+                "size": "DB BS",
+                "qty": 360,
+                "net_amount": 481409,
+            }
+        ]
+        fo = fodb.get_filled_order(conn, uid, fo_id)
+        fo_items = fodb.get_filled_order_items(conn, fo_id)
+        pack = {"line_detail": line_detail, "meta": {"source_filename": "balaji.zip"}}
+        payload = run_match_saved_fo_vs_so_pack(
+            fo_meta={**fo, "id": fo_id},
+            fo_items=fo_items,
+            so_pack_payload=pack,
+        )
+        run = matchdb.save_match_run(
+            conn,
+            user_id=uid,
+            match_payload=payload,
+            so_pack=pack,
+            so_line_detail=line_detail,
+            so_buyer_label=dist_name,
+        )
+        return fo_id, run
+
+    uid = 11
+    fo1, run1 = save_pair(uid)
+    run_id = int(run1["id"])
+    matchdb.delete_match_run(conn, uid, run_id)
+    fodb.delete_filled_order(conn, uid, fo1)
+
+    fo2, run2 = save_pair(uid)
+    run_id = int(run2["id"])
+    fodb.delete_filled_order(conn, uid, fo2)
+    detached = matchdb.get_match_run(conn, run_id, user_id=uid)
+    assert detached is not None
+    assert detached.get("filled_order_id") is None
+
+    fo3 = fodb.create_filled_order(
+        conn, uid, 1, "Balaji Homedecor", "Bed", "AW26", total_lines=1, matched_lines=1,
+    )
+    fodb.insert_filled_order_item(
+        conn,
+        fo3,
+        {
+            "item_key": "525B|DB BS",
+            "brand": "525B",
+            "size": "DB BS",
+            "raw_qty_value": 360,
+            "detected_unit": "pieces",
+            "final_piece_qty": 360,
+            "matched": True,
+            "is_clean_bale_multiple": False,
+        },
+    )
+    entity_key = oda.fo_entity_key("Balaji Homedecor", "Bed", "AW26")
+    restored = oda.restore_match_after_fo_upload(conn, uid, fo3, entity_key)
+    assert restored == 1
+    linked = matchdb.get_match_run(conn, run_id, user_id=uid)
+    assert linked is not None
+    assert linked.get("filled_order_id") == fo3
+    assert "102876310" in matchdb.extract_so_numbers_from_run_row(linked)
+
+
+def test_explain_rematch_reports_category_mismatch(tmp_path):
+    conn = _conn(tmp_path)
+    import filled_orders_db as fodb
+
+    fo_id = fodb.create_filled_order(
+        conn, 12, 1, "Balaji Homedecor", "Bed", "AW26", total_lines=1, matched_lines=1,
+    )
+    pack = {
+        "line_detail": [
+            {"so_number": "102876310", "product_name": "525B", "qty": 72, "net_amount": 5000}
+        ]
+    }
+    payload = _payload(5000, "102876310")
+    payload["fo"]["id"] = fo_id
+    payload["fo"]["category"] = "Bed"
+    matchdb.save_match_run(
+        conn, user_id=12, match_payload=payload, so_pack=pack,
+        so_line_detail=pack["line_detail"],
+    )
+    fodb.delete_filled_order(conn, 12, fo_id)
+    bath_fo = fodb.create_filled_order(
+        conn, 12, 1, "Balaji Homedecor", "Bath", "AW26", total_lines=1, matched_lines=1,
+    )
+    ek = oda.fo_entity_key("Balaji Homedecor", "Bath", "AW26")
+    diag = matchdb.explain_rematch_for_fo_upload(conn, 12, bath_fo, ek)
+    assert diag["detached_run_count"] == 1
+    cand = diag["candidate_runs"][0]
+    assert cand["would_match"] is False
+    assert "category" in (cand["skip_reason"] or "")
+
+
 def test_purge_expired_drops_old_rows(tmp_path):
     conn = _conn(tmp_path)
     conn.execute(

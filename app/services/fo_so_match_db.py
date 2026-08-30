@@ -1463,6 +1463,149 @@ def _run_matches_fo_upload(
     return False
 
 
+def _skip_reason_for_fo_upload(
+    *,
+    upload_key: str,
+    fo_dist_id: int | None,
+    fo_cat: str,
+    fo_season: str,
+    run_dist_id: int | None,
+    run_name: str | None,
+    run_cat: str | None,
+    run_season: str | None,
+    fo_entity_key_fn,
+) -> str | None:
+    """Human-readable reason when a detached run does not match this FO upload."""
+    if _run_matches_fo_upload(
+        upload_key=upload_key,
+        fo_dist_id=fo_dist_id,
+        fo_cat=fo_cat,
+        fo_season=fo_season,
+        run_dist_id=run_dist_id,
+        run_name=run_name,
+        run_cat=run_cat,
+        run_season=run_season,
+        fo_entity_key_fn=fo_entity_key_fn,
+    ):
+        return None
+    run_key = fo_entity_key_fn(run_name, run_cat, run_season).strip().lower()
+    if run_key and run_key == upload_key:
+        return None
+    parts: list[str] = []
+    if _norm_match_category(run_cat) != _norm_match_category(fo_cat):
+        parts.append(f"category {run_cat!r} ≠ FO {fo_cat!r}")
+    if not _seasons_compatible(run_season, fo_season):
+        parts.append(f"season {run_season!r} ≠ FO {fo_season!r}")
+    if fo_dist_id and run_dist_id and int(fo_dist_id) != int(run_dist_id):
+        parts.append(f"distributor_id {run_dist_id} ≠ FO {fo_dist_id}")
+    if not _distributor_names_compatible(run_name, upload_key):
+        parts.append(f"name {run_name!r} ≠ upload key {upload_key.split('|')[0]!r}")
+    if not parts:
+        parts.append(f"entity key {run_key!r} ≠ {upload_key!r}")
+    return "; ".join(parts)
+
+
+def explain_rematch_for_fo_upload(
+    conn: sqlite3.Connection,
+    user_id: int,
+    filled_order_id: int,
+    entity_key: str,
+) -> dict[str, Any]:
+    """Diagnose why FO re-upload did or did not re-link detached SO match runs."""
+    import filled_orders_db as fodb
+
+    ensure_schema(conn)
+    key_lower = str(entity_key or "").strip().lower()
+    try:
+        from app.services import order_desk_archive as oda
+
+        fo_entity_key = oda.fo_entity_key
+    except Exception:
+        fo_entity_key = lambda n, c, s: "|".join(
+            [(n or "").strip(), (c or "").strip(), (s or "").strip()]
+        )
+
+    fo = fodb.get_filled_order(conn, user_id, filled_order_id)
+    if not fo:
+        return {"error": "filled_order_not_found", "entity_key": entity_key}
+
+    fo_dist_id = fo.get("distributor_id")
+    fo_cat = (fo.get("category") or "").strip()
+    fo_season = (fo.get("season") or "").strip()
+
+    rows = conn.execute(
+        """
+        SELECT r.id, r.filled_order_id, r.distributor_id,
+               r.distributor_name, r.category, r.season,
+               r.so_buyer_label
+        FROM fo_so_match_runs r
+        LEFT JOIN filled_orders fo
+          ON fo.id = r.filled_order_id AND fo.user_id = r.user_id
+        WHERE r.user_id = ?
+          AND (
+            r.filled_order_id IS NULL
+            OR fo.id IS NULL
+            OR r.filled_order_id = ?
+          )
+        ORDER BY r.id DESC
+        LIMIT 20
+        """,
+        (user_id, filled_order_id),
+    ).fetchall()
+
+    detached = conn.execute(
+        """
+        SELECT COUNT(*) FROM fo_so_match_runs
+        WHERE user_id = ? AND filled_order_id IS NULL
+        """,
+        (user_id,),
+    ).fetchone()[0]
+
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        run_id = int(row[0])
+        linked_fo = row[1]
+        skip = _skip_reason_for_fo_upload(
+            upload_key=key_lower,
+            fo_dist_id=fo_dist_id,
+            fo_cat=fo_cat.lower(),
+            fo_season=fo_season.lower(),
+            run_dist_id=row[2],
+            run_name=row[3],
+            run_cat=row[4],
+            run_season=row[5],
+            fo_entity_key_fn=fo_entity_key,
+        )
+        run_key = fo_entity_key(row[3], row[4], row[5])
+        candidates.append(
+            {
+                "run_id": run_id,
+                "filled_order_id": linked_fo,
+                "run_entity_key": run_key,
+                "run_distributor_id": row[2],
+                "run_distributor_name": row[3],
+                "run_category": row[4],
+                "run_season": row[5],
+                "so_buyer_label": row[6],
+                "would_match": skip is None,
+                "skip_reason": skip,
+            }
+        )
+
+    return {
+        "entity_key": entity_key,
+        "fo": {
+            "id": filled_order_id,
+            "distributor_id": fo_dist_id,
+            "distributor_name": fo.get("distributor_name_raw"),
+            "category": fo_cat,
+            "season": fo_season,
+        },
+        "detached_run_count": int(detached or 0),
+        "candidate_runs": candidates,
+    }
+
+
 def rematch_runs_for_fo_upload(
     conn: sqlite3.Connection,
     user_id: int,
