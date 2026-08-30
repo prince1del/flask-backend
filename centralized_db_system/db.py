@@ -17528,35 +17528,28 @@ class CentralizedDB:
             return cur.rowcount > 0
 
     def sum_so_value_for_fy(self, user_id: int | None, fy_label: str) -> float:
-        """Sum ex-mill value (in lakhs) of filled_order_items whose parent
-        filled_order was created within the financial year's date range
-        (Apr 1 - Mar 31, same bounds sync_ci_achievement_for_fy uses) — the
-        same underlying data as the home screen's "Total value of SO"
-        card, just date-scoped to one FY instead of by season code. Used
-        as a stand-in achievement figure until real CI data exists for
-        the year; see build_fy_achievement_summary."""
+        """Sum Order Desk matched SO net (ex-mill) for one FY — in lakhs.
+
+        Uses fo_so_match_runs (FO↔SO Pack match), deduped like the Sales
+        Orders tab — not filled_order_items / distributor FO uploads.
+        If distributor FO was 100 pc but SO Pack matched only 50 pc,
+        only the matched SO value counts here."""
         from app.fiscal_year import fiscal_year_date_bounds
+        from app.services import fo_so_match_db as matchdb
 
         if not user_id:
             return 0.0
         start, end = fiscal_year_date_bounds(fy_label)
         if not start or not end:
             return 0.0
-        import filled_orders_db as fodb
-
         with sqlite3.connect(self.db_path) as conn:
-            fodb.ensure_schema(conn)
             try:
-                row = conn.execute(
-                    "SELECT COALESCE(SUM(foi.final_piece_qty * COALESCE(foi.ex_mill_price, 0)), 0) "
-                    "FROM filled_order_items foi "
-                    "JOIN filled_orders fo ON fo.id = foi.filled_order_id "
-                    "WHERE fo.user_id = ? AND DATE(fo.created_at) BETWEEN ? AND ?",
-                    (user_id, start, end),
-                ).fetchone()
+                rupees = matchdb.sum_deduped_so_net_for_user(
+                    conn, int(user_id), date_from=start, date_to=end
+                )
             except sqlite3.OperationalError:
                 return 0.0
-        return float(row[0] or 0.0) / 100000.0
+        return float(rupees or 0.0) / 100000.0
 
     def build_fy_achievement_summary(
         self,
@@ -17596,7 +17589,7 @@ class CentralizedDB:
         ci_total = sum(float(r.get("achievement_ci") or 0) for r in breakup)
         manual_dist_total = sum(float(r.get("achievement_manual") or 0) for r in breakup)
         so_total = self.sum_so_value_for_fy(user_id, fy_label)
-        # "SO value" channel = Order Desk SO total when present, else Excel SO upload.
+        # Order Desk matched SO (fo_so_match_runs); fall back to legacy Excel SO upload.
         so_channel = so_total if so_total > 0 else excel_total
         manual_channel = float(manual_fy or 0) + float(manual_dist_total or 0)
 

@@ -716,6 +716,61 @@ def so_net_and_bill_from_match_rows(
     return (fallback, fallback)
 
 
+_DEDUPED_SO_NET_SQL = """
+    SELECT so_net_amount, rows_json
+    FROM fo_so_match_runs
+    WHERE user_id = ?
+      {date_filter}
+      AND id IN (
+        SELECT MAX(id)
+        FROM fo_so_match_runs
+        WHERE user_id = ?
+          {inner_date_filter}
+        GROUP BY CASE
+          WHEN filled_order_id IS NOT NULL
+            THEN 'fo:' || CAST(filled_order_id AS TEXT)
+          ELSE 'party:' || CAST(COALESCE(distributor_id, 0) AS TEXT)
+               || '|' || COALESCE(season, '')
+               || '|' || COALESCE(category, '')
+        END
+      )
+"""
+
+
+def sum_deduped_so_net_for_user(
+    conn: sqlite3.Connection,
+    user_id: int,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> float:
+    """Order Desk SO total (ex-mill / pre-tax) — latest FO↔SO match per slot.
+
+    Same dedupe as Payment Status / Sales Orders tab: one run per filled
+    order (or party+season+category when FO id missing). Uses matched SO
+    lines from rows_json — not distributor Filled Order ex-mill totals.
+    """
+    ensure_schema(conn)
+    if date_from and date_to:
+        date_filter = "AND DATE(created_at) BETWEEN ? AND ?"
+        inner_date_filter = "AND DATE(created_at) BETWEEN ? AND ?"
+        params = (user_id, date_from, date_to, user_id, date_from, date_to)
+    else:
+        date_filter = ""
+        inner_date_filter = ""
+        params = (user_id, user_id)
+    sql = _DEDUPED_SO_NET_SQL.format(
+        date_filter=date_filter,
+        inner_date_filter=inner_date_filter,
+    )
+    rows = conn.execute(sql, params).fetchall()
+    total = 0.0
+    for so_net_amount, rows_json in rows:
+        net, _ = so_net_and_bill_from_match_rows(rows_json, so_net_amount)
+        total += net
+    return round(total, 2)
+
+
 def list_match_runs(
     conn: sqlite3.Connection,
     user_id: int | None = None,

@@ -97,6 +97,88 @@ class PaymentCollectionTests(unittest.TestCase):
         self.assertEqual(cat["so_total"], 1_050_000.0)
         self.assertEqual(cat["outstanding"], 1_050_000.0)
 
+    def test_fy_so_achievement_uses_order_desk_match_not_filled_orders(self) -> None:
+        """Achievement SO channel must follow matched SO, not FO ex-mill uploads."""
+        user_id = 55
+        bill_rows = json.dumps(
+            [
+                {
+                    "so_breakdown": [
+                        {
+                            "so_number": "SO-PARTIAL",
+                            "qty": 50.0,
+                            "net": 500_000.0,
+                            "gst": 0.0,
+                            "total": 500_000.0,
+                        }
+                    ]
+                }
+            ]
+        )
+        with sqlite3.connect(self.path) as conn:
+            matchdb.ensure_schema(conn)
+            import filled_orders_db as fodb
+
+            fodb.ensure_schema(conn)
+            fo_id = fodb.create_filled_order(
+                conn,
+                user_id,
+                1,
+                "Bernina",
+                "Bed",
+                "AW26",
+                source_filename="fo100.xlsx",
+                quantity_column_used="Qty",
+                quantity_unit_used="pieces",
+                total_lines=1,
+                matched_lines=1,
+                unmatched_lines=0,
+                flagged_lines=0,
+            )
+            fodb.insert_filled_order_item(
+                conn,
+                fo_id,
+                {
+                    "item_key": "A|B",
+                    "brand": "A",
+                    "size": "B",
+                    "product_type": "Bedsheet",
+                    "raw_qty_value": 100.0,
+                    "final_piece_qty": 100.0,
+                    "ex_mill_price": 10_000.0,
+                    "matched": True,
+                    "detected_unit": "pieces",
+                    "is_clean_bale_multiple": True,
+                },
+            )
+            conn.execute(
+                """
+                INSERT INTO fo_so_match_runs (
+                    user_id, filled_order_id, distributor_id, distributor_name,
+                    category, season, so_net_amount, rows_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '2026-08-15')
+                """,
+                (user_id, fo_id, 1, "Bernina", "Bed", "AW26", 500_000.0, bill_rows),
+            )
+            conn.commit()
+            fo_rupees = conn.execute(
+                "SELECT COALESCE(SUM(foi.final_piece_qty * foi.ex_mill_price), 0) "
+                "FROM filled_order_items foi "
+                "JOIN filled_orders fo ON fo.id = foi.filled_order_id "
+                "WHERE fo.user_id = ?",
+                (user_id,),
+            ).fetchone()[0]
+            self.assertEqual(float(fo_rupees), 1_000_000.0)
+            self.assertEqual(
+                matchdb.sum_deduped_so_net_for_user(
+                    conn, user_id, date_from="2026-04-01", date_to="2027-03-31"
+                ),
+                500_000.0,
+            )
+
+        lakhs = self.db.sum_so_value_for_fy(user_id, "2026-2027")
+        self.assertAlmostEqual(lakhs, 5.0)
+
 
 if __name__ == "__main__":
     unittest.main()
