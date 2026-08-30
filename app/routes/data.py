@@ -4511,12 +4511,13 @@ def order_match_get(run_id: int) -> Response:
                 404,
             )
         db = CentralizedDB(_db_path())
-        _enrich_order_match_so_documents(
-            run,
-            db=db,
-            workspace_id=get_workspace_id() or "default",
-            user_id=user_id,
-        )
+        if request.args.get("include_documents", "1") != "0":
+            _enrich_order_match_so_documents(
+                run,
+                db=db,
+                workspace_id=get_workspace_id() or "default",
+                user_id=user_id,
+            )
         return _json_response({"success": True, "data": {"run": run}})
     finally:
         conn.close()
