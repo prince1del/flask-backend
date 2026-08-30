@@ -1147,6 +1147,75 @@ def detach_match_runs_from_filled_order(
     return detached
 
 
+def _so_line_detail_for_rematch(run: dict[str, Any]) -> list[dict[str, Any]]:
+    """Use stored SO pack lines; if missing, rebuild from match rows."""
+    stored = [
+        dict(l) for l in (run.get("so_line_detail") or []) if isinstance(l, dict)
+    ]
+    if stored:
+        return stored
+    rebuilt: list[dict[str, Any]] = []
+    for r in run.get("rows") or []:
+        if not isinstance(r, dict):
+            continue
+        brand = str(r.get("brand") or "").strip()
+        size = str(r.get("size") or "").strip()
+        product_name = " ".join(p for p in (brand, size) if p)
+        breakdown = r.get("so_breakdown") or []
+        cells = [c for c in breakdown if isinstance(c, dict)] if isinstance(breakdown, list) else []
+        if cells:
+            for cell in cells:
+                so_n = str(cell.get("so_number") or "").strip()
+                if not so_n:
+                    continue
+                rebuilt.append(
+                    {
+                        "so_number": so_n,
+                        "product_name": product_name,
+                        "product_detail": product_name,
+                        "brand": brand,
+                        "size": size,
+                        "qty": cell.get("qty"),
+                        "net_amount": cell.get("net"),
+                        "gst_amount": cell.get("gst"),
+                        "total_amount": cell.get("total"),
+                    }
+                )
+            continue
+        for so_n in r.get("so_numbers") or []:
+            num = str(so_n or "").strip()
+            if not num:
+                continue
+            rebuilt.append(
+                {
+                    "so_number": num,
+                    "product_name": product_name,
+                    "product_detail": product_name,
+                    "brand": brand,
+                    "size": size,
+                    "qty": r.get("so_qty"),
+                    "net_amount": r.get("so_net_amount"),
+                }
+            )
+    return rebuilt
+
+
+def _link_run_to_filled_order(
+    conn: sqlite3.Connection,
+    user_id: int,
+    run_id: int,
+    filled_order_id: int,
+) -> None:
+    conn.execute(
+        "UPDATE fo_so_match_runs SET filled_order_id = ? WHERE id = ? AND user_id = ?",
+        (filled_order_id, run_id, user_id),
+    )
+    conn.execute(
+        "UPDATE fo_so_match_so_index SET filled_order_id = ? WHERE run_id = ?",
+        (filled_order_id, run_id),
+    )
+
+
 def rematch_run_against_fo(
     conn: sqlite3.Connection,
     user_id: int,
@@ -1161,12 +1230,13 @@ def rematch_run_against_fo(
     run = get_match_run(conn, run_id, user_id=user_id)
     if not run:
         return False
-    line_detail = run.get("so_line_detail") or []
-    if not line_detail:
-        return False
     fo = fodb.get_filled_order(conn, user_id, filled_order_id)
     if not fo:
         return False
+    line_detail = _so_line_detail_for_rematch(run)
+    if not line_detail:
+        _link_run_to_filled_order(conn, user_id, run_id, filled_order_id)
+        return True
     fo_items = fodb.get_filled_order_items(conn, filled_order_id)
     so_pack: dict[str, Any] = {
         "line_detail": line_detail,
@@ -1175,11 +1245,15 @@ def rematch_run_against_fo(
             "primary_buyer_name": run.get("so_buyer_label"),
         },
     }
-    match_payload = run_match_saved_fo_vs_so_pack(
-        fo_meta={**fo, "id": filled_order_id},
-        fo_items=fo_items,
-        so_pack_payload=so_pack,
-    )
+    try:
+        match_payload = run_match_saved_fo_vs_so_pack(
+            fo_meta={**fo, "id": filled_order_id},
+            fo_items=fo_items,
+            so_pack_payload=so_pack,
+        )
+    except Exception:
+        _link_run_to_filled_order(conn, user_id, run_id, filled_order_id)
+        return True
     fo_meta = match_payload.get("fo") or {}
     match = match_payload.get("match") or {}
     totals = match.get("totals") or {}
@@ -1249,12 +1323,25 @@ def _run_matches_fo_upload(
     if run_key and run_key == upload_key:
         return True
     if fo_dist_id and run_dist_id and int(fo_dist_id) == int(run_dist_id):
-        if (run_cat or "").strip().lower() != fo_cat:
+        if _norm_match_category(run_cat) != _norm_match_category(fo_cat):
             return False
         run_s = (run_season or "").strip().lower()
         if not run_s or not fo_season or run_s == fo_season:
             return True
     return False
+
+
+def _norm_match_category(value: str | None) -> str:
+    text = (value or "").strip().lower()
+    if text.startswith("bath") or "towel" in text:
+        return "bath"
+    if text.startswith("bed"):
+        return "bed"
+    if text.startswith("pillow"):
+        return "pillow"
+    if text in ("tob", "top of bed") or "dohar" in text:
+        return "tob"
+    return text
 
 
 def rematch_runs_for_fo_upload(
@@ -1317,7 +1404,11 @@ def rematch_runs_for_fo_upload(
             fo_entity_key_fn=fo_entity_key,
         ):
             continue
-        if rematch_run_against_fo(conn, user_id, run_id, filled_order_id):
+        try:
+            if rematch_run_against_fo(conn, user_id, run_id, filled_order_id):
+                rematched += 1
+        except Exception:
+            _link_run_to_filled_order(conn, user_id, run_id, filled_order_id)
             rematched += 1
     if rematched:
         conn.commit()

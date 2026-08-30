@@ -4629,14 +4629,27 @@ def order_match_delete_selected() -> Response:
                 run_id = int(raw)
             except (TypeError, ValueError):
                 continue
-            run = matchdb.get_match_run(conn, run_id, user_id=user_id)
-            if not run:
+            try:
+                run = matchdb.get_match_run(conn, run_id, user_id=user_id)
+                if not run:
+                    continue
+                try:
+                    oda.archive_match_run(conn, user_id, run, restore_scope="run")
+                except Exception:
+                    logger.exception("archive match run %s failed", run_id)
+                if matchdb.delete_match_run(conn, user_id, run_id):
+                    deleted += 1
+            except Exception:
+                logger.exception("delete match run %s failed", raw)
                 continue
-            oda.archive_match_run(conn, user_id, run, restore_scope="run")
-            if matchdb.delete_match_run(conn, user_id, run_id):
-                deleted += 1
         conn.commit()
         return _json_response({"success": True, "data": {"deleted": deleted}})
+    except Exception as exc:
+        logger.exception("order-match delete-selected failed")
+        return _json_response(
+            {"success": False, "error": {"message": f"Bulk delete failed: {exc}"}},
+            500,
+        )
     finally:
         conn.close()
 
