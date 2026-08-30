@@ -781,6 +781,7 @@ def list_match_runs(
     ensure_schema(conn)
     if user_id is not None:
         resurrect_so_runs_orphaned_by_fo_delete(conn, user_id)
+        repair_stale_detached_match_rows(conn, user_id)
     cols = ", ".join(
         c for c in RUN_COLUMNS if c not in ("rows_json", "so_line_detail_json")
     )
@@ -978,6 +979,90 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
     return False
 
 
+def _strip_fo_from_match_row(row: dict[str, Any]) -> None:
+    """Remove FO match semantics from one stored row; keep SO breakdown intact."""
+    row["fo_qty"] = None
+    row["fo_exmill_value"] = None
+    row["delta_qty"] = row.get("so_qty")
+    row["delta_value"] = row.get("so_net_amount")
+    row["status"] = "UNMATCHED"
+
+
+def _strip_fo_from_match_rows(rows: list[Any]) -> list[Any]:
+    out: list[Any] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        row = dict(r)
+        _strip_fo_from_match_row(row)
+        out.append(row)
+    return out
+
+
+def _rows_json_still_has_fo_match(rows_json: str | bytes | None) -> bool:
+    if not rows_json:
+        return False
+    try:
+        parsed = (
+            json.loads(rows_json)
+            if isinstance(rows_json, (str, bytes))
+            else rows_json
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(parsed, list):
+        return False
+    for r in parsed:
+        if not isinstance(r, dict):
+            continue
+        if r.get("fo_qty") is not None:
+            return True
+        status = str(r.get("status") or "").upper()
+        if status in ("MATCH", "MATCH_FUZZY_BRAND"):
+            return True
+    return False
+
+
+def repair_stale_detached_match_rows(conn: sqlite3.Connection, user_id: int) -> int:
+    """Persist FO strip on old detached runs whose rows_json still look matched."""
+    ensure_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT id, rows_json FROM fo_so_match_runs
+        WHERE user_id = ? AND filled_order_id IS NULL
+        """,
+        (user_id,),
+    ).fetchall()
+    repaired = 0
+    for run_id, rows_json in rows:
+        if not _rows_json_still_has_fo_match(rows_json):
+            continue
+        try:
+            parsed = json.loads(rows_json or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(parsed, list):
+            continue
+        stripped = _strip_fo_from_match_rows(parsed)
+        conn.execute(
+            """
+            UPDATE fo_so_match_runs SET
+                rows_json = ?,
+                match_count = 0,
+                fuzzy_count = 0,
+                mismatch_count = 0,
+                missing_count = 0,
+                extra_count = 0
+            WHERE id = ? AND user_id = ?
+            """,
+            (json.dumps(stripped, default=str), run_id, user_id),
+        )
+        repaired += 1
+    if repaired:
+        conn.commit()
+    return repaired
+
+
 def _mask_fo_fields_if_detached(data: dict[str, Any]) -> None:
     """FO gone → keep SO pack, drop FO match numbers so UI cannot look matched."""
     if data.get("filled_order_id") is not None:
@@ -987,8 +1072,16 @@ def _mask_fo_fields_if_detached(data: dict[str, Any]) -> None:
     data["fo_source_filename"] = None
     data["match_count"] = 0
     data["fuzzy_count"] = 0
+    data["mismatch_count"] = 0
+    data["missing_count"] = 0
+    data["extra_count"] = 0
     data["delta_qty"] = data.get("so_qty")
     data["delta_value"] = data.get("so_net_amount")
+    rows = data.get("rows")
+    if isinstance(rows, list):
+        for r in rows:
+            if isinstance(r, dict):
+                _strip_fo_from_match_row(r)
 
 
 def detach_match_runs_from_filled_order(
@@ -1015,13 +1108,16 @@ def detach_match_runs_from_filled_order(
             oda = None
     for row in rows:
         run_id = int(row[0])
-        if oda is not None:
-            run = get_match_run(conn, run_id, user_id=user_id)
-            if run:
-                try:
-                    oda.archive_match_run(conn, user_id, run, restore_scope="run")
-                except Exception:
-                    pass
+        run = get_match_run(conn, run_id, user_id=user_id)
+        if oda is not None and run:
+            try:
+                oda.archive_match_run(conn, user_id, run, restore_scope="run")
+            except Exception:
+                pass
+        stripped_rows_json: str | None = None
+        if run:
+            stripped = _strip_fo_from_match_rows(run.get("rows") or [])
+            stripped_rows_json = json.dumps(stripped, default=str)
         conn.execute(
             """
             UPDATE fo_so_match_runs SET
@@ -1031,11 +1127,15 @@ def detach_match_runs_from_filled_order(
                 fo_source_filename = NULL,
                 match_count = 0,
                 fuzzy_count = 0,
+                mismatch_count = 0,
+                missing_count = 0,
+                extra_count = 0,
                 delta_qty = so_qty,
-                delta_value = so_net_amount
+                delta_value = so_net_amount,
+                rows_json = COALESCE(?, rows_json)
             WHERE id = ? AND user_id = ?
             """,
-            (run_id, user_id),
+            (stripped_rows_json, run_id, user_id),
         )
         conn.execute(
             "UPDATE fo_so_match_so_index SET filled_order_id = NULL WHERE run_id = ?",

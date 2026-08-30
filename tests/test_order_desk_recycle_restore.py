@@ -392,6 +392,10 @@ def test_fo_reupload_restores_archived_match(tmp_path):
     detached = matchdb.get_match_run(conn, int(run["id"]), user_id=8)
     assert detached is not None
     assert detached.get("filled_order_id") is None
+    assert detached.get("match_count") == 0
+    for row in detached.get("rows") or []:
+        assert row.get("fo_qty") is None
+        assert row.get("status") == "UNMATCHED"
 
     new_fo_id = fodb.create_filled_order(
         conn, 8, 1, "Balaji Homedecor", "Bed", "AW26",
