@@ -145,27 +145,22 @@ def _backup_filled_order_to_drive(
     try:
         from app.storage.nexora_docs import push_file_to_nexora_drive
 
-        stream_label = (
-            "Special"
-            if str(order_stream or "").strip().lower() == "special"
-            else "Regular"
-        )
-        readable = " ".join(
-            part for part in (distributor_name_raw or "", category or "", season or "", stream_label)
-            if part
-        ).strip()
-        stem = readable or Path(filename or "filled_order").stem
+        display_name = Path(filename or "filled_order").name
         if merge_upload:
             file_stem = Path(filename or "additional").stem.strip()
             if file_stem:
-                stem = f"{stem} - {file_stem}"
+                suffix_part = Path(filename or "").suffix or suffix
+                display_name = f"{file_stem}{suffix_part}"
         push_file_to_nexora_drive(
             user_id=user_id,
             workspace_id=workspace_id,
             local_path=tmp_path,
             subfolder="Filled Orders",
-            display_name=f"{stem}{suffix}",
+            display_name=display_name,
             replace_if_exists=True,
+            season=season,
+            category=category,
+            distributor_name=distributor_name_raw,
         )
     except Exception:
         logger.exception("Filled Order Drive backup failed for order %s", order_id)

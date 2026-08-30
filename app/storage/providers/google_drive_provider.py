@@ -243,6 +243,26 @@ class GoogleDriveProvider(StorageProvider):
         except Exception as exc:
             raise RuntimeError(f"Google Drive upload_or_replace failed: {exc}") from exc
 
+    def ensure_folder_path(self, parent_id: str, *segment_names: str) -> str:
+        """Create or find nested folders: parent/seg1/seg2/… Returns deepest id."""
+        current = parent_id
+        for raw_name in segment_names:
+            name = (raw_name or "").strip()
+            if not name:
+                continue
+            cache_key = f"{current}|{name}"
+            cached = self.folder_cache.get(cache_key)
+            if cached:
+                current = cached
+                continue
+            child_id = self._find_child_folder(name, current)
+            if not child_id:
+                created = self.create_folder(name, parent_folder=current)
+                child_id = str(created["id"])
+            self.folder_cache[cache_key] = child_id
+            current = child_id
+        return current
+
     def ensure_nexora_workspace(self) -> dict[str, Any]:
         """Create Drive/NEXORA with Downloads, Invoices, Reports, Backups if missing."""
         if self.nexora_root_id and self.nexora_root_id in self.folder_cache:

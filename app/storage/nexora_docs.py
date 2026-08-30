@@ -58,15 +58,11 @@ def push_file_to_nexora_drive(
     subfolder: str,
     display_name: str | None = None,
     replace_if_exists: bool = False,
+    season: str | None = None,
+    category: str | None = None,
+    distributor_name: str | None = None,
 ) -> dict[str, Any] | None:
-    """Upload any local file into NEXORA/<subfolder>. Returns Drive metadata or None.
-
-    Not PDF-specific: Drive detects the type from the file itself, so
-    workbooks (.xlsx) upload exactly the same way.
-
-    replace_if_exists: when True, overwrite a same-named file in that subfolder
-    instead of creating a duplicate (used for rolling JSON snapshots).
-    """
+    """Upload into NEXORA/{subfolder}/{Season}/{Category}/{Distributor}/file."""
     if not user_id or not local_path:
         return None
     path = Path(str(local_path))
@@ -74,6 +70,7 @@ def push_file_to_nexora_drive(
         return None
     try:
         from app.storage.manager import StorageManager
+        from app.storage.nexora_drive_paths import build_order_desk_drive_segments
         from app.storage.providers.google_drive_provider import GoogleDriveProvider
 
         manager = StorageManager()
@@ -83,7 +80,19 @@ def push_file_to_nexora_drive(
         )
         connection = getattr(manager, "user_connections", {}).get(int(user_id)) or {}
         workspace = provider.ensure_nexora_workspace()
-        folder_id = workspace["folders"].get(subfolder) or workspace["root_id"]
+        base_id = workspace["folders"].get(subfolder) or workspace["root_id"]
+        segments: list[str] = []
+        if season or category or distributor_name:
+            segments = build_order_desk_drive_segments(
+                season=season,
+                category=category,
+                distributor_name=distributor_name,
+            )
+        folder_id = (
+            provider.ensure_folder_path(base_id, *segments)
+            if segments
+            else base_id
+        )
         upload_fn = provider.upload_or_replace if replace_if_exists else provider.upload
         uploaded = upload_fn(
             str(path),
@@ -99,9 +108,10 @@ def push_file_to_nexora_drive(
                 uploaded=uploaded,
             )
             logger.info(
-                "NEXORA Drive backup OK user=%s subfolder=%s file=%s id=%s",
+                "NEXORA Drive backup OK user=%s path=%s/%s file=%s id=%s",
                 user_id,
                 subfolder,
+                "/".join(segments),
                 display_name or path.name,
                 uploaded.get("id"),
             )

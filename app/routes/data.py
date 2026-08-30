@@ -3696,6 +3696,7 @@ def so_pack_analyze() -> Response:
         mode=mode,
         label=label,
         payload=payload,
+        analyze_data=data if isinstance(data, dict) else None,
     )
     if isinstance(data, dict):
         data = dict(data)
@@ -3738,6 +3739,7 @@ def so_pack_analyze_stream() -> Response:
                         mode=mode,
                         label=label,
                         payload=payload,
+                        analyze_data=item if isinstance(item, dict) else None,
                     )
                     if isinstance(item, dict):
                         item = dict(item)
@@ -4697,6 +4699,9 @@ def _archive_order_pdf_to_drive(
     kind: str,
     local_path: str | Path | None,
     display_name: str,
+    season: str | None = None,
+    category: str | None = None,
+    distributor_name: str | None = None,
 ) -> str | None:
     """Best-effort: copy SO/CI PDF into Drive/NEXORA (does not fail the upload).
 
@@ -4715,6 +4720,9 @@ def _archive_order_pdf_to_drive(
         subfolder=subfolder,
         display_name=display_name,
         replace_if_exists=True,
+        season=season,
+        category=category,
+        distributor_name=distributor_name,
     )
     file_id = (uploaded or {}).get("id")
     if file_id:
@@ -4736,6 +4744,7 @@ def _backup_so_pack_upload_to_drive(
     mode: str,
     label: str,
     payload: Any,
+    analyze_data: dict | None = None,
 ) -> int:
     """Best-effort: push each SO PDF into Drive/NEXORA/Sales Orders (never the zip).
 
@@ -4749,12 +4758,21 @@ def _backup_so_pack_upload_to_drive(
         return 0
     from app.services.so_pack_consolidate import _load_pack_pdfs
     from app.storage.nexora_docs import push_file_to_nexora_drive, remove_file_from_nexora_drive
+    from app.storage.nexora_drive_paths import so_pdf_drive_contexts
 
     archive_name = Path(label).name
     is_archive = archive_name.lower().endswith((".zip", ".rar"))
     pushed = 0
+    pdf_contexts = so_pdf_drive_contexts(analyze_data, workspace_id=workspace_id)
 
-    def _push_bytes(raw: bytes, display_name: str) -> None:
+    def _push_bytes(
+        raw: bytes,
+        display_name: str,
+        *,
+        season: str | None,
+        category: str | None,
+        distributor_name: str | None,
+    ) -> None:
         nonlocal pushed
         suffix = Path(display_name).suffix or ".pdf"
         tmp_path: str | None = None
@@ -4769,6 +4787,9 @@ def _backup_so_pack_upload_to_drive(
                 subfolder="Sales Orders",
                 display_name=display_name,
                 replace_if_exists=True,
+                season=season,
+                category=category,
+                distributor_name=distributor_name,
             )
             if uploaded and uploaded.get("id"):
                 pushed += 1
@@ -4794,7 +4815,14 @@ def _backup_so_pack_upload_to_drive(
             safe_name = Path(name).name
             if not safe_name.lower().endswith(".pdf"):
                 continue
-            _push_bytes(raw, safe_name)
+            ctx = pdf_contexts.get(safe_name) or pdf_contexts.get("_default") or {}
+            _push_bytes(
+                raw,
+                safe_name,
+                season=ctx.get("season"),
+                category=ctx.get("category"),
+                distributor_name=ctx.get("distributor_name"),
+            )
         if is_archive:
             remove_file_from_nexora_drive(
                 user_id=user_id,
@@ -4971,6 +4999,15 @@ def upload_sales_order_v2() -> Response:
                 # Backed up now, but the local file is still needed below for
                 # line-item parsing — it is dropped at the very end of the
                 # request instead (see so_drive_file_id).
+                from app.storage.nexora_drive_paths import resolve_drive_season
+
+                sheet_category = (latest_sheet or {}).get("category")
+                sheet_name = (latest_sheet or {}).get("name")
+                so_season = resolve_drive_season(
+                    order_date=header.get("order_date"),
+                    order_sheet_name=sheet_name,
+                    workspace_id=workspace_id,
+                )
                 so_drive_file_id = _archive_order_pdf_to_drive(
                     db=db,
                     user_id=user_id,
@@ -4978,7 +5015,10 @@ def upload_sales_order_v2() -> Response:
                     tracking_id=tracking_id,
                     kind="so",
                     local_path=target_path,
-                    display_name=f"{order_ref_no or 'SO'} {distributor_name_for_folder}.pdf",
+                    display_name=Path(target_path).name,
+                    season=so_season,
+                    category=sheet_category,
+                    distributor_name=distributor_name_for_folder,
                 )
 
                 # Apply Filled Order (Article Master module) as ordered_qty source.
@@ -7082,6 +7122,7 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
             mimetype="application/json",
             status=404,
         )
+    distributor_name_for_folder = None
     if matching_so_for_move and matching_so_for_move.get("distributor_id") and commercial_invoice_file_reference:
         try:
             commercial_invoice_file_reference = str(
@@ -7135,6 +7176,20 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
         )
         # Dropped after _apply_ci_line_items_and_achievement below, which
         # still reads this file.
+        from app.fiscal_year import season_from_date
+        from app.storage.nexora_drive_paths import resolve_drive_season
+
+        sheet_name = (matching_so_for_move or {}).get("order_sheet_name")
+        sheet_id = (matching_so_for_move or {}).get("order_sheet_id")
+        ci_category = None
+        if sheet_id:
+            sheet_row = db.get_order_sheet(int(sheet_id), workspace_id=workspace_id)
+            ci_category = (sheet_row or {}).get("category")
+        ci_season = resolve_drive_season(
+            season=season_from_date(ci_date),
+            order_sheet_name=sheet_name,
+            workspace_id=workspace_id,
+        )
         ci_drive_file_id = _archive_order_pdf_to_drive(
             db=db,
             user_id=ci_user_id,
@@ -7142,7 +7197,10 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
             tracking_id=tracking_id,
             kind="ci",
             local_path=commercial_invoice_file_reference,
-            display_name=f"{invoice_no or order_ref_no or 'CI'}.pdf",
+            display_name=Path(commercial_invoice_file_reference).name,
+            season=ci_season,
+            category=ci_category,
+            distributor_name=distributor_name_for_folder,
         )
     except ValueError as exc:
         return Response(
@@ -7432,6 +7490,15 @@ def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
     )
     # Local copy is still read by _apply_ci_line_items_and_achievement below,
     # so it is dropped after that, not here.
+    from app.fiscal_year import season_from_date
+    from app.storage.nexora_drive_paths import resolve_drive_season
+
+    latest_sheet = db.get_latest_order_sheet(workspace_id=workspace_id)
+    ci_season = resolve_drive_season(
+        season=season_from_date(ci_date),
+        order_sheet_name=(latest_sheet or {}).get("name"),
+        workspace_id=workspace_id,
+    )
     ci_drive_file_id = _archive_order_pdf_to_drive(
         db=db,
         user_id=ci_user_id,
@@ -7439,7 +7506,10 @@ def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
         tracking_id=tracking_id,
         kind="ci",
         local_path=commercial_invoice_file_reference,
-        display_name=f"{invoice_no or order_ref_no or 'CI'}.pdf",
+        display_name=Path(commercial_invoice_file_reference).name,
+        season=ci_season,
+        category=(latest_sheet or {}).get("category"),
+        distributor_name=distributor_name_for_folder,
     )
 
     item_results, has_any_discrepancy, achievement_id, achievement_error, article_master_match = (

@@ -32,6 +32,18 @@ class _FakeProvider:
             "folders": {name: f"{name}-id" for name in GoogleDriveProvider.NEXORA_SUBFOLDERS},
         }
 
+    def ensure_folder_path(self, parent_id: str, *segment_names: str) -> str:
+        current = parent_id
+        for seg in segment_names:
+            key = f"{current}|{seg}"
+            child = f"{current}/{seg}"
+            if not hasattr(self, "_folder_paths"):
+                self._folder_paths = {}
+            if key not in self._folder_paths:
+                self._folder_paths[key] = child
+            current = self._folder_paths[key]
+        return current
+
     def upload(self, path, folder_id, display_name=None):
         self.uploaded.append({"path": path, "folder_id": folder_id, "name": display_name})
         return {"id": self.file_id, "name": display_name}
@@ -146,8 +158,8 @@ def test_filled_order_workbook_is_pushed_to_drive(tmp_path, monkeypatch):
 
     assert len(provider.uploaded) == 1
     sent = provider.uploaded[0]
-    assert sent["folder_id"] == "Filled Orders-id"
-    assert sent["name"] == "Balaji Homedecor Bath AW26 Regular.xlsx"
+    assert sent["folder_id"] == "Filled Orders-id/AW26/Bath/Balaji Homedecor"
+    assert sent["name"] == "whatever_the_distributor_named_it.xlsx"
 
 
 def test_filled_order_drive_failure_never_breaks_the_upload(tmp_path, monkeypatch):
@@ -202,18 +214,39 @@ def test_so_pack_zip_backup_uploads_separate_pdfs_not_archive(tmp_path, monkeypa
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("BND 102876593.pdf", b"%PDF-1.4 one")
         zf.writestr("BND SPL 102876664.pdf", b"%PDF-1.4 two")
+    analyze_data = {
+        "meta": {"dominant_category": "Bed", "primary_buyer_name": "Bernina International P Ltd"},
+        "so_summary": [
+            {
+                "source_pdf": "BND 102876593.pdf",
+                "buyer_name": "Bernina International P Ltd",
+                "order_date": "2026-08-15",
+            },
+            {
+                "source_pdf": "BND SPL 102876664.pdf",
+                "buyer_name": "Bernina International P Ltd",
+                "order_date": "2026-08-15",
+            },
+        ],
+        "line_detail": [
+            {"source_pdf": "BND 102876593.pdf", "product_name": "525B BEDSHEET", "qty": 1},
+            {"source_pdf": "BND SPL 102876664.pdf", "product_name": "525B BEDSHEET", "qty": 1},
+        ],
+    }
     _backup_so_pack_upload_to_drive(
         user_id=1,
         workspace_id="ws",
         mode="single",
         label="bnd.zip",
         payload=buf.getvalue(),
+        analyze_data=analyze_data,
     )
     assert len(provider.uploaded) == 2
     names = {u["name"] for u in provider.uploaded}
     assert names == {"BND 102876593.pdf", "BND SPL 102876664.pdf"}
     assert "bnd.zip" not in names
-    assert all(u["folder_id"] == "Sales Orders-id" for u in provider.uploaded)
+    expected_folder = "Sales Orders-id/AW26/Bed/Bernina International P Ltd"
+    assert all(u["folder_id"] == expected_folder for u in provider.uploaded)
 
 
 def test_so_pack_zip_backup_removes_stale_archive_from_drive(tmp_path, monkeypatch):
