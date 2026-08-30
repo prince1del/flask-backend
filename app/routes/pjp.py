@@ -152,6 +152,74 @@ def _day_dict(row: sqlite3.Row) -> dict:
     }
 
 
+_COMPARE_FIELDS = (
+    "place_to_visit",
+    "from_place",
+    "to_place",
+    "business_activity",
+    "particulars",
+    "night_stay",
+    "travel_kms",
+    "day_type",
+)
+
+
+def _norm_compare_value(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return f"{value:.4g}"
+    return str(value).strip()
+
+
+def _day_has_manual_data(entry: dict | None) -> bool:
+    """True when a saved DB row has meaningful planner content."""
+    if not entry or not entry.get("id"):
+        return False
+    place = (entry.get("place_to_visit") or "").strip().lower()
+    has_route = any(
+        (entry.get(key) or "").strip()
+        for key in ("from_place", "to_place", "business_activity", "particulars", "night_stay")
+    )
+    if entry.get("travel_kms") not in (None, ""):
+        has_route = True
+    if place in {"", "holiday", "leave"} and not has_route:
+        return False
+    return bool(place or has_route)
+
+
+def _days_content_equal(existing: dict, incoming: dict) -> bool:
+    for field in _COMPARE_FIELDS:
+        if _norm_compare_value(existing.get(field)) != _norm_compare_value(incoming.get(field)):
+            return False
+    return True
+
+
+def _split_import_conflicts(
+    existing_by_date: dict[str, dict],
+    incoming_days: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Return (auto_apply_days, conflicts) for Excel import preview."""
+    auto_apply: list[dict] = []
+    conflicts: list[dict] = []
+    for incoming in incoming_days:
+        plan_date = (incoming.get("plan_date") or "").strip()
+        if not plan_date:
+            continue
+        existing = existing_by_date.get(plan_date)
+        if existing and _day_has_manual_data(existing) and not _days_content_equal(existing, incoming):
+            conflicts.append(
+                {
+                    "plan_date": plan_date,
+                    "existing": existing,
+                    "incoming": incoming,
+                }
+            )
+        else:
+            auto_apply.append(incoming)
+    return auto_apply, conflicts
+
+
 def _empty_day(d: date) -> dict:
     dtype = "weekend" if d.weekday() >= 5 else "blank"
     return {
@@ -718,6 +786,122 @@ def _parse_pjp_excel(file_bytes: bytes, filename: str = "") -> dict:
     }
 
 
+def _read_pjp_upload() -> tuple[bytes, str] | tuple[None, tuple]:
+    uploaded = request.files.get("file") or request.files.get("excel")
+    if not uploaded or not uploaded.filename:
+        return None, (
+            jsonify({"success": False, "error": {"message": "Upload an Excel file (.xlsx)"}}),
+            400,
+        )
+    filename = uploaded.filename
+    if not filename.lower().endswith((".xlsx", ".xlsm")):
+        return None, (
+            jsonify(
+                {"success": False, "error": {"message": "Only .xlsx / .xlsm PJP files are supported"}}
+            ),
+            400,
+        )
+    file_bytes = uploaded.read()
+    if not file_bytes:
+        return None, (
+            jsonify({"success": False, "error": {"message": "Empty file"}}),
+            400,
+        )
+    return (file_bytes, filename), None
+
+
+def _parse_pjp_upload(file_bytes: bytes, filename: str) -> tuple[dict, str] | tuple[None, tuple]:
+    try:
+        parsed = _parse_pjp_excel(file_bytes, filename)
+    except ValueError as exc:
+        return None, (jsonify({"success": False, "error": {"message": str(exc)}}), 400)
+    except Exception as exc:
+        return None, (
+            jsonify({"success": False, "error": {"message": f"Unable to read Excel: {exc}"}}),
+            400,
+        )
+
+    force_ym = (request.form.get("year_month") or "").strip()
+    year_month = force_ym if _parse_ym(force_ym) else parsed["year_month"]
+    if force_ym and _parse_ym(force_ym):
+        parsed["days"] = [
+            d for d in parsed["days"] if str(d.get("plan_date") or "").startswith(year_month)
+        ]
+    return parsed, year_month
+
+
+def _existing_days_by_date(
+    conn: sqlite3.Connection, workspace_id: str, user_id: int, year_month: str
+) -> dict[str, dict]:
+    parsed = _parse_ym(year_month)
+    if not parsed:
+        return {}
+    year, month = parsed
+    rows = conn.execute(
+        """
+        SELECT * FROM monthly_pjp_days
+        WHERE workspace_id = ? AND user_id = ?
+          AND plan_date >= ? AND plan_date < ?
+        """,
+        (
+            workspace_id,
+            user_id,
+            f"{year_month}-01",
+            f"{year + (1 if month == 12 else 0)}-{1 if month == 12 else month + 1:02d}-01",
+        ),
+    ).fetchall()
+    return {r["plan_date"]: _day_dict(r) for r in rows}
+
+
+@pjp_bp.route("/import/preview", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def preview_pjp_excel_import():
+    """Parse PJP Excel and report dates that would overwrite saved manual entries."""
+    uid, err = _require_user_id()
+    if err:
+        return err
+    upload, upload_err = _read_pjp_upload()
+    if upload_err:
+        return upload_err
+    file_bytes, filename = upload
+    parsed_result = _parse_pjp_upload(file_bytes, filename)
+    if parsed_result[0] is None:
+        return parsed_result[1]
+    parsed, year_month = parsed_result
+
+    workspace_id = get_workspace_id()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        existing_by_date = _existing_days_by_date(conn, workspace_id, uid, year_month)
+    incoming_days = parsed.get("days") or []
+    auto_apply, conflicts = _split_import_conflicts(existing_by_date, incoming_days)
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "year_month": year_month,
+                "meta": {
+                    "sm_name": parsed.get("sm_name"),
+                    "zone": parsed.get("zone"),
+                    "title": parsed.get("title"),
+                    "note": parsed.get("note"),
+                },
+                "import": {
+                    "filename": filename,
+                    "sheet": parsed.get("sheet"),
+                    "imported_days": len(incoming_days),
+                },
+                "auto_apply_days": auto_apply,
+                "conflicts": conflicts,
+                "conflict_count": len(conflicts),
+                "auto_apply_count": len(auto_apply),
+            },
+        }
+    )
+
+
 @pjp_bp.route("/import", methods=["POST"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")
@@ -726,31 +910,14 @@ def import_pjp_excel():
     uid, err = _require_user_id()
     if err:
         return err
-    uploaded = request.files.get("file") or request.files.get("excel")
-    if not uploaded or not uploaded.filename:
-        return jsonify({"success": False, "error": {"message": "Upload an Excel file (.xlsx)"}}), 400
-    filename = uploaded.filename
-    if not filename.lower().endswith((".xlsx", ".xlsm")):
-        return jsonify(
-            {"success": False, "error": {"message": "Only .xlsx / .xlsm PJP files are supported"}}
-        ), 400
-    file_bytes = uploaded.read()
-    if not file_bytes:
-        return jsonify({"success": False, "error": {"message": "Empty file"}}), 400
-    try:
-        parsed = _parse_pjp_excel(file_bytes, filename)
-    except ValueError as exc:
-        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
-    except Exception as exc:
-        return jsonify({"success": False, "error": {"message": f"Unable to read Excel: {exc}"}}), 400
-
-    # Optional override: force year_month from form (rare)
-    force_ym = (request.form.get("year_month") or "").strip()
-    year_month = force_ym if _parse_ym(force_ym) else parsed["year_month"]
-    if force_ym and _parse_ym(force_ym):
-        parsed["days"] = [
-            d for d in parsed["days"] if str(d.get("plan_date") or "").startswith(year_month)
-        ]
+    upload, upload_err = _read_pjp_upload()
+    if upload_err:
+        return upload_err
+    file_bytes, filename = upload
+    parsed_result = _parse_pjp_upload(file_bytes, filename)
+    if parsed_result[0] is None:
+        return parsed_result[1]
+    parsed, year_month = parsed_result
 
     workspace_id = get_workspace_id()
     with sqlite3.connect(_db_path()) as conn:
