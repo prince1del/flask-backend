@@ -7446,12 +7446,13 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
         )
     )
 
+    tracking_restored = False
     if ci_user_id and tracking_id:
         from app.services import order_desk_archive as oda
 
         restore_conn = sqlite3.connect(_db_path())
         try:
-            oda.restore_tracking_after_upload(
+            tracking_restored = oda.restore_tracking_after_upload(
                 restore_conn,
                 ci_user_id,
                 order_ref_no,
@@ -7473,6 +7474,7 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
                     "achievement_id": None,
                     "achievement_error": achievement_error,
                     "article_master_match": article_master_match,
+                    "tracking_restored": tracking_restored,
                 },
             }),
             mimetype="application/json",
@@ -7487,6 +7489,7 @@ def _confirm_ci_so_link_impl(payload: dict | None = None) -> Response:
                 "item_results": item_results,
                 "has_discrepancy": has_any_discrepancy,
                 "article_master_match": article_master_match,
+                "tracking_restored": tracking_restored,
                 "mode": "linked",
                 "detail_level": (
                     commercial_invoice_parsed.get("detail_level")
@@ -7749,12 +7752,13 @@ def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
         )
     )
 
+    tracking_restored = False
     if ci_user_id and tracking_id and order_ref_no:
         from app.services import order_desk_archive as oda
 
         restore_conn = sqlite3.connect(_db_path())
         try:
-            oda.restore_tracking_after_upload(
+            tracking_restored = oda.restore_tracking_after_upload(
                 restore_conn,
                 ci_user_id,
                 order_ref_no,
@@ -7776,6 +7780,7 @@ def _confirm_ci_only_impl(payload: dict | None = None) -> Response:
             "item_results": item_results,
             "has_discrepancy": has_any_discrepancy,
             "article_master_match": article_master_match,
+            "tracking_restored": tracking_restored,
             "mode": "ci_only",
             "order_ref_no": order_ref_no,
             "invoice_no": invoice_no,
@@ -7903,6 +7908,7 @@ def _auto_confirm_ci_preview(preview: dict) -> dict:
                 "invoice_no": invoice_no,
                 "order_ref_no": order_ref_no,
                 "tracking_id": out.get("tracking_id"),
+                "tracking_restored": bool(out.get("tracking_restored")),
             }
         return {
             "state": "bad",
@@ -7941,6 +7947,7 @@ def _auto_confirm_ci_preview(preview: dict) -> dict:
                 "invoice_no": invoice_no,
                 "order_ref_no": order_ref_no,
                 "tracking_id": out.get("tracking_id"),
+                "tracking_restored": bool(out.get("tracking_restored")),
             }
         return {
             "state": "bad",
@@ -7995,6 +8002,7 @@ def _ci_bulk_summary(results: list[dict]) -> dict:
         "duplicates": sum(1 for r in results if r.get("state") == "dup"),
         "review": sum(1 for r in results if r.get("state") == "review"),
         "failed": sum(1 for r in results if r.get("state") == "bad"),
+        "tracking_restored_count": sum(1 for r in results if r.get("tracking_restored")),
         "total": len(results),
         "results": results,
     }
