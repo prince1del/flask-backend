@@ -746,7 +746,7 @@ def delete_filled_order(conn, user_id, filled_order_id):
     try:
         from app.services import fo_so_match_db as matchdb
 
-        matchdb.detach_match_runs_from_filled_order(conn, user_id, filled_order_id)
+        matchdb.delete_match_runs_for_filled_order(conn, user_id, filled_order_id)
     except Exception:
         pass
     conn.execute("DELETE FROM filled_order_items WHERE filled_order_id = ?", (filled_order_id,))

@@ -778,12 +778,15 @@ def list_match_runs(
 ) -> list[dict[str, Any]]:
     """List match runs. user_id=None → all runs (shared with BD app / team)."""
     ensure_schema(conn)
+    if user_id is not None:
+        purge_orphan_match_runs(conn, user_id)
     cols = ", ".join(
         c for c in RUN_COLUMNS if c not in ("rows_json", "so_line_detail_json")
     )
     if user_id is None:
         rows = conn.execute(
             f"""SELECT {cols} FROM fo_so_match_runs
+                WHERE filled_order_id IS NOT NULL
                 ORDER BY id DESC
                 LIMIT ?""",
             (limit,),
@@ -791,7 +794,7 @@ def list_match_runs(
     else:
         rows = conn.execute(
             f"""SELECT {cols} FROM fo_so_match_runs
-                WHERE user_id = ?
+                WHERE user_id = ? AND filled_order_id IS NOT NULL
                 ORDER BY id DESC
                 LIMIT ?""",
             (user_id, limit),
@@ -972,6 +975,42 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
     return False
 
 
+def delete_match_runs_for_filled_order(
+    conn: sqlite3.Connection,
+    user_id: int,
+    filled_order_id: int,
+    *,
+    archive: bool = True,
+) -> int:
+    """FO deleted → match deleted. Recycle archive still restores if the same FO is re-uploaded."""
+    ensure_schema(conn)
+    rows = conn.execute(
+        "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ?",
+        (user_id, filled_order_id),
+    ).fetchall()
+    deleted = 0
+    oda = None
+    if archive and rows:
+        try:
+            from app.services import order_desk_archive as oda_mod
+
+            oda = oda_mod
+        except Exception:
+            oda = None
+    for row in rows:
+        run_id = int(row[0])
+        if oda is not None:
+            run = get_match_run(conn, run_id, user_id=user_id)
+            if run:
+                try:
+                    oda.archive_match_run(conn, user_id, run, restore_scope="run")
+                except Exception:
+                    pass
+        if delete_match_run(conn, user_id, run_id):
+            deleted += 1
+    return deleted
+
+
 def detach_match_runs_from_filled_order(
     conn: sqlite3.Connection,
     user_id: int,
@@ -979,7 +1018,10 @@ def detach_match_runs_from_filled_order(
     *,
     archive: bool = True,
 ) -> int:
-    """Unlink FO from match runs when FO is deleted — SO data stays in Order Desk."""
+    """Legacy unlink. FO delete now removes the match entirely."""
+    return delete_match_runs_for_filled_order(
+        conn, user_id, filled_order_id, archive=archive
+    )
     ensure_schema(conn)
     rows = conn.execute(
         "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ?",
@@ -1075,9 +1117,28 @@ def relink_orphan_match_runs_to_filled_order(
 
 
 def purge_orphan_match_runs(conn: sqlite3.Connection, user_id: int) -> int:
-    """Legacy no-op: orphan runs are kept so SO survives FO delete."""
+    """Drop match runs whose FO row is gone (safety net after FO delete)."""
     ensure_schema(conn)
-    return 0
+    try:
+        conn.execute("SELECT 1 FROM filled_orders LIMIT 1")
+    except sqlite3.OperationalError:
+        return 0
+    rows = conn.execute(
+        """
+        SELECT r.id
+        FROM fo_so_match_runs r
+        LEFT JOIN filled_orders fo
+          ON fo.id = r.filled_order_id AND fo.user_id = r.user_id
+        WHERE r.user_id = ?
+          AND (r.filled_order_id IS NULL OR fo.id IS NULL)
+        """,
+        (user_id,),
+    ).fetchall()
+    purged = 0
+    for row in rows:
+        if delete_match_run(conn, user_id, int(row[0])):
+            purged += 1
+    return purged
 
 
 def lookup_so_in_order_match(
