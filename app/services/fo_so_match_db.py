@@ -972,20 +972,20 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
     return False
 
 
-def delete_match_runs_for_filled_order(
+def detach_match_runs_from_filled_order(
     conn: sqlite3.Connection,
     user_id: int,
     filled_order_id: int,
     *,
     archive: bool = True,
 ) -> int:
-    """Remove FO↔SO match runs when their Filled Order is deleted."""
+    """Unlink FO from match runs when FO is deleted — SO data stays in Order Desk."""
     ensure_schema(conn)
     rows = conn.execute(
         "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ?",
         (user_id, filled_order_id),
     ).fetchall()
-    deleted = 0
+    detached = 0
     oda = None
     if archive and rows:
         try:
@@ -1003,30 +1003,81 @@ def delete_match_runs_for_filled_order(
                     oda.archive_match_run(conn, user_id, run, restore_scope="run")
                 except Exception:
                     pass
-        if delete_match_run(conn, user_id, run_id):
-            deleted += 1
-    return deleted
+        conn.execute(
+            "UPDATE fo_so_match_runs SET filled_order_id = NULL WHERE id = ? AND user_id = ?",
+            (run_id, user_id),
+        )
+        conn.execute(
+            "UPDATE fo_so_match_so_index SET filled_order_id = NULL WHERE run_id = ?",
+            (run_id,),
+        )
+        detached += 1
+    if detached:
+        conn.commit()
+    return detached
 
 
-def purge_orphan_match_runs(conn: sqlite3.Connection, user_id: int) -> int:
-    """Drop match runs whose filled_order_id no longer exists (FO was deleted)."""
+def relink_orphan_match_runs_to_filled_order(
+    conn: sqlite3.Connection,
+    user_id: int,
+    filled_order_id: int,
+    entity_key: str,
+) -> int:
+    """Re-attach detached SO match runs when the same FO is uploaded again."""
     ensure_schema(conn)
+    key_lower = str(entity_key or "").strip().lower()
+    if not key_lower:
+        return 0
+    try:
+        from app.services import order_desk_archive as oda
+
+        fo_entity_key = oda.fo_entity_key
+    except Exception:
+        return 0
+
+    existing = conn.execute(
+        "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ? LIMIT 1",
+        (user_id, filled_order_id),
+    ).fetchone()
+    if existing:
+        return 0
+
     rows = conn.execute(
         """
-        SELECT r.id FROM fo_so_match_runs r
+        SELECT r.id, r.distributor_name, r.category, r.season
+        FROM fo_so_match_runs r
         LEFT JOIN filled_orders fo
           ON fo.id = r.filled_order_id AND fo.user_id = r.user_id
         WHERE r.user_id = ?
-          AND r.filled_order_id IS NOT NULL
-          AND fo.id IS NULL
+          AND (r.filled_order_id IS NULL OR fo.id IS NULL)
+        ORDER BY r.id DESC
         """,
         (user_id,),
     ).fetchall()
-    purged = 0
+    relinked = 0
     for row in rows:
-        if delete_match_run(conn, user_id, int(row[0])):
-            purged += 1
-    return purged
+        run_id = int(row[0])
+        run_key = fo_entity_key(row[1], row[2], row[3]).strip().lower()
+        if run_key != key_lower:
+            continue
+        conn.execute(
+            "UPDATE fo_so_match_runs SET filled_order_id = ? WHERE id = ? AND user_id = ?",
+            (filled_order_id, run_id, user_id),
+        )
+        conn.execute(
+            "UPDATE fo_so_match_so_index SET filled_order_id = ? WHERE run_id = ?",
+            (filled_order_id, run_id),
+        )
+        relinked += 1
+    if relinked:
+        conn.commit()
+    return relinked
+
+
+def purge_orphan_match_runs(conn: sqlite3.Connection, user_id: int) -> int:
+    """Legacy no-op: orphan runs are kept so SO survives FO delete."""
+    ensure_schema(conn)
+    return 0
 
 
 def lookup_so_in_order_match(

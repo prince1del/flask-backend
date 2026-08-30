@@ -1130,7 +1130,7 @@ def restore_match_after_fo_upload(
     filled_order_id: int,
     entity_key: str,
 ) -> int:
-    """Re-create FO↔SO Order Match from archive when the same FO is re-uploaded."""
+    """Re-link or re-create FO↔SO Order Match when the same FO is re-uploaded."""
     import filled_orders_db as fodb
     from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
 
@@ -1138,6 +1138,12 @@ def restore_match_after_fo_upload(
     fo = fodb.get_filled_order(conn, user_id, filled_order_id)
     if not fo:
         return 0
+
+    relinked = matchdb.relink_orphan_match_runs_to_filled_order(
+        conn, user_id, filled_order_id, entity_key
+    )
+    if relinked:
+        return relinked
 
     existing = conn.execute(
         "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ? LIMIT 1",

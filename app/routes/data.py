@@ -4396,10 +4396,6 @@ def order_match_list() -> Response:
         )
     conn = sqlite3.connect(_db_path())
     try:
-        try:
-            matchdb.purge_orphan_match_runs(conn, user_id)
-        except Exception:
-            current_app.logger.exception("order_match_list: orphan purge skipped")
         runs = matchdb.list_match_runs(conn, user_id=user_id)
         try:
             from app.services import order_desk_archive as oda

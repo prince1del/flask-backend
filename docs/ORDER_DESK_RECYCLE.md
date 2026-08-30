@@ -16,7 +16,7 @@ what the uploaded file contains.
 | `match_run` | the run's match rows/totals (audit) | `run:<id>` | metadata only |
 | `tracking` | `order_lifecycle_tracking` row + `order_fulfillment_items` + `achievements` + `distributor_payment_entries` + `processed_documents` | order ref no | SO PDF upload with the same order ref |
 | `filled_order` | FO header + `filled_order_items` | `<distributor>\|<category>\|<season>` | FO workbook upload (re-points archives at the new FO id) |
-| `match_run` (whole FO delete) | full run snapshot + SO numbers | same FO entity key | **FO re-upload** (auto re-match, no SO pack needed) |
+| `match_run` (whole FO delete) | full run snapshot + SO numbers | same FO entity key | **FO re-upload** (re-links detached SO match) |
 | `file` | recycled uploaded file reference | relative upload path | tracking restore (CI file) |
 
 ## Covered destructive paths
