@@ -510,6 +510,111 @@ def preview_file(file_id):
         return jsonify({'success': False, 'error': message}), 500
 
 
+_CATALOGUE_UPLOAD_EXTENSIONS = {".pdf", ".ppt", ".pptx"}
+_CATALOGUE_UPLOAD_FOLDERS = {"Catalogues"}
+
+
+@storage_bp.route('/files/upload', methods=['POST'])
+@require_jwt_auth
+def upload_storage_file():
+    """Upload a catalogue (PDF/PPT) into the user's Drive/NEXORA folder."""
+    import os
+    import tempfile
+    from werkzeug.utils import secure_filename
+
+    try:
+        user = _get_request_user()
+        user_id = int(user['user_id'])
+        workspace_id = get_workspace_id()
+
+        upload = request.files.get('file')
+        if upload is None or not upload.filename:
+            return jsonify({'success': False, 'error': 'file is required'}), 400
+
+        folder_name = (request.form.get('folder') or 'Catalogues').strip()
+        if folder_name not in _CATALOGUE_UPLOAD_FOLDERS:
+            return jsonify({
+                'success': False,
+                'error': f'Upload folder must be one of: {", ".join(sorted(_CATALOGUE_UPLOAD_FOLDERS))}',
+            }), 400
+
+        original_name = os.path.basename(str(upload.filename)).strip()
+        safe_name = secure_filename(original_name) or 'catalogue.pdf'
+        ext = os.path.splitext(safe_name)[1].lower()
+        if ext not in _CATALOGUE_UPLOAD_EXTENSIONS:
+            return jsonify({
+                'success': False,
+                'error': 'Only PDF and PowerPoint (.ppt/.pptx) catalogues are supported.',
+            }), 400
+
+        payload = upload.read()
+        if not payload:
+            return jsonify({'success': False, 'error': 'Uploaded file is empty.'}), 400
+
+        from app.storage.manager import StorageManager
+        from app.storage.nexora_docs import _index_drive_upload
+        from app.storage.providers.google_drive_provider import GoogleDriveProvider
+
+        manager = StorageManager()
+        manager.register_provider('google_drive', GoogleDriveProvider)
+        connection = manager._get_persisted_connection(
+            user_id, workspace_id=workspace_id, provider_type='google_drive',
+        )
+        if not connection:
+            return jsonify({
+                'success': False,
+                'error': 'Google Drive is not connected. Open Settings → Google Drive and connect first.',
+            }), 400
+
+        provider = connection['provider']
+        workspace = provider.ensure_nexora_workspace()
+        parent_id = (workspace.get('folders') or {}).get(folder_name)
+        if not parent_id:
+            return jsonify({
+                'success': False,
+                'error': f'Could not create Drive folder "{folder_name}". Try Sync from Drive.',
+            }), 500
+
+        fd, temp_path = tempfile.mkstemp(prefix='nexora_catalogue_', suffix=ext)
+        os.close(fd)
+        try:
+            with open(temp_path, 'wb') as fh:
+                fh.write(payload)
+            uploaded = provider.upload(
+                file_path=temp_path,
+                target_folder=parent_id,
+                display_name=safe_name,
+            )
+        finally:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+        _index_drive_upload(
+            user_id=user_id,
+            storage_account_id=connection.get('storage_account_id'),
+            workspace_id=workspace_id,
+            folder_id=parent_id,
+            uploaded=uploaded,
+        )
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'file_id': uploaded.get('id'),
+                'file_name': uploaded.get('name') or safe_name,
+                'mime_type': uploaded.get('mimeType'),
+                'folder': folder_name,
+                'message': f'Uploaded to Drive/NEXORA/{folder_name}.',
+            },
+        }), 200
+    except KeyError as e:
+        return jsonify({'success': False, 'error': str(e) or 'Google Drive is not connected.'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @storage_bp.route('/sync', methods=['POST'])
 @require_jwt_auth
 def sync_files():

@@ -13,6 +13,7 @@ class GoogleDriveProvider(StorageProvider):
     NEXORA_FOLDER_NAME = "NEXORA"
     NEXORA_SUBFOLDERS = (
         "Downloads",
+        "Catalogues",
         # One folder per stage of the order chain, so the whole trail is
         # kept somewhere durable: the distributor's Filled Order, the
         # company's Sales Order against it, and the Commercial Invoice
