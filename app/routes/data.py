@@ -4399,6 +4399,155 @@ def so_pack_match_filled_order() -> Response:
         conn.close()
 
 
+@data_blueprint.route(
+    "/api/v1/order-fulfillment/so-pack/preview-article-master-match", methods=["POST"]
+)
+@require_jwt_auth
+def so_pack_preview_article_master_match() -> Response:
+    """Preview Article Master SKU match for an analyzed SO pack (no FO required)."""
+    from app.services.so_article_master_match import preview_so_article_master_match
+
+    body = request.get_json(silent=True, force=True) or {}
+    so_pack = body.get("so_pack")
+    if not isinstance(so_pack, dict) or not so_pack.get("line_detail"):
+        return _json_response(
+            {
+                "success": False,
+                "error": {"message": "so_pack analyze payload with line_detail is required"},
+            },
+            400,
+        )
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        data = preview_so_article_master_match(conn, user_id, so_pack)
+        return _json_response({"success": True, "data": data})
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"Article Master preview failed: {exc}"}},
+            500,
+        )
+    finally:
+        conn.close()
+
+
+@data_blueprint.route(
+    "/api/v1/order-fulfillment/so-pack/save-article-master-only", methods=["POST"]
+)
+@require_jwt_auth
+def so_pack_save_article_master_only() -> Response:
+    """Save SO pack matched to Article Master only (user confirmed — no Filled Order)."""
+    from app.services import fo_so_match_db as matchdb
+    from app.services.so_article_master_match import save_so_article_master_only
+
+    body = request.get_json(silent=True, force=True) or {}
+    so_pack = body.get("so_pack")
+    if not isinstance(so_pack, dict) or not so_pack.get("line_detail"):
+        return _json_response(
+            {
+                "success": False,
+                "error": {"message": "so_pack analyze payload with line_detail is required"},
+            },
+            400,
+        )
+    if not body.get("confirm"):
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "code": "confirmation_required",
+                    "message": "Set confirm=true after reviewing Article Master match preview",
+                },
+            },
+            400,
+        )
+
+    user = getattr(request, "user", None)
+    user_id = (
+        int(user["user_id"])
+        if isinstance(user, dict) and user.get("user_id") is not None
+        else None
+    )
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+
+    so_buyer_label = (body.get("so_buyer_label") or "").strip() or None
+    so_source_filename = (body.get("so_source_filename") or "").strip() or None
+    if not so_source_filename:
+        meta = so_pack.get("meta") or {}
+        so_source_filename = meta.get("source_filename")
+    category = (body.get("category") or "").strip() or None
+    season = (body.get("season") or "").strip() or None
+    distributor_name = (body.get("distributor_name") or "").strip() or None
+    distributor_id = body.get("distributor_id")
+    try:
+        distributor_id = int(distributor_id) if distributor_id is not None else None
+    except (TypeError, ValueError):
+        distributor_id = None
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        run = save_so_article_master_only(
+            conn,
+            user_id,
+            so_pack=so_pack,
+            so_buyer_label=so_buyer_label,
+            so_source_filename=so_source_filename,
+            distributor_id=distributor_id,
+            distributor_name=distributor_name,
+            category=category,
+            season=season,
+        )
+        return _json_response(
+            {
+                "success": True,
+                "data": {
+                    "run_id": run.get("id"),
+                    "run": {k: v for k, v in run.items() if k != "rows"},
+                    "article_master_match": run.get("article_master_match"),
+                },
+            }
+        )
+    except matchdb.DuplicateSalesOrderError as dup:
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "code": "duplicate_sales_order",
+                    "message": str(dup),
+                    "conflicts": dup.conflicts,
+                },
+            },
+            409,
+        )
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    except Exception as exc:
+        return _json_response(
+            {"success": False, "error": {"message": f"SO save failed: {exc}"}},
+            500,
+        )
+    finally:
+        conn.close()
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/list", methods=["GET"])
 @require_jwt_auth
 def order_match_list() -> Response:

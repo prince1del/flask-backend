@@ -110,6 +110,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         try:
             conn.execute("SELECT 1 FROM fo_so_match_runs LIMIT 1")
             conn.execute("SELECT so_line_detail_json FROM fo_so_match_runs LIMIT 1")
+            conn.execute("SELECT match_mode FROM fo_so_match_runs LIMIT 1")
             conn.execute("SELECT 1 FROM fo_so_match_so_index LIMIT 1")
             return
         except sqlite3.OperationalError:
@@ -118,6 +119,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     try:
         conn.execute(
             "ALTER TABLE fo_so_match_runs ADD COLUMN so_line_detail_json TEXT"
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute(
+            "ALTER TABLE fo_so_match_runs ADD COLUMN match_mode TEXT DEFAULT 'fo_so'"
         )
         conn.commit()
     except sqlite3.OperationalError:
@@ -149,7 +157,7 @@ RUN_COLUMNS = [
     "category", "season", "fo_source_filename", "so_buyer_label", "so_source_filename",
     "fo_qty", "so_qty", "delta_qty", "fo_exmill_value", "so_net_amount", "delta_value",
     "match_count", "fuzzy_count", "mismatch_count", "missing_count", "extra_count",
-    "rows_json", "so_line_detail_json", "created_at",
+    "rows_json", "so_line_detail_json", "match_mode", "created_at",
 ]
 
 
@@ -484,6 +492,101 @@ def save_match_run(
             find_so_number_conflicts(conn, so_numbers) or [{"so_number": "unknown"}]
         ) from exc
     return get_match_run(conn, run_id, user_id=user_id)
+
+
+def save_am_only_match_run(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    match_payload: dict[str, Any],
+    so_buyer_label: str | None = None,
+    so_source_filename: str | None = None,
+    so_line_detail: list[Any] | None = None,
+    so_pack: dict[str, Any] | None = None,
+    distributor_id: int | None = None,
+    distributor_name: str | None = None,
+    category: str | None = None,
+    season: str | None = None,
+) -> dict[str, Any]:
+    """Persist SO-direct run (Article Master SKU match, no Filled Order)."""
+    ensure_schema(conn)
+    match = match_payload.get("match") or {}
+    totals = match.get("totals") or {}
+    counts = match.get("counts") or {}
+    rows = match.get("rows") or []
+    line_detail_json = (
+        json.dumps(so_line_detail, default=str)
+        if so_line_detail
+        else None
+    )
+
+    so_numbers = extract_so_numbers_from_pack(so_pack) if so_pack else []
+    if not so_numbers and so_line_detail:
+        so_numbers = extract_so_numbers_from_pack({"line_detail": so_line_detail})
+    if not so_numbers:
+        so_numbers = extract_so_numbers_from_run_row({"rows": rows})
+
+    conflicts = find_so_number_conflicts(conn, so_numbers)
+    if conflicts:
+        raise DuplicateSalesOrderError(conflicts)
+
+    mismatch = int(counts.get("QTY_MISMATCH") or 0) + int(counts.get("VALUE_MISMATCH") or 0)
+    am_unmatched = int(counts.get("AM_UNMATCHED") or 0) + int(counts.get("AM_PARTIAL") or 0)
+
+    conn.execute(
+        """INSERT INTO fo_so_match_runs (
+            user_id, filled_order_id, distributor_id, distributor_name,
+            category, season, fo_source_filename, so_buyer_label, so_source_filename,
+            fo_qty, so_qty, delta_qty, fo_exmill_value, so_net_amount, delta_value,
+            match_count, fuzzy_count, mismatch_count, missing_count, extra_count,
+            rows_json, so_line_detail_json, match_mode, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            user_id,
+            None,
+            distributor_id,
+            distributor_name or so_buyer_label,
+            category,
+            season,
+            None,
+            so_buyer_label,
+            so_source_filename,
+            None,
+            totals.get("so_qty"),
+            totals.get("delta_qty"),
+            None,
+            totals.get("so_net_amount"),
+            totals.get("delta_value"),
+            int(counts.get("MATCH") or 0),
+            int(counts.get("MATCH_FUZZY_BRAND") or 0),
+            mismatch,
+            0,
+            am_unmatched or int(counts.get("EXTRA_ON_SO") or 0),
+            json.dumps(rows, default=str),
+            line_detail_json,
+            "article_master_only",
+            _now(),
+        ),
+    )
+    run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    try:
+        _insert_so_index_for_run(
+            conn,
+            run_id=run_id,
+            user_id=user_id,
+            filled_order_id=None,
+            so_numbers=so_numbers,
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise DuplicateSalesOrderError(
+            find_so_number_conflicts(conn, so_numbers) or [{"so_number": "unknown"}]
+        ) from exc
+    run = get_match_run(conn, run_id, user_id=user_id)
+    if run is not None:
+        run["article_master_match"] = match_payload.get("article_master_match")
+    return run or {"id": run_id}
 
 
 def get_match_run(
@@ -1047,6 +1150,7 @@ def repair_stale_detached_match_rows(conn: sqlite3.Connection, user_id: int) -> 
         """
         SELECT id, rows_json FROM fo_so_match_runs
         WHERE user_id = ? AND filled_order_id IS NULL
+          AND COALESCE(match_mode, 'fo_so') != 'article_master_only'
         """,
         (user_id,),
     ).fetchall()
@@ -1083,6 +1187,8 @@ def repair_stale_detached_match_rows(conn: sqlite3.Connection, user_id: int) -> 
 def _mask_fo_fields_if_detached(data: dict[str, Any]) -> None:
     """FO gone → keep SO pack, drop FO match numbers so UI cannot look matched."""
     if data.get("filled_order_id") is not None:
+        return
+    if (data.get("match_mode") or "fo_so").strip().lower() == "article_master_only":
         return
     data["fo_qty"] = None
     data["fo_exmill_value"] = None
@@ -1411,6 +1517,7 @@ def auto_relink_detached_runs_for_user(conn: sqlite3.Connection, user_id: int) -
         SELECT id, distributor_id, distributor_name, category, season
         FROM fo_so_match_runs
         WHERE user_id = ? AND filled_order_id IS NULL
+          AND COALESCE(match_mode, 'fo_so') != 'article_master_only'
         ORDER BY id DESC
         """,
         (user_id,),
