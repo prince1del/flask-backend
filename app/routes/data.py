@@ -4286,6 +4286,19 @@ def so_pack_match_filled_order() -> Response:
                     existing_lines, new_lines, replace_nums
                 )
                 replaced_note = f"Replaced SO {', '.join(sorted(replace_nums))}"
+                preview_pack = sorev.pack_from_lines(
+                    merged, source_filename=so_source_filename
+                )
+                preview_result = run_match_saved_fo_vs_so_pack(
+                    fo_meta=fo, fo_items=items, so_pack_payload=preview_pack,
+                )
+                preview_run = {"rows": (preview_result.get("match") or {}).get("rows") or []}
+                leftover = sorev.fo_qty_leftover(preview_run)
+                if leftover > 0.5:
+                    replaced_note += (
+                        f" · FO leftover {int(round(leftover))} pcs open — "
+                        "upload child SO as Additional"
+                    )
             elif effective_action == "split":
                 if not parent_so_number:
                     return _json_response(
