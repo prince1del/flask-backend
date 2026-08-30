@@ -104,6 +104,12 @@ class StorageManager:
             account = self.db.get_storage_account(
                 user_id, provider_type=provider_type, workspace_id=workspace_id
             )
+            # Drive may have been connected under a different workspace row
+            # while uploads always use JWT workspace — fall back to any Drive row.
+            if account is None and workspace_id and provider_type == "google_drive":
+                account = self.db.get_storage_account(
+                    user_id, provider_type=provider_type, workspace_id=None
+                )
         else:
             for candidate in self.providers:
                 account = self.db.get_storage_account(
@@ -118,6 +124,12 @@ class StorageManager:
                     user_id, workspace_id=workspace_id
                 )
         if account is None:
+            return None
+
+        if (
+            account.get("sync_status") not in (None, "connected")
+            or not account.get("oauth_token")
+        ):
             return None
 
         found_type = account["provider_type"]

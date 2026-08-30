@@ -3690,13 +3690,16 @@ def so_pack_analyze() -> Response:
             {"success": False, "error": {"message": f"SO pack analyze failed: {exc}"}},
             500,
         )
-    _backup_so_pack_upload_to_drive(
+    drive_pushed = _backup_so_pack_upload_to_drive(
         user_id=get_request_user_id(),
         workspace_id=get_workspace_id(),
         mode=mode,
         label=label,
         payload=payload,
     )
+    if isinstance(data, dict):
+        data = dict(data)
+        data["drive_backup_count"] = drive_pushed
     return _json_response({"success": True, "data": data})
 
 
@@ -3729,13 +3732,16 @@ def so_pack_analyze_stream() -> Response:
                 if kind == "progress":
                     yield json.dumps({"type": "progress", "message": str(item)}) + "\n"
                 elif kind == "done":
-                    _backup_so_pack_upload_to_drive(
+                    drive_pushed = _backup_so_pack_upload_to_drive(
                         user_id=user_id,
                         workspace_id=workspace_id,
                         mode=mode,
                         label=label,
                         payload=payload,
                     )
+                    if isinstance(item, dict):
+                        item = dict(item)
+                        item["drive_backup_count"] = drive_pushed
                     yield json.dumps({"type": "done", "data": item}, default=str) + "\n"
         except ValueError as exc:
             yield json.dumps({"type": "error", "message": str(exc)}) + "\n"
@@ -4730,29 +4736,33 @@ def _backup_so_pack_upload_to_drive(
     mode: str,
     label: str,
     payload: Any,
-) -> None:
+) -> int:
     """Best-effort: push each SO PDF into Drive/NEXORA/Sales Orders (never the zip).
 
     Order Desk analyze parses in memory — without this hook uploads never reach
     Drive. Archives are unpacked so Drive holds the same separate PDFs the user
     would get from loose uploads.
+
+    Returns the number of PDFs successfully pushed to Drive.
     """
     if not user_id:
-        return
+        return 0
     from app.services.so_pack_consolidate import _load_pack_pdfs
     from app.storage.nexora_docs import push_file_to_nexora_drive, remove_file_from_nexora_drive
 
     archive_name = Path(label).name
     is_archive = archive_name.lower().endswith((".zip", ".rar"))
+    pushed = 0
 
     def _push_bytes(raw: bytes, display_name: str) -> None:
+        nonlocal pushed
         suffix = Path(display_name).suffix or ".pdf"
         tmp_path: str | None = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(raw)
                 tmp_path = tmp.name
-            push_file_to_nexora_drive(
+            uploaded = push_file_to_nexora_drive(
                 user_id=user_id,
                 workspace_id=workspace_id,
                 local_path=tmp_path,
@@ -4760,6 +4770,8 @@ def _backup_so_pack_upload_to_drive(
                 display_name=display_name,
                 replace_if_exists=True,
             )
+            if uploaded and uploaded.get("id"):
+                pushed += 1
         except Exception:
             logging.getLogger(__name__).exception(
                 "SO Pack Drive backup failed for %s", display_name
@@ -4790,8 +4802,17 @@ def _backup_so_pack_upload_to_drive(
                 subfolder="Sales Orders",
                 display_name=archive_name,
             )
+        if pdfs and pushed == 0:
+            logging.getLogger(__name__).warning(
+                "SO Pack Drive backup pushed 0/%s PDF(s) for user %s workspace %r — "
+                "check Google Drive connection / backup_ready",
+                len(pdfs),
+                user_id,
+                workspace_id,
+            )
     except Exception:
         logging.getLogger(__name__).exception("SO Pack Drive backup failed")
+    return pushed
 
 
 def _drop_local_after_drive_backup(

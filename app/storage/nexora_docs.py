@@ -19,6 +19,37 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _index_drive_upload(
+    *,
+    user_id: int,
+    storage_account_id: int | None,
+    workspace_id: str | None,
+    folder_id: str | None,
+    uploaded: dict[str, Any],
+) -> None:
+    """Keep file_index in sync so Settings → Drive shows new backups immediately."""
+    if not storage_account_id or not uploaded.get("id"):
+        return
+    try:
+        from centralized_db_system.db import CentralizedDB
+
+        item = dict(uploaded)
+        if folder_id and not item.get("parents"):
+            item["parents"] = [folder_id]
+        CentralizedDB().upsert_file_index_item(
+            str(workspace_id or "default"),
+            int(storage_account_id),
+            item,
+            user_id=user_id,
+        )
+    except Exception:
+        logger.exception(
+            "Drive file index update failed for user %s file %s",
+            user_id,
+            uploaded.get("id"),
+        )
+
+
 def push_file_to_nexora_drive(
     *,
     user_id: int | None,
@@ -50,6 +81,7 @@ def push_file_to_nexora_drive(
         provider = manager._get_user_provider(
             int(user_id), workspace_id=workspace_id, provider_type="google_drive"
         )
+        connection = getattr(manager, "user_connections", {}).get(int(user_id)) or {}
         workspace = provider.ensure_nexora_workspace()
         folder_id = workspace["folders"].get(subfolder) or workspace["root_id"]
         upload_fn = provider.upload_or_replace if replace_if_exists else provider.upload
@@ -58,12 +90,23 @@ def push_file_to_nexora_drive(
             folder_id,
             display_name=display_name or path.name,
         )
+        if uploaded and uploaded.get("id"):
+            _index_drive_upload(
+                user_id=int(user_id),
+                storage_account_id=connection.get("storage_account_id"),
+                workspace_id=connection.get("workspace_id") or workspace_id,
+                folder_id=folder_id,
+                uploaded=uploaded,
+            )
+            logger.info(
+                "NEXORA Drive backup OK user=%s subfolder=%s file=%s id=%s",
+                user_id,
+                subfolder,
+                display_name or path.name,
+                uploaded.get("id"),
+            )
         return uploaded
     except KeyError as exc:
-        # Was a bare `return None`. Google Drive not being connected is a
-        # normal state, but so is "connected, yet every backup silently does
-        # nothing" — which is exactly what happened when a leftover 'gmail'
-        # storage account shadowed the Drive one. Say which, either way.
         logger.warning(
             "NEXORA Drive backup skipped for %s — no usable Google Drive "
             "account for user %s in workspace %r (%s)",

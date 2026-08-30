@@ -963,7 +963,94 @@ class CentralizedDB:
                 (now, now, storage_account_id),
             )
             conn.commit()
-        return {"upserted": count, "removed": removed}
+            return {"upserted": count, "removed": removed}
+
+    def upsert_file_index_item(
+        self,
+        workspace_id: str,
+        storage_account_id: int,
+        item: dict[str, Any],
+        user_id: int | None = None,
+    ) -> bool:
+        """Insert or update one Drive file in the index (no stale sweep)."""
+        file_id = item.get("id")
+        if not file_id:
+            return False
+        self.ensure_storage_tables()
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(file_index)").fetchall()}
+            owner_id = user_id
+            if owner_id is None:
+                row = conn.execute(
+                    "SELECT user_id FROM storage_accounts WHERE id = ?",
+                    (storage_account_id,),
+                ).fetchone()
+                owner_id = int(row[0]) if row else 0
+            name = item.get("name") or "untitled"
+            mime = item.get("mimeType")
+            folder = (
+                ",".join(item.get("parents", [])) if item.get("parents") else None
+            )
+            size_val = int(item.get("size")) if item.get("size") else None
+            modified = item.get("modifiedTime")
+            row_data: dict[str, Any] = {
+                "workspace_id": workspace_id,
+                "storage_account_id": storage_account_id,
+                "file_id": file_id,
+                "file_name": name,
+                "file_type": item.get("fileType") or mime,
+                "mime_type": mime,
+                "folder_path": folder,
+                "file_size_bytes": size_val,
+                "file_size": size_val,
+                "modified_at": modified,
+                "indexed_at": now,
+                "last_synced": now,
+                "sync_status": "synced",
+                "created_at": now,
+                "updated_at": now,
+            }
+            if "user_id" in cols:
+                row_data["user_id"] = owner_id
+            if "owner_id" in cols:
+                row_data["owner_id"] = owner_id
+            insert_cols = [c for c in row_data if c in cols]
+            placeholders = ", ".join("?" for _ in insert_cols)
+            col_names = ", ".join(insert_cols)
+            values = tuple(row_data[c] for c in insert_cols)
+            if "updated_at" in cols:
+                update_cols = [
+                    c for c in insert_cols
+                    if c not in ("storage_account_id", "file_id", "created_at")
+                ]
+                update_clause = ", ".join(f"{c} = excluded.{c}" for c in update_cols)
+                conn.execute(
+                    f"""
+                        INSERT INTO file_index ({col_names})
+                        VALUES ({placeholders})
+                        ON CONFLICT(storage_account_id, file_id) DO UPDATE SET
+                            {update_clause}
+                    """,
+                    values,
+                )
+            else:
+                conn.execute(
+                    """
+                    DELETE FROM file_index
+                    WHERE storage_account_id = ? AND file_id = ?
+                    """,
+                    (storage_account_id, file_id),
+                )
+                conn.execute(
+                    f"""
+                        INSERT INTO file_index ({col_names})
+                        VALUES ({placeholders})
+                    """,
+                    values,
+                )
+            conn.commit()
+            return True
 
     def search_file_index(
         self,
