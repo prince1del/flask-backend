@@ -4439,38 +4439,45 @@ def _enrich_order_match_so_documents(
     user_id: int | None,
 ) -> None:
     """Per-SO Drive / lifecycle links so mobile can open SO & CI PDFs."""
-    docs: dict[str, dict[str, Any]] = {}
-    for so in _collect_order_match_so_numbers(run):
-        entry: dict[str, Any] = {"so_number": so}
-        tracking = db.get_order_lifecycle_by_order_ref_no(so, workspace_id=workspace_id)
-        if tracking:
-            tid = tracking.get("tracking_id")
-            entry["tracking_id"] = tid
-            try:
-                with sqlite3.connect(db.db_path) as conn:
-                    conn.row_factory = sqlite3.Row
-                    row = conn.execute(
-                        """
-                        SELECT sales_order_drive_file_id, commercial_invoice_drive_file_id,
-                               sales_order_file_reference, commercial_invoice_file_reference
-                        FROM order_lifecycle_tracking WHERE tracking_id = ?
-                        """,
-                        (int(tid),),
-                    ).fetchone()
-                if row:
-                    so_drive = (row["sales_order_drive_file_id"] or "").strip() or None
-                    ci_drive = (row["commercial_invoice_drive_file_id"] or "").strip() or None
-                    entry["so_drive_file_id"] = so_drive
-                    entry["ci_drive_file_id"] = ci_drive
-                    entry["has_so_pdf"] = bool(
-                        so_drive or (row["sales_order_file_reference"] or "").strip()
-                    )
-                    entry["has_ci_pdf"] = bool(
-                        ci_drive or (row["commercial_invoice_file_reference"] or "").strip()
-                    )
-            except Exception:
-                pass
-        docs[so] = entry
+    so_numbers = sorted(_collect_order_match_so_numbers(run))
+    if not so_numbers:
+        run["so_documents"] = {}
+        return
+    docs: dict[str, dict[str, Any]] = {
+        so: {"so_number": so} for so in so_numbers
+    }
+    try:
+        with sqlite3.connect(db.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            placeholders = ",".join("?" * len(so_numbers))
+            rows = conn.execute(
+                f"""
+                SELECT tracking_id, order_ref_no,
+                       sales_order_drive_file_id, commercial_invoice_drive_file_id,
+                       sales_order_file_reference, commercial_invoice_file_reference
+                FROM order_lifecycle_tracking
+                WHERE order_ref_no IN ({placeholders})
+                """,
+                so_numbers,
+            ).fetchall()
+            for row in rows:
+                so = str(row["order_ref_no"] or "").strip()
+                if not so or so not in docs:
+                    continue
+                entry = docs[so]
+                entry["tracking_id"] = row["tracking_id"]
+                so_drive = (row["sales_order_drive_file_id"] or "").strip() or None
+                ci_drive = (row["commercial_invoice_drive_file_id"] or "").strip() or None
+                entry["so_drive_file_id"] = so_drive
+                entry["ci_drive_file_id"] = ci_drive
+                entry["has_so_pdf"] = bool(
+                    so_drive or (row["sales_order_file_reference"] or "").strip()
+                )
+                entry["has_ci_pdf"] = bool(
+                    ci_drive or (row["commercial_invoice_file_reference"] or "").strip()
+                )
+    except Exception:
+        pass
     run["so_documents"] = docs
 
 
