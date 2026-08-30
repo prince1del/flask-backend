@@ -743,6 +743,12 @@ def delete_filled_order(conn, user_id, filled_order_id):
             oda.archive_filled_order(conn, user_id, order, items, restore_scope="run")
     except Exception:
         pass
+    try:
+        from app.services import fo_so_match_db as matchdb
+
+        matchdb.delete_match_runs_for_filled_order(conn, user_id, filled_order_id)
+    except Exception:
+        pass
     conn.execute("DELETE FROM filled_order_items WHERE filled_order_id = ?", (filled_order_id,))
     conn.execute("DELETE FROM filled_orders WHERE id = ? AND user_id = ?", (filled_order_id, user_id))
     conn.commit()

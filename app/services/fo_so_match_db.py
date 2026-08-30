@@ -972,6 +972,63 @@ def delete_match_run(conn: sqlite3.Connection, user_id: int, run_id: int) -> boo
     return False
 
 
+def delete_match_runs_for_filled_order(
+    conn: sqlite3.Connection,
+    user_id: int,
+    filled_order_id: int,
+    *,
+    archive: bool = True,
+) -> int:
+    """Remove FO↔SO match runs when their Filled Order is deleted."""
+    ensure_schema(conn)
+    rows = conn.execute(
+        "SELECT id FROM fo_so_match_runs WHERE user_id = ? AND filled_order_id = ?",
+        (user_id, filled_order_id),
+    ).fetchall()
+    deleted = 0
+    oda = None
+    if archive and rows:
+        try:
+            from app.services import order_desk_archive as oda_mod
+
+            oda = oda_mod
+        except Exception:
+            oda = None
+    for row in rows:
+        run_id = int(row[0])
+        if oda is not None:
+            run = get_match_run(conn, run_id, user_id=user_id)
+            if run:
+                try:
+                    oda.archive_match_run(conn, user_id, run, restore_scope="run")
+                except Exception:
+                    pass
+        if delete_match_run(conn, user_id, run_id):
+            deleted += 1
+    return deleted
+
+
+def purge_orphan_match_runs(conn: sqlite3.Connection, user_id: int) -> int:
+    """Drop match runs whose filled_order_id no longer exists (FO was deleted)."""
+    ensure_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT r.id FROM fo_so_match_runs r
+        LEFT JOIN filled_orders fo
+          ON fo.id = r.filled_order_id AND fo.user_id = r.user_id
+        WHERE r.user_id = ?
+          AND r.filled_order_id IS NOT NULL
+          AND fo.id IS NULL
+        """,
+        (user_id,),
+    ).fetchall()
+    purged = 0
+    for row in rows:
+        if delete_match_run(conn, user_id, int(row[0])):
+            purged += 1
+    return purged
+
+
 def lookup_so_in_order_match(
     conn: sqlite3.Connection,
     so_number: str,

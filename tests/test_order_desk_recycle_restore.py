@@ -308,6 +308,39 @@ def test_filled_order_items_restore_on_reupload(tmp_path):
     assert rows[0][0] == "525B|DB"
 
 
+def test_filled_order_delete_cascades_match_run(tmp_path):
+    conn = _conn(tmp_path)
+    import filled_orders_db as fodb
+
+    fo_id = fodb.create_filled_order(
+        conn, 7, 1, "Balaji Homedecor", "Bed", "AW26",
+        total_lines=1, matched_lines=1,
+    )
+    pack = {
+        "line_detail": [
+            {"so_number": "102876310", "product_name": "525B", "qty": 72, "net_amount": 5000}
+        ]
+    }
+    payload = _payload(5000, "102876310")
+    payload["fo"]["id"] = fo_id
+    payload["fo"]["distributor_name_raw"] = "Balaji Homedecor"
+    payload["fo"]["category"] = "Bed"
+    run = matchdb.save_match_run(
+        conn,
+        user_id=7,
+        match_payload=payload,
+        so_pack=pack,
+    )
+    run_id = int(run["id"])
+    assert matchdb.get_match_run(conn, run_id, user_id=7) is not None
+
+    fodb.delete_filled_order(conn, 7, fo_id)
+
+    assert fodb.get_filled_order(conn, 7, fo_id) is None
+    assert matchdb.get_match_run(conn, run_id, user_id=7) is None
+    assert matchdb.purge_orphan_match_runs(conn, 7) == 0
+
+
 def test_purge_expired_drops_old_rows(tmp_path):
     conn = _conn(tmp_path)
     conn.execute(
