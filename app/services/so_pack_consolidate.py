@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import re
+import shutil
+import subprocess
 import tempfile
 import zipfile
 from collections import defaultdict
@@ -385,22 +387,70 @@ def parse_bd_variant_meta(
     return None
 
 
+def _extract_rar_pdfs_cli(rar_path: str) -> list[tuple[str, bytes]] | None:
+    """Try common host extractors (Render/desktop) before rarfile's bundled unrar."""
+    dest = tempfile.mkdtemp(prefix="nexora-rar-")
+    try:
+        commands = [
+            ["unrar", "x", "-o+", "-y", rar_path, f"{dest}/"],
+            ["unrar-free", "x", "-o+", "-y", rar_path, f"{dest}/"],
+            ["7z", "x", "-y", f"-o{dest}", rar_path],
+            ["7zz", "x", "-y", f"-o{dest}", rar_path],
+            ["unar", "-f", "-o", dest, rar_path],
+            ["bsdtar", "-xf", rar_path, "-C", dest],
+        ]
+        for cmd in commands:
+            if shutil.which(cmd[0]) is None:
+                continue
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=120,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if proc.returncode != 0:
+                continue
+            pdfs: list[tuple[str, bytes]] = []
+            for pdf_path in sorted(Path(dest).rglob("*.pdf")):
+                if pdf_path.is_file():
+                    pdfs.append((pdf_path.name, pdf_path.read_bytes()))
+            if pdfs:
+                return pdfs
+        return None
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
+
+
 def _unpack_archive(file_bytes: bytes, filename: str) -> list[tuple[str, bytes]]:
     """Return list of (relative_name, pdf_bytes) in archive member order."""
     name = (filename or "pack.zip").lower()
     pdfs: list[tuple[str, bytes]] = []
 
     if name.endswith(".rar"):
-        try:
-            import rarfile  # type: ignore
-        except ImportError as exc:
-            raise ValueError(
-                "RAR support needs the rarfile package. Install rarfile, or upload a ZIP instead."
-            ) from exc
         with tempfile.NamedTemporaryFile(suffix=".rar", delete=False) as tmp:
             tmp.write(file_bytes)
             tmp_path = tmp.name
         try:
+            cli_pdfs = _extract_rar_pdfs_cli(tmp_path)
+            if cli_pdfs:
+                return cli_pdfs
+            try:
+                import rarfile  # type: ignore
+            except ImportError as exc:
+                raise ValueError(
+                    "RAR support needs the rarfile package. Install rarfile, or upload a ZIP instead."
+                ) from exc
+            tool = (
+                shutil.which("unrar")
+                or shutil.which("unrar-free")
+                or shutil.which("unar")
+                or shutil.which("bsdtar")
+            )
+            if tool:
+                rarfile.UNRAR_TOOL = tool  # type: ignore[attr-defined]
             with rarfile.RarFile(tmp_path) as rf:
                 for info in rf.infolist():
                     fn = info.filename
