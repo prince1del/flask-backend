@@ -51,35 +51,41 @@ def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {str(r[1]) for r in rows}
 
 
+_ARCHIVE_COLUMNS = (
+    ("user_id", "INTEGER NOT NULL DEFAULT 0"),
+    ("kind", "TEXT NOT NULL DEFAULT ''"),
+    ("entity_key", "TEXT NOT NULL DEFAULT ''"),
+    ("restore_scope", "TEXT NOT NULL DEFAULT 'run'"),
+    ("payload_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("filled_order_id", "INTEGER"),
+    ("created_at", "TEXT NOT NULL DEFAULT ''"),
+    ("expires_at", "TEXT NOT NULL DEFAULT ''"),
+    ("restored_at", "TEXT"),
+)
+
+
 def _migrate_archive_columns(conn: sqlite3.Connection) -> None:
     """Upgrade older order_desk_archive tables missing recycle columns."""
     cols = _table_columns(conn, "order_desk_archive")
     if not cols:
         return
+    for name, ddl in _ARCHIVE_COLUMNS:
+        if name in cols:
+            continue
+        conn.execute(f"ALTER TABLE order_desk_archive ADD COLUMN {name} {ddl}")
+        cols.add(name)
+    now = _now()
     default_exp = _expires_at()
-    if "expires_at" not in cols:
-        conn.execute(
-            "ALTER TABLE order_desk_archive ADD COLUMN expires_at TEXT NOT NULL "
-            f"DEFAULT '{default_exp}'"
-        )
-        conn.execute(
-            "UPDATE order_desk_archive SET expires_at = ? "
-            "WHERE expires_at IS NULL OR TRIM(expires_at) = ''",
-            (default_exp,),
-        )
-    if "restored_at" not in cols:
-        conn.execute(
-            "ALTER TABLE order_desk_archive ADD COLUMN restored_at TEXT"
-        )
-    if "filled_order_id" not in cols:
-        conn.execute(
-            "ALTER TABLE order_desk_archive ADD COLUMN filled_order_id INTEGER"
-        )
-    if "restore_scope" not in cols:
-        conn.execute(
-            "ALTER TABLE order_desk_archive ADD COLUMN restore_scope TEXT NOT NULL "
-            "DEFAULT 'run'"
-        )
+    conn.execute(
+        "UPDATE order_desk_archive SET created_at = ? "
+        "WHERE created_at IS NULL OR TRIM(created_at) = ''",
+        (now,),
+    )
+    conn.execute(
+        "UPDATE order_desk_archive SET expires_at = ? "
+        "WHERE expires_at IS NULL OR TRIM(expires_at) = ''",
+        (default_exp,),
+    )
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -112,24 +118,29 @@ def _insert_archive(
     filled_order_id: int | None = None,
 ) -> None:
     ensure_schema(conn)
-    conn.execute(
-        """
+    values = (
+        user_id,
+        kind,
+        entity_key,
+        restore_scope,
+        json.dumps(payload, default=str),
+        filled_order_id,
+        _now(),
+        _expires_at(),
+    )
+    sql = """
         INSERT INTO order_desk_archive (
             user_id, kind, entity_key, restore_scope, payload_json,
             filled_order_id, created_at, expires_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            user_id,
-            kind,
-            entity_key,
-            restore_scope,
-            json.dumps(payload, default=str),
-            filled_order_id,
-            _now(),
-            _expires_at(),
-        ),
-    )
+        """
+    try:
+        conn.execute(sql, values)
+    except sqlite3.OperationalError:
+        global _schema_ensured
+        _schema_ensured = False
+        ensure_schema(conn)
+        conn.execute(sql, values)
 
 
 def fo_entity_key(

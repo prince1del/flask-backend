@@ -4326,7 +4326,15 @@ def so_pack_match_filled_order() -> Response:
             # Free SO index + drop previous FO run before saving the merged match.
             from app.services import order_desk_archive as oda
 
-            oda.archive_match_run(conn, user_id, existing, restore_scope="entity")
+            try:
+                oda.archive_match_run(conn, user_id, existing, restore_scope="entity")
+            except Exception:
+                logger.exception(
+                    "archive before SO %s failed user=%s run=%s",
+                    effective_action,
+                    user_id,
+                    existing.get("id"),
+                )
             matchdb.delete_match_run(conn, user_id, int(existing["id"]))
             for c in conflicts:
                 rid = c.get("run_id")

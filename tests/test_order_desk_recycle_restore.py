@@ -663,6 +663,40 @@ def test_explain_rematch_reports_category_mismatch(tmp_path):
     assert "category" in (cand["skip_reason"] or "")
 
 
+def test_archive_schema_migrates_missing_created_at(tmp_path):
+    """Older archive tables may also lack created_at — Replace INSERT needs it."""
+    path = tmp_path / "migrate_created.sqlite3"
+    conn = sqlite3.connect(str(path))
+    conn.execute(
+        """
+        CREATE TABLE order_desk_archive (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            entity_key TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    oda.ensure_schema(conn)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(order_desk_archive)")}
+    assert "created_at" in cols
+    assert "expires_at" in cols
+    oda.archive_match_run(
+        conn,
+        1,
+        {"id": 9, "filled_order_id": 3, "rows": [], "so_line_detail": []},
+        restore_scope="entity",
+    )
+    row = conn.execute(
+        "SELECT created_at, expires_at FROM order_desk_archive WHERE user_id = 1"
+    ).fetchone()
+    assert row is not None
+    assert row[0]
+    assert row[1]
+
+
 def test_archive_schema_migrates_missing_expires_at(tmp_path):
     """Production DBs created before expires_at must migrate on ensure_schema."""
     path = tmp_path / "migrate.sqlite3"
