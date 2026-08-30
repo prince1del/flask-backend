@@ -606,6 +606,7 @@ def upload_storage_file():
                 'file_name': uploaded.get('name') or safe_name,
                 'mime_type': uploaded.get('mimeType'),
                 'folder': folder_name,
+                'folder_id': parent_id,
                 'message': f'Uploaded to Drive/NEXORA/{folder_name}.',
             },
         }), 200

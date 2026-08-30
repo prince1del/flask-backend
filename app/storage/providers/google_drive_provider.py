@@ -76,7 +76,7 @@ class GoogleDriveProvider(StorageProvider):
                 .create(
                     body=metadata,
                     media_body=media,
-                    fields="id,name,mimeType,size,modifiedTime",
+                    fields="id,name,mimeType,size,modifiedTime,parents",
                 )
                 .execute()
             )
