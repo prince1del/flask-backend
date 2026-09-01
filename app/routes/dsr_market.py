@@ -2678,8 +2678,18 @@ def _is_new_distributor_visit(data: dict, visit_intel_json: str | None = None) -
         if focus == "new distributor":
             return True
         qa = intel.get("new_distributor_qa")
-        if isinstance(qa, dict) and any(str(v or "").strip() for v in qa.values()):
-            return True
+        if isinstance(qa, dict):
+            for key, val in qa.items():
+                if key == "custom_qa":
+                    if isinstance(val, list):
+                        for item in val:
+                            if isinstance(item, dict) and any(
+                                str(item.get(f) or "").strip() for f in ("question", "answer")
+                            ):
+                                return True
+                    continue
+                if str(val or "").strip():
+                    return True
 
     existing = (data.get("existing_or_new") or "").strip().lower()
     channel = (data.get("channel_type") or "").strip().upper()
