@@ -744,15 +744,17 @@ def create_visit():
             ),
         )
         visit_id = int(cur.lastrowid)
-        if draft_party_kind == "distributor":
+        if _is_new_distributor_visit(data, visit_intel_json):
             _upsert_approach_from_visit(
                 conn,
                 workspace_id=workspace_id,
                 uid=uid,
                 username=user.get("username"),
-                data=data,
+                data={**data, "visit_date": visit_date},
                 visit_id=visit_id,
                 visit_intel_json=visit_intel_json,
+                retailer_feedback=retailer_feedback,
+                sm_remarks=sm_remarks,
             )
         conn.commit()
         row = conn.execute("SELECT * FROM dsr_market_visits WHERE id = ?", (visit_id,)).fetchone()
@@ -897,6 +899,18 @@ def update_visit(visit_id: int):
                 workspace_id,
             ),
         )
+        if _is_new_distributor_visit(merged, visit_intel_json):
+            _upsert_approach_from_visit(
+                conn,
+                workspace_id=workspace_id,
+                uid=uid,
+                username=(_current_user().get("username") or visit.get("username")),
+                data=merged,
+                visit_id=visit_id,
+                visit_intel_json=visit_intel_json,
+                retailer_feedback=retailer_feedback,
+                sm_remarks=sm_remarks,
+            )
         conn.commit()
         updated = conn.execute(
             "SELECT * FROM dsr_market_visits WHERE id = ?", (visit_id,)
@@ -2625,6 +2639,164 @@ def _categories_to_store(value) -> str | None:
     return text or None
 
 
+_ND_QA_LABELS: dict[str, str] = {
+    "last_fy_turnover": "Last FY turnover (Rs)",
+    "current_brands": "Current brands carried",
+    "top_brands_monthly_sales": "Top brands monthly sales",
+    "category_monthly_sales": "Category-wise monthly sales",
+    "sales_team_size": "Sales team size",
+    "field_sales_count": "Field sales executives",
+    "active_retailers_count": "Active retailers",
+    "monthly_billing_outlets": "Monthly billing outlets",
+    "strongest_market": "Strongest market",
+    "coverage_areas": "Coverage areas",
+    "competing_brands_yn": "Competing brands (Y/N)",
+    "competing_brands_list": "Competing brands",
+    "credit_period": "Credit period",
+    "initial_investment": "Initial investment",
+    "monthly_target_commit": "Monthly target commitment",
+    "outlets_activate_3_6_months": "Outlets to activate (3–6 months)",
+}
+
+
+def _is_new_distributor_visit(data: dict, visit_intel_json: str | None = None) -> bool:
+    """True when a market visit row represents approaching a new distributor."""
+    kind = (data.get("draft_party_kind") or "").strip().lower()
+    if kind == "distributor":
+        return True
+
+    intel_raw = visit_intel_json if visit_intel_json is not None else data.get("visit_intel_json")
+    intel: dict | None = None
+    if intel_raw:
+        try:
+            parsed = json.loads(intel_raw) if isinstance(intel_raw, str) else intel_raw
+            intel = parsed if isinstance(parsed, dict) else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            intel = None
+    if intel:
+        focus = (intel.get("visit_focus") or "").strip().lower()
+        if focus == "new distributor":
+            return True
+        qa = intel.get("new_distributor_qa")
+        if isinstance(qa, dict) and any(str(v or "").strip() for v in qa.values()):
+            return True
+
+    existing = (data.get("existing_or_new") or "").strip().lower()
+    channel = (data.get("channel_type") or "").strip().upper()
+    linked_dist = data.get("linked_distributor_id")
+    try:
+        linked_dist = int(linked_dist) if linked_dist not in (None, "") else None
+    except (TypeError, ValueError):
+        linked_dist = None
+    if existing == "new" and channel == "AWD" and not linked_dist:
+        return True
+    return False
+
+
+def _build_approach_visit_discussion_note(
+    *,
+    visit_id: int,
+    visit_date: str | None,
+    visit_intel_json: str | None,
+    retailer_feedback: str | None,
+    sm_remarks: str | None,
+    username: str | None,
+    uid,
+) -> dict | None:
+    """Readable discussion note from a New distributor market visit (id = visit-{id})."""
+    lines: list[str] = [f"Market visit · {visit_date or '—'}"]
+    intel: dict | None = None
+    if visit_intel_json:
+        try:
+            parsed = json.loads(visit_intel_json) if isinstance(visit_intel_json, str) else visit_intel_json
+            intel = parsed if isinstance(parsed, dict) else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            intel = None
+
+    if isinstance(intel, dict):
+        area_notes = (intel.get("area_market_notes") or "").strip()
+        if area_notes:
+            lines.append(f"Area / market notes: {area_notes}")
+        qa = intel.get("new_distributor_qa")
+        if isinstance(qa, dict):
+            for key, label in _ND_QA_LABELS.items():
+                val = (qa.get(key) or "").strip()
+                if val:
+                    lines.append(f"{label}: {val}")
+            custom = qa.get("custom_qa")
+            if isinstance(custom, list):
+                for item in custom:
+                    if not isinstance(item, dict):
+                        continue
+                    q = (item.get("question") or "").strip()
+                    a = (item.get("answer") or "").strip()
+                    if q or a:
+                        lines.append(f"Q: {q}")
+                        if a:
+                            lines.append(f"A: {a}")
+
+    if sm_remarks and (sm_remarks or "").strip():
+        lines.append(f"SM remarks: {sm_remarks.strip()}")
+    if retailer_feedback and (retailer_feedback or "").strip():
+        lines.append(f"Discussion summary: {retailer_feedback.strip()}")
+
+    if len(lines) <= 1:
+        return None
+
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "id": f"visit-{visit_id}",
+        "text": "\n".join(lines),
+        "created_at": now,
+        "username": username,
+        "user_id": uid,
+        "link_type": "dsr_visit",
+        "link_id": visit_id,
+    }
+
+
+def _merge_visit_note_into_approach(notes: list, note_entry: dict | None) -> list:
+    if not note_entry:
+        return notes
+    note_id = note_entry.get("id")
+    kept = [n for n in notes if (n or {}).get("id") != note_id]
+    return kept + [note_entry]
+
+
+def _sync_approach_distributors_from_visits(
+    conn: sqlite3.Connection,
+    *,
+    workspace_id: str,
+    uid,
+    username: str | None,
+) -> None:
+    """Backfill / refresh Approach list from saved New distributor market visits."""
+    sql = "SELECT * FROM dsr_market_visits WHERE workspace_id = ?"
+    params: list = [workspace_id]
+    if uid is not None:
+        sql += " AND user_id = ?"
+        params.append(uid)
+    sql += " ORDER BY id ASC"
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    for row in rows:
+        visit = dict(row)
+        intel = visit.get("visit_intel_json")
+        if not _is_new_distributor_visit(visit, intel):
+            continue
+        feedback, remarks = _resolve_visit_narratives(visit, intel)
+        _upsert_approach_from_visit(
+            conn,
+            workspace_id=workspace_id,
+            uid=uid if uid is not None else visit.get("user_id"),
+            username=username or visit.get("username"),
+            data=visit,
+            visit_id=int(visit["id"]),
+            visit_intel_json=intel,
+            retailer_feedback=feedback,
+            sm_remarks=remarks,
+        )
+
+
 def _upsert_approach_from_visit(
     conn: sqlite3.Connection,
     *,
@@ -2634,6 +2806,8 @@ def _upsert_approach_from_visit(
     data: dict,
     visit_id: int,
     visit_intel_json: str | None,
+    retailer_feedback: str | None = None,
+    sm_remarks: str | None = None,
 ) -> int | None:
     """Mirror New-distributor visit fields into Approach Distributor list."""
     firm = (data.get("customer_name") or "").strip()
@@ -2675,9 +2849,19 @@ def _upsert_approach_from_visit(
     existing_or_new = (data.get("existing_or_new") or "New").strip() or "New"
     customer_type = (data.get("customer_type") or "").strip() or None
     now = datetime.now(timezone.utc).isoformat()
+    visit_date = (data.get("visit_date") or "").strip() or None
+    discussion_note = _build_approach_visit_discussion_note(
+        visit_id=visit_id,
+        visit_date=visit_date,
+        visit_intel_json=visit_intel_json,
+        retailer_feedback=retailer_feedback,
+        sm_remarks=sm_remarks,
+        username=username,
+        uid=uid,
+    )
 
     existing_sql = """
-        SELECT id FROM dsr_approach_distributors
+        SELECT id, notes_json FROM dsr_approach_distributors
         WHERE workspace_id = ? AND lower(firm_name) = lower(?)
     """
     existing_params: list = [workspace_id, firm]
@@ -2688,6 +2872,9 @@ def _upsert_approach_from_visit(
     existing = conn.execute(existing_sql, tuple(existing_params)).fetchone()
 
     if existing:
+        notes = _merge_visit_note_into_approach(
+            _parse_notes(existing["notes_json"]), discussion_note
+        )
         conn.execute(
             """
             UPDATE dsr_approach_distributors SET
@@ -2702,6 +2889,7 @@ def _upsert_approach_from_visit(
                 existing_or_new = COALESCE(?, existing_or_new),
                 customer_type = COALESCE(?, customer_type),
                 source_visit_id = ?,
+                notes_json = ?,
                 updated_at = ?,
                 user_id = COALESCE(user_id, ?),
                 username = COALESCE(username, ?)
@@ -2719,6 +2907,7 @@ def _upsert_approach_from_visit(
                 existing_or_new,
                 customer_type,
                 visit_id,
+                json.dumps(notes, ensure_ascii=False),
                 now,
                 uid,
                 username,
@@ -2727,6 +2916,7 @@ def _upsert_approach_from_visit(
         )
         return int(existing["id"])
 
+    initial_notes = _merge_visit_note_into_approach([], discussion_note)
     cur = conn.execute(
         """
         INSERT INTO dsr_approach_distributors (
@@ -2752,7 +2942,7 @@ def _upsert_approach_from_visit(
             existing_or_new,
             customer_type,
             visit_id,
-            "[]",
+            json.dumps(initial_notes, ensure_ascii=False),
             now,
             now,
         ),
@@ -2766,10 +2956,19 @@ def _upsert_approach_from_visit(
 def list_approach_distributors():
     workspace_id = get_workspace_id()
     uid = _user_id()
+    user = _current_user()
     q = (request.args.get("q") or "").strip().lower()
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
+        # Keep Approach tab in sync with saved New distributor market visits (incl. past days).
+        _sync_approach_distributors_from_visits(
+            conn,
+            workspace_id=workspace_id,
+            uid=uid,
+            username=user.get("username"),
+        )
+        conn.commit()
         sql = """
             SELECT * FROM dsr_approach_distributors
             WHERE workspace_id = ?
