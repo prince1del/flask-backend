@@ -2909,6 +2909,98 @@ def get_approach_distributor(approach_id: int):
     return jsonify({"success": True, "data": _approach_row_to_dict(row)})
 
 
+@dsr_market_bp.route("/approach-distributors/<int:approach_id>", methods=["PUT"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def update_approach_distributor(approach_id: int):
+    workspace_id = get_workspace_id()
+    data = request.get_json(silent=True) or {}
+    firm = (data.get("firm_name") or data.get("customer_name") or data.get("name") or "").strip()
+    if not firm:
+        return jsonify({"success": False, "error": {"message": "firm_name is required"}}), 400
+
+    now = datetime.now(timezone.utc).isoformat()
+    main_categories = _categories_to_store(
+        data.get("main_categories_list")
+        if data.get("main_categories_list") is not None
+        else data.get("main_categories")
+    )
+    fields = (
+        firm,
+        (data.get("owner_name") or "").strip() or None,
+        (data.get("contact_nos") or data.get("phone") or "").strip() or None,
+        (data.get("city_area") or data.get("city") or "").strip() or None,
+        (data.get("location") or "").strip() or None,
+        (data.get("address") or "").strip() or None,
+        (str(data.get("annual_ht") or data.get("monthly_ht") or "").strip() or None),
+        main_categories,
+        (data.get("channel_type") or "AWD").strip() or "AWD",
+        (data.get("existing_or_new") or "New").strip() or "New",
+        (data.get("customer_type") or "").strip() or None,
+    )
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        uid = _user_id()
+        sql = "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?"
+        params: list = [approach_id, workspace_id]
+        if uid is not None:
+            sql += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        row = conn.execute(sql, tuple(params)).fetchone()
+        if not row:
+            return jsonify({"success": False, "error": {"message": "Not found"}}), 404
+        conn.execute(
+            """
+            UPDATE dsr_approach_distributors SET
+                firm_name = ?,
+                owner_name = ?,
+                contact_nos = ?,
+                city_area = ?,
+                location = ?,
+                address = ?,
+                monthly_ht = ?,
+                main_categories = ?,
+                channel_type = ?,
+                existing_or_new = ?,
+                customer_type = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (*fields, now, approach_id),
+        )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT * FROM dsr_approach_distributors WHERE id = ?", (approach_id,)
+        ).fetchone()
+    return jsonify({"success": True, "data": _approach_row_to_dict(updated)})
+
+
+@dsr_market_bp.route("/approach-distributors/<int:approach_id>", methods=["DELETE"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def delete_approach_distributor(approach_id: int):
+    workspace_id = get_workspace_id()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        uid = _user_id()
+        sql = "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?"
+        params: list = [approach_id, workspace_id]
+        if uid is not None:
+            sql += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        row = conn.execute(sql, tuple(params)).fetchone()
+        if not row:
+            return jsonify({"success": False, "error": {"message": "Not found"}}), 404
+        conn.execute(
+            "DELETE FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?",
+            (approach_id, workspace_id),
+        )
+        conn.commit()
+    return jsonify({"success": True, "data": {"id": approach_id, "deleted": True}})
+
+
 @dsr_market_bp.route("/approach-distributors/<int:approach_id>/notes", methods=["POST"])
 @require_jwt_auth
 @require_role("admin", "sales_executive")
