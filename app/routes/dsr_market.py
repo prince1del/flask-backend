@@ -292,6 +292,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_dsr_approach_ws "
         "ON dsr_approach_distributors(workspace_id, firm_name COLLATE NOCASE)"
     )
+    approach_cols = {row[1] for row in conn.execute("PRAGMA table_info(dsr_approach_distributors)")}
+    if "source_visit_date" not in approach_cols:
+        conn.execute("ALTER TABLE dsr_approach_distributors ADD COLUMN source_visit_date TEXT")
 
 
 def _brand_key(name: str) -> str:
@@ -2613,9 +2616,16 @@ def _parse_notes(raw) -> list:
         return []
 
 
-def _approach_row_to_dict(row: sqlite3.Row) -> dict:
+def _approach_row_to_dict(row: sqlite3.Row, conn: sqlite3.Connection | None = None) -> dict:
     d = dict(row)
     d["notes"] = _parse_notes(d.pop("notes_json", None))
+    if not d.get("source_visit_date") and d.get("source_visit_id") and conn is not None:
+        vrow = conn.execute(
+            "SELECT visit_date FROM dsr_market_visits WHERE id = ?",
+            (int(d["source_visit_id"]),),
+        ).fetchone()
+        if vrow and vrow["visit_date"]:
+            d["source_visit_date"] = vrow["visit_date"]
     cats = d.get("main_categories")
     if isinstance(cats, str) and cats.strip().startswith("["):
         try:
@@ -2899,6 +2909,7 @@ def _upsert_approach_from_visit(
                 existing_or_new = COALESCE(?, existing_or_new),
                 customer_type = COALESCE(?, customer_type),
                 source_visit_id = ?,
+                source_visit_date = COALESCE(?, source_visit_date),
                 notes_json = ?,
                 updated_at = ?,
                 user_id = COALESCE(user_id, ?),
@@ -2917,6 +2928,7 @@ def _upsert_approach_from_visit(
                 existing_or_new,
                 customer_type,
                 visit_id,
+                visit_date,
                 json.dumps(notes, ensure_ascii=False),
                 now,
                 uid,
@@ -2933,8 +2945,8 @@ def _upsert_approach_from_visit(
             workspace_id, user_id, username, firm_name,
             owner_name, contact_nos, city_area, location, address,
             monthly_ht, main_categories, channel_type, existing_or_new, customer_type,
-            source_visit_id, notes_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            source_visit_id, source_visit_date, notes_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -2952,6 +2964,7 @@ def _upsert_approach_from_visit(
             existing_or_new,
             customer_type,
             visit_id,
+            visit_date,
             json.dumps(initial_notes, ensure_ascii=False),
             now,
             now,
@@ -2989,7 +3002,7 @@ def list_approach_distributors():
             params.append(uid)
         sql += " ORDER BY updated_at DESC, id DESC"
         rows = conn.execute(sql, tuple(params)).fetchall()
-    items = [_approach_row_to_dict(r) for r in rows]
+    items = [_approach_row_to_dict(r, conn) for r in rows]
     if q:
         items = [
             x
