@@ -2649,24 +2649,50 @@ def _categories_to_store(value) -> str | None:
     return text or None
 
 
-_ND_QA_LABELS: dict[str, str] = {
-    "last_fy_turnover": "Last FY turnover (Rs)",
-    "current_brands": "Current brands carried",
-    "top_brands_monthly_sales": "Top brands monthly sales",
-    "category_monthly_sales": "Category-wise monthly sales",
-    "sales_team_size": "Sales team size",
-    "field_sales_count": "Field sales executives",
-    "active_retailers_count": "Active retailers",
-    "monthly_billing_outlets": "Monthly billing outlets",
-    "strongest_market": "Strongest market",
-    "coverage_areas": "Coverage areas",
-    "competing_brands_yn": "Competing brands (Y/N)",
-    "competing_brands_list": "Competing brands",
-    "credit_period": "Credit period",
-    "initial_investment": "Initial investment",
-    "monthly_target_commit": "Monthly target commitment",
-    "outlets_activate_3_6_months": "Outlets to activate (3–6 months)",
-}
+_ND_QA_QUESTIONS: list[tuple[str, str]] = [
+    ("last_fy_turnover", "Aapka last financial year ka total turnover kitna tha?"),
+    ("current_brands", "Aap currently kaun-kaun se brands distribute kar rahe hain?"),
+    ("top_brands_monthly_sales", "Aapke current top brands ki average monthly sales kitni hai?"),
+    ("category_monthly_sales", "Relevant product category mein aapki current average monthly sales kitni hai?"),
+    ("sales_team_size", "Aapki total sales team size kitni hai?"),
+    ("field_sales_count", "Field sales mein currently kitne sales executives / salesmen kaam kar rahe hain?"),
+    ("active_retailers_count", "Aapke network mein total kitne active retailers / dealers / MBOs hain?"),
+    ("monthly_billing_outlets", "Har month approximately kitne active outlets ko actual billing hoti hai?"),
+    ("strongest_market", "Aapki strongest market / territory kaunsi hai?"),
+    ("coverage_areas", "Aap regularly kaun-kaun se cities, districts aur markets cover karte hain?"),
+    (
+        "competing_brands_yn",
+        "Kya aap currently Bombay Dyeing ke competing brands distribute kar rahe hain?",
+    ),
+    ("credit_period", "Aapka average retailer credit period aur collection cycle kitna hai?"),
+    (
+        "initial_investment",
+        "Bombay Dyeing ke business ke liye aap kitna initial stock / investment comfortably maintain kar sakte hain?",
+    ),
+    (
+        "monthly_target_commit",
+        "Bombay Dyeing ke liye aap realistic monthly sales target kitna commit kar sakte hain?",
+    ),
+    (
+        "outlets_activate_3_6_months",
+        "Agar Bombay Dyeing ki distributorship milti hai, toh first 3–6 months mein kitne active outlets open / activate kar sakte hain?",
+    ),
+]
+
+
+def _read_nd_qa_value(qa: dict, key: str) -> str:
+    raw = qa.get(key)
+    if raw is None:
+        return ""
+    val = str(raw).strip()
+    return val if val and val != "null" else ""
+
+
+def _format_nd_qa_answer(qa: dict, key: str, val: str) -> str:
+    if key == "competing_brands_yn" and val.lower() == "yes":
+        brands = _read_nd_qa_value(qa, "competing_brands_list")
+        return f"{val} — {brands}" if brands else val
+    return val
 
 
 def _is_new_distributor_visit(data: dict, visit_intel_json: str | None = None) -> bool:
@@ -2739,10 +2765,13 @@ def _build_approach_visit_discussion_note(
             lines.append(f"Area / market notes: {area_notes}")
         qa = intel.get("new_distributor_qa")
         if isinstance(qa, dict):
-            for key, label in _ND_QA_LABELS.items():
-                val = (qa.get(key) or "").strip()
-                if val:
-                    lines.append(f"{label}: {val}")
+            for key, question in _ND_QA_QUESTIONS:
+                val = _read_nd_qa_value(qa, key)
+                if not val:
+                    continue
+                answer = _format_nd_qa_answer(qa, key, val)
+                lines.append(f"Q: {question}")
+                lines.append(f"A: {answer}")
             custom = qa.get("custom_qa")
             if isinstance(custom, list):
                 for item in custom:
@@ -2750,10 +2779,11 @@ def _build_approach_visit_discussion_note(
                         continue
                     q = (item.get("question") or "").strip()
                     a = (item.get("answer") or "").strip()
-                    if q or a:
-                        lines.append(f"Q: {q}")
-                        if a:
-                            lines.append(f"A: {a}")
+                    if not q and not a:
+                        continue
+                    lines.append(f"Q: {q or '—'}")
+                    if a:
+                        lines.append(f"A: {a}")
 
     if sm_remarks and (sm_remarks or "").strip():
         lines.append(f"SM remarks: {sm_remarks.strip()}")
