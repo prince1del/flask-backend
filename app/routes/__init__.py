@@ -1,3 +1,4 @@
+from .mail_sync import mail_sync_bp
 from .analytics import analytics_blueprint
 from .auth import auth_blueprint
 from .data import data_blueprint
@@ -72,4 +73,5 @@ __all__ = [
     'payment_collection_bp',
     'call_lists_bp',
     'ai_agent_bp',
+    'mail_sync_bp',
 ]

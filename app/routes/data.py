@@ -8035,6 +8035,8 @@ def _ingest_one_ci_pdf(filename: str, data: bytes) -> dict:
     preview = body.get("data") if isinstance(body.get("data"), dict) else {}
     row = _auto_confirm_ci_preview(preview)
     row["file"] = filename
+    if row.get("state") == "review":
+        row["preview"] = preview
     return row
 
 

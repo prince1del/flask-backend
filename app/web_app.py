@@ -74,6 +74,7 @@ from app.routes import (
     payment_collection_bp,
     call_lists_bp,
     ai_agent_bp,
+    mail_sync_bp,
 )
 import app.models  # register SQLAlchemy models
 from app.routes.auth import register_auth_hooks
@@ -367,6 +368,7 @@ def create_app() -> Flask:
     app.register_blueprint(payment_collection_bp)
     app.register_blueprint(call_lists_bp)
     app.register_blueprint(ai_agent_bp)
+    app.register_blueprint(mail_sync_bp)
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:
