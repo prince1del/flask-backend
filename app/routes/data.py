@@ -6259,6 +6259,57 @@ def set_distributor_cd_rate() -> Response:
     return _json_response({"success": True, "data": entry})
 
 
+@data_blueprint.route("/api/v1/distributor-payments/tds", methods=["POST"])
+@require_jwt_auth
+def set_distributor_tds_applicable() -> Response:
+    """Toggle TDS 194Q @ 0.1% for a distributor+season+category.
+
+    Some SO payment emails omit TDS entirely; set tds_applicable=false so
+    Payable = Gross − CD (no TDS). Default remains true.
+    """
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Not signed in"}}, 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        distributor_id = int(payload["distributor_id"])
+        season = str(payload["season"]).strip()
+        category = str(payload.get("category") or "").strip()
+        raw = payload.get("tds_applicable")
+        if isinstance(raw, bool):
+            tds_applicable = raw
+        elif isinstance(raw, (int, float)):
+            tds_applicable = bool(int(raw))
+        elif isinstance(raw, str):
+            tds_applicable = raw.strip().lower() in ("1", "true", "yes", "y")
+        else:
+            raise ValueError("tds_applicable required")
+    except (TypeError, ValueError, KeyError):
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "message": "distributor_id, season, category, tds_applicable required"
+                },
+            },
+            400,
+        )
+    if not season:
+        return _json_response({"success": False, "error": {"message": "season is required"}}, 400)
+    if not category:
+        return _json_response(
+            {"success": False, "error": {"message": "category is required"}}, 400
+        )
+    try:
+        entry = db.set_distributor_tds_applicable(
+            user_id, distributor_id, season, category, tds_applicable
+        )
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    return _json_response({"success": True, "data": entry})
+
+
 @data_blueprint.route(
     "/api/v1/distributor-payments/deposits/<int:deposit_id>", methods=["DELETE"]
 )

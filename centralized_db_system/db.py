@@ -17851,6 +17851,20 @@ class CentralizedDB:
                 conn.execute(
                     "ALTER TABLE distributor_cd_rates_v2 RENAME TO distributor_cd_rates"
                 )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributor_tds_prefs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    distributor_id INTEGER NOT NULL,
+                    season TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    tds_applicable INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(user_id, distributor_id, season, category)
+                )
+                """
+            )
 
     def get_distributor_cd_rates(self, user_id: int) -> dict[tuple[int, str, str], float]:
         """Return {(distributor_id, season, category): cd_percent}.
@@ -17903,6 +17917,65 @@ class CentralizedDB:
             "season": season,
             "category": category,
             "cd_percent": cd_percent,
+        }
+
+    def get_distributor_tds_prefs(self, user_id: int) -> dict[tuple[int, str, str], bool]:
+        """Return {(distributor_id, season, category): tds_applicable}.
+
+        Missing keys mean TDS applies (default Yes) — matches commercial
+        terms where 194Q @ 0.1% on gross is usual unless the SO email
+        omits TDS.
+        """
+        self.ensure_distributor_category_payments_table()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT distributor_id, season, category, tds_applicable "
+                "FROM distributor_tds_prefs WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        out: dict[tuple[int, str, str], bool] = {}
+        for r in rows:
+            cat = (r["category"] or "").strip()
+            out[(r["distributor_id"], r["season"], cat)] = bool(int(r["tds_applicable"] or 0))
+        return out
+
+    def set_distributor_tds_applicable(
+        self,
+        user_id: int,
+        distributor_id: int,
+        season: str,
+        category: str,
+        tds_applicable: bool,
+    ) -> dict[str, Any]:
+        """Upsert TDS Yes/No for distributor+season+category."""
+        self.ensure_distributor_category_payments_table()
+        category = (category or "").strip()
+        if not category:
+            raise ValueError("category is required for TDS preference")
+        season = (season or "").strip()
+        if not season:
+            raise ValueError("season is required for TDS preference")
+        flag = 1 if tds_applicable else 0
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO distributor_tds_prefs
+                    (user_id, distributor_id, season, category, tds_applicable, updated_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(user_id, distributor_id, season, category)
+                DO UPDATE SET
+                    tds_applicable = excluded.tds_applicable,
+                    updated_at = excluded.updated_at
+                """,
+                (user_id, distributor_id, season, category, flag),
+            )
+            conn.commit()
+        return {
+            "distributor_id": distributor_id,
+            "season": season,
+            "category": category,
+            "tds_applicable": bool(flag),
         }
 
     def list_distributor_category_payment_status(self, user_id: int | None) -> list[dict[str, Any]]:
@@ -18005,9 +18078,11 @@ class CentralizedDB:
                 )
 
             cd_rates = self.get_distributor_cd_rates(user_id)
+            tds_prefs = self.get_distributor_tds_prefs(user_id)
             # Statutory TDS on distributor payment collection — 0.1% of gross
-            # SO bill (incl. GST). CD stays on net; TDS is separate.
-            tds_pct = 0.1
+            # SO bill (incl. GST) when applicable. Some SO emails omit TDS;
+            # those categories flip tds_applicable=False. CD stays on net.
+            tds_pct_default = 0.1
 
             by_distributor: dict[int, dict[str, Any]] = {}
             for key in so_bill_by_key:
@@ -18025,7 +18100,9 @@ class CentralizedDB:
                 # CD is on net (pre-GST), GST stays on full total
                 cd_amount = so_net * (cd_pct / 100.0)
                 bill_after_cd = so_total - cd_amount
-                tds_amount = so_total * (tds_pct / 100.0)
+                tds_applicable = tds_prefs.get((dist_id, season, category), True)
+                tds_pct = tds_pct_default if tds_applicable else 0.0
+                tds_amount = so_total * (tds_pct / 100.0) if tds_applicable else 0.0
                 collectible = bill_after_cd - tds_amount
                 dist_entry = by_distributor.setdefault(
                     dist_id,
@@ -18046,6 +18123,7 @@ class CentralizedDB:
                         "cd_percent": cd_pct,
                         "cd_amount": round(cd_amount, 2),
                         "bill_after_cd": round(bill_after_cd, 2),
+                        "tds_applicable": tds_applicable,
                         "tds_percent": tds_pct,
                         "tds_amount": round(tds_amount, 2),
                         "paid_total": paid_total,
