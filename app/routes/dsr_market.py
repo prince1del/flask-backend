@@ -640,10 +640,14 @@ def create_visit():
         ), 400
 
     is_draft = 1 if _truthy_flag(str(data.get("is_draft") if data.get("is_draft") is not None else "0")) else 0
-    # Also treat explicit draft_party_kind as draft
+    # New retailer → Party Master draft (resolved at Day Close).
+    # New distributor → Approach prospect only until user confirms final (never auto-Active).
     draft_party_kind = (data.get("draft_party_kind") or "").strip().lower() or None
-    if draft_party_kind in {"retailer", "distributor"}:
+    if draft_party_kind == "retailer":
         is_draft = 1
+    elif draft_party_kind == "distributor":
+        draft_party_kind = None
+        is_draft = 0
     elif draft_party_kind:
         draft_party_kind = None
 
@@ -702,6 +706,13 @@ def create_visit():
 
         # Generate narratives on Save from structured intel; store once for app + Excel.
         retailer_feedback, sm_remarks = _resolve_visit_narratives(data, visit_intel_json)
+
+        # Meet-only new distributors: keep in visit report + Approach; never Party Master draft.
+        if _is_new_distributor_visit(
+            {**data, "draft_party_kind": draft_party_kind}, visit_intel_json
+        ):
+            is_draft = 0
+            draft_party_kind = None
 
         cur = conn.execute(
             """
@@ -903,6 +914,14 @@ def update_visit(visit_id: int):
             ),
         )
         if _is_new_distributor_visit(merged, visit_intel_json):
+            conn.execute(
+                """
+                UPDATE dsr_market_visits
+                SET is_draft = 0, draft_party_kind = NULL
+                WHERE id = ? AND workspace_id = ?
+                """,
+                (visit_id, workspace_id),
+            )
             _upsert_approach_from_visit(
                 conn,
                 workspace_id=workspace_id,
@@ -2241,6 +2260,21 @@ def list_drafts():
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
+        # New distributor meets are Approach prospects — not Party Master drafts.
+        release_sql = """
+            UPDATE dsr_market_visits
+            SET is_draft = 0, draft_party_kind = NULL
+            WHERE workspace_id = ?
+              AND is_draft = 1
+              AND lower(IFNULL(draft_party_kind, '')) = 'distributor'
+        """
+        release_params: list = [workspace_id]
+        if uid is not None and request.args.get("all") != "1":
+            release_sql += " AND user_id = ?"
+            release_params.append(uid)
+        conn.execute(release_sql, tuple(release_params))
+        conn.commit()
+
         query = "SELECT * FROM dsr_market_visits WHERE workspace_id = ? AND is_draft = 1"
         params: list = [workspace_id]
         if uid is not None and request.args.get("all") != "1":
@@ -2559,6 +2593,18 @@ def day_close():
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_table(conn)
+        # Legacy New-distributor visits were Party Master drafts; that forced Active
+        # create at Day Close. Release them — prospects stay in Approach until confirm.
+        conn.execute(
+            """
+            UPDATE dsr_market_visits
+            SET is_draft = 0, draft_party_kind = NULL
+            WHERE workspace_id = ? AND user_id = ? AND visit_date = ?
+              AND is_draft = 1
+              AND lower(IFNULL(draft_party_kind, '')) = 'distributor'
+            """,
+            (workspace_id, uid, visit_date),
+        )
         open_drafts = conn.execute(
             "SELECT id, customer_name FROM dsr_market_visits "
             "WHERE workspace_id = ? AND user_id = ? AND visit_date = ? AND is_draft = 1",
@@ -3251,6 +3297,83 @@ def delete_approach_distributor(approach_id: int):
         )
         conn.commit()
     return jsonify({"success": True, "data": {"id": approach_id, "deleted": True}})
+
+
+@dsr_market_bp.route("/approach-distributors/<int:approach_id>/confirm", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def confirm_approach_distributor(approach_id: int):
+    """User confirms prospect is final → create Active Party Master distributor.
+
+    Until this call, New distributor meets stay only in visit report + Approach.
+    """
+    workspace_id = get_workspace_id()
+    uid = _user_id()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_table(conn)
+        sql = "SELECT * FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?"
+        params: list = [approach_id, workspace_id]
+        if uid is not None:
+            sql += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(uid)
+        row = conn.execute(sql, tuple(params)).fetchone()
+        if not row:
+            return jsonify({"success": False, "error": {"message": "Approach not found"}}), 404
+
+        firm = (row["firm_name"] or "").strip()
+        if not firm:
+            return jsonify({"success": False, "error": {"message": "firm_name is required"}}), 400
+
+        db = _master_db()
+        party_id = db.add_master_distributor(
+            name=firm,
+            firm_name=firm,
+            location=(row["city_area"] or row["location"] or None),
+            address=(row["address"] or None),
+            phone_number=(row["contact_nos"] or None),
+            status="active",
+            workspace_id=workspace_id,
+            user_id=uid,
+        )
+
+        source_visit_id = row["source_visit_id"]
+        try:
+            source_visit_id = int(source_visit_id) if source_visit_id not in (None, "") else None
+        except (TypeError, ValueError):
+            source_visit_id = None
+        if source_visit_id is not None:
+            conn.execute(
+                """
+                UPDATE dsr_market_visits SET
+                    linked_distributor_id = ?,
+                    existing_or_new = 'Existing',
+                    is_draft = 0,
+                    draft_party_kind = NULL
+                WHERE id = ? AND workspace_id = ?
+                """,
+                (party_id, source_visit_id, workspace_id),
+            )
+
+        conn.execute(
+            "DELETE FROM dsr_approach_distributors WHERE id = ? AND workspace_id = ?",
+            (approach_id, workspace_id),
+        )
+        conn.commit()
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "approach_id": approach_id,
+                "party_id": party_id,
+                "party_kind": "distributor",
+                "firm_name": firm,
+                "confirmed": True,
+            },
+            "message": f"{firm} confirmed as Active distributor",
+        }
+    )
 
 
 @dsr_market_bp.route("/approach-distributors/<int:approach_id>/notes", methods=["POST"])
