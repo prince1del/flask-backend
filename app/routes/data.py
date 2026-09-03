@@ -6223,7 +6223,7 @@ def add_distributor_payment_deposit() -> Response:
 @data_blueprint.route("/api/v1/distributor-payments/cd", methods=["POST"])
 @require_jwt_auth
 def set_distributor_cd_rate() -> Response:
-    """Set Cash Discount % for a distributor+season."""
+    """Set Cash Discount % for a distributor+season+category (Bath/Bed/…)."""
     db = CentralizedDB(_db_path())
     user_id = _current_user_id()
     if not user_id:
@@ -6232,14 +6232,30 @@ def set_distributor_cd_rate() -> Response:
     try:
         distributor_id = int(payload["distributor_id"])
         season = str(payload["season"]).strip()
+        category = str(payload.get("category") or "").strip()
         cd_percent = float(payload["cd_percent"])
     except (TypeError, ValueError, KeyError):
         return _json_response(
-            {"success": False, "error": {"message": "distributor_id, season, cd_percent required"}}, 400
+            {
+                "success": False,
+                "error": {
+                    "message": "distributor_id, season, category, cd_percent required"
+                },
+            },
+            400,
         )
     if not season:
         return _json_response({"success": False, "error": {"message": "season is required"}}, 400)
-    entry = db.set_distributor_cd_rate(user_id, distributor_id, season, cd_percent)
+    if not category:
+        return _json_response(
+            {"success": False, "error": {"message": "category is required"}}, 400
+        )
+    try:
+        entry = db.set_distributor_cd_rate(
+            user_id, distributor_id, season, cd_percent, category=category
+        )
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
     return _json_response({"success": True, "data": entry})
 
 
@@ -8801,19 +8817,20 @@ def ai_assistant_query() -> Response:
             status_rows = db.list_distributor_category_payment_status(user_id)
             dist_row = next((r for r in status_rows if r.get("distributor_id") == dist_id), None)
             if dist_row:
-                season_bits = []
+                cat_bits = []
                 for season_entry in dist_row.get("seasons", []):
-                    cd_pct = float(season_entry.get("cd_percent") or 0)
-                    if cd_pct <= 0:
-                        continue
-                    cd_amt = sum(
-                        float(c.get("cd_amount") or 0) for c in season_entry.get("categories", [])
-                    )
-                    season_bits.append(
-                        f"{season_entry.get('season')}: {cd_pct:g}% (Rs {indian_number_format(cd_amt)})"
-                    )
-                if season_bits:
-                    answer = f"{ask_prefix} {dist_name} CD discount — " + "; ".join(season_bits) + "."
+                    season_name = season_entry.get("season") or "?"
+                    for cat in season_entry.get("categories", []):
+                        cd_pct = float(cat.get("cd_percent") or 0)
+                        if cd_pct <= 0:
+                            continue
+                        cd_amt = float(cat.get("cd_amount") or 0)
+                        cat_bits.append(
+                            f"{season_name}/{cat.get('category')}: {cd_pct:g}% "
+                            f"(Rs {indian_number_format(cd_amt)})"
+                        )
+                if cat_bits:
+                    answer = f"{ask_prefix} {dist_name} CD discount — " + "; ".join(cat_bits) + "."
                 else:
                     answer = f"{ask_prefix} No CD discount set for {dist_name} yet."
             else:

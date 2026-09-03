@@ -17812,44 +17812,96 @@ class CentralizedDB:
                     user_id INTEGER NOT NULL,
                     distributor_id INTEGER NOT NULL,
                     season TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT '',
                     cd_percent REAL NOT NULL DEFAULT 0,
                     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    UNIQUE(user_id, distributor_id, season)
+                    UNIQUE(user_id, distributor_id, season, category)
                 )
                 """
             )
+            # Migrate legacy season-only CD rows → category '' (season fallback).
+            cd_cols = {
+                str(info[1])
+                for info in conn.execute("PRAGMA table_info(distributor_cd_rates)").fetchall()
+            }
+            if "category" not in cd_cols:
+                conn.execute(
+                    """
+                    CREATE TABLE distributor_cd_rates_v2 (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        distributor_id INTEGER NOT NULL,
+                        season TEXT NOT NULL,
+                        category TEXT NOT NULL DEFAULT '',
+                        cd_percent REAL NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        UNIQUE(user_id, distributor_id, season, category)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO distributor_cd_rates_v2
+                        (user_id, distributor_id, season, category, cd_percent, updated_at)
+                    SELECT user_id, distributor_id, season, '', cd_percent, updated_at
+                    FROM distributor_cd_rates
+                    """
+                )
+                conn.execute("DROP TABLE distributor_cd_rates")
+                conn.execute(
+                    "ALTER TABLE distributor_cd_rates_v2 RENAME TO distributor_cd_rates"
+                )
 
-    def get_distributor_cd_rates(self, user_id: int) -> dict[tuple[int, str], float]:
-        """Return {(distributor_id, season): cd_percent} for a user."""
+    def get_distributor_cd_rates(self, user_id: int) -> dict[tuple[int, str, str], float]:
+        """Return {(distributor_id, season, category): cd_percent}.
+
+        Empty category '' is the legacy season-wide fallback used only when a
+        category-specific rate has not been set yet.
+        """
         self.ensure_distributor_category_payments_table()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT distributor_id, season, cd_percent FROM distributor_cd_rates WHERE user_id = ?",
+                "SELECT distributor_id, season, category, cd_percent "
+                "FROM distributor_cd_rates WHERE user_id = ?",
                 (user_id,),
             ).fetchall()
-        return {(r["distributor_id"], r["season"]): float(r["cd_percent"]) for r in rows}
+        out: dict[tuple[int, str, str], float] = {}
+        for r in rows:
+            cat = (r["category"] or "").strip()
+            out[(r["distributor_id"], r["season"], cat)] = float(r["cd_percent"])
+        return out
 
     def set_distributor_cd_rate(
-        self, user_id: int, distributor_id: int, season: str, cd_percent: float
+        self,
+        user_id: int,
+        distributor_id: int,
+        season: str,
+        cd_percent: float,
+        category: str | None = None,
     ) -> dict[str, Any]:
-        """Upsert CD% for a distributor+season. Returns the saved record."""
+        """Upsert CD% for a distributor+season+category. Returns the saved record."""
         self.ensure_distributor_category_payments_table()
         cd_percent = max(0.0, min(100.0, cd_percent))
+        category = (category or "").strip()
+        if not category:
+            raise ValueError("category is required for CD rate")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT INTO distributor_cd_rates (user_id, distributor_id, season, cd_percent, updated_at)
-                VALUES (?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(user_id, distributor_id, season)
+                INSERT INTO distributor_cd_rates
+                    (user_id, distributor_id, season, category, cd_percent, updated_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(user_id, distributor_id, season, category)
                 DO UPDATE SET cd_percent = excluded.cd_percent, updated_at = excluded.updated_at
                 """,
-                (user_id, distributor_id, season, cd_percent),
+                (user_id, distributor_id, season, category, cd_percent),
             )
             conn.commit()
         return {
             "distributor_id": distributor_id,
             "season": season,
+            "category": category,
             "cd_percent": cd_percent,
         }
 
@@ -17961,7 +18013,12 @@ class CentralizedDB:
                 so_net = float(so_net_by_key.get(key, 0))
                 deposits = deposits_by_key.get(key, [])
                 paid_total = sum(d["amount"] for d in deposits)
-                cd_pct = cd_rates.get((dist_id, season), 0.0)
+                # Prefer category-specific CD%; fall back to legacy season-wide
+                # rate (category '') so existing AW26 CD still applies until
+                # Bath/Bed/etc. are set individually.
+                cd_pct = cd_rates.get((dist_id, season, category))
+                if cd_pct is None:
+                    cd_pct = cd_rates.get((dist_id, season, ""), 0.0)
                 # CD is on net (pre-GST), GST stays on full total
                 cd_amount = so_net * (cd_pct / 100.0)
                 bill_after_cd = so_total - cd_amount
@@ -17974,13 +18031,14 @@ class CentralizedDB:
                     },
                 )
                 season_entry = dist_entry["seasons"].setdefault(
-                    season, {"season": season, "cd_percent": cd_pct, "categories": []}
+                    season, {"season": season, "categories": []}
                 )
                 season_entry["categories"].append(
                     {
                         "category": category,
                         "so_total": so_total,
                         "so_net": so_net,
+                        "cd_percent": cd_pct,
                         "cd_amount": round(cd_amount, 2),
                         "bill_after_cd": round(bill_after_cd, 2),
                         "paid_total": paid_total,
