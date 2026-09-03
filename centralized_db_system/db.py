@@ -18005,6 +18005,9 @@ class CentralizedDB:
                 )
 
             cd_rates = self.get_distributor_cd_rates(user_id)
+            # Statutory TDS on distributor payment collection — 0.1% of gross
+            # SO bill (incl. GST). CD stays on net; TDS is separate.
+            tds_pct = 0.1
 
             by_distributor: dict[int, dict[str, Any]] = {}
             for key in so_bill_by_key:
@@ -18022,6 +18025,8 @@ class CentralizedDB:
                 # CD is on net (pre-GST), GST stays on full total
                 cd_amount = so_net * (cd_pct / 100.0)
                 bill_after_cd = so_total - cd_amount
+                tds_amount = so_total * (tds_pct / 100.0)
+                collectible = bill_after_cd - tds_amount
                 dist_entry = by_distributor.setdefault(
                     dist_id,
                     {
@@ -18041,8 +18046,10 @@ class CentralizedDB:
                         "cd_percent": cd_pct,
                         "cd_amount": round(cd_amount, 2),
                         "bill_after_cd": round(bill_after_cd, 2),
+                        "tds_percent": tds_pct,
+                        "tds_amount": round(tds_amount, 2),
                         "paid_total": paid_total,
-                        "outstanding": round(bill_after_cd - paid_total, 2),
+                        "outstanding": round(collectible - paid_total, 2),
                         "deposits": deposits,
                     }
                 )
