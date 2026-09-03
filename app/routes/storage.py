@@ -575,6 +575,27 @@ def upload_storage_file():
                 'error': f'Could not create Drive folder "{folder_name}". Try Sync from Drive.',
             }), 500
 
+        # Google Drive allows same display name twice — block catalogue duplicates by name.
+        existing_id = provider._find_file_by_name(safe_name, parent_id)
+        if not existing_id:
+            want = safe_name.casefold()
+            for child in provider.list_files(parent_id):
+                child_name = str(child.get('name') or '')
+                mime = str(child.get('mimeType') or '')
+                if mime == 'application/vnd.google-apps.folder':
+                    continue
+                if child_name.casefold() == want:
+                    existing_id = str(child.get('id') or '') or None
+                    break
+        if existing_id:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f'Catalogue "{safe_name}" already exists in Drive/NEXORA/{folder_name}. '
+                    'Delete the old file first, or upload with a different name.'
+                ),
+            }), 409
+
         fd, temp_path = tempfile.mkstemp(prefix='nexora_catalogue_', suffix=ext)
         os.close(fd)
         try:
