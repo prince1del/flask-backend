@@ -23,7 +23,27 @@ from app.services.so_pack_consolidate import (
 )
 
 QTY_TOL = 0.01
-VALUE_TOL = 10.0  # ₹ ±10 FO ExMill vs SO Net is MATCH (teaching)
+VALUE_TOL = 10.0  # ₹ absolute floor (tiny lines / teaching)
+VALUE_PER_PC_TOL = 1.0  # FO ExMill vs SO net rounding — ignore ≤ ₹1 per piece
+VALUE_PCT_TOL = 0.005  # ±0.5% of FO value for large-line ExMill rounding
+
+
+def value_delta_is_noise(
+    fo_qty: float,
+    so_qty: float,
+    fo_val: float,
+    so_val: float,
+    d_val: float | None = None,
+) -> bool:
+    """True when qty aligns and rupee gap is FO↔SO rounding noise, not a real miss."""
+    delta = abs(float(d_val if d_val is not None else (so_val - fo_val)))
+    if delta <= VALUE_TOL:
+        return True
+    qty = max(abs(float(fo_qty or 0)), abs(float(so_qty or 0)), 1.0)
+    if delta <= qty * VALUE_PER_PC_TOL:
+        return True
+    base = max(abs(float(fo_val or 0)), abs(float(so_val or 0)), 1.0)
+    return delta <= base * VALUE_PCT_TOL
 
 # Taught FO ↔ SO brand families (distributor wording vs BD collection name).
 # Soft keys only — e.g. "Florentine / Allure" and "Allure" share "allure".
@@ -478,7 +498,7 @@ def compare_fo_so_buckets(
             status = "EXTRA_ON_SO"
         elif abs(d_qty) > QTY_TOL:
             status = "QTY_MISMATCH"
-        elif abs(d_val) > VALUE_TOL:
+        elif not value_delta_is_noise(fo_qty, so_qty, fo_val, so_val, d_val):
             status = "VALUE_MISMATCH"
         elif key in fuzzy_flags or (
             fo_brand_raw

@@ -87,6 +87,23 @@ def test_value_tol_plus_minus_10_is_match():
     assert result2["counts"]["VALUE_MISMATCH"] == 1
 
 
+def test_value_per_pc_decimal_noise_is_match():
+    """₹19 on 72 pcs (~₹0.26/pc) is FO ExMill vs SO net rounding — not a miss."""
+    fo = {
+        ("bamboo", "bath towel"): {
+            "brand": "Bamboo", "size": "Bath Towel", "qty": 72.0, "value": 53011.0,
+        }
+    }
+    so = {
+        ("bamboo", "bath towel"): {
+            "brand": "Bamboo", "size": "Bath Towel", "qty": 72.0, "value": 52992.0,
+        }
+    }
+    result = compare_fo_so_buckets(fo, so)
+    assert result["counts"]["VALUE_MISMATCH"] == 0
+    assert result["counts"]["MATCH"] == 1
+
+
 def test_face_towel_equals_face_towel_set_of_3():
     assert soft_size_key("Face Towel") == soft_size_key("Face Towel Set of 3")
     assert soft_size_key("30x30") == soft_size_key("Face Towel Set of 3")
