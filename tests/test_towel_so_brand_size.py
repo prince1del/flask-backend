@@ -16,6 +16,82 @@ def test_flora_bathrobe_from_so_pdf_name():
     assert size == "Large"
 
 
+def test_flora_bathrobe_xl_from_so_pdf_name():
+    brand, size = resolve_so_brand_size("FLORA BATHROBE DYED ASST. SIZE-XL AW26")
+    assert brand == "Flora Bathrobe"
+    assert size == "Extra Large"
+
+
+def test_flora_bathrobe_l_and_xl_match_separately():
+    from app.services.fo_so_match_lab import _bucket_add
+
+    fo: dict = {}
+    so: dict = {}
+    _bucket_add(fo, brand="Flora Bathrobe", size="Large", qty=120, value=160000)
+    _bucket_add(fo, brand="Flora Bathrobe", size="Extra Large", qty=120, value=131000)
+    lines = [
+        {
+            "product_name": "FLORA BATHROBE DYED ASST. SIZE-L AW26",
+            "qty": 120.0,
+            "net_amount": 160000.0,
+            "gst_amount": 0.0,
+            "total_amount": 160000.0,
+            "so_number": "102876540",
+        },
+        {
+            "product_name": "FLORA BATHROBE DYED ASST. SIZE-XL AW26",
+            "qty": 120.0,
+            "net_amount": 131000.0,
+            "gst_amount": 0.0,
+            "total_amount": 131000.0,
+            "so_number": "102876540",
+        },
+    ]
+    built = build_so_buckets_from_line_detail(lines)
+    for key, row in built["buckets"].items():
+        _bucket_add(
+            so,
+            brand=row["brand"],
+            size=row["size"],
+            qty=row["qty"],
+            value=row["value"],
+            so_number="102876540",
+        )
+    result = compare_fo_so_buckets(fo, so)
+    assert result["counts"]["MISSING_ON_SO"] == 0
+    assert result["counts"]["EXTRA_ON_SO"] == 0
+    assert result["counts"]["QTY_MISMATCH"] == 0
+    assert result["counts"]["MATCH"] + result["counts"]["MATCH_FUZZY_BRAND"] == 2
+
+
+def test_luxury_living_uses_product_detail_when_name_truncated():
+    lines = [
+        {
+            "product_name": "LUXURY LIVING DYED",
+            "product_detail": "LUXURY LIVING DYED 75CM X 1.5M ASST04 AW26",
+            "qty": 144.0,
+            "net_amount": 174000.0,
+            "gst_amount": 0.0,
+            "total_amount": 174000.0,
+            "so_number": "1",
+        },
+        {
+            "product_name": "LUXURY LIVING DYED",
+            "product_detail": "LUXURY LIVING DYED 40CM X 60CM ASST04 AW26",
+            "qty": 240.0,
+            "net_amount": 92000.0,
+            "gst_amount": 0.0,
+            "total_amount": 92000.0,
+            "so_number": "1",
+        },
+    ]
+    so = build_so_buckets_from_line_detail(lines)
+    keys = set(so["buckets"].keys())
+    assert ("luxury living", "bath towel") in keys
+    assert ("luxury living", "hand towel") in keys
+    assert so["others_qty"] == 0.0
+
+
 def test_flora_bath_towel_from_so_pdf_name():
     brand, size = resolve_so_brand_size("FLORA DYED 75CM X 1.5M ASST12 AW26")
     assert brand == "Flora"

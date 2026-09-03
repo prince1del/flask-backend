@@ -251,14 +251,24 @@ def build_so_buckets_from_line_detail(line_detail: list[dict[str, Any]]) -> dict
     others_net = 0.0
     for row in line_detail or []:
         short = str(row.get("product_name") or "").strip()
-        if not short and row.get("product_detail"):
-            short = product_short_name(str(row.get("product_detail") or ""))
-        brand, size = resolve_so_brand_size(
-            short or str(row.get("product_detail") or ""),
-            material_code=str(row.get("material_code") or "") or None,
-        )
+        detail = str(row.get("product_detail") or "").strip()
+        if not short and detail:
+            short = product_short_name(detail)
+        # Prefer longer detail for towel teaching — short product_name often drops
+        # "75X150" / "40X60" after dimension truncation (Luxury Living, etc.).
+        candidates: list[str] = []
+        if detail:
+            candidates.append(detail)
+        if short and short not in candidates:
+            candidates.append(short)
+        brand = size = None
+        mat = str(row.get("material_code") or "") or None
+        for cand in candidates:
+            brand, size = resolve_so_brand_size(cand, material_code=mat)
+            if brand and size:
+                break
         if not brand or not size:
-            enriched = enrich_bd_product(short) if short else {}
+            enriched = enrich_bd_product(short or detail) if (short or detail) else {}
             brand = enriched.get("collection")
             size = enriched.get("product_type")
         qty = _safe_float(row.get("qty")) or 0.0

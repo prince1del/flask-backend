@@ -351,12 +351,36 @@ def enrich_towel_so_product(
             "product_type": product_type,
             "matched": False,
         }
-    size_label = "Large" if product_type == "Bathrobe" else product_type
+    if product_type == "Bathrobe":
+        # SO PDFs carry SIZE-L / SIZE-XL / SIZE-XXL — never dump every robe onto Large.
+        size_label = _bathrobe_size_from_so_text(code, material_code or "")
+    else:
+        size_label = product_type
     return {
         "collection": collection,
         "product_type": size_label,
         "matched": True,
     }
+
+
+_BATHROBE_SIZE_TOKEN_RE = re.compile(
+    r"SIZE[\s\-]*(XXL|XL|L)\b|\b(DOUBLE\s+EXTRA\s+LARGE|EXTRA\s+LARGE)\b|\b(XXL|XL)\b",
+    re.I,
+)
+
+
+def _bathrobe_size_from_so_text(*parts: str) -> str:
+    blob = " ".join(_norm_space(p) for p in parts if p).upper()
+    if not blob:
+        return "Large"
+    # XXL before XL before L (SIZE-L must not steal XL).
+    if re.search(r"SIZE[\s\-]*XXL\b|\bXXL\b|DOUBLE\s+EXTRA\s+LARGE", blob):
+        return "Double Extra Large"
+    if re.search(r"SIZE[\s\-]*XL\b|\bXL\b|EXTRA\s+LARGE", blob):
+        return "Extra Large"
+    if re.search(r"SIZE[\s\-]*L\b|\bLARGE\b", blob):
+        return "Large"
+    return "Large"
 
 
 def resolve_so_brand_size(
