@@ -83,7 +83,14 @@ def brands_equivalent(a: str | None, b: str | None) -> bool:
 def soft_size_key(size: str | None) -> str:
     brand, size_n = amparser.normalize_brand_and_size(None, size)
     _ = brand
-    return amparser._norm(size_n or size or "")
+    key = amparser._norm(size_n or size or "")
+    # FO Article Master uses plain "Face Towel" for 30x30; SO PDF teaching uses
+    # "Face Towel Set of 3". Same physical SKU — one soft key for Order Match.
+    if key in {"face towel", "face towel set of 3", "face towels"}:
+        return "face towel set of 3"
+    if key in {"bath mat", "bathmat", "bathmat antiskid"}:
+        return "bathmat"
+    return key
 
 
 def display_size_code(size: str | None) -> str:

@@ -224,6 +224,8 @@ TOWEL_COLLECTION_ALIASES: list[tuple[str, str]] = [
     ("COOLTEX", "Rimzim Cooltex"),
     ("TULIP", "Tulip"),
     ("BAMBOO", "Bamboo"),
+    ("LUXURY LIVING", "Luxury Living"),
+    ("LUXURYLIVING", "Luxury Living"),
 ]
 
 TOWEL_SIZE_RULES: list[tuple[re.Pattern[str], str]] = [

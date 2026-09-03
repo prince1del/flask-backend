@@ -85,3 +85,30 @@ def test_value_tol_plus_minus_10_is_match():
     so[("blumen", "db bs")]["value"] = 100000.0 * 1.006
     result2 = compare_fo_so_buckets(fo, so)
     assert result2["counts"]["VALUE_MISMATCH"] == 1
+
+
+def test_face_towel_equals_face_towel_set_of_3():
+    assert soft_size_key("Face Towel") == soft_size_key("Face Towel Set of 3")
+    assert soft_size_key("30x30") == soft_size_key("Face Towel Set of 3")
+
+    from app.services.fo_so_match_lab import _bucket_add
+
+    fo: dict = {}
+    so: dict = {}
+    _bucket_add(fo, brand="Tulip", size="Face Towel", qty=100, value=10000)
+    _bucket_add(so, brand="Tulip", size="Face Towel Set of 3", qty=100, value=10000, so_number="102876540")
+    assert list(fo.keys()) == list(so.keys())
+    result = compare_fo_so_buckets(fo, so)
+    assert result["counts"]["MISSING_ON_SO"] == 0
+    assert result["counts"]["EXTRA_ON_SO"] == 0
+    assert result["counts"]["MATCH"] + result["counts"]["MATCH_FUZZY_BRAND"] == 1
+
+
+def test_luxury_living_so_pdf_resolves():
+    from app.services.bd_product_catalog import resolve_so_brand_size
+
+    brand, size = resolve_so_brand_size(
+        "LUXURY LIVING DYED 75CM X 1.5M ASST04 AW26"
+    )
+    assert brand == "Luxury Living"
+    assert size == "Bath Towel"
