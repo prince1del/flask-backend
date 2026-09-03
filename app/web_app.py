@@ -255,6 +255,13 @@ def create_app() -> Flask:
             cdb.ensure_login_identity_indexes()
         except Exception as exc:
             app.logger.warning("Login identity indexes skipped: %s", exc)
+        try:
+            cdb = CentralizedDB(app.config.get("DATABASE_PATH", "centralized_db.sqlite3"))
+            vijay = cdb.demote_mistaken_active_prospect_vijay_bedsheet()
+            if vijay.get("demoted_inactive") or vijay.get("ensured_approach"):
+                app.logger.info("Vijay Bedsheet Active→Approach cleanup: %s", vijay)
+        except Exception as exc:
+            app.logger.warning("Vijay Bedsheet cleanup skipped: %s", exc)
 
     @app.route("/", methods=["GET", "POST"])
     @app.route("/dashboard")

@@ -2874,6 +2874,150 @@ class CentralizedDB:
             )
             conn.commit()
 
+    def demote_mistaken_active_prospect_vijay_bedsheet(self) -> dict[str, Any]:
+        """One-shot: Vijay Bedsheet was meet-only but landed in Active Party Master.
+
+        Mark matching Active rows inactive and ensure they exist on Approach.
+        Idempotent — already-inactive / already-approached rows are no-ops.
+        """
+        needle_a, needle_b = "vijay", "bedsheet"
+        now = datetime.now(timezone.utc).isoformat()
+        demoted: list[dict[str, Any]] = []
+        approached: list[dict[str, Any]] = []
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            # Approach table may live in same sqlite as masters.
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dsr_approach_distributors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workspace_id TEXT NOT NULL,
+                    user_id INTEGER,
+                    username TEXT,
+                    firm_name TEXT NOT NULL,
+                    owner_name TEXT,
+                    contact_nos TEXT,
+                    city_area TEXT,
+                    location TEXT,
+                    address TEXT,
+                    monthly_ht TEXT,
+                    main_categories TEXT,
+                    channel_type TEXT,
+                    existing_or_new TEXT,
+                    customer_type TEXT,
+                    source_visit_id INTEGER,
+                    notes_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            approach_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(dsr_approach_distributors)")
+            }
+            if "source_visit_date" not in approach_cols:
+                conn.execute(
+                    "ALTER TABLE dsr_approach_distributors ADD COLUMN source_visit_date TEXT"
+                )
+
+            rows = conn.execute(
+                """
+                SELECT id, workspace_id, user_id,
+                       COALESCE(firm_name, name, '') AS firm_name,
+                       name, location, address, phone_number, status
+                FROM master_distributors
+                WHERE lower(COALESCE(firm_name, name, '')) LIKE '%' || ? || '%'
+                  AND lower(COALESCE(firm_name, name, '')) LIKE '%' || ? || '%'
+                """,
+                (needle_a, needle_b),
+            ).fetchall()
+            md_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(master_distributors)")
+            }
+            for r in rows:
+                dist_id = int(r["id"])
+                firm = (r["firm_name"] or r["name"] or "").strip() or "Vijay Bedsheet"
+                status = (r["status"] or "active").strip().lower() or "active"
+                workspace_id = r["workspace_id"] or "default"
+                uid = r["user_id"]
+                if status != "inactive":
+                    if "updated_at" in md_cols:
+                        conn.execute(
+                            """
+                            UPDATE master_distributors
+                            SET status = 'inactive', updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (now, dist_id),
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            UPDATE master_distributors
+                            SET status = 'inactive'
+                            WHERE id = ?
+                            """,
+                            (dist_id,),
+                        )
+                    demoted.append(
+                        {
+                            "distributor_id": dist_id,
+                            "firm_name": firm,
+                            "workspace_id": workspace_id,
+                            "user_id": uid,
+                        }
+                    )
+
+                # Keep on Approach so meet history stays under prospects.
+                existing_sql = """
+                    SELECT id FROM dsr_approach_distributors
+                    WHERE workspace_id = ? AND lower(firm_name) = lower(?)
+                """
+                existing_params: list[Any] = [workspace_id, firm]
+                if uid is not None:
+                    existing_sql += " AND (user_id = ? OR user_id IS NULL)"
+                    existing_params.append(uid)
+                existing_sql += " ORDER BY id DESC LIMIT 1"
+                existing = conn.execute(existing_sql, tuple(existing_params)).fetchone()
+                if not existing:
+                    conn.execute(
+                        """
+                        INSERT INTO dsr_approach_distributors (
+                            workspace_id, user_id, username, firm_name,
+                            owner_name, contact_nos, city_area, location, address,
+                            monthly_ht, main_categories, channel_type, existing_or_new,
+                            customer_type, source_visit_id, notes_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, 'AWD', 'New',
+                                  NULL, NULL, ?, ?, ?)
+                        """,
+                        (
+                            workspace_id,
+                            uid,
+                            None,
+                            firm,
+                            r["phone_number"],
+                            r["location"],
+                            r["location"],
+                            r["address"],
+                            "[]",
+                            now,
+                            now,
+                        ),
+                    )
+                    approached.append(
+                        {
+                            "firm_name": firm,
+                            "workspace_id": workspace_id,
+                            "user_id": uid,
+                        }
+                    )
+            conn.commit()
+        return {
+            "matched": len(rows),
+            "demoted_inactive": demoted,
+            "ensured_approach": approached,
+        }
+
     def find_login_identity_owner_ids(
         self,
         conn: sqlite3.Connection,
