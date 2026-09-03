@@ -17932,18 +17932,13 @@ class CentralizedDB:
         return f"{start}-{start + 1}"
 
     def list_distributor_secondary_sales(self, user_id: int | None) -> list[dict[str, Any]]:
-        """Working distributors for Secondary Sale + monthly entries by FY.
-
-        Intentionally NOT every Party Master / approach lead. Only:
-        - active Party Master distributors that appear on Target vs Achievement
-          for this user's FYs (working / FY-active set), OR
-        - distributors that already have secondary-sale entries (history stays visible).
-        Approach / meet-only parties stay out.
+        """Active distributors owned by this user + monthly secondary entries,
+        grouped by FY under each distributor. Inactive / past parties are omitted.
+        Brand-new users with no masters see an empty list.
         """
         if not user_id:
             return []
         self.ensure_distributor_secondary_sales_table()
-        self.ensure_target_achievement_tables()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             dist_rows = conn.execute(
@@ -17968,71 +17963,6 @@ class CentralizedDB:
                 (user_id,),
             ).fetchall()
 
-            # Working distributors = those on this user's Target vs Achievement rows.
-            ta_ids: set[int] = set()
-            ta_names: set[str] = set()
-            year_ids = [
-                int(r[0])
-                for r in conn.execute(
-                    "SELECT id FROM target_achievement_years WHERE user_id = ?",
-                    (user_id,),
-                ).fetchall()
-            ]
-            if year_ids:
-                placeholders = ",".join("?" for _ in year_ids)
-                self._migrate_legacy_breakup_schema(conn)
-                cols = self._breakup_table_columns(conn)
-                if "attribute_type" in cols and "attribute_name" in cols:
-                    id_sel = (
-                        ", distributor_id"
-                        if "distributor_id" in cols
-                        else ", NULL AS distributor_id"
-                    )
-                    rows = conn.execute(
-                        f"""
-                        SELECT attribute_name{id_sel}
-                        FROM target_achievement_breakup
-                        WHERE financial_year_id IN ({placeholders})
-                          AND attribute_type = 'distributor'
-                        """,
-                        tuple(year_ids),
-                    ).fetchall()
-                    for r in rows:
-                        name = str(r[0] or "").strip()
-                        dist_id = r[1]
-                        # Any TA distributor row = working for that FY (even 0 target).
-                        if name and name.lower() != "others":
-                            ta_names.add(name.lower())
-                        if dist_id is not None:
-                            try:
-                                ta_ids.add(int(dist_id))
-                            except (TypeError, ValueError):
-                                pass
-                elif "distributor_name" in cols:
-                    id_sel = (
-                        ", distributor_id"
-                        if "distributor_id" in cols
-                        else ", NULL AS distributor_id"
-                    )
-                    rows = conn.execute(
-                        f"""
-                        SELECT distributor_name{id_sel}
-                        FROM target_achievement_breakup
-                        WHERE financial_year_id IN ({placeholders})
-                        """,
-                        tuple(year_ids),
-                    ).fetchall()
-                    for r in rows:
-                        name = str(r[0] or "").strip()
-                        dist_id = r[1]
-                        if name and name.lower() != "others":
-                            ta_names.add(name.lower())
-                        if dist_id is not None:
-                            try:
-                                ta_ids.add(int(dist_id))
-                            except (TypeError, ValueError):
-                                pass
-
         entries_by_dist: dict[int, list[dict[str, Any]]] = {}
         for r in entry_rows:
             dist_id = int(r["distributor_id"])
@@ -18054,15 +17984,7 @@ class CentralizedDB:
         result: list[dict[str, Any]] = []
         for d in dist_rows:
             dist_id = int(d["id"])
-            name = str(d["distributor_name"] or "").strip()
-            name_key = name.lower()
             months = entries_by_dist.get(dist_id, [])
-            has_entries = len(months) > 0
-            on_ta = dist_id in ta_ids or (name_key and name_key in ta_names)
-            # Approach / meet-only Party Master rows stay out unless already on TA
-            # or they already have secondary history.
-            if not on_ta and not has_entries:
-                continue
             fy_map: dict[str, dict[str, Any]] = {}
             for m in months:
                 fy = m["fy_label"]
