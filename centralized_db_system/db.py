@@ -9018,22 +9018,27 @@ class CentralizedDB:
             ci_categories = self._ci_categories_summary(parsed) if has_ci else []
             so_parsed_raw = row[12] if len(row) > 12 else None
             has_so_parsed = False
+            so_loaded: dict[str, Any] | None = None
             if isinstance(so_parsed_raw, str) and so_parsed_raw.strip():
                 try:
-                    so_loaded = json.loads(so_parsed_raw)
-                    has_so_parsed = isinstance(so_loaded, dict) and bool(
-                        so_loaded.get("header")
-                        or so_loaded.get("rows")
-                        or so_loaded.get("line_items")
-                    )
+                    loaded = json.loads(so_parsed_raw)
+                    if isinstance(loaded, dict):
+                        so_loaded = loaded
+                        has_so_parsed = bool(
+                            loaded.get("header")
+                            or loaded.get("rows")
+                            or loaded.get("line_items")
+                        )
                 except (TypeError, ValueError, json.JSONDecodeError):
                     has_so_parsed = False
             elif isinstance(so_parsed_raw, dict):
+                so_loaded = so_parsed_raw
                 has_so_parsed = bool(
                     so_parsed_raw.get("header")
                     or so_parsed_raw.get("rows")
                     or so_parsed_raw.get("line_items")
                 )
+            so_amount, so_qty = self._so_list_totals_from_parsed(so_loaded)
             results.append(
                 {
                     "tracking_id": row[0],
@@ -9050,6 +9055,8 @@ class CentralizedDB:
                     "buyer_name": buyer_name,
                     "buyer_gst": (header.get("buyer_gst") or "").strip() or None,
                     "ci_amount": amount,
+                    "so_amount": so_amount,
+                    "so_qty": so_qty,
                     "commercial_invoice_date": ci_date,
                     # Derived from commercial_invoice_date (SS=Mar-Jul,
                     # AW=Aug-Feb) — order_lifecycle_tracking has no season
@@ -9062,6 +9069,91 @@ class CentralizedDB:
                 }
             )
         return results
+
+    @staticmethod
+    def _so_list_totals_from_parsed(
+        so_loaded: dict[str, Any] | None,
+    ) -> tuple[float | None, float | None]:
+        """Best-effort SO net + qty for Order Desk list billing badges."""
+        if not isinstance(so_loaded, dict):
+            return None, None
+        header = so_loaded.get("header") if isinstance(so_loaded.get("header"), dict) else {}
+        totals = so_loaded.get("totals") if isinstance(so_loaded.get("totals"), dict) else {}
+        amount = None
+        for key in (
+            "net_amount",
+            "order_value",
+            "total_amount",
+            "grand_total",
+            "invoice_total",
+            "so_net_amount",
+            "amount",
+        ):
+            raw = header.get(key)
+            if raw is None:
+                raw = totals.get(key)
+            if raw is None or raw == "":
+                continue
+            try:
+                amount = float(raw)
+                if amount > 0:
+                    break
+            except (TypeError, ValueError):
+                continue
+        qty = None
+        for key in ("total_qty", "order_qty", "qty", "quantity"):
+            raw = header.get(key)
+            if raw is None:
+                raw = totals.get(key)
+            if raw is None or raw == "":
+                continue
+            try:
+                qty = float(raw)
+                if qty > 0:
+                    break
+            except (TypeError, ValueError):
+                continue
+        lines = so_loaded.get("line_items") or so_loaded.get("rows") or []
+        if isinstance(lines, list) and lines:
+            if qty is None or qty <= 0:
+                line_qty = 0.0
+                for line in lines:
+                    if not isinstance(line, dict):
+                        continue
+                    for key in ("qty", "quantity", "ordered_qty", "so_qty"):
+                        raw = line.get(key)
+                        if raw is None or raw == "":
+                            continue
+                        try:
+                            line_qty += float(raw)
+                            break
+                        except (TypeError, ValueError):
+                            continue
+                if line_qty > 0:
+                    qty = line_qty
+            if amount is None or amount <= 0:
+                line_amt = 0.0
+                for line in lines:
+                    if not isinstance(line, dict):
+                        continue
+                    for key in (
+                        "line_total",
+                        "net_amount",
+                        "amount",
+                        "value",
+                        "taxable",
+                    ):
+                        raw = line.get(key)
+                        if raw is None or raw == "":
+                            continue
+                        try:
+                            line_amt += float(raw)
+                            break
+                        except (TypeError, ValueError):
+                            continue
+                if line_amt > 0:
+                    amount = line_amt
+        return amount, qty
 
     @staticmethod
     def _normalize_ci_category_label(raw: Any) -> str:
