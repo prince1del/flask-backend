@@ -332,26 +332,136 @@ def _list_daily_questions(conn: sqlite3.Connection, user_id: int, workspace_id: 
     ]
 
 
-def _merge_qa(questions: list[dict], answers_raw: Any) -> list[dict]:
-    saved = {
-        int(a.get("question_id")): str(a.get("answer") or "")
-        for a in _parse_answers(answers_raw)
-        if a.get("question_id") is not None
-    }
-    return [
-        {
-            "question_id": q["id"],
-            "question": q["question"],
-            "answer": saved.get(int(q["id"]), ""),
-        }
-        for q in questions
-    ]
+def _freeform_qa(answers_raw: Any) -> list[dict[str, Any]]:
+    """Per-call freeform Q&A pairs (question + answer text)."""
+    out: list[dict[str, Any]] = []
+    for a in _parse_answers(answers_raw):
+        q = str(a.get("question") or "").strip()
+        ans = str(a.get("answer") or "").strip()
+        if not q and not ans:
+            continue
+        item: dict[str, Any] = {"question": q, "answer": ans}
+        if a.get("question_id") is not None:
+            try:
+                item["question_id"] = int(a.get("question_id"))
+            except (TypeError, ValueError):
+                pass
+        out.append(item)
+    return out
 
 
-def _queue_item_dict(
-    row: sqlite3.Row,
-    questions: list[dict],
-) -> dict[str, Any]:
+def _normalize_qa_payload(raw: Any) -> list[dict[str, Any]]:
+    cleaned: list[dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return cleaned
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        q = str(item.get("question") or "").strip()
+        ans = str(item.get("answer") or "").strip()
+        if not q and not ans:
+            continue
+        row: dict[str, Any] = {"question": q, "answer": ans}
+        qid = item.get("question_id") or item.get("id")
+        if qid is not None:
+            try:
+                row["question_id"] = int(qid)
+            except (TypeError, ValueError):
+                pass
+        cleaned.append(row)
+    return cleaned
+
+
+def _remember_questions_from_qa(
+    conn: sqlite3.Connection,
+    user_id: int,
+    workspace_id: str,
+    qa_rows: list[dict[str, Any]],
+) -> None:
+    """Upsert asked questions into ref bank for next retailers."""
+    now = _now_iso()
+    for item in qa_rows:
+        q = str(item.get("question") or "").strip()
+        if not q:
+            continue
+        existing = conn.execute(
+            """
+            SELECT id FROM daily_retailer_call_questions
+            WHERE user_id = ? AND workspace_id = ? AND lower(question) = lower(?)
+            LIMIT 1
+            """,
+            (user_id, workspace_id, q),
+        ).fetchone()
+        if existing:
+            continue
+        max_ord = conn.execute(
+            """
+            SELECT COALESCE(MAX(sort_order), 0) FROM daily_retailer_call_questions
+            WHERE user_id = ? AND workspace_id = ?
+            """,
+            (user_id, workspace_id),
+        ).fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO daily_retailer_call_questions (
+                workspace_id, user_id, question, sort_order, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (workspace_id, user_id, q, int(max_ord) + 1, now),
+        )
+
+
+def _question_refs(conn: sqlite3.Connection, user_id: int, workspace_id: str) -> list[str]:
+    """Questions asked before — for selectable reference chips."""
+    seen: set[str] = set()
+    refs: list[str] = []
+
+    def _add(text: str) -> None:
+        clean = re.sub(r"\s+", " ", (text or "").strip())
+        if not clean:
+            return
+        key = clean.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        refs.append(clean)
+
+    for r in conn.execute(
+        """
+        SELECT question FROM daily_retailer_call_questions
+        WHERE user_id = ? AND workspace_id = ?
+        ORDER BY id DESC
+        """,
+        (user_id, workspace_id),
+    ).fetchall():
+        _add(r["question"] if isinstance(r, sqlite3.Row) else r[0])
+
+    for r in conn.execute(
+        """
+        SELECT answers_json FROM daily_retailer_call_events
+        WHERE user_id = ? AND workspace_id = ?
+        ORDER BY id DESC
+        LIMIT 200
+        """,
+        (user_id, workspace_id),
+    ).fetchall():
+        for pair in _freeform_qa(r["answers_json"] if isinstance(r, sqlite3.Row) else r[0]):
+            _add(str(pair.get("question") or ""))
+
+    for r in conn.execute(
+        """
+        SELECT answers_json FROM daily_retailer_call_queue
+        WHERE user_id = ? AND workspace_id = ?
+        """,
+        (user_id, workspace_id),
+    ).fetchall():
+        for pair in _freeform_qa(r["answers_json"] if isinstance(r, sqlite3.Row) else r[0]):
+            _add(str(pair.get("question") or ""))
+
+    return refs[:80]
+
+
+def _queue_item_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
         "retailer_id": row["retailer_id"],
@@ -362,10 +472,22 @@ def _queue_item_dict(
         "awd_name": row["awd_name"],
         "phone": row["phone"],
         "retailer_status": row["retailer_status"] or "active",
-        "qa": _merge_qa(questions, row["answers_json"]),
+        "qa": _freeform_qa(row["answers_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def _list_open_queue(conn: sqlite3.Connection, user_id: int, workspace_id: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT * FROM daily_retailer_call_queue
+        WHERE user_id = ? AND workspace_id = ?
+        ORDER BY id ASC
+        """,
+        (user_id, workspace_id),
+    ).fetchall()
+    return [_queue_item_dict(r) for r in rows]
 
 
 def _eligible_retailer_ids(
@@ -535,19 +657,6 @@ def _fill_daily_queue(conn: sqlite3.Connection, user_id: int, workspace_id: str)
             added += 1
         except sqlite3.IntegrityError:
             continue
-
-
-def _list_open_queue(conn: sqlite3.Connection, user_id: int, workspace_id: str) -> list[dict]:
-    questions = _list_daily_questions(conn, user_id, workspace_id)
-    rows = conn.execute(
-        """
-        SELECT * FROM daily_retailer_call_queue
-        WHERE user_id = ? AND workspace_id = ?
-        ORDER BY id ASC
-        """,
-        (user_id, workspace_id),
-    ).fetchall()
-    return [_queue_item_dict(r, questions) for r in rows]
 
 
 def _brand_key(name: str) -> str:
@@ -1671,6 +1780,7 @@ def get_daily_retailer_queue():
         conn.commit()
         items = _list_open_queue(conn, uid, workspace_id)
         questions = _list_daily_questions(conn, uid, workspace_id)
+        refs = _question_refs(conn, uid, workspace_id)
     return jsonify(
         {
             "success": True,
@@ -1679,6 +1789,7 @@ def get_daily_retailer_queue():
                 "count": len(items),
                 "target": DAILY_QUEUE_SIZE,
                 "questions": questions,
+                "question_refs": refs,
                 "ist_today": _ist_today(),
             },
         }
@@ -1770,22 +1881,7 @@ def save_daily_answers(queue_id: int):
         return err
     data = request.get_json(silent=True) or {}
     raw = data.get("qa") if data.get("qa") is not None else data.get("answers")
-    cleaned: list[dict] = []
-    if isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            qid = item.get("question_id") or item.get("id")
-            try:
-                qid_int = int(qid)
-            except (TypeError, ValueError):
-                continue
-            cleaned.append(
-                {
-                    "question_id": qid_int,
-                    "answer": str(item.get("answer") or "").strip(),
-                }
-            )
+    cleaned = _normalize_qa_payload(raw)
     now = _now_iso()
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
@@ -1799,6 +1895,7 @@ def save_daily_answers(queue_id: int):
         ).fetchone()
         if row is None:
             return jsonify({"success": False, "error": {"message": "Queue item not found"}}), 404
+        _remember_questions_from_qa(conn, uid, workspace_id, cleaned)
         conn.execute(
             """
             UPDATE daily_retailer_call_queue
@@ -1811,8 +1908,7 @@ def save_daily_answers(queue_id: int):
         updated = conn.execute(
             "SELECT * FROM daily_retailer_call_queue WHERE id = ?", (queue_id,)
         ).fetchone()
-        questions = _list_daily_questions(conn, uid, workspace_id)
-    return jsonify({"success": True, "data": _queue_item_dict(updated, questions)})
+    return jsonify({"success": True, "data": _queue_item_dict(updated)})
 
 
 @call_lists_bp.route("/daily-retailers/<int:queue_id>/status", methods=["POST"])
@@ -1853,25 +1949,12 @@ def set_daily_status(queue_id: int):
 
         answers_raw = data.get("qa") if data.get("qa") is not None else data.get("answers")
         if answers_raw is not None:
-            cleaned: list[dict] = []
-            if isinstance(answers_raw, list):
-                for item in answers_raw:
-                    if not isinstance(item, dict):
-                        continue
-                    qid = item.get("question_id") or item.get("id")
-                    try:
-                        qid_int = int(qid)
-                    except (TypeError, ValueError):
-                        continue
-                    cleaned.append(
-                        {
-                            "question_id": qid_int,
-                            "answer": str(item.get("answer") or "").strip(),
-                        }
-                    )
+            cleaned = _normalize_qa_payload(answers_raw)
+            _remember_questions_from_qa(conn, uid, workspace_id, cleaned)
             answers_json = json.dumps(cleaned, ensure_ascii=False)
         else:
             answers_json = row["answers_json"] or "[]"
+            _remember_questions_from_qa(conn, uid, workspace_id, _freeform_qa(answers_json))
 
         conn.execute(
             """
@@ -1918,6 +2001,8 @@ def set_daily_status(queue_id: int):
             _fill_daily_queue(conn, uid, workspace_id)
         conn.commit()
         items = _list_open_queue(conn, uid, workspace_id)
+        refs = _question_refs(conn, uid, workspace_id)
+        questions = _list_daily_questions(conn, uid, workspace_id)
     return jsonify(
         {
             "success": True,
@@ -1926,6 +2011,8 @@ def set_daily_status(queue_id: int):
                 "count": len(items),
                 "target": DAILY_QUEUE_SIZE,
                 "removed_status": status,
+                "question_refs": refs,
+                "questions": questions,
             },
         }
     )
@@ -1990,7 +2077,6 @@ def daily_archive_day(event_date: str):
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_tables(conn)
-        questions = _list_daily_questions(conn, uid, workspace_id)
         rows = conn.execute(
             """
             SELECT * FROM daily_retailer_call_events
@@ -2013,7 +2099,7 @@ def daily_archive_day(event_date: str):
                 "location": r["location"],
                 "awd_name": r["awd_name"],
                 "phone": r["phone"],
-                "qa": _merge_qa(questions, r["answers_json"]),
+                "qa": _freeform_qa(r["answers_json"]),
                 "created_at": r["created_at"],
             }
         )
