@@ -11,8 +11,9 @@ import io
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from openpyxl import Workbook, load_workbook
@@ -188,6 +189,365 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_call_list_deals_user "
         "ON call_list_deals(user_id, workspace_id, deal_name COLLATE NOCASE)"
     )
+    _ensure_daily_retailer_tables(conn)
+
+
+DAILY_QUEUE_SIZE = 10
+NOT_CONNECTED_COOLDOWN_DAYS = 7
+DAILY_STATUSES = {"call_done", "not_connected", "wrong_number"}
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def _ist_today() -> str:
+    return datetime.now(_IST).date().isoformat()
+
+
+def _ensure_daily_retailer_tables(conn: sqlite3.Connection) -> None:
+    """Party Master retailers → daily call queue (Call List mode)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_retailer_call_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            retailer_id INTEGER NOT NULL,
+            firm_name TEXT,
+            contact_name TEXT,
+            address TEXT,
+            location TEXT,
+            awd_name TEXT,
+            phone TEXT,
+            retailer_status TEXT,
+            answers_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, workspace_id, retailer_id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_daily_call_queue_user "
+        "ON daily_retailer_call_queue(user_id, workspace_id)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_retailer_call_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            retailer_id INTEGER NOT NULL,
+            queue_id INTEGER,
+            event_date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            firm_name TEXT,
+            contact_name TEXT,
+            address TEXT,
+            location TEXT,
+            awd_name TEXT,
+            phone TEXT,
+            answers_json TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_daily_call_events_user_date "
+        "ON daily_retailer_call_events(user_id, workspace_id, event_date DESC)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_retailer_call_exclude (
+            user_id INTEGER NOT NULL,
+            workspace_id TEXT NOT NULL,
+            retailer_id INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, workspace_id, retailer_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_retailer_call_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_daily_call_questions_user "
+        "ON daily_retailer_call_questions(user_id, workspace_id, id)"
+    )
+
+
+def _phone_digits(raw: Any) -> str:
+    return re.sub(r"\D", "", str(raw or ""))
+
+
+def _has_callable_phone(*vals: Any) -> bool:
+    return any(len(_phone_digits(v)) >= 8 for v in vals)
+
+
+def _pick_phone(*vals: Any) -> str | None:
+    for v in vals:
+        if len(_phone_digits(v)) >= 8:
+            return str(v).strip()
+    return None
+
+
+def _parse_answers(raw: Any) -> list[dict[str, Any]]:
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict)]
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+        return [x for x in parsed if isinstance(x, dict)] if isinstance(parsed, list) else []
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+
+def _list_daily_questions(conn: sqlite3.Connection, user_id: int, workspace_id: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, question, sort_order, created_at
+        FROM daily_retailer_call_questions
+        WHERE user_id = ? AND workspace_id = ?
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (user_id, workspace_id),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "question": r["question"],
+            "sort_order": r["sort_order"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+def _merge_qa(questions: list[dict], answers_raw: Any) -> list[dict]:
+    saved = {
+        int(a.get("question_id")): str(a.get("answer") or "")
+        for a in _parse_answers(answers_raw)
+        if a.get("question_id") is not None
+    }
+    return [
+        {
+            "question_id": q["id"],
+            "question": q["question"],
+            "answer": saved.get(int(q["id"]), ""),
+        }
+        for q in questions
+    ]
+
+
+def _queue_item_dict(
+    row: sqlite3.Row,
+    questions: list[dict],
+) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "retailer_id": row["retailer_id"],
+        "firm_name": row["firm_name"],
+        "contact_name": row["contact_name"],
+        "address": row["address"],
+        "location": row["location"],
+        "awd_name": row["awd_name"],
+        "phone": row["phone"],
+        "retailer_status": row["retailer_status"] or "active",
+        "qa": _merge_qa(questions, row["answers_json"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _eligible_retailer_ids(
+    conn: sqlite3.Connection,
+    user_id: int,
+    workspace_id: str,
+) -> list[int]:
+    cool_from = (
+        datetime.now(_IST).date() - timedelta(days=NOT_CONNECTED_COOLDOWN_DAYS)
+    ).isoformat()
+    open_ids = {
+        int(r[0])
+        for r in conn.execute(
+            """
+            SELECT retailer_id FROM daily_retailer_call_queue
+            WHERE user_id = ? AND workspace_id = ?
+            """,
+            (user_id, workspace_id),
+        ).fetchall()
+    }
+    excluded = {
+        int(r[0])
+        for r in conn.execute(
+            """
+            SELECT retailer_id FROM daily_retailer_call_exclude
+            WHERE user_id = ? AND workspace_id = ?
+            """,
+            (user_id, workspace_id),
+        ).fetchall()
+    }
+    cooling = {
+        int(r[0])
+        for r in conn.execute(
+            """
+            SELECT DISTINCT retailer_id FROM daily_retailer_call_events
+            WHERE user_id = ? AND workspace_id = ?
+              AND status = 'not_connected'
+              AND event_date >= ?
+              AND retailer_id NOT IN (
+                  SELECT retailer_id FROM daily_retailer_call_exclude
+                  WHERE user_id = ? AND workspace_id = ?
+              )
+            """,
+            (user_id, workspace_id, cool_from, user_id, workspace_id),
+        ).fetchall()
+    }
+    blocked = open_ids | excluded | cooling
+    mr_cols = {r[1] for r in conn.execute("PRAGMA table_info(master_retailers)").fetchall()}
+    phone2_sel = "mr.phone_number_2" if "phone_number_2" in mr_cols else "NULL AS phone_number_2"
+    rows = conn.execute(
+        f"""
+        SELECT mr.id, mr.phone_number, {phone2_sel}
+        FROM master_retailers mr
+        WHERE mr.user_id = ? AND mr.workspace_id = ?
+        """,
+        (user_id, workspace_id),
+    ).fetchall()
+    eligible: list[int] = []
+    for r in rows:
+        rid = int(r["id"])
+        if rid in blocked:
+            continue
+        if not _has_callable_phone(r["phone_number"], r["phone_number_2"]):
+            continue
+        eligible.append(rid)
+    return eligible
+
+
+def _snapshot_retailer(
+    conn: sqlite3.Connection,
+    retailer_id: int,
+    user_id: int,
+    workspace_id: str,
+) -> dict[str, Any] | None:
+    mr_cols = {r[1] for r in conn.execute("PRAGMA table_info(master_retailers)").fetchall()}
+    phone2_sel = "mr.phone_number_2" if "phone_number_2" in mr_cols else "NULL AS phone_number_2"
+    owner_sel = "mr.owner_name" if "owner_name" in mr_cols else "NULL AS owner_name"
+    contact_sel = "mr.contact_person" if "contact_person" in mr_cols else "NULL AS contact_person"
+    row = conn.execute(
+        f"""
+        SELECT
+            mr.id,
+            mr.name,
+            {owner_sel},
+            {contact_sel},
+            mr.address,
+            mr.location,
+            mr.phone_number,
+            {phone2_sel},
+            mr.status,
+            COALESCE(md.firm_name, md.name) AS awd_name
+        FROM master_retailers mr
+        LEFT JOIN master_distributors md
+            ON md.id = mr.distributor_id
+            AND (mr.workspace_id IS NULL OR md.workspace_id = mr.workspace_id)
+        WHERE mr.id = ? AND mr.user_id = ? AND mr.workspace_id = ?
+        """,
+        (retailer_id, user_id, workspace_id),
+    ).fetchone()
+    if row is None:
+        return None
+    firm = (row["name"] or "").strip() or "Retailer"
+    contact = (row["owner_name"] or "").strip() or (row["contact_person"] or "").strip() or None
+    if contact and contact.lower() == firm.lower():
+        contact = None
+    return {
+        "retailer_id": int(row["id"]),
+        "firm_name": firm,
+        "contact_name": contact,
+        "address": (row["address"] or "").strip() or None,
+        "location": (row["location"] or "").strip() or None,
+        "awd_name": (row["awd_name"] or "").strip() or None,
+        "phone": _pick_phone(row["phone_number"], row["phone_number_2"]),
+        "retailer_status": (row["status"] or "active").strip() or "active",
+    }
+
+
+def _fill_daily_queue(conn: sqlite3.Connection, user_id: int, workspace_id: str) -> None:
+    open_count = conn.execute(
+        """
+        SELECT COUNT(*) FROM daily_retailer_call_queue
+        WHERE user_id = ? AND workspace_id = ?
+        """,
+        (user_id, workspace_id),
+    ).fetchone()[0]
+    need = DAILY_QUEUE_SIZE - int(open_count)
+    if need <= 0:
+        return
+    eligible = _eligible_retailer_ids(conn, user_id, workspace_id)
+    if not eligible:
+        return
+    import random
+
+    random.shuffle(eligible)
+    now = _now_iso()
+    added = 0
+    for rid in eligible:
+        if added >= need:
+            break
+        snap = _snapshot_retailer(conn, rid, user_id, workspace_id)
+        if not snap or not snap.get("phone"):
+            continue
+        try:
+            conn.execute(
+                """
+                INSERT INTO daily_retailer_call_queue (
+                    workspace_id, user_id, retailer_id, firm_name, contact_name,
+                    address, location, awd_name, phone, retailer_status,
+                    answers_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)
+                """,
+                (
+                    workspace_id,
+                    user_id,
+                    snap["retailer_id"],
+                    snap["firm_name"],
+                    snap["contact_name"],
+                    snap["address"],
+                    snap["location"],
+                    snap["awd_name"],
+                    snap["phone"],
+                    snap["retailer_status"],
+                    now,
+                    now,
+                ),
+            )
+            added += 1
+        except sqlite3.IntegrityError:
+            continue
+
+
+def _list_open_queue(conn: sqlite3.Connection, user_id: int, workspace_id: str) -> list[dict]:
+    questions = _list_daily_questions(conn, user_id, workspace_id)
+    rows = conn.execute(
+        """
+        SELECT * FROM daily_retailer_call_queue
+        WHERE user_id = ? AND workspace_id = ?
+        ORDER BY id ASC
+        """,
+        (user_id, workspace_id),
+    ).fetchall()
+    return [_queue_item_dict(r, questions) for r in rows]
 
 
 def _brand_key(name: str) -> str:
@@ -1292,3 +1652,369 @@ def delete_batch(batch_id: int):
         conn.execute("DELETE FROM call_list_batches WHERE id = ?", (batch_id,))
         conn.commit()
     return jsonify({"success": True, "data": {"deleted": batch_id}}), 200
+
+
+# ── Daily retailer calls (Party Master pool, Call List mode) ──
+
+
+@call_lists_bp.route("/daily-retailers", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def get_daily_retailer_queue():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        _fill_daily_queue(conn, uid, workspace_id)
+        conn.commit()
+        items = _list_open_queue(conn, uid, workspace_id)
+        questions = _list_daily_questions(conn, uid, workspace_id)
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "queue": items,
+                "count": len(items),
+                "target": DAILY_QUEUE_SIZE,
+                "questions": questions,
+                "ist_today": _ist_today(),
+            },
+        }
+    )
+
+
+@call_lists_bp.route("/daily-retailers/questions", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def list_daily_questions():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        questions = _list_daily_questions(conn, uid, workspace_id)
+    return jsonify({"success": True, "data": questions})
+
+
+@call_lists_bp.route("/daily-retailers/questions", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def add_daily_question():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or data.get("text") or "").strip()
+    if not question:
+        return jsonify({"success": False, "error": {"message": "question is required"}}), 400
+    now = _now_iso()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        max_ord = conn.execute(
+            """
+            SELECT COALESCE(MAX(sort_order), 0) FROM daily_retailer_call_questions
+            WHERE user_id = ? AND workspace_id = ?
+            """,
+            (uid, workspace_id),
+        ).fetchone()[0]
+        cur = conn.execute(
+            """
+            INSERT INTO daily_retailer_call_questions (
+                workspace_id, user_id, question, sort_order, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (workspace_id, uid, question, int(max_ord) + 1, now),
+        )
+        conn.commit()
+        qid = int(cur.lastrowid)
+        questions = _list_daily_questions(conn, uid, workspace_id)
+    return jsonify(
+        {"success": True, "data": {"id": qid, "question": question, "questions": questions}}
+    ), 201
+
+
+@call_lists_bp.route("/daily-retailers/questions/<int:question_id>", methods=["DELETE"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def delete_daily_question(question_id: int):
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        cur = conn.execute(
+            """
+            DELETE FROM daily_retailer_call_questions
+            WHERE id = ? AND user_id = ? AND workspace_id = ?
+            """,
+            (question_id, uid, workspace_id),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"success": False, "error": {"message": "Question not found"}}), 404
+        conn.commit()
+        questions = _list_daily_questions(conn, uid, workspace_id)
+    return jsonify({"success": True, "data": {"deleted": question_id, "questions": questions}})
+
+
+@call_lists_bp.route("/daily-retailers/<int:queue_id>/answers", methods=["PUT", "PATCH"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def save_daily_answers(queue_id: int):
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    raw = data.get("qa") if data.get("qa") is not None else data.get("answers")
+    cleaned: list[dict] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            qid = item.get("question_id") or item.get("id")
+            try:
+                qid_int = int(qid)
+            except (TypeError, ValueError):
+                continue
+            cleaned.append(
+                {
+                    "question_id": qid_int,
+                    "answer": str(item.get("answer") or "").strip(),
+                }
+            )
+    now = _now_iso()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        row = conn.execute(
+            """
+            SELECT * FROM daily_retailer_call_queue
+            WHERE id = ? AND user_id = ? AND workspace_id = ?
+            """,
+            (queue_id, uid, workspace_id),
+        ).fetchone()
+        if row is None:
+            return jsonify({"success": False, "error": {"message": "Queue item not found"}}), 404
+        conn.execute(
+            """
+            UPDATE daily_retailer_call_queue
+            SET answers_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (json.dumps(cleaned, ensure_ascii=False), now, queue_id),
+        )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT * FROM daily_retailer_call_queue WHERE id = ?", (queue_id,)
+        ).fetchone()
+        questions = _list_daily_questions(conn, uid, workspace_id)
+    return jsonify({"success": True, "data": _queue_item_dict(updated, questions)})
+
+
+@call_lists_bp.route("/daily-retailers/<int:queue_id>/status", methods=["POST"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def set_daily_status(queue_id: int):
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+    if status not in DAILY_STATUSES:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "message": "status must be call_done, not_connected, or wrong_number"
+                    },
+                }
+            ),
+            400,
+        )
+    now = _now_iso()
+    today = _ist_today()
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        row = conn.execute(
+            """
+            SELECT * FROM daily_retailer_call_queue
+            WHERE id = ? AND user_id = ? AND workspace_id = ?
+            """,
+            (queue_id, uid, workspace_id),
+        ).fetchone()
+        if row is None:
+            return jsonify({"success": False, "error": {"message": "Queue item not found"}}), 404
+
+        answers_raw = data.get("qa") if data.get("qa") is not None else data.get("answers")
+        if answers_raw is not None:
+            cleaned: list[dict] = []
+            if isinstance(answers_raw, list):
+                for item in answers_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    qid = item.get("question_id") or item.get("id")
+                    try:
+                        qid_int = int(qid)
+                    except (TypeError, ValueError):
+                        continue
+                    cleaned.append(
+                        {
+                            "question_id": qid_int,
+                            "answer": str(item.get("answer") or "").strip(),
+                        }
+                    )
+            answers_json = json.dumps(cleaned, ensure_ascii=False)
+        else:
+            answers_json = row["answers_json"] or "[]"
+
+        conn.execute(
+            """
+            INSERT INTO daily_retailer_call_events (
+                workspace_id, user_id, retailer_id, queue_id, event_date, status,
+                firm_name, contact_name, address, location, awd_name, phone,
+                answers_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                workspace_id,
+                uid,
+                row["retailer_id"],
+                queue_id,
+                today,
+                status,
+                row["firm_name"],
+                row["contact_name"],
+                row["address"],
+                row["location"],
+                row["awd_name"],
+                row["phone"],
+                answers_json,
+                now,
+            ),
+        )
+        if status in {"call_done", "wrong_number"}:
+            conn.execute(
+                """
+                INSERT INTO daily_retailer_call_exclude (
+                    user_id, workspace_id, retailer_id, reason, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, workspace_id, retailer_id) DO UPDATE SET
+                    reason = excluded.reason
+                """,
+                (uid, workspace_id, row["retailer_id"], status, now),
+            )
+        conn.execute(
+            "DELETE FROM daily_retailer_call_queue WHERE id = ?",
+            (queue_id,),
+        )
+        # Call done: shrink the list. Not connected / wrong number: refill one.
+        if status != "call_done":
+            _fill_daily_queue(conn, uid, workspace_id)
+        conn.commit()
+        items = _list_open_queue(conn, uid, workspace_id)
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "queue": items,
+                "count": len(items),
+                "target": DAILY_QUEUE_SIZE,
+                "removed_status": status,
+            },
+        }
+    )
+
+
+@call_lists_bp.route("/daily-retailers/archive", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def daily_archive_tree():
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        rows = conn.execute(
+            """
+            SELECT event_date, COUNT(*) AS n
+            FROM daily_retailer_call_events
+            WHERE user_id = ? AND workspace_id = ?
+            GROUP BY event_date
+            ORDER BY event_date DESC
+            """,
+            (uid, workspace_id),
+        ).fetchall()
+    years: dict[int, dict[int, list[dict]]] = {}
+    for r in rows:
+        iso = str(r["event_date"] or "")[:10]
+        if len(iso) < 10:
+            continue
+        year = int(iso[0:4])
+        month = int(iso[5:7])
+        years.setdefault(year, {}).setdefault(month, []).append(
+            {"date": iso, "count": int(r["n"])}
+        )
+    tree = []
+    for year in sorted(years.keys(), reverse=True):
+        months = []
+        for month in sorted(years[year].keys(), reverse=True):
+            months.append(
+                {
+                    "year": year,
+                    "month": month,
+                    "label": datetime(year, month, 1).strftime("%B %Y"),
+                    "days": years[year][month],
+                }
+            )
+        tree.append({"year": year, "months": months})
+    return jsonify({"success": True, "data": {"years": tree}})
+
+
+@call_lists_bp.route("/daily-retailers/archive/<event_date>", methods=["GET"])
+@require_jwt_auth
+@require_role("admin", "sales_executive")
+def daily_archive_day(event_date: str):
+    uid, workspace_id, err = _require_user()
+    if err:
+        return err
+    iso = (event_date or "").strip()[:10]
+    if len(iso) != 10:
+        return jsonify({"success": False, "error": {"message": "date must be YYYY-MM-DD"}}), 400
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_tables(conn)
+        questions = _list_daily_questions(conn, uid, workspace_id)
+        rows = conn.execute(
+            """
+            SELECT * FROM daily_retailer_call_events
+            WHERE user_id = ? AND workspace_id = ? AND event_date = ?
+            ORDER BY id DESC
+            """,
+            (uid, workspace_id, iso),
+        ).fetchall()
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "id": r["id"],
+                "retailer_id": r["retailer_id"],
+                "event_date": r["event_date"],
+                "status": r["status"],
+                "firm_name": r["firm_name"],
+                "contact_name": r["contact_name"],
+                "address": r["address"],
+                "location": r["location"],
+                "awd_name": r["awd_name"],
+                "phone": r["phone"],
+                "qa": _merge_qa(questions, r["answers_json"]),
+                "created_at": r["created_at"],
+            }
+        )
+    return jsonify({"success": True, "data": {"date": iso, "items": items, "count": len(items)}})
