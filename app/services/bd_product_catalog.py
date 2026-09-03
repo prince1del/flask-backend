@@ -226,6 +226,12 @@ TOWEL_COLLECTION_ALIASES: list[tuple[str, str]] = [
     ("BAMBOO", "Bamboo"),
     ("LUXURY LIVING", "Luxury Living"),
     ("LUXURYLIVING", "Luxury Living"),
+    # Shriram SO PDF wording; FO Article Master = One side Terry
+    ("FLIP TOWEL", "One side Terry"),
+    ("FLIP TOWELS", "One side Terry"),
+    ("ONE SIDE TERRY", "One side Terry"),
+    ("ONESIDE TERRY", "One side Terry"),
+    ("ONE SIDE TERRY TOWEL", "One side Terry"),
 ]
 
 TOWEL_SIZE_RULES: list[tuple[re.Pattern[str], str]] = [

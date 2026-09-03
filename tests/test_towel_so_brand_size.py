@@ -144,3 +144,49 @@ def test_fo_flora_bath_towel_matches_so_pdf_bucket():
     result = compare_fo_so_buckets(fo, so["buckets"])
     assert result["counts"]["MISSING_ON_SO"] == 0
     assert result["counts"]["MATCH"] + result["counts"]["VALUE_MISMATCH"] == 1
+
+
+def test_flip_towel_is_one_side_terry():
+    brand, size = resolve_so_brand_size("FLIP TOWEL DYED 75CM X 1.5M ASST04 AW26")
+    assert brand == "One side Terry"
+    assert size == "Bath Towel"
+    brand_h, size_h = resolve_so_brand_size("FLIP TOWEL DYED 40CM X 60CM ASST04 AW26")
+    assert brand_h == "One side Terry"
+    assert size_h == "Hand Towel"
+
+
+def test_fo_one_side_terry_matches_so_flip_towel():
+    from app.services.fo_so_match_lab import _bucket_add
+
+    fo: dict = {}
+    so: dict = {}
+    _bucket_add(fo, brand="One side Terry", size="Bath Towel", qty=240, value=90134)
+    _bucket_add(fo, brand="One side Terry", size="Hand Towel", qty=288, value=24346)
+    lines = [
+        {
+            "product_name": "FLIP TOWEL DYED 75CM X 1.5M ASST04 AW26",
+            "qty": 240.0,
+            "net_amount": 90134.0,
+            "so_number": "102876584",
+        },
+        {
+            "product_name": "FLIP TOWEL DYED 40CM X 60CM ASST04 AW26",
+            "qty": 288.0,
+            "net_amount": 24346.0,
+            "so_number": "102876584",
+        },
+    ]
+    built = build_so_buckets_from_line_detail(lines)
+    for key, row in built["buckets"].items():
+        _bucket_add(
+            so,
+            brand=row["brand"],
+            size=row["size"],
+            qty=row["qty"],
+            value=row["value"],
+            so_number="102876584",
+        )
+    result = compare_fo_so_buckets(fo, so)
+    assert result["counts"]["MISSING_ON_SO"] == 0
+    assert result["counts"]["EXTRA_ON_SO"] == 0
+    assert result["counts"]["MATCH"] + result["counts"]["MATCH_FUZZY_BRAND"] >= 2

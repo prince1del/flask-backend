@@ -29,6 +29,8 @@ VALUE_TOL = 10.0  # ₹ ±10 FO ExMill vs SO Net is MATCH (teaching)
 # Soft keys only — e.g. "Florentine / Allure" and "Allure" share "allure".
 BRAND_ALIAS_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"allure", "florentine allure"}),
+    # SO PDF "Flip Towel" ≡ FO "One side Terry"
+    frozenset({"one side terry", "oneside terry", "flip towel", "flip towels"}),
 )
 
 
