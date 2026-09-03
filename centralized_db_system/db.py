@@ -1685,6 +1685,8 @@ class CentralizedDB:
             # Annual secondary sale typed on Target vs Achievement (lakhs).
             # Used when monthly Secondary Sale module has no FY months yet.
             ("secondary_sales_manual", "REAL DEFAULT 0"),
+            # Calendar month 1–12: manual Ach covers Apr..this month within the FY.
+            ("manual_through_month", "INTEGER"),
             ("nick", "TEXT"),
             ("distributor_id", "INTEGER"),
             ("source_distributor_name", "TEXT"),
@@ -16755,6 +16757,7 @@ class CentralizedDB:
                     "achievement_ci",
                     "achievement_manual",
                     "secondary_sales_manual",
+                    "manual_through_month",
                 ):
                     if split_col in cols:
                         extra_cols.append(split_col)
@@ -16783,6 +16786,14 @@ class CentralizedDB:
                         if "secondary_sales_manual" in cols
                         else 0.0
                     )
+                    through_month = None
+                    if "manual_through_month" in cols and r["manual_through_month"] is not None:
+                        try:
+                            through_month = int(r["manual_through_month"])
+                        except (TypeError, ValueError):
+                            through_month = None
+                        if through_month is not None and not (1 <= through_month <= 12):
+                            through_month = None
                     excel, ci, manual, total = self._split_achievement_values(
                         excel=excel,
                         ci=ci,
@@ -16807,6 +16818,7 @@ class CentralizedDB:
                             "achievement_ci": ci,
                             "achievement_manual": manual,
                             "secondary_sales_manual": sec_manual,
+                            "manual_through_month": through_month,
                             "achievement_lakhs": total,
                             "percentage": float(r["achievement_percent"] or 0),
                             "source": src or self._derived_breakup_source(excel, ci, manual),
@@ -16823,6 +16835,8 @@ class CentralizedDB:
                     extra_cols.append("source_distributor_name")
                 if "secondary_sales_manual" in cols:
                     extra_cols.append("secondary_sales_manual")
+                if "manual_through_month" in cols:
+                    extra_cols.append("manual_through_month")
                 extra_sel = (", " + ", ".join(extra_cols)) if extra_cols else ""
                 query = f"""
                     SELECT distributor_name{extra_sel},
@@ -16859,6 +16873,14 @@ class CentralizedDB:
                             if "secondary_sales_manual" in cols
                             else 0.0
                         )
+                        through_month = None
+                        if "manual_through_month" in cols and r["manual_through_month"] is not None:
+                            try:
+                                through_month = int(r["manual_through_month"])
+                            except (TypeError, ValueError):
+                                through_month = None
+                            if through_month is not None and not (1 <= through_month <= 12):
+                                through_month = None
                     else:
                         dist = r[0]
                         nick = None
@@ -16869,6 +16891,7 @@ class CentralizedDB:
                         dist_id = None
                         source_name = None
                         sec_manual = 0.0
+                        through_month = None
                     total = excel + ci + manual
                     pct = round((total / target) * 100, 2) if target > 0 else 0.0
                     identity = self._ta_breakup_display_fields(
@@ -16882,6 +16905,7 @@ class CentralizedDB:
                             "achievement_ci": ci,
                             "achievement_manual": manual,
                             "secondary_sales_manual": sec_manual,
+                            "manual_through_month": through_month,
                             "achievement_lakhs": total,
                             "percentage": pct,
                             "source": "mixed",
@@ -16889,6 +16913,284 @@ class CentralizedDB:
                     )
                 return result
         return []
+
+    @staticmethod
+    def _fy_month_rank(calendar_month: int) -> int:
+        """Indian FY order: Apr=0 … Mar=11."""
+        m = int(calendar_month)
+        return (m - 4) % 12
+
+    @staticmethod
+    def _month_short_name(calendar_month: int) -> str:
+        names = {
+            1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+            7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+        }
+        return names.get(int(calendar_month), str(calendar_month))
+
+    @staticmethod
+    def _month_full_name(calendar_month: int) -> str:
+        names = {
+            1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+            7: "July", 8: "August", 9: "September", 10: "October", 11: "November",
+            12: "December",
+        }
+        return names.get(int(calendar_month), str(calendar_month))
+
+    def _blend_caption(self, through_month: int) -> str:
+        """e.g. Till August + CI Sep–Mar"""
+        through = int(through_month)
+        till = self._month_full_name(through)
+        after = [
+            m for m in (4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3)
+            if self._fy_month_rank(m) > self._fy_month_rank(through)
+        ]
+        if not after:
+            return f"Till {till} (manual covers full FY)"
+        first = self._month_short_name(after[0])
+        last = self._month_short_name(after[-1])
+        if first == last:
+            return f"Till {till} + CI {first}"
+        return f"Till {till} + CI {first}–{last}"
+
+    def set_manual_through_month(
+        self,
+        *,
+        workspace_id: str,
+        financial_year_id: int,
+        distributor_name: str,
+        through_month: int | None,
+        nick: str | None = None,
+    ) -> int | None:
+        """Persist calendar month (1–12) or clear when None / Ach cleared."""
+        self.ensure_target_achievement_tables()
+        month_val: int | None = None
+        if through_month is not None:
+            month_val = int(through_month)
+            if not (1 <= month_val <= 12):
+                raise ValueError("manual_through_month must be 1–12")
+        resolved = self.resolve_ta_distributor_reference(
+            distributor_name, workspace_id, nick
+        )
+        display_name = resolved["distributor_name"]
+        with sqlite3.connect(self.db_path) as conn:
+            self._migrate_legacy_breakup_schema(conn)
+            cols = self._breakup_table_columns(conn)
+            if "manual_through_month" not in cols:
+                return month_val
+            if "attribute_type" in cols and "attribute_name" in cols:
+                where = (
+                    "financial_year_id = ? AND attribute_type = 'distributor' "
+                    "AND attribute_name = ?"
+                )
+                params: list[Any] = [financial_year_id, display_name]
+            elif "distributor_name" in cols:
+                where = "financial_year_id = ? AND distributor_name = ?"
+                params = [financial_year_id, display_name]
+            else:
+                return month_val
+            if "workspace_id" in cols:
+                where += " AND workspace_id = ?"
+                params.append(workspace_id)
+            exists = conn.execute(
+                f"SELECT 1 FROM target_achievement_breakup WHERE {where}",
+                tuple(params),
+            ).fetchone()
+            if not exists:
+                # Row should already exist after manual upsert; no-op if missing.
+                return month_val
+            conn.execute(
+                f"UPDATE target_achievement_breakup SET manual_through_month = ? "
+                f"WHERE {where}",
+                tuple([month_val] + params),
+            )
+            conn.commit()
+        return month_val
+
+    def sum_ci_lakhs_after_month_by_distributor(
+        self,
+        workspace_id: str,
+        fy_label: str,
+        through_month: int | None,
+    ) -> dict[str, float]:
+        """CI lakhs per distributor for invoices after through_month (same FY).
+
+        If through_month is None, returns empty (caller should use full CI).
+        Keys are lowercased distributor names.
+        """
+        from app.fiscal_year import fiscal_year_date_bounds
+
+        if through_month is None:
+            return {}
+        through = int(through_month)
+        if not (1 <= through <= 12):
+            return {}
+        start, end = fiscal_year_date_bounds(fy_label)
+        if not start or not end:
+            return {}
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if not self._table_has_column(
+                "order_lifecycle_tracking", "commercial_invoice_file_reference"
+            ):
+                return {}
+            has_parsed = self._table_has_column(
+                "order_lifecycle_tracking", "commercial_invoice_parsed"
+            )
+            has_drive = self._table_has_column(
+                "order_lifecycle_tracking", "commercial_invoice_drive_file_id"
+            )
+            ci_present = (
+                "( "
+                "(olt.commercial_invoice_file_reference IS NOT NULL "
+                " AND TRIM(olt.commercial_invoice_file_reference) != '') "
+            )
+            if has_drive:
+                ci_present += (
+                    " OR (olt.commercial_invoice_drive_file_id IS NOT NULL "
+                    " AND TRIM(olt.commercial_invoice_drive_file_id) != '') "
+                )
+            if has_parsed:
+                ci_present += (
+                    " OR (olt.commercial_invoice_parsed IS NOT NULL "
+                    " AND TRIM(olt.commercial_invoice_parsed) != '') "
+                )
+            ci_present += ")"
+            parsed_sel = (
+                ", olt.commercial_invoice_parsed"
+                if has_parsed
+                else ", NULL AS commercial_invoice_parsed"
+            )
+            group_extra = (
+                ", olt.commercial_invoice_parsed" if has_parsed else ""
+            )
+            query = f"""
+                SELECT olt.tracking_id,
+                       COALESCE(md.firm_name, md.name, 'Unknown') AS distributor_name,
+                       olt.commercial_invoice_date AS invoice_date,
+                       COALESCE(SUM(ofi.ci_value), 0) AS ci_items_total
+                       {parsed_sel}
+                FROM order_lifecycle_tracking olt
+                JOIN master_distributors md ON md.id = olt.distributor_id
+                LEFT JOIN order_fulfillment_items ofi ON ofi.order_lifecycle_id = olt.tracking_id
+                WHERE olt.workspace_id = ?
+                  AND {ci_present}
+                  AND olt.commercial_invoice_date IS NOT NULL
+                  AND olt.commercial_invoice_date >= ?
+                  AND olt.commercial_invoice_date <= ?
+                GROUP BY olt.tracking_id,
+                         COALESCE(md.firm_name, md.name, 'Unknown'),
+                         olt.commercial_invoice_date
+                       {group_extra}
+            """
+            rows = conn.execute(query, (workspace_id, start, end)).fetchall()
+
+        through_rank = self._fy_month_rank(through)
+        by_distributor: dict[str, float] = {}
+        for row in rows:
+            date_raw = str(row["invoice_date"] or "")
+            m = re.match(r"^(\d{4})-(\d{2})", date_raw.strip())
+            if not m:
+                continue
+            inv_month = int(m.group(2))
+            if not (1 <= inv_month <= 12):
+                continue
+            if self._fy_month_rank(inv_month) <= through_rank:
+                continue
+            name = str(row["distributor_name"] or "Unknown")
+            items_total = float(row["ci_items_total"] or 0)
+            amount = items_total
+            if amount <= 0:
+                parsed_raw = row["commercial_invoice_parsed"]
+                parsed: dict[str, Any] | None = None
+                if isinstance(parsed_raw, str) and parsed_raw.strip():
+                    try:
+                        loaded = json.loads(parsed_raw)
+                        if isinstance(loaded, dict):
+                            parsed = loaded
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        parsed = None
+                elif isinstance(parsed_raw, dict):
+                    parsed = parsed_raw
+                if isinstance(parsed, dict):
+                    header = parsed.get("header") if isinstance(parsed.get("header"), dict) else {}
+                    totals = parsed.get("totals") if isinstance(parsed.get("totals"), dict) else {}
+                    for key in ("invoice_total", "line_total", "taxable_amount"):
+                        amt = self._parse_money(header.get(key))
+                        if amt is None:
+                            amt = self._parse_money(totals.get(key))
+                        if amt is not None and amt > 0:
+                            amount = float(amt)
+                            break
+            if amount <= 0:
+                continue
+            key = name.strip().lower()
+            by_distributor[key] = by_distributor.get(key, 0.0) + amount
+
+        return {k: round(v / 100_000.0, 6) for k, v in by_distributor.items()}
+
+    def attach_effective_achievement_to_breakup(
+        self,
+        workspace_id: str,
+        fy_label: str,
+        breakup: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Card display: blend manual (till month) + later CI; hide need for CI line."""
+        # Precompute after-CI maps for each distinct through_month present.
+        through_values = {
+            int(r["manual_through_month"])
+            for r in breakup
+            if r.get("manual_through_month") is not None
+            and float(r.get("achievement_manual") or 0) > 0.0005
+            and float(r.get("achievement_ci") or 0) > 0.0005
+        }
+        after_maps: dict[int, dict[str, float]] = {
+            m: self.sum_ci_lakhs_after_month_by_distributor(workspace_id, fy_label, m)
+            for m in through_values
+        }
+        for row in breakup:
+            manual = float(row.get("achievement_manual") or 0)
+            ci_full = float(row.get("achievement_ci") or 0)
+            through = row.get("manual_through_month")
+            name_key = (row.get("distributor_name") or "").strip().lower()
+            display_key = (row.get("display_label") or "").strip().lower()
+
+            if manual > 0.0005 and ci_full > 0.0005 and through is not None:
+                after = after_maps.get(int(through), {})
+                ci_after = float(after.get(name_key) or 0)
+                if ci_after <= 0 and display_key:
+                    # fallback if name key differs slightly
+                    for k, v in after.items():
+                        if k == name_key or name_key in k or k in name_key:
+                            ci_after = float(v)
+                            break
+                effective = manual + ci_after
+                row["achievement_effective"] = round(effective, 6)
+                row["achievement_ci_after_manual"] = round(ci_after, 6)
+                row["achievement_blend_mode"] = "manual_plus_later_ci"
+                row["achievement_blend_caption"] = self._blend_caption(int(through))
+            elif manual > 0.0005:
+                row["achievement_effective"] = round(manual, 6)
+                row["achievement_ci_after_manual"] = 0.0
+                row["achievement_blend_mode"] = "manual_only"
+                if through is not None:
+                    row["achievement_blend_caption"] = (
+                        f"Till {self._month_full_name(int(through))}"
+                    )
+                else:
+                    row["achievement_blend_caption"] = "Manual"
+            elif ci_full > 0.0005:
+                row["achievement_effective"] = round(ci_full, 6)
+                row["achievement_ci_after_manual"] = round(ci_full, 6)
+                row["achievement_blend_mode"] = "ci_only"
+                row["achievement_blend_caption"] = "CI (Order Desk)"
+            else:
+                row["achievement_effective"] = 0.0
+                row["achievement_ci_after_manual"] = 0.0
+                row["achievement_blend_mode"] = "none"
+                row["achievement_blend_caption"] = None
+        return breakup
 
     def set_distributor_secondary_sales_manual(
         self,
@@ -17868,19 +18170,34 @@ class CentralizedDB:
         if use_so and use_ci:
             use_ci = False
 
+        blended_manual_ci = None
+        if use_manual and use_ci and not use_so:
+            # Manual till month + CI after that month (per distributor), plus FY-level manual.
+            enriched = self.attach_effective_achievement_to_breakup(
+                workspace_id, fy_label, [dict(r) for r in breakup]
+            )
+            blended_manual_ci = float(manual_fy or 0) + sum(
+                float(r.get("achievement_effective") or 0) for r in enriched
+            )
+
         if use_manual or use_so or use_ci:
             active_achievement = 0.0
             sources: list[str] = []
-            if use_manual:
-                active_achievement += manual_channel
-                sources.append("manual")
-            if use_so:
-                active_achievement += so_channel
-                sources.append("so")
-            if use_ci:
-                active_achievement += ci_total
-                sources.append("ci")
-            active_source = "+".join(sources) if sources else "none"
+            if blended_manual_ci is not None:
+                active_achievement = blended_manual_ci
+                sources.extend(["manual", "ci"])
+                active_source = "manual+ci_blend"
+            else:
+                if use_manual:
+                    active_achievement += manual_channel
+                    sources.append("manual")
+                if use_so:
+                    active_achievement += so_channel
+                    sources.append("so")
+                if use_ci:
+                    active_achievement += ci_total
+                    sources.append("ci")
+                active_source = "+".join(sources) if sources else "none"
         else:
             # Legacy fallback when every toggle is off — keep CI-first behaviour.
             if ci_total > 0:
@@ -17905,6 +18222,7 @@ class CentralizedDB:
             "achievement_so_total": so_total,
             "achievement_manual_channel": manual_channel,
             "achievement_so_channel": so_channel,
+            "achievement_manual_ci_blend": blended_manual_ci,
             "channels": {
                 "manual": use_manual,
                 "so": use_so,

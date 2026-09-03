@@ -712,6 +712,7 @@ def get_breakup(year_id):
         summary = db.build_fy_achievement_summary(workspace_id, year_id, fy_label, user_id)
         breakup = db.list_target_distributor_breakup(workspace_id, year_id)
         db.attach_manual_categories_to_breakup(workspace_id, user_id, year_id, breakup)
+        db.attach_effective_achievement_to_breakup(workspace_id, fy_label, breakup)
         catalog = db.ensure_manual_category_catalog(workspace_id, user_id)
         category_matrix = db.get_category_breakup_matrix(workspace_id, year_id)
         return jsonify(
@@ -1285,6 +1286,33 @@ def upload_achievement(year_id):
             nick=nick,
             source='manual',
         )
+        # Till-month required whenever manual Ach > 0; clear when Ach wiped.
+        through_raw = data.get('manual_through_month', data.get('through_month'))
+        through_saved = None
+        if float(amount) > 0.0005:
+            if through_raw is None or str(through_raw).strip() == '':
+                return jsonify({
+                    'success': False,
+                    'error': 'manual_through_month required when achievement is set (1=Jan … 12=Dec)',
+                }), 400
+            try:
+                through_saved = db.set_manual_through_month(
+                    workspace_id=workspace_id,
+                    financial_year_id=year_id,
+                    distributor_name=distributor,
+                    through_month=int(through_raw),
+                    nick=nick,
+                )
+            except ValueError as e:
+                return jsonify({'success': False, 'error': str(e)}), 400
+        else:
+            through_saved = db.set_manual_through_month(
+                workspace_id=workspace_id,
+                financial_year_id=year_id,
+                distributor_name=distributor,
+                through_month=None,
+                nick=nick,
+            )
         sec_lakhs = None
         if data.get('secondary_sales_rupees') is not None:
             sec_lakhs = float(data.get('secondary_sales_rupees') or 0) / 100_000.0
@@ -1323,6 +1351,7 @@ def upload_achievement(year_id):
                 'total_achievement_lakhs': total_lakhs,
                 'categories': saved_cats,
                 'achievement_lakhs': float(amount),
+                'manual_through_month': through_saved,
                 'secondary_sales_lakhs': sec_saved,
                 'secondary_sales_rupees': (
                     round(float(sec_saved) * 100_000.0, 2) if sec_saved is not None else None
