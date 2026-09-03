@@ -629,10 +629,12 @@ def get_distributor_targets(year_id):
             # List is the user's typed rows (target and/or manual Ach).
             # Order Desk CI/SO must not invent extra distributors here.
             ach = float(r.get("achievement_manual") or 0)
+            sec = float(r.get("secondary_sales_manual") or 0)
             # Keep mid-year joins with Ach but no Target (target=0) visible in the list.
             if (
                 tl <= 0
                 and ach <= 0
+                and sec <= 0
                 and name.lower() != OTHERS_DISTRIBUTOR_NAME.lower()
             ):
                 continue
@@ -1283,6 +1285,22 @@ def upload_achievement(year_id):
             nick=nick,
             source='manual',
         )
+        sec_lakhs = None
+        if data.get('secondary_sales_rupees') is not None:
+            sec_lakhs = float(data.get('secondary_sales_rupees') or 0) / 100_000.0
+        elif data.get('secondary_sales_lakhs') is not None:
+            sec_lakhs = float(data.get('secondary_sales_lakhs') or 0)
+        sec_saved = None
+        if sec_lakhs is not None:
+            if sec_lakhs < 0:
+                return jsonify({'success': False, 'error': 'secondary_sales must be >= 0'}), 400
+            sec_saved = db.set_distributor_secondary_sales_manual(
+                workspace_id=workspace_id,
+                financial_year_id=year_id,
+                distributor_name=distributor,
+                secondary_sales_lakhs=sec_lakhs,
+                nick=nick,
+            )
         total_lakhs = db.sync_financial_year_achievement_from_breakup(workspace_id, year_id)
 
         conn = get_db()
@@ -1305,6 +1323,10 @@ def upload_achievement(year_id):
                 'total_achievement_lakhs': total_lakhs,
                 'categories': saved_cats,
                 'achievement_lakhs': float(amount),
+                'secondary_sales_lakhs': sec_saved,
+                'secondary_sales_rupees': (
+                    round(float(sec_saved) * 100_000.0, 2) if sec_saved is not None else None
+                ),
             },
         }), 201
     except Exception as e:

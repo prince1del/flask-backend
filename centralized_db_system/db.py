@@ -1682,6 +1682,9 @@ class CentralizedDB:
             ("achievement_excel", "REAL DEFAULT 0"),
             ("achievement_ci", "REAL DEFAULT 0"),
             ("achievement_manual", "REAL DEFAULT 0"),
+            # Annual secondary sale typed on Target vs Achievement (lakhs).
+            # Used when monthly Secondary Sale module has no FY months yet.
+            ("secondary_sales_manual", "REAL DEFAULT 0"),
             ("nick", "TEXT"),
             ("distributor_id", "INTEGER"),
             ("source_distributor_name", "TEXT"),
@@ -16751,6 +16754,7 @@ class CentralizedDB:
                     "achievement_excel",
                     "achievement_ci",
                     "achievement_manual",
+                    "secondary_sales_manual",
                 ):
                     if split_col in cols:
                         extra_cols.append(split_col)
@@ -16774,6 +16778,11 @@ class CentralizedDB:
                     excel = float(r["achievement_excel"] or 0) if "achievement_excel" in cols else 0.0
                     ci = float(r["achievement_ci"] or 0) if "achievement_ci" in cols else 0.0
                     manual = float(r["achievement_manual"] or 0) if "achievement_manual" in cols else 0.0
+                    sec_manual = (
+                        float(r["secondary_sales_manual"] or 0)
+                        if "secondary_sales_manual" in cols
+                        else 0.0
+                    )
                     excel, ci, manual, total = self._split_achievement_values(
                         excel=excel,
                         ci=ci,
@@ -16797,6 +16806,7 @@ class CentralizedDB:
                             "achievement_excel": excel,
                             "achievement_ci": ci,
                             "achievement_manual": manual,
+                            "secondary_sales_manual": sec_manual,
                             "achievement_lakhs": total,
                             "percentage": float(r["achievement_percent"] or 0),
                             "source": src or self._derived_breakup_source(excel, ci, manual),
@@ -16811,6 +16821,8 @@ class CentralizedDB:
                     extra_cols.append("distributor_id")
                 if "source_distributor_name" in cols:
                     extra_cols.append("source_distributor_name")
+                if "secondary_sales_manual" in cols:
+                    extra_cols.append("secondary_sales_manual")
                 extra_sel = (", " + ", ".join(extra_cols)) if extra_cols else ""
                 query = f"""
                     SELECT distributor_name{extra_sel},
@@ -16842,6 +16854,11 @@ class CentralizedDB:
                             if "source_distributor_name" in cols
                             else None
                         )
+                        sec_manual = (
+                            float(r["secondary_sales_manual"] or 0)
+                            if "secondary_sales_manual" in cols
+                            else 0.0
+                        )
                     else:
                         dist = r[0]
                         nick = None
@@ -16851,6 +16868,7 @@ class CentralizedDB:
                         manual = float(r[4] or 0)
                         dist_id = None
                         source_name = None
+                        sec_manual = 0.0
                     total = excel + ci + manual
                     pct = round((total / target) * 100, 2) if target > 0 else 0.0
                     identity = self._ta_breakup_display_fields(
@@ -16863,6 +16881,7 @@ class CentralizedDB:
                             "achievement_excel": excel,
                             "achievement_ci": ci,
                             "achievement_manual": manual,
+                            "secondary_sales_manual": sec_manual,
                             "achievement_lakhs": total,
                             "percentage": pct,
                             "source": "mixed",
@@ -16870,6 +16889,167 @@ class CentralizedDB:
                     )
                 return result
         return []
+
+    def set_distributor_secondary_sales_manual(
+        self,
+        *,
+        workspace_id: str,
+        financial_year_id: int,
+        distributor_name: str,
+        secondary_sales_lakhs: float,
+        nick: str | None = None,
+    ) -> float:
+        """Store annual secondary sale on TA breakup (lakhs). Does not touch Ach/CI."""
+        self.ensure_target_achievement_tables()
+        amount = float(secondary_sales_lakhs or 0)
+        if amount < 0:
+            raise ValueError("secondary_sales must be >= 0")
+        resolved = self.resolve_ta_distributor_reference(
+            distributor_name, workspace_id, nick
+        )
+        display_name = resolved["distributor_name"]
+        store_nick = nick or resolved.get("nick")
+        distributor_id = resolved.get("distributor_id")
+        source_name = resolved.get("source_distributor_name")
+
+        with sqlite3.connect(self.db_path) as conn:
+            self._migrate_legacy_breakup_schema(conn)
+            cols = self._breakup_table_columns(conn)
+            if "secondary_sales_manual" not in cols:
+                return amount
+            if "distributor_name" in cols:
+                self._consolidate_breakup_rows_for_resolved(
+                    conn, workspace_id, financial_year_id, resolved, cols
+                )
+
+            def _apply_identity(where_sql: str, where_params: list[Any]) -> None:
+                identity_sets: list[str] = []
+                identity_params: list[Any] = []
+                if "nick" in cols and store_nick:
+                    identity_sets.append("nick = ?")
+                    identity_params.append(store_nick)
+                if "distributor_id" in cols:
+                    identity_sets.append("distributor_id = ?")
+                    identity_params.append(distributor_id)
+                if "source_distributor_name" in cols:
+                    identity_sets.append("source_distributor_name = ?")
+                    identity_params.append(source_name)
+                if identity_sets:
+                    identity_params.extend(where_params)
+                    conn.execute(
+                        f"UPDATE target_achievement_breakup SET {', '.join(identity_sets)} "
+                        f"WHERE {where_sql}",
+                        tuple(identity_params),
+                    )
+
+            if "attribute_type" in cols and "attribute_name" in cols:
+                where = (
+                    "financial_year_id = ? AND attribute_type = 'distributor' "
+                    "AND attribute_name = ?"
+                )
+                params: list[Any] = [financial_year_id, display_name]
+                if "workspace_id" in cols:
+                    where += " AND workspace_id = ?"
+                    params.append(workspace_id)
+                row = conn.execute(
+                    f"SELECT 1 FROM target_achievement_breakup WHERE {where}",
+                    tuple(params),
+                ).fetchone()
+                if not row:
+                    insert_cols = [
+                        "financial_year_id",
+                        "attribute_type",
+                        "attribute_name",
+                        "target_amount",
+                        "achievement_amount",
+                        "achievement_percent",
+                        "source",
+                        "secondary_sales_manual",
+                    ]
+                    vals: list[Any] = [
+                        financial_year_id,
+                        "distributor",
+                        display_name,
+                        0.0,
+                        0.0,
+                        0.0,
+                        "manual",
+                        amount,
+                    ]
+                    if "workspace_id" in cols:
+                        insert_cols.insert(0, "workspace_id")
+                        vals.insert(0, workspace_id)
+                    for col, val in (
+                        ("achievement_excel", 0.0),
+                        ("achievement_ci", 0.0),
+                        ("achievement_manual", 0.0),
+                        ("nick", store_nick),
+                        ("distributor_id", distributor_id),
+                        ("source_distributor_name", source_name),
+                    ):
+                        if col in cols and val is not None:
+                            insert_cols.append(col)
+                            vals.append(val)
+                    placeholders = ", ".join("?" for _ in insert_cols)
+                    conn.execute(
+                        f"INSERT INTO target_achievement_breakup ({', '.join(insert_cols)}) "
+                        f"VALUES ({placeholders})",
+                        tuple(vals),
+                    )
+                else:
+                    conn.execute(
+                        f"UPDATE target_achievement_breakup SET secondary_sales_manual = ? "
+                        f"WHERE {where}",
+                        tuple([amount] + params),
+                    )
+                    _apply_identity(where, params)
+            elif "distributor_name" in cols:
+                where = "financial_year_id = ? AND distributor_name = ?"
+                params = [financial_year_id, display_name]
+                if "workspace_id" in cols:
+                    where += " AND workspace_id = ?"
+                    params.append(workspace_id)
+                row = conn.execute(
+                    f"SELECT 1 FROM target_achievement_breakup WHERE {where}",
+                    tuple(params),
+                ).fetchone()
+                if not row:
+                    insert_cols = [
+                        "financial_year_id",
+                        "distributor_name",
+                        "target_lakhs",
+                        "secondary_sales_manual",
+                    ]
+                    vals = [financial_year_id, display_name, 0.0, amount]
+                    if "workspace_id" in cols:
+                        insert_cols.insert(0, "workspace_id")
+                        vals.insert(0, workspace_id)
+                    for col, val in (
+                        ("achievement_excel", 0.0),
+                        ("achievement_ci", 0.0),
+                        ("achievement_manual", 0.0),
+                        ("nick", store_nick),
+                        ("distributor_id", distributor_id),
+                        ("source_distributor_name", source_name),
+                    ):
+                        if col in cols and val is not None:
+                            insert_cols.append(col)
+                            vals.append(val)
+                    placeholders = ", ".join("?" for _ in insert_cols)
+                    conn.execute(
+                        f"INSERT INTO target_achievement_breakup ({', '.join(insert_cols)}) "
+                        f"VALUES ({placeholders})",
+                        tuple(vals),
+                    )
+                else:
+                    conn.execute(
+                        f"UPDATE target_achievement_breakup SET secondary_sales_manual = ? "
+                        f"WHERE {where}",
+                        tuple([amount] + params),
+                    )
+                    _apply_identity(where, params)
+            conn.commit()
+        return amount
 
     def list_others_lines(self, workspace_id: str, financial_year_id: int) -> list[dict]:
         """Named achievement lines that roll into the Others distributor bucket."""
