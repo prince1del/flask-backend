@@ -90,6 +90,9 @@ def soft_size_key(size: str | None) -> str:
         return "face towel set of 3"
     if key in {"bath mat", "bathmat", "bathmat antiskid"}:
         return "bathmat"
+    # SO PDF size rule yields "Bathrobe"; FO / enrich uses Large (L).
+    if key in {"bathrobe", "large", "l"}:
+        return "large"
     return key
 
 

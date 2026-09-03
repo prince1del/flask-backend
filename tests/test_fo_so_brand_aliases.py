@@ -104,6 +104,33 @@ def test_face_towel_equals_face_towel_set_of_3():
     assert result["counts"]["MATCH"] + result["counts"]["MATCH_FUZZY_BRAND"] == 1
 
 
+def test_bathrobe_size_equals_large():
+    assert soft_size_key("Bathrobe") == soft_size_key("Large")
+    assert soft_size_key("Bathrobe") != soft_size_key("Extra Large")
+
+    from app.services.fo_so_match_lab import _bucket_add
+
+    fo: dict = {}
+    so: dict = {}
+    _bucket_add(fo, brand="Flora Bathrobe", size="Large", qty=120, value=160000)
+    _bucket_add(
+        so,
+        brand="Flora Bathrobe",
+        size="Bathrobe",
+        qty=240,
+        value=314880,
+        so_number="102876540",
+    )
+    assert list(fo.keys()) == list(so.keys())
+    result = compare_fo_so_buckets(fo, so)
+    assert result["counts"]["MISSING_ON_SO"] == 0
+    assert result["counts"]["EXTRA_ON_SO"] == 0
+    assert result["counts"]["QTY_MISMATCH"] == 1
+    row = result["rows"][0]
+    assert row["fo_qty"] == 120
+    assert row["so_qty"] == 240
+
+
 def test_luxury_living_so_pdf_resolves():
     from app.services.bd_product_catalog import resolve_so_brand_size
 
