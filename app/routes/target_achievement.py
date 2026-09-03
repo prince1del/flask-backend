@@ -896,6 +896,20 @@ def save_others_lines(year_id):
             target_lakhs=target_lakhs,
             others_name=OTHERS_DISTRIBUTOR_NAME,
         )
+        # Optional Bed/Bath/… split for the Others bucket (same catalog as
+        # named distributors). Does NOT rewrite Others Ach — party lines stay
+        # the achievement source of truth.
+        categories = data.get('categories')
+        user_id = _jwt_user_id()
+        saved_cats = None
+        if categories is not None and user_id is not None:
+            saved_cats = _cdb().replace_distributor_manual_categories(
+                workspace_id=workspace_id,
+                user_id=int(user_id),
+                financial_year_id=year_id,
+                distributor_name=OTHERS_DISTRIBUTOR_NAME,
+                categories=categories if isinstance(categories, list) else [],
+            )
         total_money = _money_payload(result.get('total_achievement_lakhs') or 0)
         fy_target = _money_payload(result.get('fy_target_lakhs') or 0)
         out_lines = []
@@ -908,19 +922,22 @@ def save_others_lines(year_id):
                 'amount_rupees': money['target_rupees'],
                 'amount_narration': money['target_narration'],
             })
+        payload = {
+            'others_name': OTHERS_DISTRIBUTOR_NAME,
+            'lines': out_lines,
+            'total_achievement_lakhs': total_money['target_lakhs'],
+            'total_achievement_rupees': total_money['target_rupees'],
+            'total_achievement_narration': total_money['target_narration'],
+            'fy_target_lakhs': fy_target['target_lakhs'],
+            'fy_target_rupees': fy_target['target_rupees'],
+            'fy_target_narration': fy_target['target_narration'],
+            'input_unit': 'rupees',
+        }
+        if saved_cats is not None:
+            payload['categories'] = saved_cats
         return jsonify({
             'success': True,
-            'data': {
-                'others_name': OTHERS_DISTRIBUTOR_NAME,
-                'lines': out_lines,
-                'total_achievement_lakhs': total_money['target_lakhs'],
-                'total_achievement_rupees': total_money['target_rupees'],
-                'total_achievement_narration': total_money['target_narration'],
-                'fy_target_lakhs': fy_target['target_lakhs'],
-                'fy_target_rupees': fy_target['target_rupees'],
-                'fy_target_narration': fy_target['target_narration'],
-                'input_unit': 'rupees',
-            },
+            'data': payload,
         }), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
