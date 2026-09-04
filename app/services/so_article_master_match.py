@@ -168,6 +168,60 @@ def build_am_only_match_payload(
             }
         )
 
+    # Lines that never resolved Brand×Size still need By-SO cards
+    # (otherwise SO qty shows in the header but "By SO (0)" / no line rows).
+    covered = set(buckets.keys())
+    orphan_by_so: dict[str, dict[str, float]] = {}
+    for line in annotated_lines:
+        brand, size = _line_brand_size(line)
+        if brand and size and match_pair_key(brand, size) in covered:
+            continue
+        so_n = str(line.get("so_number") or "").strip() or "—"
+        cell = orphan_by_so.setdefault(
+            so_n, {"qty": 0.0, "net": 0.0, "gst": 0.0, "total": 0.0}
+        )
+        qty = float(line.get("qty") or 0)
+        net = float(line.get("net_amount") or 0)
+        gst = float(line.get("gst_amount") or 0)
+        total = float(line.get("total_amount") or 0) or round(net + gst, 2)
+        cell["qty"] = round(cell["qty"] + qty, 3)
+        cell["net"] = round(cell["net"] + net, 2)
+        cell["gst"] = round(cell["gst"] + gst, 2)
+        cell["total"] = round(cell["total"] + total, 2)
+
+    for so_n, cell in sorted(orphan_by_so.items(), key=lambda x: str(x[0])):
+        so_qty = float(cell.get("qty") or 0)
+        so_val = float(cell.get("net") or 0)
+        if so_qty <= 0 and so_val <= 0:
+            continue
+        counts["AM_UNMATCHED"] += 1
+        counts["EXTRA_ON_SO"] += 1
+        nums = [] if so_n == "—" else [so_n]
+        rows.append(
+            {
+                "brand": "Others",
+                "size": "—",
+                "match_key_brand": "others",
+                "fo_qty": None,
+                "so_qty": so_qty,
+                "delta_qty": so_qty,
+                "fo_exmill_value": None,
+                "so_net_amount": so_val,
+                "delta_value": so_val,
+                "status": "AM_UNMATCHED",
+                "so_numbers": nums,
+                "so_breakdown": [
+                    {
+                        "so_number": so_n if so_n != "—" else None,
+                        "qty": so_qty,
+                        "net": so_val,
+                        "gst": float(cell.get("gst") or 0),
+                        "total": float(cell.get("total") or so_val),
+                    }
+                ],
+            }
+        )
+
     so_qty_t = round(float(bucketed.get("total_qty") or 0), 3)
     so_val_t = round(float(bucketed.get("total_value") or 0), 2)
     meta = so_pack.get("meta") if isinstance(so_pack.get("meta"), dict) else {}
