@@ -723,6 +723,102 @@ def _distinct_so_buyers(line_detail: list[Any]) -> list[str]:
     return out
 
 
+def _rebuild_so_pack_from_lines(
+    so_pack: dict[str, Any],
+    line_detail: list[dict[str, Any]],
+    *,
+    extra_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    kept_sos = {
+        str(r.get("so_number") or "").strip()
+        for r in line_detail
+        if r.get("so_number")
+    }
+    kept_keys = {
+        soft_brand_key(str(r.get("buyer_name") or ""))
+        for r in line_detail
+        if r.get("buyer_name")
+    }
+    so_summary = [
+        r
+        for r in (so_pack.get("so_summary") or [])
+        if isinstance(r, dict)
+        and (
+            str(r.get("so_number") or "").strip() in kept_sos
+            or soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
+        )
+    ]
+    consolidated = [
+        r
+        for r in (so_pack.get("consolidated") or [])
+        if isinstance(r, dict)
+        and (
+            str(r.get("so_number") or "").strip() in kept_sos
+            or soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
+        )
+    ]
+    meta = dict(so_pack.get("meta") or {})
+    if extra_meta:
+        meta.update(extra_meta)
+    buyers = _distinct_so_buyers(line_detail)
+    meta["primary_buyer_name"] = buyers[0] if len(buyers) == 1 else meta.get(
+        "primary_buyer_name"
+    )
+    meta["so_count"] = len(so_summary)
+    meta["line_rows"] = len(line_detail)
+    meta["consolidated_rows"] = len(consolidated)
+    meta["total_qty"] = round(sum(float(r.get("total_qty") or 0) for r in so_summary), 3)
+    meta["net_amount"] = round(sum(float(r.get("net_amount") or 0) for r in so_summary), 2)
+    meta["gst_amount"] = round(sum(float(r.get("gst_amount") or 0) for r in so_summary), 2)
+    meta["total_amount"] = round(
+        sum(float(r.get("total_amount") or 0) for r in so_summary), 2
+    )
+    return {
+        "meta": meta,
+        "consolidated": consolidated,
+        "so_summary": so_summary,
+        "line_detail": line_detail,
+    }
+
+
+def slice_so_pack_by_buyer_label(
+    so_pack: dict[str, Any],
+    buyer_label: str,
+) -> dict[str, Any] | None:
+    """Return SO pack slice for one buyer label, or None if no lines."""
+    want = soft_brand_key(buyer_label)
+    if not want:
+        return None
+    lines = [
+        r
+        for r in (so_pack.get("line_detail") or [])
+        if isinstance(r, dict)
+        and soft_brand_key(str(r.get("buyer_name") or "")) == want
+    ]
+    if not lines:
+        # Soft containment for long labels (city suffix, etc.)
+        lines = [
+            r
+            for r in (so_pack.get("line_detail") or [])
+            if isinstance(r, dict)
+            and len(want) >= 5
+            and (
+                want in soft_brand_key(str(r.get("buyer_name") or ""))
+                or soft_brand_key(str(r.get("buyer_name") or "")) in want
+            )
+        ]
+    if not lines:
+        return None
+    return _rebuild_so_pack_from_lines(
+        so_pack,
+        lines,
+        extra_meta={
+            "sliced_buyer": buyer_label,
+            "primary_buyer_name": buyer_label,
+        },
+    )
+
+
 def filter_so_pack_by_fo_buyer(
     so_pack: dict[str, Any],
     fo_meta: dict[str, Any],
@@ -757,52 +853,17 @@ def filter_so_pack_by_fo_buyer(
         for r in lines
         if soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
     ]
-    kept_sos = {
-        str(r.get("so_number") or "").strip()
-        for r in line_detail
-        if r.get("so_number")
-    }
-    so_summary = [
-        r
-        for r in (so_pack.get("so_summary") or [])
-        if isinstance(r, dict)
-        and (
-            str(r.get("so_number") or "").strip() in kept_sos
-            or soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
-        )
-    ]
-    consolidated = [
-        r
-        for r in (so_pack.get("consolidated") or [])
-        if isinstance(r, dict)
-        and (
-            str(r.get("so_number") or "").strip() in kept_sos
-            or soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
-        )
-    ]
-    meta = dict(so_pack.get("meta") or {})
-    meta["filtered_by_fo_buyer"] = True
-    meta["kept_buyers"] = kept_buyers
-    meta["skipped_buyers"] = skipped
-    meta["primary_buyer_name"] = kept_buyers[0] if kept_buyers else meta.get(
-        "primary_buyer_name"
-    )
-    meta["so_count"] = len(so_summary)
-    meta["line_rows"] = len(line_detail)
-    meta["consolidated_rows"] = len(consolidated)
-    meta["total_qty"] = round(sum(float(r.get("total_qty") or 0) for r in so_summary), 3)
-    meta["net_amount"] = round(sum(float(r.get("net_amount") or 0) for r in so_summary), 2)
-    meta["gst_amount"] = round(sum(float(r.get("gst_amount") or 0) for r in so_summary), 2)
-    meta["total_amount"] = round(
-        sum(float(r.get("total_amount") or 0) for r in so_summary), 2
-    )
     return (
-        {
-            "meta": meta,
-            "consolidated": consolidated,
-            "so_summary": so_summary,
-            "line_detail": line_detail,
-        },
+        _rebuild_so_pack_from_lines(
+            so_pack,
+            line_detail,
+            extra_meta={
+                "filtered_by_fo_buyer": True,
+                "kept_buyers": kept_buyers,
+                "skipped_buyers": skipped,
+                "primary_buyer_name": kept_buyers[0],
+            },
+        ),
         skipped,
     )
 

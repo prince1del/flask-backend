@@ -4052,6 +4052,7 @@ def so_pack_match_filled_order() -> Response:
     from app.services.fo_so_match_lab import (
         filter_so_pack_by_fo_buyer,
         run_match_saved_fo_vs_so_pack,
+        slice_so_pack_by_buyer_label,
     )
     from app.services.order_stream import (
         build_mixed_zip_retry_hint,
@@ -4148,6 +4149,7 @@ def so_pack_match_filled_order() -> Response:
             )
         # Mixed WeTransfer zips (Choice + Shri Ram + Savitri) must not dump every
         # buyer onto one FO — keep only SO lines for this FO's distributor.
+        original_so_pack = so_pack
         so_pack, skipped_buyers = filter_so_pack_by_fo_buyer(so_pack, fo)
         if not (so_pack.get("line_detail") or so_pack.get("consolidated")):
             return _json_response(
@@ -4424,6 +4426,21 @@ def so_pack_match_filled_order() -> Response:
                 f"Kept this FO's buyer only — other buyers still in pack: {short}"
             )
             result["skipped_buyers"] = skipped_buyers
+            remaining_packs: list[dict[str, Any]] = []
+            for buyer in skipped_buyers:
+                sliced = slice_so_pack_by_buyer_label(original_so_pack, buyer)
+                if not sliced or not sliced.get("line_detail"):
+                    continue
+                remaining_packs.append(
+                    {
+                        "buyer_label": buyer,
+                        "so_pack": sliced,
+                        "so_count": len(sliced.get("so_summary") or []),
+                        "line_rows": len(sliced.get("line_detail") or []),
+                    }
+                )
+            if remaining_packs:
+                result["remaining_buyer_packs"] = remaining_packs
             result["revision_note"] = (
                 f"{replaced_note} · {buyer_note}" if replaced_note else buyer_note
             )
