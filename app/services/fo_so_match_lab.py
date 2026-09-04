@@ -53,6 +53,10 @@ BRAND_ALIAS_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"one side terry", "oneside terry", "flip towel", "flip towels"}),
 )
 
+# Dual collection labels use slash (Florentine / Allure). Never split on "&" —
+# "Shri Ram & Co" must stay one firm name (otherwise soft key becomes "co").
+_DUAL_BRAND_SPLIT_RE = re.compile(r"[/|／⁄∕]+")
+
 
 def _soft_brand_raw(brand: str | None) -> str:
     """Collapse punctuation/hyphens; no alias teaching."""
@@ -64,14 +68,14 @@ def brand_match_keys(brand: str | None) -> set[str]:
     """All soft keys that should collide for this brand label.
 
     - Soft full string
-    - Slash / ampersand parts: ``Florentine / Allure`` → florentine, allure
+    - Slash parts: ``Florentine / Allure`` → florentine, allure
     - Taught alias groups
     """
     raw = _soft_brand_raw(brand)
     keys: set[str] = set()
     if raw:
         keys.add(raw)
-    for part in re.split(r"[/|＆&／⁄∕]+", brand or ""):
+    for part in _DUAL_BRAND_SPLIT_RE.split(brand or ""):
         p = _soft_brand_raw(part)
         if p:
             keys.add(p)
@@ -91,7 +95,7 @@ def soft_brand_key(brand: str | None) -> str:
             # Prefer the shortest taught name (Allure over Florentine Allure)
             return min(group, key=len)
     # Dual label without a taught group: prefer last slash part if present
-    parts = [_soft_brand_raw(p) for p in re.split(r"[/|＆&／⁄∕]+", brand or "")]
+    parts = [_soft_brand_raw(p) for p in _DUAL_BRAND_SPLIT_RE.split(brand or "")]
     parts = [p for p in parts if p]
     if len(parts) >= 2:
         return parts[-1]
@@ -694,10 +698,113 @@ def score_fo_for_buyer(order: dict[str, Any], buyer_label: str | None) -> float:
         key = soft_brand_key(str(name or ""))
         if not key:
             continue
-        if key in buyer or buyer in key:
+        # Containment only when both sides are long enough — short keys like
+        # "co" (from a broken "& Co" split) must not match "Choice Corner…".
+        if len(key) >= 5 and len(buyer) >= 5 and (key in buyer or buyer in key):
             best = max(best, 0.95)
         best = max(best, SequenceMatcher(None, key, buyer).ratio())
     return best
+
+
+def _distinct_so_buyers(line_detail: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in line_detail or []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("buyer_name") or "").strip()
+        if not name:
+            continue
+        key = soft_brand_key(name)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(name)
+    return out
+
+
+def filter_so_pack_by_fo_buyer(
+    so_pack: dict[str, Any],
+    fo_meta: dict[str, Any],
+    *,
+    min_score: float = 0.45,
+) -> tuple[dict[str, Any], list[str]]:
+    """Keep only SO lines whose buyer soft-matches this Filled Order distributor.
+
+    WeTransfer zips often mix Choice + Shri Ram + Savitri. Matching the whole
+    pack to one FO made every other buyer's SKUs look like EXTRA_ON_SO.
+    Returns (filtered_pack, skipped_buyer_labels). No-op when ≤1 buyer or
+    nothing scores high enough (fallback = keep all).
+    """
+    lines = [r for r in (so_pack.get("line_detail") or []) if isinstance(r, dict)]
+    buyers = _distinct_so_buyers(lines)
+    if len(buyers) <= 1:
+        return so_pack, []
+
+    kept_buyers = [
+        b for b in buyers if score_fo_for_buyer(fo_meta, b) >= min_score
+    ]
+    if not kept_buyers:
+        return so_pack, []
+
+    kept_keys = {soft_brand_key(b) for b in kept_buyers}
+    skipped = [b for b in buyers if soft_brand_key(b) not in kept_keys]
+    if not skipped:
+        return so_pack, []
+
+    line_detail = [
+        r
+        for r in lines
+        if soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
+    ]
+    kept_sos = {
+        str(r.get("so_number") or "").strip()
+        for r in line_detail
+        if r.get("so_number")
+    }
+    so_summary = [
+        r
+        for r in (so_pack.get("so_summary") or [])
+        if isinstance(r, dict)
+        and (
+            str(r.get("so_number") or "").strip() in kept_sos
+            or soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
+        )
+    ]
+    consolidated = [
+        r
+        for r in (so_pack.get("consolidated") or [])
+        if isinstance(r, dict)
+        and (
+            str(r.get("so_number") or "").strip() in kept_sos
+            or soft_brand_key(str(r.get("buyer_name") or "")) in kept_keys
+        )
+    ]
+    meta = dict(so_pack.get("meta") or {})
+    meta["filtered_by_fo_buyer"] = True
+    meta["kept_buyers"] = kept_buyers
+    meta["skipped_buyers"] = skipped
+    meta["primary_buyer_name"] = kept_buyers[0] if kept_buyers else meta.get(
+        "primary_buyer_name"
+    )
+    meta["so_count"] = len(so_summary)
+    meta["line_rows"] = len(line_detail)
+    meta["consolidated_rows"] = len(consolidated)
+    meta["total_qty"] = round(sum(float(r.get("total_qty") or 0) for r in so_summary), 3)
+    meta["net_amount"] = round(sum(float(r.get("net_amount") or 0) for r in so_summary), 2)
+    meta["gst_amount"] = round(sum(float(r.get("gst_amount") or 0) for r in so_summary), 2)
+    meta["total_amount"] = round(
+        sum(float(r.get("total_amount") or 0) for r in so_summary), 2
+    )
+    return (
+        {
+            "meta": meta,
+            "consolidated": consolidated,
+            "so_summary": so_summary,
+            "line_detail": line_detail,
+        },
+        skipped,
+    )
 
 
 def run_match_saved_fo_vs_so_pack(

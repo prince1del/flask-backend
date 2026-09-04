@@ -4049,7 +4049,10 @@ def so_pack_match_filled_order() -> Response:
     import filled_orders_db as fodb
     from app.services import fo_so_match_db as matchdb
     from app.services import fo_so_revision as sorev
-    from app.services.fo_so_match_lab import run_match_saved_fo_vs_so_pack
+    from app.services.fo_so_match_lab import (
+        filter_so_pack_by_fo_buyer,
+        run_match_saved_fo_vs_so_pack,
+    )
     from app.services.order_stream import (
         build_mixed_zip_retry_hint,
         classify_so_pack_stream,
@@ -4143,6 +4146,28 @@ def so_pack_match_filled_order() -> Response:
                 },
                 409,
             )
+        # Mixed WeTransfer zips (Choice + Shri Ram + Savitri) must not dump every
+        # buyer onto one FO — keep only SO lines for this FO's distributor.
+        so_pack, skipped_buyers = filter_so_pack_by_fo_buyer(so_pack, fo)
+        if not (so_pack.get("line_detail") or so_pack.get("consolidated")):
+            return _json_response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "buyer_mismatch",
+                        "message": (
+                            "No Sales Order lines for this Filled Order's buyer in the pack. "
+                            "Upload that distributor's SO PDFs, or pick the matching FO."
+                        ),
+                        "skipped_buyers": skipped_buyers,
+                    },
+                },
+                409,
+            )
+        if skipped_buyers and not so_buyer_label:
+            kept = (so_pack.get("meta") or {}).get("kept_buyers") or []
+            if kept:
+                so_buyer_label = str(kept[0])
         new_lines = [r for r in (so_pack.get("line_detail") or []) if isinstance(r, dict)]
         new_numbers = matchdb.extract_so_numbers_from_pack(so_pack)
         items = fodb.get_filled_order_items(conn, filled_order_id)
@@ -4391,6 +4416,17 @@ def so_pack_match_filled_order() -> Response:
         if replaced_note:
             result["revision_note"] = replaced_note
             result["confirm_action"] = effective_action
+        if skipped_buyers:
+            short = ", ".join(
+                (b.split(",")[0].strip() if b else b) for b in skipped_buyers[:3]
+            )
+            buyer_note = (
+                f"Kept this FO's buyer only — other buyers still in pack: {short}"
+            )
+            result["skipped_buyers"] = skipped_buyers
+            result["revision_note"] = (
+                f"{replaced_note} · {buyer_note}" if replaced_note else buyer_note
+            )
         return _json_response({"success": True, "data": result})
     except Exception as exc:
         return _json_response(

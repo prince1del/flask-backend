@@ -61,3 +61,34 @@ def test_shri_ram_tob_fo_vs_so_seven_match():
     assert matched == 7
     assert int(compared["counts"].get("MISSING_ON_SO") or 0) == 0
     assert compared["totals"]["so_qty"] == 228.0
+
+
+def test_mixed_wetransfer_filters_to_shri_ram_only():
+    if not FO_PATH.is_file() or not SO_DIR.is_dir():
+        return
+    from app.services.fo_so_match_lab import filter_so_pack_by_fo_buyer, run_match_saved_fo_vs_so_pack
+    all_pdfs = sorted({p.resolve(): p for p in list(SO_DIR.glob("*.PDF")) + list(SO_DIR.glob("*.pdf"))}.values())
+    pack = analyze_so_pack_pdfs([(p.name, p.read_bytes()) for p in all_pdfs])
+    fo_meta = {"distributor_name_raw": "Shri Ram & Co", "id": 1, "category": "TOB"}
+    filtered, skipped = filter_so_pack_by_fo_buyer(pack, fo_meta)
+    assert len(filtered.get("so_summary") or []) == 3
+    assert any("CHOICE" in s.upper() for s in skipped)
+    assert any("SAVITRI" in s.upper() for s in skipped)
+    fo = build_fo_buckets_from_workbook(FO_PATH)
+    items = [
+        {"brand": b, "size": s, "final_piece_qty": c["qty"],
+         "ex_mill_price": (c.get("value") or 0) / (c.get("qty") or 1)}
+        for (b, s), c in fo["buckets"].items()
+    ]
+    result = run_match_saved_fo_vs_so_pack(fo_meta=fo_meta, fo_items=items, so_pack_payload=filtered)
+    matched = int(result["match"]["counts"].get("MATCH") or 0)
+    assert matched == 7
+    assert int(result["match"]["counts"].get("EXTRA_ON_SO") or 0) == 0
+
+
+def test_shri_ram_and_co_soft_key_not_co():
+    from app.services.fo_so_match_lab import soft_brand_key, score_fo_for_buyer
+    assert soft_brand_key("Shri Ram & Co") == "shri ram co"
+    fo = {"distributor_name_raw": "Shri Ram & Co"}
+    assert score_fo_for_buyer(fo, "CHOICE CORNER BOMBAY DYEING") < 0.45
+    assert score_fo_for_buyer(fo, "SHRI RAM & CO., MEERUT") >= 0.45
