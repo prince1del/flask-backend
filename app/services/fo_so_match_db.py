@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -886,6 +887,180 @@ def sum_deduped_so_net_for_user(
     rows = conn.execute(sql, params).fetchall()
     total = 0.0
     for so_net_amount, rows_json in rows:
+        net, _ = so_net_and_bill_from_match_rows(rows_json, so_net_amount)
+        total += net
+    return round(total, 2)
+
+
+def _pending_ref_keys(*blobs: Any) -> set[str]:
+    """Compact digit/alpha keys used to match SO refs against billed CI refs."""
+    out: set[str] = set()
+    for blob in blobs:
+        text = str(blob or "").strip()
+        if not text:
+            continue
+        compact = re.sub(r"[^a-z0-9]+", "", text.lower())
+        if len(compact) >= 5:
+            out.add(compact)
+        for m in re.finditer(r"\d{6,}", text):
+            out.add(m.group(0))
+    return out
+
+
+def _so_number_looks_billed(so_number: str, billed: set[str]) -> bool:
+    keys = _pending_ref_keys(so_number)
+    if keys & billed:
+        return True
+    compact = re.sub(r"[^a-z0-9]+", "", (so_number or "").lower())
+    return len(compact) >= 5 and compact in billed
+
+
+def _invoice_no_from_ci_parsed(parsed_raw: Any) -> str | None:
+    data = parsed_raw
+    if isinstance(parsed_raw, str):
+        text = parsed_raw.strip()
+        if not text:
+            return None
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(data, dict):
+        return None
+    candidates: list[Any] = [
+        data.get("invoice_no"),
+        data.get("invoice_number"),
+        data.get("ci_number"),
+        data.get("ci_no"),
+        data.get("document_number"),
+    ]
+    header = data.get("header") or data.get("meta") or data.get("invoice")
+    if isinstance(header, dict):
+        candidates.extend(
+            [
+                header.get("invoice_no"),
+                header.get("invoice_number"),
+                header.get("ci_number"),
+                header.get("ci_no"),
+                header.get("document_number"),
+            ]
+        )
+    for value in candidates:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return None
+
+
+def billed_so_keys_for_user(conn: sqlite3.Connection, user_id: int) -> set[str]:
+    """SO/CI refs that already have a Commercial Invoice (Pending SO exclude set).
+
+    Same ownership filter as Order Desk lifecycle list: distributors owned by
+    this user (or legacy unowned rows).
+    """
+    ensure_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT olt.order_ref_no,
+               olt.commercial_invoice_parsed,
+               olt.commercial_invoice_file_reference,
+               olt.commercial_invoice_drive_file_id
+        FROM order_lifecycle_tracking olt
+        LEFT JOIN master_distributors md ON olt.distributor_id = md.id
+        WHERE (md.user_id = ? OR md.user_id IS NULL)
+          AND (
+            (olt.commercial_invoice_file_reference IS NOT NULL
+             AND TRIM(olt.commercial_invoice_file_reference) != '')
+            OR (olt.commercial_invoice_drive_file_id IS NOT NULL
+                AND TRIM(olt.commercial_invoice_drive_file_id) != '')
+            OR (olt.commercial_invoice_parsed IS NOT NULL
+                AND TRIM(olt.commercial_invoice_parsed) != '')
+          )
+        """,
+        (user_id,),
+    ).fetchall()
+    billed: set[str] = set()
+    for order_ref, parsed, file_ref, drive_id in rows:
+        if not (file_ref or drive_id or parsed):
+            continue
+        inv = _invoice_no_from_ci_parsed(parsed)
+        billed |= _pending_ref_keys(order_ref, inv)
+        compact = re.sub(r"[^a-z0-9]+", "", str(order_ref or "").lower())
+        if len(compact) >= 5:
+            billed.add(compact)
+    return billed
+
+
+def sum_pending_so_net_for_user(
+    conn: sqlite3.Connection,
+    user_id: int,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> float:
+    """Unbilled Order Desk SO net (ex-mill) for one user — Pending SO total.
+
+    Deduped match runs (same as Sales Orders / full SO sum), but each SO
+    number that already has a CI is excluded so CI + Pending SO can both
+    count toward Target vs Achievement without double-counting billed work.
+    """
+    ensure_schema(conn)
+    billed = billed_so_keys_for_user(conn, user_id)
+    if date_from and date_to:
+        date_filter = "AND DATE(created_at) BETWEEN ? AND ?"
+        inner_date_filter = "AND DATE(created_at) BETWEEN ? AND ?"
+        params = (user_id, date_from, date_to, user_id, date_from, date_to)
+    else:
+        date_filter = ""
+        inner_date_filter = ""
+        params = (user_id, user_id)
+    sql = _DEDUPED_SO_NET_SQL.format(
+        date_filter=date_filter,
+        inner_date_filter=inner_date_filter,
+    )
+    rows = conn.execute(sql, params).fetchall()
+    total = 0.0
+    seen_so: set[str] = set()
+    for so_net_amount, rows_json in rows:
+        parsed_rows: list[Any] = []
+        if rows_json:
+            try:
+                loaded = (
+                    json.loads(rows_json)
+                    if isinstance(rows_json, (str, bytes))
+                    else rows_json
+                )
+                if isinstance(loaded, list):
+                    parsed_rows = loaded
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed_rows = []
+        so_totals = _compute_so_totals_from_rows(parsed_rows)
+        if so_totals:
+            for so_n, acc in so_totals.items():
+                so_key = normalize_so_number(so_n) or str(so_n or "").strip()
+                if not so_key:
+                    continue
+                dedupe = re.sub(r"[^a-z0-9]+", "", so_key.lower()) or so_key.upper()
+                if dedupe in seen_so:
+                    continue
+                if _so_number_looks_billed(so_key, billed):
+                    continue
+                seen_so.add(dedupe)
+                net = float(acc.get("net") or 0) or float(acc.get("total") or 0)
+                total += net
+            continue
+        # No per-SO breakdown: include whole run only if none of its SO refs billed.
+        so_nums = extract_so_numbers_from_run_row(
+            {"rows": parsed_rows, "rows_json": rows_json}
+        )
+        if so_nums and any(_so_number_looks_billed(n, billed) for n in so_nums):
+            continue
+        if so_nums:
+            for n in so_nums:
+                dedupe = re.sub(r"[^a-z0-9]+", "", n.lower()) or n.upper()
+                if dedupe in seen_so:
+                    continue
+                seen_so.add(dedupe)
         net, _ = so_net_and_bill_from_match_rows(rows_json, so_net_amount)
         total += net
     return round(total, 2)

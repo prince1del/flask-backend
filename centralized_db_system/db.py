@@ -18384,12 +18384,14 @@ class CentralizedDB:
             return cur.rowcount > 0
 
     def sum_so_value_for_fy(self, user_id: int | None, fy_label: str) -> float:
-        """Sum Order Desk matched SO net (ex-mill) for one FY — in lakhs.
+        """Sum Pending (unbilled) Order Desk SO net for one FY — in lakhs.
 
         Uses fo_so_match_runs (FO↔SO Pack match), deduped like the Sales
-        Orders tab — not filled_order_items / distributor FO uploads.
-        If distributor FO was 100 pc but SO Pack matched only 50 pc,
-        only the matched SO value counts here."""
+        Orders / Pending SO tab. SOs that already have a Commercial Invoice
+        are excluded so Manual + CI + Pending SO can all contribute without
+        double-counting billed value. Matched SO Pack net only — not FO
+        ex-mill uploads.
+        """
         from app.fiscal_year import fiscal_year_date_bounds
         from app.services import fo_so_match_db as matchdb
 
@@ -18400,7 +18402,7 @@ class CentralizedDB:
             return 0.0
         with sqlite3.connect(self.db_path) as conn:
             try:
-                rupees = matchdb.sum_deduped_so_net_for_user(
+                rupees = matchdb.sum_pending_so_net_for_user(
                     conn, int(user_id), date_from=start, date_to=end
                 )
             except sqlite3.OperationalError:
@@ -18445,7 +18447,7 @@ class CentralizedDB:
         ci_total = sum(float(r.get("achievement_ci") or 0) for r in breakup)
         manual_dist_total = sum(float(r.get("achievement_manual") or 0) for r in breakup)
         so_total = self.sum_so_value_for_fy(user_id, fy_label)
-        # Order Desk matched SO (fo_so_match_runs); fall back to legacy Excel SO upload.
+        # Pending (unbilled) Order Desk SO; fall back to legacy Excel SO upload.
         so_channel = so_total if so_total > 0 else excel_total
         manual_channel = float(manual_fy or 0) + float(manual_dist_total or 0)
 
@@ -18453,12 +18455,9 @@ class CentralizedDB:
         use_manual = bool(prefs.get("manual"))
         use_so = bool(prefs.get("so"))
         use_ci = bool(prefs.get("ci"))
-        # Hard rule: never combine SO + CI.
-        if use_so and use_ci:
-            use_ci = False
 
         blended_manual_ci = None
-        if use_manual and use_ci and not use_so:
+        if use_manual and use_ci:
             # Manual till month + CI after that month (per distributor), plus FY-level manual.
             enriched = self.attach_effective_achievement_to_breakup(
                 workspace_id, fy_label, [dict(r) for r in breakup]
@@ -18474,13 +18473,18 @@ class CentralizedDB:
                 active_achievement = blended_manual_ci
                 sources.extend(["manual", "ci"])
                 active_source = "manual+ci_blend"
+                if use_so:
+                    # Pending SO on top of Manual+CI blend (unbilled only).
+                    active_achievement += so_channel
+                    sources.append("pending_so")
+                    active_source = "manual+ci_blend+pending_so"
             else:
                 if use_manual:
                     active_achievement += manual_channel
                     sources.append("manual")
                 if use_so:
                     active_achievement += so_channel
-                    sources.append("so")
+                    sources.append("pending_so")
                 if use_ci:
                     active_achievement += ci_total
                     sources.append("ci")

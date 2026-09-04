@@ -307,7 +307,8 @@ def get_fy_overview():
 def achievement_channels(year_id: int | None = None):
     """Toggle which sources count toward Target vs Achievement (per user + FY).
 
-    Rules: any single channel, or Manual+SO / Manual+CI. SO+CI is rejected.
+    Any combination of Manual, Pending SO, and CI is allowed. Pending SO is
+    unbilled Order Desk SO only (same idea as the Pending SO tab).
     Prefer /years/<year_id>/achievement-channels. Legacy path requires ?year_id=.
     """
     try:
@@ -353,17 +354,11 @@ def achievement_channels(year_id: int | None = None):
         use_manual = bool(body.get('manual', body.get('use_manual', False)))
         use_so = bool(body.get('so', body.get('use_so', False)))
         use_ci = bool(body.get('ci', body.get('use_ci', False)))
-        if use_so and use_ci:
-            return jsonify({
-                'success': False,
-                'error': {'message': 'SO and CI cannot be on together. Use Manual+SO or Manual+CI.'},
-                'message': 'SO and CI cannot be on together. Use Manual+SO or Manual+CI.',
-            }), 400
         if not (use_manual or use_so or use_ci):
             return jsonify({
                 'success': False,
-                'error': {'message': 'Turn on at least one: Manual, SO, or CI.'},
-                'message': 'Turn on at least one: Manual, SO, or CI.',
+                'error': {'message': 'Turn on at least one: Manual, Pending SO, or CI.'},
+                'message': 'Turn on at least one: Manual, Pending SO, or CI.',
             }), 400
         prefs = db.set_achievement_channel_prefs(
             workspace_id, int(user_id), int(year_id), use_manual, use_so, use_ci
