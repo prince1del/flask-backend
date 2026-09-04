@@ -389,12 +389,104 @@ def _bathrobe_size_from_so_text(*parts: str) -> str:
     return "Large"
 
 
+# TOB (blanket / comforter / BIAB) SO PDF → FO Booking Sheet Brand×Size.
+# Without this, line_detail qty lands in others_qty and Order Match shows SO qty 0.
+_TOB_DIM_RE = re.compile(
+    r"(?:SB)?\s*(\d{2,3})\s*[xX×]\s*(\d{2,3})",
+    re.I,
+)
+_TOB_CODE_DIM_RE = re.compile(r"(\d{3})(\d{3})(?=[A-Z]|$)", re.I)
+_TOB_BIAB_SIZE = '250x275/18x28"'
+
+
+def _tob_size_from_text(*parts: str) -> str | None:
+    blob = " ".join(_norm_space(p) for p in parts if p)
+    if not blob:
+        return None
+    m = _TOB_DIM_RE.search(blob)
+    if m:
+        return f"{int(m.group(1))}x{int(m.group(2))}"
+    # Material codes: BLOROVERO150220AST, QT2LREV229274WHITE
+    for m in _TOB_CODE_DIM_RE.finditer(re.sub(r"\s+", "", blob.upper())):
+        a, b = int(m.group(1)), int(m.group(2))
+        if 90 <= a <= 400 and 90 <= b <= 400:
+            return f"{a}x{b}"
+    return None
+
+
+def _tob_is_white(*parts: str) -> bool:
+    blob = " ".join(_norm_space(p) for p in parts if p).upper()
+    if not blob:
+        return False
+    if re.search(r"\bASS?RT?\b|\bASST\b|\bASSORTED\b", blob):
+        return False
+    return bool(re.search(r"\bWHITE\b", blob))
+
+
+def enrich_tob_so_product(
+    product_name: str | None,
+    *,
+    material_code: str | None = None,
+) -> dict[str, Any]:
+    """Parse TOB SO PDF lines → FO Booking Sheet brand + size."""
+    # Strip PDF mojibake (SLUMBER� REVERSIBLE) before matching.
+    raw = _norm_space(
+        re.sub(r"[^\x20-\x7E]+", " ", f"{product_name or ''} {material_code or ''}")
+    )
+    upper = raw.upper()
+    if not upper:
+        return {"collection": None, "product_type": None, "matched": False}
+
+    collection: str | None = None
+    product_type = _tob_size_from_text(product_name or "", material_code or "")
+
+    if re.search(r"\bORO[\s\-]?VERO\b|OROVERO", upper):
+        collection = "Oro-Vero"
+    elif re.search(r"\bBIAB\b|\bBIBVOGUE\b|BED\s+IN\s+A\s+BA", upper):
+        collection = "BIAB"
+        if not product_type:
+            product_type = _TOB_BIAB_SIZE
+    elif "SLUMBER" in upper:
+        if _tob_is_white(product_name or "", material_code or ""):
+            collection = "Slumber White"
+        elif "LITE" in upper or "SLULT" in upper:
+            collection = "Slumber Lite"
+        elif "REVERSIBLE" in upper or "SLREV" in upper or "2LREV" in upper:
+            collection = "Slumber Reversible"
+        else:
+            collection = "Slumber Reversible"
+    elif re.search(r"ALL\s*SEASON\s*BLANKET|BLALLSDB|ALLSEASON", upper):
+        collection = "All Season Blanket"
+    elif re.search(r"FIDELIS|FIDILIS|BLFIDELIS", upper):
+        if "EMBOSS" in upper:
+            collection = "Fidilis Embossed"
+        elif "JACQ" in upper:
+            collection = "Fidilis Jacquard"
+        else:
+            collection = "Fidilis Print"
+    elif re.search(r"CASHMERE\s*CLOUDY|CLOUDY\s*BLANKET|BLMNKCLOUDY", upper):
+        collection = "Cashmere Cloudy"
+    elif re.search(r"\bDAISY\b", upper):
+        collection = "Daisy"
+    elif re.search(r"\bTREASURE\b", upper):
+        collection = "Treasure"
+    elif re.search(r"\bELEGANT\b", upper):
+        collection = "Elegant"
+
+    matched = bool(collection and product_type)
+    return {
+        "collection": collection,
+        "product_type": product_type,
+        "matched": matched,
+    }
+
+
 def resolve_so_brand_size(
     product_name: str | None,
     *,
     material_code: str | None = None,
 ) -> tuple[str | None, str | None]:
-    """Bedsheet short codes first, then towel SO PDF teaching."""
+    """Bedsheet short codes, towel teaching, then TOB blanket/comforter SO PDFs."""
     short = _norm_space(product_name or "")
     if not short and material_code:
         short = _norm_space(material_code)
@@ -406,6 +498,11 @@ def resolve_so_brand_size(
     towel = enrich_towel_so_product(product_name, material_code=material_code)
     if towel.get("matched"):
         return towel.get("collection"), towel.get("product_type")
+    tob = enrich_tob_so_product(product_name, material_code=material_code)
+    if tob.get("matched"):
+        return tob.get("collection"), tob.get("product_type")
     if brand and not size:
         return str(brand), None
+    if tob.get("collection") and not tob.get("product_type"):
+        return tob.get("collection"), None
     return None, None
