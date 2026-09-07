@@ -18384,13 +18384,13 @@ class CentralizedDB:
             return cur.rowcount > 0
 
     def sum_so_value_for_fy(self, user_id: int | None, fy_label: str) -> float:
-        """Sum Pending (unbilled) Order Desk SO net for one FY — in lakhs.
+        """Sum remaining unbilled Order Desk SO net for one FY — in lakhs.
 
-        Uses fo_so_match_runs (FO↔SO Pack match), deduped like the Sales
-        Orders / Pending SO tab. SOs that already have a Commercial Invoice
-        are excluded so Manual + CI + Pending SO can all contribute without
-        double-counting billed value. Matched SO Pack net only — not FO
-        ex-mill uploads.
+        Uses fo_so_match_runs (FO↔SO Pack match), deduped like Sales Orders.
+        Partial CI keeps the open SO share here so Manual (till month) +
+        remaining Pending SO + later CI stay balanced (SO 10 → CI 5 →
+        pending 5 + CI 5). Fully billed SOs contribute 0 (value in CI).
+        Matched SO Pack net only — not FO ex-mill uploads.
         """
         from app.fiscal_year import fiscal_year_date_bounds
         from app.services import fo_so_match_db as matchdb
@@ -18474,7 +18474,7 @@ class CentralizedDB:
                 sources.extend(["manual", "ci"])
                 active_source = "manual+ci_blend"
                 if use_so:
-                    # Pending SO on top of Manual+CI blend (unbilled only).
+                    # Remaining unbilled Pending SO on top of Manual+later-CI.
                     active_achievement += so_channel
                     sources.append("pending_so")
                     active_source = "manual+ci_blend+pending_so"

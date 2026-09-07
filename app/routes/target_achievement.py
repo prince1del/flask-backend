@@ -308,8 +308,9 @@ def achievement_channels(year_id: int | None = None):
     """Toggle which sources count toward Target vs Achievement (per user + FY).
 
     Any combination of Manual, Pending SO, and CI is allowed. Pending SO is
-    unbilled Order Desk SO only (same idea as the Pending SO tab).
-    Prefer /years/<year_id>/achievement-channels. Legacy path requires ?year_id=.
+    remaining unbilled Order Desk SO (partial CI keeps the open share so
+    Pending SO + CI stay balanced). Prefer /years/<year_id>/achievement-channels.
+    Legacy path requires ?year_id=.
     """
     try:
         workspace_id = get_workspace_id()

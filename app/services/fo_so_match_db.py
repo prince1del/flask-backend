@@ -991,6 +991,215 @@ def billed_so_keys_for_user(conn: sqlite3.Connection, user_id: int) -> set[str]:
     return billed
 
 
+def _parse_money_loose(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _ci_qty_and_amount_from_parsed(parsed_raw: Any) -> tuple[float, float]:
+    """Return (qty, amount) from commercial_invoice_parsed JSON."""
+    data = parsed_raw
+    if isinstance(parsed_raw, str):
+        text = parsed_raw.strip()
+        if not text:
+            return (0.0, 0.0)
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return (0.0, 0.0)
+    if not isinstance(data, dict):
+        return (0.0, 0.0)
+
+    header = data.get("header") if isinstance(data.get("header"), dict) else {}
+    totals = data.get("totals") if isinstance(data.get("totals"), dict) else {}
+    lines = data.get("line_items") or data.get("rows") or []
+    if not isinstance(lines, list):
+        lines = []
+
+    line_qty = 0.0
+    line_amount = 0.0
+    for row in lines:
+        if not isinstance(row, dict):
+            continue
+        q = _parse_money_loose(row.get("qty") or row.get("quantity") or row.get("pieces"))
+        if q is not None and q > 0:
+            line_qty += q
+        for key in ("line_total", "amount", "value", "taxable", "taxable_amount"):
+            amt = _parse_money_loose(row.get(key))
+            if amt is not None and amt > 0:
+                line_amount += amt
+                break
+
+    header_qty = _parse_money_loose(
+        header.get("total_pieces")
+        or header.get("total_qty")
+        or totals.get("total_qty")
+        or totals.get("total_pieces")
+        or data.get("total_pieces")
+        or data.get("total_qty")
+    )
+    qty = 0.0
+    if header_qty is not None and header_qty > 0:
+        # Tiny footer vs rich line list (same guard as Android ciBilledQty).
+        if line_qty > 0 and header_qty <= 2.0 and line_qty > header_qty * 10:
+            qty = line_qty
+        else:
+            qty = float(header_qty)
+    elif line_qty > 0:
+        qty = line_qty
+
+    amount = 0.0
+    for key in ("taxable_amount", "line_total", "invoice_total", "grand_total"):
+        amt = _parse_money_loose(header.get(key))
+        if amt is None:
+            amt = _parse_money_loose(totals.get(key))
+        if amt is None:
+            amt = _parse_money_loose(data.get(key))
+        if amt is not None and amt > 0:
+            amount = float(amt)
+            break
+    if amount <= 0 and line_amount > 0:
+        amount = line_amount
+    return (round(qty, 3), round(amount, 2))
+
+
+def list_ci_billings_for_user(
+    conn: sqlite3.Connection, user_id: int
+) -> list[dict[str, Any]]:
+    """One entry per CI tracking row: ref keys + billed qty/amount.
+
+    Used so Pending SO can keep the *remaining* unbilled SO net after a
+    partial CI (e.g. SO 10 → CI 5 → pending 5), instead of zeroing the SO.
+    """
+    ensure_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT olt.tracking_id,
+               olt.order_ref_no,
+               olt.commercial_invoice_parsed,
+               olt.commercial_invoice_file_reference,
+               olt.commercial_invoice_drive_file_id,
+               COALESCE(SUM(ofi.ci_qty), 0) AS items_ci_qty,
+               COALESCE(SUM(ofi.ci_value), 0) AS items_ci_value
+        FROM order_lifecycle_tracking olt
+        LEFT JOIN master_distributors md ON olt.distributor_id = md.id
+        LEFT JOIN order_fulfillment_items ofi
+          ON ofi.order_lifecycle_id = olt.tracking_id
+        WHERE (md.user_id = ? OR md.user_id IS NULL)
+          AND (
+            (olt.commercial_invoice_file_reference IS NOT NULL
+             AND TRIM(olt.commercial_invoice_file_reference) != '')
+            OR (olt.commercial_invoice_drive_file_id IS NOT NULL
+                AND TRIM(olt.commercial_invoice_drive_file_id) != '')
+            OR (olt.commercial_invoice_parsed IS NOT NULL
+                AND TRIM(olt.commercial_invoice_parsed) != '')
+          )
+        GROUP BY olt.tracking_id,
+                 olt.order_ref_no,
+                 olt.commercial_invoice_parsed,
+                 olt.commercial_invoice_file_reference,
+                 olt.commercial_invoice_drive_file_id
+        """,
+        (user_id,),
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for (
+        tracking_id,
+        order_ref,
+        parsed,
+        file_ref,
+        drive_id,
+        items_qty,
+        items_value,
+    ) in rows:
+        if not (file_ref or drive_id or parsed):
+            continue
+        inv = _invoice_no_from_ci_parsed(parsed)
+        keys = _pending_ref_keys(order_ref, inv)
+        compact = re.sub(r"[^a-z0-9]+", "", str(order_ref or "").lower())
+        if len(compact) >= 5:
+            keys.add(compact)
+        parsed_qty, parsed_amount = _ci_qty_and_amount_from_parsed(parsed)
+        items_q = float(items_qty or 0)
+        items_a = float(items_value or 0)
+        # Prefer parsed header/lines for qty (fulfillment can double-count).
+        qty = parsed_qty if parsed_qty > 0.05 else items_q
+        amount = items_a if items_a > 0.05 else parsed_amount
+        out.append(
+            {
+                "tracking_id": int(tracking_id),
+                "keys": keys,
+                "qty": float(qty or 0),
+                "amount": float(amount or 0),
+            }
+        )
+    return out
+
+
+def _ci_billed_for_so(
+    so_number: str, billings: list[dict[str, Any]]
+) -> tuple[float, float]:
+    """Sum CI qty/amount linked to one SO number (dedupe by tracking_id)."""
+    so_keys = _pending_ref_keys(so_number)
+    compact = re.sub(r"[^a-z0-9]+", "", (so_number or "").lower())
+    if len(compact) >= 5:
+        so_keys.add(compact)
+    if not so_keys:
+        return (0.0, 0.0)
+    seen: set[int] = set()
+    qty = 0.0
+    amount = 0.0
+    for bill in billings:
+        tid = int(bill.get("tracking_id") or 0)
+        if tid and tid in seen:
+            continue
+        keys = bill.get("keys") or set()
+        if not (so_keys & keys):
+            continue
+        if tid:
+            seen.add(tid)
+        qty += float(bill.get("qty") or 0)
+        amount += float(bill.get("amount") or 0)
+    return (round(qty, 3), round(amount, 2))
+
+
+def remaining_so_net_after_ci(
+    so_net: float,
+    so_qty: float,
+    ci_qty: float,
+    ci_amount: float,
+    *,
+    has_ci: bool,
+) -> float:
+    """Unbilled SO net so Pending SO + CI stay balanced on partial bills.
+
+    Example: SO net 10, CI bills half → remaining 5 (CI channel holds the rest).
+    """
+    net = float(so_net or 0)
+    if net <= 0:
+        return 0.0
+    if not has_ci and ci_qty <= 0.05 and ci_amount <= 0.05:
+        return round(net, 2)
+    sq = float(so_qty or 0)
+    cq = float(ci_qty or 0)
+    if sq > 0.05 and cq > 0.05:
+        open_qty = max(0.0, sq - cq)
+        if open_qty <= 0.05:
+            return 0.0
+        return round(net * (open_qty / sq), 2)
+    ca = float(ci_amount or 0)
+    if ca > 0.05:
+        return round(max(0.0, net - ca), 2)
+    # CI present but qty/amount unknown → treat as fully billed.
+    if has_ci:
+        return 0.0
+    return round(net, 2)
+
+
 def sum_pending_so_net_for_user(
     conn: sqlite3.Connection,
     user_id: int,
@@ -998,14 +1207,16 @@ def sum_pending_so_net_for_user(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> float:
-    """Unbilled Order Desk SO net (ex-mill) for one user — Pending SO total.
+    """Remaining unbilled Order Desk SO net — Pending SO achievement channel.
 
-    Deduped match runs (same as Sales Orders / full SO sum), but each SO
-    number that already has a CI is excluded so CI + Pending SO can both
-    count toward Target vs Achievement without double-counting billed work.
+    Deduped match runs (same as Sales Orders). Partial CI reduces this by the
+    billed share only (qty first, else value), so Manual + remaining Pending SO
+    + later CI stay balanced: SO 10 → CI 5 → pending 5 + CI 5 = 10.
+    Fully billed SOs contribute 0 here (value lives in the CI channel).
     """
     ensure_schema(conn)
     billed = billed_so_keys_for_user(conn, user_id)
+    billings = list_ci_billings_for_user(conn, user_id)
     if date_from and date_to:
         date_filter = "AND DATE(created_at) BETWEEN ? AND ?"
         inner_date_filter = "AND DATE(created_at) BETWEEN ? AND ?"
@@ -1043,11 +1254,14 @@ def sum_pending_so_net_for_user(
                 dedupe = re.sub(r"[^a-z0-9]+", "", so_key.lower()) or so_key.upper()
                 if dedupe in seen_so:
                     continue
-                if _so_number_looks_billed(so_key, billed):
-                    continue
                 seen_so.add(dedupe)
                 net = float(acc.get("net") or 0) or float(acc.get("total") or 0)
-                total += net
+                so_qty = float(acc.get("qty") or 0)
+                ci_qty, ci_amount = _ci_billed_for_so(so_key, billings)
+                has_ci = _so_number_looks_billed(so_key, billed) or ci_qty > 0.05 or ci_amount > 0.05
+                total += remaining_so_net_after_ci(
+                    net, so_qty, ci_qty, ci_amount, has_ci=has_ci
+                )
             continue
         # No per-SO breakdown: include whole run only if none of its SO refs billed.
         so_nums = extract_so_numbers_from_run_row(
