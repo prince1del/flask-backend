@@ -2079,6 +2079,78 @@ def resurrect_so_runs_orphaned_by_fo_delete(
     return restored
 
 
+def compress_repeated_so_qty(qtys: list[float], bridge: float = 0.0) -> float:
+    """
+    Undo SO-header qty stamped on every design line (16×648 → 648).
+
+    Do NOT collapse real multi-line SOs where every article shares the same
+    pack qty (24×12 → 288). That bug showed CI 288 vs SO 12 QTY MISMATCH.
+    """
+    if not qtys:
+        return float(bridge or 0)
+    total = float(sum(qtys))
+    rounded = [round(float(q), 4) for q in qtys]
+    n_lines = len(qtys)
+    bridge = float(bridge or 0)
+
+    def _near(a: float, b: float, rel: float = 0.08) -> bool:
+        return abs(a - b) <= max(1.0, abs(b) * rel)
+
+    if len(set(rounded)) == 1:
+        single = float(rounded[0])
+        if n_lines == 1:
+            return single
+        # Bridge confirms sum of identical pack lines (24×12 with bridge 288).
+        if bridge > 0 and _near(total, bridge):
+            return total
+        # Header stamp: many lines each carry a large full-order total (== bridge).
+        # Require n>=4 and single>=100 so pack sizes like 12 are never crushed.
+        if (
+            bridge > 0
+            and n_lines >= 4
+            and single >= 100
+            and _near(single, bridge, 0.02)
+            and total > bridge * 1.5
+        ):
+            return bridge
+        # Wrong/tiny bridge or no bridge — keep the real multi-line sum.
+        return total
+
+    # Mixed qtys — only collapse to bridge when many lines look like the header total.
+    if bridge > 0 and total > bridge * 1.2:
+        ratio = total / bridge
+        n = int(round(ratio))
+        near_bridge = sum(1 for q in qtys if _near(float(q), bridge, 0.05))
+        if (
+            n >= 2
+            and abs(ratio - n) < 0.08
+            and near_bridge >= max(2, (n_lines + 1) // 2)
+            and bridge >= 100
+        ):
+            return bridge
+
+    # Mode collapse only for large header-like modes (not pack sizes).
+    counts: dict[float, int] = {}
+    for q in rounded:
+        counts[q] = counts.get(q, 0) + 1
+    mode = max(counts.items(), key=lambda kv: kv[1])[0]
+    mode_hits = counts[mode]
+    if (
+        mode >= 100
+        and n_lines >= 4
+        and total > mode * 1.2
+        and mode_hits >= (n_lines + 1) // 2
+    ):
+        ratio = total / mode
+        n = int(round(ratio))
+        if n >= 2 and abs(ratio - n) < 0.08:
+            if bridge > 0 and _near(mode, bridge, 0.05):
+                return float(mode)
+            if bridge <= 0:
+                return float(mode)
+    return total
+
+
 def lookup_so_in_order_match(
     conn: sqlite3.Connection,
     so_number: str,
@@ -2148,33 +2220,7 @@ def lookup_so_in_order_match(
             totals_net = 0.0
         break
 
-    def _compress_repeated_so_qty(qtys: list[float], bridge: float) -> float:
-        """Undo SO-header qty stamped on every design line (16×648, 8×396)."""
-        if not qtys:
-            return bridge
-        total = float(sum(qtys))
-        rounded = [round(q, 4) for q in qtys]
-        if len(set(rounded)) == 1:
-            return float(rounded[0])
-        if bridge > 0 and total > bridge * 1.2:
-            ratio = total / bridge
-            n = int(round(ratio))
-            if n >= 2 and abs(ratio - n) < 0.08:
-                return bridge
-        # Mode: most common line qty, if sum ≈ n × mode
-        counts: dict[float, int] = {}
-        for q in rounded:
-            counts[q] = counts.get(q, 0) + 1
-        mode = max(counts.items(), key=lambda kv: kv[1])[0]
-        mode_hits = counts[mode]
-        if mode > 0 and len(qtys) >= 2 and total > mode * 1.2 and mode_hits >= (len(qtys) + 1) // 2:
-            ratio = total / mode
-            n = int(round(ratio))
-            if n >= 2 and abs(ratio - n) < 0.08:
-                return float(mode)
-        return total
-
-    qty = _compress_repeated_so_qty(line_qtys, totals_qty)
+    qty = compress_repeated_so_qty(line_qtys, totals_qty)
     if qty <= 0:
         qty = totals_qty
     net = line_net if line_net > 0 else totals_net
