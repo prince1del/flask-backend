@@ -2227,6 +2227,7 @@ def add_placement_category():
 def open_days():
     workspace_id = get_workspace_id()
     uid = _user_id()
+    check_date = (request.args.get("date") or "").strip() or None
     with sqlite3.connect(_db_path()) as conn:
         _ensure_table(conn)
         dates = _open_visit_dates(conn, workspace_id, uid)
@@ -2237,6 +2238,9 @@ def open_days():
                 "WHERE workspace_id = ? AND user_id = ? AND is_draft = 1",
                 (workspace_id, uid),
             ).fetchone()[0]
+        day_closed = (
+            _day_is_closed(conn, workspace_id, uid, check_date) if check_date else None
+        )
     return jsonify(
         {
             "success": True,
@@ -2245,6 +2249,8 @@ def open_days():
                 "count": len(dates),
                 "max_open_days": 2,
                 "draft_count": draft_count,
+                "checked_date": check_date,
+                "day_closed": day_closed,
             },
         }
     )
