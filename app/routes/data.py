@@ -911,11 +911,14 @@ def _build_ci_party_match_summary(
                 "so_distributor": so_payload,
                 "candidates": ci_match.get("candidates") or [],
             }
+        # SO / Order Match already pinned the distributor (e.g. DCA MARKETING).
+        # Bulk CI upload on mobile has no review UI — trust the SO party unless
+        # CI maps to a *different* Customers row (handled as mismatch above).
         return {
-            "status": "unmatched",
+            "status": "matched",
             "message": (
-                f"CI buyer \"{buyer_name or '—'}\" did not match Customers master; "
-                f"SO party is \"{so_name}\". Confirm this is the same distributor."
+                f"Using SO party \"{so_name}\" "
+                f"(CI buyer \"{buyer_name or '—'}\" had no separate Customers hit)."
             ),
             "ci_distributor": None,
             "so_distributor": so_payload,
@@ -5952,12 +5955,12 @@ def _upload_invoice_v2_impl(uploaded_file=None) -> Response:
             "ci_totals": parsed_invoice.get("totals"),
             "detail_level": "upload_preview",
             "compare": compare,
-            "requires_confirmation": matching_so is not None,
-            "requires_ci_only_confirmation": matching_so is None,
-            "no_match_found": matching_so is None,
+            "requires_confirmation": matching_so is not None or order_match_so is not None,
+            "requires_ci_only_confirmation": matching_so is None and not order_match_so,
+            "no_match_found": matching_so is None and not order_match_so,
             "existing_ci_only_tracking_id": (
                 (existing_ci_only_tracking or {}).get("tracking_id")
-                if matching_so is None else None
+                if matching_so is None and not order_match_so else None
             ),
         },
     })
@@ -8008,10 +8011,19 @@ def _collect_ci_pdfs_from_request() -> list[tuple[str, bytes]]:
 
 
 def _ci_party_safe_for_auto(preview: dict) -> bool:
-    status = ((preview.get("party_match") or {}) if isinstance(preview.get("party_match"), dict) else {}).get(
-        "status"
+    party_match = (
+        preview.get("party_match") if isinstance(preview.get("party_match"), dict) else {}
     )
-    return status == "matched" or not status
+    status = party_match.get("status")
+    if status == "matched" or not status:
+        return True
+    # Legacy previews: unmatched + SO party known → still safe (SO is authoritative).
+    if status == "unmatched":
+        so = party_match.get("so_distributor") if isinstance(party_match.get("so_distributor"), dict) else {}
+        ci = party_match.get("ci_distributor") if isinstance(party_match.get("ci_distributor"), dict) else None
+        if so.get("id") and not ci:
+            return True
+    return False
 
 
 def _auto_confirm_ci_preview(preview: dict) -> dict:
@@ -8035,16 +8047,16 @@ def _auto_confirm_ci_preview(preview: dict) -> dict:
         if isinstance(preview.get("matching_sales_order"), dict)
         else {}
     )
-    has_real_so = (
-        not preview.get("no_match_found")
-        and bool(matching_so)
-        and (
-            compare.get("so_has_file")
-            or matching_so.get("sales_order_file_reference")
-            or matching_so.get("has_sales_order")
-            or matching_so.get("from_order_match")
-            or preview.get("order_match_so")
-        )
+    order_match_so = preview.get("order_match_so")
+    # Order Match counts as a real SO even when lifecycle seed is still catching up.
+    so_present = bool(matching_so) or bool(order_match_so)
+    has_real_so = so_present and (
+        compare.get("so_has_file")
+        or matching_so.get("sales_order_file_reference")
+        or matching_so.get("has_sales_order")
+        or matching_so.get("from_order_match")
+        or bool(order_match_so)
+        or matching_so.get("tracking_id") is not None
     )
     amount = preview.get("extracted_amount")
     try:
