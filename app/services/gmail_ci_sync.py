@@ -27,6 +27,29 @@ GMAIL_QUERY = (
 GMAIL_READONLY_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
+def _gmail_clean_party_name(raw: str | None) -> str | None:
+    """Drop email-signature / street OCR junk so pending list stays recognizable."""
+    text = (raw or "").strip()
+    if len(text) < 3:
+        return None
+    lower = text.lower()
+    if "@" in lower:
+        return None
+    junk = (
+        "street", " st.", " st ", "road", " rd.", "avenue", " ave.",
+        "lane", " ln.", "market street", "gmail", "yahoo", "hotmail",
+    )
+    if any(tok in lower for tok in junk):
+        return None
+    import re
+
+    if re.match(r"^\d{2,6}\s+\w+", text) and re.search(
+        r"\b(street|st|road|rd|ave|lane|ln|market)\b", text, re.I
+    ):
+        return None
+    return text
+
+
 def build_gmail_service(oauth_token: dict[str, Any]):
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
@@ -236,7 +259,15 @@ def poll_for_user(
                 state = result.get("state")
                 doc_no = result.get("invoice_no") or result.get("order_ref_no")
                 preview = result.get("preview") if isinstance(result.get("preview"), dict) else {}
-                party_name = preview.get("buyer_name")
+                raw_party = (preview.get("buyer_name") or "").strip()
+                # Prefer suggested distributor name over OCR junk (email signature / street).
+                suggested = preview.get("suggested_distributor") if isinstance(
+                    preview.get("suggested_distributor"), dict
+                ) else {}
+                party_name = (
+                    (suggested.get("firm_name") or suggested.get("name") or "").strip()
+                    or _gmail_clean_party_name(raw_party)
+                )
 
                 if state == "ok":
                     summary["ci_imported"] += 1
