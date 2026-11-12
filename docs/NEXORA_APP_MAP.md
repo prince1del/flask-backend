@@ -236,6 +236,12 @@ Natural-language questions over the user's data ("how much CD does X pay").
   prepay tier (₹500 credits, auto-reload off — the spend cap). Agent tries
   `gemini-3.6-flash` first (low thinking, 25 s), then `GEMINI_FLASH_MODEL`.
   Override with `GEMINI_AGENT_MODELS`. Usage: `ai_agent_usage_log`.
+- Voice: `POST /api/v1/ai/voice` {text, voice?} → WAV in a natural Hinglish voice
+  (`app/services/nexora_voice.py`, Gemini `gemini-3.8-flash-tts`, disk cache
+  `tts_cache/` next to the SQLite file). `GET /api/v1/ai/voices` + `POST .../voices/select`
+  keep each user's voice in `ask_nexora_voice_prefs` (default Kore).
+  Phone: `ui/screens/AskNexoraVoice.kt` (Settings → Ask Nexora voice; plays answers,
+  falls back to the phone's TTS offline). Web chat: not wired yet.
 
 ### 3.14 Settings, help, updates
 - Company profile `/api/v1/company-profile`; UI theme `/api/v1/me/ui-theme`.
