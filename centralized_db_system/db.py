@@ -4425,7 +4425,7 @@ class CentralizedDB:
         self,
         old_username: str = "bd_gt_north_head",
         new_username: str = "kps.julka@gmail.com",
-        new_password: str = "@Princeking123",
+        new_password: str = "",
         full_name: str | None = "K.P.S. Julka",
     ) -> dict[str, Any]:
         """
@@ -4450,6 +4450,8 @@ class CentralizedDB:
                 }
             if old_row is None:
                 return {"action": "noop", "reason": "old user not found"}
+            if not (new_password or "").strip():
+                return {"action": "noop", "reason": "password required for rename"}
             if new_row is not None and int(new_row[0]) != int(old_row[0]):
                 return {"action": "blocked", "reason": "target username already exists"}
             uid = int(old_row[0])
@@ -4485,9 +4487,13 @@ class CentralizedDB:
         self,
         old_username: str = "hop_prizm",
         new_username: str = "prince1del",
-        new_password: str = "@Princeking123",
+        new_password: str = "",
     ) -> dict[str, Any]:
-        """Create or rename the House of Prizm admin login (idempotent)."""
+        """Create or rename the House of Prizm admin login (idempotent).
+
+        The password is only used when the login is first created or renamed
+        from the legacy name; an existing login keeps its current password.
+        """
         from app.hop_schema import HOP_ROLE, HOP_WORKSPACE_ID, ensure_hop_schema
 
         ensure_hop_schema(self.db_path)
@@ -4516,17 +4522,15 @@ class CentralizedDB:
                 (new_u,),
             ).fetchone()
 
-            def _apply(uid: int, username: str) -> None:
+            def _apply(uid: int, username: str, set_password: bool) -> None:
                 clean_user, clean_email = self.assert_login_identity_available(
                     conn, username=username, email=None, exclude_user_id=uid
                 )
-                sets = [
-                    "username = ?",
-                    "password_hash = ?",
-                    "role = ?",
-                    "workspace_id = ?",
-                ]
-                params: list[Any] = [clean_user, pw_hash, HOP_ROLE, HOP_WORKSPACE_ID]
+                sets = ["username = ?", "role = ?", "workspace_id = ?"]
+                params: list[Any] = [clean_user, HOP_ROLE, HOP_WORKSPACE_ID]
+                if set_password:
+                    sets.append("password_hash = ?")
+                    params.append(pw_hash)
                 if "email" in cols:
                     sets.append("email = ?")
                     params.append(clean_email)
@@ -4547,7 +4551,8 @@ class CentralizedDB:
             ):
                 uid = int(old_row[0])
                 renamed = old_u.lower() != new_u.lower()
-                _apply(uid, new_u)
+                # Legacy login being renamed: seed the password once.
+                _apply(uid, new_u, set_password=renamed)
                 conn.commit()
                 return {
                     "action": "renamed" if renamed else "updated",
@@ -4557,7 +4562,8 @@ class CentralizedDB:
 
             if new_row is not None:
                 uid = int(new_row[0])
-                _apply(uid, new_u)
+                # Existing admin: never overwrite a password the owner changed in the app.
+                _apply(uid, new_u, set_password=False)
                 conn.commit()
                 return {"action": "updated", "user_id": uid, "username": new_u}
 

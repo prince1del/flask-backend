@@ -48,15 +48,19 @@ try:
 
     cdb = CentralizedDB(db_path)
     try:
-        print(
-            "SEED",
-            cdb.create_user(
-                os.getenv("SEED_USERNAME", "kps.julka@gmail.com"),
-                os.getenv("SEED_PASSWORD", "@Princeking123"),
-                role=os.getenv("SEED_ROLE", "sales_executive"),
-                workspace_id=os.getenv("SEED_WORKSPACE", "bombay_dyeing_gt_north"),
-            ),
-        )
+        seed_pw = (os.getenv("SEED_PASSWORD") or "").strip()
+        if not seed_pw:
+            print("SEED skip: SEED_PASSWORD not set")
+        else:
+            print(
+                "SEED",
+                cdb.create_user(
+                    os.getenv("SEED_USERNAME", "kps.julka@gmail.com"),
+                    seed_pw,
+                    role=os.getenv("SEED_ROLE", "sales_executive"),
+                    workspace_id=os.getenv("SEED_WORKSPACE", "bombay_dyeing_gt_north"),
+                ),
+            )
     except ValueError as e:
         print("SEED skip:", e)
     except Exception as e:
@@ -74,7 +78,7 @@ try:
             cdb.ensure_hop_admin_login(
                 old_username=os.getenv("HOP_ADMIN_OLD_USERNAME", "hop_prizm"),
                 new_username=os.getenv("HOP_ADMIN_USERNAME", "prince1del"),
-                new_password=os.getenv("HOP_ADMIN_PASSWORD", "@Princeking123"),
+                new_password=os.getenv("HOP_ADMIN_PASSWORD", ""),
             ),
         )
     except Exception as e:

@@ -3,7 +3,7 @@ import requests
 
 BASE_URL = "http://127.0.0.1:5000"
 USERNAME = "bd_gt_north_head"
-PASSWORD = "@Princeking123"
+PASSWORD = __import__("os").environ.get("NEXORA_TEST_PASSWORD", "")
 
 if len(sys.argv) < 2:
     print("Usage: python test_real_retailer_upload.py <path_to_file.csv_or_.xlsx>")

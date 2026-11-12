@@ -28,7 +28,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 1. Copy `app-debug.apk` to phone
 2. Enable **Install unknown apps** for Files/Chrome
 3. Open APK → Install
-4. Login: `prince1del` / `@Princeking123`
+4. Login with your own NEXORA username and password
 
 ## Android Studio
 

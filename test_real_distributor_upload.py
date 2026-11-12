@@ -11,7 +11,7 @@ import requests
 
 BASE_URL = "http://127.0.0.1:5000"
 USERNAME = "bd_gt_north_head"
-PASSWORD = "@Princeking123"
+PASSWORD = __import__("os").environ.get("NEXORA_TEST_PASSWORD", "")
 FILE_PATH = "distributors.xlsx"  # place your real file here, in this same folder
 
 # Step 1: log in to get a real JWT token

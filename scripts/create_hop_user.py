@@ -45,7 +45,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--password",
-        default=os.getenv("HOP_ADMIN_PASSWORD", "@Princeking123"),
+        default=os.getenv("HOP_ADMIN_PASSWORD", ""),
+        help="Required (or set HOP_ADMIN_PASSWORD).",
     )
     parser.add_argument(
         "--old-username",
