@@ -236,6 +236,11 @@ Natural-language questions over the user's data ("how much CD does X pay").
   prepay tier (₹500 credits, auto-reload off — the spend cap). Agent tries
   `gemini-3.6-flash` first (low thinking, 25 s), then `GEMINI_FLASH_MODEL`.
   Override with `GEMINI_AGENT_MODELS`. Usage: `ai_agent_usage_log`.
+- Learning: after a one-step tool answer, the question's shape and its tools are kept
+  in `ask_nexora_learned` (e.g. `{distributor_name} ke kitne so pending hai` →
+  `get_pending_so`). A later question of the same shape fetches that data first, so
+  the AI writes the answer in one round (≈5 s → ≈2 s). Follow-ups are not learned;
+  numbers are always fetched fresh. Usage rows show `nexora_agent_learned`.
 - Voice: `POST /api/v1/ai/voice` {text, voice?} → WAV in a natural Hinglish voice
   (`app/services/nexora_voice.py`, Gemini `gemini-3.8-flash-tts`, disk cache
   `tts_cache/` next to the SQLite file). `GET /api/v1/ai/voices` + `POST .../voices/select`
