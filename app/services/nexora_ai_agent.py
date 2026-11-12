@@ -1145,7 +1145,8 @@ def ask_order_desk(query: str, *, user_id: int, workspace_id: str) -> str:
             }
             for call in function_calls
         ]
-        contents.append({"role": "function", "parts": response_parts})
+        # Gemini 3 rejects role "function"; tool results go back as a user turn.
+        contents.append({"role": "user", "parts": response_parts})
 
     return _finish(
         "Yeh sawaal thoda complex tha — kripya thoda specific poochiye "
