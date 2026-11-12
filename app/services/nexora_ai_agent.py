@@ -86,6 +86,10 @@ You answer questions across these areas, each with its own tools:
 Rules:
 - ONLY state numbers/facts that came back from a tool call. Never estimate or invent.
 - If a tool returns no data, say so plainly - do not guess.
+- Think for yourself: work out what the user wants and pick the tools. If no
+  specific tool fits, use search_nexora to find the party/article/order first,
+  then the right tool. If the question is incomplete ("MRP of"), ask one short
+  question back (e.g. "Kis article ka MRP chahiye?") instead of giving up.
 - Follow-ups: earlier turns of this conversation come before the latest
   question. If the latest question names no distributor, item, season or
   category of its own ("aur Bath ke?", "uska payment?", "kitne pcs?"), it is
@@ -138,6 +142,20 @@ def _tool_declarations() -> list[dict[str, Any]]:
                         "description": "Season code, e.g. AW26 (optional).",
                     },
                 },
+            },
+        },
+        {
+            "name": "search_nexora",
+            "description": (
+                "Search everything in NEXORA by a word or name - distributors, retailers, "
+                "orders, stock, Article Master (MRP/PTR/ex-mill), visit logs. Use when no other "
+                "tool fits, to find who/what the user means, or to look up any party, article "
+                "or order detail."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "description": "Word, name or number to search."}},
+                "required": ["text"],
             },
         },
         {
@@ -730,6 +748,16 @@ def _run_tool(
                 category=str(args.get("category") or ""),
                 season=str(args.get("season") or ""),
             ))
+
+        if name == "search_nexora":
+            from centralized_db_system.db import CentralizedDB
+
+            text = str(args.get("text") or "").strip()
+            if not text:
+                return {"error": "text is required"}
+            found = CentralizedDB(_db_path()).global_search(text, workspace_id=workspace_id, user_id=user_id)
+            results = found.get("results") or {}
+            return _sanitize({k: (v or [])[:10] for k, v in results.items() if v})
 
         if name == "find_so_by_article":
             runs = []

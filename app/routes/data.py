@@ -8918,7 +8918,10 @@ def ai_assistant_query() -> Response:
         # Counting / hisaab / "SO ka number" questions go straight to the AI:
         # the rule engine reads "number" as a phone number and "kitne" as a
         # name search, and answered those wrongly.
-        _ai_first = _looks_like_ai_data_question(query)
+        # AI first for every question (it has the data tools and understands
+        # Hinglish); the rule engine below is only the backup when the AI is
+        # unavailable. Plain arithmetic stays with the built-in calculator.
+        _ai_first = intent != "calculator" or _looks_like_ai_data_question(query)
         _follow = _agent.is_follow_up(query, _turns)
         if _ai_first or _follow:
             try:
