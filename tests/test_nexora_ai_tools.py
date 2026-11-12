@@ -189,3 +189,27 @@ def test_ask_learns_then_prefetches(tmp_path, monkeypatch):
     assert len(gemini_calls) == 1  # learned: data fetched first, one AI round
     assert tool_runs == [("get_pending_so", {"distributor_name": "kalra agencies"})]
     assert a._learned_rows("ws")[0][0] == "{distributor_name} ke kitne so pending hai"
+
+
+def test_so_number_question_goes_to_ai_not_phone():
+    from app.routes.data import _looks_like_ai_data_question as q
+
+    assert q("bernina ke aster ke aw26 ke so ka number kya tha")
+    assert q("Savitri ka CI number batao")
+    assert q("invoice no of kalra")
+    assert not q("bernina ka number kya hai")
+
+
+def test_so_by_article_finds_latest_run_only():
+    from app.services.nexora_ai_agent import so_by_article_for_ai
+
+    def run(i, so):
+        return {"id": i, "distributor_name": "Bernina International P Ltd", "season": "AW26", "category": "Bed",
+                "rows": [{"brand": "ASTER 1+2 DB SET", "size": "90x100", "status": "MATCH", "fo_qty": 30,
+                          "so_qty": 30, "so_numbers": [so], "so_breakdown": [{"so_number": so, "qty": 30, "net": 100}]},
+                         {"brand": "CARDINAL", "so_numbers": ["999"]}]}
+
+    out = so_by_article_for_ai([run(9, "102877001"), run(3, "OLD")], article="aster", distributor_name="bernina")
+    assert out["so_numbers"] == ["102877001"] and out["count"] == 1
+    assert so_by_article_for_ai([run(9, "1")], article="aster", category="Bath")["count"] == 0
+    assert "error" in so_by_article_for_ai([run(9, "1")], article="")

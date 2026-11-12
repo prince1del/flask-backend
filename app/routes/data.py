@@ -8549,9 +8549,19 @@ _AI_DATA_WORDS = (
 )
 
 
+_DOC_NUMBER_RE = re.compile(
+    r"\b(so|sos|ci|cis|invoice|sales order|bill)\s+(ka|ki|ke|of)?\s*(no|nos|number|numbers|num)\b"
+    r"|\b(so|ci|invoice)\s*(no|number)\b"
+)
+
+
 def _looks_like_ai_data_question(query: str) -> bool:
-    """A counting / hisaab question (needs the AI tools), not a plain name lookup."""
+    """A counting / hisaab question (needs the AI tools), not a plain name lookup.
+
+    Also "aster ke SO ka number kya tha": an SO/CI number, not a phone number."""
     text = " " + re.sub(r"[^a-z0-9 ]+", " ", (query or "").lower()) + " "
+    if _DOC_NUMBER_RE.search(text):
+        return True
     has_question = any(f" {w} " in text for w in _AI_QUESTION_WORDS)
     has_data = any(f" {w} " in text for w in _AI_DATA_WORDS)
     return has_question and has_data
@@ -8905,15 +8915,22 @@ def ai_assistant_query() -> Response:
         from app.services import nexora_ai_agent as _agent
 
         _turns = _agent.recent_turns(user_id, workspace_id)
-        if _agent.is_follow_up(query, _turns):
+        # Counting / hisaab / "SO ka number" questions go straight to the AI:
+        # the rule engine reads "number" as a phone number and "kitne" as a
+        # name search, and answered those wrongly.
+        _ai_first = _looks_like_ai_data_question(query)
+        _follow = _agent.is_follow_up(query, _turns)
+        if _ai_first or _follow:
             try:
                 _ai = _agent.ask_order_desk(
-                    query, user_id=user_id, workspace_id=workspace_id, history=_turns
+                    query, user_id=user_id, workspace_id=workspace_id,
+                    history=_turns if _follow else None,
                 )
                 _agent.record_turn(user_id, workspace_id, query, _ai)
                 return Response(
                     json.dumps(
-                        {"intent": "ai_followup", "query": query, "answer": _ai.strip()},
+                        {"intent": "ai_followup" if _follow else "ai_order_desk",
+                         "query": query, "answer": _ai.strip()},
                         ensure_ascii=False,
                     ),
                     mimetype="application/json",

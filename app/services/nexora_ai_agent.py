@@ -141,6 +141,25 @@ def _tool_declarations() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "find_so_by_article",
+            "description": (
+                "Find the Sales Order number(s) for an article (brand / print name like "
+                "Aster, Cardinal, BIAB, optionally with size) for a distributor, from the "
+                "matched filled orders - with SO qty and value per SO. Use for 'X ke Aster "
+                "ka SO number kya hai', 'kis SO mein Y hai', 'SO no. of article Z'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "article": {"type": "string", "description": "Brand / print / article name, e.g. Aster."},
+                    "distributor_name": {"type": "string", "description": "Distributor (optional)."},
+                    "category": {"type": "string", "description": "Bed, Bath, Pillow, TOB ... (optional)."},
+                    "season": {"type": "string", "description": "Season code, e.g. AW26 (optional)."},
+                },
+                "required": ["article"],
+            },
+        },
+        {
             "name": "get_pending_so",
             "description": (
                 "Sales Orders not yet billed, or only partly billed, by a CI - SO "
@@ -619,6 +638,47 @@ def hisaab_for_ai(
     return {"as_of": ledger.get("as_of"), "distributors": out, "count": len(out)}
 
 
+def so_by_article_for_ai(
+    runs: list[dict[str, Any]], *, article: str, distributor_name: str = "", category: str = "", season: str = ""
+) -> dict[str, Any]:
+    """Which SO(s) carry an article (brand/size) - from the latest FO↔SO match runs.
+
+    `runs` are full match runs (with rows), newest first; only the newest run per
+    distributor/season/category counts, like the Order Desk."""
+    want = _norm_key(article)
+    if not want:
+        return {"error": "article is required (brand / print name, e.g. Aster)"}
+    allowed = _name_filter(sorted({str(r.get("distributor_name") or "") for r in runs}), distributor_name)
+    if allowed is not None and not allowed:
+        return {"error": f"No matched SOs for a distributor matching '{distributor_name}'", "matches": [], "count": 0}
+    seen_slots: set[tuple[str, str, str]] = set()
+    hits = []
+    for run in runs:
+        slot = (str(run.get("distributor_name") or ""), str(run.get("season") or ""), str(run.get("category") or ""))
+        if slot in seen_slots:
+            continue
+        seen_slots.add(slot)
+        if allowed is not None and slot[0] not in allowed:
+            continue
+        if not _same(slot[1], season) or not _same(slot[2], category):
+            continue
+        for row in run.get("rows") or []:
+            brand = str(row.get("brand") or "")
+            if want not in _norm_key(brand) and want not in _norm_key(row.get("match_key_brand")):
+                continue
+            hits.append({
+                "distributor": slot[0], "season": slot[1], "category": slot[2],
+                "brand": brand, "size": row.get("size"), "status": row.get("status"),
+                "fo_qty": row.get("fo_qty"), "so_qty": row.get("so_qty"),
+                "so_numbers": row.get("so_numbers") or [],
+                "so_breakdown": [
+                    {k: b.get(k) for k in ("so_number", "qty", "net")} for b in (row.get("so_breakdown") or [])
+                ],
+            })
+    so_set = sorted({s for h in hits for s in h["so_numbers"]})
+    return {"count": len(hits), "so_numbers": so_set, "matches": hits[:60]}
+
+
 def pending_so_for_ai(
     items: list[dict[str, Any]], *, distributor_name: str = "", category: str = "", season: str = ""
 ) -> dict[str, Any]:
@@ -666,6 +726,20 @@ def _run_tool(
             )
             return _sanitize(hisaab_for_ai(
                 ledger,
+                distributor_name=str(args.get("distributor_name") or ""),
+                category=str(args.get("category") or ""),
+                season=str(args.get("season") or ""),
+            ))
+
+        if name == "find_so_by_article":
+            runs = []
+            for r in sorted(matchdb.list_match_runs(conn, user_id=user_id), key=lambda x: -int(x.get("id") or 0)):
+                full = matchdb.get_match_run(conn, int(r["id"]), user_id=user_id)
+                if full:
+                    runs.append(full)
+            return _sanitize(so_by_article_for_ai(
+                runs,
+                article=str(args.get("article") or ""),
                 distributor_name=str(args.get("distributor_name") or ""),
                 category=str(args.get("category") or ""),
                 season=str(args.get("season") or ""),

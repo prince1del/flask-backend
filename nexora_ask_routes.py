@@ -46,18 +46,22 @@ def ask_nexora():
     if workspace_id != "house_of_prizm":
         from app.services import nexora_ai_agent as agent
 
+        from app.routes.data import _looks_like_ai_data_question
+
         turns = agent.recent_turns(user_id, workspace_id)
-        if agent.is_follow_up(question, turns):
+        follow = agent.is_follow_up(question, turns)
+        if follow or _looks_like_ai_data_question(question):
             try:
                 ai_answer = ask_order_desk(
-                    question, user_id=user_id, workspace_id=workspace_id, history=turns
+                    question, user_id=user_id, workspace_id=workspace_id,
+                    history=turns if follow else None,
                 )
                 agent.record_turn(user_id, workspace_id, question, ai_answer)
                 return jsonify({
                     "status": "success",
                     "question": question,
                     "answer": ai_answer,
-                    "intent": "ai_followup",
+                    "intent": "ai_followup" if follow else "ai_order_desk",
                     "data": {"isolation": {"user_id": user_id, "workspace_id": workspace_id}},
                 }), 200
             except Exception:  # noqa: BLE001 - fall back to the normal engine
