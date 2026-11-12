@@ -20,6 +20,35 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Retention: every daily backup is kept for $KeepDays days. In addition, the
+# FIRST backup of each calendar month (per type: postgres / sqlite) is kept
+# forever — a monthly snapshot even if the laptop/server was off on the 1st.
+# The date comes from the file name (postgres_2026-12-01_2100.sql.gz), not the
+# file's modified time, so copying/restoring files doesn't change what's kept.
+function Invoke-NexoraRetention([string]$Dest, [int]$KeepDays) {
+    $cutoff = (Get-Date).Date.AddDays(-$KeepDays)
+    $files = foreach ($f in Get-ChildItem $Dest -Filter *.gz) {
+        if ($f.Name -match '^(?<kind>[a-z]+)_(?<date>\d{4}-\d{2}-\d{2})_') {
+            [pscustomobject]@{
+                File  = $f
+                Kind  = $Matches.kind
+                Date  = [datetime]::ParseExact($Matches.date, 'yyyy-MM-dd', $null)
+                Month = $Matches.date.Substring(0, 7)
+            }
+        }
+    }
+    $monthly = @{}
+    foreach ($g in ($files | Group-Object Kind, Month)) {
+        $first = $g.Group | Sort-Object { $_.File.Name } | Select-Object -First 1
+        $monthly[$first.File.FullName] = $true
+    }
+    foreach ($x in $files) {
+        if ($x.Date -lt $cutoff -and -not $monthly.ContainsKey($x.File.FullName)) {
+            Remove-Item $x.File.FullName -Force
+        }
+    }
+}
+
 if ($Register) {
     $script = $MyInvocation.MyCommand.Path
     $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$script`" -Server $Server -User $User -KeyFile `"$KeyFile`" -Dest `"$Dest`" -KeepDays $KeepDays"
@@ -50,8 +79,7 @@ try {
         }
     }
 
-    # Keep the laptop folder from growing forever.
-    Get-ChildItem $Dest -Filter *.gz | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) } | Remove-Item -Force
+    Invoke-NexoraRetention -Dest $Dest -KeepDays $KeepDays
 
     $latest = Get-ChildItem $Dest -Filter *.gz | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     "$(Get-Date -Format s)  OK  copied=$copied  latest=$($latest.Name)" | Add-Content $log

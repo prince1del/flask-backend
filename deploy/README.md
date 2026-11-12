@@ -61,7 +61,7 @@ powershell -ExecutionPolicy Bypass -File deploy\laptop_backup.ps1 -Server <IP-ya
 ```
 
 - Roz subah 10 baje chalega; laptop band tha to on hote hi chal jaayega.
-- Backups: `Documents\NEXORA-Backups` (60 din tak).
+- Backups: `Documents\NEXORA-Backups` — roz wali copy 60 din tak, aur **har mahine ki pehli copy hamesha ke liye**.
 - Har run ka hisaab: `Documents\NEXORA-Backups\backup-log.txt`.
 
 ## Roz ka kaam
