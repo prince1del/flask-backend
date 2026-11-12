@@ -102,14 +102,21 @@ except Exception:
 PY
 fi
 
-# 512MB Starter: NO --preload (master+worker ≈ 2× RAM). One sync worker only.
+# Standard plan (1 CPU / 2GB). The old "1 sync worker, 1 thread" setup (sized for
+# 512MB Starter) served ONE request at a time — a slow OCR / mail-sync / PDF call
+# froze every other client. gthread lets I/O-bound requests (Postgres, OCR APIs,
+# SMTP) overlap. Keep a single process by default: business data lives in a
+# SQLite file on the persistent disk, and one process avoids cross-process
+# write-lock contention and per-process in-memory state drift.
+# Tune on Render via env: GUNICORN_WORKERS / GUNICORN_THREADS / GUNICORN_MAX_REQUESTS.
+# No --preload (master+worker ≈ 2× RAM).
 exec gunicorn wsgi:app \
   --bind 0.0.0.0:${PORT:-10000} \
-  --workers 1 \
-  --threads 1 \
-  --worker-class sync \
+  --workers "${GUNICORN_WORKERS:-1}" \
+  --threads "${GUNICORN_THREADS:-6}" \
+  --worker-class gthread \
   --timeout 120 \
   --graceful-timeout 20 \
-  --keep-alive 2 \
-  --max-requests "${GUNICORN_MAX_REQUESTS:-150}" \
-  --max-requests-jitter 30
+  --keep-alive 5 \
+  --max-requests "${GUNICORN_MAX_REQUESTS:-2000}" \
+  --max-requests-jitter 200
