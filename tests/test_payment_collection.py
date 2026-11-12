@@ -57,6 +57,43 @@ class PaymentCollectionTests(unittest.TestCase):
         self.assertEqual(order["outstanding"], 150_000)
         self.assertEqual(order["payment_status"], "PARTIAL")
 
+    def test_edit_payment_entry_updates_status(self) -> None:
+        tid = self.db.create_order_lifecycle_tracking(
+            order_ref_no="SO-EDIT-1",
+            distributor_id=1,
+            sales_order_file_reference="dummy.pdf",
+            sales_order_parsed='{"header":{"invoice_total":450000}}',
+            workspace_id="default",
+        )
+        entry = self.db.add_distributor_payment_entry(
+            workspace_id="default", distributor_id=1, tracking_id=tid,
+            amount=45_000, payment_date="2026-06-11", note="typo",
+        )
+        fixed = self.db.update_distributor_payment_entry(
+            entry["id"], "default", amount=450_000, payment_date="2026-06-12", note="", set_note=True,
+        )
+        self.assertEqual(fixed["amount"], 450_000)
+        self.assertEqual(fixed["payment_date"], "2026-06-12")
+        self.assertEqual(fixed["note"], "")
+        order = self.db.list_distributor_payment_collection("default")[0]["orders"][0]
+        self.assertEqual(order["payment_status"], "PAID")
+        with self.assertRaises(ValueError):
+            self.db.update_distributor_payment_entry(entry["id"], "default", amount=0)
+        self.assertIsNone(self.db.update_distributor_payment_entry(entry["id"], "other_ws", amount=5))
+
+    def test_edit_category_deposit(self) -> None:
+        dep = self.db.add_distributor_category_payment(42, 7, "AW26", "Bed", 10_000, "2026-08-01", note="x")
+        fixed = self.db.update_distributor_category_payment(42, dep["id"], amount=100_000, payment_date="2026-08-02")
+        self.assertEqual(fixed["amount"], 100_000)
+        self.assertEqual(fixed["payment_date"], "2026-08-02")
+        self.assertEqual(fixed["note"], "x")
+        cleared = self.db.update_distributor_category_payment(42, dep["id"], note=None, set_note=True)
+        self.assertIsNone(cleared["note"])
+        with self.assertRaises(ValueError):
+            self.db.update_distributor_category_payment(42, dep["id"], payment_date=" ")
+        self.assertIsNone(self.db.update_distributor_category_payment(43, dep["id"], amount=5))
+        self.assertEqual(self.db.update_distributor_category_payment(42, dep["id"])["amount"], 100_000)
+
     def test_category_payment_dedupes_reuploaded_so_match_runs(self) -> None:
         """Same FO rematched twice must not double SO total / recovery."""
         user_id = 42

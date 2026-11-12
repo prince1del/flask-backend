@@ -2,6 +2,7 @@
 
 GET    /api/v1/order-fulfillment/payment-collection
 POST   /api/v1/order-fulfillment/payment-collection/entries
+PUT    /api/v1/order-fulfillment/payment-collection/entries/<id>
 DELETE /api/v1/order-fulfillment/payment-collection/entries/<id>
 """
 
@@ -103,6 +104,38 @@ def create_payment_entry():
         username=_username(),
     )
     return jsonify({"ok": True, "entry": entry}), 201
+
+
+@payment_collection_bp.route("/entries/<int:entry_id>", methods=["PUT"])
+@require_jwt_auth
+def update_payment_entry(entry_id: int):
+    workspace_id = get_workspace_id()
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = float(body["amount"]) if body.get("amount") is not None else None
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "amount must be a number"}), 400
+    payment_date = body.get("payment_date")
+    try:
+        entry = _db().update_distributor_payment_entry(
+            entry_id,
+            workspace_id,
+            amount=amount,
+            payment_date=str(payment_date) if payment_date is not None else None,
+            note=body.get("note"),
+            set_note="note" in body,
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    if entry is None:
+        return jsonify({"ok": False, "error": "Payment entry not found"}), 404
+    backup_so_payment_collection_to_drive(
+        db=_db(),
+        user_id=_user_id(),
+        workspace_id=workspace_id,
+        username=_username(),
+    )
+    return jsonify({"ok": True, "entry": entry})
 
 
 @payment_collection_bp.route("/entries/<int:entry_id>", methods=["DELETE"])

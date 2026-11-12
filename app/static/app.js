@@ -11747,6 +11747,7 @@ function renderPaymentCollection(distributors) {
           <td class="of-pay-num">${_payInr(p.amount)}</td>
           <td>${foEscapeText(p.note || '')}</td>
           <td>
+            ${typeof odmPaymentEditButton === 'function' ? odmPaymentEditButton('collection', p) : ''}
             <button type="button" class="nx-btn nx-btn-danger of-pay-del" data-entry-id="${p.id}">Delete</button>
           </td>
         </tr>`).join('');

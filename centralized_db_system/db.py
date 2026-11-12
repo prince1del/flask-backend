@@ -9571,6 +9571,66 @@ class CentralizedDB:
             "created_at": created_at,
         }
 
+    def update_distributor_payment_entry(
+        self,
+        entry_id: int,
+        workspace_id: str,
+        *,
+        amount: float | None = None,
+        payment_date: str | None = None,
+        note: str | None = None,
+        set_note: bool = False,
+    ) -> dict[str, Any] | None:
+        """Correct an SO payment entry (amount / date / note). None when not found."""
+        ws = (workspace_id or "default").strip() or "default"
+        sets: list[str] = []
+        params: list[Any] = []
+        if amount is not None:
+            if float(amount) <= 0:
+                raise ValueError("Payment amount must be greater than zero")
+            sets.append("amount = ?")
+            params.append(round(float(amount), 2))
+        if payment_date is not None:
+            if not str(payment_date).strip():
+                raise ValueError("payment_date is required (YYYY-MM-DD)")
+            sets.append("payment_date = ?")
+            params.append(str(payment_date).strip())
+        if set_note:
+            sets.append("note = ?")
+            params.append((note or "").strip() or None)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if sets:
+                cur = conn.execute(
+                    f"UPDATE distributor_payment_entries SET {', '.join(sets)} "
+                    "WHERE id = ? AND workspace_id = ?",
+                    (*params, int(entry_id), ws),
+                )
+                conn.commit()
+                if cur.rowcount == 0:
+                    return None
+            row = conn.execute(
+                "SELECT id, distributor_id, tracking_id, order_ref_no, amount, payment_date, note, "
+                "created_by, created_at FROM distributor_payment_entries WHERE id = ? AND workspace_id = ?",
+                (int(entry_id), ws),
+            ).fetchone()
+        if row is None:
+            return None
+        tracking_id = int(row["tracking_id"]) if row["tracking_id"] is not None else None
+        if tracking_id is not None and sets:
+            self._sync_tracking_payment_status(tracking_id, workspace_id=ws)
+        return {
+            "id": int(row["id"]),
+            "distributor_id": int(row["distributor_id"]),
+            "tracking_id": tracking_id,
+            "order_ref_no": row["order_ref_no"],
+            "amount": float(row["amount"] or 0),
+            "payment_date": row["payment_date"],
+            "note": row["note"] or "",
+            "created_by": row["created_by"],
+            "created_at": row["created_at"],
+        }
+
     def delete_distributor_payment_entry(
         self, entry_id: int, workspace_id: str
     ) -> dict[str, Any] | None:
@@ -18201,6 +18261,61 @@ class CentralizedDB:
                 "FROM distributor_category_payments WHERE id = ?",
                 (cur.lastrowid,),
             ).fetchone()
+        return {
+            "id": row[0],
+            "distributor_id": row[1],
+            "season": row[2],
+            "category": row[3],
+            "amount": float(row[4] or 0),
+            "payment_date": row[5],
+            "note": row[6],
+            "created_at": row[7],
+        }
+
+    def update_distributor_category_payment(
+        self,
+        user_id: int,
+        deposit_id: int,
+        *,
+        amount: float | None = None,
+        payment_date: str | None = None,
+        note: str | None = None,
+        set_note: bool = False,
+    ) -> dict[str, Any] | None:
+        """Correct a recorded deposit (amount / date / note). None when not found."""
+        self.ensure_distributor_category_payments_table()
+        sets: list[str] = []
+        params: list[Any] = []
+        if amount is not None:
+            if float(amount) <= 0:
+                raise ValueError("amount must be > 0")
+            sets.append("amount = ?")
+            params.append(round(float(amount), 2))
+        if payment_date is not None:
+            if not str(payment_date).strip():
+                raise ValueError("payment_date is required")
+            sets.append("payment_date = ?")
+            params.append(str(payment_date).strip())
+        if set_note:
+            sets.append("note = ?")
+            params.append((note or "").strip() or None)
+        with sqlite3.connect(self.db_path) as conn:
+            if sets:
+                cur = conn.execute(
+                    f"UPDATE distributor_category_payments SET {', '.join(sets)} "
+                    "WHERE id = ? AND user_id = ?",
+                    (*params, deposit_id, user_id),
+                )
+                conn.commit()
+                if cur.rowcount == 0:
+                    return None
+            row = conn.execute(
+                "SELECT id, distributor_id, season, category, amount, payment_date, note, created_at "
+                "FROM distributor_category_payments WHERE id = ? AND user_id = ?",
+                (deposit_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
         return {
             "id": row[0],
             "distributor_id": row[1],

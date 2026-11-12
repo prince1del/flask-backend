@@ -6425,6 +6425,44 @@ def set_distributor_tds_applicable() -> Response:
 
 
 @data_blueprint.route(
+    "/api/v1/distributor-payments/deposits/<int:deposit_id>", methods=["PUT"]
+)
+@require_jwt_auth
+def update_distributor_payment_deposit(deposit_id: int) -> Response:
+    """Correct a wrong deposit: any of amount, payment_date, note."""
+    db = CentralizedDB(_db_path())
+    user_id = _current_user_id()
+    if not user_id:
+        return _json_response({"success": False, "error": {"message": "Not signed in"}}, 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        amount = float(payload["amount"]) if payload.get("amount") is not None else None
+    except (TypeError, ValueError):
+        return _json_response({"success": False, "error": {"message": "amount must be a number"}}, 400)
+    payment_date = payload.get("payment_date")
+    try:
+        entry = db.update_distributor_category_payment(
+            user_id,
+            deposit_id,
+            amount=amount,
+            payment_date=str(payment_date) if payment_date is not None else None,
+            note=payload.get("note"),
+            set_note="note" in payload,
+        )
+    except ValueError as exc:
+        return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
+    if entry is None:
+        return _json_response({"success": False, "error": {"message": "Deposit not found"}}, 404)
+    backup_category_payment_status_to_drive(
+        db=db,
+        user_id=user_id,
+        workspace_id=get_workspace_id(),
+        username=_request_username(),
+    )
+    return _json_response({"success": True, "data": {"entry": entry}})
+
+
+@data_blueprint.route(
     "/api/v1/distributor-payments/deposits/<int:deposit_id>", methods=["DELETE"]
 )
 @require_jwt_auth

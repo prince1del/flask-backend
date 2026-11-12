@@ -116,6 +116,80 @@ function renderPendingSo() {
   }).join('');
 }
 
+/* ------------------------------------------------- Edit a payment entry */
+
+const ODM_PAYMENT_EDIT = {
+  deposit: {
+    url: (id) => `/api/v1/distributor-payments/deposits/${id}`,
+    reload: () => loadDistributorHisaab(),
+  },
+  collection: {
+    url: (id) => `/api/v1/order-fulfillment/payment-collection/entries/${id}`,
+    reload: () => loadPaymentCollection(),
+  },
+};
+
+function odmPaymentEditButton(kind, p) {
+  return `<button type="button" class="nx-btn of-pay-edit" data-kind="${kind}" data-id="${odmEsc(p.id)}"
+    data-amount="${odmEsc(p.amount)}" data-date="${odmEsc(p.payment_date || '')}" data-note="${odmEsc(p.note || '')}"
+    onclick="odmStartPaymentEdit(this)">Edit</button>`;
+}
+
+function odmStartPaymentEdit(btn) {
+  const row = btn.closest('tr');
+  if (!row || row.hidden) return;
+  const editRow = document.createElement('tr');
+  editRow.innerHTML = `<td colspan="${row.children.length}">
+    <form class="of-pay-add-form of-pay-edit-form">
+      <label>Date <input type="date" name="payment_date" required value="${odmEsc(btn.dataset.date.slice(0, 10))}" /></label>
+      <label>Amount <input type="number" name="amount" min="1" step="0.01" required value="${odmEsc(btn.dataset.amount)}" /></label>
+      <label>Note <input type="text" name="note" value="${odmEsc(btn.dataset.note)}" /></label>
+      <button type="submit" class="nx-btn nx-btn-primary">Save</button>
+      <button type="button" class="nx-btn" data-cancel>Cancel</button>
+    </form></td>`;
+  row.hidden = true;
+  row.after(editRow);
+  const form = editRow.querySelector('form');
+  form.querySelector('[data-cancel]').addEventListener('click', () => {
+    editRow.remove();
+    row.hidden = false;
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    odmSavePaymentEdit(form, btn.dataset.kind, btn.dataset.id, Number(btn.dataset.amount));
+  });
+  form.querySelector('input[name="amount"]').focus();
+}
+
+async function odmSavePaymentEdit(form, kind, id, oldAmount) {
+  const cfg = ODM_PAYMENT_EDIT[kind];
+  const amount = Number(form.amount.value);
+  if (!cfg || !(amount > 0) || !form.payment_date.value) return;
+  if (Math.abs(amount - oldAmount) >= 1
+    && !confirm(`Change amount from ${odmInr(oldAmount)} to ${odmInr(amount)}?`)) return;
+  form.querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
+  try {
+    const response = await fetchWithAuth(cfg.url(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount,
+        payment_date: form.payment_date.value,
+        note: form.note.value.trim(),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.success === false || data.ok === false) {
+      const err = data.error;
+      throw new Error((err && err.message) || (typeof err === 'string' ? err : '') || 'Save failed');
+    }
+    await cfg.reload();
+  } catch (error) {
+    alert(error.message || 'Save failed');
+    form.querySelectorAll('button, input').forEach((el) => { el.disabled = false; });
+  }
+}
+
 /* --------------------------------------------------------------- Hisaab */
 
 const ODM_ALERT_CLASS = { alert: 'is-due', warn: 'is-partial', info: '' };
@@ -151,7 +225,8 @@ function renderDistributorHisaab(distributors) {
       <li><span class="of-pay-pill ${ODM_ALERT_CLASS[a.level] || ''}">${odmEsc(String(a.level || 'info').toUpperCase())}</span> ${odmEsc(a.text)}</li>`).join('');
     const cats = (d.categories || []).map((c) => {
       const deposits = (c.deposits || []).map((p) => `
-        <tr><td>${odmEsc(p.payment_date || '—')}</td><td class="of-pay-num">${odmInr(p.amount)}</td><td>${odmEsc(p.note || '')}</td></tr>`).join('');
+        <tr><td>${odmEsc(p.payment_date || '—')}</td><td class="of-pay-num">${odmInr(p.amount)}</td><td>${odmEsc(p.note || '')}</td>
+        <td>${p.id != null ? odmPaymentEditButton('deposit', p) : ''}</td></tr>`).join('');
       const cis = (c.cis || []).map((ci) => {
         const cls = ci.status === 'paid' ? 'is-paid' : (ci.status === 'part_paid' ? 'is-partial' : 'is-due');
         const label = ci.status === 'paid' ? 'PAID' : (ci.status === 'part_paid' ? 'PART PAID' : 'UNPAID');
@@ -185,8 +260,8 @@ function renderDistributorHisaab(distributors) {
             <p class="of-pane-help">${odmEsc(terms)}</p>
             <h4 class="of-hisaab-h">Payments received</h4>
             <table class="data-table of-pay-table">
-              <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
-              <tbody>${deposits || '<tr><td colspan="3">No deposits yet.</td></tr>'}</tbody>
+              <thead><tr><th>Date</th><th>Amount</th><th>Note</th><th></th></tr></thead>
+              <tbody>${deposits || '<tr><td colspan="4">No deposits yet.</td></tr>'}</tbody>
             </table>
             <h4 class="of-hisaab-h">CI (bills) — oldest payment pays the oldest CI first</h4>
             <table class="data-table of-pay-table">
