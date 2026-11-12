@@ -213,3 +213,30 @@ def test_so_by_article_finds_latest_run_only():
     assert out["so_numbers"] == ["102877001"] and out["count"] == 1
     assert so_by_article_for_ai([run(9, "1")], article="aster", category="Bath")["count"] == 0
     assert "error" in so_by_article_for_ai([run(9, "1")], article="")
+
+
+def test_daily_ai_limit_stops_ai_and_lets_engine_answer(tmp_path, monkeypatch):
+    import pytest
+    from app.services import nexora_ai_agent as a
+
+    monkeypatch.setattr(a, "_db_path", lambda: str(tmp_path / "limit.sqlite3"))
+    monkeypatch.setenv("NEXORA_AI_DAILY_LIMIT", "2")
+    for _ in range(2):
+        a._log_usage(user_id=5, feature="nexora_agent", model="m", rounds=1, prompt_tokens=1,
+                     output_tokens=1, total_tokens=2, query="q")
+    a._log_usage(user_id=6, feature="nexora_agent", model="m", rounds=1, prompt_tokens=1,
+                 output_tokens=1, total_tokens=2, query="q")
+    assert a.used_today(5, "ai") == 2 and a.over_daily_limit(5, "ai")
+    assert not a.over_daily_limit(6, "ai")
+    with pytest.raises(a.NexoraAiAgentError):
+        a.ask_order_desk("Savitri ke kitne CI", user_id=5, workspace_id="ws")
+    monkeypatch.setenv("NEXORA_AI_DAILY_LIMIT", "0")
+    assert not a.over_daily_limit(5, "ai")
+
+
+def test_voice_cache_only_past_limit(tmp_path):
+    import pytest
+    from app.services import nexora_voice as nv
+
+    with pytest.raises(nv.VoiceError):
+        nv.synthesize("naya jawab", voice="Kore", api_key="k", db_path=str(tmp_path / "x.sqlite3"), cache_only=True)

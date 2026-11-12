@@ -1254,6 +1254,45 @@ def _log_usage(
         pass  # usage logging must never break the actual answer
 
 
+_DAILY_AI_LIMIT_DEFAULT = 50
+_DAILY_VOICE_LIMIT_DEFAULT = 100
+
+
+def daily_limit(kind: str) -> int:
+    """Per-user AI calls allowed per day (IST). Env NEXORA_AI_DAILY_LIMIT /
+    NEXORA_VOICE_DAILY_LIMIT override; 0 = no limit."""
+    env = "NEXORA_VOICE_DAILY_LIMIT" if kind == "voice" else "NEXORA_AI_DAILY_LIMIT"
+    default = _DAILY_VOICE_LIMIT_DEFAULT if kind == "voice" else _DAILY_AI_LIMIT_DEFAULT
+    try:
+        return max(0, int(os.getenv(env) or default))
+    except ValueError:
+        return default
+
+
+def used_today(user_id: int, kind: str) -> int:
+    """This user's AI calls today (India day), from ai_agent_usage_log."""
+    feature_sql = "feature = 'nexora_voice'" if kind == "voice" else "feature LIKE 'nexora_agent%'"
+    try:
+        conn = sqlite3.connect(_db_path())
+        try:
+            _ensure_usage_schema(conn)
+            row = conn.execute(
+                f"SELECT count(*) FROM ai_agent_usage_log WHERE user_id = ? AND {feature_sql} "
+                "AND date(created_at, '+330 minutes') = date('now', '+330 minutes')",
+                (int(user_id),),
+            ).fetchone()
+        finally:
+            conn.close()
+        return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+def over_daily_limit(user_id: int | None, kind: str) -> bool:
+    limit = daily_limit(kind)
+    return bool(user_id is not None and limit and used_today(int(user_id), kind) >= limit)
+
+
 def get_usage_summary(*, user_id: int, all_users: bool, days: int = 30) -> dict[str, Any]:
     conn = sqlite3.connect(_db_path())
     try:
@@ -1465,6 +1504,9 @@ def ask_order_desk(
     Achievement, PJP, or Distributor Payment Status) and return the final
     text answer. `history` = earlier turns of this conversation (follow-ups).
     Raises NexoraAiAgentError on hard failure."""
+    if over_daily_limit(user_id, "ai"):
+        # Callers fall back to the rule engine, so the user still gets an answer.
+        raise NexoraAiAgentError(f"Daily AI limit ({daily_limit('ai')}) reached for this user")
     contents: list[dict[str, Any]] = [
         *_history_contents(history),
         {"role": "user", "parts": [{"text": query}]},

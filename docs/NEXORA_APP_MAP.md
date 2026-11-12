@@ -241,6 +241,10 @@ Natural-language questions over the user's data ("how much CD does X pay").
   `get_pending_so`). A later question of the same shape fetches that data first, so
   the AI writes the answer in one round (≈5 s → ≈2 s). Follow-ups are not learned;
   numbers are always fetched fresh. Usage rows show `nexora_agent_learned`.
+- Limits: each user gets 50 AI questions and 100 new voice clips per India day
+  (`NEXORA_AI_DAILY_LIMIT`, `NEXORA_VOICE_DAILY_LIMIT`; 0 = off), counted from
+  `ai_agent_usage_log`. Past the limit the rule engine answers and only cached voice
+  clips play. Every Gemini call carries `maxOutputTokens` so a stuck call stays cheap.
 - Voice: `POST /api/v1/ai/voice` {text, voice?} → WAV in a natural Hinglish voice
   (`app/services/nexora_voice.py`, Gemini `gemini-3.8-flash-tts`, disk cache
   `tts_cache/` next to the SQLite file). `GET /api/v1/ai/voices` + `POST .../voices/select`

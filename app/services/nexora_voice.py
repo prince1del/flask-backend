@@ -122,8 +122,12 @@ def _prune(cache: Path) -> None:
             pass
 
 
-def synthesize(text: str, *, voice: str, api_key: str, db_path: str) -> tuple[bytes, dict]:
-    """Return (wav_bytes, info). info: model, cached, chars, tokens."""
+def synthesize(
+    text: str, *, voice: str, api_key: str, db_path: str, cache_only: bool = False
+) -> tuple[bytes, dict]:
+    """Return (wav_bytes, info). info: model, cached, chars, tokens.
+
+    cache_only=True (daily limit reached): serve a saved clip or raise VoiceError."""
     spoken = speakable_text(text)
     if not spoken:
         raise VoiceError("Nothing to say")
@@ -134,6 +138,8 @@ def synthesize(text: str, *, voice: str, api_key: str, db_path: str) -> tuple[by
     if hit.exists():
         os.utime(hit)
         return hit.read_bytes(), {"cached": True, "voice": voice, "chars": len(spoken)}
+    if cache_only:
+        raise VoiceError("Daily voice limit reached")
     if not api_key:
         raise VoiceError("GEMINI_API_KEY not configured on the server")
 

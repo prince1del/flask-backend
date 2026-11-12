@@ -127,6 +127,9 @@ def ai_voice():
     text = str(payload.get("text") or "").strip()
     if not text:
         return jsonify({"success": False, "error": {"message": "text is required"}}), 400
+    # Replaying a cached answer is free, so only new audio counts toward the
+    # daily limit; synthesize() serves cache hits before calling Gemini.
+    limit_hit = agent.over_daily_limit(user_id, "voice")
     try:
         audio, info = synthesize(
             text[:6000],
@@ -134,6 +137,7 @@ def ai_voice():
             voice=str(payload.get("voice") or "") or _saved_voice(user_id),
             api_key=_gemini_key(),
             db_path=str(current_app.config.get("DATABASE_PATH") or "centralized_db.sqlite3"),
+            cache_only=limit_hit,
         )
     except VoiceError as exc:
         return jsonify({"success": False, "error": {"message": str(exc)}}), 503
