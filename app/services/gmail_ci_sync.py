@@ -11,6 +11,7 @@ import base64
 import json
 import logging
 import os
+import re
 import tempfile
 from typing import Any
 
@@ -106,7 +107,7 @@ def _extract_message_pdfs(
     return subject, email_date, attachments
 
 
-def _pdf_has_text_layer(data: bytes) -> bool:
+def _pdf_text(data: bytes) -> str:
     from app.three_step_verification import _extract_pdf_text
 
     tmp_path = None
@@ -114,15 +115,26 @@ def _pdf_has_text_layer(data: bytes) -> bool:
         fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
         with os.fdopen(fd, "wb") as tmp_f:
             tmp_f.write(data)
-        return bool((_extract_pdf_text(tmp_path) or "").strip())
+        return _extract_pdf_text(tmp_path) or ""
     except Exception:
-        return False
+        return ""
     finally:
         if tmp_path:
             try:
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def _pdf_has_text_layer(data: bytes) -> bool:
+    return bool(_pdf_text(data).strip())
+
+
+def is_bombay_dyeing_document(text: str) -> bool:
+    """Real Bombay Dyeing CIs always print the company name; shop / app / SaaS
+    bills that also say "invoice" or "receipt" do not."""
+    flat = re.sub(r"[^a-z]", "", (text or "").lower())
+    return "bombaydyeing" in flat
 
 
 def _finish(db, *, user_id: int, workspace_id: str, summary: dict[str, Any]) -> dict[str, Any]:
@@ -234,7 +246,8 @@ def poll_for_user(
             handled_any = False
             for filename, data in attachments:
                 summary["attachments_seen"] += 1
-                if not _pdf_has_text_layer(data):
+                text = _pdf_text(data)
+                if not text.strip():
                     summary["attachments_unreadable"] += 1
                     summary["unreadable_files"].append(
                         {
@@ -242,6 +255,19 @@ def poll_for_user(
                             "subject": subject,
                             "filename": filename,
                             "reason": "no_text_layer",
+                        }
+                    )
+                    continue
+
+                if not is_bombay_dyeing_document(text):
+                    # Not a Bombay Dyeing CI (online shopping / subscription bill):
+                    # leave it out instead of asking the user to pick a distributor.
+                    summary["skipped_reasons"].append(
+                        {
+                            "message_id": message_id,
+                            "subject": subject,
+                            "filename": filename,
+                            "reason": "not_bombay_dyeing",
                         }
                     )
                     continue

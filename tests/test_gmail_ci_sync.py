@@ -62,3 +62,13 @@ def test_ingest_one_ci_pdf_includes_preview_on_review(monkeypatch):
     row = data_routes._ingest_one_ci_pdf("ci.pdf", b"%PDF-1.4 test")
     assert row["state"] == "review"
     assert row.get("preview") == preview
+
+
+def test_only_bombay_dyeing_pdfs_count_as_ci():
+    from app.services.gmail_ci_sync import is_bombay_dyeing_document
+
+    assert is_bombay_dyeing_document("THE BOMBAY DYEING & MFG. CO. LTD.\nTax Invoice No. 1400010999")
+    assert is_bombay_dyeing_document("Bombay\nDyeing commercial invoice")
+    assert not is_bombay_dyeing_document("Receipt #2961  Paid with card  Market Street")
+    assert not is_bombay_dyeing_document("GST Invoice  Order ID 4057  Sold by Example Retail")
+    assert not is_bombay_dyeing_document("")
