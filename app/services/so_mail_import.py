@@ -239,6 +239,19 @@ def compare_mail_vs_pack(parsed: dict[str, Any], pack: dict[str, Any] | None) ->
 # -------------------------------------------------------------- checks
 
 
+AUTO_DISTRIBUTOR_SCORE = 85
+
+
+def auto_answers(questions: list[dict[str, Any]]) -> dict[str, str] | None:
+    """Answers NEXORA can give on its own, or None when any question needs the person."""
+    out: dict[str, str] = {}
+    for q in questions or []:
+        if not q.get("auto"):
+            return None
+        out[q["key"]] = q["auto"]
+    return out
+
+
 def evaluate_checks(
     parsed: dict[str, Any],
     compare: dict[str, Any] | None,
@@ -266,6 +279,8 @@ def evaluate_checks(
                     ". Order Desk uses the PDF. Save with the PDF figures?",
             "options": [{"value": "pdf", "label": "Save with PDF figures"},
                         {"value": "ignore", "label": "Ignore this mail"}],
+            "auto": "pdf",
+            "auto_reason": "Mail and SO PDF differ — used the SO PDF figures (Order Desk always uses the PDF)",
         })
 
     # 2) Distributor
@@ -275,10 +290,14 @@ def evaluate_checks(
     else:
         checks.append({"key": "distributor", "ok": False,
                        "text": "Distributor not certain" + (f" (best guess {dist.get('name')})" if dist else "")})
+        good_guess = bool(dist) and float(dist.get("score") or 0) >= AUTO_DISTRIBUTOR_SCORE
         questions.append({"key": "distributor",
                           "text": "Which distributor is this mail for?"
                                   + (f" Best guess: {dist.get('name')}." if dist else ""),
-                          "options": [{"value": "pick", "label": "Pick distributor"}]})
+                          "options": [{"value": "pick", "label": "Pick distributor"}],
+                          "auto": "pick" if good_guess else None,
+                          "auto_reason": f"Distributor taken as {dist.get('name')} (name match "
+                                         f"{float(dist.get('score') or 0):.0f}%)" if good_guess else None})
 
     # 3) Filled Order present and quantities line up (±5%)
     cands = proposal.get("filled_order_candidates") or []
@@ -294,7 +313,11 @@ def evaluate_checks(
                           "text": f"Order sheet has {fo_qty:,.0f} pcs but the mail has {mail_qty:,.0f}. "
                                   "Match the SOs against it anyway?",
                           "options": [{"value": "match", "label": "Match anyway"},
-                                      {"value": "ignore", "label": "Ignore this mail"}]})
+                                      {"value": "ignore", "label": "Ignore this mail"}],
+                          "auto": "match" if mail_qty <= fo_qty * 1.05 else None,
+                          "auto_reason": f"Matched with the order sheet ({fo_qty:,.0f} pcs ordered, "
+                                         f"{mail_qty:,.0f} pcs in this mail)"
+                                         if mail_qty <= fo_qty * 1.05 else None})
     else:
         checks.append({"key": "filled_order", "ok": False, "text": "No Filled Order for this category"})
         questions.append({"key": "filled_order",
@@ -314,6 +337,16 @@ def evaluate_checks(
         if cd_same and cur_tds == mail_tds:
             checks.append({"key": "payment", "ok": True, "text": "CD/TDS same as Payment"})
         else:
+            tds_blank = bool(summary.get("tds_dash"))
+            if cd_same and tds_blank:
+                auto_pay = "keep"
+                auto_pay_reason = (f"Mail leaves TDS blank — kept TDS {'yes' if cur_tds else 'no'} "
+                                   "as in Payment")
+            else:
+                auto_pay = "mail"
+                auto_pay_reason = (f"CD/TDS set from the Bombay Dyeing mail: CD {mail_cd}% / TDS "
+                                   f"{'yes' if mail_tds else 'no'} (was CD {cur_cd}% / TDS "
+                                   f"{'yes' if cur_tds else 'no'})")
             checks.append({"key": "payment", "ok": False,
                            "text": f"Payment has CD {cur_cd}% / TDS {'yes' if cur_tds else 'no'}; "
                                    f"mail says CD {mail_cd}% / TDS {'yes' if mail_tds else 'no'}"})
@@ -323,6 +356,8 @@ def evaluate_checks(
                         f"the mail says CD {mail_cd}% and TDS {'yes' if mail_tds else 'no'}. Which to keep?",
                 "options": [{"value": "keep", "label": "Keep current"},
                             {"value": "mail", "label": "Use the mail"}],
+                "auto": auto_pay,
+                "auto_reason": auto_pay_reason,
             })
 
     # 5) Not already in Order Desk
@@ -331,8 +366,12 @@ def evaluate_checks(
         checks.append({"key": "duplicate", "ok": True, "text": "SOs are new"})
     else:
         total = len(parsed.get("so_rows") or [])
-        checks.append({"key": "duplicate", "ok": False,
-                       "text": f"{len(already)} of {total} SOs already in Order Desk"})
+        if len(already) >= total:
+            checks.append({"key": "duplicate", "ok": True,
+                           "text": "SOs already in Order Desk — only CD/TDS/due date to apply"})
+        else:
+            checks.append({"key": "duplicate", "ok": False,
+                           "text": f"{len(already)} of {total} SOs already in Order Desk"})
         if len(already) < total:
             questions.append({"key": "duplicate",
                               "text": f"{len(already)} of these SOs are already in Order Desk. "
@@ -397,7 +436,7 @@ def refresh_checks(items: list[dict[str, Any]], existing_payment=None) -> list[d
             continue
         proposal["checks"] = checks
         proposal["questions"] = questions
-        proposal["auto_ok"] = item.get("status") == "review" and not questions
+        proposal["auto_ok"] = auto_answers(questions) is not None
     return items
 
 
@@ -508,7 +547,7 @@ def stage_mail(
         checks, questions = evaluate_checks(parsed, compare, proposal, current)
         proposal["checks"] = checks
         proposal["questions"] = questions
-        proposal["auto_ok"] = status == "review" and not questions
+        proposal["auto_ok"] = auto_answers(questions) is not None
 
     now = _now()
     cur = conn.execute(
@@ -562,7 +601,7 @@ def scan_mailbox(user_id: int, workspace_id: str, max_messages: int = 50,
                     existing_payment=lambda did, season, cat: current_payment(db, user_id, did, season, cat),
                 )
                 final = res["status"]
-                if res["new"] and final == "review" and auto_save:
+                if res["new"] and final in ("review", "already_imported") and auto_save:
                     final = auto_process(conn, user_id=user_id, workspace_id=workspace_id,
                                          import_id=res["id"], db=db)
                 out["staged"] += 1
@@ -571,6 +610,13 @@ def scan_mailbox(user_id: int, workspace_id: str, max_messages: int = 50,
             except Exception as exc:
                 logger.exception("SO mail staging failed for %s", m["id"])
                 out["errors"].append({"message_id": m["id"], "error": str(exc)})
+        if auto_save:
+            try:
+                out["auto_saved"] = out.get("auto_saved", 0) + auto_process_open(
+                    conn, user_id=user_id, workspace_id=workspace_id, db=db)
+            except Exception as exc:
+                logger.exception("SO mail auto-save of waiting mails failed")
+                out["errors"].append({"error": f"auto-save: {exc}"})
     finally:
         conn.close()
     return out
@@ -708,7 +754,10 @@ def confirm_import(
                      source=f"so_mail:{import_id}")
         payment["due_date"] = prop["due_date"]
 
-    result = {"matches": results, "payment": payment, "undo": undo, "previous_status": rec["status"]}
+    decisions = [q.get("auto_reason") for q in (prop.get("questions") or [])
+                 if auto and q.get("auto_reason") and answers.get(q.get("key")) == q.get("auto")]
+    result = {"matches": results, "payment": payment, "undo": undo, "previous_status": rec["status"],
+              "auto_decisions": decisions}
     conn.execute(
         "UPDATE so_mail_imports SET status=?, result_json=?, proposal_json=?, updated_at=? "
         "WHERE id=? AND user_id=? AND workspace_id=?",
@@ -793,28 +842,66 @@ def undo_import(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, im
 
 def auto_process(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, import_id: int,
                  db=None, match_fn=None) -> str:
-    """Auto-save a staged mail when every check passed; else leave it for review."""
+    """Save a staged mail on its own when every question has an automatic answer."""
     rec = get_import(conn, user_id, workspace_id, import_id)
-    if not rec or rec["status"] != "review" or not (rec.get("proposal") or {}).get("auto_ok"):
+    if not rec or rec["status"] not in ("review", "already_imported"):
         return rec["status"] if rec else "missing"
+    prop = rec.get("proposal") or {}
+    answers = auto_answers(prop.get("questions") or [])
+    if not prop.get("auto_ok") or answers is None:
+        return rec["status"]
+    overrides: dict[str, Any] = {"answers": answers}
+    if answers.get("distributor") == "pick" and (prop.get("distributor") or {}).get("id"):
+        overrides["distributor_id"] = int(prop["distributor"]["id"])
     try:
         confirm_import(conn, user_id=user_id, workspace_id=workspace_id, import_id=import_id,
-                       db=db, match_fn=match_fn, auto=True)
+                       overrides=overrides, db=db, match_fn=match_fn, auto=True)
         return "auto_saved"
     except Exception as exc:
         # e.g. Order Desk asks replace/split — turn it into a question instead.
-        prop = dict(rec.get("proposal") or {})
+        prop = dict(prop)
         prop["auto_ok"] = False
-        prop.setdefault("questions", []).append({
+        prop["questions"] = [q for q in (prop.get("questions") or []) if q.get("key") != "order_desk"] + [{
             "key": "order_desk",
             "text": f"Order Desk could not save automatically: {exc}",
             "options": [{"value": "match", "label": "Try again"},
                         {"value": "ignore", "label": "Ignore this mail"}],
-        })
+        }]
         conn.execute("UPDATE so_mail_imports SET proposal_json=?, error=?, updated_at=? WHERE id=?",
                      (json.dumps(prop), str(exc)[:500], _now(), import_id))
         conn.commit()
-        return "review"
+        return rec["status"]
+
+
+def auto_process_open(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, db,
+                      match_fn=None) -> int:
+    """Re-check every waiting mail (Payment or Order Desk may have changed since)
+    and save the ones NEXORA can now answer on its own. Returns how many saved."""
+    items = [i for i in list_imports(conn, user_id, workspace_id)
+             if i.get("status") in ("review", "already_imported")
+             and not any(q.get("key") == "order_desk" for q in (i.get("proposal") or {}).get("questions") or [])]
+    if not items:
+        return 0
+    try:
+        status = db.list_distributor_category_payment_status(user_id) or []
+    except Exception:
+        status = None
+    refresh_checks(items, existing_payment=lambda did, season, cat: current_payment(
+        db, user_id, did, season, cat, status=status))
+    saved = 0
+    for item in items:
+        conn.execute("UPDATE so_mail_imports SET proposal_json=? WHERE id=? AND user_id=? AND workspace_id=?",
+                     (json.dumps(item["proposal"]), item["id"], user_id, workspace_id))
+        conn.commit()
+        if auto_process(conn, user_id=user_id, workspace_id=workspace_id, import_id=item["id"],
+                        db=db, match_fn=match_fn) == "auto_saved":
+            saved += 1
+            status = None  # payment changed; reload for the next one
+            try:
+                status = db.list_distributor_category_payment_status(user_id) or []
+            except Exception:
+                pass
+    return saved
 
 
 def reject_import(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, import_id: int) -> bool:

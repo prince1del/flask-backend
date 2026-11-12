@@ -258,8 +258,10 @@ def test_payment_difference_becomes_question_and_keep_answer_leaves_payment(monk
         existing_payment=lambda d, s, c: {"cd_percent": 3.0, "tds_applicable": True},
     )
     prop = smi.get_import(conn, 1, "ws", res["id"])["proposal"]
-    assert prop["auto_ok"] is False
+    # Sample mail leaves TDS blank ("-"), so NEXORA keeps the TDS Payment already uses.
+    assert prop["auto_ok"] is True
     assert [q["key"] for q in prop["questions"]] == ["payment"]
+    assert prop["questions"][0]["auto"] == "keep"
     db = _FakeDb()
     smi.confirm_import(conn, user_id=1, workspace_id="ws", import_id=res["id"], db=db,
                        overrides={"answers": {"payment": "keep"}},
@@ -291,3 +293,57 @@ def test_refresh_checks_adds_questions_to_old_items():
     assert item["proposal"]["auto_ok"] is False
     assert any(c["key"] == "payment" and c["ok"] for c in item["proposal"]["checks"])
     assert "checks" not in done["proposal"]
+
+
+def test_blank_tds_in_mail_keeps_payment_tds():
+    q = smi.evaluate_checks(
+        {"summary": {"qty": 10, "tds_dash": True}, "so_rows": [{"so_number": "1"}]},
+        {"all_match": True},
+        {"distributor": {"id": 1, "name": "D", "score": 95}, "cd_percent": 3.0, "tds_applicable": False,
+         "filled_order_candidates": [{"total_piece_qty": 10}], "already_imported_sos": []},
+        {"cd_percent": 3.0, "tds_applicable": True},
+    )[1]
+    assert [(x["key"], x["auto"]) for x in q] == [("payment", "keep")]
+
+
+def test_all_sos_already_in_order_desk_is_not_a_question():
+    checks, q = smi.evaluate_checks(
+        {"summary": {"qty": 10}, "so_rows": [{"so_number": "1"}, {"so_number": "2"}]},
+        {"all_match": True},
+        {"distributor": {"id": 1, "name": "D", "score": 95}, "cd_percent": 3.0, "tds_applicable": False,
+         "filled_order_candidates": [{"total_piece_qty": 10}], "already_imported_sos": ["1", "2"]},
+        None,
+    )
+    assert q == []
+    assert all(c["ok"] for c in checks)
+
+
+def test_mail_bigger_than_order_still_asks():
+    q = smi.evaluate_checks(
+        {"summary": {"qty": 200}, "so_rows": [{"so_number": "1"}]},
+        {"all_match": True},
+        {"distributor": {"id": 1, "name": "D", "score": 95}, "cd_percent": 3.0, "tds_applicable": False,
+         "filled_order_candidates": [{"total_piece_qty": 100}], "already_imported_sos": []},
+        None,
+    )[1]
+    assert smi.auto_answers(q) is None
+
+
+def test_auto_process_open_saves_waiting_already_imported(monkeypatch):
+    conn = _db()
+    monkeypatch.setattr(smi, "candidate_filled_orders",
+                        lambda *a: [{"id": 55, "category": "Bed", "season": "AW26", "total_piece_qty": 300}])
+    monkeypatch.setattr(smi, "_already_imported", lambda *a: {"102870001", "102870002"})
+    res = smi.stage_mail(
+        conn, user_id=1, workspace_id="ws", message_id="m10", mail=_mail(),
+        analyze_pdfs=lambda p, l: _pack([("102870001", 100, 40000.0), ("102870002", 200, 60000.0)]),
+    )
+    assert smi.get_import(conn, 1, "ws", res["id"])["status"] == "already_imported"
+    db = _FakeDb()
+    db.list_distributor_category_payment_status = lambda uid: []
+    saved = smi.auto_process_open(conn, user_id=1, workspace_id="ws", db=db,
+                                  match_fn=lambda p, f: {"status_code": 200, "body": {"success": True}})
+    assert saved == 1
+    rec = smi.get_import(conn, 1, "ws", res["id"])
+    assert rec["status"] == "auto_saved"
+    assert db.calls  # CD/TDS set
