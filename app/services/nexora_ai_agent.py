@@ -27,7 +27,8 @@ from app.services.gemini_models import get_ocr_gemini_models
 from app.services.visiting_card_ocr import _gemini_key
 
 MAX_TOOL_ROUNDS = 4
-_AGENT_TIMEOUT_S = 75
+_AGENT_TIMEOUT_S = 60
+_AGENT_FIRST_TRY_TIMEOUT_S = 25
 # Fast model first for the agent; the OCR list (GEMINI_FLASH_MODEL etc.) follows
 # as fallback. Override with GEMINI_AGENT_MODELS="model-a,model-b".
 _AGENT_DEFAULT_MODELS = ("gemini-3.6-flash",)
@@ -960,7 +961,11 @@ def _call_gemini(contents: list[dict[str, Any]]) -> tuple[dict[str, Any], str]:
         "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1024},
     }
     last_err = ""
-    for model in agent_gemini_models():
+    models = agent_gemini_models()
+    for idx, model in enumerate(models):
+        # A stuck model should hand over to the next one quickly; only the
+        # last model gets the full wait (phone gives up after 120 s).
+        timeout_s = _AGENT_TIMEOUT_S if idx == len(models) - 1 else _AGENT_FIRST_TRY_TIMEOUT_S
         model_body = body
         if model.startswith("gemini-3"):
             # Gemini 3 thinks by default and took 15-40 s per round on the server,
@@ -973,7 +978,7 @@ def _call_gemini(contents: list[dict[str, Any]]) -> tuple[dict[str, Any], str]:
             url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=_AGENT_TIMEOUT_S) as resp:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                 return json.loads(resp.read().decode("utf-8")), model
         except urllib.error.HTTPError as exc:
             try:
