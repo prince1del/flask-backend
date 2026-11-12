@@ -77,6 +77,7 @@ from app.routes import (
     mail_sync_bp,
 )
 import app.models  # register SQLAlchemy models
+from app.routes.app_updates import app_updates_bp
 from app.routes.auth import register_auth_hooks
 from app.routes.data import index as data_index
 from app.routes.order_reconciliation_api import order_reconciliation_blueprint
@@ -376,6 +377,7 @@ def create_app() -> Flask:
     app.register_blueprint(call_lists_bp)
     app.register_blueprint(ai_agent_bp)
     app.register_blueprint(mail_sync_bp)
+    app.register_blueprint(app_updates_bp)
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:

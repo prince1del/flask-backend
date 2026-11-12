@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,13 @@ from .order_reconciliation import normalize_product_code
 
 
 class CentralizedDB:
+    # Schema/seed/search-index bootstrap is idempotent but expensive (~2.4k
+    # statements + a commit). CentralizedDB() is constructed on every request
+    # (auth hook, route helpers), so run it once per process per DB file.
+    # Keyed by (path, device, inode) so a deleted/recreated file re-initialises.
+    _INIT_DONE: set = set()
+    _INIT_LOCK = threading.Lock()
+
     # ============ DYNAMIC SCHEMA MANAGER ============
 
     def init_schema_manager(self):
@@ -2645,7 +2653,27 @@ class CentralizedDB:
         # Lazy — constructing FirebaseSync on every CentralizedDB() flooded Render logs.
         self._firebase_sync: FirebaseSync | None = None
         self.article_service = ArticleMasterService(str(self.db_path))
-        self._initialize()
+        self._initialize_once()
+
+    def _init_key(self):
+        try:
+            st = os.stat(self.db_path)
+        except OSError:
+            return None
+        return (str(Path(self.db_path).resolve()), st.st_dev, st.st_ino)
+
+    def _initialize_once(self) -> None:
+        key = self._init_key()
+        if key is not None and key in CentralizedDB._INIT_DONE:
+            return
+        with CentralizedDB._INIT_LOCK:
+            key = self._init_key()
+            if key is not None and key in CentralizedDB._INIT_DONE:
+                return
+            self._initialize()
+            key = self._init_key()
+            if key is not None:
+                CentralizedDB._INIT_DONE.add(key)
 
     @property
     def firebase_sync(self) -> FirebaseSync:

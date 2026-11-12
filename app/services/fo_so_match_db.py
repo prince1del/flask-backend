@@ -1280,6 +1280,135 @@ def sum_pending_so_net_for_user(
     return round(total, 2)
 
 
+_PENDING_SO_RUNS_SQL = """
+    SELECT r.id, r.distributor_id, r.season, r.category, r.rows_json,
+           r.distributor_name
+    FROM fo_so_match_runs r
+    WHERE r.user_id = ?
+      AND r.id IN (
+        SELECT MAX(id)
+        FROM fo_so_match_runs
+        WHERE user_id = ?
+        GROUP BY CASE
+          WHEN filled_order_id IS NOT NULL
+            THEN 'fo:' || CAST(filled_order_id AS TEXT)
+          ELSE 'party:' || CAST(COALESCE(distributor_id, 0) AS TEXT)
+               || '|' || COALESCE(season, '')
+               || '|' || COALESCE(category, '')
+        END
+      )
+    ORDER BY r.id DESC
+"""
+
+
+def _so_articles_from_rows(rows: list[Any], so_number: str) -> list[dict[str, Any]]:
+    """Brand · size lines of one SO from FO↔SO match rows (SO-side qty/net)."""
+    merged: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        for cell in r.get("so_breakdown") or []:
+            if not isinstance(cell, dict):
+                continue
+            if str(cell.get("so_number") or "").strip() != so_number:
+                continue
+            qty = float(cell.get("qty") or 0)
+            net = float(cell.get("net") or 0) or float(cell.get("total") or 0)
+            if qty <= 0.05 and net <= 0.5:
+                continue
+            name = " · ".join(
+                p for p in (str(r.get("brand") or "").strip(), str(r.get("size") or "").strip()) if p
+            ) or "Article"
+            acc = merged.setdefault(name.lower(), {"name": name, "so_qty": 0.0, "so_net": 0.0})
+            acc["so_qty"] = round(acc["so_qty"] + qty, 3)
+            acc["so_net"] = round(acc["so_net"] + net, 2)
+    return sorted(merged.values(), key=lambda a: -a["so_net"])
+
+
+def list_pending_so_for_user(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:
+    """Unbilled / partly billed Sales Orders, one row per SO number.
+
+    Uses the same latest-run dedupe and partial-CI rule as
+    sum_pending_so_net_for_user (qty share first, else CI value), so the
+    Pending SO list always adds up to the Pending SO achievement total.
+    Fully billed SOs are omitted. Article lines are the SO's own lines; for a
+    partly billed SO their pending share is pro-rated (CI lines rarely map to
+    articles reliably), flagged with articles_prorated=True.
+    """
+    ensure_schema(conn)
+    billed = billed_so_keys_for_user(conn, user_id)
+    billings = list_ci_billings_for_user(conn, user_id)
+    runs = conn.execute(_PENDING_SO_RUNS_SQL, (user_id, user_id)).fetchall()
+    master_names: dict[int, str] = {}
+    try:
+        for mid, firm, name in conn.execute(
+            "SELECT id, firm_name, name FROM master_distributors"
+        ).fetchall():
+            label = (firm or "").strip() or (name or "").strip()
+            if label:
+                master_names[int(mid)] = label
+    except sqlite3.OperationalError:
+        pass
+
+    out: list[dict[str, Any]] = []
+    seen_so: set[str] = set()
+    for run_id, dist_id, season, category, rows_json, run_dist_name in runs:
+        dist_name = (
+            (master_names.get(int(dist_id)) if dist_id is not None else None)
+            or (run_dist_name or "").strip()
+            or "Distributor"
+        )
+        try:
+            loaded = json.loads(rows_json) if rows_json else []
+        except (TypeError, ValueError, json.JSONDecodeError):
+            loaded = []
+        rows = loaded if isinstance(loaded, list) else []
+        for so_n, acc in _compute_so_totals_from_rows(rows).items():
+            so_key = normalize_so_number(so_n) or str(so_n or "").strip()
+            if not so_key:
+                continue
+            dedupe = re.sub(r"[^a-z0-9]+", "", so_key.lower()) or so_key.upper()
+            if dedupe in seen_so:
+                continue
+            seen_so.add(dedupe)
+            so_net = float(acc.get("net") or 0) or float(acc.get("total") or 0)
+            so_qty = float(acc.get("qty") or 0)
+            ci_qty, ci_amount = _ci_billed_for_so(so_key, billings)
+            has_ci = _so_number_looks_billed(so_key, billed) or ci_qty > 0.05 or ci_amount > 0.05
+            pending_net = remaining_so_net_after_ci(
+                so_net, so_qty, ci_qty, ci_amount, has_ci=has_ci
+            )
+            if pending_net <= 0.5:
+                continue
+            ratio = (pending_net / so_net) if so_net > 0 else 1.0
+            pending_qty = round(max(0.0, so_qty - ci_qty), 3) if (has_ci and ci_qty > 0.05) else round(so_qty * ratio, 3)
+            articles = _so_articles_from_rows(rows, str(so_n).strip())
+            for a in articles:
+                a["pending_qty"] = round(a["so_qty"] * ratio, 3)
+                a["pending_net"] = round(a["so_net"] * ratio, 2)
+            out.append(
+                {
+                    "so_number": so_key,
+                    "distributor_id": dist_id,
+                    "distributor_name": dist_name,
+                    "season": season,
+                    "category": category,
+                    "match_run_id": run_id,
+                    "status": "partial" if has_ci else "open",
+                    "so_qty": round(so_qty, 3),
+                    "so_net": round(so_net, 2),
+                    "ci_qty": ci_qty,
+                    "ci_amount": ci_amount,
+                    "pending_qty": pending_qty,
+                    "pending_net": pending_net,
+                    "articles": articles,
+                    "articles_prorated": bool(has_ci),
+                }
+            )
+    out.sort(key=lambda x: (str(x["distributor_name"]).lower(), -x["pending_net"]))
+    return out
+
+
 def list_match_runs(
     conn: sqlite3.Connection,
     user_id: int | None = None,

@@ -4606,6 +4606,47 @@ def so_pack_save_article_master_only() -> Response:
         conn.close()
 
 
+@data_blueprint.route("/api/v1/order-fulfillment/pending-so", methods=["GET"])
+@require_jwt_auth
+def order_fulfillment_pending_so() -> Response:
+    """Pending SO tab: unbilled + partly billed SOs with remaining qty/net.
+
+    Server-side so phone/web/desktop share one rule (partial CI keeps the open
+    share) and the client needs one request instead of a detail call per run.
+    """
+    from app.services import fo_so_match_db as matchdb
+
+    user = getattr(request, "user", None)
+    try:
+        user_id = (
+            int(user["user_id"])
+            if isinstance(user, dict) and user.get("user_id") is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        user_id = None
+    if user_id is None:
+        return _json_response(
+            {"success": False, "error": {"message": "Authentication required"}},
+            401,
+        )
+    conn = sqlite3.connect(_db_path())
+    try:
+        items = matchdb.list_pending_so_for_user(conn, user_id)
+    finally:
+        conn.close()
+    return _json_response(
+        {
+            "success": True,
+            "data": {
+                "items": items,
+                "so_count": len(items),
+                "pending_net_total": round(sum(i["pending_net"] for i in items), 2),
+            },
+        }
+    )
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/order-match/list", methods=["GET"])
 @require_jwt_auth
 def order_match_list() -> Response:
