@@ -42,7 +42,7 @@ migration_temp/
 diagnose_*.py
 fix_*.py
 check_*.py
-tmp_*.py
+tmp_*
 patch_*.py
 scan_*.py
 _tmp_*.py
