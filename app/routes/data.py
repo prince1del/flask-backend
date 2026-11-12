@@ -8538,6 +8538,25 @@ _UNRESOLVED_ANSWER_MARKERS = (
 )
 
 
+_AI_QUESTION_WORDS = (
+    "kitne", "kitna", "kitni", "kitno", "how many", "how much", "total", "count",
+    "list", "dikhao", "batao", "bataiye", "konse", "kaunse", "kon se", "kaun se", "which",
+)
+_AI_DATA_WORDS = (
+    "ci", "cis", "so", "sos", "invoice", "bill", "billed", "pending", "hisaab", "hisab",
+    "baaki", "baki", "outstanding", "unpaid", "paid", "payment", "bed", "bath", "pillow",
+    "tob", "qty", "pcs", "order", "orders",
+)
+
+
+def _looks_like_ai_data_question(query: str) -> bool:
+    """A counting / hisaab question (needs the AI tools), not a plain name lookup."""
+    text = " " + re.sub(r"[^a-z0-9 ]+", " ", (query or "").lower()) + " "
+    has_question = any(f" {w} " in text for w in _AI_QUESTION_WORDS)
+    has_data = any(f" {w} " in text for w in _AI_DATA_WORDS)
+    return has_question and has_data
+
+
 def _is_unresolved_answer(answer: str) -> bool:
     """True for answers that mean Nexora couldn't understand or find the
     entity asked about — as opposed to a real, definitive business answer
@@ -9583,6 +9602,16 @@ def ai_assistant_query() -> Response:
                 for op, value in zip(ops, operands[1:]):
                     expr += f" {_CALC_OP_LABELS[op]} {_fmt_num(value)}"
                 answer = f"{ask_prefix} {expr} = {result_txt}"
+    elif (
+        user_id is not None
+        and workspace_id != "house_of_prizm"
+        and _looks_like_ai_data_question(query)
+    ):
+        # "Savitri ke kitne CI pending hai, kitne Bed kitne Bath" used to fall
+        # into the generic search below and come back as just "1 distributor:
+        # Savitri ...". Counting/hisaab questions go to the AI agent instead
+        # (the unresolved marker hands it over a few lines down).
+        answer = f"{ask_prefix} No matching information found."
     else:
         # Strip filler words so a sentence like "distributor kalra name" or
         # "aster ka mrp aur exmill kya hai" narrows to the actual search

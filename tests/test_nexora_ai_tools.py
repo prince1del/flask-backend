@@ -93,3 +93,14 @@ def test_agent_models_fast_first(monkeypatch):
     assert agent_gemini_models() == ("gemini-3.6-flash", "gemini-3.5-flash")
     monkeypatch.setenv("GEMINI_AGENT_MODELS", "m1,gemini-3.5-flash")
     assert agent_gemini_models() == ("m1", "gemini-3.5-flash")
+
+
+def test_phone_ask_sends_counting_questions_to_ai():
+    from app.routes.data import _looks_like_ai_data_question as q
+
+    assert q("Savitri Steel ki kitne CI pending hai, uske kitne Bed or kitne Bath hai?")
+    assert q("Bernina ke kitne SO pending hai?")
+    assert q("how much payment is outstanding for Kalra")
+    assert not q("Savitri Steel")
+    assert not q("Kalra ka number kya hai")
+    assert not q("aster ka mrp kya hai")
