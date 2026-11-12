@@ -214,3 +214,62 @@ def test_reject_and_other_users_isolated(staged):
     assert smi.get_import(conn, 2, "ws", res["id"]) is None
     assert smi.reject_import(conn, user_id=2, workspace_id="ws", import_id=res["id"]) is False
     assert smi.reject_import(conn, user_id=1, workspace_id="ws", import_id=res["id"]) is True
+
+
+def test_all_checks_pass_means_auto_ok(staged):
+    conn, res = staged
+    prop = smi.get_import(conn, 1, "ws", res["id"])["proposal"]
+    assert [c["ok"] for c in prop["checks"]] == [True, True, True, True, True]
+    assert prop["questions"] == [] and prop["auto_ok"] is True
+
+
+def test_auto_process_saves_and_undo_reverses(staged):
+    conn, res = staged
+    db = _FakeDb()
+    match = lambda pack, fo: {"status_code": 200, "body": {"success": True, "data": {"run_id": 9001}}}
+    assert smi.auto_process(conn, user_id=1, workspace_id="ws", import_id=res["id"], db=db, match_fn=match) == "auto_saved"
+    rec = smi.get_import(conn, 1, "ws", res["id"])
+    assert rec["status"] == "auto_saved"
+    assert rec["result"]["undo"]["run_ids"] == [9001]
+    assert (7, "AW26", "Bed") in smi.due_dates_for_user(conn, 1)
+
+    out = smi.undo_import(conn, user_id=1, workspace_id="ws", import_id=res["id"], db=db)
+    assert out["status"] == "review"
+    assert smi.get_import(conn, 1, "ws", res["id"])["status"] == "review"
+    assert (7, "AW26", "Bed") not in smi.due_dates_for_user(conn, 1)
+
+
+def test_auto_process_turns_order_desk_refusal_into_question(staged):
+    conn, res = staged
+    refuse = lambda pack, fo: {"status_code": 409, "body": {"success": False, "error": {"message": "choose split"}}}
+    assert smi.auto_process(conn, user_id=1, workspace_id="ws", import_id=res["id"], db=_FakeDb(),
+                            match_fn=refuse) == "review"
+    prop = smi.get_import(conn, 1, "ws", res["id"])["proposal"]
+    assert prop["auto_ok"] is False and prop["questions"][-1]["key"] == "order_desk"
+
+
+def test_payment_difference_becomes_question_and_keep_answer_leaves_payment(monkeypatch):
+    conn = _db()
+    monkeypatch.setattr(smi, "candidate_filled_orders",
+                        lambda *a: [{"id": 55, "category": "Bed", "season": "AW26", "total_piece_qty": 300}])
+    res = smi.stage_mail(
+        conn, user_id=1, workspace_id="ws", message_id="m9", mail=_mail(),
+        analyze_pdfs=lambda p, l: _pack([("102870001", 100, 40000.0), ("102870002", 200, 60000.0)]),
+        existing_payment=lambda d, s, c: {"cd_percent": 3.0, "tds_applicable": True},
+    )
+    prop = smi.get_import(conn, 1, "ws", res["id"])["proposal"]
+    assert prop["auto_ok"] is False
+    assert [q["key"] for q in prop["questions"]] == ["payment"]
+    db = _FakeDb()
+    smi.confirm_import(conn, user_id=1, workspace_id="ws", import_id=res["id"], db=db,
+                       overrides={"answers": {"payment": "keep"}},
+                       match_fn=lambda p, f: {"status_code": 200, "body": {"success": True}})
+    assert db.calls == []  # CD/TDS untouched
+
+
+def test_ignore_answer_rejects(staged):
+    conn, res = staged
+    out = smi.confirm_import(conn, user_id=1, workspace_id="ws", import_id=res["id"], db=_FakeDb(),
+                             overrides={"answers": {"mail_vs_pdf": "ignore"}})
+    assert out["ignored"] is True
+    assert smi.get_import(conn, 1, "ws", res["id"])["status"] == "rejected"

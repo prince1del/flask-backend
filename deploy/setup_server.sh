@@ -97,6 +97,12 @@ ufw allow OpenSSH
 ufw allow 'Nginx Full'
 ufw --force enable
 
+log "SO-mail scan timer (every 30 minutes)"
+cp "$APP_DIR/deploy/nexora-so-mail.service" /etc/systemd/system/nexora-so-mail.service
+cp "$APP_DIR/deploy/nexora-so-mail.timer" /etc/systemd/system/nexora-so-mail.timer
+systemctl daemon-reload
+systemctl enable --now nexora-so-mail.timer
+
 log "Daily backup (02:30 IST = 21:00 UTC)"
 install -m 755 "$APP_DIR/deploy/backup_daily.sh" /usr/local/bin/nexora-backup
 echo "0 21 * * * root /usr/local/bin/nexora-backup >> /var/log/nexora-backup.log 2>&1" > /etc/cron.d/nexora-backup

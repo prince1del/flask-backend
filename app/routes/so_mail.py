@@ -83,7 +83,7 @@ def confirm(import_id: int):
     overrides = {
         k: body.get(k)
         for k in ("distributor_id", "filled_order_ids", "season", "category",
-                  "cd_percent", "tds_applicable", "due_date")
+                  "cd_percent", "tds_applicable", "due_date", "answers")
         if k in body
     }
     conn = _conn()
@@ -99,6 +99,50 @@ def confirm(import_id: int):
     finally:
         conn.close()
     return jsonify({"success": True, "data": result}), 200
+
+
+@so_mail_bp.route("/imports/<int:import_id>/undo", methods=["POST"])
+@require_jwt_auth
+def undo(import_id: int):
+    uid, ws = _who()
+    if uid is None:
+        return _auth_error()
+    conn = _conn()
+    try:
+        result = smi.undo_import(conn, user_id=uid, workspace_id=ws, import_id=import_id)
+    except LookupError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 404
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+    finally:
+        conn.close()
+    return jsonify({"success": True, "data": result}), 200
+
+
+@so_mail_bp.route("/summary", methods=["GET"])
+@require_jwt_auth
+def summary():
+    """Small payload for the phone's background check / notifications."""
+    uid, ws = _who()
+    if uid is None:
+        return _auth_error()
+    conn = _conn()
+    try:
+        smi.ensure_schema(conn)
+        rows = conn.execute(
+            "SELECT id, status, distributor_name, category, subject, updated_at FROM so_mail_imports "
+            "WHERE user_id=? AND workspace_id=? AND status IN ('review','auto_saved') "
+            "ORDER BY id DESC LIMIT 50",
+            (uid, ws),
+        ).fetchall()
+    finally:
+        conn.close()
+    items = [{"id": r[0], "status": r[1], "distributor_name": r[2], "category": r[3],
+              "subject": r[4], "updated_at": r[5]} for r in rows]
+    return jsonify({"success": True, "data": {
+        "review_count": sum(1 for i in items if i["status"] == "review"),
+        "items": items,
+    }}), 200
 
 
 @so_mail_bp.route("/imports/<int:import_id>/reject", methods=["POST"])

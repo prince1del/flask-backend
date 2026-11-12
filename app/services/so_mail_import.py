@@ -27,6 +27,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from app.services import fo_so_match_db as matchdb
 from app.services import so_mail_parser as parser
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,112 @@ def compare_mail_vs_pack(parsed: dict[str, Any], pack: dict[str, Any] | None) ->
     return {"rows": rows, "totals": totals, "diffs": diffs, "all_match": not diffs}
 
 
+# -------------------------------------------------------------- checks
+
+
+def evaluate_checks(
+    parsed: dict[str, Any],
+    compare: dict[str, Any] | None,
+    proposal: dict[str, Any],
+    current_payment: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Five checks; a mail auto-saves only when every one passes.
+
+    Each failing check becomes a plain question with answer options, so the
+    person never has to re-add numbers — only decide what only they know.
+    """
+    checks: list[dict[str, Any]] = []
+    questions: list[dict[str, Any]] = []
+    summary = parsed.get("summary") or {}
+
+    # 1) Mail table vs SO PDFs
+    if compare and compare.get("all_match"):
+        checks.append({"key": "mail_vs_pdf", "ok": True, "text": "Mail matches the SO PDFs"})
+    else:
+        diffs = (compare or {}).get("diffs") or ["SO PDFs could not be compared"]
+        checks.append({"key": "mail_vs_pdf", "ok": False, "text": "; ".join(diffs[:3])})
+        questions.append({
+            "key": "mail_vs_pdf",
+            "text": "Mail and SO PDFs differ: " + "; ".join(diffs[:3]) +
+                    ". Order Desk uses the PDF. Save with the PDF figures?",
+            "options": [{"value": "pdf", "label": "Save with PDF figures"},
+                        {"value": "ignore", "label": "Ignore this mail"}],
+        })
+
+    # 2) Distributor
+    dist = proposal.get("distributor") or {}
+    if dist and float(dist.get("score") or 0) >= 90:
+        checks.append({"key": "distributor", "ok": True, "text": f"Distributor: {dist.get('name')}"})
+    else:
+        checks.append({"key": "distributor", "ok": False,
+                       "text": "Distributor not certain" + (f" (best guess {dist.get('name')})" if dist else "")})
+        questions.append({"key": "distributor",
+                          "text": "Which distributor is this mail for?"
+                                  + (f" Best guess: {dist.get('name')}." if dist else ""),
+                          "options": [{"value": "pick", "label": "Pick distributor"}]})
+
+    # 3) Filled Order present and quantities line up (±5%)
+    cands = proposal.get("filled_order_candidates") or []
+    fo_qty = sum(float(c.get("total_piece_qty") or 0) for c in cands)
+    mail_qty = float(summary.get("qty") or 0)
+    if cands and mail_qty and fo_qty and abs(fo_qty - mail_qty) <= 0.05 * mail_qty:
+        checks.append({"key": "filled_order", "ok": True,
+                       "text": f"Filled Order found ({fo_qty:,.0f} pcs vs mail {mail_qty:,.0f})"})
+    elif cands:
+        checks.append({"key": "filled_order", "ok": False,
+                       "text": f"Filled Order qty {fo_qty:,.0f} vs mail {mail_qty:,.0f}"})
+        questions.append({"key": "filled_order",
+                          "text": f"Order sheet has {fo_qty:,.0f} pcs but the mail has {mail_qty:,.0f}. "
+                                  "Match the SOs against it anyway?",
+                          "options": [{"value": "match", "label": "Match anyway"},
+                                      {"value": "ignore", "label": "Ignore this mail"}]})
+    else:
+        checks.append({"key": "filled_order", "ok": False, "text": "No Filled Order for this category"})
+        questions.append({"key": "filled_order",
+                          "text": "No order sheet for this distributor and category in NEXORA. "
+                                  "Upload it in Order Desk, then check mails again.",
+                          "options": [{"value": "later", "label": "OK, later"}]})
+
+    # 4) CD / TDS vs what Payment already uses
+    mail_cd = proposal.get("cd_percent")
+    mail_tds = bool(proposal.get("tds_applicable"))
+    if not current_payment:
+        checks.append({"key": "payment", "ok": True, "text": "CD/TDS set for the first time from the mail"})
+    else:
+        cur_cd = current_payment.get("cd_percent")
+        cur_tds = bool(current_payment.get("tds_applicable"))
+        cd_same = cur_cd is None or mail_cd is None or abs(float(cur_cd) - float(mail_cd)) < 0.01 or float(cur_cd or 0) == 0
+        if cd_same and cur_tds == mail_tds:
+            checks.append({"key": "payment", "ok": True, "text": "CD/TDS same as Payment"})
+        else:
+            checks.append({"key": "payment", "ok": False,
+                           "text": f"Payment has CD {cur_cd}% / TDS {'yes' if cur_tds else 'no'}; "
+                                   f"mail says CD {mail_cd}% / TDS {'yes' if mail_tds else 'no'}"})
+            questions.append({
+                "key": "payment",
+                "text": f"Payment now uses CD {cur_cd}% and TDS {'yes' if cur_tds else 'no'}, "
+                        f"the mail says CD {mail_cd}% and TDS {'yes' if mail_tds else 'no'}. Which to keep?",
+                "options": [{"value": "keep", "label": "Keep current"},
+                            {"value": "mail", "label": "Use the mail"}],
+            })
+
+    # 5) Not already in Order Desk
+    already = proposal.get("already_imported_sos") or []
+    if not already:
+        checks.append({"key": "duplicate", "ok": True, "text": "SOs are new"})
+    else:
+        total = len(parsed.get("so_rows") or [])
+        checks.append({"key": "duplicate", "ok": False,
+                       "text": f"{len(already)} of {total} SOs already in Order Desk"})
+        if len(already) < total:
+            questions.append({"key": "duplicate",
+                              "text": f"{len(already)} of these SOs are already in Order Desk. "
+                                      "Match the full pack again (Order Desk will ask to replace)?",
+                              "options": [{"value": "match", "label": "Match again"},
+                                          {"value": "ignore", "label": "Ignore this mail"}]})
+    return checks, questions
+
+
 # ------------------------------------------------------------- staging
 
 
@@ -291,8 +398,14 @@ def stage_mail(
     message_id: str,
     mail: dict[str, Any],
     analyze_pdfs=None,
+    existing_payment=None,
 ) -> dict[str, Any]:
-    """Parse + analyze + compare one mail and store it for review (idempotent)."""
+    """Parse + analyze + compare one mail and store it for review (idempotent).
+
+    existing_payment(distributor_id, season, category) -> {"cd_percent",
+    "tds_applicable"} | None lets the checks compare the mail's CD/TDS with
+    what Payment already uses for that slot.
+    """
     ensure_schema(conn)
     existing = conn.execute(
         "SELECT id, status FROM so_mail_imports WHERE user_id=? AND workspace_id=? AND message_id=?",
@@ -354,6 +467,17 @@ def stage_mail(
         error = "Distributor not recognised — pick it before confirming"
     if status == "review" and dist and not candidates:
         error = "No saved Filled Order for this distributor/category — upload it in Order Desk first"
+    if status in ("review", "already_imported"):
+        current = None
+        if existing_payment is not None and dist and proposal["season"] and proposal["category"]:
+            try:
+                current = existing_payment(dist["id"], proposal["season"], proposal["category"])
+            except Exception:
+                current = None
+        checks, questions = evaluate_checks(parsed, compare, proposal, current)
+        proposal["checks"] = checks
+        proposal["questions"] = questions
+        proposal["auto_ok"] = status == "review" and not questions
 
     now = _now()
     cur = conn.execute(
@@ -371,8 +495,10 @@ def stage_mail(
     return {"id": cur.lastrowid, "status": status, "new": True}
 
 
-def scan_mailbox(user_id: int, workspace_id: str, max_messages: int = 50) -> dict[str, Any]:
-    """Stage new SO mails from the connected Gmail inbox."""
+def scan_mailbox(user_id: int, workspace_id: str, max_messages: int = 50,
+                 auto_save: bool = True) -> dict[str, Any]:
+    """Stage new SO mails from the connected Gmail inbox; auto-save the ones
+    whose five checks all pass (needs a request context carrying the user)."""
     from app.routes.data import _db_path
     from app.services.gmail_ci_sync import build_gmail_service
     from centralized_db_system.db import CentralizedDB
@@ -400,10 +526,17 @@ def scan_mailbox(user_id: int, workspace_id: str, max_messages: int = 50) -> dic
                 continue
             try:
                 mail = fetch_mail(service, m["id"])
-                res = stage_mail(conn, user_id=user_id, workspace_id=workspace_id,
-                                 message_id=m["id"], mail=mail)
+                res = stage_mail(
+                    conn, user_id=user_id, workspace_id=workspace_id, message_id=m["id"], mail=mail,
+                    existing_payment=lambda did, season, cat: current_payment(db, user_id, did, season, cat),
+                )
+                final = res["status"]
+                if res["new"] and final == "review" and auto_save:
+                    final = auto_process(conn, user_id=user_id, workspace_id=workspace_id,
+                                         import_id=res["id"], db=db)
                 out["staged"] += 1
-                out["items"].append({"id": res["id"], "status": res["status"], "subject": mail.get("subject")})
+                out["auto_saved"] = out.get("auto_saved", 0) + (1 if final == "auto_saved" else 0)
+                out["items"].append({"id": res["id"], "status": final, "subject": mail.get("subject")})
             except Exception as exc:
                 logger.exception("SO mail staging failed for %s", m["id"])
                 out["errors"].append({"message_id": m["id"], "error": str(exc)})
@@ -474,6 +607,7 @@ def confirm_import(
     overrides: dict[str, Any] | None = None,
     match_fn=None,
     db=None,
+    auto: bool = False,
 ) -> dict[str, Any]:
     rec = get_import(conn, user_id, workspace_id, import_id, with_pack=True)
     if rec is None:
@@ -481,7 +615,15 @@ def confirm_import(
     if rec["status"] not in ("review", "already_imported"):
         raise ValueError(f"Import is {rec['status']}, cannot confirm")
     prop = dict(rec.get("proposal") or {})
-    prop.update({k: v for k, v in (overrides or {}).items() if v is not None})
+    overrides = dict(overrides or {})
+    answers = overrides.pop("answers", None) or {}
+    prop.update({k: v for k, v in overrides.items() if v is not None})
+    if any(v == "ignore" for v in answers.values()):
+        reject_import(conn, user_id=user_id, workspace_id=workspace_id, import_id=import_id)
+        return {"matches": [], "payment": {}, "ignored": True}
+    if answers.get("filled_order") == "later":
+        raise ValueError("Upload the Filled Order in Order Desk first, then check mails again")
+    keep_payment = answers.get("payment") == "keep"
     dist = prop.get("distributor") or {}
     dist_id = prop.get("distributor_id") or dist.get("id")
     if not dist_id:
@@ -501,9 +643,12 @@ def confirm_import(
         match_fn = match_fn or run_order_desk_match
         for fo_id in fo_ids:
             res = match_fn(rec["pack"], fo_id)
-            ok = res.get("status_code") == 200 and (res.get("body") or {}).get("success") is not False
+            body = res.get("body") or {}
+            ok = res.get("status_code") == 200 and body.get("success") is not False
+            data = body.get("data") if isinstance(body.get("data"), dict) else body
             results.append({"filled_order_id": fo_id, "ok": ok,
-                            "message": ((res.get("body") or {}).get("error") or {}).get("message")})
+                            "run_id": (data or {}).get("run_id") if ok else None,
+                            "message": (body.get("error") or {}).get("message")})
         if not any(r["ok"] for r in results):
             raise RuntimeError("Order Desk match failed: " + "; ".join(
                 str(r.get("message") or "error") for r in results))
@@ -513,11 +658,17 @@ def confirm_import(
         from centralized_db_system.db import CentralizedDB
 
         db = CentralizedDB(_db_path())
+    undo = {
+        "run_ids": [r["run_id"] for r in results if r.get("run_id")],
+        "slot": [int(dist_id), season, category],
+        "prev_payment": current_payment(db, user_id, int(dist_id), season, category),
+        "prev_due": due_dates_for_user(conn, user_id).get((int(dist_id), season, category)),
+    }
     payment: dict[str, Any] = {}
-    if prop.get("cd_percent") is not None:
+    if not keep_payment and prop.get("cd_percent") is not None:
         db.set_distributor_cd_rate(user_id, int(dist_id), season, float(prop["cd_percent"]), category)
         payment["cd_percent"] = float(prop["cd_percent"])
-    if prop.get("tds_applicable") is not None:
+    if not keep_payment and prop.get("tds_applicable") is not None:
         db.set_distributor_tds_applicable(user_id, int(dist_id), season, category, bool(prop["tds_applicable"]))
         payment["tds_applicable"] = bool(prop["tds_applicable"])
     if prop.get("due_date"):
@@ -526,18 +677,116 @@ def confirm_import(
                      source=f"so_mail:{import_id}")
         payment["due_date"] = prop["due_date"]
 
-    result = {"matches": results, "payment": payment}
+    result = {"matches": results, "payment": payment, "undo": undo, "previous_status": rec["status"]}
     conn.execute(
-        "UPDATE so_mail_imports SET status='confirmed', result_json=?, proposal_json=?, updated_at=? "
+        "UPDATE so_mail_imports SET status=?, result_json=?, proposal_json=?, updated_at=? "
         "WHERE id=? AND user_id=? AND workspace_id=?",
-        (json.dumps(result), json.dumps(prop), _now(), import_id, user_id, workspace_id),
+        ("auto_saved" if auto else "confirmed", json.dumps(result), json.dumps(prop), _now(),
+         import_id, user_id, workspace_id),
     )
     conn.commit()
     return result
 
 
+def current_payment(db, user_id: int, distributor_id: int, season: str, category: str) -> dict | None:
+    """CD % / TDS that Payment uses today for one slot (None when not set yet)."""
+    try:
+        status = db.list_distributor_category_payment_status(user_id) or []
+    except Exception:
+        return None
+    for d in status:
+        if int(d.get("distributor_id") or 0) != int(distributor_id):
+            continue
+        for s in d.get("seasons") or []:
+            if s.get("season") != season:
+                continue
+            for c in s.get("categories") or []:
+                if c.get("category") == category:
+                    return {"cd_percent": c.get("cd_percent"), "tds_applicable": bool(c.get("tds_applicable"))}
+    return None
+
+
+def undo_import(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, import_id: int,
+                db=None) -> dict[str, Any]:
+    """Reverse a confirmed / auto-saved mail: remove the SO matches it created
+    and put CD, TDS and due date back to what they were."""
+    rec = get_import(conn, user_id, workspace_id, import_id)
+    if rec is None:
+        raise LookupError("Import not found")
+    if rec["status"] not in ("confirmed", "auto_saved"):
+        raise ValueError(f"Import is {rec['status']}, nothing to undo")
+    undo = (rec.get("result") or {}).get("undo") or {}
+    removed = 0
+    for rid in undo.get("run_ids") or []:
+        if matchdb.delete_match_run(conn, user_id, int(rid)):
+            removed += 1
+    slot = undo.get("slot") or []
+    if len(slot) == 3:
+        did, season, category = int(slot[0]), slot[1], slot[2]
+        prev = undo.get("prev_payment")
+        if db is None:
+            from app.routes.data import _db_path
+            from centralized_db_system.db import CentralizedDB
+
+            db = CentralizedDB(_db_path())
+        if prev:
+            if prev.get("cd_percent") is not None:
+                db.set_distributor_cd_rate(user_id, did, season, float(prev["cd_percent"]), category)
+            db.set_distributor_tds_applicable(user_id, did, season, category, bool(prev.get("tds_applicable")))
+        else:
+            for table in ("distributor_cd_rates", "distributor_tds_prefs"):
+                try:
+                    conn.execute(f"DELETE FROM {table} WHERE user_id=? AND distributor_id=? AND season=? "
+                                 "AND category=?", (user_id, did, season, category))
+                except sqlite3.OperationalError:
+                    pass
+        prev_due = undo.get("prev_due")
+        if prev_due:
+            set_due_date(conn, user_id=user_id, distributor_id=did, season=season, category=category,
+                         due_date=prev_due["due_date"], mail_total=prev_due.get("mail_total"),
+                         source="so_mail:undo")
+        else:
+            ensure_schema(conn)
+            conn.execute("DELETE FROM distributor_payment_due_dates WHERE user_id=? AND distributor_id=? "
+                         "AND season=? AND category=?", (user_id, did, season, category))
+    back = (rec.get("result") or {}).get("previous_status") or "review"
+    conn.execute(
+        "UPDATE so_mail_imports SET status=?, result_json=NULL, updated_at=? WHERE id=? AND user_id=? "
+        "AND workspace_id=?", (back, _now(), import_id, user_id, workspace_id),
+    )
+    conn.commit()
+    return {"removed_match_runs": removed, "status": back}
+
+
+def auto_process(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, import_id: int,
+                 db=None, match_fn=None) -> str:
+    """Auto-save a staged mail when every check passed; else leave it for review."""
+    rec = get_import(conn, user_id, workspace_id, import_id)
+    if not rec or rec["status"] != "review" or not (rec.get("proposal") or {}).get("auto_ok"):
+        return rec["status"] if rec else "missing"
+    try:
+        confirm_import(conn, user_id=user_id, workspace_id=workspace_id, import_id=import_id,
+                       db=db, match_fn=match_fn, auto=True)
+        return "auto_saved"
+    except Exception as exc:
+        # e.g. Order Desk asks replace/split — turn it into a question instead.
+        prop = dict(rec.get("proposal") or {})
+        prop["auto_ok"] = False
+        prop.setdefault("questions", []).append({
+            "key": "order_desk",
+            "text": f"Order Desk could not save automatically: {exc}",
+            "options": [{"value": "match", "label": "Try again"},
+                        {"value": "ignore", "label": "Ignore this mail"}],
+        })
+        conn.execute("UPDATE so_mail_imports SET proposal_json=?, error=?, updated_at=? WHERE id=?",
+                     (json.dumps(prop), str(exc)[:500], _now(), import_id))
+        conn.commit()
+        return "review"
+
+
 def reject_import(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, import_id: int) -> bool:
     ensure_schema(conn)
+    # Auto-saved mails must be undone (not just hidden) before ignoring.
     cur = conn.execute(
         "UPDATE so_mail_imports SET status='rejected', updated_at=? "
         "WHERE id=? AND user_id=? AND workspace_id=? AND status IN ('review','already_imported','error')",

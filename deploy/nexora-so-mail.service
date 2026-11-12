@@ -1,0 +1,13 @@
+[Unit]
+Description=NEXORA SO-mail scan (Gmail -> Order Desk / Payment)
+After=network-online.target nexora.service
+
+[Service]
+Type=oneshot
+User=nexora
+Group=nexora
+WorkingDirectory=/opt/nexora
+EnvironmentFile=/etc/nexora.env
+Environment=PYTHONPATH=/opt/nexora
+ExecStart=/opt/nexora/.venv/bin/python -m app.services.so_mail_cron
+TimeoutStartSec=1500
