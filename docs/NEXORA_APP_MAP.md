@@ -224,7 +224,18 @@ Natural-language questions over the user's data ("how much CD does X pay").
   usage `/api/v1/ai/usage-summary`.
 - Code: `nexora_ask.py`, `nexora_ask_learn.py`, `nexora_ask_routes.py`,
   `app/services/nexora_ai_agent.py`, `gemini_models.py`.
-- Phone: `AskNexoraSheet.kt`.
+- Phone: `AskNexoraSheet.kt` (calls `/api/v1/ai-assistant/query`); web calls `/api/v1/nexora/ask`.
+- Flow: the rule engine answers first; the Gemini agent takes over when it cannot,
+  and for counting/hisaab questions (`_looks_like_ai_data_question` in `data.py`).
+- AI tools include `get_distributor_hisaab` (CI count/status per category, received,
+  still to collect, SOs not billed) and `get_pending_so`.
+- Follow-ups: table `ask_nexora_turns` keeps each user's last turns; inside a 20-minute
+  window a short or "uska / aur / bhi" question goes to the agent with that history,
+  so it stays on the same distributor/item until a new one is named.
+- Gemini: key in `/etc/nexora.env`, project `Default Gemini Project` on the paid
+  prepay tier (₹500 credits, auto-reload off — the spend cap). Agent tries
+  `gemini-3.6-flash` first (low thinking, 25 s), then `GEMINI_FLASH_MODEL`.
+  Override with `GEMINI_AGENT_MODELS`. Usage: `ai_agent_usage_log`.
 
 ### 3.14 Settings, help, updates
 - Company profile `/api/v1/company-profile`; UI theme `/api/v1/me/ui-theme`.
