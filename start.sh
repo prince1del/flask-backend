@@ -27,6 +27,15 @@ try:
     print("DATABASE_PATH=", db_path)
     uri = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
 
+    # WAL lets several gunicorn worker processes read/write the business
+    # SQLite file concurrently without "database is locked". Persistent; idempotent.
+    try:
+        import sqlite3 as _sq
+        with _sq.connect(db_path) as _c:
+            print("SQLite journal_mode:", _c.execute("PRAGMA journal_mode=WAL").fetchone()[0])
+    except Exception as e:
+        print("SQLite WAL skip:", e)
+
     with app.app_context():
         tables = set(inspect(db.engine).get_table_names())
         if "postgresql" in uri:
@@ -106,17 +115,17 @@ except Exception:
 PY
 fi
 
-# Standard plan (1 CPU / 2GB). The old "1 sync worker, 1 thread" setup (sized for
+# Sizing: 2 vCPU / 2GB. The old "1 sync worker, 1 thread" setup (sized for
 # 512MB Starter) served ONE request at a time — a slow OCR / mail-sync / PDF call
-# froze every other client. gthread lets I/O-bound requests (Postgres, OCR APIs,
-# SMTP) overlap. Keep a single process by default: business data lives in a
-# SQLite file on the persistent disk, and one process avoids cross-process
-# write-lock contention and per-process in-memory state drift.
+# froze every other client. gthread lets I/O-bound requests overlap; a second
+# worker process uses the second CPU core so CPU-heavy PDF parsing in one
+# process does not stall everyone else (Python threads share one core per
+# process). Safe with SQLite because the DB is switched to WAL mode above.
 # Tune on Render via env: GUNICORN_WORKERS / GUNICORN_THREADS / GUNICORN_MAX_REQUESTS.
 # No --preload (master+worker ≈ 2× RAM).
 exec gunicorn wsgi:app \
   --bind 0.0.0.0:${PORT:-10000} \
-  --workers "${GUNICORN_WORKERS:-1}" \
+  --workers "${GUNICORN_WORKERS:-2}" \
   --threads "${GUNICORN_THREADS:-6}" \
   --worker-class gthread \
   --timeout 120 \
