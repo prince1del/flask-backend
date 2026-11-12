@@ -643,6 +643,50 @@
   background:#fff;
   color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
 }
+.of-odm-search{
+  min-width:14rem;
+  padding:0.4rem 0.55rem;
+  border:1px solid var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
+  border-radius:6px;
+  background:#fff;
+  color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
+}
+.of-hisaab-h{
+  margin:0.6rem 0 0.3rem;
+  font-size:0.82rem;
+  font-weight:650;
+  color:var(--hop-c-text, var(--nxt-text, #1F1F1F));
+}
+.of-hisaab-alerts{
+  list-style:none;
+  margin:0;
+  padding:0.55rem 0.85rem;
+  display:flex;
+  flex-direction:column;
+  gap:0.3rem;
+  font-size:0.84rem;
+  border-bottom:1px solid var(--hop-c-border, var(--nxt-glass-border, #DED3BE));
+}
+.of-somail-body{ padding-top:0.6rem; font-size:0.86rem; }
+.of-somail-body p{ margin:0.2rem 0; }
+.of-somail-checks{
+  list-style:none;
+  margin:0.4rem 0;
+  padding:0;
+  font-size:0.8rem;
+}
+.of-somail-ok{ color:#1B6B3A; }
+.of-somail-bad{ color:#8B2E28; }
+.of-somail-q{ margin-top:0.6rem; }
+.of-somail-q p{ font-weight:600; }
+.of-somail-opts,
+.of-somail-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:0.4rem;
+  margin-top:0.35rem;
+}
+.of-somail-actions{ margin-top:0.7rem; }
 .of-ci-bulk-status.is-ok{color:var(--nxt-mint, #047857); font-weight:650;}
 .of-ci-bulk-status.is-warn{color:var(--nxt-amber, #92400E); font-weight:650;}
 .of-ci-bulk-status.is-bad{color:var(--nxt-coral, #B91C1C); font-weight:650;}

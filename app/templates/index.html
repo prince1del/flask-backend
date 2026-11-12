@@ -85,7 +85,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/personal-todos.css') }}?v=20260809-ptodo1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pjp.css') }}?v=20260809-pjp2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20260809-kyc-edit">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20261112-odm1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
@@ -2079,6 +2079,27 @@
                             <span class="of-rail-hint">SO deposits &amp; dues</span>
                         </span>
                     </button>
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="pending-so" onclick="showOfSection('pending-so')">
+                        <span class="of-rail-num">7</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">Pending SO</span>
+                            <span class="of-rail-hint">SO not yet billed</span>
+                        </span>
+                    </button>
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="hisaab" onclick="showOfSection('hisaab')">
+                        <span class="of-rail-num">8</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">Distributor Hisaab</span>
+                            <span class="of-rail-hint">Order vs received vs billed</span>
+                        </span>
+                    </button>
+                    <button type="button" class="of-rail-item" role="tab" data-of-section="so-mail" onclick="showOfSection('so-mail')">
+                        <span class="of-rail-num">9</span>
+                        <span class="of-rail-text">
+                            <span class="of-rail-label">SO payment mails</span>
+                            <span class="of-rail-hint">Bombay Dyeing mails</span>
+                        </span>
+                    </button>
                     <button type="button" class="back-btn of-rail-back" onclick="goBack()">← Back</button>
                 </nav>
                 <div class="of-rail-nav hidden" id="of-rail-saved-nav" aria-label="Saved order distributors">
@@ -2305,6 +2326,66 @@
                                 <p class="of-pane-help">Track deposits against each Sales Order — paid vs outstanding, date-wise.</p>
                             </div>
                             <div id="of-pay-board" class="of-pay-board">
+                                <p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="of-pane" data-of-pane="pending-so" hidden>
+                    <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <input type="search" id="of-pending-search" class="of-odm-search" placeholder="Search distributor or SO" oninput="renderPendingSo()" />
+                        <button type="button" class="nx-btn" onclick="loadPendingSo()">Refresh</button>
+                        <span id="of-pending-summary" class="of-pay-summary" aria-live="polite"></span>
+                    </div>
+                    <div class="of-pane-body">
+                        <div class="nx-card nx-of-panel of-pane-card of-pane-card--fill">
+                            <div class="of-pane-card-head">
+                                <h3 class="of-pane-card-title">Pending SO</h3>
+                                <p class="of-pane-help">Sales Orders not billed yet, or only partly billed by a CI. The total matches Pending SO in Target vs Achievement.</p>
+                            </div>
+                            <div id="of-pending-board" class="of-pay-board">
+                                <p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="of-pane" data-of-pane="hisaab" hidden>
+                    <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <button type="button" class="nx-btn" onclick="loadDistributorHisaab()">Refresh</button>
+                        <span id="of-hisaab-summary" class="of-pay-summary" aria-live="polite"></span>
+                    </div>
+                    <div class="of-pane-body">
+                        <div class="nx-card nx-of-panel of-pane-card of-pane-card--fill">
+                            <div class="of-pane-card-head">
+                                <h3 class="of-pane-card-title">Distributor Hisaab</h3>
+                                <p class="of-pane-help">Per distributor, season and category: order payable, money received, CI billed, money received but CI not made, and money still to collect.</p>
+                            </div>
+                            <div id="of-hisaab-board" class="of-pay-board">
+                                <p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="of-pane" id="of-somail-pane" data-of-pane="so-mail" hidden>
+                    <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <button type="button" class="nx-btn nx-btn-primary" onclick="scanSoMails()">Check SO mails</button>
+                        <button type="button" class="nx-btn" onclick="loadSoMailImports()">Refresh</button>
+                        <button type="button" class="nx-btn" id="of-somail-connect" onclick="connectSoMailGmail()" hidden>Connect Gmail</button>
+                        <label class="of-pay-meta"><input type="checkbox" id="of-somail-show-ignored" onchange="renderSoMailImports()" /> Show ignored</label>
+                        <span id="of-somail-gmail" class="of-pay-summary"></span>
+                        <span id="of-somail-summary" class="of-pay-summary" aria-live="polite"></span>
+                    </div>
+                    <div class="of-pane-body">
+                        <div class="nx-card nx-of-panel of-pane-card of-pane-card--fill">
+                            <div class="of-pane-card-head">
+                                <h3 class="of-pane-card-title">SO payment mails</h3>
+                                <p class="of-pane-help">Reads Bombay Dyeing "for Cash payment" mails, matches the SOs with your Filled Orders and sets CD, TDS and the due date. Saves on its own when every check passes; otherwise asks you here.</p>
+                                <p id="of-somail-message" class="of-pane-help" aria-live="polite"></p>
+                            </div>
+                            <div id="of-somail-board" class="of-pay-board">
                                 <p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>
                             </div>
                         </div>
@@ -3673,9 +3754,10 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260810-ta-summary-err"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20261112-odm1"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
     <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp3"></script>
+    <script src="{{ url_for('static', filename='order_desk_money.js') }}?v=20261112-odm1"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260824-pdf-fix2"></script>
     <script src="{{ url_for('static', filename='hop_commercial_web.js') }}?v=20260824-delete-yesno1"></script>
 </body>

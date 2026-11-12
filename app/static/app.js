@@ -9975,6 +9975,18 @@ function showOfSection(section) {
       title: "Distributor's Payment Collection",
       sub: 'Distributor-wise SO payment tracking — date-wise deposits vs outstanding.',
     },
+    'pending-so': {
+      title: 'Pending SO',
+      sub: 'Open and partly billed Sales Orders — what is still to be billed by a CI.',
+    },
+    hisaab: {
+      title: 'Distributor Hisaab',
+      sub: 'Order vs received vs billed per distributor, season and category.',
+    },
+    'so-mail': {
+      title: 'SO payment mails',
+      sub: 'Bombay Dyeing SO mails — match SOs and set CD, TDS and due date.',
+    },
     'saved-orders': {
       title: 'Saved Orders',
       sub: '',
@@ -10049,6 +10061,15 @@ function showOfSection(section) {
   }
   if (key === 'payment-collection') {
     loadPaymentCollection();
+  }
+  if (key === 'pending-so' && typeof loadPendingSo === 'function') {
+    loadPendingSo();
+  }
+  if (key === 'hisaab' && typeof loadDistributorHisaab === 'function') {
+    loadDistributorHisaab();
+  }
+  if (key === 'so-mail' && typeof loadSoMailImports === 'function') {
+    loadSoMailImports();
   }
   if (key === 'so-pack' && ofSoPackLastPayload) {
     const preview = document.getElementById('of-so-pack-preview');

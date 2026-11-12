@@ -123,6 +123,8 @@ Pending SO = SO value not yet billed by any CI   GET /api/v1/order-fulfillment/p
 - Phone: `BdOrderDeskPane.kt`, `OrderDeskTree.kt` (season → category → distributor
   tree; Pending SO tab built from the server list), `SoPackBusyOverlay.kt`,
   `util/SoPackUploadPrep.kt`.
+- Web: Order Desk rail in `index.html` (`#order-fulfillment-workspace`, `showOfSection` in
+  `app.js`); tab 7 **Pending SO** is in `app/static/order_desk_money.js`.
 - Matching rules: `docs/ORDER_BUNDLE_MATCHING_RULES.md`; recycle: `docs/ORDER_DESK_RECYCLE.md`.
 
 ### 3.5 Distributor Zone
@@ -141,7 +143,7 @@ Menu group with four sections:
   "received but CI not made", "still to receive", overdue alerts, which CI is
   covered by which payment (oldest payment pays the oldest CI first).
   Route: `GET /api/v1/distributor-ledger`. Code: `app/services/distributor_ledger.py`.
-  Phone: `DistributorHisaab.kt`.
+  Phone: `DistributorHisaab.kt`. Web: Order Desk tab 8 (`order_desk_money.js`).
 - **Statement of Account** — `POST /api/v1/statement-of-account/from-ledger`
   (`app/services/statement_of_account.py`). Phone: `BdStatementOfAccountPane.kt`.
 - **Secondary Sale** — `/api/v1/distributor-secondary-sales/*`. Phone: `BdSecondarySalePane.kt`.
@@ -166,6 +168,8 @@ Two readers on the same Gmail connection (`storage_accounts`, provider `gmail`):
    Table: `so_mail_imports`. Server timer: `nexora-so-mail.timer` (every 30 min).
 - Phone: Settings → Mail sync (`BdSettingsPanes.kt`), `SoMailReview.kt`;
   notifications: `reminders/SoMailNotifyWorker.kt` (polls `/so-mail/summary`).
+- Web: Order Desk tab 9 **SO payment mails** (`order_desk_money.js`) — Gmail connect,
+  Check SO mails, question cards, Confirm / Ignore / Undo.
 
 ### 3.7 Target vs Achievement
 Yearly / monthly targets, achievement uploads (sales Excel), category and
@@ -262,8 +266,10 @@ SQLAlchemy models in PostgreSQL: `sales_orders`, `invoices`, `finance_*`,
 | Payment Excel → Drive | after each payment change (background) | `app/storage/payment_drive_backup.py` |
 
 ## 7. Phone ↔ web parity (2026-11-12)
-Phone-only today (no web screen yet): Distributor Payment Status & Hisaab,
-SO payment mails, Mail sync review, Call List, Statement of Account, Secondary
+On web since 2026-11-12: Pending SO, Distributor Hisaab, SO payment mails
+(Order Desk tabs 7–9).
+Phone-only today (no web screen yet): Distributor Payment Status (CD/TDS
+settings), Mail sync CI review, Call List, Statement of Account, Secondary
 Sale, Grievances. Market Visit DSR on web is partial (visits, competitor brands,
 export only). When adding to web,
 reuse the same routes listed above — no new endpoints needed.
