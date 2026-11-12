@@ -16,6 +16,7 @@ exactly like the existing REST endpoints for the same data already are.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import urllib.error
 import urllib.request
@@ -26,6 +27,20 @@ from app.services.gemini_models import get_ocr_gemini_models
 from app.services.visiting_card_ocr import _gemini_key
 
 MAX_TOOL_ROUNDS = 4
+_AGENT_TIMEOUT_S = 75
+# Fast model first for the agent; the OCR list (GEMINI_FLASH_MODEL etc.) follows
+# as fallback. Override with GEMINI_AGENT_MODELS="model-a,model-b".
+_AGENT_DEFAULT_MODELS = ("gemini-3.6-flash",)
+
+
+def agent_gemini_models() -> tuple[str, ...]:
+    csv_models = (os.getenv("GEMINI_AGENT_MODELS") or "").strip()
+    first = tuple(m.strip() for m in csv_models.split(",") if m.strip()) or _AGENT_DEFAULT_MODELS
+    out: list[str] = []
+    for m in (*first, *get_ocr_gemini_models()):
+        if m not in out:
+            out.append(m)
+    return tuple(out)
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
 
@@ -36,8 +51,17 @@ workspace). Today's date is {today} (UTC) — use this to resolve relative dates
 ("tomorrow", "kal", "next Monday") into an actual YYYY-MM-DD before calling
 get_pjp_for_date.
 
-You answer questions across ten areas, each with its own tools:
-- Order Desk: CI (customer indent) vs SO (sales order) reconciliation —
+Words: SO = Sales Order (what the distributor ordered, from Bombay Dyeing).
+CI = Commercial Invoice (the bill raised against an SO). FO = Filled Order sheet.
+
+You answer questions across these areas, each with its own tools:
+- Distributor Hisaab: per distributor, season and category (Bed/Bath/Pillow/
+  TOB) - how many CIs, each CI's number/date/qty/value and whether payment has
+  covered it (paid / part paid / unpaid), money received, and which SOs are
+  still not billed by a CI. Use get_distributor_hisaab.
+- Pending SO: Sales Orders not yet (fully) billed by a CI, across all
+  distributors or one. Use get_pending_so.
+- Order Desk: FO vs SO reconciliation —
   matched/mismatched quantities and values, by season, category
   (Bed/Bath/Pillow/TOB), and distributor.
 - Target vs Achievement: this fiscal year's (or a named FY's) sales target
@@ -61,6 +85,10 @@ You answer questions across ten areas, each with its own tools:
 Rules:
 - ONLY state numbers/facts that came back from a tool call. Never estimate or invent.
 - If a tool returns no data, say so plainly - do not guess.
+- "CI pending" is ambiguous. Answer both, clearly separated: (a) CIs raised
+  but not yet paid (status unpaid / part paid), and (b) SOs still waiting for
+  a CI (pending SO). Split counts by category (Bed / Bath / ...) when the
+  question asks for it.
 - Keep answers short and direct, in the same language style as the question
   (Hindi/Hinglish questions get Hindi/Hinglish answers).
 - When useful, mention counts (e.g. "3 distributors have QTY_MISMATCH this season")
@@ -77,6 +105,60 @@ class NexoraAiAgentError(RuntimeError):
 
 def _tool_declarations() -> list[dict[str, Any]]:
     return [
+        {
+            "name": "get_distributor_hisaab",
+            "description": (
+                "Distributor Hisaab per season and category: CI count and each CI "
+                "(invoice no, date, SO, qty, gross, net after CD/TDS, amount covered "
+                "by payments, status paid/part_paid/unpaid), money received, order "
+                "payable, still to collect, money received but CI not made, and SOs "
+                "still not billed by a CI. Use for 'X ke kitne CI hai', 'kitne CI "
+                "pending/unpaid hai', 'Bed ke kitne, Bath ke kitne', 'X ka hisaab'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "distributor_name": {
+                        "type": "string",
+                        "description": "Distributor name, partial or misspelled is fine (optional - omit for all).",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Bed, Bath, Pillow, TOB ... (optional).",
+                    },
+                    "season": {
+                        "type": "string",
+                        "description": "Season code, e.g. AW26 (optional).",
+                    },
+                },
+            },
+        },
+        {
+            "name": "get_pending_so",
+            "description": (
+                "Sales Orders not yet billed, or only partly billed, by a CI - SO "
+                "number, distributor, season, category, SO qty/value, CI-billed "
+                "qty/value and pending qty/value. Use for 'kitne SO pending hai', "
+                "'kiska maal abhi bill nahi hua', 'pending SO kitna hai'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "distributor_name": {
+                        "type": "string",
+                        "description": "Filter to one distributor (optional).",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Bed, Bath, Pillow, TOB ... (optional).",
+                    },
+                    "season": {
+                        "type": "string",
+                        "description": "Season code, e.g. AW26 (optional).",
+                    },
+                },
+            },
+        },
         {
             "name": "get_order_desk_overview",
             "description": (
@@ -345,6 +427,123 @@ def _sanitize(obj: Any) -> Any:
     return obj
 
 
+def _norm_key(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
+def _name_filter(names: list[str], wanted: str) -> set[str] | None:
+    """Names (as given) that match `wanted`; None means no filter asked.
+
+    Substring on letters/digits first ("savitri" → "Savitri Steel Cement
+    Traders"), then a close-spelling match for typos ("savitri steal")."""
+    want = _norm_key(wanted)
+    if not want:
+        return None
+    hits = {n for n in names if want in _norm_key(n) or (_norm_key(n) and _norm_key(n) in want)}
+    if hits or len(want) < 5:
+        # Too short to guess a misspelling safely ("zeta" is not "beta").
+        return hits
+    import difflib
+
+    keys = {_norm_key(n): n for n in names if _norm_key(n)}
+    close = difflib.get_close_matches(want, list(keys), n=3, cutoff=0.6)
+    if not close:
+        # Typo in a long name: compare against same-length prefixes.
+        prefixes = {k[: len(want)]: k for k in keys}
+        close = [prefixes[p] for p in difflib.get_close_matches(want, list(prefixes), n=3, cutoff=0.75)]
+    return {keys[k] for k in close}
+
+
+def _same(value: Any, wanted: str) -> bool:
+    return not wanted or _norm_key(value) == _norm_key(wanted)
+
+
+def hisaab_for_ai(
+    ledger: dict[str, Any], *, distributor_name: str = "", category: str = "", season: str = ""
+) -> dict[str, Any]:
+    """Trim the Distributor Hisaab (build_ledger output) to what an answer needs."""
+    dists = ledger.get("distributors") or []
+    allowed = _name_filter([str(d.get("distributor_name") or "") for d in dists], distributor_name)
+    if allowed is not None and not allowed:
+        return {"error": f"No distributor matching '{distributor_name}' in Hisaab",
+                "distributors_on_file": [d.get("distributor_name") for d in dists][:40]}
+    out = []
+    for d in dists:
+        if allowed is not None and str(d.get("distributor_name") or "") not in allowed:
+            continue
+        cats = []
+        for c in d.get("categories") or []:
+            if not _same(c.get("category"), category) or not _same(c.get("season"), season):
+                continue
+            cis = c.get("cis") or []
+            by_status: dict[str, int] = {}
+            for ci in cis:
+                by_status[ci.get("status") or "unpaid"] = by_status.get(ci.get("status") or "unpaid", 0) + 1
+            pend = c.get("pending_sos") or []
+            cats.append({
+                "season": c.get("season"),
+                "category": c.get("category"),
+                "ci_count": len(cis),
+                "ci_count_by_status": by_status,
+                "ci_qty_total": round(sum(float(ci.get("qty") or 0) for ci in cis), 2),
+                "ci_gross_total": round(sum(float(ci.get("gross") or 0) for ci in cis), 2),
+                "cis": [
+                    {k: ci.get(k) for k in ("invoice_no", "invoice_date", "so_number", "qty",
+                                            "gross", "net", "covered", "status")}
+                    for ci in cis[:60]
+                ],
+                "order_payable": c.get("order_payable"),
+                "received": c.get("received"),
+                "billed_net": c.get("billed"),
+                "still_to_collect": c.get("payment_due"),
+                "received_but_ci_not_made": c.get("unbilled_advance"),
+                "due_date": c.get("due_date"),
+                "cd_percent": c.get("cd_percent"),
+                "tds_percent": c.get("tds_percent"),
+                "pending_so_count": len(pend),
+                "pending_so_qty": round(sum(float(p.get("pending_qty") or 0) for p in pend), 2),
+                "pending_so_value": round(sum(float(p.get("pending_net") or 0) for p in pend), 2),
+                "pending_sos": pend[:30],
+            })
+        if not cats and (category or season):
+            continue
+        out.append({
+            "distributor": d.get("distributor_name"),
+            "totals": d.get("totals"),
+            "categories": cats,
+            "cis_not_linked_to_matched_so": d.get("unlinked_cis") or [],
+            "alerts": [a.get("text") for a in d.get("alerts") or []],
+        })
+    return {"as_of": ledger.get("as_of"), "distributors": out, "count": len(out)}
+
+
+def pending_so_for_ai(
+    items: list[dict[str, Any]], *, distributor_name: str = "", category: str = "", season: str = ""
+) -> dict[str, Any]:
+    """Pending SO rows filtered for one question, with per-category totals."""
+    allowed = _name_filter(sorted({str(i.get("distributor_name") or "") for i in items}), distributor_name)
+    if allowed is not None and not allowed:
+        return {"error": f"No pending SO for a distributor matching '{distributor_name}'", "items": [], "count": 0}
+    rows = [
+        i for i in items
+        if (allowed is None or str(i.get("distributor_name") or "") in allowed)
+        and _same(i.get("category"), category) and _same(i.get("season"), season)
+    ]
+    summary: dict[str, dict[str, Any]] = {}
+    for i in rows:
+        key = f"{i.get('distributor_name') or '-'} | {i.get('season') or '-'} | {i.get('category') or '-'}"
+        s = summary.setdefault(key, {"so_count": 0, "pending_qty": 0.0, "pending_value": 0.0})
+        s["so_count"] += 1
+        s["pending_qty"] = round(s["pending_qty"] + float(i.get("pending_qty") or 0), 2)
+        s["pending_value"] = round(s["pending_value"] + float(i.get("pending_net") or 0), 2)
+    slim = [
+        {k: i.get(k) for k in ("so_number", "distributor_name", "season", "category", "status",
+                               "so_qty", "so_net", "ci_qty", "ci_amount", "pending_qty", "pending_net")}
+        for i in rows[:80]
+    ]
+    return {"count": len(rows), "by_distributor_season_category": summary, "items": slim}
+
+
 def _run_tool(
     name: str, args: dict[str, Any], *, user_id: int, workspace_id: str
 ) -> dict[str, Any]:
@@ -356,6 +555,29 @@ def _run_tool(
 
     conn = sqlite3.connect(_db_path())
     try:
+        if name == "get_distributor_hisaab":
+            from centralized_db_system.db import CentralizedDB
+            from app.services.distributor_ledger import build_ledger
+
+            ledger = build_ledger(
+                CentralizedDB(_db_path()), conn, user_id=user_id, workspace_id=workspace_id
+            )
+            return _sanitize(hisaab_for_ai(
+                ledger,
+                distributor_name=str(args.get("distributor_name") or ""),
+                category=str(args.get("category") or ""),
+                season=str(args.get("season") or ""),
+            ))
+
+        if name == "get_pending_so":
+            items = matchdb.list_pending_so_for_user(conn, user_id)
+            return _sanitize(pending_so_for_ai(
+                items,
+                distributor_name=str(args.get("distributor_name") or ""),
+                category=str(args.get("category") or ""),
+                season=str(args.get("season") or ""),
+            ))
+
         if name == "get_order_desk_overview":
             fodb.ensure_schema(conn)
             seasons = fodb.build_season_overview(conn, user_id)
@@ -737,22 +959,28 @@ def _call_gemini(contents: list[dict[str, Any]]) -> tuple[dict[str, Any], str]:
         "tools": [{"functionDeclarations": _tool_declarations()}],
         "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1024},
     }
-    payload = json.dumps(body).encode("utf-8")
     last_err = ""
-    for model in get_ocr_gemini_models():
+    for model in agent_gemini_models():
+        model_body = body
+        if model.startswith("gemini-3"):
+            # Gemini 3 thinks by default and took 15-40 s per round on the server,
+            # past the old 30 s timeout. Low thinking is enough to pick tools.
+            model_body = {**body, "generationConfig": {
+                **body["generationConfig"], "thinkingConfig": {"thinkingLevel": "low"}}}
+        payload = json.dumps(model_body).encode("utf-8")
         url = _GEMINI_URL.format(model=model, key=key)
         req = urllib.request.Request(
             url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=_AGENT_TIMEOUT_S) as resp:
                 return json.loads(resp.read().decode("utf-8")), model
         except urllib.error.HTTPError as exc:
             try:
                 last_err = exc.read().decode("utf-8", errors="ignore")[:300]
             except Exception:
                 last_err = str(exc)
-            if exc.code in (404, 429):
+            if exc.code in (404, 429, 500, 503):
                 # 404 = model unavailable, 429 = this model's quota is
                 # exhausted — either way, the next model in the list might
                 # still work (they're billed/rate-limited separately).
