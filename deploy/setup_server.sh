@@ -27,7 +27,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y python3 python3-venv python3-dev build-essential git \
   nginx postgresql postgresql-contrib sqlite3 ufw \
-  certbot python3-certbot-nginx tesseract-ocr libgl1 libglib2.0-0
+  certbot python3-certbot-nginx tesseract-ocr libgl1 libglib2.0-0 \
+  unar libarchive-tools  # RAR/ZIP SO packs
 
 log "Swap (1GB) so pip / OCR spikes don't OOM a 2GB box"
 if ! swapon --show | grep -q /swapfile; then
