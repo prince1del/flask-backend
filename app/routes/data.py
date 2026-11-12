@@ -6265,6 +6265,23 @@ def get_distributor_payment_status() -> Response:
     db = CentralizedDB(_db_path())
     user_id = _current_user_id()
     distributors = db.list_distributor_category_payment_status(user_id)
+    # Payment due date + the payable the SO mail quoted (set by SO-mail import).
+    try:
+        from app.services import so_mail_import as smi
+
+        conn = sqlite3.connect(_db_path())
+        try:
+            due = smi.due_dates_for_user(conn, int(user_id)) if user_id else {}
+        finally:
+            conn.close()
+        for d in distributors or []:
+            for s in d.get("seasons") or []:
+                for c in s.get("categories") or []:
+                    hit = due.get((int(d.get("distributor_id") or 0), s.get("season"), c.get("category")))
+                    c["due_date"] = hit["due_date"] if hit else None
+                    c["mail_total"] = hit["mail_total"] if hit else None
+    except Exception:
+        logging.getLogger(__name__).exception("Attaching payment due dates failed")
     backup_category_payment_status_to_drive(
         db=db,
         user_id=user_id,
