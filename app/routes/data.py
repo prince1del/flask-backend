@@ -8898,6 +8898,29 @@ def ai_assistant_query() -> Response:
     )
     workspace_id = get_workspace_id()
 
+    # Follow-up inside a running conversation ("aur Bath ke?", "uska
+    # payment?"): answer with the AI and the last few turns, so it stays on
+    # the distributor/item asked about a moment ago.
+    if intent != "greeting" and user_id is not None and workspace_id != "house_of_prizm":
+        from app.services import nexora_ai_agent as _agent
+
+        _turns = _agent.recent_turns(user_id, workspace_id)
+        if _agent.is_follow_up(query, _turns):
+            try:
+                _ai = _agent.ask_order_desk(
+                    query, user_id=user_id, workspace_id=workspace_id, history=_turns
+                )
+                _agent.record_turn(user_id, workspace_id, query, _ai)
+                return Response(
+                    json.dumps(
+                        {"intent": "ai_followup", "query": query, "answer": _ai.strip()},
+                        ensure_ascii=False,
+                    ),
+                    mimetype="application/json",
+                )
+            except Exception:  # noqa: BLE001 - fall back to the normal engine
+                pass
+
     if intent == "greeting":
         profile = db.get_user_profile(user_id) if user_id is not None else None
         display_name = ((profile or {}).get("full_name") or (profile or {}).get("username") or "").strip()
@@ -9698,6 +9721,11 @@ def ai_assistant_query() -> Response:
         # entry automatically. Skipped when it's still unresolved — that
         # branch just logged this exact failure a moment ago above.
         resolve_unresolved_query(workspace_id, query)
+
+    if workspace_id != "house_of_prizm" and intent != "greeting":
+        from app.services.nexora_ai_agent import record_turn
+
+        record_turn(user_id, workspace_id, query, answer)
 
     return Response(
         json.dumps(

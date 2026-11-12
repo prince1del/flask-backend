@@ -42,6 +42,27 @@ def ask_nexora():
     user_id = _get_current_user_id()
     workspace_id = get_workspace_id()
 
+    # Follow-up inside a running conversation stays on the same distributor/item.
+    if workspace_id != "house_of_prizm":
+        from app.services import nexora_ai_agent as agent
+
+        turns = agent.recent_turns(user_id, workspace_id)
+        if agent.is_follow_up(question, turns):
+            try:
+                ai_answer = ask_order_desk(
+                    question, user_id=user_id, workspace_id=workspace_id, history=turns
+                )
+                agent.record_turn(user_id, workspace_id, question, ai_answer)
+                return jsonify({
+                    "status": "success",
+                    "question": question,
+                    "answer": ai_answer,
+                    "intent": "ai_followup",
+                    "data": {"isolation": {"user_id": user_id, "workspace_id": workspace_id}},
+                }), 200
+            except Exception:  # noqa: BLE001 - fall back to the normal engine
+                pass
+
     conn = _get_db_connection()
     db_path = current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")
     try:
@@ -81,6 +102,11 @@ def ask_nexora():
             }
         except NexoraAiAgentError:
             pass  # AI unavailable (no key / all models down) — keep the original answer.
+
+    if workspace_id != "house_of_prizm":
+        from app.services.nexora_ai_agent import record_turn
+
+        record_turn(user_id, workspace_id, question, str(result.get("answer") or ""))
 
     return jsonify({
         "status": "success",

@@ -86,6 +86,12 @@ You answer questions across these areas, each with its own tools:
 Rules:
 - ONLY state numbers/facts that came back from a tool call. Never estimate or invent.
 - If a tool returns no data, say so plainly - do not guess.
+- Follow-ups: earlier turns of this conversation come before the latest
+  question. If the latest question names no distributor, item, season or
+  category of its own ("aur Bath ke?", "uska payment?", "kitne pcs?"), it is
+  about the same ones as the earlier turns - keep them and call the tools
+  again for fresh numbers. As soon as the user names a different distributor
+  or item, switch to that one.
 - "CI pending" is ambiguous. Answer both, clearly separated: (a) CIs raised
   but not yet paid (status unpaid / part paid), and (b) SOs still waiting for
   a CI (pending SO). Split counts by category (Bed / Bath / ...) when the
@@ -426,6 +432,101 @@ def _sanitize(obj: Any) -> Any:
     if isinstance(obj, (bytes, bytearray)):
         return None
     return obj
+
+
+# --- Conversation memory (follow-up questions) ----------------------------
+# Each user's recent Ask Nexora turns, so "aur Bath ke?" or "uska payment?"
+# stays about the distributor/item asked a moment ago. A turn older than
+# _TURN_WINDOW_MIN minutes starts a fresh conversation.
+_TURN_WINDOW_MIN = 20
+_TURN_LIMIT = 6
+_FOLLOW_UP_WORDS = (
+    "uska", "uske", "uski", "usko", "usme", "usmein", "iska", "iske", "iski", "isme", "unka",
+    "unke", "unki", "inka", "inke", "aur", "or", "bhi", "also", "same", "wahi", "vahi", "ye",
+    "yeh", "wo", "woh", "voh", "its", "their", "that", "those", "them", "kitne", "kitna",
+    "kitni", "kab", "kyun", "kaise", "details", "detail", "list",
+)
+
+
+def _ensure_turns_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ask_nexora_turns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            workspace_id TEXT NOT NULL,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ask_nexora_turns_user ON ask_nexora_turns (user_id, workspace_id, id)"
+    )
+
+
+def record_turn(user_id: int | None, workspace_id: str, question: str, answer: str) -> None:
+    """Remember one question/answer; never breaks the answer itself."""
+    if user_id is None or not (question or "").strip():
+        return
+    try:
+        conn = sqlite3.connect(_db_path())
+        try:
+            _ensure_turns_schema(conn)
+            conn.execute(
+                "INSERT INTO ask_nexora_turns (user_id, workspace_id, question, answer) VALUES (?, ?, ?, ?)",
+                (int(user_id), workspace_id or "default", question.strip()[:1000], (answer or "").strip()[:4000]),
+            )
+            # Keep the table small: only the last 50 turns per user matter.
+            conn.execute(
+                "DELETE FROM ask_nexora_turns WHERE user_id = ? AND workspace_id = ? AND id NOT IN "
+                "(SELECT id FROM ask_nexora_turns WHERE user_id = ? AND workspace_id = ? ORDER BY id DESC LIMIT 50)",
+                (int(user_id), workspace_id or "default", int(user_id), workspace_id or "default"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def recent_turns(user_id: int | None, workspace_id: str) -> list[dict[str, str]]:
+    """This user's turns from the current conversation, oldest first."""
+    if user_id is None:
+        return []
+    try:
+        conn = sqlite3.connect(_db_path())
+        try:
+            _ensure_turns_schema(conn)
+            rows = conn.execute(
+                "SELECT question, answer FROM ask_nexora_turns WHERE user_id = ? AND workspace_id = ? "
+                "AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT ?",
+                (int(user_id), workspace_id or "default", f"-{_TURN_WINDOW_MIN} minutes", _TURN_LIMIT),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return []
+    return [{"question": q, "answer": a} for q, a in reversed(rows)]
+
+
+def is_follow_up(query: str, turns: list[dict[str, str]]) -> bool:
+    """Does this question lean on the conversation so far?"""
+    if not turns:
+        return False
+    words = [w for w in "".join(ch if ch.isalnum() else " " for ch in (query or "").lower()).split() if w]
+    if not words:
+        return False
+    return len(words) <= 5 or any(w in _FOLLOW_UP_WORDS for w in words)
+
+
+def _history_contents(turns: list[dict[str, str]] | None) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for t in turns or []:
+        out.append({"role": "user", "parts": [{"text": t["question"]}]})
+        out.append({"role": "model", "parts": [{"text": (t.get("answer") or "")[:1500] or "(no answer)"}]})
+    return out
 
 
 def _norm_key(value: Any) -> str:
@@ -1090,11 +1191,21 @@ def get_usage_summary(*, user_id: int, all_users: bool, days: int = 30) -> dict[
         conn.close()
 
 
-def ask_order_desk(query: str, *, user_id: int, workspace_id: str) -> str:
+def ask_order_desk(
+    query: str,
+    *,
+    user_id: int,
+    workspace_id: str,
+    history: list[dict[str, str]] | None = None,
+) -> str:
     """Run the tool-calling loop for one question (Order Desk, Target vs
     Achievement, PJP, or Distributor Payment Status) and return the final
-    text answer. Raises NexoraAiAgentError on hard failure."""
-    contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": query}]}]
+    text answer. `history` = earlier turns of this conversation (follow-ups).
+    Raises NexoraAiAgentError on hard failure."""
+    contents: list[dict[str, Any]] = [
+        *_history_contents(history),
+        {"role": "user", "parts": [{"text": query}]},
+    ]
     rounds = 0
     prompt_tokens = 0
     output_tokens = 0

@@ -104,3 +104,42 @@ def test_phone_ask_sends_counting_questions_to_ai():
     assert not q("Savitri Steel")
     assert not q("Kalra ka number kya hai")
     assert not q("aster ka mrp kya hai")
+
+
+def test_follow_up_memory(tmp_path, monkeypatch):
+    from app.services import nexora_ai_agent as a
+
+    monkeypatch.setattr(a, "_db_path", lambda: str(tmp_path / "turns.sqlite3"))
+    assert a.recent_turns(7, "ws") == []
+    assert not a.is_follow_up("aur Bath ke?", [])
+
+    a.record_turn(7, "ws", "Savitri ke kitne CI hai?", "33 CI: Bed 31, Bath 2")
+    a.record_turn(8, "ws", "other user", "x")
+    turns = a.recent_turns(7, "ws")
+    assert turns == [{"question": "Savitri ke kitne CI hai?", "answer": "33 CI: Bed 31, Bath 2"}]
+
+    assert a.is_follow_up("aur Bath ke?", turns)
+    assert a.is_follow_up("uska payment kitna baaki hai abhi tak bataiye", turns)
+    assert not a.is_follow_up("Bernina International ke saare sales order dikhao season AW26", turns)
+
+    hist = a._history_contents(turns)
+    assert [h["role"] for h in hist] == ["user", "model"]
+    assert hist[1]["parts"][0]["text"].startswith("33 CI")
+
+
+def test_ask_sends_history_before_question(monkeypatch):
+    from app.services import nexora_ai_agent as a
+
+    seen = {}
+
+    def fake_call(contents):
+        seen["contents"] = contents
+        return {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}, "m"
+
+    monkeypatch.setattr(a, "_call_gemini", fake_call)
+    monkeypatch.setattr(a, "_log_usage", lambda **k: None)
+    out = a.ask_order_desk("aur Bath ke?", user_id=1, workspace_id="ws",
+                           history=[{"question": "Savitri ke CI?", "answer": "Bed 31"}])
+    assert out == "ok"
+    texts = [c["parts"][0]["text"] for c in seen["contents"]]
+    assert texts == ["Savitri ke CI?", "Bed 31", "aur Bath ke?"]
