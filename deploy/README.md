@@ -43,6 +43,27 @@ Phir: `sudo systemctl restart nexora`
 - Android: `android/app/build.gradle.kts` mein URL badlo → naya APK.
 - Desktop/web: naya URL.
 
+## Step 5 — Laptop pe backup (data kabhi na khoye)
+
+Server roz raat 2:30 baje backup banata hai. Yeh script use **laptop pe copy** karti hai,
+taaki server/company/account kuch bhi band ho, data tumhare paas rahe.
+
+PowerShell mein (ek baar):
+
+```powershell
+ssh-keygen -t ed25519 -f $HOME\.ssh\nexora_backup -N '""'
+```
+
+`$HOME\.ssh\nexora_backup.pub` ka content server pe `/home/nexora/.ssh/authorized_keys` mein daalo, phir:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\laptop_backup.ps1 -Server <IP-ya-domain> -Register
+```
+
+- Roz subah 10 baje chalega; laptop band tha to on hote hi chal jaayega.
+- Backups: `Documents\NEXORA-Backups` (60 din tak).
+- Har run ka hisaab: `Documents\NEXORA-Backups\backup-log.txt`.
+
 ## Roz ka kaam
 
 | Kaam | Command |
