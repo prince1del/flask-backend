@@ -132,10 +132,10 @@ Menu group with four sections:
 - **Distributors Payment Status** — money received per distributor / season /
   category, CD % and TDS settings, due date.
   Routes: `GET /api/v1/distributor-payments/status`, `POST .../deposits`,
-  `POST .../cd`, `POST .../tds`. Tables: `distributor_category_payments`,
+  `PUT|DELETE .../deposits/<id>` (Edit / Delete a deposit), `POST .../cd`, `POST .../tds`. Tables: `distributor_category_payments`,
   `distributor_cd_rates`, `distributor_tds_prefs`, `distributor_payment_due_dates`.
   SO-wise collection: `/api/v1/order-fulfillment/payment-collection*`
-  (`distributor_payment_entries`). After every change an Excel snapshot is
+  (`distributor_payment_entries`; `PUT .../entries/<id>` edits one). After every change an Excel snapshot is
   pushed to Drive `NEXORA/Payment Receiving/` **in a background thread**
   (`app/storage/payment_drive_backup.py`).
   Phone: `BdDistributorPaymentStatusPane.kt`, `PaymentCollectionPane.kt`.
