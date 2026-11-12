@@ -67,6 +67,7 @@ def list_imports():
             return smi.current_payment(db, uid, did, season, cat, status=status_once["s"])
 
         smi.refresh_checks(items, existing_payment=_payment)
+        smi.fix_decision_wording(items)
     except Exception:
         pass  # list still works with the stored checks
     return jsonify({"success": True, "data": {"items": items}}), 200

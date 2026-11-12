@@ -300,6 +300,8 @@ def evaluate_checks(
                                          f"{float(dist.get('score') or 0):.0f}%)" if good_guess else None})
 
     # 3) Filled Order present and quantities line up (±5%)
+    _so_total = len(parsed.get("so_rows") or [])
+    all_in_desk = bool(_so_total) and len(proposal.get("already_imported_sos") or []) >= _so_total
     cands = proposal.get("filled_order_candidates") or []
     fo_qty = sum(float(c.get("total_piece_qty") or 0) for c in cands)
     mail_qty = float(summary.get("qty") or 0)
@@ -315,8 +317,8 @@ def evaluate_checks(
                           "options": [{"value": "match", "label": "Match anyway"},
                                       {"value": "ignore", "label": "Ignore this mail"}],
                           "auto": "match" if mail_qty <= fo_qty * 1.05 else None,
-                          "auto_reason": f"Matched with the order sheet ({fo_qty:,.0f} pcs ordered, "
-                                         f"{mail_qty:,.0f} pcs in this mail)"
+                          "auto_reason": (f"{'Order sheet checked' if all_in_desk else 'Matched with the order sheet'} "
+                                          f"({fo_qty:,.0f} pcs ordered, {mail_qty:,.0f} pcs in this mail)")
                                          if mail_qty <= fo_qty * 1.05 else None})
     else:
         checks.append({"key": "filled_order", "ok": False, "text": "No Filled Order for this category"})
@@ -407,6 +409,20 @@ def list_imports(conn: sqlite3.Connection, user_id: int, workspace_id: str,
     sql += " ORDER BY COALESCE(email_date, created_at) DESC, id DESC"
     cur = conn.execute(sql, params)
     return [_row_dict(cur, r) for r in cur.fetchall()]
+
+
+def fix_decision_wording(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mails whose SOs were already in Order Desk were only checked against the
+    order sheet, not matched — say so on cards saved before this wording."""
+    for item in items:
+        res = item.get("result")
+        if not isinstance(res, dict) or res.get("previous_status") != "already_imported":
+            continue
+        res["auto_decisions"] = [
+            d.replace("Matched with the order sheet", "Order sheet checked", 1) if isinstance(d, str) else d
+            for d in res.get("auto_decisions") or []
+        ]
+    return items
 
 
 def refresh_checks(items: list[dict[str, Any]], existing_payment=None) -> list[dict[str, Any]]:

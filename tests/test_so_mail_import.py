@@ -347,3 +347,16 @@ def test_auto_process_open_saves_waiting_already_imported(monkeypatch):
     rec = smi.get_import(conn, 1, "ws", res["id"])
     assert rec["status"] == "auto_saved"
     assert db.calls  # CD/TDS set
+
+
+def test_order_sheet_wording_when_sos_already_in_order_desk():
+    base = {"distributor": {"id": 1, "name": "D", "score": 95}, "cd_percent": 3.0, "tds_applicable": False,
+            "filled_order_candidates": [{"total_piece_qty": 300}]}
+    parsed = {"summary": {"qty": 200}, "so_rows": [{"so_number": "1"}]}
+    q_new = smi.evaluate_checks(parsed, {"all_match": True}, {**base, "already_imported_sos": []}, None)[1]
+    q_old = smi.evaluate_checks(parsed, {"all_match": True}, {**base, "already_imported_sos": ["1"]}, None)[1]
+    assert q_new[0]["auto_reason"].startswith("Matched with the order sheet")
+    assert q_old[0]["auto_reason"].startswith("Order sheet checked")
+    saved = [{"result": {"previous_status": "already_imported",
+                         "auto_decisions": ["Matched with the order sheet (2 pcs ordered, 1 pcs in this mail)"]}}]
+    assert smi.fix_decision_wording(saved)[0]["result"]["auto_decisions"][0].startswith("Order sheet checked")
