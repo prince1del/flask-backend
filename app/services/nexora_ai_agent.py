@@ -1191,6 +1191,167 @@ def get_usage_summary(*, user_id: int, all_users: bool, days: int = 30) -> dict[
         conn.close()
 
 
+# --- Learned question patterns ---------------------------------------------
+# When the agent answers a question with tools, the question's shape and the
+# tools it needed are remembered ("{distributor_name} ke kitne ci pending hai"
+# -> get_distributor_hisaab + get_pending_so). The next question with the same
+# shape - for any distributor - fetches that data straight away and the AI
+# only writes the answer: one round instead of two. Numbers are always fresh.
+_LEARN_ARG_KEYS = ("distributor_name", "party_name", "customer_name", "category", "season", "query")
+
+
+def _norm_text(text: str) -> str:
+    return " ".join("".join(ch if ch.isalnum() else " " for ch in (text or "").lower()).split())
+
+
+def _ensure_learned_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ask_nexora_learned (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            template TEXT NOT NULL,
+            tools_json TEXT NOT NULL,
+            learned_from TEXT,
+            hits INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_used_at TEXT,
+            UNIQUE (workspace_id, template)
+        )
+        """
+    )
+
+
+def learn_template(query: str, calls: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]] | None:
+    """Question + tool calls -> (template, tools with {placeholders}), or None.
+
+    Only values that literally appear in the question become placeholders, so
+    the template can be filled from a new question of the same shape."""
+    template = _norm_text(query)
+    if not template or not calls:
+        return None
+    tools = []
+    for call in calls:
+        name = str(call.get("name") or "")
+        if not name:
+            return None
+        args_out: dict[str, Any] = {}
+        for k, v in (call.get("args") or {}).items():
+            val = _norm_text(str(v))
+            if k in _LEARN_ARG_KEYS and val:
+                if "{" + k + "}" in template:
+                    args_out[k] = "{" + k + "}"
+                    continue
+                padded = f" {template} "
+                if f" {val} " in padded:
+                    template = padded.replace(f" {val} ", " {" + k + "} ", 1).strip()
+                    args_out[k] = "{" + k + "}"
+                    continue
+            args_out[k] = v
+        tools.append({"name": name, "args": args_out})
+    if "{" not in template:
+        return None  # nothing to fill in - a fixed question, no gain over asking again
+    if len([w for w in template.split() if not w.startswith("{")]) < 2:
+        return None  # too vague to recognise safely
+    return template, tools
+
+
+def _template_regex(template: str):
+    import re
+
+    parts = re.split(r"(\{[a-z_]+\})", template)
+    seen: set[str] = set()
+    out = []
+    for part in parts:
+        if part.startswith("{") and part.endswith("}"):
+            key = part[1:-1]
+            out.append(f"(?P<{key}>.+?)" if key not in seen else f"(?P={key})")
+            seen.add(key)
+        else:
+            out.append(re.escape(part))
+    return re.compile("^" + "".join(out) + "$")
+
+
+def match_learned(query: str, rows: list[tuple[str, str]]) -> list[dict[str, Any]] | None:
+    """Fill the first matching template's tools from `query`. rows = (template, tools_json)."""
+    q = _norm_text(query)
+    for template, tools_json in rows:
+        m = _template_regex(template).match(q)
+        if not m:
+            continue
+        values = m.groupdict()
+        filled = []
+        for tool in json.loads(tools_json):
+            args = {}
+            for k, v in (tool.get("args") or {}).items():
+                if isinstance(v, str) and v.startswith("{") and v.endswith("}"):
+                    v = values.get(v[1:-1], "")
+                args[k] = v
+            filled.append({"name": tool["name"], "args": args})
+        return filled
+    return None
+
+
+def _learned_rows(workspace_id: str) -> list[tuple[str, str]]:
+    try:
+        conn = sqlite3.connect(_db_path())
+        try:
+            _ensure_learned_schema(conn)
+            return conn.execute(
+                "SELECT template, tools_json FROM ask_nexora_learned WHERE workspace_id = ? "
+                "ORDER BY hits DESC, id DESC LIMIT 300",
+                (workspace_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def _save_learned(workspace_id: str, query: str, calls: list[dict[str, Any]]) -> None:
+    learned = learn_template(query, calls)
+    if not learned:
+        return
+    template, tools = learned
+    try:
+        conn = sqlite3.connect(_db_path())
+        try:
+            _ensure_learned_schema(conn)
+            conn.execute(
+                "INSERT INTO ask_nexora_learned (workspace_id, template, tools_json, learned_from) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(workspace_id, template) DO UPDATE SET "
+                "tools_json = excluded.tools_json",
+                (workspace_id, template, json.dumps(tools, ensure_ascii=False), query[:300]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def _mark_learned_used(workspace_id: str, query: str) -> None:
+    q = _norm_text(query)
+    try:
+        conn = sqlite3.connect(_db_path())
+        try:
+            for (template,) in conn.execute(
+                "SELECT template FROM ask_nexora_learned WHERE workspace_id = ?", (workspace_id,)
+            ).fetchall():
+                if _template_regex(template).match(q):
+                    conn.execute(
+                        "UPDATE ask_nexora_learned SET hits = hits + 1, last_used_at = datetime('now') "
+                        "WHERE workspace_id = ? AND template = ?",
+                        (workspace_id, template),
+                    )
+                    conn.commit()
+                    break
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
 def ask_order_desk(
     query: str,
     *,
@@ -1210,11 +1371,31 @@ def ask_order_desk(
     prompt_tokens = 0
     output_tokens = 0
     model_used = ""
+    first_round_calls: list[dict[str, Any]] = []
+    used_learned = False
+
+    # A question shaped like one answered before: fetch its data first, so the
+    # AI only has to write the answer. Not for follow-ups (they lean on history).
+    if not history:
+        prefetch = match_learned(query, _learned_rows(workspace_id))
+        if prefetch:
+            results = [
+                {"tool": c["name"], "args": c["args"],
+                 "result": _run_tool(c["name"], c["args"], user_id=user_id, workspace_id=workspace_id)}
+                for c in prefetch
+            ]
+            if not any(isinstance(r["result"], dict) and r["result"].get("error") for r in results):
+                used_learned = True
+                contents = [{"role": "user", "parts": [{"text": (
+                    f"{query}\n\n[NEXORA already fetched this data for the question above. "
+                    f"Answer from it; call a tool only if something needed is missing.]\n"
+                    + json.dumps(_sanitize(results), ensure_ascii=False, default=str)[:60000]
+                )}]}]
 
     def _finish(answer: str) -> str:
         _log_usage(
             user_id=user_id,
-            feature="nexora_agent",
+            feature="nexora_agent_learned" if used_learned else "nexora_agent",
             model=model_used,
             rounds=rounds,
             prompt_tokens=prompt_tokens,
@@ -1244,7 +1425,18 @@ def ask_order_desk(
         text_parts = [p["text"] for p in parts if isinstance(p, dict) and p.get("text")]
 
         if not function_calls:
-            return _finish("\n".join(text_parts).strip() or "Iska jawab abhi nahi mil paaya.")
+            answer = "\n".join(text_parts).strip()
+            if answer and used_learned:
+                _mark_learned_used(workspace_id, query)
+            elif answer and first_round_calls and not history and rounds == 2:
+                # Plain one-step tool answer - worth remembering for next time.
+                _save_learned(workspace_id, query, first_round_calls)
+            return _finish(answer or "Iska jawab abhi nahi mil paaya.")
+
+        if rounds == 1:
+            first_round_calls = [
+                {"name": c.get("name") or "", "args": c.get("args") or {}} for c in function_calls
+            ]
 
         # Model's turn (including its function-call request) joins the history first.
         contents.append({"role": "model", "parts": parts})

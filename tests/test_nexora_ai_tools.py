@@ -143,3 +143,49 @@ def test_ask_sends_history_before_question(monkeypatch):
     assert out == "ok"
     texts = [c["parts"][0]["text"] for c in seen["contents"]]
     assert texts == ["Savitri ke CI?", "Bed 31", "aur Bath ke?"]
+
+
+def test_learn_template_and_match_other_distributor():
+    from app.services import nexora_ai_agent as a
+
+    calls = [{"name": "get_distributor_hisaab", "args": {"distributor_name": "Savitri Steel"}},
+             {"name": "get_pending_so", "args": {"distributor_name": "Savitri Steel", "category": "Bath"}}]
+    template, tools = a.learn_template("Savitri Steel ke kitne Bath SO pending hai?", calls)
+    assert template == "{distributor_name} ke kitne {category} so pending hai"
+    assert tools[1]["args"] == {"distributor_name": "{distributor_name}", "category": "{category}"}
+
+    import json as _json
+    filled = a.match_learned("Bernina International ke kitne Bed SO pending hai", [(template, _json.dumps(tools))])
+    assert filled[0] == {"name": "get_distributor_hisaab", "args": {"distributor_name": "bernina international"}}
+    assert filled[1]["args"] == {"distributor_name": "bernina international", "category": "bed"}
+    assert a.match_learned("Bernina ka phone number kya hai", [(template, _json.dumps(tools))]) is None
+    # A fixed question (nothing to fill in) is not worth learning.
+    assert a.learn_template("aaj ka PJP kya hai", [{"name": "get_pjp_for_date", "args": {"date": "2026-11-13"}}]) is None
+
+
+def test_ask_learns_then_prefetches(tmp_path, monkeypatch):
+    from app.services import nexora_ai_agent as a
+
+    monkeypatch.setattr(a, "_db_path", lambda: str(tmp_path / "learn.sqlite3"))
+    monkeypatch.setattr(a, "_log_usage", lambda **k: None)
+    tool_runs = []
+    monkeypatch.setattr(a, "_run_tool", lambda name, args, **k: tool_runs.append((name, dict(args))) or {"ok": 1})
+    gemini_calls = []
+
+    def fake_call(contents):
+        gemini_calls.append(contents)
+        first_text = contents[0]["parts"][0].get("text", "")
+        if "already fetched" in first_text or len(contents) > 1:
+            return {"candidates": [{"content": {"parts": [{"text": "jawab"}]}}]}, "m"
+        return {"candidates": [{"content": {"parts": [{"functionCall": {
+            "name": "get_pending_so", "args": {"distributor_name": "Savitri Steel"}}}]}}]}, "m"
+
+    monkeypatch.setattr(a, "_call_gemini", fake_call)
+    assert a.ask_order_desk("Savitri Steel ke kitne SO pending hai", user_id=1, workspace_id="ws") == "jawab"
+    assert len(gemini_calls) == 2  # tool round + answer round
+
+    gemini_calls.clear(); tool_runs.clear()
+    assert a.ask_order_desk("Kalra Agencies ke kitne SO pending hai", user_id=1, workspace_id="ws") == "jawab"
+    assert len(gemini_calls) == 1  # learned: data fetched first, one AI round
+    assert tool_runs == [("get_pending_so", {"distributor_name": "kalra agencies"})]
+    assert a._learned_rows("ws")[0][0] == "{distributor_name} ke kitne so pending hai"
