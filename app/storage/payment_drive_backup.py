@@ -226,7 +226,7 @@ def _push_snapshot(
             pass
 
 
-def backup_so_payment_collection_to_drive(
+def _backup_so_payment_collection_sync(
     *,
     db: Any,
     user_id: int | None,
@@ -265,7 +265,7 @@ def backup_so_payment_collection_to_drive(
         logger.exception("SO payment receiving Drive backup failed")
 
 
-def backup_category_payment_status_to_drive(
+def _backup_category_payment_status_sync(
     *,
     db: Any,
     user_id: int | None,
@@ -300,3 +300,70 @@ def backup_category_payment_status_to_drive(
         _mark_backup_done(user_id, workspace_id, "category")
     except Exception:
         logger.exception("Category payment status Drive backup failed")
+
+
+# --------------------------------------------------------------- background
+# A Drive push is ~15 Google API calls (≈10 s). Running it inside the request
+# made "Add payment" hang and tied up a server thread, so callers now return
+# at once and the snapshot is pushed from a background thread. Repeated calls
+# while a push is running coalesce into one follow-up push with fresh data.
+
+import threading as _threading
+
+_bg_lock = _threading.Lock()
+_bg_state: dict[tuple[str, int, str], str] = {}  # key -> "running" | "again"
+
+
+def _run_in_background(key: tuple[str, int, str], fn, kwargs: dict[str, Any]) -> None:
+    import os
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        fn(**kwargs)  # deterministic in tests
+        return
+    with _bg_lock:
+        state = _bg_state.get(key)
+        if state == "running":
+            _bg_state[key] = "again"
+            return
+        if state == "again":
+            return
+        _bg_state[key] = "running"
+
+    def worker() -> None:
+        while True:
+            try:
+                fn(**kwargs)
+            except Exception:
+                logger.exception("Background payment Drive backup failed (%s)", key[0])
+            with _bg_lock:
+                if _bg_state.get(key) == "again":
+                    _bg_state[key] = "running"
+                    continue
+                _bg_state.pop(key, None)
+                return
+
+    _threading.Thread(target=worker, daemon=True, name=f"payment-drive-{key[0]}").start()
+
+
+def backup_so_payment_collection_to_drive(**kwargs: Any) -> None:
+    """Order Desk → Distributor's Payment Collection — pushed in the background."""
+    if not kwargs.get("user_id") or not kwargs.get("workspace_id"):
+        return
+    if kwargs.get("allow_read_cooldown") and not _should_run_read_backup(
+        kwargs["user_id"], kwargs["workspace_id"], "so"
+    ):
+        return
+    key = ("so", int(kwargs["user_id"]), str(kwargs["workspace_id"]))
+    _run_in_background(key, _backup_so_payment_collection_sync, {**kwargs, "allow_read_cooldown": False})
+
+
+def backup_category_payment_status_to_drive(**kwargs: Any) -> None:
+    """Drawer → Distributors Payment Status — pushed in the background."""
+    if not kwargs.get("user_id"):
+        return
+    if kwargs.get("allow_read_cooldown") and not _should_run_read_backup(
+        kwargs["user_id"], kwargs.get("workspace_id"), "category"
+    ):
+        return
+    key = ("category", int(kwargs["user_id"]), str(kwargs.get("workspace_id") or ""))
+    _run_in_background(key, _backup_category_payment_status_sync, {**kwargs, "allow_read_cooldown": False})
