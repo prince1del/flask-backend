@@ -1,0 +1,18 @@
+[Unit]
+Description=NEXORA Flask API (gunicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+User=nexora
+Group=nexora
+WorkingDirectory=/opt/nexora
+EnvironmentFile=/etc/nexora.env
+Environment=PATH=/opt/nexora/.venv/bin:/usr/bin:/bin
+ExecStart=/bin/sh /opt/nexora/start.sh
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
