@@ -370,6 +370,37 @@ def list_imports(conn: sqlite3.Connection, user_id: int, workspace_id: str,
     return [_row_dict(cur, r) for r in cur.fetchall()]
 
 
+def refresh_checks(items: list[dict[str, Any]], existing_payment=None) -> list[dict[str, Any]]:
+    """Recompute checks/questions for open items at read time.
+
+    Keeps answers current (e.g. CD/TDS changed in Payment since staging) and
+    gives mails staged before the checks existed the same question cards.
+    Nothing is written back.
+    """
+    for item in items:
+        if item.get("status") not in ("review", "already_imported"):
+            continue
+        proposal = item.get("proposal")
+        parsed = item.get("parsed")
+        if not isinstance(proposal, dict) or not isinstance(parsed, dict):
+            continue
+        dist = proposal.get("distributor") or {}
+        current = None
+        if existing_payment is not None and dist.get("id") and proposal.get("season") and proposal.get("category"):
+            try:
+                current = existing_payment(dist["id"], proposal["season"], proposal["category"])
+            except Exception:
+                current = None
+        try:
+            checks, questions = evaluate_checks(parsed, item.get("compare"), proposal, current)
+        except Exception:
+            continue
+        proposal["checks"] = checks
+        proposal["questions"] = questions
+        proposal["auto_ok"] = item.get("status") == "review" and not questions
+    return items
+
+
 def get_import(conn: sqlite3.Connection, user_id: int, workspace_id: str, import_id: int,
                *, with_pack: bool = False) -> dict[str, Any] | None:
     ensure_schema(conn)
@@ -688,12 +719,14 @@ def confirm_import(
     return result
 
 
-def current_payment(db, user_id: int, distributor_id: int, season: str, category: str) -> dict | None:
+def current_payment(db, user_id: int, distributor_id: int, season: str, category: str,
+                    *, status: list | None = None) -> dict | None:
     """CD % / TDS that Payment uses today for one slot (None when not set yet)."""
-    try:
-        status = db.list_distributor_category_payment_status(user_id) or []
-    except Exception:
-        return None
+    if status is None:
+        try:
+            status = db.list_distributor_category_payment_status(user_id) or []
+        except Exception:
+            return None
     for d in status:
         if int(d.get("distributor_id") or 0) != int(distributor_id):
             continue

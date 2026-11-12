@@ -54,6 +54,21 @@ def list_imports():
         items = smi.list_imports(conn, uid, ws, status=request.args.get("status") or None)
     finally:
         conn.close()
+    try:
+        from app.routes.data import _db_path
+        from centralized_db_system.db import CentralizedDB
+
+        db = CentralizedDB(_db_path())
+        status_once: dict = {}
+
+        def _payment(did, season, cat):
+            if "s" not in status_once:
+                status_once["s"] = db.list_distributor_category_payment_status(uid) or []
+            return smi.current_payment(db, uid, did, season, cat, status=status_once["s"])
+
+        smi.refresh_checks(items, existing_payment=_payment)
+    except Exception:
+        pass  # list still works with the stored checks
     return jsonify({"success": True, "data": {"items": items}}), 200
 
 

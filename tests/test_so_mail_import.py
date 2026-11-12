@@ -273,3 +273,21 @@ def test_ignore_answer_rejects(staged):
                              overrides={"answers": {"mail_vs_pdf": "ignore"}})
     assert out["ignored"] is True
     assert smi.get_import(conn, 1, "ws", res["id"])["status"] == "rejected"
+
+
+def test_refresh_checks_adds_questions_to_old_items():
+    from app.services import so_mail_import as smi
+
+    parsed = {"summary": {"qty": 10, "gross": 100.0, "cd_percent": 3, "tds_applied": False},
+              "so_rows": [{"so_number": "SO1"}]}
+    item = {"status": "review", "parsed": parsed, "compare": {"diffs": ["SO SO1: qty differs"]},
+            "proposal": {"distributor": {"id": 5, "name": "Test Dist", "score": 95},
+                         "distributor_id": 5, "season": "AW26", "category": "Bath",
+                         "cd_percent": 3, "tds_applicable": False, "already_imported_sos": []}}
+    done = {"status": "confirmed", "parsed": parsed, "proposal": {"x": 1}}
+    smi.refresh_checks([item, done], existing_payment=lambda d, s, c: {"cd_percent": 3, "tds_applicable": False})
+    keys = [q["key"] for q in item["proposal"]["questions"]]
+    assert "mail_vs_pdf" in keys
+    assert item["proposal"]["auto_ok"] is False
+    assert any(c["key"] == "payment" and c["ok"] for c in item["proposal"]["checks"])
+    assert "checks" not in done["proposal"]
