@@ -73,7 +73,7 @@ def test_ledger_values_cis_like_the_order_and_allocates_oldest_first():
     assert [c["status"] for c in cat["cis"]] == ["paid", "part_paid"]
     assert cat["cis"][1]["uncovered"] == 1137.0
     assert cat["advance_not_used_by_ci"] == 0.0
-    assert any("billed 1,137 more than received" in a["text"] for a in out["distributors"][0]["alerts"])
+    assert any("billed ₹1,137 more than received" in a["text"] for a in out["distributors"][0]["alerts"])
 
 
 def test_extra_payment_and_unbilled_advance_alerts():
@@ -85,5 +85,5 @@ def test_extra_payment_and_unbilled_advance_alerts():
     assert cat["unbilled_advance"] == round(102000 - 61137, 2)
     assert cat["advance_not_used_by_ci"] == round(102000 - 61137, 2)
     texts = " | ".join(a["text"] for a in d["alerts"])
-    assert "paid 105 extra" in texts and "CI still to be raised" in texts
+    assert "paid ₹105 extra" in texts and "CI still to be raised" in texts
     assert out["totals"]["payment_due"] == -105.0

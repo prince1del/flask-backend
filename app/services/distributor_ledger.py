@@ -31,6 +31,23 @@ from app.services import fo_so_match_db as matchdb
 _TOL = 1.0  # rupees
 
 
+def _inr(v: float) -> str:
+    """Indian grouping with rupee sign: 2739139 -> ₹27,39,139."""
+    n = int(round(abs(v)))
+    s = str(n)
+    if len(s) > 3:
+        head, tail = s[:-3], s[-3:]
+        parts = []
+        while len(head) > 2:
+            parts.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            parts.insert(0, head)
+        s = ",".join(parts + [tail])
+    return "₹" + s
+
+
+
 def _so_slots(conn: sqlite3.Connection, user_id: int) -> dict[str, tuple[int, str, str]]:
     """SO number → (distributor_id, season, category) from the latest match runs."""
     out: dict[str, tuple[int, str, str]] = {}
@@ -199,15 +216,15 @@ def build_ledger(
                 cats_out.append(row)
                 label = f"{category} {season}".strip()
                 if unbilled_advance > _TOL and not cis:
-                    alerts.append({"level": "warn", "text": f"{label}: received {unbilled_advance:,.0f} but no CI raised yet"})
+                    alerts.append({"level": "warn", "text": f"{label}: received {_inr(unbilled_advance)} but no CI raised yet"})
                 elif unbilled_advance > _TOL:
-                    alerts.append({"level": "info", "text": f"{label}: {unbilled_advance:,.0f} received, CI still to be raised"})
+                    alerts.append({"level": "info", "text": f"{label}: {_inr(unbilled_advance)} received, CI still to be raised"})
                 elif unbilled_advance < -_TOL:
-                    alerts.append({"level": "warn", "text": f"{label}: billed {-unbilled_advance:,.0f} more than received"})
+                    alerts.append({"level": "warn", "text": f"{label}: billed {_inr(-unbilled_advance)} more than received"})
                 if payment_due < -_TOL:
-                    alerts.append({"level": "info", "text": f"{label}: distributor paid {-payment_due:,.0f} extra"})
+                    alerts.append({"level": "info", "text": f"{label}: distributor paid {_inr(-payment_due)} extra"})
                 elif payment_due > _TOL and due_info.get("due_date") and due_info["due_date"] < today.isoformat():
-                    alerts.append({"level": "alert", "text": f"{label}: {payment_due:,.0f} overdue since {due_info['due_date']}"})
+                    alerts.append({"level": "alert", "text": f"{label}: {_inr(payment_due)} overdue since {due_info['due_date']}"})
         tot = {k: round(sum(r[k] for r in cats_out), 2)
                for k in ("order_payable", "received", "billed", "unbilled_advance", "payment_due")}
         for k in ("order_payable", "received", "billed"):
