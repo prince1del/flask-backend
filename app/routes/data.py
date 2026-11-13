@@ -5664,6 +5664,25 @@ def _bridge_order_match_so_into_lifecycle(
         dist_id = dist_id or existing.get("distributor_id")
     if not dist_id:
         return om
+    # Already seeded with exactly these SO lines? Then skip the ~36 item
+    # writes: this runs on every CI detail view and made each one ~0.5-1 s.
+    try:
+        with sqlite3.connect(db.db_path) as conn:
+            seeded = conn.execute(
+                "SELECT tracking_id, sales_order_parsed FROM order_lifecycle_tracking "
+                "WHERE LOWER(order_ref_no) = ? AND workspace_id = ? AND sales_order_parsed IS NOT NULL",
+                (str(order_ref_no).lower(), workspace_id or "default"),
+            ).fetchall()
+        for seeded_id, raw in seeded:
+            try:
+                if json.loads(raw) == json.loads(json.dumps(parsed, default=str)):
+                    om = dict(om)
+                    om["lifecycle_tracking_id"] = seeded_id
+                    return om
+            except (TypeError, ValueError):
+                continue
+    except sqlite3.Error:
+        pass
     try:
         tracking_id = db.link_sales_order_to_order_lifecycle(
             order_ref_no=order_ref_no,
