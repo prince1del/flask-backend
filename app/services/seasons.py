@@ -177,6 +177,7 @@ def season_overview(db, conn: sqlite3.Connection, *, user_id: int, workspace_id:
             unassigned.append({
                 "distributor_id": d.get("distributor_id"),
                 "distributor_name": d.get("distributor_name"),
+                "tracking_id": ci.get("tracking_id"),  # opens the CI PDF
                 "invoice_no": ci.get("invoice_no"),
                 "invoice_date": ci.get("invoice_date"),
                 "so_number": so,

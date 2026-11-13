@@ -254,7 +254,7 @@ def build_ledger(
                 "distributor_name": d.get("distributor_name"),
                 "totals": tot,
                 "categories": cats_out,
-                "unlinked_cis": [{k: ci[k] for k in ("invoice_no", "invoice_date", "so_number", "gross")}
+                "unlinked_cis": [{k: ci.get(k) for k in ("tracking_id", "invoice_no", "invoice_date", "so_number", "gross")}
                                  for ci in extra],
                 "alerts": alerts,
             }
