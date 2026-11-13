@@ -417,6 +417,7 @@ async function odmCheckLedger(input, distributorId) {
           <thead><tr><th></th><th>Ledger</th><th>NEXORA</th><th>Difference</th></tr></thead>
           <tbody>${compare}</tbody>
         </table>
+        ${r.skipped_older ? `<p class="nx-text-dim">Compared from ${odmEsc(r.compared_from)} (when NEXORA's data for this distributor starts). ${Number(r.skipped_older)} older ledger lines not checked.</p>` : ''}
         ${findings.length ? `<ul class="of-hisaab-alerts">${rows}</ul>` : '<p><strong>✓ Everything matches the ledger.</strong></p>'}
       </div>`;
   } catch (error) {
