@@ -286,6 +286,12 @@ Natural-language questions over the user's data ("how much CD does X pay").
   (`app/routes/app_updates.py`); release files in `<persistent disk>/app-releases/android`;
   publish with `bash deploy/publish_android_apk.sh "notes"`; phone side
   `ui/update/AppUpdate.kt` (`AppUpdateGate`). versionCode = minutes since 2026-01-01.
+  The gate checks after login, every 30 min while open and on every return to the app;
+  `reminders/AppUpdateNotifyWorker.kt` checks hourly in the background and posts one
+  notification per new version with its notes. Write notes as short points separated by
+  ";" — the update window and Settings → Updates show them as bullets.
+  `GET /api/v1/app/android/releases` serves `history.json` (every build's notes; the
+  publish script appends to it) for Settings → Updates.
 
 ---
 
