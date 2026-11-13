@@ -94,9 +94,11 @@ def test_voice_routes_save_choice_and_use_it(tmp_path, monkeypatch):
 
     listed = client.get("/api/v1/ai/voices", headers=h).get_json()["data"]
     assert listed["selected"] == "Kore" and any(v["id"] == "Puck" for v in listed["voices"])
+    assert listed["saved"] is False
     assert client.post("/api/v1/ai/voices/select", json={"voice": "Nope"}, headers=h).status_code == 400
     assert client.post("/api/v1/ai/voices/select", json={"voice": "Puck"}, headers=h).status_code == 200
-    assert client.get("/api/v1/ai/voices", headers=h).get_json()["data"]["selected"] == "Puck"
+    after = client.get("/api/v1/ai/voices", headers=h).get_json()["data"]
+    assert after["selected"] == "Puck" and after["saved"] is True
 
     calls = []
     _fake_gemini(monkeypatch, calls)

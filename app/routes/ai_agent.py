@@ -49,6 +49,8 @@ def ai_voices() -> tuple[Response, int]:
     return jsonify({"success": True, "data": {
         "default": DEFAULT_VOICE,
         "selected": _saved_voice(user_id),
+        # True once this user picked a voice; the phone then follows the server.
+        "saved": _has_saved_voice(user_id),
         "voices": [{"id": k, "label": v} for k, v in VOICES.items()],
     }}), 200
 
@@ -94,6 +96,16 @@ def _voice_conn():
         "user_id INTEGER PRIMARY KEY, voice TEXT NOT NULL, updated_at TEXT NOT NULL)"
     )
     return conn
+
+
+def _has_saved_voice(user_id: int | None) -> bool:
+    if user_id is None:
+        return False
+    conn = _voice_conn()
+    try:
+        return conn.execute("SELECT 1 FROM ask_nexora_voice_prefs WHERE user_id = ?", (user_id,)).fetchone() is not None
+    finally:
+        conn.close()
 
 
 def _saved_voice(user_id: int | None) -> str:
