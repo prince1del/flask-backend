@@ -390,15 +390,33 @@ function renderDistributorHisaab(distributors) {
 
 /* ------------------------------------------------- Check with party ledger */
 
-async function odmCheckLedger(input, distributorId) {
+const _odmLedgerFiles = {};
+
+function odmOwes(v) {
+  const n = Number(v || 0);
+  if (n > 1) return `${odmInr(n)} due`;
+  if (n < -1) return `${odmInr(-n)} advance`;
+  return '₹0';
+}
+
+function odmRecheckLedger(distributorId) {
+  const el = document.getElementById(`of-ledger-from-${distributorId}`);
+  const file = _odmLedgerFiles[distributorId];
+  if (!file || !el || !el.value) return;
+  odmCheckLedger(null, distributorId, el.value);
+}
+
+async function odmCheckLedger(input, distributorId, fromDate) {
   const box = document.getElementById(`of-ledger-check-${distributorId}`);
-  const file = input.files && input.files[0];
-  input.value = '';
+  const file = input ? (input.files && input.files[0]) : _odmLedgerFiles[distributorId];
+  if (input) input.value = '';
   if (!box || !file) return;
+  _odmLedgerFiles[distributorId] = file;
   box.innerHTML = '<p class="nx-text-dim" style="padding:0.5rem 0;">Reading the ledger and matching it with NEXORA…</p>';
   try {
     const fd = new FormData();
     fd.append('distributor_id', String(distributorId));
+    if (fromDate) fd.append('from', fromDate);
     fd.append('file', file);
     const r = await odmJson('/api/v1/distributor-ledger/reconcile', { method: 'POST', body: fd });
     const findings = r.findings || [];
@@ -435,7 +453,20 @@ async function odmCheckLedger(input, distributorId) {
           <tbody>${compare}</tbody>
         </table>
         ${r.summary ? `<p class="of-ledger-summary"><strong>✨ AI summary:</strong> ${odmEsc(r.summary)}</p>` : ''}
-        ${r.skipped_older ? `<p class="nx-text-dim">Compared from ${odmEsc(r.compared_from)} (when NEXORA's data for this distributor starts). ${Number(r.skipped_older)} older ledger lines not checked.</p>` : ''}
+        ${r.balance ? `
+        <h4 class="of-hisaab-h">Balance check</h4>
+        <table class="data-table of-pay-table">
+          <tbody>
+            <tr><td>Opening (ledger, before ${odmEsc(r.compared_from || '')})</td><td class="of-pay-num">${odmOwes(r.balance.opening)}</td></tr>
+            <tr><td>Ledger balance on ${odmEsc(r.period_to || '')}</td><td class="of-pay-num">${odmOwes(r.balance.ledger_closing)}</td></tr>
+            <tr><td>NEXORA balance (opening + entries)</td><td class="of-pay-num">${odmOwes(r.balance.nexora_closing)}</td></tr>
+            <tr><th>${r.balance.matches ? '✓ Balances match' : 'Difference — the mismatches below explain it'}</th><th class="of-pay-num">${r.balance.matches ? '' : odmInr(r.balance.difference)}</th></tr>
+          </tbody>
+        </table>
+        ${r.skipped_older ? `<p class="nx-text-dim">${Number(r.skipped_older)} older ledger lines are inside the opening balance — no need to enter them in NEXORA.</p>` : ''}
+        <p>Compare from <input type="date" id="of-ledger-from-${distributorId}" value="${odmEsc(r.compared_from || '')}">
+          <button type="button" class="nx-btn nx-btn--ghost" onclick="odmRecheckLedger(${distributorId})">Check again</button>
+          <span class="nx-text-dim">Tip: use the season start date to find payments missing since then.</span></p>` : ''}
         ${r.mismatch_count ? `<p><strong>${Number(r.mismatch_count)} mismatch${r.mismatch_count === 1 ? '' : 'es'} found</strong></p>` : '<p><strong>✓ Everything matches the ledger.</strong></p>'}
         ${findings.length ? `<ul class="of-hisaab-alerts">${rows}</ul>` : ''}
       </div>`;

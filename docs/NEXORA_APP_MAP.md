@@ -185,7 +185,11 @@ Menu group with four sections:
   3-sentence AI summary (220-token cap) sits on top. Payments split by category
   match on the same day's total. A payment / credit note that is only in the ledger
   has "+ Add to NEXORA": pick the category (suggested ✨), check amount/date, save
-  (uses `POST /api/v1/distributor-payments/deposits` / `POST …/credit-notes`). `POST /api/v1/distributor-ledger/reconcile`.
+  (uses `POST /api/v1/distributor-payments/deposits` / `POST …/credit-notes`).
+  Older history is never typed in: the ledger's balance before the compare date is
+  the **opening balance**; a Balance check shows ledger closing vs opening + NEXORA
+  entries. Compare-from defaults to when NEXORA's data starts; `from=YYYY-MM-DD`
+  (phone/web "Compare from · Change") moves it, e.g. to the season start. `POST /api/v1/distributor-ledger/reconcile`.
   Code: `app/services/ledger_reconcile.py`. Phone: `LedgerCheckDialog.kt`. Web: Hisaab
   distributor header button.
 - **Statement of Account** — `POST /api/v1/statement-of-account/from-ledger`
