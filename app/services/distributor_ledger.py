@@ -150,6 +150,22 @@ def build_ledger(
     except Exception:
         due = {}
 
+    # SOs the user gave a season by hand (CI without a Filled Order). Used only
+    # when that distributor/season/category exists in Payment Status, so the CI
+    # lands somewhere visible; otherwise it stays in "CI not linked".
+    try:
+        from app.services import seasons as season_svc
+
+        status_slots = {
+            (int(d.get("distributor_id") or 0), s.get("season") or "", c.get("category") or "")
+            for d in status for s in d.get("seasons") or [] for c in s.get("categories") or []
+        }
+        for so, (dist, season, category) in season_svc.overrides(conn, workspace_id).items():
+            if so not in slots and dist is not None and (int(dist), season, category) in status_slots:
+                slots[so] = (int(dist), season, category)
+    except Exception:
+        pass
+
     # CIs grouped by (distributor, season, category); unmapped kept per distributor.
     ci_by_slot: dict[tuple[int, str, str], list[dict[str, Any]]] = {}
     unlinked: dict[int, list[dict[str, Any]]] = {}

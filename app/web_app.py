@@ -80,6 +80,7 @@ import app.models  # register SQLAlchemy models
 from app.routes.app_updates import app_updates_bp
 from app.routes.so_mail import so_mail_bp
 from app.routes.distributor_ledger import distributor_ledger_bp
+from app.routes.seasons import seasons_bp
 from app.routes.auth import register_auth_hooks
 from app.routes.data import index as data_index
 from app.routes.order_reconciliation_api import order_reconciliation_blueprint
@@ -382,6 +383,7 @@ def create_app() -> Flask:
     app.register_blueprint(app_updates_bp)
     app.register_blueprint(so_mail_bp)
     app.register_blueprint(distributor_ledger_bp)
+    app.register_blueprint(seasons_bp)
 
     @app.route("/scheduler", methods=["GET", "POST"])
     def scheduler() -> str:

@@ -264,7 +264,10 @@ def upload_filled_order():
         or Path(file.filename or "upload").stem
     )
     category = (request.form.get("category") or "").strip() or None
-    season = (request.form.get("season") or "").strip() or None
+    # "aw 26", "AW-26" -> "AW26": one spelling per season everywhere.
+    from app.services.seasons import canonical_season
+
+    season = canonical_season(request.form.get("season"))
     use_last_season = _bool_form(request.form.get("use_last_season"))
     confirm_commit = _bool_form(request.form.get("confirm_commit"))
     confirm_replace = _bool_form(request.form.get("confirm_replace"))
