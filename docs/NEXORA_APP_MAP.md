@@ -97,7 +97,11 @@ global search box.
   `season_prices`; `?season=AW26` puts that season's MRP/PTR/Ex-Mill in the row
   (response only) and marks `season_price_missing`. Phone: season chips on Article
   Master follow the app-wide season, "↑ ₹50 vs SS26" tag, "Price by season" in detail.
-  Web: "Latest price / AW26 price" select. Ask Nexora `get_article_price` reads
+  Web: "Latest price / AW26 price" select. Uploading an **older** season's sheet
+  (e.g. SS-26 after AW-26) never asks to replace prices: it compares with that
+  season's own saved price and stores it in `article_season_prices` only
+  (`classify_upload_article` → `older_season`; upload reply `season_prices_saved`).
+  Ask Nexora `get_article_price` reads
   `article_master` (not the empty `article_master_v2`) with every season's price.
 
 ### 3.4 Order Desk (Filled Order ↔ SO ↔ CI)  — the core workflow

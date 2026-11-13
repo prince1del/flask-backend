@@ -241,10 +241,11 @@ def _build_upload_conflict_payload(upload_index, article, classification, key_fi
             "status": status,
         })
 
+    price_base = classification.get("price_base") or existing
     price_comparisons = []
     for field in amdb.TRACKED_PRICE_FIELDS:
         upload_val = article.get(field)
-        existing_val = existing.get(field)
+        existing_val = price_base.get(field)
         change = _price_change_meta(existing_val, upload_val)
         price_comparisons.append({
             "field": field,
@@ -273,6 +274,12 @@ def _build_upload_conflict_payload(upload_index, article, classification, key_fi
         issue_summary = revision_summary
     else:
         issue_summary = "; ".join(parts) if parts else "Conflict with existing article"
+    older_season = classification.get("older_season")
+    if older_season:
+        issue_summary += (
+            f" — {older_season} price is saved for that season only; "
+            f"{classification.get('latest_season')} price stays."
+        )
 
     return {
         "upload_index": upload_index,
@@ -291,15 +298,27 @@ def _build_upload_conflict_payload(upload_index, article, classification, key_fi
         "issue_summary": issue_summary,
         "recommended_action": "replace",
         "duplicate_ids": classification.get("duplicate_ids") or [],
+        "older_season": older_season,
+        "latest_season": classification.get("latest_season"),
     }
 
 
-def _build_upload_success_message(created, updated, skipped):
+def _build_upload_success_message(created, updated, skipped, season_saved=None):
+    season_note = ""
+    if season_saved:
+        seasons = ", ".join(sorted(season_saved))
+        count = sum(season_saved.values())
+        season_note = (
+            f" Saved {seasons} price for {count} item(s) as an older season — "
+            f"latest season prices unchanged."
+        )
     if created > 0:
         suffix = f" ({updated} updated)" if updated else ""
-        return f"Successfully added {created} item(s){suffix}."
+        return f"Successfully added {created} item(s){suffix}.{season_note}"
     if updated > 0:
-        return f"Successfully updated {updated} item(s)."
+        return f"Successfully updated {updated} item(s).{season_note}"
+    if season_note:
+        return season_note.strip()
     if skipped > 0:
         return "0 items updated — items already available in Article Master."
     return "Upload complete — no changes made."
@@ -395,6 +414,7 @@ def upload_article_sheet():
             }), 400
 
         created, updated, skipped = 0, 0, 0
+        season_saved = {}
         created_by_category = {}
         changed_summary = []
         conflicts = []
@@ -430,6 +450,9 @@ def upload_article_sheet():
                 if was_created:
                     created += 1
                     created_by_category[cat] = created_by_category.get(cat, 0) + 1
+                elif classification.get("conflict_reason") == "older_season":
+                    tag = classification["older_season"]
+                    season_saved[tag] = season_saved.get(tag, 0) + 1
                 elif changed_fields:
                     updated += 1
                     changed_summary.append({"item_key": article["item_key"], "changed": changed_fields})
@@ -485,6 +508,7 @@ def upload_article_sheet():
                 "created": created,
                 "updated": updated,
                 "skipped": skipped,
+                "season_prices_saved": season_saved,
                 "created_by_category": created_by_category,
                 "total_parsed": len(articles) + len(needs_review),
                 "needs_manual_review": _sanitize_for_json(needs_review),
@@ -492,7 +516,7 @@ def upload_article_sheet():
 
         return jsonify({
             "status": "success",
-            "message": _build_upload_success_message(created, updated, skipped),
+            "message": _build_upload_success_message(created, updated, skipped, season_saved),
             "category": suggested_category if not force else force,
             "category_breakdown": category_breakdown,
             "created_by_category": created_by_category,
@@ -500,6 +524,7 @@ def upload_article_sheet():
             "created": created,
             "updated": updated,
             "skipped": skipped,
+            "season_prices_saved": season_saved,
             "changed_details": changed_summary,
             "needs_manual_review": _sanitize_for_json(needs_review),
             "duplicate_groups_remaining": len(

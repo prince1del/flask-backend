@@ -256,3 +256,34 @@ def test_list_shows_the_chosen_seasons_price(tmp_path):
     aster = next(a for a in arts if a["brand"] == "Aster")
     assert aster["mrp"] == 250 and aster["prev_season_price"]["mrp"] == 100
     conn.close()
+
+
+def test_older_season_upload_saves_its_own_price_without_review(tmp_path):
+    conn = _conn(tmp_path)
+    key_fields = ["brand", "TC", "size"]
+    latest = _article("Aster", "DB BS", 999, 719.28, 580, "AW-26")
+    amdb.upsert_article(conn, 1, latest, source_filename="aw26.xlsx")
+
+    old = {**latest, "mrp": 1049, "ptr": 719.31, "ex_mill_price": 625.49, "season_tag": "SS-26"}
+    c = amdb.classify_upload_article(conn, 1, old, key_fields)
+    assert c["action"] == "create" and c["conflict_reason"] == "older_season"
+    assert c["older_season"] == "SS-26" and c["latest_season"] == "AW-26"
+
+    amdb.upsert_article(conn, 1, old, source_filename="ss26.xlsx")
+    art = amdb.get_article_by_item_key(conn, 1, latest["item_key"])
+    assert art["mrp"] == 999 and art["season_tag"] == "AW-26"
+    assert amdb.get_season_snapshot(conn, art["id"], "SS-26")["mrp"] == 1049
+
+    # Same old sheet again: nothing to do
+    assert amdb.classify_upload_article(conn, 1, old, key_fields)["action"] == "skip"
+    # Corrected old sheet: that season's price is updated, latest still untouched
+    fixed = {**old, "mrp": 1099}
+    assert amdb.classify_upload_article(conn, 1, fixed, key_fields)["action"] == "create"
+    amdb.upsert_article(conn, 1, fixed, source_filename="ss26_v2.xlsx")
+    assert amdb.get_season_snapshot(conn, art["id"], "SS-26")["mrp"] == 1099
+    assert amdb.get_article_by_item_key(conn, 1, latest["item_key"])["mrp"] == 999
+
+    # A newer season is still a real price revision for review
+    newer = {**latest, "mrp": 1199, "season_tag": "SS-27"}
+    assert amdb.classify_upload_article(conn, 1, newer, key_fields)["action"] == "conflict"
+    conn.close()

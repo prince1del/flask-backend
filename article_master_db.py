@@ -809,6 +809,34 @@ def get_price_field_diffs(existing, article_data):
     return diffs
 
 
+def get_season_snapshot(conn, article_id, season_tag):
+    """Saved mrp/ptr/ex_mill_price for one season of an article, or None."""
+    tag = amparser.normalize_season_tag(season_tag)
+    if not tag:
+        return None
+    row = conn.execute(
+        """SELECT mrp, ptr, ex_mill_price FROM article_season_prices
+           WHERE article_id = ? AND season_tag = ?""",
+        (article_id, tag),
+    ).fetchone()
+    if row is None or all(v is None for v in row):
+        return None
+    return {"season_tag": tag, "mrp": row[0], "ptr": row[1], "ex_mill_price": row[2]}
+
+
+def _effective_latest_season(conn, existing):
+    """Newest season among the article's own tag and its season snapshots."""
+    latest = amparser.normalize_season_tag(existing.get("season_tag"))
+    rows = conn.execute(
+        "SELECT season_tag, mrp, ptr, ex_mill_price FROM article_season_prices WHERE article_id = ?",
+        (existing["id"],),
+    ).fetchall()
+    snap = _latest_season_snapshot_from_rows(rows)
+    if snap and amparser.season_rank(snap.get("season_tag")) >= amparser.season_rank(latest):
+        latest = snap.get("season_tag")
+    return latest
+
+
 def _article_core_fields(article_data):
     return {
         "brand": article_data.get("brand"),
@@ -878,10 +906,50 @@ def classify_upload_article(conn, user_id, article_data, key_fields):
 
     existing = exact or next((m for m in matches if m["item_key"] == item_key), None) or matches[0]
     duplicate_ids = [m["id"] for m in matches if m["id"] != existing["id"]]
-    price_diffs = get_price_field_diffs(existing, article_data)
     key_differs = existing["item_key"] != item_key
     has_duplicate_rows = len(matches) > 1
     category_differs = str(existing.get("category") or "") != str(article_data.get("category") or "")
+
+    # An older season's sheet is compared with that season's own saved price,
+    # never with the latest season's price (which it must not replace).
+    incoming_season = amparser.normalize_season_tag(article_data.get("season_tag"))
+    latest_season = _effective_latest_season(conn, existing)
+    if (
+        incoming_season and latest_season
+        and not amparser.is_season_newer_or_equal(incoming_season, latest_season)
+    ):
+        season_snap = get_season_snapshot(conn, existing["id"], incoming_season)
+        price_base = {**existing, **(season_snap or {}), "bale_pack_size": article_data.get("bale_pack_size")}
+        price_diffs = get_price_field_diffs(price_base, article_data) if season_snap else []
+        new_season_price = season_snap is None and any(
+            article_data.get(f) is not None for f in ("mrp", "ptr", "ex_mill_price")
+        )
+        older = {
+            "older_season": incoming_season,
+            "latest_season": latest_season,
+            "price_base": price_base,
+        }
+        if not key_differs and not has_duplicate_rows:
+            saves = bool(price_diffs or new_season_price or category_differs)
+            return {
+                "action": "create" if saves else "skip",
+                "existing": existing,
+                "price_diffs": [],
+                "conflict_reason": "older_season" if saves else None,
+                "duplicate_ids": [],
+                **older,
+            }
+        reason = "duplicate_entries_in_master" if has_duplicate_rows else "item_key_mismatch"
+        return {
+            "action": "conflict",
+            "existing": existing,
+            "price_diffs": price_diffs,
+            "conflict_reason": reason,
+            "duplicate_ids": duplicate_ids,
+            **older,
+        }
+
+    price_diffs = get_price_field_diffs(existing, article_data)
 
     # Same prices but Bed→TOB (or similar): force upsert path so category/product persist.
     if category_differs and not price_diffs and not key_differs and not has_duplicate_rows:
