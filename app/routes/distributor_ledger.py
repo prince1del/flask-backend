@@ -37,3 +37,131 @@ def ledger():
 
         data = filter_ledger_by_season(data, season)
     return jsonify({"success": True, "data": data}), 200
+
+
+# ── Credit notes ─────────────────────────────────────────────────────────────
+
+import re as _re
+
+_TOKEN_RE = _re.compile(r"^cn_[0-9a-f]{32}\.(pdf|jpg|png)$")
+_MIMES = {"pdf": "application/pdf", "jpg": "image/jpeg", "png": "image/png"}
+
+
+def _cn_conn():
+    from app.routes.data import _db_path
+
+    return sqlite3.connect(_db_path())
+
+
+@distributor_ledger_bp.route("/credit-notes/read", methods=["POST"])
+@require_jwt_auth
+def credit_note_read():
+    """Upload a CN PDF/photo: keeps the file and returns what it says (not saved yet)."""
+    import uuid
+
+    from app.services import credit_notes as cn
+
+    uid = get_request_user_id()
+    if uid is None:
+        return jsonify({"success": False, "error": {"message": "Authentication required"}}), 401
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"success": False, "error": {"message": "Choose a PDF or photo"}}), 400
+    name = (f.filename or "").lower()
+    if name.endswith(".pdf") or (f.mimetype or "") == "application/pdf":
+        ext = "pdf"
+    elif name.endswith(".png"):
+        ext = "png"
+    else:
+        ext = "jpg"
+    data = f.read()
+    if not data:
+        return jsonify({"success": False, "error": {"message": "The file is empty"}}), 400
+    token = f"cn_{uuid.uuid4().hex}.{ext}"
+    (cn.files_dir() / token).write_bytes(data)
+    try:
+        fields = cn.read_document(data, _MIMES[ext], user_id=uid)
+    except ValueError as exc:
+        # The file is kept: the user can still type the CN in and attach it.
+        return jsonify({"success": True, "data": {"file_token": token, "fields": None,
+                                                  "message": str(exc)}}), 200
+    return jsonify({"success": True, "data": {"file_token": token, "fields": fields}}), 200
+
+
+@distributor_ledger_bp.route("/credit-notes", methods=["POST"])
+@require_jwt_auth
+def credit_note_add():
+    from app.services import credit_notes as cn
+
+    uid = get_request_user_id()
+    if uid is None:
+        return jsonify({"success": False, "error": {"message": "Authentication required"}}), 401
+    body = request.get_json(silent=True) or {}
+    token = str(body.get("file_token") or "").strip() or None
+    if token and (not _TOKEN_RE.match(token) or not (cn.files_dir() / token).is_file()):
+        return jsonify({"success": False, "error": {"message": "Upload the file again"}}), 400
+    try:
+        distributor_id = int(body.get("distributor_id"))
+        amount = float(body.get("amount") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": {"message": "Distributor and amount are required"}}), 400
+    conn = _cn_conn()
+    try:
+        entry = cn.add(
+            conn,
+            workspace_id=str(get_workspace_id() or "default"),
+            user_id=uid,
+            distributor_id=distributor_id,
+            season=str(body.get("season") or ""),
+            category=str(body.get("category") or ""),
+            amount=amount,
+            cn_no=body.get("cn_no"),
+            cn_date=body.get("cn_date"),
+            reason=body.get("reason"),
+            file_name=token,
+            created_by=uid,
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+    finally:
+        conn.close()
+    return jsonify({"success": True, "data": {"entry": entry}}), 200
+
+
+@distributor_ledger_bp.route("/credit-notes/<int:cn_id>", methods=["DELETE"])
+@require_jwt_auth
+def credit_note_delete(cn_id: int):
+    from app.services import credit_notes as cn
+
+    uid = get_request_user_id()
+    if uid is None:
+        return jsonify({"success": False, "error": {"message": "Authentication required"}}), 401
+    conn = _cn_conn()
+    try:
+        ok = cn.delete(conn, user_id=uid, cn_id=cn_id)
+    finally:
+        conn.close()
+    if not ok:
+        return jsonify({"success": False, "error": {"message": "Credit note not found"}}), 404
+    return jsonify({"success": True, "data": {"deleted": cn_id}}), 200
+
+
+@distributor_ledger_bp.route("/credit-notes/<int:cn_id>/file", methods=["GET"])
+@require_jwt_auth
+def credit_note_file(cn_id: int):
+    from flask import send_file
+
+    from app.services import credit_notes as cn
+
+    uid = get_request_user_id()
+    if uid is None:
+        return jsonify({"success": False, "error": {"message": "Authentication required"}}), 401
+    conn = _cn_conn()
+    try:
+        name = cn.file_name_of(conn, user_id=uid, cn_id=cn_id)
+    finally:
+        conn.close()
+    path = cn.files_dir() / name if name and _TOKEN_RE.match(name) else None
+    if path is None or not path.is_file():
+        return jsonify({"success": False, "error": {"message": "No file for this credit note"}}), 404
+    return send_file(path, mimetype=_MIMES[name.rsplit(".", 1)[1]], max_age=0)

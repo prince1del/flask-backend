@@ -286,6 +286,12 @@ function renderDistributorHisaab(distributors) {
             <td><span class="of-pay-pill ${cls}">${label}</span></td>
           </tr>`;
       }).join('');
+      const cns = (c.credit_notes || []).map((n) => `
+        <tr><td>${odmEsc(n.cn_no || '—')}</td><td>${odmEsc(n.cn_date || '—')}</td>
+        <td>${odmEsc(n.reason || '')}</td><td class="of-pay-num">${odmInr(n.amount)}</td>
+        <td>${n.has_file ? `<button type="button" class="nx-btn nx-btn--ghost" onclick="odmOpenCreditNote(${n.id})">View</button>` : ''}
+        <button type="button" class="nx-btn nx-btn--ghost" onclick="odmDeleteCreditNote(${n.id})">Delete</button></td></tr>`).join('');
+      const cnSlot = odmEsc(JSON.stringify({ distributor_id: d.distributor_id, season: c.season, category: c.category }));
       const pend = (c.pending_sos || []).map((p) => `
         <tr><td>${odmEsc(p.so_number)}</td><td>${p.status === 'partial' ? 'Part billed' : 'Open'}</td>
         <td class="of-pay-num">${odmQty(p.pending_qty)}</td><td class="of-pay-num">${odmInr(p.pending_net)}</td></tr>`).join('');
@@ -299,7 +305,7 @@ function renderDistributorHisaab(distributors) {
           <summary class="of-pay-order-sum">
             <span class="of-pay-order-ref">${odmEsc([c.category, c.season].filter(Boolean).join(' · ') || 'Category')}</span>
             <span class="of-pay-meta">Order ${odmInr(c.order_payable)} · Received ${odmInr(c.received)} · Billed ${odmInr(c.billed)} (${c.ci_count || 0} CI)</span>
-            <span class="of-pay-meta">To collect ${odmInr(c.payment_due)} · Received, CI not made ${odmInr(c.unbilled_advance)}</span>
+            <span class="of-pay-meta">To collect ${odmInr(c.payment_due)}${c.credit_total ? ` (after credit notes ${odmInr(c.credit_total)})` : ''} · Received, CI not made ${odmInr(c.unbilled_advance)}</span>
           </summary>
           <div class="of-pay-order-body">
             <p class="of-pane-help">${odmEsc(terms)}</p>
@@ -313,6 +319,21 @@ function renderDistributorHisaab(distributors) {
               <thead><tr><th>CI No</th><th>Date</th><th>SO</th><th>Gross</th><th>Net (after CD/TDS)</th><th>Covered</th><th>Status</th></tr></thead>
               <tbody>${cis || '<tr><td colspan="7">No CI yet.</td></tr>'}</tbody>
             </table>
+            <h4 class="of-hisaab-h">Credit notes — lower the balance to collect</h4>
+            <table class="data-table of-pay-table">
+              <thead><tr><th>CN No</th><th>Date</th><th>Reason</th><th>Amount</th><th></th></tr></thead>
+              <tbody>${cns || '<tr><td colspan="5">No credit notes.</td></tr>'}</tbody>
+            </table>
+            <form class="of-cn-form" data-slot="${cnSlot}" onsubmit="odmAddCreditNote(event)">
+              <label>Read from PDF / photo <input type="file" name="file" accept="application/pdf,image/*" onchange="odmReadCreditNote(this)"></label>
+              <input name="cn_no" placeholder="CN number">
+              <input name="cn_date" type="date">
+              <input name="amount" type="number" step="0.01" min="0" placeholder="Amount ₹" required>
+              <input name="reason" placeholder="Reason (return, rate difference…)">
+              <input name="file_token" type="hidden">
+              <button type="submit" class="nx-btn">Add credit note</button>
+              <span class="of-cn-msg nx-text-dim"></span>
+            </form>
             ${pend ? `
             <h4 class="of-hisaab-h">SO still to be billed</h4>
             <table class="data-table of-pay-table">
@@ -322,6 +343,20 @@ function renderDistributorHisaab(distributors) {
           </div>
         </details>`;
     }).join('');
+    const catList = d.categories || [];
+    const grand = catList.length > 1 ? `
+        <table class="data-table of-pay-table of-grand-total">
+          <thead><tr><th>Category</th><th>Order</th><th>Received</th><th>Credit notes</th><th>Invoiced</th><th>To collect</th></tr></thead>
+          <tbody>${catList.map((c) => `
+            <tr><td>${odmEsc([c.category, c.season].filter(Boolean).join(' · '))}</td>
+            <td class="of-pay-num">${odmInr(c.order_payable)}</td><td class="of-pay-num">${odmInr(c.received)}</td>
+            <td class="of-pay-num">${odmInr(c.credit_total || 0)}</td><td class="of-pay-num">${odmInr(c.billed)}</td>
+            <td class="of-pay-num">${odmInr(c.payment_due)}</td></tr>`).join('')}
+            <tr><th>Grand total</th><th class="of-pay-num">${odmInr(t.order_payable)}</th><th class="of-pay-num">${odmInr(t.received)}</th>
+            <th class="of-pay-num">${odmInr(t.credit_total || 0)}</th><th class="of-pay-num">${odmInr(t.billed)}</th>
+            <th class="of-pay-num">${odmInr(t.payment_due)}</th></tr>
+          </tbody>
+        </table>` : '';
     const unlinked = (d.unlinked_cis || []).map((ci) => `
       <tr><td>${odmEsc(ci.invoice_no || '—')}</td><td>${odmEsc(ci.invoice_date || '—')}</td>
       <td>${odmEsc(ci.so_number || '—')}</td><td class="of-pay-num">${odmInr(ci.gross)}</td></tr>`).join('');
@@ -332,6 +367,7 @@ function renderDistributorHisaab(distributors) {
           <span class="of-pay-meta">Order ${odmInr(t.order_payable)} · Received ${odmInr(t.received)} · Billed ${odmInr(t.billed)} · To collect ${odmInr(t.payment_due)}</span>
         </header>
         ${alerts ? `<ul class="of-hisaab-alerts">${alerts}</ul>` : ''}
+        ${grand}
         ${cats}
         ${unlinked ? `
         <details class="of-pay-order">
@@ -345,6 +381,76 @@ function renderDistributorHisaab(distributors) {
         </details>` : ''}
       </section>`;
   }).join('');
+}
+
+/* ---------------------------------------------------------- Credit notes */
+
+async function odmReadCreditNote(input) {
+  const form = input.closest('form');
+  const msg = form.querySelector('.of-cn-msg');
+  const file = input.files && input.files[0];
+  if (!file) return;
+  msg.textContent = 'Reading…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const data = await odmJson('/api/v1/distributor-ledger/credit-notes/read', { method: 'POST', body: fd });
+    form.file_token.value = data.file_token || '';
+    const f = data.fields;
+    if (f) {
+      if (f.cn_no) form.cn_no.value = f.cn_no;
+      if (f.cn_date) form.cn_date.value = f.cn_date;
+      if (f.amount) form.amount.value = f.amount;
+      if (f.reason) form.reason.value = f.reason;
+      msg.textContent = 'Check the details, then click Add credit note.';
+    } else {
+      msg.textContent = data.message || 'Could not read it. Type the details in.';
+    }
+  } catch (error) {
+    msg.textContent = error.message;
+  }
+}
+
+async function odmAddCreditNote(event) {
+  event.preventDefault();
+  const form = event.target;
+  const slot = JSON.parse(form.dataset.slot || '{}');
+  const body = {
+    ...slot,
+    cn_no: form.cn_no.value,
+    cn_date: form.cn_date.value,
+    amount: Number(form.amount.value || 0),
+    reason: form.reason.value,
+    file_token: form.file_token.value || null,
+  };
+  try {
+    await odmJson('/api/v1/distributor-ledger/credit-notes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    loadDistributorHisaab();
+  } catch (error) {
+    form.querySelector('.of-cn-msg').textContent = error.message;
+  }
+}
+
+async function odmDeleteCreditNote(id) {
+  if (!confirm('Delete this credit note? The balance to collect will go up again.')) return;
+  try {
+    await odmJson(`/api/v1/distributor-ledger/credit-notes/${id}`, { method: 'DELETE' });
+    loadDistributorHisaab();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function odmOpenCreditNote(id) {
+  try {
+    const res = await fetchWithAuth(`/api/v1/distributor-ledger/credit-notes/${id}/file`);
+    if (!res.ok) throw new Error('No file for this credit note');
+    window.open(URL.createObjectURL(await res.blob()), '_blank');
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 /* ------------------------------------------------------- SO payment mails */

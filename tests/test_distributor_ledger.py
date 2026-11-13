@@ -87,3 +87,36 @@ def test_extra_payment_and_unbilled_advance_alerts():
     texts = " | ".join(a["text"] for a in d["alerts"])
     assert "paid ₹105 extra" in texts and "CI still to be raised" in texts
     assert out["totals"]["payment_due"] == -105.0
+
+
+def test_credit_note_lowers_payment_due_only():
+    from app.services import credit_notes as cn
+
+    conn = _conn()
+    deps = [{"amount": 30000.0, "payment_date": "2026-08-05"}]
+    cn.add(conn, workspace_id="ws", user_id=1, distributor_id=7, season="AW26", category="Bed",
+           amount=5000, cn_no="CN-1", cn_date="2026-08-30", reason="Rate difference")
+    gone = cn.add(conn, workspace_id="ws", user_id=1, distributor_id=7, season="AW26", category="Bed",
+                  amount=999, cn_no="CN-2")
+    assert cn.delete(conn, user_id=1, cn_id=gone["id"])
+    assert not cn.delete(conn, user_id=2, cn_id=1)  # another user cannot delete it
+    out = build_ledger(_Db(_status(deps)), conn, user_id=1, workspace_id="ws", today=date(2026, 9, 1))
+    cat = out["distributors"][0]["categories"][0]
+    assert cat["credit_total"] == 5000.0
+    assert [c["cn_no"] for c in cat["credit_notes"]] == ["CN-1"]
+    assert cat["payment_due"] == round(101895.0 - 30000.0 - 5000.0, 2)
+    assert cat["billed"] == 61137.0  # invoices unchanged
+    assert out["distributors"][0]["totals"]["credit_total"] == 5000.0
+    assert out["totals"]["payment_due"] == cat["payment_due"]
+
+
+def test_credit_note_needs_amount_and_slot():
+    import pytest
+
+    from app.services import credit_notes as cn
+
+    conn = sqlite3.connect(":memory:")
+    with pytest.raises(ValueError):
+        cn.add(conn, workspace_id="ws", user_id=1, distributor_id=7, season="AW26", category="Bed", amount=0)
+    with pytest.raises(ValueError):
+        cn.add(conn, workspace_id="ws", user_id=1, distributor_id=7, season="", category="Bed", amount=10)

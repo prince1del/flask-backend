@@ -12,8 +12,11 @@ and two answers:
 
 * Unbilled advance = Received − Billed  → money received, CI still to be raised
                                           (negative = billed more than received)
-* Payment due      = Order payable − Received → still to collect
+* Payment due      = Order payable − Received − Credit notes → still to collect
                                           (negative = distributor paid extra)
+
+Credit notes (returns, rate difference, schemes; app/services/credit_notes.py)
+only lower the payment due; invoices stay as they are.
 
 Deposits are applied to CIs oldest-first so every CI shows how much of it is
 covered and which money is still sitting as advance.
@@ -186,8 +189,15 @@ def build_ledger(
              "pending_net": p["pending_net"]}
         )
 
+    try:
+        from app.services import credit_notes as cn_svc
+
+        cn_by_slot = cn_svc.by_slot(conn, user_id)
+    except Exception:
+        cn_by_slot = {}
+
     distributors = []
-    totals_all = {"order_payable": 0.0, "received": 0.0, "billed": 0.0}
+    totals_all = {"order_payable": 0.0, "received": 0.0, "billed": 0.0, "credit_total": 0.0}
     for d in status:
         did = int(d.get("distributor_id") or 0)
         cats_out = []
@@ -208,7 +218,9 @@ def build_ledger(
                 billed = round(sum(ci["net"] for ci in cis), 2)
                 advance_left = _allocate(c.get("deposits") or [], cis)
                 unbilled_advance = round(received - billed, 2)
-                payment_due = round(order_payable - received, 2)
+                cns = cn_by_slot.get((did, season, category), [])
+                credit_total = round(sum(x["amount"] for x in cns), 2)
+                payment_due = round(order_payable - received - credit_total, 2)
                 due_info = due.get((did, season, category)) or {}
                 row = {
                     "season": season,
@@ -222,6 +234,8 @@ def build_ledger(
                     "ci_count": len(cis),
                     "unbilled_advance": unbilled_advance,
                     "payment_due": payment_due,
+                    "credit_total": credit_total,
+                    "credit_notes": cns,
                     "advance_not_used_by_ci": advance_left,
                     "due_date": due_info.get("due_date"),
                     "deposits": sorted(c.get("deposits") or [], key=lambda x: x.get("payment_date") or ""),
@@ -242,8 +256,8 @@ def build_ledger(
                 elif payment_due > _TOL and due_info.get("due_date") and due_info["due_date"] < today.isoformat():
                     alerts.append({"level": "alert", "text": f"{label}: {_inr(payment_due)} overdue since {due_info['due_date']}"})
         tot = {k: round(sum(r[k] for r in cats_out), 2)
-               for k in ("order_payable", "received", "billed", "unbilled_advance", "payment_due")}
-        for k in ("order_payable", "received", "billed"):
+               for k in ("order_payable", "received", "billed", "unbilled_advance", "payment_due", "credit_total")}
+        for k in ("order_payable", "received", "billed", "credit_total"):
             totals_all[k] += tot[k]
         extra = unlinked.get(did) or []
         if extra:
@@ -262,7 +276,8 @@ def build_ledger(
     distributors.sort(key=lambda x: -abs(x["totals"]["payment_due"]) - abs(x["totals"]["unbilled_advance"]))
     totals_all = {k: round(v, 2) for k, v in totals_all.items()}
     totals_all["unbilled_advance"] = round(totals_all["received"] - totals_all["billed"], 2)
-    totals_all["payment_due"] = round(totals_all["order_payable"] - totals_all["received"], 2)
+    totals_all["payment_due"] = round(
+        totals_all["order_payable"] - totals_all["received"] - totals_all["credit_total"], 2)
     return {"distributors": distributors, "totals": totals_all, "as_of": today.isoformat()}
 
 
@@ -272,7 +287,7 @@ def filter_ledger_by_season(data: dict[str, Any], season: str) -> dict[str, Any]
     from app.services.seasons import canonical_season
 
     want = canonical_season(season) or season
-    keys = ("order_payable", "received", "billed", "unbilled_advance", "payment_due")
+    keys = ("order_payable", "received", "billed", "unbilled_advance", "payment_due", "credit_total")
     dists = []
     for d in data.get("distributors") or []:
         cats = [c for c in d.get("categories") or [] if (canonical_season(c.get("season")) or c.get("season")) == want]
@@ -283,7 +298,8 @@ def filter_ledger_by_season(data: dict[str, Any], season: str) -> dict[str, Any]
         alerts = [a for a in d.get("alerts") or []
                   if any(str(a.get("text") or "").startswith(lbl) for lbl in labels)]
         dists.append({**d, "categories": cats, "totals": tot, "alerts": alerts})
-    totals = {k: round(sum(x["totals"][k] for x in dists), 2) for k in ("order_payable", "received", "billed")}
+    totals = {k: round(sum(x["totals"][k] for x in dists), 2)
+              for k in ("order_payable", "received", "billed", "credit_total")}
     totals["unbilled_advance"] = round(totals["received"] - totals["billed"], 2)
-    totals["payment_due"] = round(totals["order_payable"] - totals["received"], 2)
+    totals["payment_due"] = round(totals["order_payable"] - totals["received"] - totals["credit_total"], 2)
     return {**data, "distributors": dists, "totals": totals, "season": want}

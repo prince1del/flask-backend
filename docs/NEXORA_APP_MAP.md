@@ -166,6 +166,15 @@ Menu group with four sections:
   covered by which payment (oldest payment pays the oldest CI first).
   Route: `GET /api/v1/distributor-ledger`. Code: `app/services/distributor_ledger.py`.
   Phone: `DistributorHisaab.kt`. Web: Order Desk tab 8 (`order_desk_money.js`).
+  Each distributor shows a **grand total** (all categories + total to collect).
+- **Credit notes** (inside Hisaab) — lower the balance to collect for one
+  season + category: `Balance = Order − Received − Credit notes`; invoices unchanged.
+  Table `distributor_credit_notes`; files in `/var/data/credit-notes/`.
+  Routes: `POST /api/v1/distributor-ledger/credit-notes/read` (PDF/photo → fields via
+  Gemini, 300-token cap, counts in the daily AI limit), `POST /credit-notes`,
+  `DELETE /credit-notes/<id>`, `GET /credit-notes/<id>/file`.
+  Code: `app/services/credit_notes.py`. Phone: `DistributorHisaab.kt` (+ Credit note
+  sheet). Web: Hisaab tab, "Credit notes" table and form.
 - **Statement of Account** — `POST /api/v1/statement-of-account/from-ledger`
   (`app/services/statement_of_account.py`). Phone: `BdStatementOfAccountPane.kt`.
 - **Secondary Sale** — `/api/v1/distributor-secondary-sales/*`. Phone: `BdSecondarySalePane.kt`.
