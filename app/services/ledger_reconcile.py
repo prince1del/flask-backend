@@ -373,25 +373,29 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
         if c.get("category") and c.get("season"):
             seasons_of.setdefault(c["category"], []).append(c["season"])
 
-    def likely(ln: dict[str, Any]) -> str | None:
-        """'Bed · AW26 (RFA 0377)' from the line's own words, or via its RFA."""
+    def likely_slot(ln: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+        """(category, season, RFA) from the line's own words, or via its RFA."""
         blob = f"{ln.get('so_ref') or ''} {ln.get('text') or ''}"
         m = _RFA_RE.search(blob)
         rfa = (m.group(1).lstrip("0") or "0") if m else ci_rfa.get(_num(ln.get("ref")))
         cat = _category_in(blob) or (rfa_cat.get(rfa) if rfa else None)
         if not cat:
-            return None
+            return None, None, rfa
         # newest season last: AW26 after SS26
         seasons = sorted(set(seasons_of.get(cat, [])), key=lambda x: (x[-2:], 1 if x.upper().startswith("AW") else 0))
-        label = cat + (f" · {seasons[-1]}" if seasons else "")
-        return label + (f" (RFA {rfa})" if rfa else "")
+        return cat, (seasons[-1] if seasons else None), rfa
 
     def add(kind: str, level: str, title: str, detail: str, action: str, amount: float = 0.0,
             ref: str = "", tracking_id: int | None = None, line: dict[str, Any] | None = None) -> None:
-        hint = likely(line) if line else None
+        cat, season, rfa = likely_slot(line) if line else (None, None, None)
+        hint = (cat + (f" · {season}" if season else "") + (f" (RFA {rfa})" if rfa else "")) if cat else None
+        d = line.get("date") if line else None
         findings.append({"kind": kind, "level": level, "title": title,
                          "detail": detail + (f" · Likely {hint}" if hint else ""),
-                         "likely": hint, "action": action, "amount": round(amount, 2), "ref": ref,
+                         "likely": hint, "likely_category": cat, "likely_season": season,
+                         "date": d.isoformat() if isinstance(d, date) else None,
+                         "note": (" · ".join(x for x in (ref, (line or {}).get("so_ref")) if x))[:120] if line else "",
+                         "action": action, "amount": round(amount, 2), "ref": ref,
                          "tracking_id": tracking_id})
 
     # Invoices
@@ -544,6 +548,9 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
             {"label": "TDS", "ledger": led["tds"], "nexora": nx_tds},
         ],
         "line_count": len(lines),
+        # where a missing payment / credit note can be added
+        "slots": [{"category": c.get("category"), "season": c.get("season")}
+                  for c in dist.get("categories") or [] if c.get("category") and c.get("season")],
         "skipped_older": skipped,
         "compared_from": start.isoformat() if start else None,
         "findings": findings,

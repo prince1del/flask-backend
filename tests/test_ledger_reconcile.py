@@ -168,3 +168,14 @@ def test_split_payment_matches_as_day_total():
     day = [f for f in out["findings"] if "24 Sep 2026" in f["title"]]
     assert len(day) == 1 and day[0]["level"] == "info" and "₹10,50,000" in day[0]["title"]
     assert out["mismatch_count"] == len([f for f in out["findings"] if f["level"] != "info"])
+
+
+def test_missing_payment_carries_what_add_needs():
+    L = {"kind": "payment", "date": date(2026, 8, 27), "ref": "UTR2", "so_ref": "RFA 0377 Bedsheet",
+         "text": "", "amount": 15000.0, "signed": -15000.0}
+    out = reconcile([L], _dist(), since=date(2026, 8, 1))
+    f = next(x for x in out["findings"] if x["kind"] == "payment" and x["level"] == "alert")
+    assert f["date"] == "2026-08-27" and f["amount"] == 15000.0
+    assert f["likely_category"] == "Bed" and f["likely_season"] == "AW26"
+    assert "UTR2" in f["note"]
+    assert {"category": "Bed", "season": "AW26"} in out["slots"]
