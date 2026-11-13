@@ -6923,3 +6923,6 @@ html[data-hop-theme="custom"] #hop-executive-workspace .vyp-empty {
 .nexora-chat-action { border: 1px solid rgba(34, 211, 238, 0.45); }
 .nexora-chat-action-summary { font-weight: 600; margin-bottom: 0.5rem; }
 .nexora-chat-action .nexora-chat-bubble-actions { display: flex; gap: 0.5rem; }
+
+/* Season picker on the Order Desk money tabs */
+.of-odm-season { min-width: 9rem; padding: 0.35rem 0.5rem; border-radius: 8px; }

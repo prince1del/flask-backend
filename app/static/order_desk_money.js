@@ -33,6 +33,49 @@ async function odmJson(url, options) {
   return data.data || {};
 }
 
+/* ---------------------------------------------------------------- Season */
+// One season choice for these tabs (same idea as the phone's season bar).
+// '' = all seasons. Remembered in this browser.
+
+let odmSeason = '';
+try { odmSeason = localStorage.getItem('nexora_season') || ''; } catch (_) { odmSeason = ''; }
+let _odmSeasonsLoaded = false;
+
+function odmSeasonKey(v) {
+  const m = String(v || '').match(/\b(AW|SS)\s*[-_/ ]?\s*'?(\d{2})\b/i);
+  return m ? (m[1].toUpperCase() + m[2]) : String(v || '').trim().toUpperCase();
+}
+
+function odmSeasonMatches(v) {
+  if (!odmSeason) return true;
+  if (!String(v || '').trim()) return true; // unknown season stays visible
+  return odmSeasonKey(v) === odmSeasonKey(odmSeason);
+}
+
+async function odmLoadSeasons() {
+  if (_odmSeasonsLoaded) return;
+  try {
+    const data = await odmJson('/api/v1/seasons');
+    const seasons = data.seasons || [];
+    document.querySelectorAll('.of-odm-season').forEach((sel) => {
+      sel.innerHTML = '<option value="">All seasons</option>' + seasons.map((s) => {
+        const due = s.to_collect > 1 ? ` · ${odmInr(s.to_collect)} due` : (s.open ? ' · open' : ' ✓');
+        return `<option value="${odmEsc(s.season)}">${odmEsc(s.season)}${odmEsc(due)}</option>`;
+      }).join('');
+      sel.value = odmSeason;
+    });
+    _odmSeasonsLoaded = true;
+  } catch (_) { /* picker stays on "All seasons" */ }
+}
+
+function odmSetSeason(value) {
+  odmSeason = value || '';
+  try { localStorage.setItem('nexora_season', odmSeason); } catch (_) { /* ignore */ }
+  document.querySelectorAll('.of-odm-season').forEach((sel) => { sel.value = odmSeason; });
+  renderPendingSo();
+  loadDistributorHisaab();
+}
+
 /* ------------------------------------------------------------ Pending SO */
 
 let _odmPendingItems = [];
@@ -41,6 +84,7 @@ async function loadPendingSo() {
   const board = document.getElementById('of-pending-board');
   const summary = document.getElementById('of-pending-summary');
   if (board) board.innerHTML = '<p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>';
+  odmLoadSeasons();
   try {
     const data = await odmJson('/api/v1/order-fulfillment/pending-so');
     _odmPendingItems = data.items || [];
@@ -58,9 +102,9 @@ function renderPendingSo() {
   const board = document.getElementById('of-pending-board');
   if (!board) return;
   const q = (document.getElementById('of-pending-search')?.value || '').trim().toLowerCase();
-  const items = _odmPendingItems.filter((i) => !q
+  const items = _odmPendingItems.filter((i) => odmSeasonMatches(i.season) && (!q
     || String(i.distributor_name || '').toLowerCase().includes(q)
-    || String(i.so_number || '').toLowerCase().includes(q));
+    || String(i.so_number || '').toLowerCase().includes(q)));
   if (!items.length) {
     board.innerHTML = `<p class="nx-text-dim" style="padding:0.75rem;">${_odmPendingItems.length
       ? 'No SO matches the search.'
@@ -199,7 +243,8 @@ async function loadDistributorHisaab() {
   const summary = document.getElementById('of-hisaab-summary');
   if (board) board.innerHTML = '<p class="nx-text-dim" style="padding:0.75rem;">Loading…</p>';
   try {
-    const data = await odmJson('/api/v1/distributor-ledger');
+    odmLoadSeasons();
+    const data = await odmJson('/api/v1/distributor-ledger' + (odmSeason ? `?season=${encodeURIComponent(odmSeason)}` : ''));
     const t = data.totals || {};
     if (summary) {
       summary.textContent = `Order ${odmInr(t.order_payable)} · Received ${odmInr(t.received)} · `

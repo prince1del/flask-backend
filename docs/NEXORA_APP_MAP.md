@@ -132,6 +132,23 @@ Pending SO = SO value not yet billed by any CI   GET /api/v1/order-fulfillment/p
   file (`repair_checked` mark in `commercial_invoice_parsed`) and does not re-seed Order
   Match SO lines that are already saved. Keep heavy PDF work out of GET routes.
 
+### 3.4a Seasons (AW26, SS27 …)
+- Rule: the season is chosen once, on the Filled Order upload (stored as one spelling,
+  `canonical_season`: "aw 26" → AW26). SOs inherit it through the FO match, CIs through
+  their SO number, payments through the distributor's season. Bombay Dyeing seasons have
+  no fixed dates, so nothing is guessed from a calendar.
+- CI whose SO never met an FO: no season. `GET /api/v1/seasons` lists them with a
+  suggestion (season/category of the nearest SO number, same distributor first);
+  `POST /api/v1/seasons/assign` stores the choice in `so_season_overrides`, and Hisaab
+  then places that CI in its season.
+- `GET /api/v1/seasons` also gives every season's counts and money and the active one;
+  Hisaab takes `?season=` and recomputes totals for it.
+- Phone: `ui/screens/SeasonBar.kt` — one app-wide switch (All / AW26 / …) on Order Desk
+  and Hisaab, plus the "N CI without season" fix; Order Desk, Pending SO, Hisaab and
+  Payment Status follow it (`SeasonSelection`). Web: season picker on the Pending SO and
+  Hisaab tabs (`order_desk_money.js`); the "without season" fix is phone-only for now.
+- Code: `app/services/seasons.py`, `app/routes/seasons.py`.
+
 ### 3.5 Distributor Zone
 Menu group with four sections:
 - **Distributors Payment Status** — money received per distributor / season /

@@ -85,7 +85,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/personal-todos.css') }}?v=20260809-ptodo1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pjp.css') }}?v=20260809-pjp2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20261113-ai-actions">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme.css') }}?v=20261113-season">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-bright.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-emerald.css') }}?v=20260807-dsr-noblue">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nexora-theme-custom.css') }}?v=20260806-mobile-nav3">
@@ -2334,6 +2334,7 @@
 
                 <div class="of-pane" data-of-pane="pending-so" hidden>
                     <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <select class="of-odm-season" aria-label="Season" onchange="odmSetSeason(this.value)"><option value="">All seasons</option></select>
                         <input type="search" id="of-pending-search" class="of-odm-search" placeholder="Search distributor or SO" oninput="renderPendingSo()" />
                         <button type="button" class="nx-btn" onclick="loadPendingSo()">Refresh</button>
                         <span id="of-pending-summary" class="of-pay-summary" aria-live="polite"></span>
@@ -2353,6 +2354,7 @@
 
                 <div class="of-pane" data-of-pane="hisaab" hidden>
                     <div class="of-pane-toolbar of-pane-toolbar--wrap">
+                        <select class="of-odm-season" aria-label="Season" onchange="odmSetSeason(this.value)"><option value="">All seasons</option></select>
                         <button type="button" class="nx-btn" onclick="loadDistributorHisaab()">Refresh</button>
                         <span id="of-hisaab-summary" class="of-pay-summary" aria-live="polite"></span>
                     </div>
@@ -3757,7 +3759,7 @@
     <script src="{{ url_for('static', filename='app.js') }}?v=20261113-ai-actions"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
     <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp3"></script>
-    <script src="{{ url_for('static', filename='order_desk_money.js') }}?v=20261112-odm2"></script>
+    <script src="{{ url_for('static', filename='order_desk_money.js') }}?v=20261113-season"></script>
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20260824-pdf-fix2"></script>
     <script src="{{ url_for('static', filename='hop_commercial_web.js') }}?v=20260824-delete-yesno1"></script>
 </body>
