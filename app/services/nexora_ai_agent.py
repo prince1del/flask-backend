@@ -16,6 +16,7 @@ exactly like the existing REST endpoints for the same data already are.
 from __future__ import annotations
 
 import json
+import re
 import os
 import sqlite3
 import urllib.error
@@ -419,8 +420,10 @@ def _tool_declarations() -> list[dict[str, Any]]:
             "name": "get_article_price",
             "description": (
                 "Search Article Master for MRP/PTR/ex-mill price by brand, product, "
-                "or print style (e.g. 'Cardinal', 'towel'). Use for 'X ka MRP/rate/"
-                "ex-mill kya hai' type questions. Optionally narrow to one exact size."
+                "category or size (e.g. 'Cardinal', 'towel'). Prices differ by season "
+                "(AW26, SS26…): each article lists every season's price; answer for the "
+                "season the user names, else the newest. Use for 'X ka MRP/rate/ex-mill "
+                "kya hai' and 'price kitna badha' questions."
             ),
             "parameters": {
                 "type": "object",
@@ -431,7 +434,11 @@ def _tool_declarations() -> list[dict[str, Any]]:
                     },
                     "size": {
                         "type": "string",
-                        "description": "Exact size string to narrow to, e.g. '(224 X 254)' (optional).",
+                        "description": "Size text to narrow to, e.g. 'Double' or '224' (optional).",
+                    },
+                    "season": {
+                        "type": "string",
+                        "description": "Season like AW26 or SS26 (optional).",
                     },
                 },
                 "required": ["query"],
@@ -1092,27 +1099,44 @@ def _run_tool(
             })
 
         if name == "get_article_price":
+            # Real articles live in article_master (article_master_v2 is an
+            # old empty table). Prices are per season.
+            import article_master_db as amdb
+
             query = str(args.get("query") or "").strip()
             if not query:
                 return {"error": "query is required"}
             size = str(args.get("size") or "").strip()
-            conn.row_factory = sqlite3.Row
-            sql = (
-                "SELECT brand, size, bs_size, product, print_style, colors, mrp, "
-                "selling_price, ptr, retailer_margin, exmill_price "
-                "FROM article_master_v2 WHERE workspace_id = ? "
-                "AND (brand LIKE ? OR product LIKE ? OR print_style LIKE ?)"
-            )
-            like = f"%{query}%"
-            params: list[Any] = [workspace_id, like, like, like]
+            season = str(args.get("season") or "").strip()
+            words = [w for w in re.split(r"\s+", query) if w]
+            articles = amdb.get_all_articles(conn, user_id)
+
+            def hay(a: dict[str, Any]) -> str:
+                extra = a.get("extra_attributes") or {}
+                extra_text = " ".join(str(v) for v in extra.values()) if isinstance(extra, dict) else str(extra)
+                return " ".join(str(a.get(k) or "") for k in
+                                ("brand", "category", "product_type", "size", "item_key")).lower() + " " + extra_text.lower()
+
+            hits = [a for a in articles if all(w.lower() in hay(a) for w in words)]
             if size:
-                sql += " AND size = ?"
-                params.append(size)
-            sql += " ORDER BY brand, size LIMIT 25"
-            rows = conn.execute(sql, params).fetchall()
-            conn.row_factory = None
-            articles = [dict(r) for r in rows]
-            return {"articles": _sanitize(articles), "count": len(articles)}
+                hits = [a for a in hits if size.lower() in str(a.get("size") or "").lower()
+                        or size.lower() in hay(a)]
+            hits = hits[:20]
+            amdb.attach_season_prices(conn, hits)
+            if season:
+                amdb.overlay_season(hits, season)
+            out = []
+            for a in hits:
+                out.append({
+                    "brand": a.get("brand"), "category": a.get("category"),
+                    "product": a.get("product_type"), "size": a.get("size"),
+                    "price_season": a.get("season_tag"),
+                    "mrp": a.get("mrp"), "ptr": a.get("ptr"), "ex_mill": a.get("ex_mill_price"),
+                    "no_price_for_asked_season": a.get("season_price_missing") or None,
+                    "all_seasons": [{"season": p["season"], "mrp": p["mrp"], "ptr": p["ptr"],
+                                     "ex_mill": p["ex_mill_price"]} for p in a.get("season_prices") or []],
+                })
+            return {"articles": _sanitize(out), "count": len(out), "season_asked": season or None}
 
         if name == "get_market_visits":
             from app.routes.dsr_market import _ensure_table as _ensure_market_table

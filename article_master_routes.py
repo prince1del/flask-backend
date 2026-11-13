@@ -781,9 +781,16 @@ def list_articles():
         articles = amdb.get_articles_by_category(conn, user_id, category)
     else:
         articles = amdb.get_all_articles(conn, user_id)
+    # Every season's price travels with the article; ?season=AW26 shows that
+    # season's price in mrp/ptr/ex_mill_price (that season's goods sell at it).
+    amdb.attach_season_prices(conn, articles)
+    season = (request.args.get("season") or "").strip()
+    if season and season.upper() != "ALL":
+        amdb.overlay_season(articles, season)
 
     conn.close()
-    return jsonify({"articles": articles, "count": len(articles)}), 200
+    return jsonify({"articles": articles, "count": len(articles),
+                    "seasons": amdb.list_seasons(articles)}), 200
 
 
 @article_master_bp.route("/brand-aliases", methods=["GET"])

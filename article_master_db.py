@@ -1684,3 +1684,77 @@ def purge_excluded_extra_attributes(conn) -> dict:
         updated += 1
     conn.commit()
     return {"articles_updated": updated, "keys_removed": removed_keys}
+
+
+# ── Season-wise prices for lists, phone and Ask Nexora ───────────────────────
+
+def _season_key(tag):
+    """'AW-26' / 'aw26' / 'AW 26' -> 'AW26' (the app-wide season name)."""
+    from app.services.seasons import canonical_season
+
+    return canonical_season(amparser.normalize_season_tag(tag) or tag)
+
+
+def attach_season_prices(conn, articles):
+    """Add `season_prices` (oldest -> newest) to every article dict:
+    [{"season": "AW26", "season_tag": "AW-26", "mrp", "ptr", "ex_mill_price"}]."""
+    if not articles:
+        return articles
+    ids = [a["id"] for a in articles if a.get("id") is not None]
+    by_id = {}
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"""SELECT article_id, season_tag, mrp, ptr, ex_mill_price
+                FROM article_season_prices WHERE article_id IN ({placeholders})""",
+            tuple(ids),
+        ).fetchall()
+        for article_id, tag, mrp, ptr, ex_mill in rows:
+            if mrp is None and ptr is None and ex_mill is None:
+                continue
+            by_id.setdefault(article_id, []).append({
+                "season": _season_key(tag), "season_tag": tag,
+                "mrp": mrp, "ptr": ptr, "ex_mill_price": ex_mill,
+            })
+    for article in articles:
+        snaps = by_id.get(article.get("id")) or []
+        snaps.sort(key=lambda s: amparser.season_rank(s["season_tag"]))
+        article["season_prices"] = snaps
+    return articles
+
+
+def price_for_season(article, season):
+    """(snapshot for `season`, the season before it) from attach_season_prices."""
+    want = _season_key(season)
+    snaps = article.get("season_prices") or []
+    for i, snap in enumerate(snaps):
+        if snap["season"] == want:
+            return snap, (snaps[i - 1] if i > 0 else None)
+    return None, None
+
+
+def overlay_season(articles, season):
+    """Show one season's prices in mrp/ptr/ex_mill_price (response only, never
+    saved). Articles with no price for that season keep the latest one and get
+    season_price_missing=True so screens can say 'No AW26 price'."""
+    want = _season_key(season)
+    for article in articles:
+        snap, prev = price_for_season(article, want)
+        if snap:
+            article["mrp"], article["ptr"] = snap["mrp"], snap["ptr"]
+            article["ex_mill_price"] = snap["ex_mill_price"]
+            article["season_tag"] = snap["season_tag"]
+            article["season_price_missing"] = False
+        else:
+            article["season_price_missing"] = bool(article.get("season_prices"))
+        article["prev_season_price"] = prev
+    return articles
+
+
+def list_seasons(articles):
+    """Seasons that have prices, newest first ('AW26', 'SS26', …)."""
+    seen = {}
+    for a in articles:
+        for s in a.get("season_prices") or []:
+            seen.setdefault(s["season"], amparser.season_rank(s["season_tag"]))
+    return [k for k, _ in sorted(seen.items(), key=lambda kv: -kv[1])]

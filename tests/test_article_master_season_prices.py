@@ -228,3 +228,31 @@ def test_blank_season_upload_does_not_clobber_latest(tmp_path):
     assert art["mrp"] == 250
     assert art["season_tag"] == "AW-26"
     conn.close()
+
+
+def test_list_shows_the_chosen_seasons_price(tmp_path):
+    conn = _conn(tmp_path)
+    base = _article("Aster", "DB BS", 100, 70, 50, "SS-26")
+    amdb.upsert_article(conn, 1, base, source_filename="ss26.xlsx")
+    amdb.upsert_article(conn, 1, {**base, "mrp": 250, "ptr": 180, "ex_mill_price": 110, "season_tag": "AW-26"},
+                        source_filename="aw26.xlsx")
+    other = _article("Rio", "SB BS", 90, 60, 40, "AW-26")
+    amdb.upsert_article(conn, 1, other, source_filename="aw26.xlsx")
+
+    arts = amdb.attach_season_prices(conn, amdb.get_all_articles(conn, 1))
+    assert amdb.list_seasons(arts) == ["AW26", "SS26"]
+    aster = next(a for a in arts if a["brand"] == "Aster")
+    assert [p["season"] for p in aster["season_prices"]] == ["SS26", "AW26"]
+
+    amdb.overlay_season(arts, "SS26")  # app-wide name, article table says SS-26
+    aster = next(a for a in arts if a["brand"] == "Aster")
+    rio = next(a for a in arts if a["brand"] == "Rio")
+    assert aster["mrp"] == 100 and aster["season_price_missing"] is False
+    assert rio["season_price_missing"] is True  # no SS26 price: do not pretend
+    # the saved article still holds the latest season
+    assert amdb.get_article_by_item_key(conn, 1, base["item_key"])["mrp"] == 250
+
+    arts = amdb.overlay_season(amdb.attach_season_prices(conn, amdb.get_all_articles(conn, 1)), "AW26")
+    aster = next(a for a in arts if a["brand"] == "Aster")
+    assert aster["mrp"] == 250 and aster["prev_season_price"]["mrp"] == 100
+    conn.close()
