@@ -6918,3 +6918,8 @@ html[data-hop-theme="custom"] #hop-executive-workspace .vyp-empty {
 }
 
 
+
+/* Ask Nexora: a change the AI prepared, waiting for Confirm / Cancel */
+.nexora-chat-action { border: 1px solid rgba(34, 211, 238, 0.45); }
+.nexora-chat-action-summary { font-weight: 600; margin-bottom: 0.5rem; }
+.nexora-chat-action .nexora-chat-bubble-actions { display: flex; gap: 0.5rem; }

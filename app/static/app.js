@@ -5301,6 +5301,41 @@ function appendNexoraChatBubble(role, text, teachContext = null) {
   container.scrollTop = container.scrollHeight;
 }
 
+// A change the AI prepared (to-do, payment, CD/TDS...). Nothing is saved until
+// Confirm; the buttons send "haan" / "nahi" like typing it, so the server path
+// is the same as on the phone and by voice.
+function appendNexoraActionCard(action) {
+  const container = document.getElementById('nexora-chat-messages');
+  if (!container) return;
+  const card = document.createElement('div');
+  card.className = 'nexora-chat-bubble nexora-chat-bubble-bot nexora-chat-action';
+  const summary = document.createElement('div');
+  summary.className = 'nexora-chat-action-summary';
+  summary.textContent = action.summary || 'Save this change?';
+  const row = document.createElement('div');
+  row.className = 'nexora-chat-bubble-actions';
+  const send = (text) => {
+    row.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    const input = document.getElementById('nexora-chat-input');
+    if (input) input.value = text;
+    submitNexoraQuestion(new Event('submit'));
+  };
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.className = 'nx-btn nx-btn-primary';
+  ok.textContent = 'Confirm';
+  ok.addEventListener('click', () => send('haan'));
+  const no = document.createElement('button');
+  no.type = 'button';
+  no.className = 'nx-btn';
+  no.textContent = 'Cancel';
+  no.addEventListener('click', () => send('nahi'));
+  row.append(ok, no);
+  card.append(summary, row);
+  container.appendChild(card);
+  container.scrollTop = container.scrollHeight;
+}
+
 async function loadNexoraChatExamples() {
   const scopeKey = nexoraUserScopeKey();
   const wrap = document.getElementById('nexora-chat-examples');
@@ -5372,6 +5407,7 @@ async function submitNexoraQuestion(event) {
       throw new Error(getApiErrorMessage(data, 'Unable to get an answer'));
     }
     appendNexoraChatBubble('bot', data.answer || 'No answer returned.', { question });
+    if (data.action && data.action.id) appendNexoraActionCard(data.action);
   } catch (error) {
     const msg = (error.message || '').includes('reload')
       ? 'Server restart karein (.venv\\Scripts\\python.exe _run_server_5000.py) phir Ctrl+Shift+R.'
