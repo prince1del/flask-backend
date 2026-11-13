@@ -90,7 +90,20 @@ def _install_fake_drive(monkeypatch, provider):
 # --------------------------------------------------------------- the interlock
 
 
+def test_local_copy_is_kept_by_default(tmp_path, monkeypatch):
+    upload_root = tmp_path / "instance" / "order_fulfillment_files" / "SO"
+    upload_root.mkdir(parents=True)
+    doc = upload_root / "so.pdf"
+    doc.write_bytes(b"%PDF-1.4")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("NEXORA_DROP_LOCAL_AFTER_DRIVE", raising=False)
+    # Lightsail keeps its disk: the server copy stays even after Drive has it.
+    assert data_routes._drop_local_after_drive_backup(doc, "drive-abc") is False
+    assert doc.is_file()
+
+
 def test_local_copy_is_dropped_only_after_drive_confirms(tmp_path, monkeypatch):
+    monkeypatch.setenv("NEXORA_DROP_LOCAL_AFTER_DRIVE", "1")
     upload_root = tmp_path / "instance" / "order_fulfillment_files" / "SO"
     upload_root.mkdir(parents=True)
     doc = upload_root / "so.pdf"
@@ -109,6 +122,7 @@ def test_local_copy_is_dropped_only_after_drive_confirms(tmp_path, monkeypatch):
 
 
 def test_never_deletes_outside_the_upload_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("NEXORA_DROP_LOCAL_AFTER_DRIVE", "1")
     (tmp_path / "instance" / "order_fulfillment_files").mkdir(parents=True)
     outsider = tmp_path / "important.sqlite3"
     outsider.write_bytes(b"not an upload")
@@ -119,6 +133,7 @@ def test_never_deletes_outside_the_upload_root(tmp_path, monkeypatch):
 
 
 def test_missing_file_and_missing_path_are_handled(tmp_path, monkeypatch):
+    monkeypatch.setenv("NEXORA_DROP_LOCAL_AFTER_DRIVE", "1")
     (tmp_path / "instance" / "order_fulfillment_files").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     gone = tmp_path / "instance" / "order_fulfillment_files" / "gone.pdf"

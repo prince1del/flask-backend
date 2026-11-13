@@ -5215,16 +5215,21 @@ def _schedule_so_pack_drive_backup(
 def _drop_local_after_drive_backup(
     local_path: str | Path | None, drive_file_id: str | None
 ) -> bool:
-    """Delete the server-side copy once Drive holds it.
+    """Delete the server-side copy once Drive holds it — only when
+    NEXORA_DROP_LOCAL_AFTER_DRIVE=1.
 
-    Drive is the durable store; the server disk is small and is wiped on every
-    redeploy anyway, so keeping a second copy there only fills it up.
+    That was the Render setup (small disk, wiped on every redeploy). On the
+    Lightsail server the disk is kept and large, and the local copy makes
+    "Show CI" instant and lets the CI detail re-check lines from the PDF, so
+    by default the file now stays (Drive is still the off-server copy).
 
-    Deletes ONLY when Drive returned a file id AND that id was recorded — if
-    Drive is not connected, or the upload failed, the local file is the only
-    copy in existence and is left alone. Also refuses to touch anything
-    outside the upload root, so a bad path can never delete something else.
+    When enabled, deletes ONLY when Drive returned a file id AND that id was
+    recorded — if Drive is not connected, or the upload failed, the local
+    file is the only copy in existence and is left alone. Also refuses to
+    touch anything outside the upload root.
     """
+    if (os.getenv("NEXORA_DROP_LOCAL_AFTER_DRIVE") or "").strip() != "1":
+        return False
     if not drive_file_id or not local_path:
         return False
     try:

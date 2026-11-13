@@ -119,7 +119,9 @@ Pending SO = SO value not yet billed by any CI   GET /api/v1/order-fulfillment/p
   `order_fulfillment_items`, `order_desk_archive`.
 - Files: originals are saved under `instance/` and copied to Drive as
   `NEXORA/{Sales Orders|Filled Orders|Commercial Invoices}/{Season}/{Category}/{Distributor}/`
-  (`app/storage/nexora_drive_paths.py`).
+  (`app/storage/nexora_drive_paths.py`). The server copy is kept after the Drive copy
+  is made (set `NEXORA_DROP_LOCAL_AFTER_DRIVE=1` to delete it, as on old Render).
+  "Show CI/SO" serves Drive first, then the server copy.
 - Phone: `BdOrderDeskPane.kt`, `OrderDeskTree.kt` (season → category → distributor
   tree; Pending SO tab built from the server list), `SoPackBusyOverlay.kt`,
   `util/SoPackUploadPrep.kt`.
