@@ -59,7 +59,9 @@ def files_dir() -> Path:
 def _row(r: sqlite3.Row | tuple) -> dict[str, Any]:
     keys = ("id", "distributor_id", "season", "category", "cn_no", "cn_date", "amount", "reason", "file_name")
     d = dict(zip(keys, r))
-    d["has_file"] = bool(d.pop("file_name"))
+    name = d.pop("file_name")
+    d["has_file"] = bool(name)
+    d["file_type"] = name.rsplit(".", 1)[-1] if name else None  # pdf / jpg / png
     d["amount"] = round(float(d["amount"] or 0), 2)
     return d
 
