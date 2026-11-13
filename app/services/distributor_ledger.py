@@ -264,3 +264,26 @@ def build_ledger(
     totals_all["unbilled_advance"] = round(totals_all["received"] - totals_all["billed"], 2)
     totals_all["payment_due"] = round(totals_all["order_payable"] - totals_all["received"], 2)
     return {"distributors": distributors, "totals": totals_all, "as_of": today.isoformat()}
+
+
+def filter_ledger_by_season(data: dict[str, Any], season: str) -> dict[str, Any]:
+    """Keep one season's categories and recompute every total from them, so the
+    phone/web season switch shows that season's own order / received / due."""
+    from app.services.seasons import canonical_season
+
+    want = canonical_season(season) or season
+    keys = ("order_payable", "received", "billed", "unbilled_advance", "payment_due")
+    dists = []
+    for d in data.get("distributors") or []:
+        cats = [c for c in d.get("categories") or [] if (canonical_season(c.get("season")) or c.get("season")) == want]
+        if not cats:
+            continue
+        tot = {k: round(sum(float(c.get(k) or 0) for c in cats), 2) for k in keys}
+        labels = {f"{c.get('category') or ''} {c.get('season') or ''}".strip() for c in cats}
+        alerts = [a for a in d.get("alerts") or []
+                  if any(str(a.get("text") or "").startswith(lbl) for lbl in labels)]
+        dists.append({**d, "categories": cats, "totals": tot, "alerts": alerts})
+    totals = {k: round(sum(x["totals"][k] for x in dists), 2) for k in ("order_payable", "received", "billed")}
+    totals["unbilled_advance"] = round(totals["received"] - totals["billed"], 2)
+    totals["payment_due"] = round(totals["order_payable"] - totals["received"], 2)
+    return {**data, "distributors": dists, "totals": totals, "season": want}

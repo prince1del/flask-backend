@@ -31,4 +31,9 @@ def ledger():
     dist_id = request.args.get("distributor_id", type=int)
     if dist_id:
         data["distributors"] = [d for d in data["distributors"] if d["distributor_id"] == dist_id]
+    season = (request.args.get("season") or "").strip()
+    if season and season.upper() != "ALL":
+        from app.services.distributor_ledger import filter_ledger_by_season
+
+        data = filter_ledger_by_season(data, season)
     return jsonify({"success": True, "data": data}), 200

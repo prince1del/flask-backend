@@ -75,3 +75,20 @@ def test_season_routes(tmp_path, monkeypatch):
     bad = client.post("/api/v1/seasons/assign", json={"so_number": "102876013"}, headers=h)
     assert bad.status_code == 400
     assert client.get("/api/v1/seasons").status_code == 401
+
+
+def test_filter_ledger_by_season():
+    from app.services.distributor_ledger import filter_ledger_by_season
+
+    cat = lambda season, due: {"season": season, "category": "Bed", "order_payable": 100.0, "received": 100.0 - due,
+                               "billed": 50.0, "unbilled_advance": 50.0 - due, "payment_due": due}
+    data = {"distributors": [
+        {"distributor_id": 1, "categories": [cat("AW26", 30.0), cat("SS27", 10.0)], "totals": {},
+         "alerts": [{"text": "Bed AW26: ₹30 overdue"}, {"text": "Bed SS27: ₹10 overdue"}]},
+        {"distributor_id": 2, "categories": [cat("SS27", 5.0)], "totals": {}, "alerts": []},
+    ], "totals": {}}
+    out = filter_ledger_by_season(data, "aw 26")
+    assert [d["distributor_id"] for d in out["distributors"]] == [1]
+    assert out["distributors"][0]["totals"]["payment_due"] == 30.0
+    assert out["distributors"][0]["alerts"] == [{"text": "Bed AW26: ₹30 overdue"}]
+    assert out["totals"]["payment_due"] == 30.0 and out["season"] == "AW26"
