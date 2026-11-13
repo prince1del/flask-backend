@@ -635,6 +635,8 @@ def get_one_article(article_id):
     conn = _get_db_connection()
     try:
         article = amdb.get_article_by_id(conn, user_id, article_id)
+        if article is not None:
+            amdb.attach_season_prices(conn, [article])
     finally:
         conn.close()
     if article is None:

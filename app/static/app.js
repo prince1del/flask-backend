@@ -12667,7 +12667,9 @@ function renderArticleMasterTable() {
       <td>${escapePartyDetailHtml(formatArticleSizeDisplay(a.size) || '—')}</td>
       <td>${escapePartyDetailHtml(getArticlePhysicalSizeDisplay(a) || '—')}</td>
       <td>${escapePartyDetailHtml(getArticleProductDisplay(a))}</td>
-      <td>${formatArticleMasterValue(a.mrp, 'mrp')}</td>
+      <td>${a.season_price_missing
+        ? `<span style="color:#b26a00;font-weight:600;">No ${escapePartyDetailHtml(articleMasterState.priceSeason || '')} price</span>`
+        : formatArticleMasterValue(a.mrp, 'mrp')}${articleMasterPriceChange(a)}</td>
       <td>${formatArticleMasterValue(a.ptr, 'ptr')}</td>
       <td>${formatArticleMasterValue(a.ex_mill_price, 'ex_mill_price')}</td>
       ${distTd}${retTd}${percTd}
@@ -12678,6 +12680,20 @@ function renderArticleMasterTable() {
   scheduleArticleMasterLayout();
 }
 
+/** "↑ ₹50 vs SS26" under MRP when the season before had another price. */
+function articleMasterPriceChange(a) {
+  const snaps = a.season_prices || [];
+  if (a.season_price_missing || snaps.length < 2) return '';
+  const tag = String(a.season_tag || '').replace(/[-\s]/g, '').toUpperCase();
+  let idx = snaps.findIndex((s) => s.season === tag);
+  if (idx < 0) idx = snaps.length - 1;
+  const prev = idx > 0 ? snaps[idx - 1] : null;
+  const now = Number(a.mrp);
+  if (!prev || prev.mrp == null || !Number.isFinite(now) || Math.abs(now - prev.mrp) < 1) return '';
+  const up = now > prev.mrp;
+  return `<div style="font-size:11px;font-weight:600;color:${up ? '#c62828' : '#2e7d32'};">${up ? '↑' : '↓'} ₹${Math.round(Math.abs(now - prev.mrp)).toLocaleString('en-IN')} vs ${prev.season}</div>`;
+}
+
 async function loadArticleMasterList() {
   const tbody = document.getElementById('am-articles-tbody');
   if (tbody) {
@@ -12685,12 +12701,22 @@ async function loadArticleMasterList() {
   }
 
   try {
-    const response = await fetchWithAuth('/api/v1/article-master/list');
+    // Same article, different price each season: ?season= shows that season's price.
+    const seasonSel = document.getElementById('am-price-season');
+    const priceSeason = seasonSel ? seasonSel.value : '';
+    const response = await fetchWithAuth('/api/v1/article-master/list'
+      + (priceSeason ? `?season=${encodeURIComponent(priceSeason)}` : ''));
     const data = await response.json();
     if (!response.ok) {
       throw new Error(getApiErrorMessage(data, 'Failed to load articles'));
     }
     articleMasterState.articles = data.articles || [];
+    articleMasterState.priceSeason = priceSeason;
+    if (seasonSel) {
+      seasonSel.innerHTML = '<option value="">Latest price</option>'
+        + (data.seasons || []).map((s) => `<option value="${s}">${s} price</option>`).join('');
+      seasonSel.value = priceSeason;
+    }
     if (articleMasterState.selectionMode) {
       const valid = new Set(
         (articleMasterState.articles || []).map((a) => Number(a.id)).filter((id) => Number.isFinite(id)),

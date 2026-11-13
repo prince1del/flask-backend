@@ -2482,6 +2482,7 @@
                     <h2 class="inv-title">Article Master</h2>
                     <label class="bd-am-filter-inline">
                         <span>Category</span>
+                        <select id="am-price-season" title="Show prices of this season" onchange="loadArticleMasterList()"><option value="">Latest price</option></select>
                         <select id="am-category-filter" onchange="renderArticleMasterTable()">
                             <option value="All">All</option>
                         </select>
@@ -3756,7 +3757,7 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20261113-ai-actions"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20261113-season-price"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
     <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp3"></script>
     <script src="{{ url_for('static', filename='order_desk_money.js') }}?v=20261113-ledger6"></script>

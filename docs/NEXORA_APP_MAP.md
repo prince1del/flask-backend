@@ -92,6 +92,13 @@ global search box.
 - Tables: `article_master_v2`, `article_price_history`, `article_season_prices`,
   `brand_aliases`, `category_master`.
 - Phone: `BdArticlesPane.kt`, `ArticleMasterUploadSheet.kt`, `ArticleMasterManualEntrySheet.kt`.
+- **Season-wise price:** one article, a price per season (`article_season_prices`,
+  tags like AW-26 = app season AW26). `GET /list` sends every article's
+  `season_prices`; `?season=AW26` puts that season's MRP/PTR/Ex-Mill in the row
+  (response only) and marks `season_price_missing`. Phone: season chips on Article
+  Master follow the app-wide season, "↑ ₹50 vs SS26" tag, "Price by season" in detail.
+  Web: "Latest price / AW26 price" select. Ask Nexora `get_article_price` reads
+  `article_master` (not the empty `article_master_v2`) with every season's price.
 
 ### 3.4 Order Desk (Filled Order ↔ SO ↔ CI)  — the core workflow
 ```
