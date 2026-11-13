@@ -153,3 +153,50 @@ def ai_voice():
     resp.headers["X-Nexora-Voice-Cached"] = "1" if info.get("cached") else "0"
     resp.headers["Cache-Control"] = "private, max-age=86400"
     return resp
+
+
+# --- Ask Nexora actions: confirm / cancel what the AI proposed -------------
+
+
+def _actions_ids():
+    from flask import current_app
+
+    from app.routes.auth import get_workspace_id
+
+    user_id = _request_user_id()
+    return user_id, str(get_workspace_id() or "default"), str(current_app.config.get("DATABASE_PATH") or "centralized_db.sqlite3")
+
+
+@ai_agent_bp.route("/api/v1/ai/actions/pending", methods=["GET"])
+@require_jwt_auth
+def ai_action_pending() -> tuple[Response, int]:
+    from app.services import nexora_actions
+
+    user_id, ws, db_path = _actions_ids()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"message": "Login required"}}), 401
+    return jsonify({"success": True, "data": {"action": nexora_actions.pending(db_path, user_id=user_id, workspace_id=ws)}}), 200
+
+
+@ai_agent_bp.route("/api/v1/ai/actions/<int:action_id>/confirm", methods=["POST"])
+@require_jwt_auth
+def ai_action_confirm(action_id: int) -> tuple[Response, int]:
+    from app.services import nexora_actions
+
+    user_id, ws, db_path = _actions_ids()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"message": "Login required"}}), 401
+    out = nexora_actions.confirm(db_path, action_id=action_id, user_id=user_id, workspace_id=ws)
+    return jsonify({"success": bool(out.get("ok")), "data": out}), 200
+
+
+@ai_agent_bp.route("/api/v1/ai/actions/<int:action_id>/cancel", methods=["POST"])
+@require_jwt_auth
+def ai_action_cancel(action_id: int) -> tuple[Response, int]:
+    from app.services import nexora_actions
+
+    user_id, ws, db_path = _actions_ids()
+    if user_id is None:
+        return jsonify({"success": False, "error": {"message": "Login required"}}), 401
+    out = nexora_actions.cancel(db_path, action_id=action_id, user_id=user_id, workspace_id=ws)
+    return jsonify({"success": bool(out.get("ok")), "data": out}), 200

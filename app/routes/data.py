@@ -8973,6 +8973,18 @@ def ai_assistant_query() -> Response:
     if intent != "greeting" and user_id is not None and workspace_id != "house_of_prizm":
         from app.services import nexora_ai_agent as _agent
 
+        # "haan" / "nahi" right after the AI proposed a change: confirm or
+        # cancel it (works by voice too, e.g. in the car).
+        from app.services import nexora_actions as _actions
+
+        _reply = _actions.answer_reply(_db_path(), user_id=user_id, workspace_id=workspace_id, text=query)
+        if _reply is not None:
+            _agent.record_turn(user_id, workspace_id, query, _reply)
+            return Response(
+                json.dumps({"intent": "ai_action", "query": query, "answer": _reply}, ensure_ascii=False),
+                mimetype="application/json",
+            )
+
         _turns = _agent.recent_turns(user_id, workspace_id)
         # Counting / hisaab / "SO ka number" questions go straight to the AI:
         # the rule engine reads "number" as a phone number and "kitne" as a
@@ -8989,10 +9001,14 @@ def ai_assistant_query() -> Response:
                     history=_turns if _follow else None,
                 )
                 _agent.record_turn(user_id, workspace_id, query, _ai)
+                from flask import g as _g
+
                 return Response(
                     json.dumps(
                         {"intent": "ai_followup" if _follow else "ai_order_desk",
-                         "query": query, "answer": _ai.strip()},
+                         "query": query, "answer": _ai.strip(),
+                         # A change the AI prepared: the app shows Confirm / Cancel.
+                         "action": getattr(_g, "nexora_pending_action", None)},
                         ensure_ascii=False,
                     ),
                     mimetype="application/json",

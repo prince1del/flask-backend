@@ -175,22 +175,27 @@ def trim(value: Any, depth: int = 0) -> Any:
     return value
 
 
-def read_app(path: str, query: dict | None, *, user_id: int, workspace_id: str) -> dict[str, Any]:
-    """GET an allow-listed app route as the asking user; JSON back, trimmed."""
-    import json
+def call_as_user(
+    method: str,
+    path: str,
+    *,
+    user_id: int,
+    workspace_id: str,
+    query: dict | None = None,
+    json_body: dict | None = None,
+):
+    """Run one app route as the asking user and return the response.
 
+    Reuses the asker's own login so the route applies its usual checks and
+    isolation: the phone's token as-is; for a browser session, the identity
+    the outer request was authenticated as (forwarding the raw cookie to the
+    inner client did not carry the session). Outside a request (jobs, tests)
+    the given user_id/workspace_id is used."""
     from flask import current_app, has_request_context, request
 
-    if not allowed(path):
-        return {"error": f"'{path}' is not a readable NEXORA screen. Use one of the listed paths."}
-    query = {str(k): str(v) for k, v in (query or {}).items() if v not in (None, "")}
     headers: dict[str, str] = {}
     who: dict[str, Any] = {"user_id": int(user_id), "workspace_id": workspace_id}
     if has_request_context():
-        # Reuse the asker's own login so the route applies its usual isolation:
-        # the phone's token as-is; for a browser session, the same identity the
-        # outer request was authenticated as (forwarding the raw cookie to the
-        # inner client did not carry the session).
         if request.headers.get("Authorization"):
             headers["Authorization"] = request.headers["Authorization"]
         user = getattr(request, "user", None)
@@ -206,7 +211,19 @@ def read_app(path: str, query: dict | None, *, user_id: int, workspace_id: str) 
         if not headers:
             with client.session_transaction() as sess:
                 sess.update(authenticated=True, **{k: v for k, v in who.items() if v is not None})
-        resp = client.get(path.split("?", 1)[0], query_string=query, headers=headers)
+        return client.open(path, method=method, query_string=query or None, json=json_body, headers=headers)
+
+
+def read_app(path: str, query: dict | None, *, user_id: int, workspace_id: str) -> dict[str, Any]:
+    """GET an allow-listed app route as the asking user; JSON back, trimmed."""
+    import json
+
+    from flask import current_app, has_request_context, request
+
+    if not allowed(path):
+        return {"error": f"'{path}' is not a readable NEXORA screen. Use one of the listed paths."}
+    query = {str(k): str(v) for k, v in (query or {}).items() if v not in (None, "")}
+    resp = call_as_user("GET", path.split("?", 1)[0], user_id=user_id, workspace_id=workspace_id, query=query)
     data = resp.get_json(silent=True)
     if data is None:
         return {"error": f"{path} returned no JSON (status {resp.status_code})"}

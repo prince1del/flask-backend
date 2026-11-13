@@ -44,7 +44,21 @@ def ask_nexora():
 
     # Follow-up inside a running conversation stays on the same distributor/item.
     if workspace_id != "house_of_prizm":
+        from flask import g
+
+        from app.services import nexora_actions
         from app.services import nexora_ai_agent as agent
+
+        isolation = {"isolation": {"user_id": user_id, "workspace_id": workspace_id}}
+        # "haan" / "nahi" right after a proposed change confirms or cancels it.
+        reply = nexora_actions.answer_reply(
+            current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3"),
+            user_id=user_id, workspace_id=workspace_id, text=question,
+        )
+        if reply is not None:
+            agent.record_turn(user_id, workspace_id, question, reply)
+            return jsonify({"status": "success", "question": question, "answer": reply,
+                            "intent": "ai_action", "data": isolation}), 200
 
         turns = agent.recent_turns(user_id, workspace_id)
         follow = agent.is_follow_up(question, turns)
@@ -60,7 +74,9 @@ def ask_nexora():
                 "question": question,
                 "answer": ai_answer,
                 "intent": "ai_followup" if follow else "ai_order_desk",
-                "data": {"isolation": {"user_id": user_id, "workspace_id": workspace_id}},
+                # A change the AI prepared: the chat shows Confirm / Cancel.
+                "action": getattr(g, "nexora_pending_action", None),
+                "data": isolation,
             }), 200
         except Exception:  # noqa: BLE001 - fall back to the normal engine
             pass

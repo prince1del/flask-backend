@@ -96,6 +96,11 @@ Rules:
   about the same ones as the earlier turns - keep them and call the tools
   again for fresh numbers. As soon as the user names a different distributor
   or item, switch to that one.
+- Changes (add a to-do, record a payment, set CD/TDS, log a grievance, plan a
+  day...): you cannot save anything yourself. Call propose_action with the exact
+  fields, then reply with the summary and ask the user to tap Confirm or say
+  "haan". Never say it is saved. If an id or amount is unclear, ask first.
+- Always reply in Roman-script Hinglish (or English), never in Devanagari.
 - "CI pending" is ambiguous. Answer both, clearly separated: (a) CIs raised
   but not yet paid (status unpaid / part paid), and (b) SOs still waiting for
   a CI (pending SO). Split counts by category (Bed / Bath / ...) when the
@@ -145,9 +150,33 @@ def _read_app_declaration() -> dict[str, Any]:
     }
 
 
+def _propose_action_declaration() -> dict[str, Any]:
+    from app.services.nexora_actions import catalog_text
+
+    return {
+        "name": "propose_action",
+        "description": (
+            "Prepare a change in NEXORA for the user to confirm (nothing is saved by this "
+            "call). Look up ids first with read_app/search (distributor_id, todo_id, "
+            "tracking_id...). Write `summary` as one short line the user can check, with the "
+            "real names, amounts and dates. Actions:\n" + catalog_text()
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "One of the listed action names."},
+                "params": {"type": "object", "description": "Fields for that action."},
+                "summary": {"type": "string", "description": "e.g. 'Kalra Agencies · AW26 Bed · ₹50,000 received on 13 Nov 2026 (NEFT)'"},
+            },
+            "required": ["action", "params", "summary"],
+        },
+    }
+
+
 def _tool_declarations() -> list[dict[str, Any]]:
     return [
         _read_app_declaration(),
+        _propose_action_declaration(),
         {
             "name": "get_distributor_hisaab",
             "description": (
@@ -780,6 +809,26 @@ def _run_tool(
                 category=str(args.get("category") or ""),
                 season=str(args.get("season") or ""),
             ))
+
+        if name == "propose_action":
+            from app.services import nexora_actions
+
+            params = args.get("params")
+            out = nexora_actions.propose(
+                _db_path(), user_id=user_id, workspace_id=workspace_id,
+                action=str(args.get("action") or ""),
+                params=params if isinstance(params, dict) else {},
+                summary=str(args.get("summary") or ""),
+            )
+            if "action_id" in out:
+                try:
+                    from flask import g, has_request_context
+
+                    if has_request_context():
+                        g.nexora_pending_action = {"id": out["action_id"], "summary": out["summary"]}
+                except Exception:
+                    pass
+            return out
 
         if name == "read_app":
             from app.services.nexora_app_reader import read_app
@@ -1414,6 +1463,8 @@ def learn_template(query: str, calls: list[dict[str, Any]]) -> tuple[str, list[d
     template = _norm_text(query)
     if not template or not calls:
         return None
+    if any(str(c.get("name") or "") == "propose_action" for c in calls):
+        return None  # changes are never replayed from a pattern
     tools = []
     for call in calls:
         name = str(call.get("name") or "")
