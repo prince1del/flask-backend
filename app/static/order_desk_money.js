@@ -407,7 +407,7 @@ async function odmCheckLedger(input, distributorId) {
       <td class="of-pay-num">${odmInr(c.nexora)}</td>
       <td class="of-pay-num">${Math.abs(c.ledger - c.nexora) < 2 ? '✓' : odmInr(c.ledger - c.nexora)}</td></tr>`).join('');
     const rows = findings.map((f) => `
-      <li><span class="of-pay-pill ${f.level === 'alert' ? 'is-due' : 'is-partial'}">${f.level === 'alert' ? 'MISSING' : 'CHECK'}</span>
+      <li><span class="of-pay-pill ${f.level === 'alert' ? 'is-due' : (f.level === 'info' ? 'is-paid' : 'is-partial')}">${f.level === 'alert' ? 'MISSING' : (f.level === 'info' ? 'OK' : 'CHECK')}</span>
       <strong>${odmEsc(f.title)}</strong><br><span class="nx-text-dim">${odmEsc(f.detail || '')}</span><br>→ ${odmEsc(f.action || '')}</li>`).join('');
     box.innerHTML = `
       <div class="of-pay-order-body">
@@ -419,7 +419,8 @@ async function odmCheckLedger(input, distributorId) {
         </table>
         ${r.summary ? `<p class="of-ledger-summary"><strong>✨ AI summary:</strong> ${odmEsc(r.summary)}</p>` : ''}
         ${r.skipped_older ? `<p class="nx-text-dim">Compared from ${odmEsc(r.compared_from)} (when NEXORA's data for this distributor starts). ${Number(r.skipped_older)} older ledger lines not checked.</p>` : ''}
-        ${findings.length ? `<ul class="of-hisaab-alerts">${rows}</ul>` : '<p><strong>✓ Everything matches the ledger.</strong></p>'}
+        ${r.mismatch_count ? `<p><strong>${Number(r.mismatch_count)} mismatch${r.mismatch_count === 1 ? '' : 'es'} found</strong></p>` : '<p><strong>✓ Everything matches the ledger.</strong></p>'}
+        ${findings.length ? `<ul class="of-hisaab-alerts">${rows}</ul>` : ''}
       </div>`;
   } catch (error) {
     box.innerHTML = `<p class="nx-text-dim" style="padding:0.5rem 0;">${odmEsc(error.message)}</p>`;

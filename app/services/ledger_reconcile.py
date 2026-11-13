@@ -239,7 +239,7 @@ def lines_from_sheet(headers: list[str], rows: list[list[Any]], *, user_id: int)
 
 def summarize(result: dict[str, Any], *, user_id: int) -> str | None:
     """Two or three plain sentences on what to fix first (one small AI call)."""
-    findings = result.get("findings") or []
+    findings = [f for f in result.get("findings") or [] if f.get("level") != "info"]
     if not findings:
         return None
     facts = {
@@ -426,8 +426,9 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
             "Check if the company booked it; it may be cancelled or for another party.",
             float(ci.get("gross") or 0), str(ci.get("invoice_no") or ""), ci.get("tracking_id"))
 
-    # Payments: closest date with the same amount, within _PAY_DAYS
+    # Payments, step 1: same amount, closest date within _PAY_DAYS
     free = list(range(len(deposits)))
+    led_left: list[dict[str, Any]] = []
     for ln in [x for x in lines if x["kind"] == "payment"]:
         best, gap = None, 10**6
         for i in free:
@@ -440,7 +441,29 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
                 best, gap = i, g
         if best is not None:
             free.remove(best)
+        else:
+            led_left.append(ln)
+
+    # Step 2: same day, same total. One transfer is often split in NEXORA by
+    # category (₹9.5 L → Bath ₹5 L + Bed ₹4.5 L), or two transfers entered as one.
+    for day in sorted({ln["date"] for ln in led_left if ln.get("date")}):
+        led_day = [ln for ln in led_left if ln.get("date") == day]
+        nx_day = [i for i in free if _d(deposits[i].get("payment_date")) == day]
+        lt = sum(ln["amount"] for ln in led_day)
+        nt = sum(float(deposits[i].get("amount") or 0) for i in nx_day)
+        if not nx_day or abs(lt - nt) > _TOL:
             continue
+        for ln in led_day:
+            led_left.remove(ln)
+        for i in nx_day:
+            free.remove(i)
+        add("payment", "info", f"Payments on {_fmt(day)} match as a total ({_inr(lt)})",
+            "Ledger: " + " + ".join(_inr(ln["amount"]) for ln in led_day)
+            + " · NEXORA: " + " + ".join(
+                f"{deposits[i]['_where'].split(' · ')[0]} {_inr(float(deposits[i].get('amount') or 0))}" for i in nx_day),
+            "Nothing to do — the money is the same, only split differently.", 0.0)
+
+    for ln in led_left:
         add("payment", "alert", f"Payment {_inr(ln['amount'])} on {_fmt(ln['date'])} is missing in NEXORA",
             "In the ledger" + (f" · ref {ln['ref']}" if ln["ref"] else "")
             + (f" · {ln['text']}" if ln["text"] else ""),
@@ -506,7 +529,7 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
     nx_inv = round(sum(float(ci.get("gross") or 0) for ci in cis if in_period(_d(ci.get("invoice_date")))), 2)
     nx_pay = round(sum(float(p.get("amount") or 0) for p in deposits if in_period(_d(p.get("payment_date")))), 2)
     nx_cn = round(sum(float(n.get("amount") or 0) for n in cns if in_period(_d(n.get("cn_date")))), 2)
-    order = {"alert": 0, "warn": 1}
+    order = {"alert": 0, "warn": 1, "info": 2}
     findings.sort(key=lambda f: (order.get(f["level"], 2), -abs(f["amount"])))
     return {
         "distributor_id": dist.get("distributor_id"),
@@ -524,5 +547,6 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
         "skipped_older": skipped,
         "compared_from": start.isoformat() if start else None,
         "findings": findings,
-        "all_clear": not findings,
+        "mismatch_count": sum(1 for f in findings if f["level"] != "info"),
+        "all_clear": not any(f["level"] != "info" for f in findings),
     }

@@ -155,3 +155,16 @@ def test_unknown_excel_goes_to_ai(tmp_path, monkeypatch):
     assert r.status_code == 200, r.get_data(as_text=True)
     assert seen["headers"][:2] == ["Date", "Particulars"]
     assert r.get_json()["data"]["need_distributor"] is True
+
+
+def test_split_payment_matches_as_day_total():
+    d = _dist()
+    d["categories"].append({"category": "Bath", "season": "AW26", "cis": [], "credit_notes": [],
+                            "deposits": [{"amount": 500000.0, "payment_date": "2026-09-24"}]})
+    d["categories"][0]["deposits"].append({"amount": 550000.0, "payment_date": "2026-09-24"})
+    L = lambda amt: {"kind": "payment", "date": date(2026, 9, 24), "ref": "SBI", "so_ref": "",  # noqa: E731
+                     "text": "", "amount": amt, "signed": -amt}
+    out = reconcile([L(950000.0), L(100000.0)], d, since=date(2026, 9, 1))
+    day = [f for f in out["findings"] if "24 Sep 2026" in f["title"]]
+    assert len(day) == 1 and day[0]["level"] == "info" and "₹10,50,000" in day[0]["title"]
+    assert out["mismatch_count"] == len([f for f in out["findings"] if f["level"] != "info"])
