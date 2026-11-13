@@ -46,6 +46,16 @@ scp -i "$SSH_KEY" -q "$APK" "$SSH_USER@$SERVER:/tmp/$REMOTE_APK"
  \"sha256\": \"$SHA\", \"size_bytes\": $SIZE, \"file\": \"$REMOTE_APK\", \"published_at\": \"$STAMP\"}
 JSON
   sudo install -m 644 /tmp/latest.json $REMOTE_DIR/latest.json && rm -f /tmp/latest.json
+  # history.json: every build's notes, newest first (Settings -> Updates on the phone)
+  sudo python3 - $REMOTE_DIR <<'PYH'
+import json, sys, pathlib
+d = pathlib.Path(sys.argv[1]); h = d / 'history.json'
+latest = json.loads((d / 'latest.json').read_text())
+items = json.loads(h.read_text()) if h.is_file() else []
+items = [r for r in items if r.get('version_code') != latest['version_code']]
+items.insert(0, {k: latest.get(k) for k in ('version_code', 'version_name', 'notes', 'published_at')})
+h.write_text(json.dumps(items[:200], ensure_ascii=False, indent=1))
+PYH
   # keep the 3 newest APKs (rollback = point latest.json at an older one)
   ls -1t $REMOTE_DIR/nexora-*.apk | tail -n +4 | xargs -r sudo rm -f
   sudo chown -R nexora:nexora /var/data/app-releases

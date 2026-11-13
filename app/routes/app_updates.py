@@ -95,3 +95,39 @@ def android_download():
         download_name=f"NEXORA-{meta.get('version_name') or meta['version_code']}.apk",
         max_age=0,
     )
+
+
+def _load_history() -> list[dict]:
+    """Every published build (newest first) from history.json; latest.json as fallback."""
+    path = _android_release_dir() / "history.json"
+    items: list[dict] = []
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            items = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+        except (OSError, ValueError):
+            items = []
+    latest = _load_latest()
+    if latest and not any(str(r.get("version_code")) == str(latest["version_code"]) for r in items):
+        items.append(latest)
+    out = []
+    for r in items:
+        try:
+            code = int(r.get("version_code"))
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "version_code": code,
+            "version_name": r.get("version_name") or str(code),
+            "notes": r.get("notes") or "",
+            "published_at": r.get("published_at"),
+        })
+    out.sort(key=lambda r: r["version_code"], reverse=True)
+    return out[:60]
+
+
+@app_updates_bp.route("/android/releases", methods=["GET"])
+@require_jwt_auth
+def android_releases():
+    """What changed in each build - Settings → Updates on the phone."""
+    return jsonify({"success": True, "data": {"releases": _load_history()}}), 200

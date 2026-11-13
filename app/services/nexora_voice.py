@@ -30,11 +30,11 @@ VOICES: dict[str, str] = {
     "Orus": "Orus — male, firm",
     "Fenrir": "Fenrir — male, energetic",
 }
-_MODELS = ("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts")
-_STYLE = (
-    "Read this aloud in a warm, natural, conversational Indian Hinglish voice, "
-    "like a helpful colleague giving a quick update. Text: "
-)
+# Lite first: ~20% faster to first sound, same voices.
+_MODELS = ("gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts")
+# No spoken style instruction: the TTS model sometimes read the instruction
+# aloud ("Read this aloud in a warm…") before the answer. Only the answer text
+# is sent; the chosen voice already sounds natural.
 _MAX_SPOKEN_CHARS = 700
 _CACHE_MAX_FILES = 400
 _URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
@@ -133,7 +133,7 @@ def synthesize(
         raise VoiceError("Nothing to say")
     voice = voice if voice in VOICES else DEFAULT_VOICE
     cache = _cache_dir(db_path)
-    key = hashlib.sha256(f"{voice}|{spoken}".encode()).hexdigest()[:32]
+    key = hashlib.sha256(f"v2|{voice}|{spoken}".encode()).hexdigest()[:32]
     hit = cache / f"{key}.wav"
     if hit.exists():
         os.utime(hit)
@@ -144,7 +144,7 @@ def synthesize(
         raise VoiceError("GEMINI_API_KEY not configured on the server")
 
     body = json.dumps({
-        "contents": [{"parts": [{"text": _STYLE + spoken}]}],
+        "contents": [{"parts": [{"text": spoken}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
