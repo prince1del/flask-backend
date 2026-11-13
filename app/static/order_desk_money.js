@@ -406,9 +406,26 @@ async function odmCheckLedger(input, distributorId) {
       <tr><td>${odmEsc(c.label)}</td><td class="of-pay-num">${odmInr(c.ledger)}</td>
       <td class="of-pay-num">${odmInr(c.nexora)}</td>
       <td class="of-pay-num">${Math.abs(c.ledger - c.nexora) < 2 ? '✓' : odmInr(c.ledger - c.nexora)}</td></tr>`).join('');
+    const slots = r.slots || [];
+    const addForm = (f) => {
+      if (f.level !== 'alert' || (f.kind !== 'payment' && f.kind !== 'credit_note')) return '';
+      const opts = slots.map((sl) => {
+        const sel = sl.category === f.likely_category && (!f.likely_season || sl.season === f.likely_season);
+        return `<option value="${odmEsc(JSON.stringify(sl))}" ${sel ? 'selected' : ''}>${odmEsc(sl.category)} · ${odmEsc(sl.season)}${sel ? ' (suggested)' : ''}</option>`;
+      }).join('');
+      return `
+        <form class="of-ledger-add" data-kind="${f.kind}" data-dist="${distributorId}" data-ref="${odmEsc(f.ref || '')}" onsubmit="odmAddFromLedger(event)">
+          <select name="slot" required>${slots.length ? '' : '<option value="">No season / category yet</option>'}${opts}</select>
+          <input name="amount" type="number" step="0.01" min="0" value="${Number(f.amount || 0)}" required>
+          <input name="date" type="date" value="${odmEsc(f.date || '')}" required>
+          <input name="note" value="${odmEsc(f.note || '')}" placeholder="Note">
+          <button type="submit" class="nx-btn">${f.kind === 'payment' ? 'Add payment to NEXORA' : 'Add credit note to NEXORA'}</button>
+          <span class="of-cn-msg nx-text-dim"></span>
+        </form>`;
+    };
     const rows = findings.map((f) => `
       <li><span class="of-pay-pill ${f.level === 'alert' ? 'is-due' : (f.level === 'info' ? 'is-paid' : 'is-partial')}">${f.level === 'alert' ? 'MISSING' : (f.level === 'info' ? 'OK' : 'CHECK')}</span>
-      <strong>${odmEsc(f.title)}</strong><br><span class="nx-text-dim">${odmEsc(f.detail || '')}</span><br>→ ${odmEsc(f.action || '')}</li>`).join('');
+      <strong>${odmEsc(f.title)}</strong><br><span class="nx-text-dim">${odmEsc(f.detail || '')}</span><br>→ ${odmEsc(f.action || '')}${addForm(f)}</li>`).join('');
     box.innerHTML = `
       <div class="of-pay-order-body">
         <h4 class="of-hisaab-h">Ledger check ${r.period_from ? `· ${odmEsc(r.period_from)} to ${odmEsc(r.period_to)}` : ''}
@@ -424,6 +441,32 @@ async function odmCheckLedger(input, distributorId) {
       </div>`;
   } catch (error) {
     box.innerHTML = `<p class="nx-text-dim" style="padding:0.5rem 0;">${odmEsc(error.message)}</p>`;
+  }
+}
+
+async function odmAddFromLedger(event) {
+  event.preventDefault();
+  const form = event.target;
+  const msg = form.querySelector('.of-cn-msg');
+  let slot = {};
+  try { slot = JSON.parse(form.slot.value || '{}'); } catch (_) { slot = {}; }
+  if (!slot.category) { msg.textContent = 'Choose a category'; return; }
+  const distributorId = Number(form.dataset.dist);
+  const amount = Number(form.amount.value || 0);
+  const isPayment = form.dataset.kind === 'payment';
+  const url = isPayment ? '/api/v1/distributor-payments/deposits' : '/api/v1/distributor-ledger/credit-notes';
+  const body = isPayment
+    ? { distributor_id: distributorId, season: slot.season, category: slot.category, amount,
+        payment_date: form.date.value, note: 'From ledger' + (form.note.value ? ` · ${form.note.value}` : '') }
+    : { distributor_id: distributorId, season: slot.season, category: slot.category, amount,
+        cn_no: form.dataset.ref || '', cn_date: form.date.value, reason: form.note.value || 'From ledger' };
+  form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = true; });
+  try {
+    await odmJson(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    form.outerHTML = `<p><strong>✓ Added to ${odmEsc(slot.category)} · ${odmEsc(slot.season)}</strong> — refresh Hisaab to see it.</p>`;
+  } catch (error) {
+    form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
+    msg.textContent = error.message;
   }
 }
 

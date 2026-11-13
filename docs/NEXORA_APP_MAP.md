@@ -182,7 +182,10 @@ Menu group with four sections:
   "3%CD"/"TDS:" credit lines compared as CD/TDS totals). Any other Excel/CSV layout
   and PDF/photo are read by Gemini (12k-token cap, daily AI limit). Each mismatch
   gets a "Likely Bed · AW26 (RFA …)" hint from the ledger's own RFA text, and a
-  3-sentence AI summary (220-token cap) sits on top. `POST /api/v1/distributor-ledger/reconcile`.
+  3-sentence AI summary (220-token cap) sits on top. Payments split by category
+  match on the same day's total. A payment / credit note that is only in the ledger
+  has "+ Add to NEXORA": pick the category (suggested ✨), check amount/date, save
+  (uses `POST /api/v1/distributor-payments/deposits` / `POST …/credit-notes`). `POST /api/v1/distributor-ledger/reconcile`.
   Code: `app/services/ledger_reconcile.py`. Phone: `LedgerCheckDialog.kt`. Web: Hisaab
   distributor header button.
 - **Statement of Account** — `POST /api/v1/statement-of-account/from-ledger`
