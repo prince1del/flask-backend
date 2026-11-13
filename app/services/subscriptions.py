@@ -192,7 +192,14 @@ def is_blocked(db_path, user: dict[str, Any] | None, path: str) -> bool:
         return False
     if path_is_allowed_when_expired(path) or is_super_admin(user):
         return False
-    ends = _parse(_cached_ends_at(db_path, int(user["user_id"])))
+    user_id = int(user["user_id"])
+    ends = _parse(_cached_ends_at(db_path, user_id))
+    if ends is None or ends > _now():
+        return False
+    # A code may have been redeemed on another worker process; never block
+    # on a cached value.
+    _invalidate(user_id)
+    ends = _parse(_cached_ends_at(db_path, user_id))
     return ends is not None and ends <= _now()
 
 
