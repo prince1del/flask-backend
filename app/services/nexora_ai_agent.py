@@ -31,7 +31,9 @@ _AGENT_TIMEOUT_S = 60
 _AGENT_FIRST_TRY_TIMEOUT_S = 25
 # Fast model first for the agent; the OCR list (GEMINI_FLASH_MODEL etc.) follows
 # as fallback. Override with GEMINI_AGENT_MODELS="model-a,model-b".
-_AGENT_DEFAULT_MODELS = ("gemini-3.6-flash",)
+# Lite answers in ~2-3 s vs ~5-6 s for 3.6-flash with the same tools and the
+# same answers in tests (13 Nov 2026); 3.6-flash stays as the fallback.
+_AGENT_DEFAULT_MODELS = ("gemini-3.5-flash-lite", "gemini-3.6-flash")
 
 
 def agent_gemini_models() -> tuple[str, ...]:

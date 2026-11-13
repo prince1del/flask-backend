@@ -90,7 +90,7 @@ def test_name_filter():
 def test_agent_models_fast_first(monkeypatch):
     monkeypatch.delenv("GEMINI_AGENT_MODELS", raising=False)
     monkeypatch.setenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
-    assert agent_gemini_models() == ("gemini-3.6-flash", "gemini-3.5-flash")
+    assert agent_gemini_models() == ("gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash")
     monkeypatch.setenv("GEMINI_AGENT_MODELS", "m1,gemini-3.5-flash")
     assert agent_gemini_models() == ("m1", "gemini-3.5-flash")
 

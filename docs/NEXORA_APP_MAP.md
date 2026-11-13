@@ -261,7 +261,7 @@ Natural-language questions over the user's data ("how much CD does X pay").
   so it stays on the same distributor/item until a new one is named.
 - Gemini: key in `/etc/nexora.env`, project `Default Gemini Project` on the paid
   prepay tier (₹500 credits, auto-reload off — the spend cap). Agent tries
-  `gemini-3.6-flash` first (low thinking, 25 s), then `GEMINI_FLASH_MODEL`.
+  `gemini-3.5-flash-lite` first (~2-3 s per answer), then `gemini-3.6-flash`, then `GEMINI_FLASH_MODEL`.
   Override with `GEMINI_AGENT_MODELS`. Usage: `ai_agent_usage_log`.
 - Learning: after a one-step tool answer, the question's shape and its tools are kept
   in `ask_nexora_learned` (e.g. `{distributor_name} ke kitne so pending hai` →
