@@ -95,7 +95,10 @@ def lines_from_statement(statement: dict[str, Any]) -> list[dict[str, Any]]:
         assign = str(ln.get("assignment") or "").strip()
         text = str(ln.get("text") or "").strip()
         if kind == "invoice" and _CI_NO_RE.match(assign):
-            ref, assign = assign, ref
+            # Reference holds SAP's own document number, not an SO
+            sap_doc = ref
+            ref, assign = assign, ""
+            text = text or (f"SAP doc {sap_doc}" if sap_doc else "")
         if kind == "credit_note":
             kind = credit_kind(text)
         out.append({
@@ -249,7 +252,8 @@ def summarize(result: dict[str, Any], *, user_id: int) -> str | None:
     }
     prompt = ("You check a distributor's company ledger against our app NEXORA. In at most 3 short "
               "sentences of plain English, say what is wrong and what to fix first (biggest money first). "
-              "Use ₹ with Indian lakh style (e.g. ₹2.97 L). No markdown, no lists.\n" + json.dumps(facts, default=str))
+              "Write money with ₹ and Indian commas (₹58,111); use L / Cr only from ₹1 lakh up (₹2.97 L). "
+              "Dates like 10 Aug 2026. No markdown, no lists.\n" + json.dumps(facts, default=str))
     try:
         text = _gemini([{"text": prompt}], user_id=user_id, feature="nexora_agent_ledger_summary",
                        max_tokens=220, json_out=False, timeout=30)
