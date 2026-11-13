@@ -533,6 +533,20 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
     nx_inv = round(sum(float(ci.get("gross") or 0) for ci in cis if in_period(_d(ci.get("invoice_date")))), 2)
     nx_pay = round(sum(float(p.get("amount") or 0) for p in deposits if in_period(_d(p.get("payment_date")))), 2)
     nx_cn = round(sum(float(n.get("amount") or 0) for n in cns if in_period(_d(n.get("cn_date")))), 2)
+    # Opening balance: everything in the ledger before the compare date, so the
+    # older history never has to be typed into NEXORA. + = distributor owes.
+    def signed(ln: dict[str, Any]) -> float:
+        if ln["kind"] == "invoice":
+            return ln["amount"]
+        if ln["kind"] in ("payment", "cd", "tds", "credit_note"):
+            return -ln["amount"]
+        return float(ln.get("signed") or 0)
+
+    opening = round(sum(signed(ln) for ln in all_lines if start and ln.get("date") and ln["date"] < start), 2)
+    ledger_closing = round(sum(signed(ln) for ln in all_lines), 2)
+    nexora_closing = round(opening + nx_inv - nx_pay - nx_cn - nx_cd - nx_tds, 2)
+    balance_diff = round(ledger_closing - nexora_closing, 2)
+
     order = {"alert": 0, "warn": 1, "info": 2}
     findings.sort(key=lambda f: (order.get(f["level"], 2), -abs(f["amount"])))
     return {
@@ -552,6 +566,13 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
         "slots": [{"category": c.get("category"), "season": c.get("season")}
                   for c in dist.get("categories") or [] if c.get("category") and c.get("season")],
         "skipped_older": skipped,
+        "balance": {
+            "opening": opening,                 # ledger balance before compared_from
+            "ledger_closing": ledger_closing,   # ledger balance at period_to
+            "nexora_closing": nexora_closing,   # opening + NEXORA's entries in the period
+            "difference": balance_diff,
+            "matches": abs(balance_diff) <= _TOL,
+        },
         "compared_from": start.isoformat() if start else None,
         "findings": findings,
         "mismatch_count": sum(1 for f in findings if f["level"] != "info"),

@@ -179,3 +179,21 @@ def test_missing_payment_carries_what_add_needs():
     assert f["likely_category"] == "Bed" and f["likely_season"] == "AW26"
     assert "UTR2" in f["note"]
     assert {"category": "Bed", "season": "AW26"} in out["slots"]
+
+
+def test_opening_balance_covers_older_history():
+    L = lambda kind, d, ref, amt: {"kind": kind, "date": d, "ref": ref, "so_ref": "", "text": "",  # noqa: E731
+                                    "amount": amt, "signed": 0.0}
+    old = [L("invoice", date(2026, 3, 1), "1300000001", 100000.0), L("payment", date(2026, 3, 9), "U0", 60000.0)]
+    out = reconcile(old + _lines(), _dist())
+    b = out["balance"]
+    assert out["skipped_older"] == 2
+    assert b["opening"] == 40000.0  # older invoice − older payment
+    # ledger closing = opening + everything after; NEXORA = opening + its own entries
+    assert b["ledger_closing"] == round(40000 + 42000 + 21500 + 9000 - 30000 - 15000 - 500 - 1200, 2)
+    assert b["nexora_closing"] == round(40000 + 68000 - 37000 - 500, 2)
+    assert b["matches"] is False
+    # a chosen earlier date pulls the older lines into the check
+    out2 = reconcile(old + _lines(), _dist(), since=date(2026, 2, 1))
+    assert out2["skipped_older"] == 0 and out2["balance"]["opening"] == 0.0
+    assert any("1300000001" in f["title"] for f in out2["findings"])

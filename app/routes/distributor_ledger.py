@@ -237,7 +237,16 @@ def reconcile_ledger():
             "need_distributor": True, "party": party,
             "distributors": [{"id": d.get("distributor_id"), "name": d.get("distributor_name")} for d in dists],
         }}), 200
-    out = lr.reconcile(lines, dist)
+    since = None
+    raw_from = (request.form.get("from") or request.args.get("from") or "").strip()[:10]
+    if raw_from:
+        from datetime import date as _date
+
+        try:
+            since = _date.fromisoformat(raw_from)
+        except ValueError:
+            return jsonify({"success": False, "error": {"message": "Compare-from date must be YYYY-MM-DD"}}), 400
+    out = lr.reconcile(lines, dist, since=since)
     out.update({"party": party, "read_by": read_by})
     if request.form.get("summary", "1") != "0":
         out["summary"] = lr.summarize(out, user_id=uid)
