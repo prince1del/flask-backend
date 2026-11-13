@@ -7,6 +7,12 @@ NEXORA has for that distributor (all seasons):
 * Invoice  ↔ CI by invoice number; amount compared with the CI gross.
 * Payment  ↔ deposit by amount, date within 10 days (closest first).
 * Credit note ↔ credit note by number, else by amount.
+* SAP books cash discount ("3%CD …") and TDS ("TDS: …") as credit notes too;
+  those are compared, as totals, with the CD / TDS NEXORA already takes off
+  each CI — they are not user credit notes.
+
+Only the stretch of time NEXORA has data for this distributor is compared
+(older ledger lines are counted as skipped), unless a from-date is given.
 
 Every line that has no partner, or whose amount differs, becomes a finding the
 user can act on ("payment of ₹5 L on 4 Aug is in the ledger but not in NEXORA").
@@ -19,7 +25,7 @@ import json
 import re
 import urllib.error
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 _TOL = 2.0  # rupees: rounding differences are not a mismatch
@@ -61,8 +67,23 @@ def _fmt(d: date | None) -> str:
 
 # ── Ledger lines ─────────────────────────────────────────────────────────────
 
+_CD_RE = re.compile(r"(\d+(\.\d+)?\s*%\s*CD\b|\bCASH\s+DISCOUNT\b|^\s*CD\b)", re.I)
+_TDS_RE = re.compile(r"^\s*TDS\b|\bTDS\s*:", re.I)
+_CI_NO_RE = re.compile(r"^\d{8,}$")
+
+
+def credit_kind(text: str) -> str:
+    """SAP 'Credit Note' lines: cash discount, TDS, or a real credit note."""
+    if _TDS_RE.search(text or ""):
+        return "tds"
+    if _CD_RE.search(text or ""):
+        return "cd"
+    return "credit_note"
+
+
 def lines_from_statement(statement: dict[str, Any]) -> list[dict[str, Any]]:
-    """SAP GL parse (statement_of_account) → uniform lines."""
+    """SAP GL parse (statement_of_account) → uniform lines.
+    SAP keeps the CI number in Assignment (Reference is SAP's own doc number)."""
     kind_of = {"Sale Invoice": "invoice", "Payment Received": "payment", "Credit Note": "credit_note"}
     out = []
     for ln in statement.get("lines") or []:
@@ -70,12 +91,19 @@ def lines_from_statement(statement: dict[str, Any]) -> list[dict[str, Any]]:
         amt = abs(float(ln.get("signed") or 0))
         if amt < 0.01:
             continue
+        ref = str(ln.get("reference") or "").strip()
+        assign = str(ln.get("assignment") or "").strip()
+        text = str(ln.get("text") or "").strip()
+        if kind == "invoice" and _CI_NO_RE.match(assign):
+            ref, assign = assign, ref
+        if kind == "credit_note":
+            kind = credit_kind(text)
         out.append({
             "kind": kind,
             "date": _d(ln.get("date")),
-            "ref": str(ln.get("reference") or "").strip(),
-            "so_ref": str(ln.get("assignment") or "").strip(),
-            "text": str(ln.get("text") or ln.get("particulars") or "").strip(),
+            "ref": ref,
+            "so_ref": assign,
+            "text": text,
             "amount": round(amt, 2),
             "signed": float(ln.get("signed") or 0),
         })
@@ -88,8 +116,9 @@ _PDF_PROMPT = (
     '{"party":"","closing_balance":0,"lines":[{"date":"YYYY-MM-DD","kind":"invoice|payment|credit_note|other",'
     '"ref":"","so_ref":"","text":"","debit":0,"credit":0}]}. '
     "kind: invoice = sale/tax invoice (debit), payment = receipt/bank/RTGS/NEFT/cheque (credit), "
-    "credit_note = credit note/sales return/discount/rate difference (credit), other = anything else "
-    "(opening balance, TDS, journal). ref = invoice/CN/UTR number. so_ref = order/SO number if shown. "
+    "cd = cash discount credit, tds = TDS credit, "
+    "credit_note = other credit note/sales return/rate difference/scheme (credit), other = anything else "
+    "(opening balance, journal). ref = invoice (CI) / CN / UTR number. so_ref = order/SO number if shown. "
     "Amounts are plain numbers in rupees. Do not invent lines."
 )
 
@@ -156,7 +185,7 @@ def lines_from_document(data: bytes, mime: str, *, user_id: int) -> tuple[str, l
                 continue
             kind = str(ln.get("kind") or "other")
             lines.append({
-                "kind": kind if kind in ("invoice", "payment", "credit_note") else "other",
+                "kind": kind if kind in ("invoice", "payment", "credit_note", "cd", "tds") else "other",
                 "date": _d(ln.get("date")),
                 "ref": str(ln.get("ref") or "").strip(),
                 "so_ref": str(ln.get("so_ref") or "").strip(),
@@ -194,8 +223,9 @@ def match_distributor(party: str, distributors: list[dict[str, Any]]) -> dict[st
 
 # ── Compare ──────────────────────────────────────────────────────────────────
 
-def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any]) -> dict[str, Any]:
-    """Findings for one distributor: ledger lines vs NEXORA (build_ledger row)."""
+def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | None = None) -> dict[str, Any]:
+    """Findings for one distributor: ledger lines vs NEXORA (build_ledger row).
+    [since]: compare from this date; default = the first date NEXORA has."""
     cis: list[dict[str, Any]] = []
     deposits: list[dict[str, Any]] = []
     cns: list[dict[str, Any]] = []
@@ -206,8 +236,19 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any]) -> dict[str, An
         cns += [{**n, "_where": label} for n in c.get("credit_notes") or []]
     cis += [{**ci, "_where": "not linked to an SO"} for ci in dist.get("unlinked_cis") or []]
 
+    nx_dates = [x for x in (
+        [_d(ci.get("invoice_date")) for ci in cis]
+        + [_d(p.get("payment_date")) for p in deposits]
+        + [_d(n.get("cn_date")) for n in cns]) if x]
+    # A payment often lands a few days before the first CI / entry NEXORA has.
+    start = since or (min(nx_dates) - timedelta(days=_PAY_DAYS) if nx_dates else None)
+    all_lines = lines
+    lines = [ln for ln in all_lines if not start or not ln.get("date") or ln["date"] >= start]
+    skipped = len(all_lines) - len(lines)
     dated = [ln["date"] for ln in lines if ln.get("date")]
     p_from, p_to = (min(dated), max(dated)) if dated else (None, None)
+    if start and p_from and start < p_from:
+        p_from = start
 
     def in_period(d: date | None) -> bool:
         return bool(d and p_from and p_to and p_from <= d <= p_to)
@@ -316,7 +357,19 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any]) -> dict[str, An
             f"In NEXORA · {n['_where']}", "Check with the company if it was issued.", float(n.get("amount") or 0))
 
     led = {k: round(sum(x["amount"] for x in lines if x["kind"] == k), 2)
-           for k in ("invoice", "payment", "credit_note")}
+           for k in ("invoice", "payment", "credit_note", "cd", "tds")}
+    period_cis = [ci for ci in cis if in_period(_d(ci.get("invoice_date")))]
+    nx_cd = round(sum(float(ci.get("cd") or 0) for ci in period_cis), 2)
+    nx_tds = round(sum(float(ci.get("tds") or 0) for ci in period_cis), 2)
+    for label, lv, nv, what in (("Cash discount (CD)", led["cd"], nx_cd, "CD %"),
+                                ("TDS", led["tds"], nx_tds, "TDS")):
+        diff = lv - nv
+        if (lv or nv) and abs(diff) > max(50.0, 0.01 * max(lv, nv)):
+            add("cd" if what == "CD %" else "tds", "warn",
+                f"{label} differs: ledger {_inr(lv)}, NEXORA {_inr(nv)}",
+                f"Difference {_inr(diff)} for the invoices in this period.",
+                f"Check the {what} set for this distributor in Payment Status, or CD/TDS not yet given by the company.",
+                diff)
     nx_inv = round(sum(float(ci.get("gross") or 0) for ci in cis if in_period(_d(ci.get("invoice_date")))), 2)
     nx_pay = round(sum(float(p.get("amount") or 0) for p in deposits if in_period(_d(p.get("payment_date")))), 2)
     nx_cn = round(sum(float(n.get("amount") or 0) for n in cns if in_period(_d(n.get("cn_date")))), 2)
@@ -331,8 +384,12 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any]) -> dict[str, An
             {"label": "Invoices", "ledger": led["invoice"], "nexora": nx_inv},
             {"label": "Payments", "ledger": led["payment"], "nexora": nx_pay},
             {"label": "Credit notes", "ledger": led["credit_note"], "nexora": nx_cn},
+            {"label": "Cash discount (CD)", "ledger": led["cd"], "nexora": nx_cd},
+            {"label": "TDS", "ledger": led["tds"], "nexora": nx_tds},
         ],
         "line_count": len(lines),
+        "skipped_older": skipped,
+        "compared_from": start.isoformat() if start else None,
         "findings": findings,
         "all_clear": not findings,
     }

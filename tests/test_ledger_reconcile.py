@@ -89,3 +89,21 @@ def test_reconcile_route_reads_sap_excel(tmp_path, monkeypatch):
     d = r.get_json()["data"]
     assert d["need_distributor"] is True and d["party"] == "Acme Traders"
     assert client.post("/api/v1/distributor-ledger/reconcile").status_code == 401
+
+
+def test_sap_lines_ci_in_assignment_and_cd_tds_split():
+    from app.services.ledger_reconcile import lines_from_statement
+
+    st = {"lines": [
+        {"type": "Sale Invoice", "date": date(2026, 8, 10), "reference": "802541158",
+         "assignment": "1400000070", "text": "", "signed": 58111.2},
+        {"type": "Credit Note", "date": date(2026, 8, 13), "reference": "102876077",
+         "assignment": "102876077", "text": "3%CD - Acme - RFA0377 CI 1400000070", "signed": -1660.32},
+        {"type": "Credit Note", "date": date(2026, 8, 10), "reference": "RFA 0377",
+         "assignment": "RFA 0377", "text": "TDS:  Acme : RFA 0377 Bedsheet", "signed": -87.17},
+        {"type": "Credit Note", "date": date(2026, 8, 11), "reference": "CN9", "assignment": "",
+         "text": "Rate difference", "signed": -500.0},
+    ]}
+    ls = lines_from_statement(st)
+    assert [l["kind"] for l in ls] == ["invoice", "cd", "tds", "credit_note"]
+    assert ls[0]["ref"] == "1400000070"
