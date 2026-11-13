@@ -74,3 +74,22 @@ def test_catalog_lists_query_params(tmp_path, monkeypatch):
     text = r.catalog_text(app)
     assert "/api/v1/search - Search everything" in text
     assert "[query:" in text
+
+
+def test_read_app_with_browser_session(tmp_path, monkeypatch):
+    app = _app(tmp_path, monkeypatch)
+    client = app.test_client()
+    tok_a = client.post("/api/v1/auth/login", json={"username": "reader_a", "password": "pass123"}).get_json()["data"]["access_token"]
+    client.post("/api/v1/personal-todos", json={"task_title": "Visit Bernina"}, headers={"Authorization": f"Bearer {tok_a}"})
+    import os as _os
+    import sqlite3 as _sq
+
+    with _sq.connect(_os.environ["DATABASE_PATH"]) as conn:
+        uid = conn.execute("SELECT id FROM users WHERE username = 'reader_a'").fetchone()[0]
+    # A web (cookie) request: no Authorization header, identity on request.user.
+    with app.test_request_context("/api/v1/nexora/ask"):
+        from flask import request as _rq
+
+        _rq.user = {"user_id": uid, "workspace_id": "ws-a", "role": "sales_executive"}
+        out = r.read_app("/api/v1/personal-todos", None, user_id=uid, workspace_id="ws-a")
+    assert "Visit Bernina" in str(out)

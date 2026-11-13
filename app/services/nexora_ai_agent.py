@@ -26,7 +26,7 @@ from typing import Any
 from app.services.gemini_models import get_ocr_gemini_models
 from app.services.visiting_card_ocr import _gemini_key
 
-MAX_TOOL_ROUNDS = 4
+MAX_TOOL_ROUNDS = 5
 _AGENT_TIMEOUT_S = 60
 _AGENT_FIRST_TRY_TIMEOUT_S = 25
 # Fast model first for the agent; the OCR list (GEMINI_FLASH_MODEL etc.) follows
@@ -1644,6 +1644,6 @@ def ask_order_desk(
         contents.append({"role": "user", "parts": response_parts})
 
     return _finish(
-        "Yeh sawaal thoda complex tha — kripya thoda specific poochiye "
-        "(jaise ek season ya category ka naam bata kar)."
+        "Iska pakka jawab abhi nahi mil paaya. Kripya distributor, article, "
+        "season ya category ka naam saath mein bataiye."
     )

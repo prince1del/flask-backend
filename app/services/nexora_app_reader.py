@@ -185,16 +185,27 @@ def read_app(path: str, query: dict | None, *, user_id: int, workspace_id: str) 
         return {"error": f"'{path}' is not a readable NEXORA screen. Use one of the listed paths."}
     query = {str(k): str(v) for k, v in (query or {}).items() if v not in (None, "")}
     headers: dict[str, str] = {}
+    who: dict[str, Any] = {"user_id": int(user_id), "workspace_id": workspace_id}
     if has_request_context():
-        # Reuse the asker's own login so the route applies its usual isolation.
+        # Reuse the asker's own login so the route applies its usual isolation:
+        # the phone's token as-is; for a browser session, the same identity the
+        # outer request was authenticated as (forwarding the raw cookie to the
+        # inner client did not carry the session).
         if request.headers.get("Authorization"):
             headers["Authorization"] = request.headers["Authorization"]
-        elif request.headers.get("Cookie"):
-            headers["Cookie"] = request.headers["Cookie"]
+        user = getattr(request, "user", None)
+        if isinstance(user, dict) and user.get("user_id") is not None:
+            who = {
+                "user_id": int(user["user_id"]),
+                "workspace_id": user.get("workspace_id") or workspace_id,
+                "role": user.get("role") or "unassigned",
+                "username": user.get("username"),
+                "is_workspace_owner": bool(user.get("is_workspace_owner")),
+            }
     with current_app.test_client() as client:
         if not headers:
             with client.session_transaction() as sess:
-                sess.update(authenticated=True, user_id=int(user_id), workspace_id=workspace_id)
+                sess.update(authenticated=True, **{k: v for k, v in who.items() if v is not None})
         resp = client.get(path.split("?", 1)[0], query_string=query, headers=headers)
     data = resp.get_json(silent=True)
     if data is None:
