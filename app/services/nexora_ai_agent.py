@@ -87,8 +87,8 @@ Rules:
 - ONLY state numbers/facts that came back from a tool call. Never estimate or invent.
 - If a tool returns no data, say so plainly - do not guess.
 - Think for yourself: work out what the user wants and pick the tools. If no
-  specific tool fits, use search_nexora to find the party/article/order first,
-  then the right tool. If the question is incomplete ("MRP of"), ask one short
+  specific tool fits, use read_app to read the matching screen (it covers the
+  whole app), or search_nexora to find the party/article/order first. If the question is incomplete ("MRP of"), ask one short
   question back (e.g. "Kis article ka MRP chahiye?") instead of giving up.
 - Follow-ups: earlier turns of this conversation come before the latest
   question. If the latest question names no distributor, item, season or
@@ -114,8 +114,40 @@ class NexoraAiAgentError(RuntimeError):
     """Raised for hard agent failures (no key, all Gemini models unreachable)."""
 
 
+def _read_app_declaration() -> dict[str, Any]:
+    from app.services.nexora_app_reader import catalog_text
+
+    try:
+        from flask import current_app
+
+        catalog = catalog_text(current_app._get_current_object())
+    except Exception:  # no app context (unit tests)
+        catalog = catalog_text(None)
+    return {
+        "name": "read_app",
+        "description": (
+            "Read any NEXORA screen's data, exactly as this user sees it in the app. Use it "
+            "when no specific tool covers the question (mail imports, call lists, catalogues, "
+            "secondary sales, monthly targets, article price history, users, reports...). "
+            "Paths ({id} = a number from another reply):\n" + catalog
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "One of the listed paths with ids filled in."},
+                "query": {
+                    "type": "object",
+                    "description": "Optional query parameters, e.g. {\"q\": \"aster\"} or {\"distributor_id\": \"9\"}.",
+                },
+            },
+            "required": ["path"],
+        },
+    }
+
+
 def _tool_declarations() -> list[dict[str, Any]]:
     return [
+        _read_app_declaration(),
         {
             "name": "get_distributor_hisaab",
             "description": (
@@ -747,6 +779,17 @@ def _run_tool(
                 distributor_name=str(args.get("distributor_name") or ""),
                 category=str(args.get("category") or ""),
                 season=str(args.get("season") or ""),
+            ))
+
+        if name == "read_app":
+            from app.services.nexora_app_reader import read_app
+
+            query = args.get("query")
+            return _sanitize(read_app(
+                str(args.get("path") or ""),
+                query if isinstance(query, dict) else None,
+                user_id=user_id,
+                workspace_id=workspace_id,
             ))
 
         if name == "search_nexora":
