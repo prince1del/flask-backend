@@ -187,7 +187,8 @@ def _tool_declarations() -> list[dict[str, Any]]:
         {
             "name": "get_distributor_hisaab",
             "description": (
-                "Distributor Hisaab per season and category: CI count and each CI "
+                "Distributor Hisaab per season and category: payments received (each "
+                "deposit's date and amount, latest first, plus last_deposit), CI count and each CI "
                 "(invoice no, date, SO, qty, gross, net after CD/TDS, amount covered "
                 "by payments, status paid/part_paid/unpaid), money received, order "
                 "payable, still to collect, money received but CI not made, and SOs "
@@ -687,7 +688,14 @@ def hisaab_for_ai(
             for ci in cis:
                 by_status[ci.get("status") or "unpaid"] = by_status.get(ci.get("status") or "unpaid", 0) + 1
             pend = c.get("pending_sos") or []
+            deposits = sorted(
+                ({"payment_date": p.get("payment_date"), "amount": p.get("amount"), "note": p.get("note")}
+                 for p in c.get("deposits") or [] if isinstance(p, dict)),
+                key=lambda p: str(p.get("payment_date") or ""), reverse=True,
+            )
             cats.append({
+                "deposits_latest_first": deposits[:15],
+                "deposit_count": len(deposits),
                 "season": c.get("season"),
                 "category": c.get("category"),
                 "ci_count": len(cis),
@@ -714,8 +722,14 @@ def hisaab_for_ai(
             })
         if not cats and (category or season):
             continue
+        all_deps = [
+            {**p, "season": c["season"], "category": c["category"]}
+            for c in cats for p in c["deposits_latest_first"]
+        ]
+        all_deps.sort(key=lambda p: str(p.get("payment_date") or ""), reverse=True)
         out.append({
             "distributor": d.get("distributor_name"),
+            "last_deposit": all_deps[0] if all_deps else None,
             "totals": d.get("totals"),
             "categories": cats,
             "cis_not_linked_to_matched_so": d.get("unlinked_cis") or [],

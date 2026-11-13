@@ -255,3 +255,17 @@ def test_list_match_runs_reports_so_count():
                  "VALUES (7, 'Dist', 'Bed', 'AW26', ?, datetime('now'))", (_json.dumps(rows),))
     runs = m.list_match_runs(conn, user_id=7)
     assert runs[0]["so_count"] == 2
+
+
+def test_hisaab_shows_deposits_latest_first():
+    ledger = {"distributors": [{"distributor_name": "Alpha Steel Traders", "totals": {}, "unlinked_cis": [], "alerts": [],
+        "categories": [
+            {"season": "AW26", "category": "Bed", "cis": [], "pending_sos": [],
+             "deposits": [{"payment_date": "2026-09-01", "amount": 5000}, {"payment_date": "2026-10-08", "amount": 100000}]},
+            {"season": "AW26", "category": "Bath", "cis": [], "pending_sos": [],
+             "deposits": [{"payment_date": "2026-09-20", "amount": 7000}]},
+        ]}]}
+    out = hisaab_for_ai(ledger, distributor_name="alpha")
+    d = out["distributors"][0]
+    assert d["last_deposit"]["amount"] == 100000 and d["last_deposit"]["category"] == "Bed"
+    assert [p["amount"] for p in d["categories"][0]["deposits_latest_first"]] == [100000, 5000]
