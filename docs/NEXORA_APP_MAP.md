@@ -175,6 +175,13 @@ Menu group with four sections:
   `DELETE /credit-notes/<id>`, `GET /credit-notes/<id>/file`.
   Code: `app/services/credit_notes.py`. Phone: `DistributorHisaab.kt` (+ Credit note
   sheet). Web: Hisaab tab, "Credit notes" table and form.
+- **Check with party ledger** (inside Hisaab, per distributor) — upload the company
+  ledger; lists invoices missing in NEXORA, CIs not in the ledger, amount
+  differences, payments missing either side (same amount, ±10 days) and credit notes.
+  SAP Excel is read without AI (`statement_of_account.py`); PDF/photo is read by
+  Gemini (12k-token cap, daily AI limit). `POST /api/v1/distributor-ledger/reconcile`.
+  Code: `app/services/ledger_reconcile.py`. Phone: `LedgerCheckDialog.kt`. Web: Hisaab
+  distributor header button.
 - **Statement of Account** — `POST /api/v1/statement-of-account/from-ledger`
   (`app/services/statement_of_account.py`). Phone: `BdStatementOfAccountPane.kt`.
 - **Secondary Sale** — `/api/v1/distributor-secondary-sales/*`. Phone: `BdSecondarySalePane.kt`.

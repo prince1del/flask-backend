@@ -365,7 +365,12 @@ function renderDistributorHisaab(distributors) {
         <header class="of-pay-dist-head">
           <strong>${odmEsc(d.distributor_name || 'Distributor')}</strong>
           <span class="of-pay-meta">Order ${odmInr(t.order_payable)} · Received ${odmInr(t.received)} · Billed ${odmInr(t.billed)} · To collect ${odmInr(t.payment_due)}</span>
+          <label class="nx-btn nx-btn--ghost" title="Upload the company ledger (Excel or PDF) to find missing CIs, payments and credit notes">
+            Check with party ledger
+            <input type="file" hidden accept=".xls,.xlsx,application/pdf,image/*" onchange="odmCheckLedger(this, ${Number(d.distributor_id)})">
+          </label>
         </header>
+        <div class="of-ledger-check" id="of-ledger-check-${Number(d.distributor_id)}"></div>
         ${alerts ? `<ul class="of-hisaab-alerts">${alerts}</ul>` : ''}
         ${grand}
         ${cats}
@@ -381,6 +386,42 @@ function renderDistributorHisaab(distributors) {
         </details>` : ''}
       </section>`;
   }).join('');
+}
+
+/* ------------------------------------------------- Check with party ledger */
+
+async function odmCheckLedger(input, distributorId) {
+  const box = document.getElementById(`of-ledger-check-${distributorId}`);
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!box || !file) return;
+  box.innerHTML = '<p class="nx-text-dim" style="padding:0.5rem 0;">Reading the ledger and matching it with NEXORA…</p>';
+  try {
+    const fd = new FormData();
+    fd.append('distributor_id', String(distributorId));
+    fd.append('file', file);
+    const r = await odmJson('/api/v1/distributor-ledger/reconcile', { method: 'POST', body: fd });
+    const findings = r.findings || [];
+    const compare = (r.compare || []).map((c) => `
+      <tr><td>${odmEsc(c.label)}</td><td class="of-pay-num">${odmInr(c.ledger)}</td>
+      <td class="of-pay-num">${odmInr(c.nexora)}</td>
+      <td class="of-pay-num">${Math.abs(c.ledger - c.nexora) < 2 ? '✓' : odmInr(c.ledger - c.nexora)}</td></tr>`).join('');
+    const rows = findings.map((f) => `
+      <li><span class="of-pay-pill ${f.level === 'alert' ? 'is-due' : 'is-partial'}">${f.level === 'alert' ? 'MISSING' : 'CHECK'}</span>
+      <strong>${odmEsc(f.title)}</strong><br><span class="nx-text-dim">${odmEsc(f.detail || '')}</span><br>→ ${odmEsc(f.action || '')}</li>`).join('');
+    box.innerHTML = `
+      <div class="of-pay-order-body">
+        <h4 class="of-hisaab-h">Ledger check ${r.period_from ? `· ${odmEsc(r.period_from)} to ${odmEsc(r.period_to)}` : ''}
+          ${r.read_by === 'ai' ? '<span class="nx-text-dim">(PDF read by AI)</span>' : ''}</h4>
+        <table class="data-table of-pay-table">
+          <thead><tr><th></th><th>Ledger</th><th>NEXORA</th><th>Difference</th></tr></thead>
+          <tbody>${compare}</tbody>
+        </table>
+        ${findings.length ? `<ul class="of-hisaab-alerts">${rows}</ul>` : '<p><strong>✓ Everything matches the ledger.</strong></p>'}
+      </div>`;
+  } catch (error) {
+    box.innerHTML = `<p class="nx-text-dim" style="padding:0.5rem 0;">${odmEsc(error.message)}</p>`;
+  }
 }
 
 /* ---------------------------------------------------------- Credit notes */
