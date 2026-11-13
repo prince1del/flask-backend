@@ -232,6 +232,11 @@ Natural-language questions over the user's data ("how much CD does X pay").
 - Phone: `AskNexoraSheet.kt` (calls `/api/v1/ai-assistant/query`); web calls `/api/v1/nexora/ask`.
 - Flow: the rule engine answers first; the Gemini agent takes over when it cannot,
   and for counting/hisaab questions (`_looks_like_ai_data_question` in `data.py`).
+- Whole-app reading: tool `read_app(path, query)` (`app/services/nexora_app_reader.py`)
+  calls any allow-listed GET route (~65 BD screens) as the asking user — the phone's
+  token or the web session's identity — so the AI sees exactly what that user sees.
+  `{id}` accepts numbers only; file/export/admin routes are not on the list; replies are
+  trimmed (40 items, 400 chars). New module → add one line to `APP_READ_ROUTES`.
 - AI tools include `get_distributor_hisaab` (CI count/status per category, received,
   still to collect, SOs not billed) and `get_pending_so`.
 - Follow-ups: table `ask_nexora_turns` keeps each user's last turns; inside a 20-minute
