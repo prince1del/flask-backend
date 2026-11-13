@@ -279,6 +279,19 @@ Natural-language questions over the user's data ("how much CD does X pay").
   Phone: `ui/screens/AskNexoraVoice.kt` (Settings → Ask Nexora voice; plays answers,
   falls back to the phone's TTS offline). Web chat: not wired yet.
 
+### 3.13a Galaxy Watch (Wear OS)
+- Server: `app/routes/watch.py`. `POST /api/v1/watch/pair` (phone login) → a watch key
+  (hash stored in `watch_keys`); `DELETE` switches all of the user's keys off. With
+  header `X-Watch-Key`: `GET /summary` (active season, to collect, SOs to bill, overdue,
+  to-dos due, today's PJP, SO mails waiting) and `POST /ask` (Ask Nexora as that user,
+  haan/nahi included). The key opens no other route.
+- Phone: `ui/screens/WatchConnect.kt` — Settings → Galaxy Watch → Connect / Disconnect;
+  hands the key to the watch over the Wear data layer (path `/nexora/watch`).
+- Watch app: Android Studio module `:wear` (same applicationId and signing key as the
+  phone — required for the data layer). `NexoraTileService` (tile, refresh 30 min) and
+  `WatchMainActivity` (numbers + voice ask). Installed on the watch by ADB over Wi-Fi;
+  it is not on the phone OTA.
+
 ### 3.14 Settings, help, updates
 - Company profile `/api/v1/company-profile`; UI theme `/api/v1/me/ui-theme`.
 - In-app help: `BdHelp*.kt`, `HindiHelp.kt`, `ui/i18n/`.
