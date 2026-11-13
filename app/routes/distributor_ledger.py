@@ -165,3 +165,63 @@ def credit_note_file(cn_id: int):
     if path is None or not path.is_file():
         return jsonify({"success": False, "error": {"message": "No file for this credit note"}}), 404
     return send_file(path, mimetype=_MIMES[name.rsplit(".", 1)[1]], max_age=0)
+
+
+# ── Check a party ledger against NEXORA ─────────────────────────────────────
+
+@distributor_ledger_bp.route("/reconcile", methods=["POST"])
+@require_jwt_auth
+def reconcile_ledger():
+    """Upload the distributor's party ledger (SAP Excel, or PDF/photo read by AI)
+    and get every mismatch: missing CI, missing payment, credit note, amounts."""
+    from app.routes.data import _db_path
+    from app.services import ledger_reconcile as lr
+    from app.services.distributor_ledger import build_ledger
+    from centralized_db_system.db import CentralizedDB
+
+    uid = get_request_user_id()
+    if uid is None:
+        return jsonify({"success": False, "error": {"message": "Authentication required"}}), 401
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"success": False, "error": {"message": "Choose the ledger file"}}), 400
+    name = (f.filename or "ledger").lower()
+    data = f.read()
+    if not data:
+        return jsonify({"success": False, "error": {"message": "The file is empty"}}), 400
+    try:
+        if name.endswith((".xls", ".xlsx")):
+            from app.services.statement_of_account import parse_statement_of_account
+
+            statement = parse_statement_of_account(data, name)
+            party, lines, read_by = statement.get("party_name") or "", lr.lines_from_statement(statement), "excel"
+        else:
+            mime = "application/pdf" if name.endswith(".pdf") else (f.mimetype or "image/jpeg")
+            party, lines = lr.lines_from_document(data, mime, user_id=uid)
+            read_by = "ai"
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+    except Exception:
+        return jsonify({"success": False, "error": {"message": "Could not read this ledger file"}}), 400
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        from app.services import fo_so_match_db as matchdb
+
+        matchdb.ensure_schema(conn)  # a fresh workspace has no match tables yet
+        ledger = build_ledger(CentralizedDB(_db_path()), conn, user_id=uid,
+                              workspace_id=str(get_workspace_id() or "default"))
+    finally:
+        conn.close()
+    dists = ledger.get("distributors") or []
+    want = request.form.get("distributor_id", type=int) or request.args.get("distributor_id", type=int)
+    dist = next((d for d in dists if d.get("distributor_id") == want), None) if want else \
+        lr.match_distributor(party, dists)
+    if dist is None:
+        return jsonify({"success": True, "data": {
+            "need_distributor": True, "party": party,
+            "distributors": [{"id": d.get("distributor_id"), "name": d.get("distributor_name")} for d in dists],
+        }}), 200
+    out = lr.reconcile(lines, dist)
+    out.update({"party": party, "read_by": read_by})
+    return jsonify({"success": True, "data": out}), 200
