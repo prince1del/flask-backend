@@ -126,6 +126,9 @@ Pending SO = SO value not yet billed by any CI   GET /api/v1/order-fulfillment/p
 - Web: Order Desk rail in `index.html` (`#order-fulfillment-workspace`, `showOfSection` in
   `app.js`); tab 7 **Pending SO** is in `app/static/order_desk_money.js`.
 - Matching rules: `docs/ORDER_BUNDLE_MATCHING_RULES.md`; recycle: `docs/ORDER_DESK_RECYCLE.md`.
+- Speed: `GET /api/v1/order-fulfillment/tracking/<id>` re-checks a CI PDF only once per
+  file (`repair_checked` mark in `commercial_invoice_parsed`) and does not re-seed Order
+  Match SO lines that are already saved. Keep heavy PDF work out of GET routes.
 
 ### 3.5 Distributor Zone
 Menu group with four sections:
