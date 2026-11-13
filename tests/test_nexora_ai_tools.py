@@ -240,3 +240,18 @@ def test_voice_cache_only_past_limit(tmp_path):
 
     with pytest.raises(nv.VoiceError):
         nv.synthesize("naya jawab", voice="Kore", api_key="k", db_path=str(tmp_path / "x.sqlite3"), cache_only=True)
+
+
+def test_list_match_runs_reports_so_count():
+    import json as _json
+    import sqlite3 as _sq
+    from app.services import fo_so_match_db as m
+
+    conn = _sq.connect(":memory:")
+    m.ensure_schema(conn)
+    rows = [{"brand": "A", "so_numbers": ["102876001", "102876002"]},
+            {"brand": "B", "so_numbers": ["102876002"]}, {"brand": "C", "so_numbers": []}]
+    conn.execute("INSERT INTO fo_so_match_runs (user_id, distributor_name, category, season, rows_json, created_at) "
+                 "VALUES (7, 'Dist', 'Bed', 'AW26', ?, datetime('now'))", (_json.dumps(rows),))
+    runs = m.list_match_runs(conn, user_id=7)
+    assert runs[0]["so_count"] == 2

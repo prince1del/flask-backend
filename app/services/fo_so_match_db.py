@@ -1442,7 +1442,39 @@ def list_match_runs(
     out = [_row_to_dict(r, keys) for r in rows]
     for item in out:
         _mask_fo_fields_if_detached(item)
+    _attach_so_counts(conn, out)
     return out
+
+
+def _attach_so_counts(conn: sqlite3.Connection, runs: list[dict[str, Any]]) -> None:
+    """so_count = distinct SO numbers in each run (the Sales Orders tab counts
+    SOs, not runs — 20 runs carry 181 SOs)."""
+    ids = [int(r["id"]) for r in runs if r.get("id") is not None]
+    if not ids:
+        return
+    counts: dict[int, int] = {}
+    for start in range(0, len(ids), 400):
+        chunk = ids[start:start + 400]
+        marks = ",".join("?" for _ in chunk)
+        for rid, rows_json in conn.execute(
+            f"SELECT id, rows_json FROM fo_so_match_runs WHERE id IN ({marks})", chunk
+        ).fetchall():
+            try:
+                parsed = json.loads(rows_json) if rows_json else []
+            except (TypeError, ValueError):
+                parsed = []
+            sos: set[str] = set()
+            for row in parsed if isinstance(parsed, list) else []:
+                if not isinstance(row, dict):
+                    continue
+                for so in row.get("so_numbers") or []:
+                    key = normalize_so_number(so)
+                    if key:
+                        sos.add(key)
+            counts[int(rid)] = len(sos)
+    for r in runs:
+        if r.get("id") is not None:
+            r["so_count"] = counts.get(int(r["id"]), 0)
 
 
 def _strip_so_from_run(run: dict[str, Any], so_number: str) -> dict[str, Any] | None:
