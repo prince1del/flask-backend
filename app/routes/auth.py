@@ -66,7 +66,38 @@ def get_jwt_service() -> JWTService:
     return service
 
 
+def _subscription_gate(fn):
+    @wraps(fn)
+    def gated(*args, **kwargs):
+        from app.services import subscriptions
+
+        user = getattr(request, "user", None)
+        try:
+            blocked = subscriptions.is_blocked(_get_auth_db().db_path, user, request.path)
+        except Exception:
+            current_app.logger.exception("subscription check failed")
+            blocked = False
+        if blocked:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "SUBSCRIPTION_EXPIRED",
+                            "message": "Your NEXORA access has ended. Enter an activation code to continue.",
+                        },
+                    }
+                ),
+                402,
+            )
+        return fn(*args, **kwargs)
+
+    return gated
+
+
 def require_jwt_auth(fn):
+    gated_fn = _subscription_gate(fn)
+
     @wraps(fn)
     def decorated(*args, **kwargs):
         if not auth_enabled():
@@ -76,7 +107,7 @@ def require_jwt_auth(fn):
         # this is a genuine token-based caller (mobile app, external
         # API client, etc.) and must be verified as a real JWT.
         if request.headers.get("Authorization"):
-            return get_jwt_service().require_auth(fn)(*args, **kwargs)
+            return get_jwt_service().require_auth(gated_fn)(*args, **kwargs)
 
         # CRITICAL FIX: a valid browser session (from the HTML /login
         # form) is just as trustworthy as a JWT for THIS SAME browser's
@@ -108,13 +139,13 @@ def require_jwt_auth(fn):
                 "workspace_id": session.get("workspace_id", "default"),
                 "is_workspace_owner": is_owner,
             }
-            return fn(*args, **kwargs)
+            return gated_fn(*args, **kwargs)
 
         # No session, no Authorization header — genuine API-style
         # requests must supply a valid JWT; browser page routes get
         # redirected to the login form instead.
         if request.path.startswith("/api/") or request.is_json:
-            return get_jwt_service().require_auth(fn)(*args, **kwargs)
+            return get_jwt_service().require_auth(gated_fn)(*args, **kwargs)
 
         # Prefer JSON for XHR/fetch callers hitting non-/api routes (e.g. legacy /search)
         # so the SPA does not try to parse the HTML login page as JSON.

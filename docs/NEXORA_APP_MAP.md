@@ -60,6 +60,28 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
   workspace). Admin screens: `/api/v1/admin/*`, `/api/v1/workspace/users`.
 - **Profile / theme / recovery:** `/api/v1/me/*`, `/api/v1/auth/*` (recovery
   PIN, secret question, password reset).
+- **Self sign-up:** `POST /api/v1/signup` (`app/routes/signup.py`) makes a new
+  company + workspace + login. With `invite_code` the login instead joins the
+  inviter's company/workspace with the invite's role.
+- **Company invites:** `app/routes/invites.py` + `app/services/company_invites.py`,
+  tables `company_invites`, `company_invite_redemptions`. Owner / company admin
+  creates `XXXX-XXXX` codes (`POST /api/v1/invites`), lists, stops them;
+  `GET /api/v1/invites/check?code=` is public for the sign-up form;
+  `GET /api/v1/invites/members` lists the company's logins.
+- **Plan (per login):** `app/routes/subscription.py` + `app/services/subscriptions.py`.
+  `users.trial_ends_at` / `users.paid_until`; both NULL = unlimited (all
+  logins made before Nov 2026 and admin-created ones). Self sign-ups get a
+  7-day trial. Once ended, `require_jwt_auth` answers **402
+  SUBSCRIPTION_EXPIRED** for everything except `/api/v1/subscription`,
+  `/api/v1/auth`, `/api/v1/app/...` (OTA). Super admin
+  (`WORKSPACE_OWNER_USERNAME`) generates single-use N-day codes
+  (`/api/v1/subscription/codes`, table `subscription_codes`); the user redeems
+  with `POST /api/v1/subscription/redeem`, which adds N days from today or
+  from the current end date.
+  Web: `app/static/subscription.js` (profile menu: My plan, Team & invites,
+  Subscription codes; login: Join with company code). Phone:
+  `ui/plan/PlanGate.kt` (drawer "Plan & team", lock screen on 402) and the
+  "Join my company" card on `SignUpScreen`.
 
 ---
 

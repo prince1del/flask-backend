@@ -882,6 +882,15 @@
                             </div>
                         </div>
                         <div class="nx-profile-dropdown-divider" role="separator"></div>
+                        <button type="button" role="menuitem" class="nx-profile-dropdown-item" onclick="window.nxSubscription && nxSubscription.openPlan()">
+                            <span class="nx-profile-dropdown-item-label">My plan / Enter code</span>
+                        </button>
+                        <button type="button" role="menuitem" class="nx-profile-dropdown-item hidden" id="nx-menu-invites" onclick="window.nxSubscription && nxSubscription.openInvites()">
+                            <span class="nx-profile-dropdown-item-label">Team &amp; invites</span>
+                        </button>
+                        <button type="button" role="menuitem" class="nx-profile-dropdown-item hidden" id="nx-menu-sub-codes" onclick="window.nxSubscription && nxSubscription.openCodeDesk()">
+                            <span class="nx-profile-dropdown-item-label">Subscription codes</span>
+                        </button>
                         <button type="button" role="menuitem" class="nx-profile-dropdown-item nx-profile-dropdown-logout" onclick="closeUserProfileMenu(); logout();">
                             <span class="nx-profile-dropdown-item-icon" aria-hidden="true">
                                 <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/><path d="M13 14l4-4-4-4"/><path d="M7 10h10"/></svg>
@@ -932,6 +941,7 @@
             <button type="submit" class="btn btn-primary login-submit-btn">Login</button>
             </form>
             <p id="loginError" class="error" role="status"></p>
+            <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px;" onclick="window.nxSubscription && nxSubscription.openJoin()">Join with company code</button>
         </div>
     </div>
 
@@ -3757,7 +3767,8 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20261113-season-price"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20261114-plan"></script>
+    <script src="{{ url_for('static', filename='subscription.js') }}?v=20261114-plan"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
     <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp3"></script>
     <script src="{{ url_for('static', filename='order_desk_money.js') }}?v=20261113-ledger6"></script>

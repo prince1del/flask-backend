@@ -356,6 +356,7 @@ function setUserProfileButton(username) {
       : '';
     roleEl.textContent = [roleLabel, workspace].filter(Boolean).join(' · ');
   }
+  if (window.nxSubscription && authState.accessToken) window.nxSubscription.refresh();
   // Hide any leftover standalone logout buttons across shells
   document.querySelectorAll('.btn-logout, .hop-nav-logout').forEach((btn) => {
     if (btn.closest?.('#nx-profile-dropdown')) return;
@@ -1377,6 +1378,9 @@ async function fetchWithAuth(url, options = {}, alreadyRetried = false) {
   if (response.status === 401) {
     await handleSessionTimeout();
     throw makeSessionTimeoutError();
+  }
+  if (response.status === 402 && window.nxSubscription) {
+    window.nxSubscription.showLock();
   }
   return response;
 }

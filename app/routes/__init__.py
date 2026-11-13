@@ -7,6 +7,8 @@ from .reports import reports_bp
 from .schemas import schemas_blueprint
 from .storage import storage_bp
 from .signup import signup_bp
+from .invites import invites_bp
+from .subscription import subscription_bp
 from .target_achievement import target_achievement_bp
 from .workspaces import workspaces_blueprint
 from .party_matching import party_matching_bp
@@ -42,6 +44,8 @@ __all__ = [
     'storage_bp',
     'gdrive_bp',
     'signup_bp',
+    'invites_bp',
+    'subscription_bp',
     'analytics_blueprint',
     'auth_blueprint',
     'data_blueprint',

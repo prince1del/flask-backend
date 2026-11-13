@@ -5,6 +5,10 @@ own company row, own workspace_id, own admin login — with zero contact
 with House of Prizm's or Bombay Dyeing's data. Phase 1 (companies /
 workspace_registry tables) already exists; this just provisions into it.
 
+With ``invite_code`` (see app/routes/invites.py) the new login joins the
+inviter's existing company and workspace instead. Every self sign-up starts
+a 7-day trial (app/services/subscriptions.py).
+
 Phase 3 (auditing every existing query for consistent workspace/company
 filtering) is NOT done — until that's complete, a new tenant signed up
 here is only as isolated as the rest of the codebase actually enforces.
@@ -17,6 +21,8 @@ import re
 from flask import Blueprint, jsonify, request
 
 from app.routes.auth import _get_auth_db, get_jwt_service
+from app.services import company_invites as ci
+from app.services import subscriptions as subs
 
 signup_bp = Blueprint("signup", __name__, url_prefix="/api/v1")
 
@@ -50,8 +56,11 @@ def signup():
     category = (data.get("category") or "").strip().lower()
     secret_question = (data.get("secret_question") or "").strip()
     secret_answer = (data.get("secret_answer") or "").strip()
+    # With a teammate's invite code the login joins that company instead of
+    # creating a new one; company and role then come from the invite.
+    invite_code = (data.get("invite_code") or "").strip()
 
-    if not company_name:
+    if not company_name and not invite_code:
         return jsonify({"success": False, "error": {"message": "company_name is required"}}), 400
     if not username:
         return jsonify({"success": False, "error": {"message": "username is required"}}), 400
@@ -65,23 +74,34 @@ def signup():
             "error": {"message": "secret_question and secret_answer are required"},
         }), 400
     role = CATEGORY_TO_ROLE.get(category)
-    if not role:
+    if not role and not invite_code:
         return jsonify({
             "success": False,
             "error": {"message": f"category must be one of: {', '.join(CATEGORY_TO_ROLE)}"},
         }), 400
 
     db = _get_auth_db()
+    invite = None
 
-    base_workspace = _slugify(company_name)
-    workspace_id = base_workspace
-    suffix = 1
-    while db.workspace_id_taken(workspace_id):
-        suffix += 1
-        workspace_id = f"{base_workspace}_{suffix}"
+    if invite_code:
+        try:
+            invite = ci.claim_invite(db, invite_code)
+        except ValueError as exc:
+            return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+        workspace_id = invite["workspace_id"]
+        role = invite["role"]
+        company_id = db.get_company_id_for_workspace(workspace_id)
+        company_name = ci.company_name_for_workspace(db, workspace_id) or company_name or None
+    else:
+        base_workspace = _slugify(company_name)
+        workspace_id = base_workspace
+        suffix = 1
+        while db.workspace_id_taken(workspace_id):
+            suffix += 1
+            workspace_id = f"{base_workspace}_{suffix}"
 
-    company_id = db.create_company(name=company_name)
-    db.register_workspace_for_company(workspace_id, company_id)
+        company_id = db.create_company(name=company_name)
+        db.register_workspace_for_company(workspace_id, company_id)
 
     try:
         created = db.create_user(
@@ -92,10 +112,12 @@ def signup():
             email=email,
         )
     except ValueError as exc:
-        # Username/email already taken — the company + workspace rows
-        # created above are harmless orphans (no data ever written under
-        # them), left for a human to clean up rather than risking a
-        # partial-delete bug in a request that's about to 409 anyway.
+        # Username/email already taken — for a new company the company +
+        # workspace rows created above are harmless orphans (no data ever
+        # written under them), left for a human to clean up rather than
+        # risking a partial-delete bug in a request that's about to 409.
+        if invite:
+            ci.release_invite(db, invite["id"])
         return jsonify({"success": False, "error": {"message": str(exc)}}), 409
 
     user_id = int(created["id"])
@@ -107,9 +129,15 @@ def signup():
             db.delete_login_user(user_id)
         except Exception:
             pass
+        if invite:
+            ci.release_invite(db, invite["id"])
         return jsonify({"success": False, "error": {"message": str(exc)}}), 400
 
-    db.set_company_owner(company_id, user_id)
+    if invite:
+        ci.record_redemption(db, invite["id"], user_id, created["username"])
+    else:
+        db.set_company_owner(company_id, user_id)
+    trial_ends_at = subs.start_trial(db.db_path, user_id)
     # Deliberately NOT is_workspace_owner=True: the Android app treats
     # that flag as "show the Founder's multi-shell Hub Chooser" (incl.
     # Admin Zone) — UserSession.usesFounderShellHub() == isWorkspaceOwner.
@@ -141,6 +169,8 @@ def signup():
             "user_id": user_id,
             "username": created["username"],
             "role": role,
+            "joined_existing_company": invite is not None,
+            "trial_ends_at": trial_ends_at,
             "full_name": full_name,
             "access_token": access_token,
             "refresh_token": refresh_token,
