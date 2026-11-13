@@ -2811,6 +2811,20 @@ def _ci_as_float(value: Any) -> float | None:
         return None
 
 
+_CI_REPAIR_VERSION = "1"
+
+
+def _ci_repair_mark(ci_file: str | None) -> str | None:
+    """Identity of a CI PDF for 'repair already checked' (changes on re-upload)."""
+    if not ci_file:
+        return None
+    try:
+        st = os.stat(ci_file)
+    except OSError:
+        return None
+    return f"v{_CI_REPAIR_VERSION}:{os.path.basename(ci_file)}:{st.st_size}:{int(st.st_mtime)}"
+
+
 def _ci_lines_disagree_with_header(header: dict | None, lines: list | None) -> bool:
     """True when saved line qty/amount drifted from the CI footer (Total Pieces / Invoice Total)."""
     if not isinstance(header, dict) or not lines:
@@ -6848,6 +6862,13 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
         # Re-parse from CI PDF when any saved line is missing Design+Colour
         # (page-break truncation → 17/18 colourways). Uses real PDF text only.
         ci_file = tracking.get("commercial_invoice_file_reference")
+        # These checks re-read the CI PDF (1-4 s each). Run them once per PDF
+        # file, not on every view: a CI the repair could not "fix" used to be
+        # re-parsed every time, so a 16-CI distributor took ~20 s to open.
+        repair_mark = _ci_repair_mark(ci_file)
+        repair_done = bool(repair_mark) and ci_parsed.get("repair_checked") == repair_mark
+        if repair_done:
+            ci_file = None
         needs_design_repair = bool(ci_file) and bool(ci_lines) and any(
             isinstance(ln, dict)
             and ln.get("item_name")
@@ -6958,6 +6979,20 @@ def get_order_fulfillment_tracking(tracking_id: int) -> Response:
                             )
                             conn.commit()
                         ci_parsed = updated
+            except Exception:
+                pass
+        if repair_mark and not repair_done:
+            try:
+                marked = dict(ci_parsed)
+                marked["repair_checked"] = repair_mark
+                with sqlite3.connect(db.db_path) as conn:
+                    conn.execute(
+                        "UPDATE order_lifecycle_tracking "
+                        "SET commercial_invoice_parsed = ? WHERE tracking_id = ?",
+                        (json.dumps(marked, default=str), tracking_id),
+                    )
+                    conn.commit()
+                ci_parsed = marked
             except Exception:
                 pass
         article_master_match = ci_parsed.get("article_master_match")
