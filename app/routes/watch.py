@@ -245,3 +245,95 @@ def voice():
             query=f"watch voice {info.get('voice')} {info.get('chars')} chars",
         )
     return Response(audio, mimetype="audio/wav")
+
+
+def build_lists(db, conn: sqlite3.Connection, *, user_id: int, workspace_id: str, today: date | None = None) -> dict:
+    """Short lists for the watch screens (each item fits one or two lines)."""
+    from app.services import distributor_ledger as dl
+    from app.services import fo_so_match_db as matchdb
+
+    today = today or date.today()
+    matchdb.ensure_schema(conn)
+    ledger = dl.build_ledger(db, conn, user_id=user_id, workspace_id=workspace_id, today=today)
+    overdue, due, payments = [], [], []
+    for d in ledger.get("distributors") or []:
+        name = d.get("distributor_name") or "Distributor"
+        to_collect = float((d.get("totals") or {}).get("payment_due") or 0)
+        if to_collect > 1:
+            due.append({"name": name, "amount": round(to_collect, 2)})
+        for c in d.get("categories") or []:
+            amt = float(c.get("payment_due") or 0)
+            dd = c.get("due_date")
+            if amt > 1 and dd and dd < today.isoformat():
+                try:
+                    days = (today - date.fromisoformat(dd)).days
+                except ValueError:
+                    days = None
+                overdue.append({"name": name, "category": c.get("category"), "season": c.get("season"),
+                                "amount": round(amt, 2), "due_date": dd, "days": days})
+            for p in c.get("deposits") or []:
+                payments.append({"name": name, "category": c.get("category"), "amount": float(p.get("amount") or 0),
+                                 "date": p.get("payment_date")})
+    overdue.sort(key=lambda x: -x["amount"])
+    due.sort(key=lambda x: -x["amount"])
+    payments.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
+
+    by_dist: dict[str, dict] = {}
+    for p in matchdb.list_pending_so_for_user(conn, user_id):
+        b = by_dist.setdefault(p.get("distributor_name") or "Distributor", {"name": p.get("distributor_name") or "Distributor", "count": 0, "value": 0.0})
+        b["count"] += 1
+        b["value"] = round(b["value"] + float(p.get("pending_net") or 0), 2)
+    pending = sorted(by_dist.values(), key=lambda x: -x["value"])
+
+    todos = []
+    try:
+        for tid, title, dd, pr in conn.execute(
+            "SELECT id, task_title, due_date, priority FROM personal_todos WHERE user_id = ? AND workspace_id = ? "
+            "AND status != 'done' ORDER BY due_date IS NULL, due_date LIMIT 15", (user_id, workspace_id)
+        ).fetchall():
+            todos.append({"id": tid, "title": title, "due_date": dd, "priority": pr,
+                          "late": bool(dd and dd < today.isoformat())})
+    except sqlite3.OperationalError:
+        pass
+    pjp = None
+    try:
+        row = conn.execute(
+            "SELECT place_to_visit, business_activity, day_type FROM monthly_pjp_days WHERE user_id = ? "
+            "AND workspace_id = ? AND plan_date = ?", (user_id, workspace_id, today.isoformat())
+        ).fetchone()
+        if row:
+            pjp = " · ".join(x for x in row if x)
+    except sqlite3.OperationalError:
+        pass
+    return {"overdue": overdue[:15], "due": due[:15], "pending_so": pending[:15],
+            "today": {"pjp": pjp, "todos": todos}, "payments": payments[:8], "as_of": today.isoformat()}
+
+
+@watch_bp.route("/lists", methods=["GET"])
+def lists():
+    user = _watch_user()
+    if user is None:
+        return _unauthorized()
+    from app.routes.data import _db_path
+    from centralized_db_system.db import CentralizedDB
+
+    conn = sqlite3.connect(_db_path())
+    try:
+        data = build_lists(CentralizedDB(_db_path()), conn, user_id=user["user_id"], workspace_id=user["workspace_id"])
+    finally:
+        conn.close()
+    return jsonify({"success": True, "data": data}), 200
+
+
+@watch_bp.route("/todos/<int:todo_id>/done", methods=["POST"])
+def todo_done(todo_id: int):
+    """Tick a to-do from the watch — through the app's own route, as this user."""
+    user = _watch_user()
+    if user is None:
+        return _unauthorized()
+    from app.services.nexora_app_reader import call_as_user
+
+    resp = call_as_user("POST", f"/api/v1/personal-todos/{todo_id}/done",
+                        user_id=user["user_id"], workspace_id=user["workspace_id"], json_body={})
+    ok = resp.status_code < 400
+    return jsonify({"success": ok, "data": {"status": resp.status_code}}), (200 if ok else resp.status_code)

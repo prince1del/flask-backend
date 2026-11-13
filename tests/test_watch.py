@@ -61,5 +61,30 @@ def test_pair_summary_ask_revoke(tmp_path, monkeypatch):
     assert v.status_code == 200 and v.mimetype == "audio/wav" and v.data[:4] == b"RIFF"
     assert client.post("/api/v1/watch/voice", json={"text": "x"}).status_code == 401
 
+    lst = client.get("/api/v1/watch/lists", headers=w)
+    assert lst.status_code == 200, lst.get_data(as_text=True)
+    ld = lst.get_json()["data"]
+    for k in ("overdue", "due", "pending_so", "today", "payments"):
+        assert k in ld
+
+    made = client.post("/api/v1/personal-todos", json={"task_title": "Call Goyal"}, headers=h).get_json()
+    import json as _json
+    tid = None
+    def _find(x):
+        nonlocal tid
+        if isinstance(x, dict):
+            if x.get("task_title") == "Call Goyal" and x.get("id"):
+                tid = x["id"]
+            for v in x.values():
+                _find(v)
+        elif isinstance(x, list):
+            for v in x:
+                _find(v)
+    _find(made)
+    assert any(t["title"] == "Call Goyal" for t in client.get("/api/v1/watch/lists", headers=w).get_json()["data"]["today"]["todos"])
+    assert client.post(f"/api/v1/watch/todos/{tid}/done", headers=w).status_code == 200
+    assert not any(t["title"] == "Call Goyal" for t in client.get("/api/v1/watch/lists", headers=w).get_json()["data"]["today"]["todos"])
+    assert client.post(f"/api/v1/watch/todos/{tid}/done").status_code == 401
+
     assert client.delete("/api/v1/watch/pair", headers=h).get_json()["data"]["revoked"] == 1
     assert client.get("/api/v1/watch/summary", headers=w).status_code == 401
