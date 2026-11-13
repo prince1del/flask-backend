@@ -367,7 +367,7 @@ function renderDistributorHisaab(distributors) {
           <span class="of-pay-meta">Order ${odmInr(t.order_payable)} · Received ${odmInr(t.received)} · Billed ${odmInr(t.billed)} · To collect ${odmInr(t.payment_due)}</span>
           <label class="nx-btn nx-btn--ghost" title="Upload the company ledger (Excel or PDF) to find missing CIs, payments and credit notes">
             Check with party ledger
-            <input type="file" hidden accept=".xls,.xlsx,application/pdf,image/*" onchange="odmCheckLedger(this, ${Number(d.distributor_id)})">
+            <input type="file" hidden accept=".xls,.xlsx,.csv,application/pdf,image/*" onchange="odmCheckLedger(this, ${Number(d.distributor_id)})">
           </label>
         </header>
         <div class="of-ledger-check" id="of-ledger-check-${Number(d.distributor_id)}"></div>
@@ -412,11 +412,12 @@ async function odmCheckLedger(input, distributorId) {
     box.innerHTML = `
       <div class="of-pay-order-body">
         <h4 class="of-hisaab-h">Ledger check ${r.period_from ? `· ${odmEsc(r.period_from)} to ${odmEsc(r.period_to)}` : ''}
-          ${r.read_by === 'ai' ? '<span class="nx-text-dim">(PDF read by AI)</span>' : ''}</h4>
+          ${r.read_by === 'ai' ? '<span class="nx-text-dim">(read by AI)</span>' : ''}</h4>
         <table class="data-table of-pay-table">
           <thead><tr><th></th><th>Ledger</th><th>NEXORA</th><th>Difference</th></tr></thead>
           <tbody>${compare}</tbody>
         </table>
+        ${r.summary ? `<p class="of-ledger-summary"><strong>✨ AI summary:</strong> ${odmEsc(r.summary)}</p>` : ''}
         ${r.skipped_older ? `<p class="nx-text-dim">Compared from ${odmEsc(r.compared_from)} (when NEXORA's data for this distributor starts). ${Number(r.skipped_older)} older ledger lines not checked.</p>` : ''}
         ${findings.length ? `<ul class="of-hisaab-alerts">${rows}</ul>` : '<p><strong>✓ Everything matches the ledger.</strong></p>'}
       </div>`;

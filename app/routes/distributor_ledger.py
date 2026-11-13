@@ -190,11 +190,26 @@ def reconcile_ledger():
     if not data:
         return jsonify({"success": False, "error": {"message": "The file is empty"}}), 400
     try:
-        if name.endswith((".xls", ".xlsx")):
-            from app.services.statement_of_account import parse_statement_of_account
+        if name.endswith((".xls", ".xlsx", ".csv")):
+            from app.services.statement_of_account import _read_sheet_rows, parse_statement_of_account
 
-            statement = parse_statement_of_account(data, name)
-            party, lines, read_by = statement.get("party_name") or "", lr.lines_from_statement(statement), "excel"
+            try:
+                statement = parse_statement_of_account(data, name)
+                party, lines, read_by = statement.get("party_name") or "", lr.lines_from_statement(statement), "excel"
+                if not lines:
+                    raise ValueError("no lines")
+            except ValueError:
+                # Not the SAP layout NEXORA knows: let AI read the rows.
+                if name.endswith(".csv"):
+                    import csv
+                    import io
+
+                    table = list(csv.reader(io.StringIO(data.decode("utf-8", errors="ignore"))))
+                    headers, rows = (table[0] if table else []), table[1:]
+                else:
+                    headers, rows, _mode = _read_sheet_rows(data, name)
+                party, lines = lr.lines_from_sheet(headers, rows, user_id=uid)
+                read_by = "ai"
         else:
             mime = "application/pdf" if name.endswith(".pdf") else (f.mimetype or "image/jpeg")
             party, lines = lr.lines_from_document(data, mime, user_id=uid)
@@ -224,4 +239,6 @@ def reconcile_ledger():
         }}), 200
     out = lr.reconcile(lines, dist)
     out.update({"party": party, "read_by": read_by})
+    if request.form.get("summary", "1") != "0":
+        out["summary"] = lr.summarize(out, user_id=uid)
     return jsonify({"success": True, "data": out}), 200

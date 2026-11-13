@@ -178,8 +178,11 @@ Menu group with four sections:
 - **Check with party ledger** (inside Hisaab, per distributor) — upload the company
   ledger; lists invoices missing in NEXORA, CIs not in the ledger, amount
   differences, payments missing either side (same amount, ±10 days) and credit notes.
-  SAP Excel is read without AI (`statement_of_account.py`); PDF/photo is read by
-  Gemini (12k-token cap, daily AI limit). `POST /api/v1/distributor-ledger/reconcile`.
+  SAP Excel is read without AI (`statement_of_account.py`; CI no. from Assignment,
+  "3%CD"/"TDS:" credit lines compared as CD/TDS totals). Any other Excel/CSV layout
+  and PDF/photo are read by Gemini (12k-token cap, daily AI limit). Each mismatch
+  gets a "Likely Bed · AW26 (RFA …)" hint from the ledger's own RFA text, and a
+  3-sentence AI summary (220-token cap) sits on top. `POST /api/v1/distributor-ledger/reconcile`.
   Code: `app/services/ledger_reconcile.py`. Phone: `LedgerCheckDialog.kt`. Web: Hisaab
   distributor header button.
 - **Statement of Account** — `POST /api/v1/statement-of-account/from-ledger`

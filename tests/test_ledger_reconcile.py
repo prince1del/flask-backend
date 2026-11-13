@@ -107,3 +107,51 @@ def test_sap_lines_ci_in_assignment_and_cd_tds_split():
     ls = lines_from_statement(st)
     assert [l["kind"] for l in ls] == ["invoice", "cd", "tds", "credit_note"]
     assert ls[0]["ref"] == "1400000070"
+
+
+def test_likely_category_from_rfa_and_ci_list():
+    from app.services.ledger_reconcile import _expand_ci_list
+
+    assert _expand_ci_list("1400009209/10/1/2/27/8") == [
+        "1400009209", "1400009210", "1400009211", "1400009212", "1400009227", "1400009228"]
+    L = lambda kind, d, ref, amt, so="", text="": {"kind": kind, "date": d, "ref": ref, "so_ref": so,  # noqa: E731
+                                                   "text": text, "amount": amt, "signed": amt}
+    lines = [
+        L("payment", date(2026, 8, 20), "UTR9", 84590.0, so="RFA 0377 Bedsheet"),
+        L("invoice", date(2026, 8, 22), "1400000070", 58111.2),
+        L("cd", date(2026, 8, 23), "102876077", 1660.32, text="3%CD - Acme - RFA0377 CI 1400000070"),
+    ]
+    out = reconcile(lines, _dist())
+    inv = next(f for f in out["findings"] if f["ref"] == "1400000070")
+    assert inv["likely"] == "Bed · AW26 (RFA 377)"
+    pay = next(f for f in out["findings"] if f["kind"] == "payment" and f["level"] == "alert")
+    assert pay["likely"].startswith("Bed · AW26")
+
+
+def test_unknown_excel_goes_to_ai(tmp_path, monkeypatch):
+    import io
+
+    from openpyxl import Workbook
+
+    from app.services import ledger_reconcile as lr
+    from tests.test_watch import _app
+
+    seen = {}
+
+    def fake_sheet(headers, rows, *, user_id):
+        seen["headers"] = headers
+        return "Acme Traders", [{"kind": "invoice", "date": date(2026, 8, 10), "ref": "1", "so_ref": "",
+                                 "text": "", "amount": 10.0, "signed": 10.0}]
+
+    monkeypatch.setattr(lr, "lines_from_sheet", fake_sheet)
+    _a, client, h = _app(tmp_path, monkeypatch)
+    wb = Workbook()
+    wb.active.append(["Date", "Particulars", "Debit", "Credit"])
+    wb.active.append(["2026-08-10", "Sale bill 1", 10, None])
+    buf = io.BytesIO()
+    wb.save(buf)
+    r = client.post("/api/v1/distributor-ledger/reconcile", headers=h,
+                    data={"file": (io.BytesIO(buf.getvalue()), "tally.xlsx")}, content_type="multipart/form-data")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert seen["headers"][:2] == ["Date", "Particulars"]
+    assert r.get_json()["data"]["need_distributor"] is True

@@ -123,80 +123,189 @@ _PDF_PROMPT = (
 )
 
 
-def lines_from_document(data: bytes, mime: str, *, user_id: int) -> tuple[str, list[dict[str, Any]]]:
-    """Read a PDF/photo ledger with Gemini (one call, capped). Returns (party, lines)."""
+def _gemini(parts: list[dict[str, Any]], *, user_id: int, feature: str, max_tokens: int,
+            json_out: bool, timeout: int = 120) -> str:
+    """One capped Gemini call (logged, counted in the daily AI limit). Returns the text."""
     from app.services import nexora_ai_agent as agent
     from app.services.dsr_notes_polish import gemini_api_key
 
     if agent.over_daily_limit(user_id, "ai"):
-        raise ValueError("Daily AI limit reached. Upload the ledger as Excel instead (no AI needed).")
+        raise ValueError("Daily AI limit reached for today.")
     key = gemini_api_key()
     if not key:
-        raise ValueError("Reading PDF ledgers is not set up on the server. Upload the Excel.")
-    if len(data) > 15 * 1024 * 1024:
-        raise ValueError("File is too big (max 15 MB).")
-    body = json.dumps({
-        "contents": [{"role": "user", "parts": [
-            {"text": _PDF_PROMPT},
-            {"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("ascii")}},
-        ]}],
-        "generationConfig": {"temperature": 0, "maxOutputTokens": 12000,
-                             "responseMimeType": "application/json"},
-    }).encode("utf-8")
+        raise ValueError("AI is not set up on the server.")
+    cfg: dict[str, Any] = {"temperature": 0, "maxOutputTokens": max_tokens}
+    if json_out:
+        cfg["responseMimeType"] = "application/json"
+    body = json.dumps({"contents": [{"role": "user", "parts": parts}], "generationConfig": cfg}).encode("utf-8")
     for model in agent.agent_gemini_models():
         req = urllib.request.Request(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
             data=body, headers={"Content-Type": "application/json"}, method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 out = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 continue
-            raise ValueError("Could not read the ledger. Try the Excel export.") from exc
+            raise ValueError("AI could not read it right now.") from exc
         except Exception as exc:
-            raise ValueError("Could not read the ledger. Try the Excel export.") from exc
+            raise ValueError("AI could not read it right now.") from exc
         usage = out.get("usageMetadata") or {}
         agent._log_usage(
-            user_id=int(user_id), feature="nexora_agent_ledger_read", model=model, rounds=1,
+            user_id=int(user_id), feature=feature, model=model, rounds=1,
             prompt_tokens=int(usage.get("promptTokenCount") or 0),
             output_tokens=int(usage.get("candidatesTokenCount") or 0),
-            total_tokens=int(usage.get("totalTokenCount") or 0), query="ledger read",
+            total_tokens=int(usage.get("totalTokenCount") or 0), query=feature,
         )
-        parts = ((out.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
-        text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
-        m = re.search(r"\{.*\}", text, re.S)
+        parts_out = ((out.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        return "".join(p.get("text", "") for p in parts_out if isinstance(p, dict))
+    raise ValueError("AI could not read it right now.")
+
+
+def _lines_from_ai_json(text: str) -> tuple[str, list[dict[str, Any]]]:
+    m = re.search(r"\{.*\}", text or "", re.S)
+    try:
+        parsed = json.loads(m.group(0)) if m else {}
+    except ValueError:
+        parsed = {}
+    lines = []
+    for ln in parsed.get("lines") or []:
+        if not isinstance(ln, dict):
+            continue
         try:
-            parsed = json.loads(m.group(0)) if m else {}
+            debit = float(str(ln.get("debit") or 0).replace(",", ""))
+            credit = float(str(ln.get("credit") or 0).replace(",", ""))
         except ValueError:
-            parsed = {}
-        lines = []
-        for ln in parsed.get("lines") or []:
-            if not isinstance(ln, dict):
-                continue
-            try:
-                debit = float(str(ln.get("debit") or 0).replace(",", ""))
-                credit = float(str(ln.get("credit") or 0).replace(",", ""))
-            except ValueError:
-                continue
-            amt = debit or credit
-            if amt <= 0:
-                continue
-            kind = str(ln.get("kind") or "other")
-            lines.append({
-                "kind": kind if kind in ("invoice", "payment", "credit_note", "cd", "tds") else "other",
-                "date": _d(ln.get("date")),
-                "ref": str(ln.get("ref") or "").strip(),
-                "so_ref": str(ln.get("so_ref") or "").strip(),
-                "text": str(ln.get("text") or "").strip()[:120],
-                "amount": round(amt, 2),
-                "signed": debit - credit,
-            })
-        if not lines:
-            raise ValueError("No transactions found in this file.")
-        return str(parsed.get("party") or "").strip(), lines
-    raise ValueError("Could not read the ledger. Try the Excel export.")
+            continue
+        amt = debit or credit
+        if amt <= 0:
+            continue
+        kind = str(ln.get("kind") or "other")
+        txt = str(ln.get("text") or "").strip()[:120]
+        if kind == "credit_note":
+            kind = credit_kind(txt)  # AI may call a CD/TDS line a credit note
+        lines.append({
+            "kind": kind if kind in ("invoice", "payment", "credit_note", "cd", "tds") else "other",
+            "date": _d(ln.get("date")),
+            "ref": str(ln.get("ref") or "").strip(),
+            "so_ref": str(ln.get("so_ref") or "").strip(),
+            "text": txt,
+            "amount": round(amt, 2),
+            "signed": debit - credit,
+        })
+    if not lines:
+        raise ValueError("No transactions found in this file.")
+    return str(parsed.get("party") or "").strip(), lines
+
+
+def lines_from_document(data: bytes, mime: str, *, user_id: int) -> tuple[str, list[dict[str, Any]]]:
+    """Read a PDF/photo ledger with Gemini (one call, capped). Returns (party, lines)."""
+    if len(data) > 15 * 1024 * 1024:
+        raise ValueError("File is too big (max 15 MB).")
+    try:
+        text = _gemini([{"text": _PDF_PROMPT},
+                        {"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("ascii")}}],
+                       user_id=user_id, feature="nexora_agent_ledger_read", max_tokens=12000, json_out=True)
+    except ValueError as exc:
+        raise ValueError(f"{exc} Upload the ledger as Excel if you can.") from exc
+    return _lines_from_ai_json(text)
+
+
+_MAX_SHEET_ROWS = 700
+
+
+def lines_from_sheet(headers: list[str], rows: list[list[Any]], *, user_id: int) -> tuple[str, list[dict[str, Any]]]:
+    """Any Excel layout NEXORA does not know: send the rows as text to Gemini.
+    Newest rows are kept when the sheet is very long."""
+    def cell(v: Any) -> str:
+        if isinstance(v, (datetime, date)):
+            return v.strftime("%Y-%m-%d")
+        return str(v if v is not None else "").replace("|", "/").replace("\n", " ").strip()[:60]
+
+    body_rows = [r for r in rows if any(cell(c) for c in r)][-_MAX_SHEET_ROWS:]
+    table = "\n".join(" | ".join(cell(c) for c in r) for r in [headers] + body_rows)
+    try:
+        text = _gemini([{"text": _PDF_PROMPT + " The ledger is given as a table, one row per line:\n" + table}],
+                       user_id=user_id, feature="nexora_agent_ledger_read", max_tokens=12000, json_out=True)
+    except ValueError as exc:
+        raise ValueError(f"This Excel layout is new and {str(exc).lower()}") from exc
+    return _lines_from_ai_json(text)
+
+
+def summarize(result: dict[str, Any], *, user_id: int) -> str | None:
+    """Two or three plain sentences on what to fix first (one small AI call)."""
+    findings = result.get("findings") or []
+    if not findings:
+        return None
+    facts = {
+        "distributor": result.get("distributor_name"),
+        "period": [result.get("period_from"), result.get("period_to")],
+        "totals_ledger_vs_nexora": result.get("compare"),
+        "mismatches": [{"title": f["title"], "detail": f["detail"], "likely": f.get("likely")}
+                       for f in findings[:15]],
+        "more": max(0, len(findings) - 15),
+    }
+    prompt = ("You check a distributor's company ledger against our app NEXORA. In at most 3 short "
+              "sentences of plain English, say what is wrong and what to fix first (biggest money first). "
+              "Use ₹ with Indian lakh style (e.g. ₹2.97 L). No markdown, no lists.\n" + json.dumps(facts, default=str))
+    try:
+        text = _gemini([{"text": prompt}], user_id=user_id, feature="nexora_agent_ledger_summary",
+                       max_tokens=220, json_out=False, timeout=30)
+    except ValueError:
+        return None
+    return re.sub(r"[*#`]", "", text).strip()[:600] or None
+
+
+# ── Which category / season does a ledger line belong to? ────────────────────
+
+_CAT_WORDS = (
+    ("Bath", re.compile(r"\b(bath|towel)", re.I)),
+    ("Pillow", re.compile(r"\bpillow", re.I)),
+    ("TOB", re.compile(r"\b(tob|top of bed|comforter|quilt|dohar|blanket)", re.I)),
+    ("Bed", re.compile(r"\b(bed|bedsheet|sheet)", re.I)),
+)
+_RFA_RE = re.compile(r"RFA\s*[-:]?\s*0*(\d{2,})", re.I)
+_CI_LIST_RE = re.compile(r"CI\s*[-:]?\s*(\d{8,}(?:\s*/\s*\d{1,})*)", re.I)
+
+
+def _category_in(text: str) -> str | None:
+    for cat, rx in _CAT_WORDS:
+        if rx.search(text or ""):
+            return cat
+    return None
+
+
+def _expand_ci_list(raw: str) -> list[str]:
+    """'1400009209/10/1/2/27/8' -> 1400009209, …210, …211, …212, …227, …228."""
+    parts = [x.strip() for x in raw.split("/") if x.strip()]
+    if not parts:
+        return []
+    out = [parts[0]]
+    for t in parts[1:]:
+        prev = out[-1]  # each short part replaces the last digits of the one before
+        out.append(prev[: len(prev) - len(t)] + t if len(t) < len(prev) else t)
+    return out
+
+
+def ledger_hints(lines: list[dict[str, Any]]) -> tuple[dict[str, str], dict[str, str]]:
+    """(RFA -> category, CI number -> RFA) learned from the ledger's own text."""
+    rfa_cat: dict[str, str] = {}
+    ci_rfa: dict[str, str] = {}
+    for ln in lines:
+        blob = f"{ln.get('so_ref') or ''} {ln.get('text') or ''}"
+        m = _RFA_RE.search(blob)
+        if not m:
+            continue
+        rfa = m.group(1).lstrip("0") or "0"
+        cat = _category_in(blob)
+        if cat:
+            rfa_cat.setdefault(rfa, cat)
+        for lst in _CI_LIST_RE.findall(blob):
+            for ci in _expand_ci_list(lst):
+                ci_rfa.setdefault(ci, rfa)
+    return rfa_cat, ci_rfa
 
 
 # ── Which distributor? ───────────────────────────────────────────────────────
@@ -254,11 +363,31 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
         return bool(d and p_from and p_to and p_from <= d <= p_to)
 
     findings: list[dict[str, Any]] = []
+    rfa_cat, ci_rfa = ledger_hints(all_lines)
+    seasons_of: dict[str, list[str]] = {}
+    for c in dist.get("categories") or []:
+        if c.get("category") and c.get("season"):
+            seasons_of.setdefault(c["category"], []).append(c["season"])
+
+    def likely(ln: dict[str, Any]) -> str | None:
+        """'Bed · AW26 (RFA 0377)' from the line's own words, or via its RFA."""
+        blob = f"{ln.get('so_ref') or ''} {ln.get('text') or ''}"
+        m = _RFA_RE.search(blob)
+        rfa = (m.group(1).lstrip("0") or "0") if m else ci_rfa.get(_num(ln.get("ref")))
+        cat = _category_in(blob) or (rfa_cat.get(rfa) if rfa else None)
+        if not cat:
+            return None
+        # newest season last: AW26 after SS26
+        seasons = sorted(set(seasons_of.get(cat, [])), key=lambda x: (x[-2:], 1 if x.upper().startswith("AW") else 0))
+        label = cat + (f" · {seasons[-1]}" if seasons else "")
+        return label + (f" (RFA {rfa})" if rfa else "")
 
     def add(kind: str, level: str, title: str, detail: str, action: str, amount: float = 0.0,
-            ref: str = "", tracking_id: int | None = None) -> None:
-        findings.append({"kind": kind, "level": level, "title": title, "detail": detail,
-                         "action": action, "amount": round(amount, 2), "ref": ref,
+            ref: str = "", tracking_id: int | None = None, line: dict[str, Any] | None = None) -> None:
+        hint = likely(line) if line else None
+        findings.append({"kind": kind, "level": level, "title": title,
+                         "detail": detail + (f" · Likely {hint}" if hint else ""),
+                         "likely": hint, "action": action, "amount": round(amount, 2), "ref": ref,
                          "tracking_id": tracking_id})
 
     # Invoices
@@ -276,7 +405,7 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
             add("invoice", "alert", f"Invoice {ln['ref'] or '?'} is missing in NEXORA",
                 f"Ledger: {_inr(ln['amount'])} on {_fmt(ln['date'])}"
                 + (f" · SO {ln['so_ref']}" if ln["so_ref"] else ""),
-                "Upload this CI in Order Desk → Commercial Invoices.", ln["amount"], ln["ref"])
+                "Upload this CI in Order Desk → Commercial Invoices.", ln["amount"], ln["ref"], line=ln)
             continue
         seen_ci.add(key)
         gross = float(ci.get("gross") or 0)
@@ -284,7 +413,7 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
             add("invoice", "warn", f"Invoice {ln['ref']}: amount differs",
                 f"Ledger {_inr(ln['amount'])} vs NEXORA {_inr(gross)} (difference {_inr(ln['amount'] - gross)})",
                 "Open the CI and check the total; re-upload if it was read wrong.",
-                ln["amount"] - gross, ln["ref"], ci.get("tracking_id"))
+                ln["amount"] - gross, ln["ref"], ci.get("tracking_id"), line=ln)
     for key, ci in ci_by_no.items():
         if key in seen_ci or not in_period(_d(ci.get("invoice_date"))):
             continue
@@ -312,7 +441,7 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
             "In the ledger" + (f" · ref {ln['ref']}" if ln["ref"] else "")
             + (f" · {ln['text']}" if ln["text"] else ""),
             "Add it in Distributors Payment Status → Payments for the right season and category.",
-            ln["amount"], ln["ref"])
+            ln["amount"], ln["ref"], line=ln)
     for i in free:
         p = deposits[i]
         pd = _d(p.get("payment_date"))
@@ -348,7 +477,7 @@ def reconcile(lines: list[dict[str, Any]], dist: dict[str, Any], since: date | N
         add("credit_note", "alert",
             f"Credit note {ln['ref'] or ''} {_inr(ln['amount'])} is missing in NEXORA".replace("  ", " "),
             f"Ledger: {_fmt(ln['date'])}" + (f" · {ln['text']}" if ln["text"] else ""),
-            "Add it in Hisaab → + Add credit note for the right category.", ln["amount"], ln["ref"])
+            "Add it in Hisaab → + Add credit note for the right category.", ln["amount"], ln["ref"], line=ln)
     for i in cn_free:
         n = cns[i]
         if not in_period(_d(n.get("cn_date"))):
