@@ -210,3 +210,38 @@ def ask():
 
     action = getattr(g, "nexora_pending_action", None)
     return jsonify({"success": True, "data": {"answer": answer, "action": action}}), 200
+
+
+@watch_bp.route("/voice", methods=["POST"])
+def voice():
+    """Body {text} -> WAV of the answer in this user's saved Ask Nexora voice."""
+    user = _watch_user()
+    if user is None:
+        return _unauthorized()
+    text = str((request.get_json(silent=True) or {}).get("text") or "").strip()
+    if not text:
+        return jsonify({"success": False, "error": {"message": "text is required"}}), 400
+    from flask import Response
+
+    from app.routes.ai_agent import _saved_voice
+    from app.services import nexora_ai_agent as agent
+    from app.services.nexora_voice import VoiceError, synthesize
+    from app.services.visiting_card_ocr import _gemini_key
+
+    uid = user["user_id"]
+    try:
+        audio, info = synthesize(
+            text[:6000], voice=_saved_voice(uid), api_key=_gemini_key(),
+            db_path=str(current_app.config.get("DATABASE_PATH") or "centralized_db.sqlite3"),
+            cache_only=agent.over_daily_limit(uid, "voice"),
+        )
+    except VoiceError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 503
+    if not info.get("cached"):
+        agent._log_usage(
+            user_id=uid, feature="nexora_voice", model=str(info.get("model") or ""), rounds=1,
+            prompt_tokens=int(info.get("prompt_tokens") or 0), output_tokens=int(info.get("output_tokens") or 0),
+            total_tokens=int(info.get("prompt_tokens") or 0) + int(info.get("output_tokens") or 0),
+            query=f"watch voice {info.get('voice')} {info.get('chars')} chars",
+        )
+    return Response(audio, mimetype="audio/wav")

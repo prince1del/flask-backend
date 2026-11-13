@@ -52,5 +52,14 @@ def test_pair_summary_ask_revoke(tmp_path, monkeypatch):
     assert r.status_code == 200 and r.get_json()["data"]["answer"].startswith("Kalra")
     assert client.post("/api/v1/watch/ask", json={}, headers=w).status_code == 400
 
+    from app.services import nexora_voice as nv
+
+    monkeypatch.setattr(nv, "synthesize", lambda text, **k: (b"RIFF" + b"0" * 60, {"cached": True, "voice": k["voice"]}))
+    import app.routes.watch as wr
+
+    v = client.post("/api/v1/watch/voice", json={"text": "Kalra ka koi payment baaki nahi."}, headers=w)
+    assert v.status_code == 200 and v.mimetype == "audio/wav" and v.data[:4] == b"RIFF"
+    assert client.post("/api/v1/watch/voice", json={"text": "x"}).status_code == 401
+
     assert client.delete("/api/v1/watch/pair", headers=h).get_json()["data"]["revoked"] == 1
     assert client.get("/api/v1/watch/summary", headers=w).status_code == 401
