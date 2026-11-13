@@ -88,3 +88,28 @@ def test_pair_summary_ask_revoke(tmp_path, monkeypatch):
 
     assert client.delete("/api/v1/watch/pair", headers=h).get_json()["data"]["revoked"] == 1
     assert client.get("/api/v1/watch/summary", headers=w).status_code == 401
+
+
+def test_watch_app_update(tmp_path, monkeypatch):
+    import json
+
+    rel = tmp_path / "releases"
+    monkeypatch.setenv("APP_RELEASES_DIR", str(rel))
+    app, client, h = _app(tmp_path, monkeypatch)
+    key = client.post("/api/v1/watch/pair", headers=h).get_json()["data"]["watch_key"]
+    w = {"X-Watch-Key": key}
+
+    assert client.get("/api/v1/watch/app/latest").status_code == 401
+    assert client.get("/api/v1/watch/app/latest", headers=w).get_json()["data"]["available"] is False
+
+    (rel / "wear").mkdir(parents=True)
+    (rel / "wear" / "nexora-watch-7.apk").write_bytes(b"PK-watch")
+    (rel / "wear" / "latest.json").write_text(json.dumps(
+        {"version_code": 7, "version_name": "watch-2.0.7", "file": "nexora-watch-7.apk", "sha256": "ab"}))
+    d = client.get("/api/v1/watch/app/latest", headers=w).get_json()["data"]
+    assert d["available"] is True and d["version_code"] == 7
+    r = client.get("/api/v1/watch/app/download", headers=w)
+    assert r.status_code == 200 and r.data == b"PK-watch"
+    assert client.get("/api/v1/watch/app/download").status_code == 401
+    # the phone release stays separate
+    assert client.get("/api/v1/app/android/latest", headers=h).get_json()["data"]["available"] is False

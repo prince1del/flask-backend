@@ -337,3 +337,44 @@ def todo_done(todo_id: int):
                         user_id=user["user_id"], workspace_id=user["workspace_id"], json_body={})
     ok = resp.status_code < 400
     return jsonify({"success": ok, "data": {"status": resp.status_code}}), (200 if ok else resp.status_code)
+
+
+@watch_bp.route("/app/latest", methods=["GET"])
+def watch_app_latest():
+    """Newest Galaxy Watch app build: the watch updates itself from here."""
+    if _watch_user() is None:
+        return _unauthorized()
+    from app.routes.app_updates import _load_latest
+
+    meta = _load_latest("wear")
+    if meta is None:
+        return jsonify({"success": True, "data": {"available": False}}), 200
+    return jsonify({"success": True, "data": {
+        "available": True,
+        "version_code": meta["version_code"],
+        "version_name": meta.get("version_name") or str(meta["version_code"]),
+        "notes": meta.get("notes") or "",
+        "sha256": meta.get("sha256") or "",
+        "size_bytes": meta.get("size_bytes"),
+        "download_path": "/api/v1/watch/app/download",
+    }}), 200
+
+
+@watch_bp.route("/app/download", methods=["GET"])
+def watch_app_download():
+    if _watch_user() is None:
+        return _unauthorized()
+    from flask import send_file
+
+    from app.routes.app_updates import _load_latest, _release_dir
+
+    meta = _load_latest("wear")
+    if meta is None:
+        return jsonify({"success": False, "error": {"message": "No watch release published"}}), 404
+    return send_file(
+        _release_dir("wear") / meta["file"],
+        mimetype="application/vnd.android.package-archive",
+        as_attachment=True,
+        download_name=f"NEXORA-watch-{meta['version_code']}.apk",
+        max_age=0,
+    )

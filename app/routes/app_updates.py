@@ -24,18 +24,23 @@ from app.routes.auth import require_jwt_auth
 app_updates_bp = Blueprint("app_updates", __name__, url_prefix="/api/v1/app")
 
 
-def _android_release_dir() -> Path:
+def _release_dir(platform: str = "android") -> Path:
+    """android = phone app, wear = Galaxy Watch app (deploy/publish_watch_apk.sh)."""
     explicit = (os.getenv("APP_RELEASES_DIR") or "").strip()
     if explicit:
         base = Path(explicit)
     else:
         disk = (os.getenv("PERSISTENT_DISK_PATH") or "").strip() or "/var/data"
         base = Path(disk) / "app-releases"
-    return base / "android"
+    return base / platform
 
 
-def _load_latest() -> dict | None:
-    meta_path = _android_release_dir() / "latest.json"
+def _android_release_dir() -> Path:
+    return _release_dir("android")
+
+
+def _load_latest(platform: str = "android") -> dict | None:
+    meta_path = _release_dir(platform) / "latest.json"
     if not meta_path.is_file():
         return None
     try:
@@ -48,7 +53,7 @@ def _load_latest() -> dict | None:
     # Only a bare file name inside the release dir — never a path.
     if not file_name or Path(file_name).name != file_name:
         return None
-    if not (_android_release_dir() / file_name).is_file():
+    if not (_release_dir(platform) / file_name).is_file():
         return None
     try:
         meta["version_code"] = int(meta.get("version_code"))

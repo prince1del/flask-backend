@@ -292,6 +292,13 @@ Natural-language questions over the user's data ("how much CD does X pay").
   `WatchMainActivity` (numbers + voice ask). Installed on the watch by ADB over Wi-Fi;
   it is not on the phone OTA.
 
+**Watch app updates (OTA):** `GET /api/v1/watch/app/latest` and `GET /api/v1/watch/app/download`
+(X-Watch-Key) serve the newest watch build from `/var/data/app-releases/wear/`
+(publish with `bash deploy/publish_watch_apk.sh "notes"` after `:wear:assembleDebug`).
+The watch checks on every open and shows "⬆ Update watch app"; the phone's
+Settings → Galaxy Watch → **Update watch app** sends `/nexora/watch/update` to the watch.
+The user taps Install on the watch (first time: allow installs from this source).
+
 ### 3.14 Settings, help, updates
 - Company profile `/api/v1/company-profile`; UI theme `/api/v1/me/ui-theme`.
 - In-app help: `BdHelp*.kt`, `HindiHelp.kt`, `ui/i18n/`.
