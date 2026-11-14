@@ -542,14 +542,15 @@ def _so_claimed_by_other_run(
     so_number: str,
     *,
     except_run_id: int | None,
+    user_id: int | None = None,
 ) -> bool:
     matchdb.ensure_schema(conn)
     key = matchdb.normalize_so_number(so_number)
     if not key:
         return False
     row = conn.execute(
-        "SELECT run_id FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
-        (key,),
+        "SELECT run_id FROM fo_so_match_so_index WHERE workspace_id = ? AND UPPER(so_number) = UPPER(?)",
+        (matchdb.user_workspace(conn, user_id), key),
     ).fetchone()
     if not row:
         return False
@@ -577,7 +578,7 @@ def restore_match_archives_after_save(
         if matchdb.normalize_so_number(n)
     }
     for so_key in sorted(uploaded_upper):
-        if _so_claimed_by_other_run(conn, so_key, except_run_id=run_id):
+        if _so_claimed_by_other_run(conn, so_key, except_run_id=run_id, user_id=user_id):
             continue
         archives = _pending_archives(conn, user_id, "match_so", entity_key=so_key, filled_order_id=filled_order_id)
         if not archives:
@@ -1276,7 +1277,7 @@ def restore_match_after_fo_upload(
         so_numbers = list(payload.get("so_numbers") or [])
         if not so_numbers:
             so_numbers = matchdb.extract_so_numbers_from_run_row(snap)
-        conflicts = matchdb.find_so_number_conflicts(conn, so_numbers)
+        conflicts = matchdb.find_so_number_conflicts(conn, so_numbers, user_id=user_id)
         if conflicts:
             continue
 

@@ -43,13 +43,16 @@ CREATE INDEX IF NOT EXISTS idx_fo_so_match_dist
 CREATE INDEX IF NOT EXISTS idx_fo_so_match_fo
     ON fo_so_match_runs(user_id, filled_order_id, id DESC);
 
--- One Sales Order number may appear in at most one saved match run.
+-- One Sales Order number may appear in at most one saved match run per
+-- company (workspace); two companies may use the same SO number.
 CREATE TABLE IF NOT EXISTS fo_so_match_so_index (
-    so_number TEXT NOT NULL PRIMARY KEY,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    so_number TEXT NOT NULL,
     run_id INTEGER NOT NULL,
     user_id INTEGER,
     filled_order_id INTEGER,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (workspace_id, so_number)
 );
 CREATE INDEX IF NOT EXISTS idx_fo_so_match_so_run
     ON fo_so_match_so_index(run_id);
@@ -112,11 +115,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("SELECT 1 FROM fo_so_match_runs LIMIT 1")
             conn.execute("SELECT so_line_detail_json FROM fo_so_match_runs LIMIT 1")
             conn.execute("SELECT match_mode FROM fo_so_match_runs LIMIT 1")
-            conn.execute("SELECT 1 FROM fo_so_match_so_index LIMIT 1")
+            conn.execute("SELECT workspace_id FROM fo_so_match_so_index LIMIT 1")
             return
         except sqlite3.OperationalError:
             _schema_ensured = False
     conn.executescript(SCHEMA_SQL)
+    _migrate_so_index_per_workspace(conn)
     try:
         conn.execute(
             "ALTER TABLE fo_so_match_runs ADD COLUMN so_line_detail_json TEXT"
@@ -141,6 +145,74 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             pass
     _rebuild_so_index_if_empty(conn)
     _schema_ensured = True
+
+
+def _migrate_so_index_per_workspace(conn: sqlite3.Connection) -> None:
+    """Old index keyed SO numbers globally; re-key it by the owner's workspace."""
+    def migrated() -> bool:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(fo_so_match_so_index)").fetchall()}
+        return "workspace_id" in cols
+
+    if migrated():
+        return
+    conn.commit()
+    # Several server workers start together: one migrates, the rest wait and skip.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if migrated():
+            conn.rollback()
+            return
+        has_users = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+        ).fetchone()
+        owner_ws = (
+            "COALESCE((SELECT u.workspace_id FROM users u WHERE u.id = o.user_id), 'default')"
+            if has_users else "'default'"
+        )
+        conn.execute("ALTER TABLE fo_so_match_so_index RENAME TO fo_so_match_so_index_old")
+        conn.execute("DROP INDEX IF EXISTS idx_fo_so_match_so_run")
+        conn.execute(
+            """
+            CREATE TABLE fo_so_match_so_index (
+                workspace_id TEXT NOT NULL DEFAULT 'default',
+                so_number TEXT NOT NULL,
+                run_id INTEGER NOT NULL,
+                user_id INTEGER,
+                filled_order_id INTEGER,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (workspace_id, so_number)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX idx_fo_so_match_so_run ON fo_so_match_so_index(run_id)")
+        conn.execute(
+            f"""
+            INSERT OR IGNORE INTO fo_so_match_so_index
+                (workspace_id, so_number, run_id, user_id, filled_order_id, created_at)
+            SELECT {owner_ws}, o.so_number, o.run_id, o.user_id, o.filled_order_id, o.created_at
+            FROM fo_so_match_so_index_old o
+            """
+        )
+        conn.execute("DROP TABLE fo_so_match_so_index_old")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def user_workspace(conn: sqlite3.Connection, user_id: int | None) -> str:
+    """Workspace (company) that owns this login's SO numbers."""
+    if user_id is None:
+        return "default"
+    try:
+        row = conn.execute("SELECT workspace_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    except (sqlite3.OperationalError, TypeError, ValueError):
+        return "default"
+    return (row[0] if row and row[0] else None) or "default"
+
+
+def _scope(conn: sqlite3.Connection, user_id: int | None, workspace_id: str | None) -> str:
+    return workspace_id or user_workspace(conn, user_id)
 
 
 def _now() -> str:
@@ -275,9 +347,12 @@ def find_so_number_conflicts(
     so_numbers: list[str],
     *,
     exclude_run_id: int | None = None,
+    user_id: int | None = None,
+    workspace_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return index rows that already claim any of these SO numbers."""
+    """Return index rows of this login's company that already claim any of these SO numbers."""
     ensure_schema(conn)
+    scope = _scope(conn, user_id, workspace_id)
     conflicts: list[dict[str, Any]] = []
     for so_n in so_numbers:
         key = normalize_so_number(so_n)
@@ -285,8 +360,8 @@ def find_so_number_conflicts(
             continue
         row = conn.execute(
             "SELECT so_number, run_id, user_id, filled_order_id, created_at "
-            "FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
-            (key,),
+            "FROM fo_so_match_so_index WHERE workspace_id = ? AND UPPER(so_number) = UPPER(?)",
+            (scope, key),
         ).fetchone()
         if not row:
             continue
@@ -318,6 +393,7 @@ def _insert_so_index_for_run(
     so_numbers: list[str],
 ) -> None:
     now = _now()
+    scope = user_workspace(conn, user_id)
     for so_n in so_numbers:
         key = normalize_so_number(so_n)
         if not key:
@@ -325,10 +401,10 @@ def _insert_so_index_for_run(
         conn.execute(
             """
             INSERT INTO fo_so_match_so_index
-                (so_number, run_id, user_id, filled_order_id, created_at)
-            VALUES (?, ?, ?, ?, ?)
+                (workspace_id, so_number, run_id, user_id, filled_order_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (key, int(run_id), int(user_id), filled_order_id, now),
+            (scope, key, int(run_id), int(user_id), filled_order_id, now),
         )
 
 
@@ -377,7 +453,8 @@ def _rebuild_so_index_if_empty(conn: sqlite3.Connection) -> None:
             "FROM fo_so_match_runs ORDER BY id DESC"
         ).fetchall()
         rows = [(r[0], r[1], r[2], r[3], None) for r in rows]
-    claimed: set[str] = set()
+    claimed: set[tuple[str, str]] = set()
+    workspaces: dict[Any, str] = {}
     now = _now()
     for row in rows:
         run = {
@@ -387,18 +464,21 @@ def _rebuild_so_index_if_empty(conn: sqlite3.Connection) -> None:
             "rows_json": row[3],
             "so_line_detail": row[4],
         }
+        if row[1] not in workspaces:
+            workspaces[row[1]] = user_workspace(conn, row[1])
+        scope = workspaces[row[1]]
         for so_n in extract_so_numbers_from_run_row(run):
             key = (normalize_so_number(so_n) or "").upper()
-            if not key or key in claimed:
+            if not key or (scope, key) in claimed:
                 continue
-            claimed.add(key)
+            claimed.add((scope, key))
             conn.execute(
                 """
                 INSERT OR IGNORE INTO fo_so_match_so_index
-                    (so_number, run_id, user_id, filled_order_id, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (workspace_id, so_number, run_id, user_id, filled_order_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (normalize_so_number(so_n), int(row[0]), row[1], row[2], now),
+                (scope, normalize_so_number(so_n), int(row[0]), row[1], row[2], now),
             )
     conn.commit()
 
@@ -437,7 +517,7 @@ def save_match_run(
         # Fall back to match row SO lists (still unique per pack).
         so_numbers = extract_so_numbers_from_run_row({"rows": rows})
 
-    conflicts = find_so_number_conflicts(conn, so_numbers)
+    conflicts = find_so_number_conflicts(conn, so_numbers, user_id=user_id)
     if conflicts:
         raise DuplicateSalesOrderError(conflicts)
 
@@ -490,7 +570,7 @@ def save_match_run(
         conn.rollback()
         # Race: another save claimed an SO between check and insert.
         raise DuplicateSalesOrderError(
-            find_so_number_conflicts(conn, so_numbers) or [{"so_number": "unknown"}]
+            find_so_number_conflicts(conn, so_numbers, user_id=user_id) or [{"so_number": "unknown"}]
         ) from exc
     return get_match_run(conn, run_id, user_id=user_id)
 
@@ -527,7 +607,7 @@ def save_am_only_match_run(
     if not so_numbers:
         so_numbers = extract_so_numbers_from_run_row({"rows": rows})
 
-    conflicts = find_so_number_conflicts(conn, so_numbers)
+    conflicts = find_so_number_conflicts(conn, so_numbers, user_id=user_id)
     if conflicts:
         raise DuplicateSalesOrderError(conflicts)
 
@@ -582,7 +662,7 @@ def save_am_only_match_run(
     except sqlite3.IntegrityError as exc:
         conn.rollback()
         raise DuplicateSalesOrderError(
-            find_so_number_conflicts(conn, so_numbers) or [{"so_number": "unknown"}]
+            find_so_number_conflicts(conn, so_numbers, user_id=user_id) or [{"so_number": "unknown"}]
         ) from exc
     run = get_match_run(conn, run_id, user_id=user_id)
     if run is not None:
@@ -1589,8 +1669,8 @@ def delete_match_so_from_run(
         return None
     updated = _strip_so_from_run(run, key)
     conn.execute(
-        "DELETE FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
-        (key,),
+        "DELETE FROM fo_so_match_so_index WHERE workspace_id = ? AND UPPER(so_number) = UPPER(?)",
+        (user_workspace(conn, user_id), key),
     )
     if updated is None:
         cur = conn.execute(
@@ -2387,7 +2467,7 @@ def resurrect_so_runs_orphaned_by_fo_delete(
             so_numbers = extract_so_numbers_from_run_row(snap)
         if not so_numbers:
             continue
-        if find_so_number_conflicts(conn, so_numbers):
+        if find_so_number_conflicts(conn, so_numbers, user_id=user_id):
             continue
         fo_id = snap.get("filled_order_id")
         if fo_id:
@@ -2531,16 +2611,21 @@ def lookup_so_in_order_match(
     so_number: str,
     *,
     user_id: int | None = None,
+    workspace_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Find an SO that exists in FO↔SO Order Match (may have no lifecycle PDF yet)."""
+    """Find an SO that exists in FO↔SO Order Match (may have no lifecycle PDF yet).
+
+    ``user_id`` limits it to that login's runs; ``workspace_id`` alone allows
+    any teammate's run in that company.
+    """
     ensure_schema(conn)
     key = normalize_so_number(so_number)
     if not key:
         return None
     row = conn.execute(
         "SELECT so_number, run_id, user_id, filled_order_id "
-        "FROM fo_so_match_so_index WHERE UPPER(so_number) = UPPER(?)",
-        (key,),
+        "FROM fo_so_match_so_index WHERE workspace_id = ? AND UPPER(so_number) = UPPER(?)",
+        (_scope(conn, user_id, workspace_id), key),
     ).fetchone()
     if not row:
         return None

@@ -175,6 +175,9 @@ Pending SO = SO value not yet billed by any CI   GET /api/v1/order-fulfillment/p
 - Tables: `filled_orders`, `filled_order_items`, `filled_order_so_link`,
   `fo_so_match_runs`, `fo_so_match_so_index`, `order_lifecycle_tracking`,
   `order_fulfillment_items`, `order_desk_archive`.
+- An SO number may be saved once **per company**: `fo_so_match_so_index` is
+  keyed by `(workspace_id, so_number)`, so two companies can upload the same
+  SO number and conflicts/lookups never show another company's run.
 - Files: originals are saved under `instance/` and copied to Drive as
   `NEXORA/{Sales Orders|Filled Orders|Commercial Invoices}/{Season}/{Category}/{Distributor}/`
   (`app/storage/nexora_drive_paths.py`). The server copy is kept after the Drive copy

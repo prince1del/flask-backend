@@ -4208,8 +4208,8 @@ def so_pack_match_filled_order() -> Response:
         existing = sorev.get_latest_run_for_fo(
             conn, user_id=user_id, filled_order_id=filled_order_id
         )
-        conflicts = matchdb.find_so_number_conflicts(conn, new_numbers)
-        # SO index is global — only revise when the conflicting run is this same FO.
+        conflicts = matchdb.find_so_number_conflicts(conn, new_numbers, user_id=user_id)
+        # Only revise when the conflicting run is this same FO.
         fo_conflicts = [
             c
             for c in conflicts
@@ -5662,13 +5662,7 @@ def _lookup_order_match_so(order_ref_no: str, user_id: int | None = None) -> dic
         om = matchdb.lookup_so_in_order_match(conn, ref, user_id=user_id)
         if om is None and user_id is not None:
             # A teammate's SO is fine; another company's never is.
-            owner = conn.execute(
-                "SELECT u.workspace_id FROM fo_so_match_so_index i JOIN users u ON u.id = i.user_id "
-                "WHERE UPPER(i.so_number) = UPPER(?)",
-                (matchdb.normalize_so_number(ref) or ref,),
-            ).fetchone()
-            if owner and (owner[0] or "default") == (get_workspace_id() or "default"):
-                om = matchdb.lookup_so_in_order_match(conn, ref, user_id=None)
+            om = matchdb.lookup_so_in_order_match(conn, ref, workspace_id=get_workspace_id() or "default")
         return om
     finally:
         conn.close()
