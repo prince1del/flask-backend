@@ -22,11 +22,15 @@ from app.hop_db import (
 from app.hop_schema import LEAD_STAGES, PROJECT_STAGES
 
 
-def wipe_hop_data(conn: sqlite3.Connection) -> dict[str, Any]:
-    """Delete all House of Prizm (hop_*) business data. Keeps login/users intact.
+def wipe_hop_data(conn: sqlite3.Connection, workspace_id: str) -> dict[str, Any]:
+    """Delete one workspace's hop_* business data. Keeps login/users intact.
 
-    Password protection can be layered at the route later; this function always wipes.
+    Tables without a workspace_id column are never touched — they could hold
+    other companies' rows.
     """
+    workspace_id = str(workspace_id or "").strip()
+    if not workspace_id:
+        raise ValueError("workspace_id is required to wipe data")
     tables = [
         str(r[0])
         for r in conn.execute(
@@ -34,16 +38,21 @@ def wipe_hop_data(conn: sqlite3.Connection) -> dict[str, Any]:
         ).fetchall()
     ]
     cleared: dict[str, int] = {}
+    skipped: list[str] = []
     conn.execute("PRAGMA foreign_keys=OFF")
     for table in tables:
-        before = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] or 0)
-        conn.execute(f"DELETE FROM {table}")
-        cleared[table] = before
+        cols = {str(c[1]) for c in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if "workspace_id" not in cols:
+            skipped.append(table)
+            continue
+        cur = conn.execute(f"DELETE FROM {table} WHERE workspace_id = ?", (workspace_id,))
+        cleared[table] = int(cur.rowcount or 0)
     conn.commit()
     return {
-        "tables_cleared": len(tables),
+        "tables_cleared": len(cleared),
         "rows_deleted": sum(cleared.values()),
         "details": cleared,
+        "skipped_tables": skipped,
     }
 
 

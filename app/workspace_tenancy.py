@@ -32,6 +32,21 @@ def private_workspace_id(username: str) -> str:
     return f'exec_{slug_for_username(username)}'
 
 
+LEGACY_COMPANY_IDS = frozenset({1, 2, 3})
+
+
+def is_signup_tenant(db, workspace_id: str) -> bool:
+    """True for companies created through self sign-up (not HoP / BD / legacy).
+
+    Features that still keep data outside the database's workspace columns
+    (e.g. the shared upload folder tree) must stay closed to these tenants.
+    """
+    try:
+        return db.get_company_id_for_workspace(workspace_id) not in LEGACY_COMPANY_IDS
+    except Exception:
+        return True
+
+
 def resolve_workspace_id_for_new_user(
     username: str,
     role: str,

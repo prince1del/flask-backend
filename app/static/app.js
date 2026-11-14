@@ -12716,6 +12716,12 @@ async function loadArticleMasterList() {
     }
     articleMasterState.articles = data.articles || [];
     articleMasterState.priceSeason = priceSeason;
+    articleMasterState.canEdit = data.can_edit !== false;
+    document.querySelectorAll('.am-write-action').forEach((el) => {
+      el.classList.toggle('hidden', !articleMasterState.canEdit);
+    });
+    const readOnlyNote = document.getElementById('am-readonly-note');
+    if (readOnlyNote) readOnlyNote.classList.toggle('hidden', articleMasterState.canEdit);
     if (seasonSel) {
       seasonSel.innerHTML = '<option value="">Latest price</option>'
         + (data.seasons || []).map((s) => `<option value="${s}">${s} price</option>`).join('');
@@ -13730,7 +13736,14 @@ async function confirmArticleMasterNewCategory() {
   }
 }
 
+function articleMasterReadOnlyBlocked() {
+  if (articleMasterState.canEdit !== false) return false;
+  alert('This is your company\'s shared Article Master. Only your company owner or admin can change it.');
+  return true;
+}
+
 function openArticleMasterFullEdit(articleId, fallbackArticle) {
+  if (articleMasterReadOnlyBlocked()) return;
   const idNum = Number(articleId);
   let article = articleMasterState.articles.find((a) => Number(a.id) === idNum);
   if (!article && fallbackArticle && typeof fallbackArticle === 'object') {
@@ -13869,6 +13882,7 @@ async function saveArticleMasterFullEdit() {
 }
 
 function openArticleMasterEdit(articleId, field) {
+  if (articleMasterReadOnlyBlocked()) return;
   const article = articleMasterState.articles.find((a) => a.id === articleId);
   articleMasterState.editArticleId = articleId;
   articleMasterState.editField = field;

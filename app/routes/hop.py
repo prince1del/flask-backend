@@ -314,7 +314,7 @@ def settings_wipe_data():
 
     try:
         with hop_db.connect(_db_path()) as conn:
-            result = hop_ops.wipe_hop_data(conn)
+            result = hop_ops.wipe_hop_data(conn, _ws())
     except Exception as exc:
         return _json_error(f"Wipe failed: {exc}", "WIPE_FAILED", 500)
     return jsonify({"success": True, "data": result})

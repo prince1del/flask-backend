@@ -81,7 +81,9 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
   Web: `app/static/subscription.js` (profile menu: My plan, Team & invites,
   Subscription codes; login: Join with company code). Phone:
   `ui/plan/PlanGate.kt` (drawer "Plan & team", lock screen on 402) and the
-  "Join my company" card on `SignUpScreen`.
+  "Join my company" card on `SignUpScreen`. The menu item and the "Free
+  trial · N days left" reminder appear only for logins with a trial/paid
+  plan, invite rights (`can_invite` in `/status`) or super admin.
 
 ---
 
@@ -114,6 +116,12 @@ global search box.
 - Tables: `article_master_v2`, `article_price_history`, `article_season_prices`,
   `brand_aliases`, `category_master`.
 - Phone: `BdArticlesPane.kt`, `ArticleMasterUploadSheet.kt`, `ArticleMasterManualEntrySheet.kt`.
+- **One catalog per company** (`app/services/shared_catalog.py`): inside a
+  registered company every login reads the catalog of the user who holds it
+  (most rows, else the company owner); only owner/admin (`can_manage_invites`)
+  may upload/edit/delete/merge — others get 403. `GET /list` returns
+  `can_edit` / `shared`. Logins outside a company keep a private catalog.
+  SO-pack Article Master match and Ask NEXORA price lookup use the same catalog.
 - **Season-wise price:** one article, a price per season (`article_season_prices`,
   tags like AW-26 = app season AW26). `GET /list` sends every article's
   `season_prices`; `?season=AW26` puts that season's MRP/PTR/Ex-Mill in the row

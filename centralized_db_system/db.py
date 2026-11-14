@@ -2341,6 +2341,7 @@ class CentralizedDB:
         total_rows: int,
         calculated_total: float,
         uploaded_by: str | None,
+        workspace_id: str = "default",
     ) -> int:
         """Save file upload metadata."""
         self.ensure_target_achievement_tables()
@@ -2349,8 +2350,9 @@ class CentralizedDB:
                 """
                     INSERT INTO target_achievement_uploads (
                         financial_year_id, file_name, file_type, uploaded_by,
-                        total_rows, calculated_total, upload_status, parsed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        total_rows, calculated_total, upload_status, parsed_at,
+                        workspace_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fy_id,
@@ -2361,6 +2363,7 @@ class CentralizedDB:
                     calculated_total,
                     "success",
                     datetime.now(timezone.utc).isoformat(),
+                    workspace_id,
                 ),
             )
             conn.commit()

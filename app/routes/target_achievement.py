@@ -1227,6 +1227,7 @@ def upload_sales_excel(year_id):
                 imported.get('distributor_count') or 0,
                 imported.get('total_achievement_lakhs') or imported.get('total_target_lakhs') or 0,
                 None,
+                workspace_id=get_workspace_id(),
             )
         except Exception:
             pass

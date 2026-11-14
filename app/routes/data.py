@@ -1173,7 +1173,7 @@ def bulk_upload() -> tuple[Response, int] | str:
                         connection = sqlite3.connect(db.db_path)
                         try:
                             connection.execute(
-                                "UPDATE master_distributors SET name = ?, firm_name = ?, firm_nick_name = ?, gst_no = ?, buyer_code = ?, zone = ?, region = ?, credit_limit = ?, phone_number = ?, email = ?, address = ? WHERE id = ?",
+                                "UPDATE master_distributors SET name = ?, firm_name = ?, firm_nick_name = ?, gst_no = ?, buyer_code = ?, zone = ?, region = ?, credit_limit = ?, phone_number = ?, email = ?, address = ? WHERE id = ? AND workspace_id = ?",
                                 (
                                     distributor_fields.get("name"),
                                     distributor_fields.get("firm_name"),
@@ -1192,6 +1192,7 @@ def bulk_upload() -> tuple[Response, int] | str:
                                     distributor_fields.get("email"),
                                     distributor_fields.get("address"),
                                     inserted_id,
+                                    workspace_id,
                                 ),
                             )
                             connection.commit()
@@ -1238,7 +1239,7 @@ def bulk_upload() -> tuple[Response, int] | str:
                             connection = sqlite3.connect(db.db_path)
                             try:
                                 connection.execute(
-                                    "UPDATE master_retailers SET name = ?, location = ?, phone_number = ?, email = ?, address = ?, gst_no = ? WHERE id = ?",
+                                    "UPDATE master_retailers SET name = ?, location = ?, phone_number = ?, email = ?, address = ?, gst_no = ? WHERE id = ? AND workspace_id = ?",
                                     (
                                         retailer_fields.get("name"),
                                         retailer_fields.get("location"),
@@ -1247,6 +1248,7 @@ def bulk_upload() -> tuple[Response, int] | str:
                                         retailer_fields.get("address"),
                                         retailer_fields.get("gst_no"),
                                         inserted_id,
+                                        workspace_id,
                                     ),
                                 )
                                 connection.commit()
@@ -1311,7 +1313,10 @@ def bulk_upload() -> tuple[Response, int] | str:
 
         try:
             result = CentralizedDB(_db_path()).bulk_upload_masters(
-                master_type, temp_path
+                master_type,
+                temp_path,
+                workspace_id=get_workspace_id(),
+                user_id=get_request_user_id(),
             )
         finally:
             if os.path.exists(temp_path):
@@ -1465,7 +1470,10 @@ def import_contacts() -> tuple[Response, int]:
 
         try:
             result = CentralizedDB(_db_path()).bulk_upload_masters(
-                master_type, temp_path
+                master_type,
+                temp_path,
+                workspace_id=get_workspace_id(),
+                user_id=get_request_user_id(),
             )
         finally:
             if os.path.exists(temp_path):
@@ -4502,9 +4510,14 @@ def so_pack_preview_article_master_match() -> Response:
             401,
         )
 
+    from app.services.shared_catalog import catalog_user_id
+
+    catalog_uid = catalog_user_id(CentralizedDB(_db_path()), user, get_workspace_id())
     conn = sqlite3.connect(_db_path())
     try:
-        data = preview_so_article_master_match(conn, user_id, so_pack)
+        data = preview_so_article_master_match(
+            conn, user_id, so_pack, catalog_user_id=catalog_uid
+        )
         return _json_response({"success": True, "data": data})
     except ValueError as exc:
         return _json_response({"success": False, "error": {"message": str(exc)}}, 400)
@@ -4574,6 +4587,9 @@ def so_pack_save_article_master_only() -> Response:
     except (TypeError, ValueError):
         distributor_id = None
 
+    from app.services.shared_catalog import catalog_user_id
+
+    catalog_uid = catalog_user_id(CentralizedDB(_db_path()), user, get_workspace_id())
     conn = sqlite3.connect(_db_path())
     try:
         run = save_so_article_master_only(
@@ -4586,6 +4602,7 @@ def so_pack_save_article_master_only() -> Response:
             distributor_name=distributor_name,
             category=category,
             season=season,
+            catalog_user_id=catalog_uid,
         )
         return _json_response(
             {
@@ -7348,6 +7365,25 @@ def order_fulfillment_completeness(distributor_id: int) -> Response:
     return _json_response({"success": True, "data": summary})
 
 
+def _shared_upload_tree_denied() -> Response | None:
+    """The upload folder tree is not split by company yet — keep self sign-up
+    companies out of it so they can't see or delete other companies' files."""
+    from app.workspace_tenancy import is_signup_tenant
+
+    if is_signup_tenant(CentralizedDB(_db_path()), get_workspace_id()):
+        return _json_response(
+            {
+                "success": False,
+                "error": {
+                    "code": "FORBIDDEN",
+                    "message": "The file browser is not available for your company yet.",
+                },
+            },
+            403,
+        )
+    return None
+
+
 @data_blueprint.route("/api/v1/order-fulfillment/order-cycle", methods=["GET"])
 @require_jwt_auth
 def order_cycle_hierarchy() -> Response:
@@ -7358,6 +7394,9 @@ def order_cycle_hierarchy() -> Response:
     whole upload root) and returns a properly-typed hierarchy rather
     than generic folder/file nodes.
     """
+    denied = _shared_upload_tree_denied()
+    if denied:
+        return denied
     upload_root = (
         Path("app/instance/order_fulfillment_files")
         if Path("app/instance").exists()
@@ -7423,6 +7462,9 @@ def order_fulfillment_file_browser() -> Response:
     CI/CI Received/<FY>/...) so the founder can visually confirm files
     landed exactly where expected.
     """
+    denied = _shared_upload_tree_denied()
+    if denied:
+        return denied
     upload_root = (
         Path("app/instance/order_fulfillment_files")
         if Path("app/instance").exists()
@@ -7485,6 +7527,9 @@ def order_fulfillment_view_file() -> Response:
     check, a request like "?path=../../../../etc/passwd" could read
     arbitrary files off the server.
     """
+    denied = _shared_upload_tree_denied()
+    if denied:
+        return denied
     requested_path = request.args.get("path", "")
     if not requested_path:
         return _json_response({"success": False, "error": {"message": "path is required"}}, 400)
@@ -7509,6 +7554,9 @@ def order_fulfillment_delete_file() -> Response:
     founder remove unwanted/duplicate/test uploads directly from the
     File Browser. Same path-traversal protection as the view route.
     """
+    denied = _shared_upload_tree_denied()
+    if denied:
+        return denied
     requested_path = request.args.get("path", "")
     if not requested_path:
         return _json_response({"success": False, "error": {"message": "path is required"}}, 400)

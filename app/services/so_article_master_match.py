@@ -267,12 +267,13 @@ def preview_so_article_master_match(
     conn,
     user_id: int,
     so_pack: dict[str, Any],
+    catalog_user_id: int | None = None,
 ) -> dict[str, Any]:
     line_detail = prepare_so_lines_for_am_match(so_pack.get("line_detail"))
     if not line_detail:
         raise ValueError("SO pack has no line_detail — analyze the pack first")
     annotated, summary = annotate_ci_line_items_with_article_master(
-        conn, amdb, user_id, line_detail
+        conn, amdb, catalog_user_id or user_id, line_detail
     )
     meta = so_pack.get("meta") if isinstance(so_pack.get("meta"), dict) else {}
     return {
@@ -295,6 +296,7 @@ def save_so_article_master_only(
     distributor_name: str | None = None,
     category: str | None = None,
     season: str | None = None,
+    catalog_user_id: int | None = None,
 ) -> dict[str, Any]:
     from app.services import fo_so_match_db as matchdb
 
@@ -303,7 +305,7 @@ def save_so_article_master_only(
         raise ValueError("SO pack has no line_detail — analyze the pack first")
 
     annotated, summary = annotate_ci_line_items_with_article_master(
-        conn, amdb, user_id, line_detail
+        conn, amdb, catalog_user_id or user_id, line_detail
     )
     payload = build_am_only_match_payload(
         annotated_lines=annotated,

@@ -76,7 +76,9 @@
 
   function renderBanner(st) {
     let bar = document.getElementById('nx-plan-banner');
-    const show = st && (st.status === 'trial' || st.status === 'active') && st.days_left != null && st.days_left <= 3;
+    const endingSoon = st && st.days_left != null && st.days_left <= 3;
+    const show = st && (st.status === 'trial' || (st.status === 'active' && endingSoon))
+      && sessionStorage.getItem('nxPlanBannerHidden') !== '1';
     if (!show) { if (bar) bar.remove(); return; }
     if (!bar) {
       bar = document.createElement('div');
@@ -86,36 +88,35 @@
         + 'display:flex;gap:12px;align-items:center;font-size:0.9rem;';
       document.body.appendChild(bar);
     }
+    bar.style.background = endingSoon ? '#7c2d12' : '#1e3a5f';
     const what = st.status === 'trial' ? 'Free trial' : 'Your plan';
     const when = st.days_left <= 0 ? 'ends today' : `ends in ${st.days_left} day${st.days_left === 1 ? '' : 's'}`;
     bar.innerHTML = `<span>${what} ${when}.</span>
-      <button type="button" class="btn btn-primary" style="padding:4px 12px;">Enter code</button>`;
-    bar.querySelector('button').addEventListener('click', () => openPlan());
+      <button type="button" class="btn btn-primary" data-code style="padding:4px 12px;">Enter code</button>
+      <button type="button" data-later style="background:none;border:0;color:#cbd5e1;cursor:pointer;">Later</button>`;
+    bar.querySelector('[data-code]').addEventListener('click', () => openPlan());
+    bar.querySelector('[data-later]').addEventListener('click', () => {
+      sessionStorage.setItem('nxPlanBannerHidden', '1');
+      bar.remove();
+    });
   }
 
   async function refresh() {
     try {
       const st = await api('/api/v1/subscription/status');
       lastStatus = st;
-      const adminItem = document.getElementById('nx-menu-sub-codes');
-      if (adminItem) adminItem.classList.toggle('hidden', !st.is_super_admin);
+      const show = (id, on) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('hidden', !on);
+      };
+      show('nx-menu-sub-codes', st.is_super_admin);
+      show('nx-menu-invites', st.can_invite);
+      show('nx-menu-plan', st.is_super_admin || st.can_invite || st.status !== 'unlimited');
       renderBanner(st);
       if (st.status === 'expired') showLock();
-      updateInviteMenu();
       return st;
     } catch (e) {
       return null;
-    }
-  }
-
-  async function updateInviteMenu() {
-    const item = document.getElementById('nx-menu-invites');
-    if (!item) return;
-    try {
-      const d = await api('/api/v1/invites');
-      item.classList.toggle('hidden', !d.can_invite);
-    } catch (e) {
-      item.classList.add('hidden');
     }
   }
 

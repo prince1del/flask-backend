@@ -37,7 +37,7 @@ def _setup_hop_wipe_client(tmp_path, monkeypatch):
     app.config.update(TESTING=True, DATABASE_PATH=str(db_path))
 
     db = CentralizedDB(str(db_path))
-    db.create_user("hopwipe", "correct-horse", role="hop_admin", workspace_id="default")
+    db.create_user("hopwipe", "correct-horse", role="hop_admin", workspace_id="house_of_prizm")
 
     client = app.test_client()
     login = client.post(

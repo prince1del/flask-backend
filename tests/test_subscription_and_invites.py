@@ -238,3 +238,9 @@ def test_invited_rep_cannot_invite_or_hand_out_admin(client):
     rep_token = rep.get_json()["data"]["access_token"]
     res = client.post("/api/v1/invites", json={"role": "hop_admin"}, headers=_auth(rep_token))
     assert res.status_code == 403
+
+    def can_invite(token):
+        return client.get("/api/v1/subscription/status", headers=_auth(token)).get_json()["data"]["can_invite"]
+
+    assert can_invite(owner["access_token"]) is True
+    assert can_invite(rep_token) is False

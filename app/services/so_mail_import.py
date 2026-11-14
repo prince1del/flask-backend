@@ -133,7 +133,7 @@ def match_distributor(
     try:
         rows = conn.execute(
             "SELECT id, firm_name, firm_nick_name, name FROM master_distributors "
-            "WHERE workspace_id = ? OR workspace_id IS NULL",
+            "WHERE workspace_id = ?",
             (workspace_id,),
         ).fetchall()
     except sqlite3.OperationalError:

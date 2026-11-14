@@ -190,11 +190,30 @@ def _build_price_revision_summary(price_comparisons):
     return f"Seasonal price {trend}: " + ", ".join(parts)
 
 
-def _get_current_user_id():
+def _catalog_scope():
+    from app.routes.auth import _get_auth_db
+    from app.services.shared_catalog import catalog_scope
+
     user = getattr(request, "user", None)
-    if isinstance(user, dict) and user.get("user_id") is not None:
-        return int(user["user_id"])
-    raise RuntimeError("Authentication required")
+    if not (isinstance(user, dict) and user.get("user_id") is not None):
+        raise RuntimeError("Authentication required")
+    return catalog_scope(_get_auth_db(), user, get_workspace_id())
+
+
+def _get_current_user_id(write: bool = False):
+    """user_id whose catalog this request uses (the company's shared catalog
+    inside a company). ``write=True`` raises CatalogReadOnly for teammates."""
+    from app.services.shared_catalog import CatalogReadOnly
+
+    scope = _catalog_scope()
+    if write and not scope["can_edit"]:
+        raise CatalogReadOnly("Only your company owner or admin can change the Article Master")
+    return int(scope["user_id"])
+
+
+@article_master_bp.errorhandler(PermissionError)
+def _catalog_read_only(exc):
+    return jsonify({"success": False, "error": {"code": "FORBIDDEN", "message": str(exc)}}), 403
 
 
 def _get_changed_by():
@@ -331,7 +350,7 @@ def upload_article_sheet():
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     workspace_id = get_workspace_id()
     # confirmed_category:
     #   "" / missing  → preview only (no save)
@@ -567,11 +586,11 @@ def list_duplicate_articles():
 @require_jwt_auth
 def merge_duplicate_articles():
     conn = None
+    user_id = _get_current_user_id(write=True)
     try:
         data = request.get_json() or {}
         merges = data.get("merges")
         auto = data.get("auto", False)
-        user_id = _get_current_user_id()
         conn = _get_db_connection()
         changed_by = _get_changed_by()
         categories = amdb.get_all_categories(conn, user_id)
@@ -672,7 +691,7 @@ def get_one_article(article_id):
 @article_master_bp.route("/<int:article_id>", methods=["DELETE"])
 @require_jwt_auth
 def delete_one_article(article_id):
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     conn = _get_db_connection()
     try:
         amdb.delete_article(conn, user_id, article_id)
@@ -690,7 +709,7 @@ def delete_selected_articles():
     raw_ids = data.get("ids") or data.get("article_ids") or []
     if not isinstance(raw_ids, list):
         return jsonify({"error": "ids must be a list"}), 400
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     conn = _get_db_connection()
     deleted = amdb.delete_articles_by_ids(conn, user_id, raw_ids)
     conn.close()
@@ -702,7 +721,7 @@ def delete_selected_articles():
 def delete_all_user_articles():
     data = request.get_json(silent=True) or {}
     category = (data.get("category") or request.args.get("category") or "All").strip() or "All"
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     conn = _get_db_connection()
     deleted = amdb.delete_all_articles(conn, user_id, category=category)
     conn.close()
@@ -717,7 +736,7 @@ def delete_all_user_articles():
 @require_jwt_auth
 def confirm_new_category():
     data = request.get_json() or {}
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     workspace_id = get_workspace_id()
     conn = _get_db_connection()
 
@@ -750,7 +769,7 @@ def _optional_float(value):
 def create_manual_article_route():
     """Add one Article Master SKU by hand (mobile manual entry)."""
     data = request.get_json(silent=True) or {}
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     workspace_id = get_workspace_id()
     conn = _get_db_connection()
     try:
@@ -797,7 +816,8 @@ def create_manual_article_route():
 @article_master_bp.route("/list", methods=["GET"])
 @require_jwt_auth
 def list_articles():
-    user_id = _get_current_user_id()
+    scope = _catalog_scope()
+    user_id = int(scope["user_id"])
     conn = _get_db_connection()
     amdb.ensure_default_brand_aliases(conn, user_id)
     amdb.ensure_default_categories(conn, user_id, workspace_id=get_workspace_id())
@@ -817,7 +837,9 @@ def list_articles():
 
     conn.close()
     return jsonify({"articles": articles, "count": len(articles),
-                    "seasons": amdb.list_seasons(articles)}), 200
+                    "seasons": amdb.list_seasons(articles),
+                    "can_edit": bool(scope["can_edit"]),
+                    "shared": bool(scope["shared"])}), 200
 
 
 @article_master_bp.route("/brand-aliases", methods=["GET"])
@@ -837,7 +859,7 @@ def create_brand_alias():
     data = request.get_json() or {}
     alias = data.get("alias")
     canonical_brand = data.get("canonical_brand")
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     conn = _get_db_connection()
     try:
         amdb.upsert_brand_alias(conn, user_id, alias, canonical_brand)
@@ -858,7 +880,7 @@ def edit_article(article_id):
     if not field or new_value is None:
         return jsonify({"error": "field and value are required"}), 400
 
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     conn = _get_db_connection()
 
     try:
@@ -882,7 +904,7 @@ def edit_article_full(article_id):
     if not isinstance(updates, dict) or not updates:
         return jsonify({"error": "updates object with at least one field is required"}), 400
 
-    user_id = _get_current_user_id()
+    user_id = _get_current_user_id(write=True)
     conn = _get_db_connection()
     try:
         cols = ", ".join(amdb.ARTICLE_MASTER_COLUMNS)

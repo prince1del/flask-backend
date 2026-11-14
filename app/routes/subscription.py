@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from app.routes.auth import _get_auth_db, require_jwt_auth
+from app.routes.auth import _get_auth_db, get_workspace_id, require_jwt_auth
+from app.services import company_invites
 from app.services import subscriptions as subs
 
 subscription_bp = Blueprint("subscription", __name__, url_prefix="/api/v1/subscription")
@@ -50,6 +51,9 @@ def status():
     if subs.is_super_admin(user):
         data = {**data, "status": "unlimited", "ends_at": None, "days_left": None}
     data["is_super_admin"] = subs.is_super_admin(user)
+    data["can_invite"] = company_invites.can_manage_invites(
+        _get_auth_db(), {**user, "workspace_id": get_workspace_id()}
+    )
     return jsonify({"success": True, "data": data}), 200
 
 

@@ -169,6 +169,32 @@ def require_jwt_auth(fn):
     return decorated
 
 
+def deny_signup_tenants():
+    """403 for self sign-up companies on legacy APIs that are not workspace-safe.
+
+    Returns None (allow) for HoP / BD / legacy workspaces, so it can be used
+    as the inner function of a blueprint-level ``require_jwt_auth`` guard.
+    """
+    from app.workspace_tenancy import is_signup_tenant
+
+    if not auth_enabled():
+        return None
+    if is_signup_tenant(_get_auth_db(), get_workspace_id()):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": "This feature is not available for your company.",
+                    },
+                }
+            ),
+            403,
+        )
+    return None
+
+
 def require_role(*allowed_roles):
     def decorator(fn):
         @wraps(fn)

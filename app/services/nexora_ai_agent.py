@@ -1109,7 +1109,13 @@ def _run_tool(
             size = str(args.get("size") or "").strip()
             season = str(args.get("season") or "").strip()
             words = [w for w in re.split(r"\s+", query) if w]
-            articles = amdb.get_all_articles(conn, user_id)
+            from app.services.shared_catalog import catalog_user_id
+            from centralized_db_system.db import CentralizedDB
+
+            catalog_uid = catalog_user_id(
+                CentralizedDB(_db_path()), {"user_id": user_id}, workspace_id
+            )
+            articles = amdb.get_all_articles(conn, catalog_uid)
 
             def hay(a: dict[str, Any]) -> str:
                 extra = a.get("extra_attributes") or {}

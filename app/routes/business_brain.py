@@ -8,14 +8,14 @@ from app.business_platform import (
 )
 from app.db import db
 from app.models import AIResponse
-from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.routes.auth import deny_signup_tenants, get_workspace_id, require_jwt_auth
 
 business_bp = Blueprint('business_brain', __name__)
 
 
 @business_bp.before_request
 def _require_business_auth():
-    return require_jwt_auth(lambda: None)()
+    return require_jwt_auth(deny_signup_tenants)()
 
 
 def _workspace_id():

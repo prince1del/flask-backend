@@ -3,7 +3,7 @@ Intelligence API routes for the platform layer.
 """
 
 from flask import Blueprint, request, jsonify
-from app.routes.auth import get_workspace_id, require_jwt_auth
+from app.routes.auth import deny_signup_tenants, get_workspace_id, require_jwt_auth
 from app.business_platform import (
     BusinessBrain,
     BusinessKnowledgeGraph,
@@ -15,6 +15,11 @@ from app.business_platform import (
 )
 
 intelligence_bp = Blueprint('intelligence', __name__, url_prefix='/api/intelligence')
+
+
+@intelligence_bp.before_request
+def _legacy_tenants_only():
+    return require_jwt_auth(deny_signup_tenants)()
 
 
 def _get_workspace_id():
