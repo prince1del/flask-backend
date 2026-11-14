@@ -883,8 +883,9 @@ def auto_process(conn: sqlite3.Connection, *, user_id: int, workspace_id: str, i
             "options": [{"value": "match", "label": "Try again"},
                         {"value": "ignore", "label": "Ignore this mail"}],
         }]
-        conn.execute("UPDATE so_mail_imports SET proposal_json=?, error=?, updated_at=? WHERE id=?",
-                     (json.dumps(prop), str(exc)[:500], _now(), import_id))
+        conn.execute("UPDATE so_mail_imports SET proposal_json=?, error=?, updated_at=? "
+                     "WHERE id=? AND user_id=? AND workspace_id=?",
+                     (json.dumps(prop), str(exc)[:500], _now(), import_id, user_id, workspace_id))
         conn.commit()
         return rec["status"]
 

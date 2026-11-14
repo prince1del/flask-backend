@@ -1530,6 +1530,11 @@ def download_master_template(master_type: str) -> Response:
 @data_blueprint.route("/legacy", methods=["GET", "POST"], endpoint="index")
 @require_jwt_auth
 def index() -> str:
+    from app.routes.auth import deny_signup_tenants
+
+    blocked = deny_signup_tenants()
+    if blocked is not None:
+        return blocked
     report = None
     progress_summary = None
     search_query = request.args.get("q", "") if request.method == "GET" else ""
@@ -1907,6 +1912,7 @@ def index() -> str:
                     filename=safe_name,
                     file_path=str(target_path),
                     metadata=stored_metadata[key],
+                    workspace_id=get_workspace_id(),
                 )
                 stored_metadata[key]["upload_record_id"] = upload_record_id
                 persisted_upload_ids.append(upload_record_id)
@@ -3594,6 +3600,7 @@ def upload_filled_order_v2() -> Response:
         filename=Path(uploaded_file.filename).name,
         file_path=str(target_path),
         distributor_name=(confirmed_distributor or suggested_distributor or {}).get("name"),
+        workspace_id=get_workspace_id(),
     )
 
     parsed_items_count = 0
@@ -5654,7 +5661,14 @@ def _lookup_order_match_so(order_ref_no: str, user_id: int | None = None) -> dic
         matchdb.ensure_schema(conn)
         om = matchdb.lookup_so_in_order_match(conn, ref, user_id=user_id)
         if om is None and user_id is not None:
-            om = matchdb.lookup_so_in_order_match(conn, ref, user_id=None)
+            # A teammate's SO is fine; another company's never is.
+            owner = conn.execute(
+                "SELECT u.workspace_id FROM fo_so_match_so_index i JOIN users u ON u.id = i.user_id "
+                "WHERE UPPER(i.so_number) = UPPER(?)",
+                (matchdb.normalize_so_number(ref) or ref,),
+            ).fetchone()
+            if owner and (owner[0] or "default") == (get_workspace_id() or "default"):
+                om = matchdb.lookup_so_in_order_match(conn, ref, user_id=None)
         return om
     finally:
         conn.close()
@@ -10021,6 +10035,14 @@ def dashboard_config() -> Response:
             json.dumps(load_dashboard_config(), ensure_ascii=False),
             mimetype="application/json",
         )
+
+    # One config file serves every company: only NEXORA may change it.
+    from app.services import subscriptions as subs
+    from app.utils import auth_enabled
+
+    user = getattr(request, "user", None)
+    if auth_enabled() and not (isinstance(user, dict) and subs.is_super_admin(user)):
+        return jsonify({"status": "error", "message": "Only NEXORA can change app branding"}), 403
 
     request_data = request.get_json(silent=True)
     if not isinstance(request_data, dict):

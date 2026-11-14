@@ -248,6 +248,16 @@ def test_failed_join_gives_the_invite_back(app, client):
     assert ok.status_code == 201, ok.get_json()
 
 
+def test_company_owner_cannot_change_app_branding_for_everyone(app, client):
+    owner = _signup(client, "brander").get_json()["data"]
+    res = client.put(
+        "/api/ui/dashboard-config", json={"app_name": "Mine"}, headers=_auth(owner["access_token"])
+    )
+    assert res.status_code == 403
+    founder = _founder_token(app, client)
+    assert client.get("/api/ui/dashboard-config", headers=_auth(founder)).get_json()["app_name"] != "Mine"
+
+
 def test_invited_rep_cannot_invite_or_hand_out_admin(app, client):
     owner = _signup(client, "chief").get_json()["data"]
     _allow_team(app, owner)

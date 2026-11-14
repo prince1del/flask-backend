@@ -10256,6 +10256,7 @@ class CentralizedDB:
         file_path: str,
         distributor_name: str | None = None,
         metadata: dict[str, Any] | None = None,
+        workspace_id: str | None = None,
     ) -> int:
         cleaned_session_id = (verification_session_id or "").strip()
         cleaned_stage_key = (stage_key or "").strip()
@@ -10284,8 +10285,9 @@ class CentralizedDB:
                     filename,
                     file_path,
                     uploaded_at,
-                    metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    metadata,
+                    workspace_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     cleaned_session_id,
@@ -10296,6 +10298,7 @@ class CentralizedDB:
                     cleaned_file_path,
                     uploaded_at,
                     json.dumps(metadata or {}, default=str),
+                    workspace_id or "default",
                 ),
             )
             conn.commit()
