@@ -81,9 +81,18 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
   Web: `app/static/subscription.js` (profile menu: My plan, Team & invites,
   Subscription codes; login: Join with company code). Phone:
   `ui/plan/PlanGate.kt` (drawer "Plan & team", lock screen on 402) and the
-  "Join my company" card on `SignUpScreen`. The menu item and the "Free
-  trial · N days left" reminder appear only for logins with a trial/paid
-  plan, invite rights (`can_invite` in `/status`) or super admin.
+  "Join my company" card on `SignUpScreen`. The menu item appears only for
+  logins with a trial/paid plan, invite rights (`can_invite` in `/status`) or
+  super admin. A paid plan with more than 7 days left shows "Active ✓ — valid
+  till …". In the last 7 days (the whole trial) the user is reminded 2–3 times
+  a day at random times between 10:00 and 20:00, not on every app open: web
+  banner (localStorage slots), phone card + notification
+  (`reminders/PlanReminderWorker.kt`, hourly WorkManager; tapping opens the
+  plan panel).
+- **Team needs an activated account:** `can_invite` (in `/status` and
+  `GET /api/v1/invites`) = owner/admin **and** `plan_active` (paid, unlimited
+  or super admin — not a trial). Creating invites and team requests on a
+  trial returns 403.
 - **Team places (paid add-on):** `companies.max_members` (NULL = default: no
   limit for House of Prizm / Bombay Dyeing, 1 login for every sign-up company;
   0 = no limit). Invites need a free place (open invite codes hold places) and

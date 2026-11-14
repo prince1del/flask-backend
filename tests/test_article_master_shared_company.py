@@ -56,6 +56,8 @@ def _signup(client, username, **extra):
 
 def _join(app, client, owner, username, role="sales_executive"):
     db = CentralizedDB(app.config["DATABASE_PATH"])
+    subs.set_unlimited(app.config["DATABASE_PATH"], owner["user_id"])
+    subs.clear_cache()
     ci.set_team_size(db, db.get_company_id_for_workspace(owner["workspace_id"]), 0)
     code = client.post(
         "/api/v1/invites", json={"role": role}, headers=_auth(owner["access_token"])

@@ -345,6 +345,15 @@ def list_user_plans(db_path) -> list[dict[str, Any]]:
     return out
 
 
+def plan_active(db_path, user: dict) -> bool:
+    """Activated = paid, unlimited or the super admin. A free trial is not activated."""
+    if is_super_admin(user):
+        return True
+    if user.get("user_id") is None:
+        return False
+    return status_for_user(db_path, int(user["user_id"]))["status"] in ("active", "unlimited")
+
+
 def set_unlimited(db_path, user_id: int) -> None:
     with _connect(db_path) as conn:
         conn.execute(

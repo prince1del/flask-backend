@@ -16,8 +16,11 @@ from flask import Blueprint, jsonify, request
 
 from app.routes.auth import _get_auth_db, get_workspace_id, require_jwt_auth
 from app.services import company_invites as ci
+from app.services import subscriptions as subs
 
 invites_bp = Blueprint("invites", __name__, url_prefix="/api/v1/invites")
+
+_NOT_ACTIVATED = "Activate your account with a NEXORA code to add a team."
 
 
 def _err(message: str, status: int):
@@ -29,6 +32,10 @@ def _user() -> dict:
     return user if isinstance(user, dict) else {}
 
 
+def _plan_active(db, user: dict) -> bool:
+    return subs.plan_active(str(db.db_path), user)
+
+
 @invites_bp.route("", methods=["POST"])
 @require_jwt_auth
 def create_invite():
@@ -36,6 +43,8 @@ def create_invite():
     user = {**_user(), "workspace_id": get_workspace_id()}
     if not ci.can_manage_invites(db, user):
         return _err("Only your company's owner or admin can invite people", 403)
+    if not _plan_active(db, user):
+        return _err(_NOT_ACTIVATED, 403)
     data = request.get_json(silent=True) or {}
     try:
         invite = ci.create_invite(
@@ -60,12 +69,15 @@ def list_invites():
     workspace_id = get_workspace_id()
     user = {**_user(), "workspace_id": workspace_id}
     can_manage = ci.can_manage_invites(db, user)
+    plan_active = _plan_active(db, user)
     team = ci.team_status(db, workspace_id) if can_manage else {}
     return jsonify({
         "success": True,
         "data": {
-            "can_invite": can_manage,
-            "can_create": can_manage and team.get("seats_left") != 0,
+            "can_invite": can_manage and plan_active,
+            "can_manage": can_manage,
+            "plan_active": plan_active,
+            "can_create": can_manage and plan_active and team.get("seats_left") != 0,
             "roles": ci.allowed_roles_for(user) if can_manage else [],
             "company_name": ci.company_name_for_workspace(db, workspace_id),
             "invites": ci.list_invites(db, workspace_id) if can_manage else [],
@@ -83,6 +95,8 @@ def request_team():
     user = {**_user(), "workspace_id": workspace_id}
     if not ci.can_manage_invites(db, user):
         return _err("Only your company's owner or admin can ask for team places", 403)
+    if not _plan_active(db, user):
+        return _err(_NOT_ACTIVATED, 403)
     data = request.get_json(silent=True) or {}
     try:
         req = ci.request_team(db, user, workspace_id, data.get("members"), data.get("note"))

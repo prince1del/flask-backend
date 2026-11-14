@@ -54,7 +54,8 @@ def status():
     if subs.is_super_admin(user):
         data = {**data, "status": "unlimited", "ends_at": None, "days_left": None}
     data["is_super_admin"] = subs.is_super_admin(user)
-    data["can_invite"] = company_invites.can_manage_invites(
+    data["plan_active"] = subs.plan_active(_db_path(), user)
+    data["can_invite"] = data["plan_active"] and company_invites.can_manage_invites(
         _get_auth_db(), {**user, "workspace_id": get_workspace_id()}
     )
     if data["is_super_admin"]:

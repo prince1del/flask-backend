@@ -74,12 +74,39 @@
 
   // ---------- Plan status / banner / lock ----------
 
+  const REMIND_DAYS = 7;
+  const REMIND_KEY = 'nxPlanReminder';
+
+  // 2–3 random times a day (10:00–20:00), not on every page load.
+  function reminderDue() {
+    const now = new Date();
+    const today = now.toDateString();
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(REMIND_KEY) || 'null'); } catch (e) { s = null; }
+    if (!s || s.date !== today) {
+      const count = 2 + Math.floor(Math.random() * 2);
+      const slots = [];
+      while (slots.length < count) {
+        const m = 600 + Math.floor(Math.random() * 600);
+        if (slots.every((x) => Math.abs(x - m) >= 90)) slots.push(m);
+      }
+      s = { date: today, slots: slots.sort((a, b) => a - b), shown: 0 };
+    }
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const passed = s.slots.filter((m) => m <= mins).length;
+    const due = passed > s.shown;
+    if (due) s.shown = passed;
+    localStorage.setItem(REMIND_KEY, JSON.stringify(s));
+    return due;
+  }
+
   function renderBanner(st) {
     let bar = document.getElementById('nx-plan-banner');
-    const endingSoon = st && st.days_left != null && st.days_left <= 3;
-    const show = st && (st.status === 'trial' || (st.status === 'active' && endingSoon))
-      && sessionStorage.getItem('nxPlanBannerHidden') !== '1';
-    if (!show) { if (bar) bar.remove(); return; }
+    const ending = st && (st.status === 'trial' || st.status === 'active')
+      && st.days_left != null && st.days_left <= REMIND_DAYS;
+    if (!ending) { if (bar) bar.remove(); return; }
+    if (!bar && !reminderDue()) return;
+    const endingSoon = st.days_left <= 3;
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'nx-plan-banner';
@@ -94,12 +121,11 @@
     bar.innerHTML = `<span>${what} ${when}.</span>
       <button type="button" class="btn btn-primary" data-code style="padding:4px 12px;">Enter code</button>
       <button type="button" data-later style="background:none;border:0;color:#cbd5e1;cursor:pointer;">Later</button>`;
-    bar.querySelector('[data-code]').addEventListener('click', () => openPlan());
-    bar.querySelector('[data-later]').addEventListener('click', () => {
-      sessionStorage.setItem('nxPlanBannerHidden', '1');
-      bar.remove();
-    });
+    bar.querySelector('[data-code]').addEventListener('click', () => { bar.remove(); openPlan(); });
+    bar.querySelector('[data-later]').addEventListener('click', () => bar.remove());
   }
+
+  setInterval(() => { if (lastStatus) renderBanner(lastStatus); }, 10 * 60 * 1000);
 
   async function refresh() {
     try {
@@ -176,7 +202,9 @@
     const label = {
       unlimited: 'Unlimited — no expiry',
       trial: `Free trial — ends ${fmtDate(st.ends_at)} (${st.days_left} days left)`,
-      active: `Active — valid till ${fmtDate(st.ends_at)} (${st.days_left} days left)`,
+      active: st.days_left > REMIND_DAYS
+        ? `Active ✓ — valid till ${fmtDate(st.ends_at)}`
+        : `Active — valid till ${fmtDate(st.ends_at)} (${st.days_left} days left)`,
       expired: `Expired on ${fmtDate(st.ends_at)}`,
     }[st.status] || 'Unknown';
     const el = modal('nx-plan-modal', 'My plan', `<p><strong>${esc(label)}</strong></p>`);
@@ -292,7 +320,8 @@
     async function load(newInvite) {
       try {
         const [inv, mem] = await Promise.all([api('/api/v1/invites'), api('/api/v1/invites/members')]);
-        if (!inv.can_invite) { body.innerHTML = '<p>Only your company owner or admin can invite people.</p>'; return; }
+        if (!inv.can_manage) { body.innerHTML = '<p>Only your company owner or admin can invite people.</p>'; return; }
+        if (!inv.plan_active) { body.innerHTML = '<p>Activate your account with a NEXORA code to add your team.</p>'; return; }
         if (!inv.can_create) {
           const req = inv.team_request;
           body.innerHTML = `

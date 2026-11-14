@@ -98,9 +98,20 @@ def _founder_token(app, client):
     return access
 
 
-def _allow_team(app, workspace_id, max_members=0):
+def _activate(app, username, days=30):
+    until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    with sqlite3.connect(app.config["DATABASE_PATH"]) as conn:
+        subs.ensure_schema(conn)
+        conn.execute("UPDATE users SET paid_until = ? WHERE username = ?", (until, username))
+        conn.commit()
+    subs.clear_cache()
+
+
+def _allow_team(app, owner, max_members=0):
+    """Activated owner whose company NEXORA allowed ``max_members`` logins."""
+    _activate(app, owner["username"])
     db = _db(app)
-    ci.set_team_size(db, db.get_company_id_for_workspace(workspace_id), max_members)
+    ci.set_team_size(db, db.get_company_id_for_workspace(owner["workspace_id"]), max_members)
 
 
 def test_signup_starts_7_day_trial(client):
@@ -193,7 +204,7 @@ def test_super_admin_never_blocked(app, client):
 
 def test_invite_code_joins_existing_company(app, client):
     owner = _signup(client, "bossman").get_json()["data"]
-    _allow_team(app, owner["workspace_id"])
+    _allow_team(app, owner)
     made = client.post(
         "/api/v1/invites",
         json={"role": "sales_executive", "max_uses": 1},
@@ -227,7 +238,7 @@ def test_invite_code_joins_existing_company(app, client):
 
 def test_failed_join_gives_the_invite_back(app, client):
     owner = _signup(client, "giver").get_json()["data"]
-    _allow_team(app, owner["workspace_id"])
+    _allow_team(app, owner)
     code = client.post(
         "/api/v1/invites", json={"role": "sales_executive"}, headers=_auth(owner["access_token"])
     ).get_json()["data"]["code"]
@@ -239,7 +250,7 @@ def test_failed_join_gives_the_invite_back(app, client):
 
 def test_invited_rep_cannot_invite_or_hand_out_admin(app, client):
     owner = _signup(client, "chief").get_json()["data"]
-    _allow_team(app, owner["workspace_id"])
+    _allow_team(app, owner)
     code = client.post(
         "/api/v1/invites", json={"role": "sales_executive"}, headers=_auth(owner["access_token"])
     ).get_json()["data"]["code"]
@@ -259,8 +270,21 @@ def test_new_company_needs_nexora_approval_for_a_team(app, client):
     owner = _signup(client, "soloco").get_json()["data"]
     token = owner["access_token"]
 
+    # On the free trial there is no team at all.
     desk = client.get("/api/v1/invites", headers=_auth(token)).get_json()["data"]
-    assert desk["can_invite"] is True
+    assert desk["can_manage"] is True
+    assert desk["can_invite"] is False
+    assert desk["plan_active"] is False
+    status = client.get("/api/v1/subscription/status", headers=_auth(token)).get_json()["data"]
+    assert status["can_invite"] is False and status["plan_active"] is False
+    assert desk["can_create"] is False
+    assert client.post(
+        "/api/v1/invites/team-request", json={"members": 2}, headers=_auth(token)
+    ).status_code == 403
+
+    _activate(app, "soloco")
+    desk = client.get("/api/v1/invites", headers=_auth(token)).get_json()["data"]
+    assert desk["plan_active"] is True and desk["can_invite"] is True
     assert desk["can_create"] is False
     assert desk["team_limit"] == 1 and desk["seats_left"] == 0
 
@@ -306,7 +330,7 @@ def test_new_company_needs_nexora_approval_for_a_team(app, client):
 
 def test_long_lived_invite_still_gives_member_only_a_7_day_trial(app, client):
     owner = _signup(client, "longcode").get_json()["data"]
-    _allow_team(app, owner["workspace_id"])
+    _allow_team(app, owner)
     code = client.post(
         "/api/v1/invites",
         json={"role": "sales_executive", "expires_in_days": 365},
