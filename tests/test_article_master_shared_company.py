@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app import create_app
+from app.services import company_invites as ci
 from app.services import subscriptions as subs
 from centralized_db_system.db import CentralizedDB
 
@@ -53,9 +54,11 @@ def _signup(client, username, **extra):
     return res.get_json()["data"]
 
 
-def _join(client, owner_token, username, role="sales_executive"):
+def _join(app, client, owner, username, role="sales_executive"):
+    db = CentralizedDB(app.config["DATABASE_PATH"])
+    ci.set_team_size(db, db.get_company_id_for_workspace(owner["workspace_id"]), 0)
     code = client.post(
-        "/api/v1/invites", json={"role": role}, headers=_auth(owner_token)
+        "/api/v1/invites", json={"role": role}, headers=_auth(owner["access_token"])
     ).get_json()["data"]["code"]
     return _signup(client, username, company_name="", category="", invite_code=code)
 
@@ -72,13 +75,14 @@ def _brands(client, token):
     return [a["brand"] for a in body["articles"]], body
 
 
-def test_teammate_reads_company_catalog_but_cannot_change_it(client):
-    owner = _signup(client, "amboss")["access_token"]
+def test_teammate_reads_company_catalog_but_cannot_change_it(app, client):
+    owner_data = _signup(client, "amboss")
+    owner = owner_data["access_token"]
     added = _add_article(client, owner)
     assert added.status_code in (200, 201), added.get_json()
     article_id = added.get_json()["article"]["id"]
 
-    rep = _join(client, owner, "amrep")["access_token"]
+    rep = _join(app, client, owner_data, "amrep")["access_token"]
     brands, body = _brands(client, rep)
     assert brands == ["Aster"]
     assert body["shared"] is True and body["can_edit"] is False
@@ -102,10 +106,11 @@ def test_teammate_reads_company_catalog_but_cannot_change_it(client):
     assert _brands(client, owner)[0] == ["Aster"]
 
 
-def test_company_admin_teammate_edits_the_shared_catalog(client):
-    owner = _signup(client, "amchief")["access_token"]
+def test_company_admin_teammate_edits_the_shared_catalog(app, client):
+    owner_data = _signup(client, "amchief")
+    owner = owner_data["access_token"]
     article_id = _add_article(client, owner).get_json()["article"]["id"]
-    admin = _join(client, owner, "amadmin", role="hop_admin")["access_token"]
+    admin = _join(app, client, owner_data, "amadmin", role="hop_admin")["access_token"]
 
     assert _brands(client, admin)[1]["can_edit"] is True
     edit = client.patch(

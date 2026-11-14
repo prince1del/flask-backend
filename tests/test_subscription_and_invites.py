@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app import create_app
+from app.services import company_invites as ci
 from app.services import subscriptions as subs
 from centralized_db_system.db import CentralizedDB
 
@@ -95,6 +96,11 @@ def _founder_token(app, client):
         is_workspace_owner=True,
     )
     return access
+
+
+def _allow_team(app, workspace_id, max_members=0):
+    db = _db(app)
+    ci.set_team_size(db, db.get_company_id_for_workspace(workspace_id), max_members)
 
 
 def test_signup_starts_7_day_trial(client):
@@ -187,6 +193,7 @@ def test_super_admin_never_blocked(app, client):
 
 def test_invite_code_joins_existing_company(app, client):
     owner = _signup(client, "bossman").get_json()["data"]
+    _allow_team(app, owner["workspace_id"])
     made = client.post(
         "/api/v1/invites",
         json={"role": "sales_executive", "max_uses": 1},
@@ -218,8 +225,9 @@ def test_invite_code_joins_existing_company(app, client):
     assert {m["username"] for m in members} == {"bossman", "newrep"}
 
 
-def test_failed_join_gives_the_invite_back(client):
+def test_failed_join_gives_the_invite_back(app, client):
     owner = _signup(client, "giver").get_json()["data"]
+    _allow_team(app, owner["workspace_id"])
     code = client.post(
         "/api/v1/invites", json={"role": "sales_executive"}, headers=_auth(owner["access_token"])
     ).get_json()["data"]["code"]
@@ -229,8 +237,9 @@ def test_failed_join_gives_the_invite_back(client):
     assert ok.status_code == 201, ok.get_json()
 
 
-def test_invited_rep_cannot_invite_or_hand_out_admin(client):
+def test_invited_rep_cannot_invite_or_hand_out_admin(app, client):
     owner = _signup(client, "chief").get_json()["data"]
+    _allow_team(app, owner["workspace_id"])
     code = client.post(
         "/api/v1/invites", json={"role": "sales_executive"}, headers=_auth(owner["access_token"])
     ).get_json()["data"]["code"]
@@ -244,3 +253,77 @@ def test_invited_rep_cannot_invite_or_hand_out_admin(client):
 
     assert can_invite(owner["access_token"]) is True
     assert can_invite(rep_token) is False
+
+
+def test_new_company_needs_nexora_approval_for_a_team(app, client):
+    owner = _signup(client, "soloco").get_json()["data"]
+    token = owner["access_token"]
+
+    desk = client.get("/api/v1/invites", headers=_auth(token)).get_json()["data"]
+    assert desk["can_invite"] is True
+    assert desk["can_create"] is False
+    assert desk["team_limit"] == 1 and desk["seats_left"] == 0
+
+    blocked = client.post("/api/v1/invites", json={"role": "sales_executive"}, headers=_auth(token))
+    assert blocked.status_code == 403
+
+    asked = client.post(
+        "/api/v1/invites/team-request", json={"members": 2, "note": "2 salesmen"}, headers=_auth(token)
+    )
+    assert asked.status_code == 200, asked.get_json()
+    assert client.get("/api/v1/invites", headers=_auth(token)).get_json()["data"]["team_request"]["members"] == 2
+
+    founder = _founder_token(app, client)
+    requests = client.get(
+        "/api/v1/subscription/team-requests", headers=_auth(founder)
+    ).get_json()["data"]["requests"]
+    mine = next(r for r in requests if r["username"] == "soloco")
+    assert mine["status"] == "pending" and mine["members"] == 2
+    assert client.get(
+        "/api/v1/subscription/status", headers=_auth(founder)
+    ).get_json()["data"]["team_requests_pending"] >= 1
+
+    granted = client.post(
+        f"/api/v1/subscription/companies/{mine['company_id']}/team",
+        json={"max_members": 3},
+        headers=_auth(founder),
+    )
+    assert granted.status_code == 200, granted.get_json()
+
+    made = client.post(
+        "/api/v1/invites", json={"role": "sales_executive", "max_uses": 10}, headers=_auth(token)
+    )
+    assert made.status_code == 201, made.get_json()
+    invite = made.get_json()["data"]
+    assert invite["max_uses"] == 2
+    for name in ("teamone", "teamtwo"):
+        joined = _signup(client, name, company_name="", category="", invite_code=invite["code"])
+        assert joined.status_code == 201, joined.get_json()
+    assert client.post(
+        "/api/v1/invites", json={"role": "sales_executive"}, headers=_auth(token)
+    ).status_code == 403
+
+
+def test_long_lived_invite_still_gives_member_only_a_7_day_trial(app, client):
+    owner = _signup(client, "longcode").get_json()["data"]
+    _allow_team(app, owner["workspace_id"])
+    code = client.post(
+        "/api/v1/invites",
+        json={"role": "sales_executive", "expires_in_days": 365},
+        headers=_auth(owner["access_token"]),
+    ).get_json()["data"]
+    assert datetime.fromisoformat(code["expires_at"]) - datetime.now(timezone.utc) <= timedelta(days=30)
+    member = _signup(client, "longmember", company_name="", category="", invite_code=code["code"])
+    ends = datetime.fromisoformat(member.get_json()["data"]["trial_ends_at"])
+    assert ends - datetime.now(timezone.utc) <= timedelta(days=7)
+
+
+def test_only_super_admin_grants_team_places(app, client):
+    owner = _signup(client, "sneaky").get_json()["data"]
+    company_id = _db(app).get_company_id_for_workspace(owner["workspace_id"])
+    res = client.post(
+        f"/api/v1/subscription/companies/{company_id}/team",
+        json={"max_members": 50},
+        headers=_auth(owner["access_token"]),
+    )
+    assert res.status_code == 403

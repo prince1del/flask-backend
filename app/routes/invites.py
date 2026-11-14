@@ -3,6 +3,7 @@
     POST   /api/v1/invites                 create a code (company manager)
     GET    /api/v1/invites                 codes of my company + who joined
     POST   /api/v1/invites/<code>/revoke   stop a code
+    POST   /api/v1/invites/team-request    {members, note} — ask NEXORA for team places
     GET    /api/v1/invites/check?code=…    public: is this code usable, which company
     GET    /api/v1/invites/members         logins in my company
 
@@ -44,6 +45,8 @@ def create_invite():
             expires_in_days=data.get("expires_in_days") or 7,
             note=data.get("note"),
         )
+    except ci.TeamLimitError as exc:
+        return _err(str(exc), 403)
     except ValueError as exc:
         return _err(str(exc), 400)
     invite["company_name"] = ci.company_name_for_workspace(db, user["workspace_id"])
@@ -57,15 +60,35 @@ def list_invites():
     workspace_id = get_workspace_id()
     user = {**_user(), "workspace_id": workspace_id}
     can_manage = ci.can_manage_invites(db, user)
+    team = ci.team_status(db, workspace_id) if can_manage else {}
     return jsonify({
         "success": True,
         "data": {
             "can_invite": can_manage,
+            "can_create": can_manage and team.get("seats_left") != 0,
             "roles": ci.allowed_roles_for(user) if can_manage else [],
             "company_name": ci.company_name_for_workspace(db, workspace_id),
             "invites": ci.list_invites(db, workspace_id) if can_manage else [],
+            **team,
         },
     }), 200
+
+
+@invites_bp.route("/team-request", methods=["POST"])
+@require_jwt_auth
+def request_team():
+    """Ask NEXORA for team places; the super admin allows them after payment."""
+    db = _get_auth_db()
+    workspace_id = get_workspace_id()
+    user = {**_user(), "workspace_id": workspace_id}
+    if not ci.can_manage_invites(db, user):
+        return _err("Only your company's owner or admin can ask for team places", 403)
+    data = request.get_json(silent=True) or {}
+    try:
+        req = ci.request_team(db, user, workspace_id, data.get("members"), data.get("note"))
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    return jsonify({"success": True, "data": req}), 200
 
 
 @invites_bp.route("/<code>/revoke", methods=["POST"])

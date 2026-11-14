@@ -27,7 +27,18 @@ _ADMIN_ONLY_ROLES = frozenset({"hop_admin"})
 _ADMIN_ROLES = frozenset({"hop_admin", "admin"})
 
 MAX_USES_LIMIT = 100
-MAX_EXPIRY_DAYS = 90
+MAX_EXPIRY_DAYS = 30
+
+# Team size is a paid add-on: a company may hold only ``companies.max_members``
+# logins (owner included). NULL = the default — no limit for the founder's own
+# companies, just the owner for everyone else. 0 = no limit (set by the super
+# admin). New teammates need a seat; the super admin grants seats after payment.
+_TEAM_UNLIMITED_COMPANY_IDS = frozenset({1, 2})
+MAX_TEAM_REQUEST = 500
+
+
+class TeamLimitError(ValueError):
+    pass
 
 
 def _now() -> datetime:
@@ -75,6 +86,26 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS team_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            workspace_id TEXT NOT NULL,
+            user_id INTEGER,
+            username TEXT,
+            members INTEGER NOT NULL,
+            note TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            decided_at TEXT
+        )
+        """
+    )
+    company_cols = {r[1] for r in conn.execute("PRAGMA table_info(companies)").fetchall()}
+    if company_cols and "max_members" not in company_cols:
+        conn.execute("ALTER TABLE companies ADD COLUMN max_members INTEGER")
+        conn.commit()
 
 
 def _connect(db_path) -> sqlite3.Connection:
@@ -138,6 +169,143 @@ def allowed_roles_for(user: dict[str, Any]) -> list[str]:
     return [r for r in INVITE_ROLES if is_admin or r not in _ADMIN_ONLY_ROLES]
 
 
+def team_limit(db, workspace_id: str) -> int | None:
+    """Most logins this workspace's company may have; None = no limit."""
+    company_id = db.get_company_id_for_workspace(workspace_id)
+    with _connect(db.db_path) as conn:
+        row = conn.execute("SELECT max_members FROM companies WHERE id = ?", (company_id,)).fetchone()
+    value = row["max_members"] if row else None
+    if value is None:
+        return None if company_id in _TEAM_UNLIMITED_COMPANY_IDS else 1
+    return None if int(value) <= 0 else int(value)
+
+
+def member_count(db, workspace_id: str) -> int:
+    with sqlite3.connect(str(db.db_path)) as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) FROM users
+               WHERE workspace_id = ? AND IFNULL(status, 'active') = 'active'
+                 AND lower(username) NOT LIKE 'archived_dup_%'""",
+            (workspace_id,),
+        ).fetchone()
+    return int(row[0] or 0)
+
+
+def _open_invite_places(conn: sqlite3.Connection, workspace_id: str) -> int:
+    row = conn.execute(
+        """SELECT COALESCE(SUM(max_uses - uses), 0) FROM company_invites
+           WHERE workspace_id = ? AND revoked_at IS NULL AND uses < max_uses AND expires_at > ?""",
+        (workspace_id, _now().isoformat()),
+    ).fetchone()
+    return int(row[0] or 0)
+
+
+def seats_left(db, workspace_id: str) -> int | None:
+    """Teammates that can still be invited (open invite codes hold a place)."""
+    limit = team_limit(db, workspace_id)
+    if limit is None:
+        return None
+    with _connect(db.db_path) as conn:
+        held = _open_invite_places(conn, workspace_id)
+    return max(0, limit - member_count(db, workspace_id) - held)
+
+
+def _pending_request(conn: sqlite3.Connection, company_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """SELECT id, members, note, created_at FROM team_requests
+           WHERE company_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def team_status(db, workspace_id: str) -> dict[str, Any]:
+    company_id = db.get_company_id_for_workspace(workspace_id)
+    with _connect(db.db_path) as conn:
+        pending = _pending_request(conn, company_id)
+    return {
+        "team_limit": team_limit(db, workspace_id),
+        "member_count": member_count(db, workspace_id),
+        "seats_left": seats_left(db, workspace_id),
+        "team_request": pending,
+    }
+
+
+def request_team(db, user: dict[str, Any], workspace_id: str, members: int, note: str | None) -> dict[str, Any]:
+    """Ask NEXORA for team places (``members`` = people besides the owner)."""
+    try:
+        members = int(members)
+    except (TypeError, ValueError):
+        raise ValueError("Enter how many people you want to add") from None
+    if members < 1 or members > MAX_TEAM_REQUEST:
+        raise ValueError(f"Ask for 1 to {MAX_TEAM_REQUEST} people")
+    company_id = db.get_company_id_for_workspace(workspace_id)
+    now = _now().isoformat()
+    note = (note or "").strip()[:300] or None
+    with _connect(db.db_path) as conn:
+        pending = _pending_request(conn, company_id)
+        if pending:
+            conn.execute(
+                "UPDATE team_requests SET members = ?, note = ?, created_at = ? WHERE id = ?",
+                (members, note, now, pending["id"]),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO team_requests
+                   (company_id, workspace_id, user_id, username, members, note, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (company_id, workspace_id, user.get("user_id"), user.get("username"), members, note, now),
+            )
+        conn.commit()
+        return _pending_request(conn, company_id) or {}
+
+
+def list_team_requests(db) -> list[dict[str, Any]]:
+    """Super admin: every team request, newest first, with the company's current size."""
+    with _connect(db.db_path) as conn:
+        rows = conn.execute(
+            """SELECT r.*, c.name AS company_name, c.max_members
+               FROM team_requests r LEFT JOIN companies c ON c.id = r.company_id
+               ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.id DESC LIMIT 100"""
+        ).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["member_count"] = member_count(db, row["workspace_id"])
+        item["team_limit"] = team_limit(db, row["workspace_id"])
+        out.append(item)
+    return out
+
+
+def set_team_size(db, company_id: int, max_members: int) -> None:
+    """Super admin: allow ``max_members`` logins in a company (0 = no limit)."""
+    max_members = int(max_members)
+    if max_members < 0:
+        raise ValueError("max_members must be 0 (no limit) or more")
+    now = _now().isoformat()
+    with _connect(db.db_path) as conn:
+        cur = conn.execute("UPDATE companies SET max_members = ? WHERE id = ?", (max_members, int(company_id)))
+        if cur.rowcount != 1:
+            raise ValueError("Company not found")
+        conn.execute(
+            """UPDATE team_requests SET status = 'approved', decided_at = ?
+               WHERE company_id = ? AND status = 'pending'""",
+            (now, int(company_id)),
+        )
+        conn.commit()
+
+
+def decline_team_request(db, request_id: int) -> bool:
+    with _connect(db.db_path) as conn:
+        cur = conn.execute(
+            """UPDATE team_requests SET status = 'declined', decided_at = ?
+               WHERE id = ? AND status = 'pending'""",
+            (_now().isoformat(), int(request_id)),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def _row_to_dict(row: sqlite3.Row, now: datetime) -> dict[str, Any]:
     expires = datetime.fromisoformat(row["expires_at"])
     if row["revoked_at"]:
@@ -178,6 +346,13 @@ def create_invite(
     workspace_id = str(user.get("workspace_id") or "")
     if not workspace_id or workspace_id == "default":
         raise ValueError("Your login has no company workspace to invite into")
+    left = seats_left(db, workspace_id)
+    if left is not None:
+        if left <= 0:
+            raise TeamLimitError(
+                "Your plan has no free team places. Ask NEXORA to add team members."
+            )
+        max_uses = min(max_uses, left)
     now = _now()
     expires_at = (now + timedelta(days=expires_in_days)).isoformat()
     with _connect(db.db_path) as conn:
@@ -246,6 +421,9 @@ def check_invite(db, code: str) -> dict[str, Any] | None:
     item = _row_to_dict(row, now)
     if item["status"] != "active":
         return {"valid": False, "status": item["status"]}
+    limit = team_limit(db, row["workspace_id"])
+    if limit is not None and member_count(db, row["workspace_id"]) >= limit:
+        return {"valid": False, "status": "company_full"}
     return {
         "valid": True,
         "status": "active",
@@ -261,6 +439,14 @@ def claim_invite(db, code: str) -> dict[str, Any]:
     """
     norm = normalize_code(code)
     now = _now().isoformat()
+    with _connect(db.db_path) as conn:
+        found = conn.execute("SELECT workspace_id FROM company_invites WHERE code = ?", (norm,)).fetchone()
+    if found is not None:
+        limit = team_limit(db, found["workspace_id"])
+        if limit is not None and member_count(db, found["workspace_id"]) >= limit:
+            raise ValueError(
+                "This company has no free places left. Ask your company owner to contact NEXORA."
+            )
     with _connect(db.db_path) as conn:
         cur = conn.execute(
             """UPDATE company_invites SET uses = uses + 1

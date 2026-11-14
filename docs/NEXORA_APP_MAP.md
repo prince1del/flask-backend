@@ -84,6 +84,14 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
   "Join my company" card on `SignUpScreen`. The menu item and the "Free
   trial · N days left" reminder appear only for logins with a trial/paid
   plan, invite rights (`can_invite` in `/status`) or super admin.
+- **Team places (paid add-on):** `companies.max_members` (NULL = default: no
+  limit for House of Prizm / Bombay Dyeing, 1 login for every sign-up company;
+  0 = no limit). Invites need a free place (open invite codes hold places) and
+  joining re-checks it. The owner asks via `POST /api/v1/invites/team-request`
+  (table `team_requests`); the super admin sees
+  `GET /api/v1/subscription/team-requests` and allows with
+  `POST /api/v1/subscription/companies/<id>/team {max_members}`. Invite codes
+  expire within 30 days; every member who joins gets their own 7-day trial.
 
 ---
 

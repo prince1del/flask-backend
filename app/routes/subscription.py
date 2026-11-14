@@ -9,6 +9,9 @@ Super admin only:
     POST /api/v1/subscription/codes/<code>/revoke
     GET  /api/v1/subscription/users              every login with its plan
     POST /api/v1/subscription/users/<id>/unlimited
+    GET  /api/v1/subscription/team-requests      companies asking for team places
+    POST /api/v1/subscription/companies/<id>/team   {max_members} logins allowed (0 = no limit)
+    POST /api/v1/subscription/team-requests/<id>/decline
 """
 
 from __future__ import annotations
@@ -54,6 +57,10 @@ def status():
     data["can_invite"] = company_invites.can_manage_invites(
         _get_auth_db(), {**user, "workspace_id": get_workspace_id()}
     )
+    if data["is_super_admin"]:
+        data["team_requests_pending"] = sum(
+            1 for r in company_invites.list_team_requests(_get_auth_db()) if r["status"] == "pending"
+        )
     return jsonify({"success": True, "data": data}), 200
 
 
@@ -132,4 +139,41 @@ def make_unlimited(user_id: int):
     if denied:
         return denied
     subs.set_unlimited(_db_path(), user_id)
+    return jsonify({"success": True}), 200
+
+
+@subscription_bp.route("/team-requests", methods=["GET"])
+@require_jwt_auth
+def team_requests():
+    denied = _super_admin_only()
+    if denied:
+        return denied
+    return jsonify({
+        "success": True,
+        "data": {"requests": company_invites.list_team_requests(_get_auth_db())},
+    }), 200
+
+
+@subscription_bp.route("/companies/<int:company_id>/team", methods=["POST"])
+@require_jwt_auth
+def set_team_size(company_id: int):
+    denied = _super_admin_only()
+    if denied:
+        return denied
+    data = request.get_json(silent=True) or {}
+    try:
+        company_invites.set_team_size(_get_auth_db(), company_id, data.get("max_members"))
+    except (TypeError, ValueError) as exc:
+        return _err(str(exc) or "max_members is required", 400)
+    return jsonify({"success": True}), 200
+
+
+@subscription_bp.route("/team-requests/<int:request_id>/decline", methods=["POST"])
+@require_jwt_auth
+def decline_team_request(request_id: int):
+    denied = _super_admin_only()
+    if denied:
+        return denied
+    if not company_invites.decline_team_request(_get_auth_db(), request_id):
+        return _err("Request not found or already decided", 404, "NOT_FOUND")
     return jsonify({"success": True}), 200

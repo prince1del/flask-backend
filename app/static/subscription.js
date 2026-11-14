@@ -202,16 +202,26 @@
         <button type="submit" class="btn btn-primary" style="grid-column:1/-1;">Generate code</button>
       </form>
       <div data-new></div>
+      <h3 style="margin-top:18px;">Team requests</h3><div data-teams>Loading…</div>
       <h3 style="margin-top:18px;">Logins</h3><div data-users>Loading…</div>
       <h3 style="margin-top:18px;">Recent codes</h3><div data-codes>Loading…</div>`);
     const body = el.querySelector('[data-body]');
 
     async function load() {
       try {
-        const [u, c] = await Promise.all([
+        const [u, c, t] = await Promise.all([
           api('/api/v1/subscription/users'),
           api('/api/v1/subscription/codes'),
+          api('/api/v1/subscription/team-requests'),
         ]);
+        const teams = t.requests || [];
+        body.querySelector('[data-teams]').innerHTML = teams.length ? `<table style="width:100%;font-size:0.85rem;">
+          <tr><th align="left">Company</th><th align="left">Asked</th><th align="left">Logins now</th><th align="left">Status</th><th></th></tr>
+          ${teams.map((x) => `<tr><td>${esc(x.company_name || x.workspace_id)}<br><small>${esc(x.username || '')}${x.note ? ` · ${esc(x.note)}` : ''}</small></td>
+            <td>+${x.members}</td><td>${x.member_count}${x.team_limit != null ? ` / ${x.team_limit}` : ' / no limit'}</td><td>${esc(x.status)}</td>
+            <td>${x.status === 'pending' ? `<button type="button" class="btn btn-primary" data-allow="${x.company_id}" data-members="${x.member_count + x.members}" style="padding:2px 8px;">Allow</button>
+              <button type="button" class="btn btn-secondary" data-decline="${x.id}" style="padding:2px 8px;">Decline</button>` : ''}</td></tr>`).join('')}
+          </table>` : '<p>No team requests.</p>';
         body.querySelector('[data-users]').innerHTML = `<table style="width:100%;font-size:0.85rem;">
           <tr><th align="left">Login</th><th align="left">Status</th><th align="left">Till</th></tr>
           ${u.users.map((x) => `<tr><td>${esc(x.username)}</td><td>${esc(x.status)}${x.days_left != null ? ` (${x.days_left}d)` : ''}</td><td>${esc(fmtDate(x.ends_at))}</td></tr>`).join('')}
@@ -228,10 +238,23 @@
     }
 
     body.addEventListener('click', async (ev) => {
-      const code = ev.target?.getAttribute?.('data-revoke');
-      if (!code) return;
+      const t = ev.target;
+      const code = t?.getAttribute?.('data-revoke');
+      const allow = t?.getAttribute?.('data-allow');
+      const decline = t?.getAttribute?.('data-decline');
       try {
-        await api(`/api/v1/subscription/codes/${encodeURIComponent(code)}/revoke`, { method: 'POST' });
+        if (code) {
+          await api(`/api/v1/subscription/codes/${encodeURIComponent(code)}/revoke`, { method: 'POST' });
+        } else if (allow) {
+          const total = window.prompt('Total logins allowed for this company (owner included, 0 = no limit):', t.getAttribute('data-members'));
+          if (total == null || total.trim() === '') return;
+          await api(`/api/v1/subscription/companies/${allow}/team`, { method: 'POST', body: { max_members: Number(total) } });
+          toast('Team places allowed', 'success');
+        } else if (decline) {
+          await api(`/api/v1/subscription/team-requests/${decline}/decline`, { method: 'POST' });
+        } else {
+          return;
+        }
         load();
       } catch (e) { toast(e.message, 'error'); }
     });
@@ -270,13 +293,40 @@
       try {
         const [inv, mem] = await Promise.all([api('/api/v1/invites'), api('/api/v1/invites/members')]);
         if (!inv.can_invite) { body.innerHTML = '<p>Only your company owner or admin can invite people.</p>'; return; }
+        if (!inv.can_create) {
+          const req = inv.team_request;
+          body.innerHTML = `
+            <p style="margin-top:0;">Your plan includes <strong>${inv.team_limit} login${inv.team_limit === 1 ? '' : 's'}</strong>
+              (${inv.member_count} in use). To add your salesmen, distributors or retailers, ask NEXORA for team access.</p>
+            ${req ? `<div style="padding:12px;border-radius:10px;background:rgba(59,130,246,.12);margin-bottom:10px;">
+              Request sent for <strong>${req.members}</strong> people on ${esc(fmtDate(req.created_at))}. NEXORA will contact you.</div>` : ''}
+            <form data-request style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div class="form-group"><label>People to add</label><input name="members" type="number" min="1" max="500" value="${req ? req.members : 1}"></div>
+              <div class="form-group"><label>Note (optional)</label><input name="note" placeholder="e.g. 3 salesmen in Delhi" value="${esc(req?.note || '')}"></div>
+              <button type="submit" class="btn btn-primary" style="grid-column:1/-1;">${req ? 'Update request' : 'Request team access'}</button>
+            </form>`;
+          body.querySelector('[data-request]').addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            const f = new FormData(ev.target);
+            try {
+              await api('/api/v1/invites/team-request', {
+                method: 'POST',
+                body: { members: Number(f.get('members') || 1), note: String(f.get('note') || '').trim() || null },
+              });
+              toast('Request sent to NEXORA', 'success');
+              load();
+            } catch (e) { toast(e.message, 'error'); }
+          });
+          return;
+        }
+        const placesLeft = inv.seats_left == null ? '' : ` You can add <strong>${inv.seats_left}</strong> more.`;
         body.innerHTML = `
-          <p style="color:#94a3b8;margin-top:0;">Share a code with a teammate. They choose “Join with company code” on the login screen and land in <strong>${esc(inv.company_name || 'your company')}</strong>.</p>
+          <p style="color:#94a3b8;margin-top:0;">Share a code with a teammate. They choose “Join with company code” on the login screen and join <strong>${esc(inv.company_name || 'your company')}</strong>. Each new member gets their own 7-day free trial.${placesLeft}</p>
           <form data-make style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div class="form-group"><label>Role</label><select name="role">
               ${inv.roles.map((r) => `<option value="${esc(r)}">${esc(ROLE_LABELS[r] || r)}</option>`).join('')}</select></div>
             <div class="form-group"><label>How many people</label><input name="max_uses" type="number" min="1" max="100" value="1"></div>
-            <div class="form-group"><label>Valid for (days)</label><input name="expires_in_days" type="number" min="1" max="90" value="7"></div>
+            <div class="form-group"><label>Code expires in (days)</label><input name="expires_in_days" type="number" min="1" max="30" value="7"></div>
             <div class="form-group"><label>Note (optional)</label><input name="note" placeholder="e.g. Rahul — Delhi"></div>
             <button type="submit" class="btn btn-primary" style="grid-column:1/-1;">Create invite code</button>
           </form>
