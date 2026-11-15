@@ -42,7 +42,7 @@ def _db(app) -> CentralizedDB:
     return CentralizedDB(app.config["DATABASE_PATH"])
 
 
-def _signup(client, username, **extra):
+def _signup(client, username, approve=True, **extra):
     payload = {
         "company_name": f"{username} Traders",
         "username": username,
@@ -53,7 +53,17 @@ def _signup(client, username, **extra):
         "category": "business",
         **extra,
     }
-    return client.post("/api/v1/signup", json=payload)
+    res = client.post("/api/v1/signup", json=payload)
+    if approve and extra.get("invite_code") and res.status_code == 201:
+        # Tests about other rules: the owner approves the teammate's first sign-in.
+        from app.services import login_approval
+
+        with sqlite3.connect(client.application.config["DATABASE_PATH"]) as conn:
+            login_approval.ensure_schema(conn)
+            conn.execute("UPDATE login_approvals SET status = 'approved' WHERE user_id = ? AND status = 'pending'",
+                         (res.get_json()["data"]["user_id"],))
+        login_approval._invalidate()
+    return res
 
 
 def _auth(token):

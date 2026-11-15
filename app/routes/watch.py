@@ -105,6 +105,11 @@ def _watch_user():
         return None
     user = {"user_id": int(row[0]), "workspace_id": row[1], "role": row[2] or "unassigned",
             "username": row[3], "is_workspace_owner": bool(row[4])}
+    from app.services import member_access
+
+    # A blocked login, or one whose owner closed the watch, gets nothing.
+    if member_access.denied(str(current_app.config.get("DATABASE_PATH") or "centralized_db.sqlite3"), user, "/api/v1/watch/pair"):
+        return None
     request.user = user
     return user
 

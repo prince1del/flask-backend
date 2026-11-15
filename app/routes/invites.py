@@ -53,6 +53,7 @@ def create_invite():
             max_uses=data.get("max_uses") or 1,
             expires_in_days=data.get("expires_in_days") or 7,
             note=data.get("note"),
+            features=data.get("features"),
         )
     except ci.TeamLimitError as exc:
         return _err(str(exc), 403)
@@ -137,3 +138,87 @@ def list_members():
             "members": ci.list_members(db, workspace_id),
         },
     }), 200
+
+
+# ── Team dashboard: features per member, block / unblock a login ─────────────
+
+@invites_bp.route("/team", methods=["GET"])
+@require_jwt_auth
+def team_dashboard():
+    from app.services import member_access
+
+    db = _get_auth_db()
+    user = {**_user(), "workspace_id": get_workspace_id()}
+    if not ci.can_manage_invites(db, user):
+        return _err("Only your company's owner or admin can see the team", 403)
+    return jsonify({"success": True, "data": {
+        "features": member_access.catalog(),
+        "members": member_access.team_dashboard(db, user),
+    }}), 200
+
+
+@invites_bp.route("/members/<int:member_id>/access", methods=["POST"])
+@require_jwt_auth
+def set_member_access(member_id: int):
+    from app.services import member_access
+
+    db = _get_auth_db()
+    user = {**_user(), "workspace_id": get_workspace_id()}
+    data = request.get_json(silent=True) or {}
+    try:
+        out = member_access.update_member(
+            db, user, member_id,
+            features=data["features"] if "features" in data else None,
+            blocked=data["blocked"] if "blocked" in data else None,
+        )
+    except LookupError as exc:
+        return _err(str(exc), 404)
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    return jsonify({"success": True, "data": out}), 200
+
+
+# ── Sign-in approvals ───────────────────────────────────────────────────────
+
+@invites_bp.route("/login-requests", methods=["GET"])
+@require_jwt_auth
+def login_requests():
+    from app.services import login_approval
+
+    try:
+        reqs = login_approval.pending_requests(_get_auth_db(), {**_user(), "workspace_id": get_workspace_id()})
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+    return jsonify({"success": True, "data": {"requests": reqs}}), 200
+
+
+@invites_bp.route("/login-requests/<int:request_id>", methods=["POST"])
+@require_jwt_auth
+def decide_login_request(request_id: int):
+    from app.services import login_approval
+
+    data = request.get_json(silent=True) or {}
+    try:
+        out = login_approval.decide(_get_auth_db(), {**_user(), "workspace_id": get_workspace_id()},
+                                    request_id, bool(data.get("approve")))
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+    except LookupError as exc:
+        return _err(str(exc), 404)
+    return jsonify({"success": True, "data": out}), 200
+
+
+@invites_bp.route("/members/<int:member_id>/signout", methods=["POST"])
+@require_jwt_auth
+def sign_out_member(member_id: int):
+    from app.services import login_approval
+
+    try:
+        login_approval.sign_out_member(_get_auth_db(), {**_user(), "workspace_id": get_workspace_id()}, member_id)
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+    except LookupError as exc:
+        return _err(str(exc), 404)
+    return jsonify({"success": True, "data": {"signed_out": member_id}}), 200

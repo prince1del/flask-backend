@@ -55,6 +55,8 @@ from app.routes import (
     signup_bp,
     invites_bp,
     subscription_bp,
+    billing_bp,
+    team_bp,
     target_achievement_bp,
     workspaces_blueprint,
     inventory_bp,
@@ -355,6 +357,8 @@ def create_app() -> Flask:
     app.register_blueprint(signup_bp)
     app.register_blueprint(invites_bp)
     app.register_blueprint(subscription_bp)
+    app.register_blueprint(billing_bp)
+    app.register_blueprint(team_bp)
     app.register_blueprint(gdrive_bp)
     app.register_blueprint(target_achievement_bp)
     app.register_blueprint(party_matching_bp)

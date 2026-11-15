@@ -39,6 +39,7 @@ CODE_LENGTH = 12
 # code, and pull app updates.
 _ALLOWED_PREFIXES = (
     "/api/v1/subscription",
+    "/api/v1/billing",  # an expired login must still be able to pay
     "/api/v1/auth",
     "/api/v1/app",
     "/api/v1/signup",

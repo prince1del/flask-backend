@@ -135,6 +135,9 @@ def signup():
 
     if invite:
         ci.record_redemption(db, invite["id"], user_id, created["username"])
+        from app.services import member_access
+
+        member_access.grant_on_join(db.db_path, user_id, workspace_id, invite.get("features"))
     else:
         db.set_company_owner(company_id, user_id)
     # A new company gets the 7-day trial; a teammate joining by invite follows
@@ -154,12 +157,24 @@ def signup():
             pass
 
     service = get_jwt_service()
+    session_id = None
+    if invite:
+        # A teammate's first sign-in also waits for the owner's approval.
+        import uuid
+
+        from app.services import login_approval
+
+        session_id = uuid.uuid4().hex
+        db.set_active_session(user_id, session_id, data.get("device_label"))
+        login_approval.request_login(db.db_path, user_id, workspace_id, session_id,
+                                     data.get("device_label"), request.remote_addr)
     access_token, refresh_token = service.create_tokens(
         user_id=user_id,
         username=created["username"],
         role=role,
         workspace_id=workspace_id,
         is_workspace_owner=False,
+        session_id=session_id,
     )
 
     return jsonify({

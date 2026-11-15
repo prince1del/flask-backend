@@ -107,6 +107,67 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
   `via_company: true`). Owner renews → every member is unblocked at once (cache
   cleared on redeem). A member's own code counts only if it runs longer.
   Companies without an owner (House of Prizm, Bombay Dyeing) are untouched.
+- **Online payment (Razorpay, self-serve):** `app/services/billing.py` +
+  `app/routes/billing.py`. Super admin enters Razorpay keys (test or live) and
+  creates products on the web (code desk → "Online payments & prices"): **plan**
+  = N days, **seats** = N extra logins; prices in paise in `billing_products`,
+  keys in `billing_config` (or env `RAZORPAY_KEY_ID/_KEY_SECRET/_WEBHOOK_SECRET`;
+  never returned in full). Buyer: `POST /api/v1/billing/orders` → hosted page
+  `/pay/<token>` (Razorpay Checkout, no login needed) → `POST /api/v1/billing/verify`
+  (HMAC signature, payment captured if only authorized) or the webhook
+  `POST /api/v1/billing/webhook` (`X-Razorpay-Signature`, events order.paid /
+  payment.captured; amount must match). Fulfilment runs once per order: plan →
+  company owner's `paid_until` += days; seats → `companies.max_members` += seats
+  (needs a paid plan). `/api/v1/billing` stays open for expired logins. Sales:
+  `GET /api/v1/billing/admin/sales`. Web: `subscription.js` (My plan / lock
+  screen "Buy online", team desk "Add team members online"). Phone: `PlanGate.kt`
+  `BuyOnline` opens the pay page in the browser and polls the order.
+  Manual codes and team requests stay for special cases.
+- **Auto-renewal (Razorpay Subscriptions):** a plan product with `renewable`
+  can be bought as auto-renew: `POST /api/v1/billing/subscriptions` makes the
+  Razorpay plan once (`billing_products.rzp_plan_id`; cleared when price/days
+  change) and a subscription (~10 years of cycles), paid on `/pay/s/<token>`
+  (UPI Autopay / card mandate). The first charge (`/verify-subscription`,
+  signature `payment_id|subscription_id`) and every renewal (webhook
+  `subscription.charged`) add the plan's days once per payment id
+  (`billing_payments`) and log a sale in `billing_orders`. Status from webhooks
+  (`subscription.halted/cancelled/completed…`) in `billing_subscriptions`.
+  Stop: `POST /api/v1/billing/subscriptions/<token>/cancel` (cancel at cycle end;
+  paid time stays). Only one running auto-renew per company. Needs the
+  Subscriptions feature on the Razorpay account and webhook events
+  `subscription.*`.
+- **Member features & switching a login off** (`app/services/member_access.py`):
+  the owner/admin ticks what each invitee may open (`company_invites.features`,
+  copied to `member_access` on joining). Team dashboard: `GET /api/v1/invites/team`,
+  `POST /api/v1/invites/members/<id>/access {features?, blocked?}` — only for
+  members of the manager's **own workspace** (404 otherwise); the company owner's
+  access can't be changed, only the owner can change an admin's. Enforced in
+  `require_jwt_auth` by URL prefix (`FEATURES` list) → 403 `FEATURE_OFF`; a
+  blocked login gets 403 `ACCOUNT_BLOCKED` on every call and at sign-in (watch key
+  too). Logins without a `member_access` row (owners, HoP/BD staff, older
+  logins) keep everything. `/api/v1/subscription/status` returns `features`
+  (null = all) and `feature_catalog`. Phone hides closed drawer items, bottom tabs
+  and the Ask Nexora button, and shows "This login is switched off" on
+  ACCOUNT_BLOCKED; web shows the server's message.
+- **Login approval (one phone at a time)** (`app/services/login_approval.py`):
+  an invited member’s sign-in stays **pending** until the company owner/admin
+  approves it (`GET/POST /api/v1/invites/login-requests…`). Pending sessions get
+  403 `LOGIN_PENDING` on every API except auth/logout and the approval check
+  (`GET /api/v1/auth/approval`). Approving a new device ends the old one; sign-out
+  clears approval so the next login needs it again. Owners and logins without a
+  `member_access` row never need approval. Owner can force sign-out:
+  `POST /api/v1/invites/members/<id>/signout`.
+- **Team duty & live location** (`app/services/team_tracking.py` +
+  `app/routes/team.py`): member Start/End day (`/api/v1/team/duty/start|end`),
+  location points only while on duty (`POST /api/v1/team/location` → 409
+  `NOT_ON_DUTY` otherwise). Owner/admin: live map `GET /api/v1/team/live`, day
+  trail `GET /api/v1/team/members/<id>/day`, work places `/api/v1/team/sites*`,
+  attendance sheet/rules/requests. Feature keys `attendance` and `live_location`
+  gate these routes. Never across companies.
+- **Data inside a company today:** shared per workspace — distributor master,
+  Commercial Invoices (order lifecycle), Target vs Achievement, Article Master
+  (edit: owner/admin). Per login — Filled Orders, SO matches, payments/Hisaab,
+  credit notes, market visits, to-dos. The owner does not yet see members' own work.
 
 ---
 

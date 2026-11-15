@@ -14,7 +14,8 @@ class JWTService:
         self.secret_key = secret_key
         self.algorithm = algorithm
         self.access_token_expiry = 3600  # 1 hour
-        self.refresh_token_expiry = 86400 * 7  # 7 days
+        # Slides forward on every refresh, so a sign-in in use lasts until sign-out.
+        self.refresh_token_expiry = 86400 * 60  # 60 days of no use
 
     def create_tokens(
         self,

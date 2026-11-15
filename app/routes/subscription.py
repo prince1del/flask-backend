@@ -54,6 +54,11 @@ def status():
     if subs.is_super_admin(user):
         data = {**data, "status": "unlimited", "ends_at": None, "days_left": None}
     data["is_super_admin"] = subs.is_super_admin(user)
+    from app.services import member_access
+
+    # Features this login may open (None = all) so apps hide the rest.
+    data["features"] = member_access.features_for(_db_path(), user)
+    data["feature_catalog"] = member_access.catalog()
     data["plan_active"] = subs.plan_active(_db_path(), user)
     data["can_invite"] = data["plan_active"] and company_invites.can_manage_invites(
         _get_auth_db(), {**user, "workspace_id": get_workspace_id()}

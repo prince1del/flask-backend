@@ -90,6 +90,25 @@ def _subscription_gate(fn):
                 ),
                 402,
             )
+        # Features the company owner opened for this member; blocked logins.
+        from app.services import member_access
+
+        try:
+            refused = member_access.denied(_get_auth_db().db_path, user, request.path)
+        except Exception:
+            current_app.logger.exception("member access check failed")
+            refused = None
+        if not refused:
+            # Invited members: this sign-in must be approved by the company owner.
+            from app.services import login_approval
+
+            try:
+                refused = login_approval.denied(_get_auth_db().db_path, user, request.path)
+            except Exception:
+                current_app.logger.exception("login approval check failed")
+                refused = None
+        if refused:
+            return jsonify({"success": False, "error": {"code": refused[0], "message": refused[1]}}), 403
         return fn(*args, **kwargs)
 
     return gated
@@ -138,6 +157,7 @@ def require_jwt_auth(fn):
                 "role": session.get("role", "unassigned"),
                 "workspace_id": session.get("workspace_id", "default"),
                 "is_workspace_owner": is_owner,
+                "sid": session.get("sid"),
             }
             return gated_fn(*args, **kwargs)
 
@@ -274,6 +294,10 @@ def enforce_auth() -> Response | None:
         return None
     if request.path.startswith("/static/"):
         return None
+    # Hosted Razorpay page opened from the phone's browser (no session there):
+    # the random token picks the order and Razorpay's signature proves payment.
+    if request.path.startswith("/pay/"):
+        return None
     if request.path in {
         "/manifest.json",
         "/service-worker.js",
@@ -387,6 +411,15 @@ def api_login() -> tuple[Response, int]:
             ),
             401,
         )
+    from app.services import member_access
+
+    if member_access.is_blocked(db.db_path, int(user_row.get("id") or 0)):
+        return (
+            jsonify({"success": False, "error": {
+                "code": "ACCOUNT_BLOCKED",
+                "message": "Your company has switched off this login. Contact your company owner."}}),
+            403,
+        )
 
     service = get_jwt_service()
     is_owner = bool(user_row.get("is_workspace_owner"))
@@ -401,6 +434,13 @@ def api_login() -> tuple[Response, int]:
         db.set_active_session(user_id, session_id, device_label)
     except Exception:
         session_id = None
+    from app.services import login_approval
+
+    approval = None
+    if session_id and login_approval.needs_approval(db.db_path, int(user_id), is_owner):
+        login_approval.request_login(db.db_path, int(user_id), user_row.get("workspace_id", "default"),
+                                     session_id, device_label, request.remote_addr)
+        approval = "pending"
     access_token, refresh_token = service.create_tokens(
         user_id=user_id,
         username=user_row.get("username", username),
@@ -415,6 +455,7 @@ def api_login() -> tuple[Response, int]:
             {
                 "success": True,
                 "data": {
+                    "approval": approval,
                     "access_token": access_token,
                     "refresh_token": refresh_token,
                     "expires_in": service.access_token_expiry,
@@ -890,7 +931,16 @@ def api_refresh() -> tuple[Response, int]:
             401,
         )
 
-    access_token, _ = get_jwt_service().create_tokens(
+    from app.services import login_approval
+
+    state = login_approval.session_state(_get_auth_db().db_path, payload.get("sid"))
+    if state in ("ended", "denied"):
+        return (
+            jsonify({"success": False, "error": {
+                "code": "SESSION_REVOKED", "message": "Signed out. Sign in again."}}),
+            401,
+        )
+    access_token, new_refresh = get_jwt_service().create_tokens(
         user_id=payload.get("user_id", 1),
         username=payload.get("username", "admin"),
         role=payload.get("role", "unassigned"),
@@ -904,6 +954,8 @@ def api_refresh() -> tuple[Response, int]:
                 "success": True,
                 "data": {
                     "access_token": access_token,
+                    # Sliding: a sign-in in use stays alive until the user signs out.
+                    "refresh_token": new_refresh,
                     "expires_in": get_jwt_service().access_token_expiry,
                     "token_type": "Bearer",
                 },
@@ -911,6 +963,16 @@ def api_refresh() -> tuple[Response, int]:
         ),
         200,
     )
+
+
+@auth_blueprint.route("/api/v1/auth/approval", methods=["GET"], endpoint="api_login_approval")
+@require_jwt_auth
+def api_login_approval() -> tuple[Response, int]:
+    """The phone polls this while waiting for the owner to approve the sign-in."""
+    from app.services import login_approval
+
+    user = getattr(request, "user", None) or {}
+    return jsonify({"success": True, "data": login_approval.my_state(_get_auth_db().db_path, user.get("sid"))}), 200
 
 
 @auth_blueprint.route("/api/v1/auth/logout", methods=["POST"], endpoint="api_logout")
@@ -932,6 +994,9 @@ def api_logout() -> tuple[Response, int]:
                 )
             except Exception:
                 pass
+            from app.services import login_approval
+
+            login_approval.end_session(_get_auth_db().db_path, str(payload.get("sid")))
     return (
         jsonify({"success": True, "data": {"message": "Logged out successfully"}}),
         200,
@@ -954,7 +1019,15 @@ def login() -> str | Response:
         # configured, which is exactly the kind of inconsistency that
         # caused this session-based login to silently authenticate
         # against the wrong database in testing.
+        _blocked = False
         if _get_auth_db().authenticate_user(username, password):
+            from app.services import member_access
+
+            _row = get_user_row(username)
+            _blocked = bool(_row) and member_access.is_blocked(_get_auth_db().db_path, int(_row.get("id") or 0))
+        if _blocked:
+            error = "Your company has switched off this login. Contact your company owner."
+        elif _get_auth_db().authenticate_user(username, password):
             user_row = get_user_row(username)
             session["authenticated"] = True
             session["username"] = username
@@ -971,8 +1044,20 @@ def login() -> str | Response:
             session["is_workspace_owner"] = bool(
                 user_row.get("is_workspace_owner") if user_row else False
             )
+            from app.services import login_approval
+
+            session["sid"] = None
+            if user_row and login_approval.needs_approval(
+                _get_auth_db().db_path, int(user_row.get("id")), bool(user_row.get("is_workspace_owner"))
+            ):
+                sid = uuid.uuid4().hex
+                session["sid"] = sid
+                login_approval.request_login(_get_auth_db().db_path, int(user_row.get("id")),
+                                             user_row.get("workspace_id", "default"), sid,
+                                             "Web browser", request.remote_addr)
             return redirect(request.args.get("next") or "/")
-        error = "Invalid username or password"
+        else:
+            error = "Invalid username or password"
 
     return render_template("index.html", error=error)
 

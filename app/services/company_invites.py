@@ -12,6 +12,7 @@ stored without the dash. Each code has a role, a use limit and an expiry.
 from __future__ import annotations
 
 import secrets
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -327,6 +328,7 @@ def _row_to_dict(row: sqlite3.Row, now: datetime) -> dict[str, Any]:
         "expires_at": row["expires_at"],
         "revoked_at": row["revoked_at"],
         "status": status,
+        "features": json.loads(row["features"]) if "features" in row.keys() and row["features"] else None,
     }
 
 
@@ -337,8 +339,12 @@ def create_invite(
     max_uses: int = 1,
     expires_in_days: int = 7,
     note: str | None = None,
+    features: list[str] | None = None,
 ) -> dict[str, Any]:
+    from app.services import member_access
+
     role = (role or "").strip()
+    feats = member_access.clean_features(features)  # None = every feature
     if role not in allowed_roles_for(user):
         raise ValueError(f"role must be one of: {', '.join(allowed_roles_for(user))}")
     max_uses = max(1, min(int(max_uses or 1), MAX_USES_LIMIT))
@@ -359,13 +365,14 @@ def create_invite(
         for _ in range(10):
             code = "".join(secrets.choice(_ALPHABET) for _ in range(CODE_LENGTH))
             try:
+                member_access.ensure_schema(conn)
                 cur = conn.execute(
                     """INSERT INTO company_invites
                        (code, workspace_id, role, max_uses, uses, note,
-                        created_by_user_id, created_at, expires_at)
-                       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                        created_by_user_id, created_at, expires_at, features)
+                       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
                     (code, workspace_id, role, max_uses, (note or "").strip() or None,
-                     user.get("user_id"), now.isoformat(), expires_at),
+                     user.get("user_id"), now.isoformat(), expires_at, json.dumps(feats)),
                 )
                 conn.commit()
                 row = conn.execute(
@@ -457,7 +464,9 @@ def claim_invite(db, code: str) -> dict[str, Any]:
         if cur.rowcount != 1:
             raise ValueError("This invite code is invalid, expired or already used")
         row = conn.execute("SELECT * FROM company_invites WHERE code = ?", (norm,)).fetchone()
-    return {"id": row["id"], "workspace_id": row["workspace_id"], "role": row["role"]}
+    feats = row["features"] if "features" in row.keys() else None
+    return {"id": row["id"], "workspace_id": row["workspace_id"], "role": row["role"],
+            "features": json.loads(feats) if feats else None}
 
 
 def release_invite(db, invite_id: int) -> None:

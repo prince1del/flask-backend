@@ -1,6 +1,7 @@
-/* Plan (7-day trial + activation codes), super-admin code desk, company invites,
- * and "join a company with an invite code" sign-up. Talks only to
- * /api/v1/subscription/*, /api/v1/invites/* and /api/v1/signup. */
+/* Plan (7-day trial + activation codes + online payment), super-admin code desk
+ * and payments/prices, company invites, and "join a company with an invite code"
+ * sign-up. Talks to /api/v1/subscription/*, /api/v1/billing/*, /api/v1/invites/*
+ * and /api/v1/signup. Payment happens on the hosted page /pay/<token>. */
 (function () {
   'use strict';
 
@@ -172,6 +173,99 @@
     return wrap;
   }
 
+  // ---------- Online payment (Razorpay) ----------
+
+  function rupees(v) {
+    return `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  }
+
+  function productLabel(p) {
+    if (p.kind === 'plan') return `${p.days} days`;
+    return `+${p.seats} team member${p.seats === 1 ? '' : 's'}`;
+  }
+
+  /** Opens the pay page and waits until it is paid (or 10 minutes pass).
+   *  autoRenew = Razorpay subscription (UPI Autopay / card mandate). */
+  async function buy(productCode, quantity, onPaid, autoRenew) {
+    const order = autoRenew
+      ? await api('/api/v1/billing/subscriptions', { method: 'POST', body: { product_code: productCode } })
+      : await api('/api/v1/billing/orders', { method: 'POST', body: { product_code: productCode, quantity } });
+    const win = window.open(order.pay_path, 'nexora-pay', 'width=480,height=720');
+    if (!win) window.location.href = order.pay_path;
+    toast('Complete the payment in the new window…', 'info');
+    const started = Date.now();
+    const timer = setInterval(async () => {
+      try {
+        let paid = false;
+        if (autoRenew) {
+          const list = await api('/api/v1/billing/subscriptions');
+          paid = (list.subscriptions || []).some((x) => x.token === order.token && x.charges > 0);
+        } else {
+          const o = await api(`/api/v1/billing/orders/${encodeURIComponent(order.token)}`);
+          paid = o.status === 'paid';
+        }
+        if (paid) {
+          clearInterval(timer);
+          toast('Payment received — thank you!', 'success');
+          onPaid && onPaid();
+        } else if (Date.now() - started > 10 * 60 * 1000) {
+          clearInterval(timer);
+        }
+      } catch (e) { /* keep waiting */ }
+    }, 3000);
+  }
+
+  /** "Buy online" block for one kind of product, or null when payments are off. */
+  async function buyBlock(kind, onPaid) {
+    let data;
+    try { data = await api('/api/v1/billing/products'); } catch (e) { return null; }
+    const items = (data.products || []).filter((p) => p.kind === kind);
+    if (!data.enabled || !items.length) return null;
+    let running = [];
+    if (kind === 'plan') {
+      try {
+        running = ((await api('/api/v1/billing/subscriptions')).subscriptions || [])
+          .filter((x) => ['active', 'authenticated', 'pending', 'halted'].includes(x.status));
+      } catch (e) { running = []; }
+    }
+    const box = document.createElement('div');
+    box.style.cssText = 'margin:12px 0;padding:12px;border-radius:12px;border:1px solid rgba(148,163,184,.3);';
+    box.innerHTML = `<div style="font-weight:600;margin-bottom:8px;">${kind === 'plan' ? 'Buy online' : 'Add team members online'}
+        ${data.mode === 'test' ? '<small style="color:#f59e0b;">(test mode)</small>' : ''}</div>
+      ${running.map((x) => `<div style="padding:8px 10px;margin-bottom:8px;border-radius:10px;background:rgba(34,197,94,.12);">
+        <strong>Auto-renew ${x.cancel_at_end ? 'stops after this period' : 'on'}</strong> · ${esc(x.product_name)} · ${rupees(x.amount)} / ${esc(x.period)}
+        ${x.status === 'halted' ? '<br><small style="color:#f87171;">Last charge failed — update your payment method in the Razorpay mail.</small>' : ''}
+        ${x.cancel_at_end ? '' : `<button type="button" class="btn btn-secondary" data-stop="${esc(x.token)}" style="padding:2px 10px;margin-left:8px;">Stop auto-renew</button>`}
+      </div>`).join('')}
+      ${items.map((p) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap;">
+        <span>${esc(p.name)} <small style="color:#94a3b8;">· ${esc(productLabel(p))}</small></span>
+        <span style="display:flex;gap:6px;">
+          <button type="button" class="btn btn-primary" data-buy="${esc(p.code)}" style="padding:4px 14px;">Pay ${rupees(p.price)}</button>
+          ${p.renewable && !running.some((x) => !x.cancel_at_end) ? `<button type="button" class="btn btn-secondary" data-renew="${esc(p.code)}" style="padding:4px 14px;">Auto-renew ${rupees(p.price)}/${esc(p.period_label || '')}</button>` : ''}
+        </span>
+      </div>`).join('')}
+      <p class="error" data-err style="margin:6px 0 0;"></p>`;
+    box.addEventListener('click', async (ev) => {
+      const code = ev.target?.getAttribute?.('data-buy');
+      const renew = ev.target?.getAttribute?.('data-renew');
+      const stop = ev.target?.getAttribute?.('data-stop');
+      if (!code && !renew && !stop) return;
+      const err = box.querySelector('[data-err]');
+      err.textContent = '';
+      try {
+        if (stop) {
+          if (!confirm('Stop auto-renew? The time already paid stays.')) return;
+          await api(`/api/v1/billing/subscriptions/${encodeURIComponent(stop)}/cancel`, { method: 'POST' });
+          toast('Auto-renew will stop after the current period', 'success');
+          onPaid && onPaid();
+        } else {
+          await buy(code || renew, 1, onPaid, !!renew);
+        }
+      } catch (e) { err.textContent = e.message; }
+    });
+    return box;
+  }
+
   function showLock() {
     if (document.getElementById('nx-plan-lock')) return;
     const el = document.createElement('div');
@@ -181,7 +275,8 @@
     el.innerHTML = `
       <div class="modal-content" style="max-width:460px;">
         <h2 style="margin-top:0;">Your NEXORA access has ended</h2>
-        <p style="color:#94a3b8;">Your free trial or plan is over. Enter the activation code you got from NEXORA to continue. Your data is safe.</p>
+        <p style="color:#94a3b8;">Your free trial or plan is over. Buy a plan online or enter an activation code from NEXORA. Your data is safe.</p>
+        <div data-buy></div>
         <div data-form></div>
         <button type="button" class="btn btn-secondary" data-logout style="margin-top:6px;">Logout</button>
       </div>`;
@@ -189,6 +284,8 @@
       el.remove();
       window.location.reload();
     }));
+    buyBlock('plan', () => { el.remove(); window.location.reload(); })
+      .then((b) => { if (b) el.querySelector('[data-buy]').appendChild(b); });
     el.querySelector('[data-logout]').addEventListener('click', () => {
       el.remove();
       if (typeof logout === 'function') logout();
@@ -207,9 +304,13 @@
         : `Active — valid till ${fmtDate(st.ends_at)} (${st.days_left} days left)`,
       expired: `Expired on ${fmtDate(st.ends_at)}`,
     }[st.status] || 'Unknown';
-    const el = modal('nx-plan-modal', 'My plan', `<p><strong>${esc(label)}</strong></p>`);
+    const el = modal('nx-plan-modal', 'My plan', `<p><strong>${esc(label)}</strong></p>
+      ${st.via_company ? '<p style="color:#94a3b8;margin-top:-6px;">Your company\'s plan</p>' : ''}`);
     if (st.status !== 'unlimited') {
-      el.querySelector('[data-body]').appendChild(redeemForm(() => { el.remove(); refresh(); }));
+      const body = el.querySelector('[data-body]');
+      const b = await buyBlock('plan', () => { el.remove(); refresh(); openPlan(); });
+      if (b) body.appendChild(b);
+      body.appendChild(redeemForm(() => { el.remove(); refresh(); }));
     }
   }
 
@@ -230,6 +331,7 @@
         <button type="submit" class="btn btn-primary" style="grid-column:1/-1;">Generate code</button>
       </form>
       <div data-new></div>
+      <button type="button" class="btn btn-secondary" data-billing style="margin-top:12px;">Online payments & prices</button>
       <h3 style="margin-top:18px;">Team requests</h3><div data-teams>Loading…</div>
       <h3 style="margin-top:18px;">Logins</h3><div data-users>Loading…</div>
       <h3 style="margin-top:18px;">Recent codes</h3><div data-codes>Loading…</div>`);
@@ -270,6 +372,7 @@
       const code = t?.getAttribute?.('data-revoke');
       const allow = t?.getAttribute?.('data-allow');
       const decline = t?.getAttribute?.('data-decline');
+      if (t?.hasAttribute?.('data-billing')) { openBilling(); return; }
       try {
         if (code) {
           await api(`/api/v1/subscription/codes/${encodeURIComponent(code)}/revoke`, { method: 'POST' });
@@ -310,6 +413,97 @@
     load();
   }
 
+  // ---------- Super admin: online payments (Razorpay keys, prices, sales) ----------
+
+  async function openBilling() {
+    const el = modal('nx-billing-desk', 'Online payments & prices', '<p>Loading…</p>');
+    const body = el.querySelector('[data-body]');
+
+    async function load() {
+      try {
+        const [cfg, pr, sales] = await Promise.all([
+          api('/api/v1/billing/config'), api('/api/v1/billing/admin/products'), api('/api/v1/billing/admin/sales'),
+        ]);
+        body.innerHTML = `
+          <h3 style="margin-top:0;">Razorpay keys</h3>
+          <p style="color:#94a3b8;margin-top:0;">Razorpay Dashboard → Account & Settings → API Keys. Start with Test Mode keys.
+            Status: <strong>${cfg.configured ? `connected (${esc(cfg.mode)} mode)` : 'not connected'}</strong></p>
+          <form data-keys style="display:grid;gap:8px;">
+            <input name="key_id" placeholder="Key ID (rzp_test_… or rzp_live_…)" value="${esc(cfg.key_id || '')}" autocomplete="off">
+            <input name="key_secret" type="password" placeholder="${cfg.key_secret ? `Key secret saved ${esc(cfg.key_secret)} — type to replace` : 'Key secret'}" autocomplete="new-password">
+            <input name="webhook_secret" type="password" placeholder="${cfg.webhook_secret ? `Webhook secret saved ${esc(cfg.webhook_secret)} — type to replace` : 'Webhook secret'}" autocomplete="new-password">
+            <small style="color:#94a3b8;">Webhook URL for Razorpay: <code>${esc(location.origin)}/api/v1/billing/webhook</code> · events: order.paid, payment.captured</small>
+            <button type="submit" class="btn btn-primary">Save keys</button>
+          </form>
+          <h3 style="margin-top:18px;">Plans & prices</h3>
+          <table style="width:100%;font-size:0.85rem;">
+            <tr><th align="left">Name</th><th align="left">Gives</th><th align="left">Price</th><th align="left">On sale</th></tr>
+            ${pr.products.map((p) => `<tr><td>${esc(p.name)}<br><small style="font-family:monospace;">${esc(p.code)}</small></td>
+              <td>${esc(productLabel(p))}${p.renewable ? ' · auto-renew' : ''}</td><td>${rupees(p.price)}</td>
+              <td><button type="button" class="btn btn-secondary" data-toggle='${esc(JSON.stringify(p))}' style="padding:2px 8px;">${p.active ? 'Yes — stop' : 'No — start'}</button></td></tr>`).join('') || '<tr><td colspan="4">No plans yet.</td></tr>'}
+          </table>
+          <form data-product style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+            <input name="name" placeholder="Name, e.g. Monthly plan" required>
+            <input name="code" placeholder="Code, e.g. plan_monthly" required>
+            <select name="kind"><option value="plan">Plan (days of access)</option><option value="seats">Team members (extra logins)</option></select>
+            <input name="amount" type="number" min="1" placeholder="Days or members" required>
+            <input name="price" type="number" min="1" step="0.01" placeholder="Price ₹ (incl. GST)" required>
+            <label style="display:flex;align-items:center;gap:6px;"><input name="renewable" type="checkbox"> Auto-renew allowed (plans only)</label>
+            <button type="submit" class="btn btn-primary">Add / update</button>
+          </form>
+          <h3 style="margin-top:18px;">Sales</h3>
+          <p style="margin-top:0;">This month: <strong>${rupees(sales.month_revenue)}</strong> (${sales.month_orders} orders) · All time: <strong>${rupees(sales.revenue)}</strong> (${sales.paid_orders})</p>
+          ${sales.orders.length ? `<table style="width:100%;font-size:0.85rem;">
+            <tr><th align="left">When</th><th align="left">Login</th><th align="left">Bought</th><th align="left">Amount</th><th align="left">Status</th></tr>
+            ${sales.orders.map((o) => `<tr><td>${esc(fmtDate(o.paid_at || o.created_at))}</td><td>${esc(o.username || '')}</td>
+              <td>${esc(o.product_name)}${o.quantity > 1 ? ` × ${o.quantity}` : ''}</td><td>${rupees(o.amount)}</td><td>${esc(o.status)}</td></tr>`).join('')}
+            </table>` : '<p>No orders yet.</p>'}
+          <h3 style="margin-top:18px;">Auto-renewals</h3>
+          ${(sales.subscriptions || []).length ? `<table style="width:100%;font-size:0.85rem;">
+            <tr><th align="left">Login</th><th align="left">Plan</th><th align="left">Charges</th><th align="left">Status</th></tr>
+            ${sales.subscriptions.map((x) => `<tr><td>${esc(x.username || '')}</td><td>${esc(x.product_name)} · ${rupees(x.amount)}/${esc(x.period)}</td>
+              <td>${x.charges}</td><td>${esc(x.status)}${x.cancel_at_end ? ' (stopping)' : ''}</td></tr>`).join('')}
+            </table>` : '<p>No auto-renewals yet.</p>'}`;
+      } catch (e) {
+        body.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+      }
+    }
+
+    body.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = new FormData(ev.target);
+      try {
+        if (ev.target.hasAttribute('data-keys')) {
+          await api('/api/v1/billing/config', { method: 'POST', body: Object.fromEntries(f.entries()) });
+          toast('Razorpay keys saved', 'success');
+        } else if (ev.target.hasAttribute('data-product')) {
+          const kind = f.get('kind');
+          await api('/api/v1/billing/admin/products', {
+            method: 'POST',
+            body: {
+              name: f.get('name'), code: f.get('code'), kind, price: Number(f.get('price')),
+              days: kind === 'plan' ? Number(f.get('amount')) : 0,
+              seats: kind === 'seats' ? Number(f.get('amount')) : 0,
+              renewable: kind === 'plan' && f.get('renewable') === 'on',
+            },
+          });
+          toast('Saved', 'success');
+        }
+        load();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+    body.addEventListener('click', async (ev) => {
+      const raw = ev.target?.getAttribute?.('data-toggle');
+      if (!raw) return;
+      const p = JSON.parse(raw);
+      try {
+        await api('/api/v1/billing/admin/products', { method: 'POST', body: { ...p, active: !p.active } });
+        load();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+    load();
+  }
+
   // ---------- Company admin: invite codes ----------
 
   async function openInvites() {
@@ -319,7 +513,9 @@
 
     async function load(newInvite) {
       try {
-        const [inv, mem] = await Promise.all([api('/api/v1/invites'), api('/api/v1/invites/members')]);
+        const [inv, team] = await Promise.all([api('/api/v1/invites'), api('/api/v1/invites/team').catch(() => null)]);
+        const catalog = team?.features || [];
+        const mem = { members: team?.members || [] };
         if (!inv.can_manage) { body.innerHTML = '<p>Only your company owner or admin can invite people.</p>'; return; }
         if (!inv.plan_active) { body.innerHTML = '<p>Activate your account with a NEXORA code to add your team.</p>'; return; }
         if (!inv.can_create) {
@@ -333,7 +529,10 @@
               <div class="form-group"><label>People to add</label><input name="members" type="number" min="1" max="500" value="${req ? req.members : 1}"></div>
               <div class="form-group"><label>Note (optional)</label><input name="note" placeholder="e.g. 3 salesmen in Delhi" value="${esc(req?.note || '')}"></div>
               <button type="submit" class="btn btn-primary" style="grid-column:1/-1;">${req ? 'Update request' : 'Request team access'}</button>
-            </form>`;
+            </form>
+            <h3 style="margin-top:18px;">Team</h3>
+            ${teamHtml(mem.members, catalog)}`;
+          buyBlock('seats', () => load()).then((b) => { if (b) body.insertBefore(b, body.querySelector('[data-request]')); });
           body.querySelector('[data-request]').addEventListener('submit', async (ev) => {
             ev.preventDefault();
             const f = new FormData(ev.target);
@@ -350,13 +549,20 @@
         }
         const placesLeft = inv.seats_left == null ? '' : ` You can add <strong>${inv.seats_left}</strong> more.`;
         body.innerHTML = `
-          <p style="color:#94a3b8;margin-top:0;">Share a code with a teammate. They choose “Join with company code” on the login screen and join <strong>${esc(inv.company_name || 'your company')}</strong>. Each new member gets their own 7-day free trial.${placesLeft}</p>
+          <p style="color:#94a3b8;margin-top:0;">Share a code with a teammate. They choose “Join with company code” on the login screen and join <strong>${esc(inv.company_name || 'your company')}</strong>. New members use your company's plan.${placesLeft}</p>
           <form data-make style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div class="form-group"><label>Role</label><select name="role">
               ${inv.roles.map((r) => `<option value="${esc(r)}">${esc(ROLE_LABELS[r] || r)}</option>`).join('')}</select></div>
             <div class="form-group"><label>How many people</label><input name="max_uses" type="number" min="1" max="100" value="1"></div>
             <div class="form-group"><label>Code expires in (days)</label><input name="expires_in_days" type="number" min="1" max="30" value="7"></div>
             <div class="form-group"><label>Note (optional)</label><input name="note" placeholder="e.g. Rahul — Delhi"></div>
+            <div style="grid-column:1/-1;">
+              <label style="font-weight:600;">What can this person open?</label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:6px;">
+                ${catalog.map((f) => `<label style="display:flex;gap:6px;align-items:center;font-size:0.9rem;">
+                  <input type="checkbox" name="feature" value="${esc(f.key)}" checked> ${esc(f.label)}</label>`).join('')}
+              </div>
+            </div>
             <button type="submit" class="btn btn-primary" style="grid-column:1/-1;">Create invite code</button>
           </form>
           ${newInvite ? `<div style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(34,197,94,.12);">
@@ -369,8 +575,8 @@
               <td>${x.uses}/${x.max_uses}${x.joined.length ? ` · ${x.joined.map((j) => esc(j.username)).join(', ')}` : ''}</td><td>${esc(x.status)}</td>
               <td>${x.status === 'active' ? `<button type="button" class="btn btn-secondary" data-revoke="${esc(x.code)}" style="padding:2px 8px;">Stop</button>` : ''}</td></tr>`).join('')}
             </table>` : '<p>No invite codes yet.</p>'}
-          <h3 style="margin-top:18px;">Members</h3>
-          <ul style="margin:0;padding-left:18px;">${mem.members.map((m) => `<li>${esc(m.full_name || m.username)} <small>(${esc(m.username)} · ${esc(ROLE_LABELS[m.role] || m.role)})</small></li>`).join('')}</ul>`;
+          <h3 style="margin-top:18px;">Team</h3>
+          ${teamHtml(mem.members, catalog)}`;
         body.querySelector('[data-make]').addEventListener('submit', async (ev) => {
           ev.preventDefault();
           const f = new FormData(ev.target);
@@ -382,6 +588,7 @@
                 max_uses: Number(f.get('max_uses') || 1),
                 expires_in_days: Number(f.get('expires_in_days') || 7),
                 note: String(f.get('note') || '').trim() || null,
+                features: f.getAll('feature'),
               },
             });
             load(created);
@@ -394,13 +601,51 @@
 
     body.addEventListener('click', async (ev) => {
       const code = ev.target?.getAttribute?.('data-revoke');
-      if (!code) return;
+      const block = ev.target?.getAttribute?.('data-block');
+      const save = ev.target?.getAttribute?.('data-save-access');
       try {
-        await api(`/api/v1/invites/${encodeURIComponent(code)}/revoke`, { method: 'POST' });
+        if (code) {
+          await api(`/api/v1/invites/${encodeURIComponent(code)}/revoke`, { method: 'POST' });
+        } else if (block) {
+          const turnOff = ev.target.getAttribute('data-blocked') !== '1';
+          if (turnOff && !confirm('Switch off this login? They will be signed out at once.')) return;
+          await api(`/api/v1/invites/members/${block}/access`, { method: 'POST', body: { blocked: turnOff } });
+          toast(turnOff ? 'Login switched off' : 'Login switched on', 'success');
+        } else if (save) {
+          const card = body.querySelector(`[data-member="${save}"]`);
+          const features = [...card.querySelectorAll('input[name=mfeature]:checked')].map((x) => x.value);
+          await api(`/api/v1/invites/members/${save}/access`, { method: 'POST', body: { features } });
+          toast('Access saved', 'success');
+        } else {
+          return;
+        }
         load();
       } catch (e) { toast(e.message, 'error'); }
     });
     load();
+  }
+
+  /** One card per teammate: features (tick to open) and switch the login off/on. */
+  function teamHtml(members, catalog) {
+    if (!members.length) return '<p>No members yet.</p>';
+    return members.map((m) => {
+      const fixed = m.is_owner || m.is_me;
+      const feats = m.features; // null = everything
+      return `<div data-member="${m.id}" style="padding:10px 12px;margin:8px 0;border-radius:12px;border:1px solid rgba(148,163,184,.3);${m.blocked ? 'opacity:.75;' : ''}">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+          <div><strong>${esc(m.full_name || m.username)}</strong>
+            <small style="color:#94a3b8;">${esc(m.username)} · ${esc(ROLE_LABELS[m.role] || m.role || '')}${m.is_owner ? ' · Owner' : ''}${m.is_me ? ' · You' : ''}</small>
+            ${m.blocked ? '<br><small style="color:#f87171;">Login switched off</small>' : ''}</div>
+          ${fixed ? '' : `<button type="button" class="btn ${m.blocked ? 'btn-primary' : 'btn-secondary'}" data-block="${m.id}" data-blocked="${m.blocked ? 1 : 0}" style="padding:2px 10px;">${m.blocked ? 'Switch on' : 'Switch off'}</button>`}
+        </div>
+        ${fixed ? '<small style="color:#94a3b8;">Every feature</small>' : `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:8px;">
+            ${catalog.map((f) => `<label style="display:flex;gap:6px;align-items:center;font-size:0.85rem;">
+              <input type="checkbox" name="mfeature" value="${esc(f.key)}" ${!feats || feats.includes(f.key) ? 'checked' : ''}> ${esc(f.label)}</label>`).join('')}
+          </div>
+          <button type="button" class="btn btn-secondary" data-save-access="${m.id}" style="padding:2px 10px;margin-top:6px;">Save access</button>`}
+      </div>`;
+    }).join('');
   }
 
   // ---------- Join a company with an invite code (sign-up) ----------
@@ -465,12 +710,12 @@
           p.value = payload.password;
           await login();
         }
-        toast(`Welcome to ${data.data.company_name || 'NEXORA'} — 7-day free trial started`, 'success');
+        toast(`Welcome to ${data.data.company_name || 'NEXORA'}`, 'success');
       } catch (e) {
         errEl.textContent = e.message;
       }
     });
   }
 
-  window.nxSubscription = { refresh, showLock, openPlan, openCodeDesk, openInvites, openJoin };
+  window.nxSubscription = { refresh, showLock, openPlan, openCodeDesk, openInvites, openJoin, openBilling };
 })();
