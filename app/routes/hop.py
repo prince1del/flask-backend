@@ -2694,7 +2694,7 @@ def party_transaction_links(txn_id: int):
         "links": links,
         "convert_to": [{"txn_type": k, "label": hop_money.LABELS[k]} for k in hop_money.CONVERT_TO.get(int(t[0]), ())]
         if not t[1] else [],
-        "converted_to_txn_id": t[1], "linked_from_txn_id": t[2],
+        "converted_to_txn_id": t[1], "linked_from_txn_id": t[2], "txn_type": int(t[0] or 0),
     }})
 
 
@@ -2718,6 +2718,49 @@ def ai_read_bill():
             out = hop_ai.read_bill(conn, _ws(), f.read(), mime, user_id=int(user.get("user_id") or 0))
     except ValueError as exc:
         return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/gst-files/<kind>", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def gst_files(kind: str):
+    """kind = einvoice | eway. Body: {txn_ids: [...], transport: {...}} → government JSON + problems to fix."""
+    ensure_hop_schema(_db_path())
+    from app import hop_einvoice
+
+    body = _payload()
+    ids = [int(x) for x in (body.get("txn_ids") or []) if str(x).isdigit()][:100]
+    if not ids:
+        return _json_error("Choose at least one sale invoice")
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if kind == "einvoice":
+                out = hop_einvoice.einvoice_json(conn, _ws(), ids)
+            elif kind == "eway":
+                out = hop_einvoice.eway_json(conn, _ws(), ids, body.get("transport") or {})
+            else:
+                return _json_error("Unknown file type", "NOT_FOUND", 404)
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/gst-refs", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def gst_refs(txn_id: int):
+    """Save IRN / Ack no / Ack date / E-Way Bill no after uploading on the government portal."""
+    ensure_hop_schema(_db_path())
+    from app import hop_einvoice
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_einvoice.save_refs(conn, _ws(), txn_id, _payload())
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
     return jsonify({"success": True, "data": out})
 
 

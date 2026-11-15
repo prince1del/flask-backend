@@ -431,6 +431,14 @@
         `<button type="button" class="nx-btn" onclick="hopMoneyConvert(${partyTxnId},${c.txn_type})">Convert to ${esc(c.label)}</button>`).join('');
       foot.insertBefore(wrap, foot.firstChild);
     }
+    if (foot && Number(info.txn_type) === 1) {
+      const g = document.createElement('span');
+      g.className = 'hop-money-gst';
+      g.innerHTML = `<button type="button" class="nx-btn" onclick="hopMoneyGstFile(${partyTxnId},'einvoice')">E-Invoice file</button>
+        <button type="button" class="nx-btn" onclick="hopMoneyGstFile(${partyTxnId},'eway')">E-Way Bill file</button>
+        <button type="button" class="nx-btn" onclick="hopMoneyGstRefs(${partyTxnId})">Save IRN / E-Way no</button>`;
+      foot.insertBefore(g, foot.firstChild);
+    }
     if (body && info.links?.length) {
       const rows = info.links.map((l) => Number(l.payment_txn_id) === Number(partyTxnId)
         ? `<tr><td>${esc(l.bill_number || '—')}</td><td>${esc((l.bill_date || '').slice(0, 10))}</td><td class="inv-num">${money(l.amount)}</td></tr>`
@@ -451,6 +459,44 @@
       if (typeof hopClosePartyTxnDetail === 'function') hopClosePartyTxnDetail();
       window.hopOpenManualDocFromDraft(draft);
     } catch (e) { toast(e?.message || 'Could not convert', 'err'); }
+  }
+
+  // ---------- GST portal files (E-Invoice / E-Way Bill JSON, no GSP account needed) ----------
+  async function gstFile(id, kind) {
+    let transport;
+    if (kind === 'eway') {
+      const vehicle = window.prompt('Vehicle number (for road transport)', '');
+      if (vehicle === null) return;
+      const km = window.prompt('Distance in km', '0');
+      transport = { mode: 'road', vehicle_no: vehicle, distance_km: Number(km || 0) };
+    }
+    try {
+      const out = await hopApi(`/api/v1/hop/gst-files/${kind}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txn_ids: [id], transport }),
+      });
+      const probs = out.problems || [];
+      if (probs.length && !window.confirm('Fix these before uploading:\n\n- ' + probs.join('\n- ') + '\n\nDownload the file anyway?')) return;
+      const blob = new Blob([JSON.stringify(out.json, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${kind === 'einvoice' ? 'einvoice' : 'ewaybill'}_${id}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast(kind === 'einvoice' ? 'Upload it on the e-invoice portal (Bulk Upload)' : 'Upload it on the e-way bill portal (Bulk Generation)');
+    } catch (e) { toast(e?.message || 'Could not make the file', 'err'); }
+  }
+
+  async function gstRefs(id) {
+    const irn = window.prompt('IRN (from the e-invoice portal)', '');
+    if (irn === null) return;
+    const eway = window.prompt('E-Way Bill no. (leave blank if none)', '') || '';
+    try {
+      await hopApi(`/api/v1/hop/party-transactions/${id}/gst-refs`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ irn, eway_bill_no: eway }),
+      });
+      toast('Saved');
+    } catch (e) { toast(e?.message || 'Could not save', 'err'); }
   }
 
   // ---------- Cash & Bank ----------
@@ -603,6 +649,8 @@
     hopMoneyPickCategory: pickCategory,
     hopMoneyReadBill: readBill,
     hopMoneyConvert: convert,
+    hopMoneyGstFile: gstFile,
+    hopMoneyGstRefs: gstRefs,
     hopRenderCashBank: renderCashBank,
     hopMoneyTab: (t) => { hopState.cbTab = t; openHopView('banking'); },
     hopMoneyPickAccount: (id) => { hopState.cbAccount = id || null; hopState.cbTab = 'accounts'; openHopView('banking'); },

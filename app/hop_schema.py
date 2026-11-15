@@ -1181,6 +1181,10 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("linked_from_txn_id", "INTEGER"),  # converted from (Estimate → Invoice …)
             ("converted_to_txn_id", "INTEGER"),
             ("expense_category_id", "INTEGER"),
+            ("irn", "TEXT"),                    # e-invoice IRN (saved after upload on the portal)
+            ("ack_no", "TEXT"),
+            ("ack_date", "TEXT"),
+            ("eway_bill_no", "TEXT"),
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
