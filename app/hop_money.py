@@ -178,7 +178,7 @@ def open_bills(conn: sqlite3.Connection, ws: str, payment_type: int, party_type:
     if not bill_type:
         return []
     rows = conn.execute(
-        """SELECT * FROM hop_party_transactions WHERE workspace_id=? AND txn_type=? AND party_type=? AND party_id=?
+        """SELECT * FROM hop_party_transactions WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND txn_type=? AND party_type=? AND party_id=?
            ORDER BY date(txn_date), id""", (ws, bill_type, party_type, int(party_id))).fetchall()
     mine: dict[int, float] = {}
     if payment_txn_id:
@@ -278,6 +278,8 @@ def _set_links(conn, ws, pay: dict[str, Any], allocations: list[dict[str, Any]])
         if amt <= EPS:
             continue
         bill = _row(conn, ws, int(a.get("txn_id") or a.get("bill_txn_id") or 0))
+        if bill and bill.get("deleted_at"):
+            raise ValueError(f"{bill.get('txn_number') or 'That bill'} is in the recycle bin")
         if not bill or int(bill.get("txn_type") or 0) != bill_type or bill.get("party_type") != pay.get("party_type") \
                 or int(bill.get("party_id") or 0) != int(pay.get("party_id") or 0):
             raise ValueError("A linked bill does not belong to this party")
@@ -301,6 +303,8 @@ def post_document(conn: sqlite3.Connection, ws: str, txn_id: int, payload: dict[
     t = _row(conn, ws, txn_id)
     if not t:
         return
+    if t.get("deleted_at"):
+        raise ValueError("This document is in the recycle bin. Restore it first.")
     ty = int(t.get("txn_type") or 0)
     total = _f(t.get("total_amount"))
 
@@ -534,7 +538,7 @@ def list_expense_categories(conn: sqlite3.Connection, ws: str) -> list[dict[str,
     rows = conn.execute(
         """SELECT c.id, c.name,
                   COALESCE((SELECT SUM(t.total_amount) FROM hop_party_transactions t
-                            WHERE t.workspace_id=c.workspace_id AND t.txn_type=7 AND t.expense_category_id=c.id), 0) AS total
+                            WHERE (t.deleted_at IS NULL OR trim(t.deleted_at)='') AND t.workspace_id=c.workspace_id AND t.txn_type=7 AND t.expense_category_id=c.id), 0) AS total
            FROM hop_expense_categories c WHERE c.workspace_id=? ORDER BY lower(c.name)""", (ws,)).fetchall()
     return [dict(r) for r in rows]
 

@@ -120,7 +120,16 @@ def restore_document(conn: sqlite3.Connection, ws: str, txn_id: int) -> dict[str
         "UPDATE hop_party_transactions SET deleted_at=NULL, deleted_by=NULL, updated_at=? WHERE id=?",
         (_now(), int(txn_id)),
     )
-    hop_money.post_document(conn, ws, int(txn_id), {})
+    # Re-post with the document's own saved payment (received now, account, cheque):
+    # is_update=True keeps those values instead of treating it as a brand-new empty document.
+    hop_money.post_document(conn, ws, int(txn_id), {}, is_update=True)
+    t = conn.execute("SELECT linked_from_txn_id, txn_type, txn_number FROM hop_party_transactions WHERE id=?",
+                     (int(txn_id),)).fetchone()
+    if t and t[0]:
+        conn.execute("UPDATE hop_party_transactions SET converted_to_txn_id=?, status_text=? WHERE workspace_id=? AND id=? "
+                     "AND (converted_to_txn_id IS NULL)",
+                     (int(txn_id), f"Converted to {hop_money.LABELS.get(int(t[1] or 0), 'document')} {t[2] or ''}".strip(),
+                      ws, int(t[0])))
     conn.commit()
     return {"party_txn_id": int(txn_id), "restored": True}
 
@@ -237,15 +246,16 @@ def add_loan_entry(conn: sqlite3.Connection, ws: str, loan_id: int, payload: dic
         (ws, int(loan_id), entry_date, entry_type, amount, _i(payload.get("bank_account_id")),
          _s(payload.get("notes")), _now()),
     )
-    # EMI / principal payment: optionally reduce cash via bank entry
-    bank_id = _i(payload.get("bank_account_id"))
-    if bank_id and entry_type in ("emi", "principal", "interest", "fee"):
-        from app import hop_books
-        hop_books.add_bank_entry(conn, ws, {
-            "account_id": bank_id, "entry_type": "out", "amount": amount,
-            "entry_date": entry_date, "notes": f"Loan {_s(loan['name'])} {entry_type}",
-            "reference": f"loan:{loan_id}",
-        })
+    # Money always moves: loan received goes into the account, EMI / interest / fees come out of it.
+    from app import hop_books, hop_money
+
+    bank_id = _i(payload.get("bank_account_id")) or hop_money.ensure_cash_account(conn, ws)
+    conn.execute("UPDATE hop_loan_entries SET bank_account_id=? WHERE id=?", (bank_id, int(cur.lastrowid)))
+    hop_books.add_bank_entry(conn, ws, {
+        "account_id": bank_id, "entry_type": "in" if entry_type == "disbursement" else "out", "amount": amount,
+        "entry_date": entry_date, "notes": f"Loan {_s(loan['name'])} {entry_type}",
+        "reference": f"loan:{loan_id}", "source": "loan",
+    })
     conn.commit()
     return {"id": int(cur.lastrowid), "loan_id": int(loan_id), "outstanding": loan_outstanding(conn, ws, int(loan_id))}
 
@@ -316,8 +326,18 @@ def create_fixed_asset(conn: sqlite3.Connection, ws: str, payload: dict) -> dict
             _s(payload.get("method")) or "slm", now, now,
         ),
     )
-    conn.commit()
     aid = int(cur.lastrowid)
+    paid_from = _i(payload.get("paid_from_account_id") or payload.get("paid_account_id"))
+    if paid_from:
+        from app import hop_books
+
+        conn.execute("UPDATE hop_fixed_assets SET paid_account_id=? WHERE id=?", (paid_from, aid))
+        hop_books.add_bank_entry(conn, ws, {
+            "account_id": paid_from, "entry_type": "out", "amount": cost,
+            "entry_date": _s(payload.get("purchase_date"))[:10] or date.today().isoformat(),
+            "notes": f"Asset bought: {name}", "reference": f"asset:{aid}", "source": "asset",
+        })
+    conn.commit()
     return next(x for x in list_fixed_assets(conn, ws, include_disposed=True) if x["id"] == aid)
 
 

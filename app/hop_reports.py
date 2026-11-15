@@ -69,9 +69,16 @@ def _doc_tax(conn, ws) -> dict[int, float]:
     return out
 
 
+FIXED_ASSETS, ACC_DEP = "Fixed Assets", "Accumulated Depreciation"
+
+
 def _account_kind(name: str, bank_names: set[str]) -> str:
     if name in bank_names or name in (CHQ_IN, IMPORT_CASH):
         return "cash"
+    if name in (FIXED_ASSETS, ACC_DEP):
+        return "asset"
+    if name.startswith("Loan: "):
+        return "liability"
     if name == DEBTORS or name == IN_GST:
         return "asset"
     if name in (CREDITORS, OUT_GST, CHQ_OUT):
@@ -217,14 +224,69 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
             post(day, money_acct(t, "out"), cr=total, t=t, kind=f"Expense · {cat}", party=party)
         # Estimates, orders, challans, proformas, journal entries: no postings.
 
+    # Loans: opening outstanding, money received, EMI / principal, interest & fees.
+    cash_name = next((a["name"] for a in banks.values() if a.get("account_type") == "cash"), "Cash in hand")
+    try:
+        loans = {int(l["id"]): l for l in _rows(conn, "SELECT * FROM hop_loan_accounts WHERE workspace_id=?", (ws,))}
+        loan_entries = _rows(conn, "SELECT * FROM hop_loan_entries WHERE workspace_id=? ORDER BY entry_date, id", (ws,))
+    except sqlite3.OperationalError:
+        loans, loan_entries = {}, []
+    for l in loans.values():
+        ob = _f(l.get("opening_balance"))
+        if ob:
+            post(OPENING, OBE, dr=ob, kind="Loan opening")
+            post(OPENING, f"Loan: {l['name']}", cr=ob, kind="Loan opening")
+    for le in loan_entries:
+        l = loans.get(int(le["loan_id"] or 0))
+        if not l:
+            continue
+        acct_name = banks.get(int(le.get("bank_account_id") or 0), {}).get("name") or cash_name
+        loan_acct, day, amt, et = f"Loan: {l['name']}", _d(le["entry_date"]), _f(le["amount"]), le["entry_type"]
+        t = {"id": None, "txn_number": f"loan:{l['id']}"}
+        if et == "disbursement":
+            post(day, acct_name, dr=amt, t=t, kind=f"Loan received · {l['name']}")
+            post(day, loan_acct, cr=amt, t=t, kind=f"Loan received · {l['name']}")
+        elif et in ("emi", "principal"):
+            post(day, loan_acct, dr=amt, t=t, kind=f"Loan repaid · {l['name']}")
+            post(day, acct_name, cr=amt, t=t, kind=f"Loan repaid · {l['name']}")
+        else:  # interest / fee
+            post(day, "Expense: Loan interest & fees", dr=amt, t=t, kind=f"Loan {et} · {l['name']}")
+            post(day, acct_name, cr=amt, t=t, kind=f"Loan {et} · {l['name']}")
+
+    # Fixed assets: cost (paid from an account, or brought in as owner capital) and depreciation.
+    try:
+        assets = _rows(conn, "SELECT * FROM hop_fixed_assets WHERE workspace_id=? AND COALESCE(is_active,1)=1", (ws,))
+        deps = _rows(conn, "SELECT * FROM hop_asset_depreciations WHERE workspace_id=?", (ws,))
+    except sqlite3.OperationalError:
+        assets, deps = [], []
+    for a in assets:
+        cost = _f(a.get("purchase_cost"))
+        day = _d(a.get("purchase_date")) or OPENING
+        paid = banks.get(int(a.get("paid_account_id") or 0), {}).get("name") if a.get("paid_account_id") else None
+        t = {"id": None, "txn_number": f"asset:{a['id']}"}
+        post(day, FIXED_ASSETS, dr=cost, t=t, kind=f"Asset bought · {a['name']}")
+        post(day, paid or OBE, cr=cost, t=t, kind=f"Asset bought · {a['name']}")
+    asset_ids = {int(a["id"]) for a in assets}
+    for d in deps:
+        if int(d["asset_id"] or 0) not in asset_ids:
+            continue
+        per = str(d.get("period") or "")[:7]
+        try:
+            y, m = int(per[:4]), int(per[5:7])
+            day = (date(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)).isoformat()
+        except ValueError:
+            day = OPENING
+        post(day, "Expense: Depreciation", dr=_f(d["amount"]), kind="Depreciation")
+        post(day, ACC_DEP, cr=_f(d["amount"]), kind="Depreciation")
+
     # Cash / bank movements not tied to a document's own posting.
     for e in _rows(conn, "SELECT * FROM hop_bank_entries WHERE workspace_id=? ORDER BY entry_date, id", (ws,)):
         src = (e.get("source") or "").lower()
         acct = banks.get(int(e["account_id"] or 0), {}).get("name") or "Bank"
         day, amt = _d(e.get("entry_date")), _f(e.get("amount"))
         t = {"id": e.get("party_txn_id"), "txn_number": e.get("reference") or ""}
-        if src == "doc":
-            continue  # already posted with its document
+        if src in ("doc", "loan", "asset") or str(e.get("reference") or "").startswith(("loan:", "asset:")):
+            continue  # posted with its document / loan / fixed asset
         if src == "cheque":
             if e["entry_type"] == "in":
                 post(day, acct, dr=amt, t=t, kind="Cheque deposited")
@@ -342,10 +404,11 @@ def balance_sheet(conn: sqlite3.Connection, ws: str, as_of: str = "") -> dict[st
     closing_stock = stock_value(conn, ws, as_of or None) if as_of else stock_value(conn, ws, None)
     pnl_all = sum(-(v) for n, v in bal.items() if _account_kind(n, banks) in ("income", "expense")) + closing_stock
     cheques_issued = -bal[CHQ_OUT]
-    from app import hop_phase3_ext
-
-    fa_assets, fa_contra = hop_phase3_ext.fixed_assets_for_balance_sheet(conn, ws)
-    loan_liab = hop_phase3_ext.loans_for_balance_sheet(conn, ws)
+    # Fixed assets and loans come from the ledger (so the sheet always balances).
+    fa_assets = [{"name": "Fixed Assets (cost)", "amount": _r2(bal[FIXED_ASSETS])}] if abs(bal[FIXED_ASSETS]) > 0.005 else []
+    fa_contra = [{"name": "Less: Accumulated Depreciation", "amount": _r2(bal[ACC_DEP])}] if abs(bal[ACC_DEP]) > 0.005 else []
+    loan_liab = [{"name": n.replace("Loan: ", "Loan — ", 1), "amount": _r2(-v)} for n, v in sorted(bal.items())
+                 if n.startswith("Loan: ") and abs(v) > 0.005]
     assets = [*cash,
               {"name": "Sundry Debtors (to receive)", "amount": debtors},
               {"name": "Advances to vendors", "amount": adv_to_vendor},

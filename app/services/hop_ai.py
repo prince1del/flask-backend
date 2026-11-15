@@ -187,7 +187,7 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         rows = conn.execute(
             """SELECT party_name, COUNT(*) AS bills, ROUND(SUM(balance_amount), 2) AS due,
                       MIN(date(txn_date)) AS oldest
-               FROM hop_party_transactions WHERE workspace_id=? AND txn_type=? AND balance_amount > 0.009
+               FROM hop_party_transactions WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND txn_type=? AND balance_amount > 0.009
                GROUP BY party_name ORDER BY due DESC""", (ws, txn_type)).fetchall()
         out = [dict(r) for r in rows]
         if party_name:
@@ -209,7 +209,7 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         return {"we_owe": rows[:25], "total": round(sum(r["due"] for r in rows), 2)}
     if what == "unpaid_bills":
         sql = """SELECT txn_label, txn_number, date(txn_date) AS date, party_name, total_amount, balance_amount, status_text
-                 FROM hop_party_transactions WHERE workspace_id=? AND txn_type IN (1, 2) AND balance_amount > 0.009
+                 FROM hop_party_transactions WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND txn_type IN (1, 2) AND balance_amount > 0.009
                  ORDER BY date(txn_date) LIMIT 60"""
         rows = [dict(r) for r in conn.execute(sql, (ws,)).fetchall()]
         if party_name:

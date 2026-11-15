@@ -1184,7 +1184,7 @@ def ensure_hop_schema(db_path: str | Path) -> None:
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
-        _ensure_column(conn, "hop_bank_entries", "source", "TEXT")  # NULL manual | doc | cheque
+        _ensure_column(conn, "hop_bank_entries", "source", "TEXT")  # NULL manual | doc | cheque | loan | asset
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS hop_payment_links (
@@ -1332,6 +1332,7 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             );
             """
         )
+        _ensure_column(conn, "hop_fixed_assets", "paid_account_id", "INTEGER")  # bank/cash it was paid from
 
         # Heal stale product_key / size so Delete & vendor matrix never drift after upgrades
         try:

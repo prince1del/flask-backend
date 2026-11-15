@@ -1852,7 +1852,7 @@ def party_transactions_collection():
         sql = """
             SELECT *
             FROM hop_party_transactions
-            WHERE workspace_id=?
+            WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=?
         """
         params: list[object] = [_ws()]
         if party_type:

@@ -102,3 +102,23 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 3. `ssh -i ~/.ssh/nexora_server ubuntu@3.7.170.77 'cd /opt/nexora && sudo -u nexora git pull -q --ff-only && sudo systemctl restart nexora'`
 4. Smoke test new endpoints (401 = exists), check `journalctl -u nexora` for errors.
 5. Update this file + docs/NEXORA_APP_MAP.md.
+
+
+## Review of Cursor's Phase 3 + phone work (2026-11-15 night, by Claude)
+Live on prod: `7191088` (Phase 1+2+3; backups taken before each deploy). `2eb1d1d` (GST
+warnings) is pushed but NOT deployed. Phone OTA `2.0.458953` published by Cursor.
+Bugs found (proved on a throwaway test DB) — **to fix next**:
+1. Deleted (recycle bin) documents still count: open bills for Payment-In, Ask Nexora
+   receivables, lists (`hop_money.open_bills`, `hop_ai.books_answer`, party-transactions
+   list route have no `deleted_at` filter).
+2. Restore from recycle bin loses "received now" + payment account
+   (`hop_phase3_ext.restore_document` calls `post_document(..., {})` as a new doc —
+   should re-post with the stored values, `is_update=True`).
+3. Loans make the Balance Sheet unbalanced (liability added outside the ledger; the
+   money side is posted as Capital/Drawings).
+4. Fixed assets make the Balance Sheet unbalanced (cost/depreciation added outside the
+   ledger, depreciation not in P&L profit).
+5. Phone: "Bank" payment mode sends no `payment_account_id` → server refuses the save.
+Smaller: phone "Received now" only on Sale Invoice / Purchase Bill (not returns) and is
+not pre-filled when editing; phone cheque tap deposits into the first bank with no choice
+or confirm, no Reopen; phone menu still says "Banking".

@@ -123,6 +123,8 @@ def add_bank_entry(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             _now(),
         ),
     )
+    if _s(payload.get("source")) in ("loan", "asset"):
+        conn.execute("UPDATE hop_bank_entries SET source=? WHERE id=?", (_s(payload.get("source")), cur.lastrowid))
     from app import hop_money
 
     if entry_type == "transfer" and not counterparty:
@@ -254,7 +256,7 @@ def gstr1_sales(conn: sqlite3.Connection, workspace_id: str, from_date: str = ""
     sql = """
         SELECT id, txn_number, txn_date, party_name, total_amount, balance_amount, status_text
         FROM hop_party_transactions
-        WHERE workspace_id=? AND txn_type=1
+        WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND txn_type=1
     """
     params: list[Any] = [workspace_id]
     if from_date:

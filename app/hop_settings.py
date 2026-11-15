@@ -300,7 +300,7 @@ def invoice_entry_warnings(
 
     if txn_number:
         q = """SELECT id, txn_number, party_name, txn_date FROM hop_party_transactions
-               WHERE workspace_id=? AND txn_type=? AND lower(trim(txn_number))=lower(?)"""
+               WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND txn_type=? AND lower(trim(txn_number))=lower(?)"""
         params: list[Any] = [ws, txn_type, txn_number]
         if exclude_id:
             q += " AND id!=?"

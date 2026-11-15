@@ -1647,7 +1647,7 @@ def _tax_invoice_base_row(conn: sqlite3.Connection, workspace_id: str, party_txn
         LEFT JOIN hop_invoices i
             ON i.workspace_id = t.workspace_id
            AND i.source_txn_id = t.source_txn_id
-        WHERE t.workspace_id = ?
+        WHERE (t.deleted_at IS NULL OR trim(t.deleted_at)='') AND t.workspace_id = ?
           AND t.id = ?
           AND t.txn_type = 1
         GROUP BY t.id
@@ -1755,7 +1755,7 @@ def _match_sale_invoice_for_commission(
         """
         SELECT id, source_txn_id, txn_number, txn_date, party_name, total_amount, balance_amount
         FROM hop_party_transactions
-        WHERE workspace_id = ?
+        WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id = ?
           AND txn_type = 1
           AND (
             txn_number = ?
@@ -1817,7 +1817,7 @@ def sync_commission_from_expenses(
         SELECT id, source_txn_id, txn_type, txn_number, txn_date, party_name, party_id, party_type,
                total_amount, notes, status_text
         FROM hop_party_transactions
-        WHERE workspace_id = ?
+        WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id = ?
           AND txn_type = 7
         ORDER BY id DESC
         """,
@@ -2224,7 +2224,7 @@ def list_tax_invoices_for_commission(
         LEFT JOIN hop_commission_entries e
             ON e.workspace_id = t.workspace_id
            AND e.source_txn_id = t.source_txn_id
-        WHERE t.workspace_id = ?
+        WHERE (t.deleted_at IS NULL OR trim(t.deleted_at)='') AND t.workspace_id = ?
           AND t.txn_type = 1
         ORDER BY date(t.txn_date) DESC, t.id DESC
         """,
@@ -2525,7 +2525,7 @@ def get_commission_worksheet(
             """
             SELECT txn_date, total_amount, balance_amount, status_text, txn_number
             FROM hop_party_transactions
-            WHERE workspace_id=? AND source_txn_id=? AND txn_type=7
+            WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND source_txn_id=? AND txn_type=7
             """,
             (workspace_id, int(exp_sid)),
         ).fetchone()
@@ -2693,7 +2693,7 @@ def list_invoices(conn: sqlite3.Connection, workspace_id: str, q: str | None = N
                  (
                    SELECT pt.party_name
                    FROM hop_party_transactions pt
-                   WHERE pt.workspace_id = i.workspace_id
+                   WHERE (pt.deleted_at IS NULL OR trim(pt.deleted_at)='') AND pt.workspace_id = i.workspace_id
                      AND pt.txn_number = i.invoice_no
                      AND pt.party_name IS NOT NULL
                      AND TRIM(pt.party_name) != ''
@@ -2721,7 +2721,7 @@ def list_invoices(conn: sqlite3.Connection, workspace_id: str, q: str | None = N
             OR p.project_name LIKE ?
             OR EXISTS (
               SELECT 1 FROM hop_party_transactions pt
-              WHERE pt.workspace_id = i.workspace_id
+              WHERE (pt.deleted_at IS NULL OR trim(pt.deleted_at)='') AND pt.workspace_id = i.workspace_id
                 AND pt.txn_number = i.invoice_no
                 AND pt.party_name LIKE ?
             )
@@ -2752,7 +2752,7 @@ def _repair_invoice_customer_links(conn: sqlite3.Connection, workspace_id: str) 
             """
             SELECT party_id
             FROM hop_party_transactions
-            WHERE workspace_id=? AND txn_number=? AND party_type='customer' AND party_id IS NOT NULL
+            WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND txn_number=? AND party_type='customer' AND party_id IS NOT NULL
             ORDER BY
               CASE WHEN LOWER(COALESCE(txn_label, '')) LIKE 'sale%' THEN 0 ELSE 1 END,
               id DESC
@@ -2784,7 +2784,7 @@ def get_invoice(conn: sqlite3.Connection, workspace_id: str, invoice_id: int) ->
                  (
                    SELECT pt.party_name
                    FROM hop_party_transactions pt
-                   WHERE pt.workspace_id = i.workspace_id
+                   WHERE (pt.deleted_at IS NULL OR trim(pt.deleted_at)='') AND pt.workspace_id = i.workspace_id
                      AND pt.txn_number = i.invoice_no
                      AND pt.party_name IS NOT NULL
                      AND TRIM(pt.party_name) != ''
@@ -3188,7 +3188,7 @@ def report_customer_dashboard(conn: sqlite3.Connection, workspace_id: str) -> li
             COALESCE(SUM(CASE WHEN COALESCE(balance_amount, 0) > 0.009 THEN balance_amount ELSE 0 END), 0) AS outstanding,
             MAX(txn_date) AS last_purchase
         FROM hop_party_transactions
-        WHERE workspace_id = ?
+        WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id = ?
           AND txn_type = 1
           AND LOWER(COALESCE(party_type, '')) = 'customer'
           AND party_id IS NOT NULL
