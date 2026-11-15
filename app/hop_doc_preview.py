@@ -832,6 +832,10 @@ def create_manual_party_document(
 
         txn_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    from app import hop_phase3_ext
+
+    hop_phase3_ext.assert_period_open(conn, workspace_id, txn_date)
+
     default_label = meta["label"]
     txn_label = _clean(payload.get("txn_label")) or default_label
     notes = _clean(payload.get("notes"))
@@ -1097,36 +1101,7 @@ def delete_manual_party_document(
     workspace_id: str,
     party_txn_id: int,
 ) -> dict[str, Any]:
-    """Delete a Nexora-created manual document (source_txn_id < 0)."""
-    row = conn.execute(
-        """
-        SELECT id, source_txn_id, txn_type, txn_number FROM hop_party_transactions
-        WHERE workspace_id=? AND id=?
-        """,
-        (workspace_id, int(party_txn_id)),
-    ).fetchone()
-    if not row:
-        raise ValueError("Transaction not found")
-    h = dict(row)
-    txn_type = int(h.get("txn_type") or 0)
-    source_txn_id = int(h.get("source_txn_id") or 0)
-    if txn_type not in MANUAL_TXN_TYPES or source_txn_id >= 0:
-        raise ValueError("Only Nexora-created documents can be deleted")
-    from app import hop_money
+    """Soft-delete a Nexora-created manual document (moves to recycle bin)."""
+    from app import hop_phase3_ext
 
-    hop_money.unpost_document(conn, workspace_id, int(party_txn_id))
-    conn.execute(
-        "DELETE FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=?",
-        (workspace_id, source_txn_id),
-    )
-    conn.execute(
-        "DELETE FROM hop_party_transactions WHERE workspace_id=? AND id=?",
-        (workspace_id, int(party_txn_id)),
-    )
-    conn.commit()
-    return {
-        "party_txn_id": int(party_txn_id),
-        "source_txn_id": source_txn_id,
-        "txn_number": _clean(h.get("txn_number")),
-        "deleted": True,
-    }
+    return hop_phase3_ext.soft_delete_document(conn, workspace_id, int(party_txn_id))

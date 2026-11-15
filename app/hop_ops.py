@@ -1244,6 +1244,7 @@ def list_products(conn: sqlite3.Connection, workspace_id: str, q: str | None = N
         FROM hop_products pr
         LEFT JOIN hop_vendors v ON v.id = pr.vendor_id
         WHERE pr.workspace_id=?
+          AND (pr.deleted_at IS NULL OR trim(pr.deleted_at)='')
     """
     params: list[Any] = [workspace_id]
     if q:

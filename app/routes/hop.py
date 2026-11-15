@@ -1560,7 +1560,7 @@ def products_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
-@hop_bp.route("/products/<int:product_id>", methods=["GET", "PATCH"])
+@hop_bp.route("/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def products_item(product_id: int):
@@ -1572,6 +1572,13 @@ def products_item(product_id: int):
             if not row:
                 return _json_error("Product not found", "NOT_FOUND", 404)
             return jsonify({"success": True, "data": row})
+        if request.method == "DELETE":
+            from app import hop_phase3_ext
+            try:
+                out = hop_phase3_ext.soft_delete_product(conn, _ws(), product_id)
+            except LookupError as exc:
+                return _json_error(str(exc), "NOT_FOUND", 404)
+            return jsonify({"success": True, "data": out})
         try:
             row = hop_ops.update_product(conn, _ws(), product_id, _payload())
         except ValueError as exc:
@@ -1924,13 +1931,15 @@ def party_transaction_download_pdf(txn_id: int):
     ensure_hop_schema(_db_path())
     from app.hop_doc_preview import build_txn_preview
     from app.hop_doc_pdf import _safe_filename, build_preview_pdf
+    from app import hop_phase3_ext
 
     with hop_db.connect(_db_path()) as conn:
         data = build_txn_preview(conn, _ws(), party_txn_id=txn_id)
+        theme = hop_phase3_ext.get_print_theme(conn, _ws())
     if not data:
         return _json_error("Transaction not found", "NOT_FOUND", 404)
     try:
-        pdf_bytes = build_preview_pdf(data)
+        pdf_bytes = build_preview_pdf(data, theme=theme)
     except Exception as exc:
         return _json_error(f"PDF generation failed ({exc})", "PDF_ERROR", 500)
     fname = f"{_safe_filename(data)}.pdf"
@@ -1957,16 +1966,19 @@ def documents_download_pdf():
     if not party_txn_id and not source_txn_id:
         return _json_error("party_txn_id or source_txn_id is required", "VALIDATION_ERROR", 400)
     with hop_db.connect(_db_path()) as conn:
+        from app import hop_phase3_ext
+
         data = build_txn_preview(
             conn,
             _ws(),
             party_txn_id=party_txn_id,
             source_txn_id=source_txn_id,
         )
+        theme = hop_phase3_ext.get_print_theme(conn, _ws())
     if not data:
         return _json_error("Transaction not found", "NOT_FOUND", 404)
     try:
-        pdf_bytes = build_preview_pdf(data)
+        pdf_bytes = build_preview_pdf(data, theme=theme)
     except Exception as exc:
         return _json_error(f"PDF generation failed ({exc})", "PDF_ERROR", 500)
     fname = f"{_safe_filename(data)}.pdf"
@@ -2459,6 +2471,191 @@ def stock_reorder():
             low_at=float(request.args.get("low_at") or 0),
         )
     return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/print-theme", methods=["GET", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def print_theme():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    with hop_db.connect(_db_path()) as conn:
+        if request.method == "PUT":
+            try:
+                theme = hop_phase3_ext.set_print_theme(conn, _ws(), _payload().get("theme_id"))
+            except ValueError as exc:
+                return _json_error(str(exc))
+            return jsonify({"success": True, "data": theme})
+        return jsonify({"success": True, "data": {
+            "active": hop_phase3_ext.get_print_theme(conn, _ws()),
+            "presets": hop_phase3_ext.list_print_themes(),
+        }})
+
+
+@hop_bp.route("/recycle-bin", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def recycle_bin():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_phase3_ext.list_recycle_bin(conn, _ws(), kind=request.args.get("kind") or "all")
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/recycle-bin/<kind>/<int:item_id>/restore", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def recycle_bin_restore(kind: str, item_id: int):
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if kind == "docs":
+                out = hop_phase3_ext.restore_document(conn, _ws(), item_id)
+            elif kind == "products":
+                out = hop_phase3_ext.restore_product(conn, _ws(), item_id)
+            else:
+                return _json_error("kind must be docs or products")
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/loan-accounts", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def loan_accounts():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                return jsonify({"success": True, "data": hop_phase3_ext.create_loan_account(
+                    conn, _ws(), _payload())}), 201
+            rows = hop_phase3_ext.list_loan_accounts(conn, _ws())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"loans": rows}})
+
+
+@hop_bp.route("/loan-accounts/<int:loan_id>/entries", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def loan_account_entries(loan_id: int):
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_phase3_ext.add_loan_entry(conn, _ws(), loan_id, _payload())
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out}), 201
+
+
+@hop_bp.route("/fixed-assets", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def fixed_assets():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                return jsonify({"success": True, "data": hop_phase3_ext.create_fixed_asset(
+                    conn, _ws(), _payload())}), 201
+            rows = hop_phase3_ext.list_fixed_assets(conn, _ws())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"assets": rows}})
+
+
+@hop_bp.route("/fixed-assets/run-depreciation", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def fixed_assets_run_dep():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    with hop_db.connect(_db_path()) as conn:
+        out = hop_phase3_ext.run_depreciation(conn, _ws(), (_payload().get("as_of") if request.is_json else None) or request.args.get("as_of") or "")
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/financial-years", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def financial_years():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_phase3_ext.list_financial_years(conn, _ws())
+    return jsonify({"success": True, "data": {"years": rows}})
+
+
+@hop_bp.route("/financial-years/<int:fy_id>/close", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def financial_year_close(fy_id: int):
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_phase3_ext.close_financial_year(
+                conn, _ws(), fy_id, actor=str(user.get("username") or user.get("user_id") or "")
+            )
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/export/tally.xml", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def export_tally_xml():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+    from flask import Response
+
+    frm = request.args.get("from") or ""
+    to = request.args.get("to") or ""
+    with hop_db.connect(_db_path()) as conn:
+        xml_bytes = hop_phase3_ext.build_tally_xml(conn, _ws(), frm, to)
+    return Response(
+        xml_bytes,
+        mimetype="application/xml",
+        headers={"Content-Disposition": 'attachment; filename="nexora_tally_export.xml"'},
+    )
+
+
+@hop_bp.route("/export/tally.csv", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def export_tally_csv():
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+    from flask import Response
+
+    frm = request.args.get("from") or ""
+    to = request.args.get("to") or frm
+    with hop_db.connect(_db_path()) as conn:
+        csv_text = hop_phase3_ext.build_tally_daybook_csv(conn, _ws(), frm, to)
+    return Response(
+        csv_text,
+        mimetype="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="nexora_tally_daybook.csv"'},
+    )
 
 
 @hop_bp.route("/party-transactions/<int:txn_id>/convert", methods=["GET"])

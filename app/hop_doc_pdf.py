@@ -19,6 +19,13 @@ C_SECTION_BG = (241, 245, 249)
 C_TOTAL_ROW_BG = (248, 250, 252)
 C_WHITE = (255, 255, 255)
 
+# Active accent for the current PDF build (set from print theme).
+_ACCENT = C_BLUE
+
+
+def _accent() -> tuple[int, int, int]:
+    return _ACCENT
+
 FONT_BODY = 7.5
 FONT_HEADER = 8.0
 FONT_ITEM_NAME = 7.5
@@ -187,8 +194,8 @@ def _draw_header_row(
 ) -> None:
     y = pdf.get_y()
     table_w = sum(cols)
-    pdf.set_fill_color(*C_BLUE)
-    pdf.set_draw_color(*C_BLUE)
+    pdf.set_fill_color(*_accent())
+    pdf.set_draw_color(*_accent())
     pdf.rect(pdf.l_margin, y, table_w, row_h, style="F")
     pdf.set_text_color(*C_WHITE)
     pdf.set_font("Helvetica", "B", FONT_HEADER)
@@ -380,7 +387,16 @@ def _draw_party_meta(pdf: FPDF, title: str, party: dict[str, Any], header: dict[
     pdf.set_xy(pdf.l_margin, max(y_left, y_right) + 3)
 
 
-def build_preview_pdf(preview: dict[str, Any]) -> bytes:
+def build_preview_pdf(preview: dict[str, Any], theme: dict[str, Any] | None = None) -> bytes:
+    global _ACCENT
+    accent = None
+    if theme and isinstance(theme.get("accent"), (list, tuple)) and len(theme["accent"]) == 3:
+        try:
+            accent = tuple(int(x) for x in theme["accent"])
+        except (TypeError, ValueError):
+            accent = None
+    _ACCENT = accent or C_BLUE
+
     commercial = _is_commercial(preview)
     pdf = _HopPdf(orientation="L" if commercial else "P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=14)
@@ -397,7 +413,7 @@ def build_preview_pdf(preview: dict[str, Any]) -> bytes:
 
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 16)
-    pdf.set_text_color(*C_BLUE)
+    pdf.set_text_color(*_accent())
     title = _t(header.get("doc_title") or "Document")
     pdf.cell(0, 9, title, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_text_color(*C_INK)
@@ -606,7 +622,7 @@ def _draw_totals_block(pdf: _HopPdf, totals: dict, commercial: bool) -> None:
         is_grand = label == "Grand Total"
         pdf.set_font("Helvetica", "B", 10 if is_grand else 8)
         if is_grand:
-            pdf.set_text_color(*C_BLUE)
+            pdf.set_text_color(*_accent())
         else:
             pdf.set_text_color(*C_INK)
         pdf.cell(label_w, 5, _t(label), border=0)

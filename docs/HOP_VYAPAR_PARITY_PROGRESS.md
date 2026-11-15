@@ -12,8 +12,17 @@ _Last updated: 2026-11-15 (deploy Phase 1+2 live; Phase 3 started)._
 |---|---|---|
 | 1 | Money flow: paid/received, Cash & Bank, cheques, Payment-In/Out against bills, stock from documents, expense categories, Convert, AI bill reader, Ask Nexora `get_hop_books` | **Deployed** on Lightsail `3.7.170.77` at `f76a9b7` (backup `/var/data/backup_before_phase12_20261115.sqlite3`). Smoke 401 on money routes. |
 | 2 | Accounts & reports (real double-entry: TB, P&L, Balance Sheet, Cash Flow; Day Book, All Transactions, Party Statement, outstanding; sale/purchase/item/stock/bill-wise profit/expense reports; GSTR-1/2/3B, HSN) + Reports screen + AI insights | **Deployed** with Phase 1 (same commit). Smoke 401 on `/books`, `/books/trial_balance`, insights. |
-| 3 | Items & settings: item categories, units, party last-rate + invoice warnings, credit days → due dates + overdue + AI WhatsApp reminder, low-stock reorder. Still pending: print themes, Fixed Assets, recycle bin, close FY, Tally export, loan accounts | **In progress (first slice).** Server `app/hop_settings.py`; routes `/item-categories`, `/units`, `/suggest-rate`, `/entry-warnings`, `/overdue-bills`, `/ai/payment-reminder`, `/stock/reorder`; web `hop_settings_web.js` (Settings → Items & units / Overdue / Reorder). |
-| 4 | Phone screens every phase (owner rule). Owner asked deploy → Phase 3 first (2026-11-15); phone Phase 1–3 follows. | Phone Phase 1+2+3: next after Phase 3 web slice ships |
+| 3 | Items & settings + print themes, recycle, loans, Fixed Assets, FY close, Tally export | **Built (web+server).** First slice + rest in `hop_settings.py` / `hop_phase3_ext.py` + Settings screens. Deploy after tests. |
+| 4 | Phone screens every phase | **In progress** — money / books / settings on Android |
+
+## Phase 3 rest (2026-11-15)
+- Print themes (`/print-theme` + PDF accent)
+- Recycle bin soft-delete docs/products
+- Loan accounts on Balance Sheet
+- Fixed assets + monthly depreciation
+- Financial year close + write guard
+- Tally XML/CSV export
+
 
 ## Phase 1 — done (details in docs/NEXORA_APP_MAP.md §4 "Money flow")
 - Server: `app/hop_money.py` (post/undo effects per document, balances recomputed

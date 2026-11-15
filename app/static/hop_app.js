@@ -2177,7 +2177,9 @@ function openHopView(viewName, opts) {
   } else if (v === 'journal_entries') {
     foldId = 'accounting';
   } else if (v === 'vyapar_import' || v === 'wipe_data' || v === 'theme' || v === 'company_profile'
-    || v === 'item_settings' || v === 'overdue_bills' || v === 'stock_reorder') {
+    || v === 'item_settings' || v === 'overdue_bills' || v === 'stock_reorder'
+    || v === 'print_theme' || v === 'recycle_bin' || v === 'loans' || v === 'fixed_assets'
+    || v === 'financial_year' || v === 'tally_export') {
     foldId = 'settings';
   } else if (v === 'hop_manual_doc_create') {
     foldId = 'sale';
@@ -2223,6 +2225,12 @@ function openHopView(viewName, opts) {
         stock_reorder: (m) => (window.hopRenderReorderModule
           ? window.hopRenderReorderModule(m)
           : m && (m.innerHTML = '<p class="nx-text-dim">Reorder loading…</p>')),
+        print_theme: (m) => window.hopRenderPrintThemeModule && window.hopRenderPrintThemeModule(m),
+        recycle_bin: (m) => window.hopRenderRecycleModule && window.hopRenderRecycleModule(m),
+        loans: (m) => window.hopRenderLoansModule && window.hopRenderLoansModule(m),
+        fixed_assets: (m) => window.hopRenderFixedAssetsModule && window.hopRenderFixedAssetsModule(m),
+        financial_year: (m) => window.hopRenderFyModule && window.hopRenderFyModule(m),
+        tally_export: (m) => window.hopRenderTallyExportModule && window.hopRenderTallyExportModule(m),
         banking: renderHopBankingModule,
         stock: renderHopStockModule,
         gst_reports: (m) => (window.hopRenderReports ? window.hopRenderReports(m, 'gstr1') : renderHopGstReportsModule(m)),

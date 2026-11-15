@@ -142,7 +142,7 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
         post(OPENING, OBE, cr=open_stock, kind="Opening stock")
 
     # Documents.
-    docs = _rows(conn, "SELECT * FROM hop_party_transactions WHERE workspace_id=? ORDER BY date(txn_date), id", (ws,))
+    docs = _rows(conn, "SELECT * FROM hop_party_transactions WHERE workspace_id=? AND (deleted_at IS NULL OR trim(deleted_at)='') ORDER BY date(txn_date), id", (ws,))
     for t in docs:
         ty = int(t.get("txn_type") or 0)
         day = _d(t.get("txn_date"))
@@ -342,15 +342,21 @@ def balance_sheet(conn: sqlite3.Connection, ws: str, as_of: str = "") -> dict[st
     closing_stock = stock_value(conn, ws, as_of or None) if as_of else stock_value(conn, ws, None)
     pnl_all = sum(-(v) for n, v in bal.items() if _account_kind(n, banks) in ("income", "expense")) + closing_stock
     cheques_issued = -bal[CHQ_OUT]
+    from app import hop_phase3_ext
+
+    fa_assets, fa_contra = hop_phase3_ext.fixed_assets_for_balance_sheet(conn, ws)
+    loan_liab = hop_phase3_ext.loans_for_balance_sheet(conn, ws)
     assets = [*cash,
               {"name": "Sundry Debtors (to receive)", "amount": debtors},
               {"name": "Advances to vendors", "amount": adv_to_vendor},
               {"name": "Closing stock", "amount": closing_stock},
-              {"name": "GST credit (input)", "amount": _r2(net_gst) if net_gst > 0 else 0.0}]
+              {"name": "GST credit (input)", "amount": _r2(net_gst) if net_gst > 0 else 0.0},
+              *fa_assets, *fa_contra]
     liabilities = [{"name": "Sundry Creditors (to pay)", "amount": creditors},
                    {"name": "Advances from customers", "amount": adv_from_cust},
                    {"name": "GST payable", "amount": _r2(-net_gst) if net_gst < 0 else 0.0},
-                   {"name": "Cheques issued (not yet withdrawn)", "amount": _r2(cheques_issued)}]
+                   {"name": "Cheques issued (not yet withdrawn)", "amount": _r2(cheques_issued)},
+                   *loan_liab]
     equity = [{"name": "Opening balance equity", "amount": _r2(-bal[OBE])},
               {"name": "Capital added", "amount": _r2(-bal[CAPITAL])},
               {"name": "Drawings", "amount": _r2(-bal[DRAWINGS])},
@@ -456,7 +462,7 @@ def party_statement(conn: sqlite3.Connection, ws: str, party_type: str, party_id
 # ── Lists ────────────────────────────────────────────────────────────────────
 
 def _docs(conn, ws, frm="", to="", types: tuple[int, ...] | None = None, party_id: int | None = None):
-    sql = "SELECT * FROM hop_party_transactions WHERE workspace_id=?"
+    sql = "SELECT * FROM hop_party_transactions WHERE workspace_id=? AND (deleted_at IS NULL OR trim(deleted_at)='')"
     params: list[Any] = [ws]
     if types:
         sql += f" AND txn_type IN ({','.join('?' * len(types))})"

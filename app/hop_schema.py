@@ -1253,6 +1253,86 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             """
         )
 
+        # Phase 3 rest — print themes, recycle, loans, FA, FY
+        _ensure_column(conn, "hop_firm_profile", "print_theme_id", "TEXT")
+        _ensure_column(conn, "hop_party_transactions", "deleted_at", "TEXT")
+        _ensure_column(conn, "hop_party_transactions", "deleted_by", "TEXT")
+        _ensure_column(conn, "hop_products", "deleted_at", "TEXT")
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS hop_loan_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                lender TEXT,
+                loan_type TEXT DEFAULT 'term',
+                principal REAL DEFAULT 0,
+                opening_balance REAL DEFAULT 0,
+                interest_pct REAL,
+                emi_amount REAL,
+                start_date TEXT,
+                end_date TEXT,
+                linked_bank_account_id INTEGER,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS hop_loan_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                loan_id INTEGER NOT NULL,
+                entry_date TEXT NOT NULL,
+                entry_type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                bank_account_id INTEGER,
+                party_txn_id INTEGER,
+                notes TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS hop_fixed_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                category TEXT,
+                purchase_date TEXT,
+                purchase_cost REAL NOT NULL,
+                salvage_value REAL DEFAULT 0,
+                life_months INTEGER,
+                method TEXT DEFAULT 'slm',
+                accumulated_dep REAL DEFAULT 0,
+                disposal_date TEXT,
+                disposal_amount REAL,
+                vendor_id INTEGER,
+                bill_txn_id INTEGER,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS hop_asset_depreciations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                asset_id INTEGER NOT NULL,
+                period TEXT NOT NULL,
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(workspace_id, asset_id, period)
+            );
+            CREATE TABLE IF NOT EXISTS hop_financial_years (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                label TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                status TEXT DEFAULT 'open',
+                closed_at TEXT,
+                closed_by TEXT,
+                opening_equity_snapshot REAL,
+                created_at TEXT NOT NULL,
+                UNIQUE(workspace_id, label)
+            );
+            """
+        )
+
         # Heal stale product_key / size so Delete & vendor matrix never drift after upgrades
         try:
             from app import hop_ops as _hop_ops
