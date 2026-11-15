@@ -6,6 +6,9 @@
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const COLORS = { alert: '#dc2626', warn: '#d97706', info: '#2563eb' };
+  const biz = () => (document.documentElement.classList.contains('hop-active')
+    || document.body.classList.contains('hop-active') ? 'hop' : 'bd');
+  const BIZ_NAME = { hop: 'House of Prizm', bd: 'Distribution' };
   const LABEL = { alert: 'Urgent', warn: 'Check', info: 'Tip' };
 
   async function api(url, options = {}) {
@@ -34,7 +37,7 @@
 
   async function check() {
     try {
-      const d = await api('/api/v1/guard/issues?status=open');
+      const d = await api(`/api/v1/guard/issues?status=open&business=${biz()}`);
       badge(d.issues.length, d.alerts);
       return d;
     } catch (e) { return null; }
@@ -57,7 +60,7 @@
     el.innerHTML = `
       <div class="modal-content" style="max-width:760px;width:94vw;max-height:88vh;overflow-y:auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-          <h2 style="margin:0;">🛡 NEXORA Guard</h2>
+          <h2 style="margin:0;">🛡 NEXORA Guard · ${BIZ_NAME[biz()]}</h2>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             ${['open', 'resolved', 'dismissed'].map((t) => `<button type="button" class="btn ${t === tab ? 'btn-primary' : 'btn-secondary'}" data-tab="${t}">${{ open: 'Open', resolved: 'Fixed', dismissed: 'Dismissed' }[t]}</button>`).join('')}
             <button type="button" class="btn btn-secondary" data-close>Close</button>
@@ -78,14 +81,14 @@
       dg.querySelector('[data-digest-btn]').addEventListener('click', async () => {
         dg.innerHTML = '<p style="color:#94a3b8;">✨ Writing today\'s note…</p>';
         try {
-          const d = await api('/api/v1/guard/digest');
+          const d = await api(`/api/v1/guard/digest?business=${biz()}`);
           dg.innerHTML = `<div style="padding:12px 14px;border-radius:12px;background:rgba(124,58,237,.1);white-space:pre-wrap;">
             <strong>✨ Today's note</strong>\n${esc(d.text)}</div>`;
         } catch (e) { dg.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
       });
     }
     let data;
-    try { data = await api(`/api/v1/guard/issues?status=${tab}`); } catch (e) { list.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+    try { data = await api(`/api/v1/guard/issues?status=${tab}&business=${biz()}`); } catch (e) { list.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
     if (tab === 'open') badge(data.issues.length, data.alerts);
     if (!data.issues.length) {
       list.innerHTML = `<p style="padding:18px;text-align:center;color:#16a34a;font-weight:600;">${tab === 'open' ? '✅ All clear — nothing needs your attention.' : 'Nothing here.'}</p>`;
@@ -116,7 +119,7 @@
         const box = card.querySelector('[data-ai]');
         box.innerHTML = '<span style="color:#94a3b8;">✨ Thinking…</span>';
         try {
-          const d = await api(`/api/v1/guard/issues/${id}/explain`);
+          const d = await api(`/api/v1/guard/issues/${id}/explain?business=${biz()}`);
           box.innerHTML = `<div style="padding:10px 12px;border-radius:10px;background:rgba(124,58,237,.08);white-space:pre-wrap;font-size:.9rem;">${esc(d.text)}</div>`;
         } catch (e) { box.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
         return;
@@ -124,7 +127,7 @@
       const action = ev.target.matches('[data-dismiss]') ? 'dismiss' : (ev.target.matches('[data-reopen]') ? 'reopen' : null);
       if (!action) return;
       try {
-        await api(`/api/v1/guard/issues/${id}/${action}`, { method: 'POST' });
+        await api(`/api/v1/guard/issues/${id}/${action}?business=${biz()}`, { method: 'POST' });
         open(tab);
       } catch (e) { if (typeof nexoraToast === 'function') nexoraToast(e.message, 'error'); }
     });
@@ -132,6 +135,9 @@
 
   // Check after sign-in and then every 15 minutes.
   let timer = null;
+  let lastBiz = null;
+  setInterval(() => { if (timer && biz() !== lastBiz) { lastBiz = biz(); check(); } }, 3000);
+
   function start() {
     if (timer) return;
     setTimeout(check, 4000);

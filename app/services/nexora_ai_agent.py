@@ -545,6 +545,9 @@ def _tool_declarations() -> list[dict[str, Any]]:
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "business": {"type": "string", "enum": ["bd", "hop"],
+                                 "description": "bd = Bombay Dyeing distribution (executive), hop = House of Prizm "
+                                                "(business UI). Pick from the question; never mix them."},
                     "status": {"type": "string", "enum": ["open", "resolved", "dismissed"],
                                "description": "Default open."},
                 },
@@ -1270,10 +1273,17 @@ def _run_tool(
         if name == "get_guard_issues":
             from app.services import nexora_guard
 
-            role_row = conn.execute("SELECT role FROM users WHERE id = ?", (int(user_id),)).fetchone()
-            who = {"user_id": user_id, "workspace_id": workspace_id, "role": role_row[0] if role_row else None}
-            data = nexora_guard.issues(_db_path(), who, str(args.get("status") or "open"))
+            role_row = conn.execute("SELECT role, is_workspace_owner FROM users WHERE id = ?", (int(user_id),)).fetchone()
+            business = str(args.get("business") or "").lower()
+            who = {"user_id": user_id, "workspace_id": workspace_id, "role": role_row[0] if role_row else None,
+                   "is_workspace_owner": bool(role_row[1]) if role_row else False,
+                   "guard_scope": business if business in ("bd", "hop") else None}
+            try:
+                data = nexora_guard.issues(_db_path(), who, str(args.get("status") or "open"))
+            except PermissionError as exc:
+                return {"error": str(exc)}
             return _sanitize({"count": len(data["issues"]),
+                              "business": "House of Prizm" if who.get("guard_scope") == "hop" else "Bombay Dyeing distribution",
                               "issues": [{k: i.get(k) for k in ("severity", "area", "title", "detail", "amount")}
                                          for i in data["issues"][:25]]})
 
@@ -1281,7 +1291,11 @@ def _run_tool(
             from app.hop_schema import HOP_WORKSPACE_ID, ensure_hop_schema
             from app.services import hop_ai
 
-            if workspace_id != HOP_WORKSPACE_ID:
+            from app.services import nexora_guard
+
+            r = conn.execute("SELECT role, is_workspace_owner FROM users WHERE id = ?", (int(user_id),)).fetchone()
+            if not nexora_guard.can_open_hop({"role": r[0] if r else None, "is_workspace_owner": bool(r[1]) if r else False,
+                                              "workspace_id": workspace_id}):
                 return {"error": "House of Prizm accounts are not part of this login."}
             ensure_hop_schema(_db_path())
             conn.row_factory = sqlite3.Row

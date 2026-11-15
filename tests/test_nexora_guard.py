@@ -102,3 +102,27 @@ def test_api(tmp_path, monkeypatch):
     assert client.get("/api/v1/guard/issues").status_code == 401
     d = client.get("/api/v1/guard/digest", headers=headers).get_json()["data"]
     assert d["day"] == date.today().isoformat() and d["text"]  # no issues → "All clear" without AI
+
+
+def test_hop_and_bd_inboxes_never_mix(db, monkeypatch):
+    """One login with both businesses (owner): HoP screen shows only HoP problems, Executive only BD."""
+    owner_ws = "ws_owner_1"
+    with connect(db) as conn:
+        hop_books.create_bank_account(conn, owner_ws, {"name": "HoP Bank", "opening_balance": -100})
+        conn.commit()
+    monkeypatch.setattr(guard, "bd_findings", lambda conn, uid, ws: [
+        guard._issue("bd:42:aw26 bed:alert", "Distributor payments", "alert", "Ramesh Traders — ₹50,000 overdue")])
+    owner = {"user_id": 5, "role": "sales_executive", "is_workspace_owner": True, "workspace_id": owner_ws}
+
+    hop = guard.issues(db, {**owner, "guard_scope": "hop"}, "open", refresh_minutes=0)["issues"]
+    bd = guard.issues(db, {**owner, "guard_scope": "bd"}, "open", refresh_minutes=0)["issues"]
+    assert hop and all(i["key"].startswith("hop:") for i in hop)
+    assert bd and all(i["key"].startswith("bd:") for i in bd)
+    assert not any("Ramesh" in i["title"] for i in hop) and not any("HoP Bank" in i["title"] for i in bd)
+
+    # A plain BD login cannot open the HoP inbox.
+    rep = {"user_id": 9, "role": "sales_executive", "workspace_id": "ws_rep"}
+    with pytest.raises(PermissionError):
+        guard.issues(db, {**rep, "guard_scope": "hop"}, "open", refresh_minutes=0)
+    # And without a business given, a BD login gets BD only.
+    assert all(i["key"].startswith("bd:") for i in guard.issues(db, rep, "open", refresh_minutes=0)["issues"])

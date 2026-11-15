@@ -14,8 +14,10 @@ guard_bp = Blueprint("guard", __name__, url_prefix="/api/v1/guard")
 
 
 def _user() -> dict:
+    """?business=hop | bd — which business's inbox (the screen the user is on). Never mixed."""
     u = getattr(request, "user", None) or {}
-    return {**u, "workspace_id": get_workspace_id()}
+    business = (request.args.get("business") or "").strip().lower()
+    return {**u, "workspace_id": get_workspace_id(), "guard_scope": business if business in ("hop", "bd") else None}
 
 
 def _db() -> str:
@@ -24,6 +26,11 @@ def _db() -> str:
 
 def _err(msg: str, status: int = 400, code: str = "BAD_REQUEST"):
     return jsonify({"success": False, "error": {"code": code, "message": msg}}), status
+
+
+@guard_bp.errorhandler(PermissionError)
+def _no_access(exc):
+    return _err(str(exc), 403, "FORBIDDEN")
 
 
 @guard_bp.route("/issues", methods=["GET"])

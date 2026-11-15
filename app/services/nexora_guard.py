@@ -253,13 +253,28 @@ def bd_findings(conn: sqlite3.Connection, user_id: int, ws: str) -> list[dict[st
 
 # ── Inbox ────────────────────────────────────────────────────────────────────
 
+def can_open_hop(user: dict[str, Any]) -> bool:
+    """Same rule as the HoP screens (require_role hop_admin, or the company owner)."""
+    from app.hop_schema import HOP_WORKSPACE_ID
+
+    return (user.get("role") == "hop_admin" or bool(user.get("is_workspace_owner"))
+            or str(user.get("workspace_id") or "") == HOP_WORKSPACE_ID)
+
+
 def _scope(user: dict[str, Any]) -> tuple[str, int, bool]:
-    """(workspace, user_id for storage, is_hop)."""
+    """(workspace, inbox id, is_hop). HoP and BD are two separate businesses with two separate inboxes:
+    the screen says which one (user["guard_scope"] = "hop" | "bd"); HoP uses the same workspace as the
+    HoP screens (the login's own workspace), inbox id 0; BD uses the login's own inbox (its user id)."""
     from app.hop_schema import HOP_WORKSPACE_ID
 
     ws = str(user.get("workspace_id") or "default")
-    if ws == HOP_WORKSPACE_ID or user.get("role") == "hop_admin":
-        return HOP_WORKSPACE_ID, 0, True
+    business = str(user.get("guard_scope") or "").lower()
+    if business not in ("hop", "bd"):
+        business = "hop" if (user.get("role") == "hop_admin" or ws == HOP_WORKSPACE_ID) else "bd"
+    if business == "hop":
+        if not can_open_hop(user):
+            raise PermissionError("House of Prizm is not open for this login")
+        return ws, 0, True
     return ws, int(user.get("user_id") or 0), False
 
 
