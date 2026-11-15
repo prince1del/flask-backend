@@ -529,6 +529,24 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
 - Phone: `Hop*.kt` screens. Web: `app/static/hop_app.js`, `hop_commercial_web.js`.
 - Does not touch BD tables.
 
+## 4b. NEXORA Guard — AI that catches mistakes (2026-11-16)
+Rules check the data and raise issues into an inbox (open → resolved automatically
+when fixed, or dismissed). "✨ Explain & fix" = one short AI call; "✨ Today's AI note"
+= one AI call per day per inbox (cached). Nothing changes business data.
+- Code: `app/services/nexora_guard.py`, routes `app/routes/guard.py`
+  (`GET /api/v1/guard/issues?status=`, `POST /run`, `POST /issues/<id>/dismiss|reopen`,
+  `GET /issues/<id>/explain`, `GET /digest`). Tables `guard_issues`, `guard_runs`,
+  `guard_digests`. Checks re-run when older than 10 minutes.
+- HoP (company inbox): overdue customer/vendor bills, negative cash/bank, negative stock,
+  duplicate invoice/bill numbers, B2B lines without HSN, cheques open > 7 days,
+  estimates not converted 30+ days, advances not set against unpaid bills, bill balances
+  that don't add up, books not balancing.
+- BD (per login): Distributor Hisaab alerts — overdue payments, money received with no CI,
+  billed more than received.
+- Ask Nexora tool `get_guard_issues`. Web: `app/static/guard_web.js` (🛡 button + inbox,
+  profile menu "NEXORA Guard"). Phone: `ui/guard/GuardScreens.kt` (card on My Day and HoP
+  home → inbox). Tests: `tests/test_nexora_guard.py`.
+
 ## 5. Older / platform layer (mostly not used by the BD screens)
 SQLAlchemy models in PostgreSQL: `sales_orders`, `invoices`, `finance_*`,
 `inventory`, `workflows`, `events`, `business_rules`, `conversations`,

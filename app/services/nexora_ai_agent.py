@@ -535,6 +535,22 @@ def _tool_declarations() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "get_guard_issues",
+            "description": (
+                "NEXORA Guard: problems the app found in this login's data that need attention — "
+                "overdue money, mistakes like duplicate bills, negative cash/stock, GST gaps, cheques not "
+                "deposited, distributor payments overdue. Use for 'koi gadbad hai kya', 'kya dhyan dena hai', "
+                "'what needs my attention', 'any mistakes', 'aaj ka guard report'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["open", "resolved", "dismissed"],
+                               "description": "Default open."},
+                },
+            },
+        },
+        {
             "name": "get_hop_books",
             "description": (
                 "House of Prizm accounts (only for the House of Prizm business): cash & bank "
@@ -1250,6 +1266,16 @@ def _run_tool(
             conn.row_factory = None
             grievances = [dict(r) for r in rows]
             return {"grievances": _sanitize(grievances), "count": len(grievances)}
+
+        if name == "get_guard_issues":
+            from app.services import nexora_guard
+
+            role_row = conn.execute("SELECT role FROM users WHERE id = ?", (int(user_id),)).fetchone()
+            who = {"user_id": user_id, "workspace_id": workspace_id, "role": role_row[0] if role_row else None}
+            data = nexora_guard.issues(_db_path(), who, str(args.get("status") or "open"))
+            return _sanitize({"count": len(data["issues"]),
+                              "issues": [{k: i.get(k) for k in ("severity", "area", "title", "detail", "amount")}
+                                         for i in data["issues"][:25]]})
 
         if name == "get_hop_books":
             from app.hop_schema import HOP_WORKSPACE_ID, ensure_hop_schema

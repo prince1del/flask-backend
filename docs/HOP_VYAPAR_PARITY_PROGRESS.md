@@ -122,3 +122,32 @@ Bugs found (proved on a throwaway test DB) — **to fix next**:
 Smaller: phone "Received now" only on Sale Invoice / Purchase Bill (not returns) and is
 not pre-filled when editing; phone cheque tap deposits into the first bank with no choice
 or confirm, no Reopen; phone menu still says "Banking".
+
+### Fixed (2026-11-16, commit 3a1bd2f + phone tree)
+- 1–4 fixed on the server (tests `tests/test_hop_review_fixes.py`): recycle-bin documents
+  count nowhere; restore keeps "received now"; loans + fixed assets are posted inside the
+  ledger (BS/TB always balance; interest & depreciation in P&L).
+- 5 fixed on the phone: "Payment type" now lists the real Cash / Bank accounts + Cheque and
+  sends `payment_account_id`. Also: menu "Cash & Bank"; Cursor's rate-suggestion code
+  did not compile (used `updateLines` before it was declared) — fixed.
+- Still to do on the phone: "Received now" on returns + pre-fill on edit; cheque deposit
+  should ask which account and allow Reopen.
+- Deploy: full tests → backup → pull/restart → build + publish phone OTA.
+
+## Overnight plan (owner asleep, 2026-11-16) — owner said: don't stop; NEXORA Guard next
+1. ✅ Phone: "Received now / Paid now" on Sale & Purchase Returns; edit shows the amount already
+   received/paid and its account. All 90 phone HoP API paths exist on the server.
+2. ⏳ Full tests → backup → deploy 3a1bd2f (+ Cursor's GST warnings) → publish phone OTA.
+3. ⏳ Live AI bill read once on prod (< ₹1).
+4. ⏳ **NEXORA Guard** (AI that catches mistakes early — agreed earlier, "tracking first, then
+   Guard"): rules engine + issues inbox (open / resolved / dismissed) + "✨ Explain & fix" (one
+   capped AI call) + daily AI digest + Ask Nexora tool + web panel + phone card. Start with HoP
+   checks (overdue bills, balance mismatches, negative cash/stock, duplicate bill numbers, missing
+   GSTIN/HSN, old open cheques, unconverted estimates, unused advances) and BD checks.
+Not without the owner: editing prod data (old-name cleanup), deleting anything, AI tests > ₹10.
+
+### NEXORA Guard — built (2026-11-16 night)
+Server + web + phone done and tested (web checked in a browser on made-up data: found
+overdue bill, negative cash, duplicate bill, negative stock). Phone card on My Day + HoP
+home compiles. See docs/NEXORA_APP_MAP.md §4b. Deploy with the next release.
+Owner reminders tonight: **mobile is the first priority**; app must be **full of AI**.

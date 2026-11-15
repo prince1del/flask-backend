@@ -257,6 +257,7 @@
       show('nx-menu-sub-codes', st.is_super_admin);
       show('nx-menu-invites', st.can_invite);
       show('nx-menu-team', st.can_invite);
+      if (window.nxGuard) window.nxGuard.start();
       if (st.can_invite && !requestTimer) watchLoginRequests();
       show('nx-menu-plan', st.is_super_admin || st.can_invite || st.status !== 'unlimited');
       renderBanner(st);

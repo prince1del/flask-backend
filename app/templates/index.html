@@ -888,6 +888,9 @@
                         <button type="button" role="menuitem" class="nx-profile-dropdown-item hidden" id="nx-menu-invites" onclick="window.nxSubscription && nxSubscription.openInvites()">
                             <span class="nx-profile-dropdown-item-label">Team &amp; invites</span>
                         </button>
+                        <button type="button" role="menuitem" class="nx-profile-dropdown-item" id="nx-menu-guard" onclick="closeUserProfileMenu && closeUserProfileMenu(); window.nxGuard && nxGuard.open()">
+                            <span class="nx-profile-dropdown-item-label">🛡 NEXORA Guard (AI checks)</span>
+                        </button>
                         <button type="button" role="menuitem" class="nx-profile-dropdown-item hidden" id="nx-menu-team" onclick="window.nxTeam && nxTeam.openTeam()">
                             <span class="nx-profile-dropdown-item-label">Team on duty (map &amp; attendance)</span>
                         </button>
@@ -3795,8 +3798,9 @@
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v=20261115-approval"></script>
-    <script src="{{ url_for('static', filename='subscription.js') }}?v=20261115-approval"></script>
+    <script src="{{ url_for('static', filename='subscription.js') }}?v=20261116-guard1"></script>
     <script src="{{ url_for('static', filename='team.js') }}?v=20261115-approval"></script>
+    <script src="{{ url_for('static', filename='guard_web.js') }}?v=20261116-guard1"></script>
     <script src="{{ url_for('static', filename='personal_todos.js') }}?v=20260809-ptodo2"></script>
     <script src="{{ url_for('static', filename='pjp.js') }}?v=20260809-pjp3"></script>
     <script src="{{ url_for('static', filename='order_desk_money.js') }}?v=20261113-ledger6"></script>

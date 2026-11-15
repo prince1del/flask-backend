@@ -11,6 +11,7 @@ from .invites import invites_bp
 from .subscription import subscription_bp
 from .billing import billing_bp
 from .team import team_bp
+from .guard import guard_bp
 from .target_achievement import target_achievement_bp
 from .workspaces import workspaces_blueprint
 from .party_matching import party_matching_bp
@@ -50,6 +51,7 @@ __all__ = [
     'subscription_bp',
     'billing_bp',
     'team_bp',
+    'guard_bp',
     'analytics_blueprint',
     'auth_blueprint',
     'data_blueprint',
