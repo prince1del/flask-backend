@@ -411,6 +411,40 @@ def _fetch_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def _item_gst_pct(conn: sqlite3.Connection, item: dict[str, Any]) -> float:
+    """Resolve GST% from Vyapar tax master when present — never hardcode 5."""
+    tax_id = item.get("item_tax_id")
+    if tax_id in (None, "", 0, "0"):
+        return 0.0
+    tables = _table_names(conn)
+    for table, id_col, rate_cols in (
+        ("kb_tax", "tax_id", ("tax_rate", "rate", "tax_percentage")),
+        ("kb_taxes", "tax_id", ("tax_rate", "rate", "tax_percentage")),
+        ("kb_item_tax", "tax_id", ("tax_rate", "rate")),
+    ):
+        if table not in tables:
+            continue
+        cols = set(_table_cols(conn, table))
+        if id_col not in cols:
+            continue
+        rate_col = next((c for c in rate_cols if c in cols), None)
+        if not rate_col:
+            continue
+        try:
+            row = conn.execute(
+                f"SELECT {rate_col} AS r FROM {table} WHERE {id_col}=?",
+                (tax_id,),
+            ).fetchone()
+        except Exception:
+            continue
+        if row is None:
+            continue
+        val = _num_or_none(dict(row).get("r"))
+        if val is not None:
+            return float(val)
+    return 0.0
+
+
 def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     cols = set(_table_cols(conn, "kb_transactions"))
     select_cols = [
@@ -838,7 +872,8 @@ def import_vyapar_backup(
                 "selling_price": float(i.get("item_sale_unit_price") or 0),
                 "purchase_price": float(i.get("item_purchase_unit_price") or 0),
                 "stock_qty": float(i.get("item_stock_quantity") or 0),
-                "gst_pct": 5,
+                "gst_pct": _item_gst_pct(src, i),
+                "hsn": _clean(i.get("item_hsn_sac_code")),
                 "specs": _clean(i.get("item_description"))[:500],
             }
             try:

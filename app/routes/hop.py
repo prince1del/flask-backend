@@ -1560,6 +1560,26 @@ def products_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/products/<int:product_id>", methods=["GET", "PATCH"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def products_item(product_id: int):
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        if request.method == "GET":
+            rows = hop_ops.list_products(conn, _ws())
+            row = next((r for r in rows if int(r.get("id") or 0) == int(product_id)), None)
+            if not row:
+                return _json_error("Product not found", "NOT_FOUND", 404)
+            return jsonify({"success": True, "data": row})
+        try:
+            row = hop_ops.update_product(conn, _ws(), product_id, _payload())
+        except ValueError as exc:
+            return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc).lower() else "VALIDATION_ERROR",
+                               404 if "not found" in str(exc).lower() else 400)
+    return jsonify({"success": True, "data": row})
+
+
 # ---------- Orders / Dispatch / Invoices / Payments ----------
 @hop_bp.route("/orders", methods=["GET", "POST"])
 @require_jwt_auth
@@ -1781,14 +1801,14 @@ def firm_profile_route():
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def party_transaction_next_number():
-    """Next serial for manual Estimate (27) / Proforma (83) — user may override on POST."""
+    """Next serial for any Nexora-manual document type — user may override on POST."""
     ensure_hop_schema(_db_path())
-    from app.hop_doc_preview import next_manual_doc_number
+    from app.hop_doc_preview import MANUAL_TXN_TYPES, next_manual_doc_number
     from datetime import datetime, timezone
 
     txn_type = request.args.get("txn_type", type=int) or 27
-    if txn_type not in (27, 83):
-        return _json_error("txn_type must be 27 or 83", "VALIDATION_ERROR", 400)
+    if txn_type not in MANUAL_TXN_TYPES:
+        return _json_error("Unsupported txn_type for manual documents", "VALIDATION_ERROR", 400)
     txn_date = (request.args.get("txn_date") or "").strip()
     if not txn_date:
         txn_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -2162,3 +2182,149 @@ def fabric_preview_render():
             },
         }
     )
+
+
+# ---------- Books: banking, stock, GST, accounts ----------
+@hop_bp.route("/bank-accounts", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bank_accounts_collection():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            rows = hop_books.list_bank_accounts(conn, _ws())
+            cash = hop_books.cash_available(conn, _ws())
+        return jsonify({"success": True, "data": {"accounts": rows, "cash_available": cash}})
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_books.create_bank_account(conn, _ws(), _payload())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/bank-entries", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bank_entries_collection():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    if request.method == "GET":
+        with hop_db.connect(_db_path()) as conn:
+            rows = hop_books.list_bank_entries(conn, _ws(), request.args.get("account_id", type=int))
+        return jsonify({"success": True, "data": rows})
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_books.add_bank_entry(conn, _ws(), _payload())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/stock", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def stock_list():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    low = (request.args.get("low") or "").strip() in ("1", "true", "yes")
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_books.list_stock(conn, _ws(), low_only=low)
+    return jsonify({"success": True, "data": rows})
+
+
+@hop_bp.route("/stock/journal", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def stock_journal():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_books.add_stock_journal(conn, _ws(), _payload())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/reports/gst-hsn", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def report_gst_hsn():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_books.gst_hsn_summary(
+            conn, _ws(), request.args.get("from") or "", request.args.get("to") or ""
+        )
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/reports/gstr1", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def report_gstr1():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_books.gstr1_sales(
+            conn, _ws(), request.args.get("from") or "", request.args.get("to") or ""
+        )
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/accounts", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def accounts_list():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_books.ensure_default_accounts(conn, _ws())
+    return jsonify({"success": True, "data": rows})
+
+
+@hop_bp.route("/reports/trial-balance", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def report_trial_balance():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_books.trial_balance(conn, _ws())
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/reports/profit-loss", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def report_profit_loss():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_books.profit_and_loss(
+            conn, _ws(), request.args.get("from") or "", request.args.get("to") or ""
+        )
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/reports/balance-sheet", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def report_balance_sheet():
+    ensure_hop_schema(_db_path())
+    from app import hop_books
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_books.balance_sheet(conn, _ws())
+    return jsonify({"success": True, "data": data})

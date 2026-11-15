@@ -1274,9 +1274,9 @@ def create_product(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
         """
         INSERT INTO hop_products (
             workspace_id, code, name, brand, category, collection, selling_price,
-            purchase_price, logistics_cost, gst_pct, commission_pct, moq, lead_time_days,
+            purchase_price, logistics_cost, gst_pct, hsn, commission_pct, moq, lead_time_days,
             vendor_id, stock_qty, specs, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -1289,6 +1289,7 @@ def create_product(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             _f(payload.get("purchase_price")),
             _f(payload.get("logistics_cost")),
             _f(payload.get("gst_pct")),
+            _s(payload.get("hsn")),
             _f(payload.get("commission_pct")),
             _s(payload.get("moq")),
             int(payload["lead_time_days"]) if payload.get("lead_time_days") not in (None, "") else None,
@@ -1303,6 +1304,54 @@ def create_product(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
     conn.commit()
     pid = int(cur.lastrowid)
     return next((r for r in list_products(conn, workspace_id) if r["id"] == pid), {"id": pid})
+
+
+def update_product(conn: sqlite3.Connection, workspace_id: str, product_id: int, payload: dict) -> dict:
+    row = conn.execute(
+        "SELECT * FROM hop_products WHERE workspace_id=? AND id=?",
+        (workspace_id, int(product_id)),
+    ).fetchone()
+    if not row:
+        raise ValueError("product not found")
+    cur = dict(row)
+    fields = {
+        "code": _s(payload["code"]) if "code" in payload else cur.get("code"),
+        "name": _s(payload.get("name")) or _s(cur.get("name")),
+        "brand": _s(payload["brand"]) if "brand" in payload else cur.get("brand"),
+        "category": _s(payload["category"]) if "category" in payload else cur.get("category"),
+        "collection": _s(payload["collection"]) if "collection" in payload else cur.get("collection"),
+        "selling_price": _f(payload["selling_price"]) if "selling_price" in payload else cur.get("selling_price"),
+        "purchase_price": _f(payload["purchase_price"]) if "purchase_price" in payload else cur.get("purchase_price"),
+        "logistics_cost": _f(payload["logistics_cost"]) if "logistics_cost" in payload else cur.get("logistics_cost"),
+        "gst_pct": _f(payload["gst_pct"]) if "gst_pct" in payload else cur.get("gst_pct"),
+        "hsn": _s(payload["hsn"]) if "hsn" in payload else cur.get("hsn"),
+        "commission_pct": _f(payload["commission_pct"]) if "commission_pct" in payload else cur.get("commission_pct"),
+        "moq": _s(payload["moq"]) if "moq" in payload else cur.get("moq"),
+        "vendor_id": _i(payload["vendor_id"]) if "vendor_id" in payload else cur.get("vendor_id"),
+        "stock_qty": _f(payload["stock_qty"]) if "stock_qty" in payload else cur.get("stock_qty"),
+        "specs": _s(payload["specs"]) if "specs" in payload else cur.get("specs"),
+        "status": _s(payload["status"]) if "status" in payload else cur.get("status"),
+    }
+    if not fields["name"]:
+        raise ValueError("name is required")
+    conn.execute(
+        """
+        UPDATE hop_products SET
+            code=?, name=?, brand=?, category=?, collection=?, selling_price=?,
+            purchase_price=?, logistics_cost=?, gst_pct=?, hsn=?, commission_pct=?,
+            moq=?, vendor_id=?, stock_qty=?, specs=?, status=?, updated_at=?
+        WHERE workspace_id=? AND id=?
+        """,
+        (
+            fields["code"], fields["name"], fields["brand"], fields["category"], fields["collection"],
+            fields["selling_price"], fields["purchase_price"], fields["logistics_cost"],
+            fields["gst_pct"], fields["hsn"], fields["commission_pct"], fields["moq"],
+            fields["vendor_id"], fields["stock_qty"], fields["specs"], fields["status"] or "active",
+            _now(), workspace_id, int(product_id),
+        ),
+    )
+    conn.commit()
+    return next((r for r in list_products(conn, workspace_id) if r["id"] == int(product_id)), {"id": product_id})
 
 
 # ----- Orders -----

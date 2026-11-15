@@ -661,12 +661,35 @@
     return hopCommMoney(hopCommRateAfterDiscFromLine(ln));
   }
 
+  const HOP_MANUAL_DOC_META = {
+    27: { title: 'Estimate / Quotation', view: 'sale_estimates', party: 'customer', label: 'Estimate / Quotation' },
+    83: { title: 'Proforma Invoice', view: 'sale_proforma', party: 'customer', label: 'Proforma Invoice' },
+    1: { title: 'Sale Invoice', view: 'invoices', party: 'customer', label: 'Sale Invoice' },
+    3: { title: 'Payment-In', view: 'payments', party: 'customer', label: 'Payment-In' },
+    65: { title: 'Sale Order', view: 'sale_orders', party: 'customer', label: 'Sale Order' },
+    30: { title: 'Delivery Challan', view: 'sale_challan', party: 'customer', label: 'Delivery Challan' },
+    82: { title: 'Delivery Challan', view: 'sale_challan', party: 'customer', label: 'Delivery Challan' },
+    21: { title: 'Sale Return / Credit Note', view: 'sale_returns', party: 'customer', label: 'Sale Return / Credit Note' },
+    2: { title: 'Purchase Bill', view: 'purchase_bills', party: 'vendor', label: 'Purchase Bill' },
+    4: { title: 'Payment-Out', view: 'purchase_payment_out', party: 'vendor', label: 'Payment-Out' },
+    7: { title: 'Expense', view: 'purchase_expenses', party: 'vendor', label: 'Expense' },
+    66: { title: 'Purchase Order', view: 'purchase_orders', party: 'vendor', label: 'Purchase Order' },
+    16: { title: 'Purchase Return / Dr. Note', view: 'purchase_returns', party: 'vendor', label: 'Purchase Return / Debit Note' },
+    81: { title: 'Journal Entry', view: 'journal_entries', party: 'customer', label: 'Journal Entry' },
+  };
+
+  function hopManualDocMeta(txnType) {
+    return HOP_MANUAL_DOC_META[Number(txnType)] || HOP_MANUAL_DOC_META[27];
+  }
+
   function hopManualDocInit(txnType, mode) {
     const isComm = mode === 'commercial' && txnType === 27;
+    const meta = hopManualDocMeta(txnType);
     hopState.manualDoc = {
       txnType: Number(txnType),
       mode: mode || 'standard',
-      returnView: hopState.view || (txnType === 83 ? 'sale_proforma' : 'sale_estimates'),
+      returnView: hopState.view || meta.view,
+      partyKind: meta.party,
       editId: null,
     };
     hopState.manualDocDraft = {
@@ -777,24 +800,28 @@
     hopCloseManualDocOverlay();
     let customers = hopState.manualDocCustomers || [];
     let firmTerms = hopState.manualDocFirmTerms || '';
+    const md0 = hopState.manualDoc || {};
+    const partyKind = md0.partyKind || hopManualDocMeta(md0.txnType).party;
     try {
-      const [cust, firm] = await Promise.all([
-        hopApi('/api/v1/hop/customers'),
+      const [parties, firm] = await Promise.all([
+        hopApi(partyKind === 'vendor' ? '/api/v1/hop/vendors' : '/api/v1/hop/customers'),
         hopApi('/api/v1/hop/firm-profile').catch(() => ({})),
       ]);
-      customers = cust || [];
+      customers = parties || [];
       firmTerms = firm?.terms_default || '';
       hopState.manualDocCustomers = customers;
       hopState.manualDocFirmTerms = firmTerms;
+      hopState.manualDocPartyKind = partyKind;
     } catch (e) {
       if (typeof nexoraToast === 'function') nexoraToast(e?.message || 'Failed to load form', 'err');
       return;
     }
     const md = hopState.manualDoc || {};
     const isEdit = !!md.editId;
+    const meta = hopManualDocMeta(md.txnType);
     const title = isEdit
-      ? (md.txnType === 83 ? 'Edit Proforma Invoice' : (md.mode === 'commercial' ? 'Edit Commercial Quotation' : 'Edit Estimate/Quotation'))
-      : (md.txnType === 83 ? 'Proforma Invoice' : (md.mode === 'commercial' ? 'Commercial Quotation' : 'Estimate/Quotation'));
+      ? (`Edit ${md.mode === 'commercial' && md.txnType === 27 ? 'Commercial Quotation' : meta.title}`)
+      : (md.mode === 'commercial' && md.txnType === 27 ? 'Commercial Quotation' : meta.title);
     const el = document.createElement('div');
     el.id = 'hop-vyp-doc-overlay';
     el.className = 'hop-vyp-doc-overlay is-open';
@@ -1061,7 +1088,7 @@
         <p id="hop-manual-doc-err" class="nx-oc-error"></p>
         <div class="hop-vyp-top">
           <div class="hop-vyp-top-left">
-            <label class="hop-vyp-field"><span>Customer *</span>
+            <label class="hop-vyp-field"><span>${(hopState.manualDocPartyKind || hopState.manualDoc?.partyKind) === 'vendor' ? 'Vendor' : 'Customer'} *</span>
               <select id="hop-manual-customer" class="hop-vyp-control" onchange="hopManualDocSetCustomer(this.value)">
                 <option value="">Search / select customer</option>${custOpts}
               </select>
@@ -1218,12 +1245,14 @@
     const md = hopState.manualDoc || {};
     const d = hopState.manualDocDraft || {};
     const errEl = document.getElementById('hop-manual-doc-err');
+    const partyKind = md.partyKind || hopState.manualDocPartyKind || hopManualDocMeta(md.txnType).party;
     const custId = Number(d.customerId || document.getElementById('hop-manual-customer')?.value || 0);
     if (!custId) {
-      if (errEl) errEl.textContent = 'Select a customer';
+      if (errEl) errEl.textContent = partyKind === 'vendor' ? 'Select a vendor' : 'Select a customer';
       return;
     }
     const isComm = md.mode === 'commercial' && md.txnType === 27;
+    const meta = hopManualDocMeta(md.txnType);
     const rawLines = [];
     if (isComm && d.sections) {
       for (const sec of d.sections) {
@@ -1237,6 +1266,7 @@
             rate: Number(ln.rate),
             tax_pct: Number(ln.tax_pct || 0),
             discount_pct: Number(ln.discount_pct || 0),
+            hsn: String(ln.hsn || '').trim(),
             section_title: String(sec.title || '').trim(),
           });
         }
@@ -1260,11 +1290,14 @@
     }
     const payload = {
       txn_type: md.txnType,
-      customer_id: custId,
+      party_type: partyKind === 'vendor' ? 'vendor' : 'customer',
+      party_id: custId,
+      customer_id: partyKind === 'vendor' ? undefined : custId,
+      vendor_id: partyKind === 'vendor' ? custId : undefined,
       txn_date: d.txnDate,
       notes: String(d.notes || '').trim() || undefined,
       doc_terms: String(d.docTerms || '').trim() || undefined,
-      txn_label: isComm ? 'Commercial Quotation' : (md.txnType === 83 ? 'Proforma Invoice' : 'Estimate / Quotation'),
+      txn_label: isComm ? 'Commercial Quotation' : meta.label,
       shipping_amount: Number(d.shippingAmount || 0),
       shipping_tax_pct: Number(d.shippingTaxPct || 0),
       lines: rawLines,

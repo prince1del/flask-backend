@@ -16,6 +16,12 @@ HOP_DOC_PREFIX_BY_TYPE: dict[int, str] = {
     30: "HOPDC",  # Delivery Challan
     82: "HOPDC",
     21: "HOPCN",  # Sale Return / Credit Note
+    2: "HOPPB",  # Purchase Bill
+    4: "PYMT",  # Payment-Out
+    7: "HOPEX",  # Expense
+    66: "HOPPO",  # Purchase Order
+    16: "HOPDN",  # Purchase Return / Debit Note
+    81: "HOPJE",  # Journal Entry
 }
 
 _SHORT_NUMERIC_RE = re.compile(r"^\d{1,6}$")

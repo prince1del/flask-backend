@@ -667,6 +667,26 @@ def _group_lines_for_edit(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sections
 
 
+# Nexora-created docs (source_txn_id < 0). party_kind: customer | vendor | either
+MANUAL_TXN_META: dict[int, dict[str, Any]] = {
+    27: {"label": "Estimate / Quotation", "party_kind": "customer"},
+    83: {"label": "Proforma Invoice", "party_kind": "customer"},
+    1: {"label": "Sale Invoice", "party_kind": "customer", "balance_due": True},
+    3: {"label": "Payment-In", "party_kind": "customer", "payment": True},
+    65: {"label": "Sale Order", "party_kind": "customer"},
+    30: {"label": "Delivery Challan", "party_kind": "customer"},
+    82: {"label": "Delivery Challan", "party_kind": "customer"},
+    21: {"label": "Sale Return / Credit Note", "party_kind": "customer"},
+    2: {"label": "Purchase Bill", "party_kind": "vendor", "balance_due": True},
+    4: {"label": "Payment-Out", "party_kind": "vendor", "payment": True},
+    7: {"label": "Expense", "party_kind": "either", "payment": True},
+    66: {"label": "Purchase Order", "party_kind": "vendor"},
+    16: {"label": "Purchase Return / Debit Note", "party_kind": "vendor"},
+    81: {"label": "Journal Entry", "party_kind": "either", "payment": True},
+}
+MANUAL_TXN_TYPES = frozenset(MANUAL_TXN_META)
+
+
 def get_party_transaction_edit_data(
     conn: sqlite3.Connection,
     workspace_id: str,
@@ -684,7 +704,7 @@ def get_party_transaction_edit_data(
     h = dict(row)
     txn_type = int(h.get("txn_type") or 0)
     source_txn_id = int(h.get("source_txn_id") or 0)
-    if txn_type not in (27, 83) or source_txn_id >= 0:
+    if txn_type not in MANUAL_TXN_TYPES or source_txn_id >= 0:
         return None
     lines = [
         dict(r)
@@ -746,19 +766,34 @@ def create_manual_party_document(
     workspace_id: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Create Estimate (27) or Proforma (83) with line items — preview + PDF ready."""
-    from app.hop_ops import get_customer
+    """Create a Nexora manual sales/purchase document with line items — preview + PDF ready."""
+    from app.hop_ops import get_customer, get_vendor
 
     txn_type = int(payload.get("txn_type") or 0)
-    if txn_type not in (27, 83):
-        raise ValueError("txn_type must be 27 (estimate) or 83 (proforma)")
+    meta = MANUAL_TXN_META.get(txn_type)
+    if not meta:
+        raise ValueError(f"Unsupported txn_type {txn_type} for manual create")
 
-    customer_id = int(payload.get("customer_id") or 0)
-    if not customer_id:
-        raise ValueError("customer_id is required")
-    customer = get_customer(conn, workspace_id, customer_id)
-    if not customer:
-        raise ValueError("customer_id not found")
+    party_kind = meta["party_kind"]
+    party_type = _clean(payload.get("party_type")).lower()
+    if party_type not in ("customer", "vendor"):
+        party_type = "vendor" if party_kind == "vendor" else "customer"
+    if party_kind == "customer" and party_type != "customer":
+        raise ValueError("This document requires a customer")
+    if party_kind == "vendor" and party_type != "vendor":
+        raise ValueError("This document requires a vendor")
+
+    party_id = int(payload.get("party_id") or payload.get("customer_id") or payload.get("vendor_id") or 0)
+    if not party_id:
+        raise ValueError("party_id is required")
+    if party_type == "vendor":
+        party = get_vendor(conn, workspace_id, party_id)
+        if not party:
+            raise ValueError("vendor not found")
+    else:
+        party = get_customer(conn, workspace_id, party_id)
+        if not party:
+            raise ValueError("customer not found")
 
     txn_date = _clean(payload.get("txn_date"))
     if not txn_date:
@@ -766,11 +801,16 @@ def create_manual_party_document(
 
         txn_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    default_label = "Estimate / Quotation" if txn_type == 27 else "Proforma Invoice"
+    default_label = meta["label"]
     txn_label = _clean(payload.get("txn_label")) or default_label
     notes = _clean(payload.get("notes"))
 
     raw_lines = payload.get("lines") or []
+    if (not isinstance(raw_lines, list) or not raw_lines) and meta.get("payment"):
+        amount = float(payload.get("total_amount") or payload.get("amount") or 0)
+        if amount <= 0:
+            raise ValueError("amount is required for payment documents")
+        raw_lines = [{"item_name": default_label, "qty": 1, "unit": "NOS", "rate": amount, "tax_pct": 0}]
     if not isinstance(raw_lines, list) or not raw_lines:
         raise ValueError("At least one line item is required")
 
@@ -786,6 +826,8 @@ def create_manual_party_document(
     doc_discount_pct = totals["doc_discount_pct"]
     round_off = totals["round_off"]
     grand = totals["grand"]
+    balance = grand if meta.get("balance_due") else 0.0
+    status_text = "Unpaid" if meta.get("balance_due") else ("Paid" if meta.get("payment") else "Open")
 
     doc_terms = ""
     delivery_terms = ""
@@ -804,7 +846,7 @@ def create_manual_party_document(
     txn_number = _clean(payload.get("txn_number")) or next_manual_doc_number(
         conn, workspace_id, txn_type, txn_date
     )
-    party_name = _clean(customer.get("company"))
+    party_name = _clean(party.get("company"))
 
     cur = conn.execute(
         """
@@ -814,11 +856,12 @@ def create_manual_party_document(
             balance_amount, status_text, notes, shipping_amount, shipping_tax_pct,
             shipping_tax_amount, discount_amount, discount_pct, round_off,
             doc_terms, delivery_terms, created_at, updated_at
-        ) VALUES (?, 'customer', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
         """,
         (
             workspace_id,
-            customer_id,
+            party_type,
+            party_id,
             party_name,
             source_txn_id,
             txn_type,
@@ -826,7 +869,8 @@ def create_manual_party_document(
             txn_number,
             txn_date,
             grand,
-            "Draft",
+            balance,
+            status_text,
             notes,
             shipping,
             shipping_tax_pct,
@@ -850,7 +894,10 @@ def create_manual_party_document(
         "txn_label": txn_label,
         "txn_date": txn_date,
         "total_amount": grand,
-        "customer_id": customer_id,
+        "balance_amount": balance,
+        "party_type": party_type,
+        "party_id": party_id,
+        "customer_id": party_id if party_type == "customer" else None,
         "party_name": party_name,
     }
 
@@ -861,8 +908,8 @@ def update_manual_party_document(
     party_txn_id: int,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Update Nexora-created Estimate (27) or Proforma (83)."""
-    from app.hop_ops import get_customer
+    """Update a Nexora-created manual document (source_txn_id < 0)."""
+    from app.hop_ops import get_customer, get_vendor
 
     row = conn.execute(
         """
@@ -876,22 +923,34 @@ def update_manual_party_document(
     h = dict(row)
     txn_type = int(h.get("txn_type") or 0)
     source_txn_id = int(h.get("source_txn_id") or 0)
-    if txn_type not in (27, 83) or source_txn_id >= 0:
-        raise ValueError("Only Nexora-created estimates/proformas can be edited")
+    meta = MANUAL_TXN_META.get(txn_type)
+    if not meta or source_txn_id >= 0:
+        raise ValueError("Only Nexora-created documents can be edited")
 
-    customer_id = int(payload.get("customer_id") or h.get("party_id") or 0)
-    if not customer_id:
-        raise ValueError("customer_id is required")
-    customer = get_customer(conn, workspace_id, customer_id)
-    if not customer:
-        raise ValueError("customer_id not found")
+    party_type = _clean(payload.get("party_type") or h.get("party_type")).lower() or "customer"
+    party_id = int(payload.get("party_id") or payload.get("customer_id") or payload.get("vendor_id") or h.get("party_id") or 0)
+    if not party_id:
+        raise ValueError("party_id is required")
+    if party_type == "vendor":
+        party = get_vendor(conn, workspace_id, party_id)
+        if not party:
+            raise ValueError("vendor not found")
+    else:
+        party = get_customer(conn, workspace_id, party_id)
+        if not party:
+            raise ValueError("customer not found")
 
     txn_date = _clean(payload.get("txn_date")) or _clean(h.get("txn_date"))[:10]
-    default_label = "Estimate / Quotation" if txn_type == 27 else "Proforma Invoice"
+    default_label = meta["label"]
     txn_label = _clean(payload.get("txn_label")) or _clean(h.get("txn_label")) or default_label
     notes = _clean(payload.get("notes")) if "notes" in payload else _clean(h.get("notes"))
 
     raw_lines = payload.get("lines") or []
+    if (not isinstance(raw_lines, list) or not raw_lines) and meta.get("payment"):
+        amount = float(payload.get("total_amount") or payload.get("amount") or h.get("total_amount") or 0)
+        if amount <= 0:
+            raise ValueError("amount is required for payment documents")
+        raw_lines = [{"item_name": default_label, "qty": 1, "unit": "NOS", "rate": amount, "tax_pct": 0}]
     if not isinstance(raw_lines, list) or not raw_lines:
         raise ValueError("At least one line item is required")
     computed_lines, sub_total, line_tax_total = _parse_manual_doc_lines(raw_lines)
@@ -906,6 +965,7 @@ def update_manual_party_document(
     doc_discount_pct = totals["doc_discount_pct"]
     round_off = totals["round_off"]
     grand = totals["grand"]
+    balance = grand if meta.get("balance_due") else 0.0
 
     if "doc_terms" in payload or "terms" in payload:
         doc_terms = _clean(payload.get("doc_terms") or payload.get("terms"))
@@ -916,24 +976,26 @@ def update_manual_party_document(
     else:
         delivery_terms = _clean(h.get("delivery_terms"))
     txn_number = _clean(payload.get("txn_number")) or _clean(h.get("txn_number"))
-    party_name = _clean(customer.get("company"))
+    party_name = _clean(party.get("company"))
 
     conn.execute(
         """
         UPDATE hop_party_transactions SET
-            party_id=?, party_name=?, txn_label=?, txn_number=?, txn_date=?,
-            total_amount=?, notes=?, shipping_amount=?, shipping_tax_pct=?,
+            party_type=?, party_id=?, party_name=?, txn_label=?, txn_number=?, txn_date=?,
+            total_amount=?, balance_amount=?, notes=?, shipping_amount=?, shipping_tax_pct=?,
             shipping_tax_amount=?, discount_amount=?, discount_pct=?, round_off=?,
             doc_terms=?, delivery_terms=?, updated_at=datetime('now')
         WHERE workspace_id=? AND id=?
         """,
         (
-            customer_id,
+            party_type,
+            party_id,
             party_name,
             txn_label,
             txn_number,
             txn_date,
             grand,
+            balance,
             notes,
             shipping,
             shipping_tax_pct,
@@ -958,7 +1020,10 @@ def update_manual_party_document(
         "txn_label": txn_label,
         "txn_date": txn_date,
         "total_amount": grand,
-        "customer_id": customer_id,
+        "balance_amount": balance,
+        "party_type": party_type,
+        "party_id": party_id,
+        "customer_id": party_id if party_type == "customer" else None,
         "party_name": party_name,
     }
 
@@ -968,7 +1033,7 @@ def delete_manual_party_document(
     workspace_id: str,
     party_txn_id: int,
 ) -> dict[str, Any]:
-    """Delete Nexora-created Estimate (27) / Proforma (83) only (source_txn_id < 0)."""
+    """Delete a Nexora-created manual document (source_txn_id < 0)."""
     row = conn.execute(
         """
         SELECT id, source_txn_id, txn_type, txn_number FROM hop_party_transactions
@@ -981,8 +1046,8 @@ def delete_manual_party_document(
     h = dict(row)
     txn_type = int(h.get("txn_type") or 0)
     source_txn_id = int(h.get("source_txn_id") or 0)
-    if txn_type not in (27, 83) or source_txn_id >= 0:
-        raise ValueError("Only Nexora-created estimates/proformas can be deleted")
+    if txn_type not in MANUAL_TXN_TYPES or source_txn_id >= 0:
+        raise ValueError("Only Nexora-created documents can be deleted")
     conn.execute(
         "DELETE FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=?",
         (workspace_id, source_txn_id),

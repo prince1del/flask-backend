@@ -472,10 +472,22 @@ The user taps Install on the watch (first time: allow installs from this source)
 ## 4. House of Prizm (HoP) — separate business module
 Interior / furnishing trade: customers, vendors, leads, deals board, quotations,
 invoices, payments, dispatches, samples, rate sheets and rate compare, commission,
-projects, Vyapar import, document PDFs.
-- Routes: `/api/v1/hop/*` (79 routes). Code: `app/routes/hop.py`, `app/hop_*.py`,
-  `app/services/vyapar_*.py`, `fabric_preview.py`, `gstin_lookup.py`.
-- Tables: `hop_*`. Role: `hop_admin`.
+projects, Vyapar import, document PDFs — plus **Vyapar-parity books** (native
+create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS).
+- Routes: `/api/v1/hop/*`. Code: `app/routes/hop.py`, `app/hop_*.py`,
+  `app/hop_books.py`, `app/hop_doc_preview.py`, `app/services/vyapar_*.py`,
+  `fabric_preview.py`, `gstin_lookup.py`.
+- **Manual docs** (`source_txn_id < 0`): Estimate(27), Proforma(83), Sale Invoice(1),
+  Payment-In(3), Sale Order(65), Challan(30/82), Sale Return(21), Purchase Bill(2),
+  Payment-Out(4), Expense(7), Purchase Order(66), Purchase Return(16), Journal(81)
+  via `POST/PATCH/DELETE /api/v1/hop/party-transactions`.
+- **Items:** `hop_products` includes `hsn` + `gst_pct` (Vyapar import maps HSN; GST
+  from tax master when present — not hardcoded to 5).
+- **Books:** `/bank-accounts`, `/bank-entries`, `/stock`, `/stock/journal`,
+  `/reports/gst-hsn`, `/reports/gstr1`, `/accounts`, `/reports/trial-balance`,
+  `/reports/profit-loss`, `/reports/balance-sheet`.
+- Tables: `hop_*` (+ `hop_bank_*`, `hop_stock_journals`, `hop_accounts`,
+  `hop_journal_lines`). Role: `hop_admin`.
 - Phone: `Hop*.kt` screens. Web: `app/static/hop_app.js`, `hop_commercial_web.js`.
 - Does not touch BD tables.
 

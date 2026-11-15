@@ -4197,6 +4197,28 @@ body.bd-hop-ui .ta-playing-card-corner{display:none !important;}
 }
 .vyp-r-warn{color:#fbbf24;font-size:.72rem;}
 
+/* --- HoP books / party KPIs (Vyapar parity) --- */
+.pty-kpi-row{
+  display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;
+}
+.pty-kpi{
+  flex:1 1 120px;min-width:110px;padding:10px 12px;border-radius:10px;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+}
+.pty-kpi-label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;color:var(--nxt-text-dim,#64748b);margin-bottom:4px;}
+.pty-kpi strong{font-size:1.05rem;color:var(--nxt-text,#e2e8f0);}
+.pty-kpi strong.is-due{color:#f87171;}
+.pty-quick-docs{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+.hop-books-toolbar{margin:10px 0 14px;}
+.hop-books-actions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px;}
+.hop-books-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px;}
+@media (max-width:960px){.hop-books-grid{grid-template-columns:1fr;}}
+.hop-books-h{margin:0 0 10px;font-size:1rem;color:var(--nxt-text,#e2e8f0);}
+.hop-books-card{padding:14px;}
+.hop-books-card .pty-meta-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+.hop-books-card .pty-meta-row:last-child{border-bottom:0;}
+td.is-due{color:#f87171;font-weight:600;}
+
 /* --- Parties (Vyapar-style) --- */
 .pty-page{
   flex:1 1 0;

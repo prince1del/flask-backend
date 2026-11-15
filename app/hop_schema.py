@@ -440,6 +440,7 @@ def ensure_hop_schema(db_path: str | Path) -> None:
                 purchase_price REAL,
                 logistics_cost REAL DEFAULT 0,
                 gst_pct REAL DEFAULT 0,
+                hsn TEXT,
                 commission_pct REAL DEFAULT 0,
                 moq TEXT,
                 lead_time_days INTEGER,
@@ -1089,8 +1090,84 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_hop_deal_bulk_sub
                 ON hop_deal_bulk_submissions(workspace_id, deal_id, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS hop_bank_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                account_type TEXT NOT NULL DEFAULT 'bank',
+                account_number TEXT,
+                ifsc TEXT,
+                opening_balance REAL DEFAULT 0,
+                current_balance REAL DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_bank_ws ON hop_bank_accounts(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS hop_bank_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                account_id INTEGER NOT NULL,
+                entry_date TEXT NOT NULL,
+                entry_type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                counterparty_account_id INTEGER,
+                party_type TEXT,
+                party_id INTEGER,
+                party_txn_id INTEGER,
+                reference TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(account_id) REFERENCES hop_bank_accounts(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_bank_entries_ws
+                ON hop_bank_entries(workspace_id, account_id, entry_date);
+
+            CREATE TABLE IF NOT EXISTS hop_stock_journals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                product_id INTEGER NOT NULL,
+                entry_date TEXT NOT NULL,
+                qty_delta REAL NOT NULL,
+                reason TEXT,
+                reference TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(product_id) REFERENCES hop_products(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_stock_j_ws
+                ON hop_stock_journals(workspace_id, product_id, entry_date);
+
+            CREATE TABLE IF NOT EXISTS hop_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                code TEXT,
+                name TEXT NOT NULL,
+                account_type TEXT NOT NULL,
+                parent_id INTEGER,
+                is_system INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_accounts_ws ON hop_accounts(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS hop_journal_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                party_txn_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                debit REAL DEFAULT 0,
+                credit REAL DEFAULT 0,
+                line_no INTEGER DEFAULT 0,
+                FOREIGN KEY(party_txn_id) REFERENCES hop_party_transactions(id),
+                FOREIGN KEY(account_id) REFERENCES hop_accounts(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_journal_lines_ws
+                ON hop_journal_lines(workspace_id, party_txn_id);
             """
         )
+
+        _ensure_column(conn, "hop_products", "hsn", "TEXT")
 
         # Heal stale product_key / size so Delete & vendor matrix never drift after upgrades
         try:

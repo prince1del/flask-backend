@@ -2213,6 +2213,10 @@ function openHopView(viewName, opts) {
         wipe_data: renderHopWipeDataModule,
         theme: renderHopThemeModule,
         company_profile: renderHopFirmProfileModule,
+        banking: renderHopBankingModule,
+        stock: renderHopStockModule,
+        gst_reports: renderHopGstReportsModule,
+        books: renderHopBooksModule,
         hop_manual_doc_create: renderHopManualDocCreateModule,
         visiting_card: () => {
           // Visiting card lives under Parties → Add Party → Scan
@@ -4695,6 +4699,25 @@ function _hopRenderPartyDetail(party, partyTxns) {
           ${email ? `<a class="pty-chip pty-chip-mail" href="mailto:${foEscapeAttr(email)}">${hopContactIcon('email')}<span>${foEscapeText(email)}</span></a>` : ''}
           ${place ? `<span class="pty-chip pty-chip-place">${hopContactIcon('pin')}<span>${foEscapeText(place)}</span></span>` : ''}
         </div>
+
+        <div class="pty-kpi-row">
+          <div class="pty-kpi"><span class="pty-kpi-label">Outstanding</span><strong class="${Number(party._balance||0) > 0 ? 'is-due' : ''}">${hopMoney(party._balance || 0)}</strong></div>
+          <div class="pty-kpi"><span class="pty-kpi-label">Total sale</span><strong>${hopMoney(hopComputePartyTotalSale(partyRows))}</strong></div>
+          <div class="pty-kpi"><span class="pty-kpi-label">Documents</span><strong>${partyRows.length}</strong></div>
+        </div>
+
+        <div class="pty-quick-docs">
+          ${!isVendor ? `
+            <button type="button" class="nx-btn nx-btn-primary" onclick="hopOpenManualDocCreate(1,'standard')">+ Invoice</button>
+            <button type="button" class="nx-btn" onclick="hopOpenManualDocCreate(27,'standard')">+ Estimate</button>
+            <button type="button" class="nx-btn" onclick="hopOpenManualDocCreate(3,'standard')">+ Payment-In</button>
+            <button type="button" class="nx-btn" onclick="hopOpenManualDocCreate(65,'standard')">+ Sale Order</button>
+          ` : `
+            <button type="button" class="nx-btn nx-btn-primary" onclick="hopOpenManualDocCreate(2,'standard')">+ Purchase Bill</button>
+            <button type="button" class="nx-btn" onclick="hopOpenManualDocCreate(4,'standard')">+ Payment-Out</button>
+            <button type="button" class="nx-btn" onclick="hopOpenManualDocCreate(66,'standard')">+ Purchase Order</button>
+          `}
+        </div>
       </div>
     </div>
 
@@ -6170,18 +6193,21 @@ const HOP_SALE_LEDGER = {
     types: [...HOP_TXN_SALE_ORDER],
     empty: 'No sale orders in this filter.',
     numberLabel: 'Order no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(65,'standard')">+ Sale Order</button>`,
   },
   sale_challan: {
     title: 'Delivery Challan',
     types: [...HOP_TXN_CHALLAN],
     empty: 'No delivery challans in this filter.',
     numberLabel: 'Challan no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(30,'standard')">+ Delivery Challan</button>`,
   },
   sale_returns: {
     title: 'Sale Return / Credit Note',
     types: [...HOP_TXN_SALE_RETURN],
     empty: 'No sale returns / credit notes in this filter.',
     numberLabel: 'Credit note no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(21,'standard')">+ Credit Note</button>`,
   },
   sale_fa: {
     title: 'Sale FA',
@@ -6195,50 +6221,57 @@ const HOP_SALE_LEDGER = {
     types: [...HOP_TXN_PAYMENT_IN],
     empty: 'No payment-in records in this filter.',
     numberLabel: 'Receipt no',
-    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopShowForm('payment')">+ Record Payment</button>`,
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(3,'standard')">+ Payment-In</button>
+      <button type="button" class="nx-btn inv-add-btn" onclick="hopShowForm('payment')">+ CRM Payment</button>`,
   },
   invoices: {
     title: 'Sale Invoices',
     empty: 'No invoices in this filter.',
     numberLabel: 'Invoice no',
-    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopShowForm('invoice')">+ Add Sale</button>`,
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(1,'standard')">+ Sale Invoice</button>
+      <button type="button" class="nx-btn inv-add-btn" onclick="hopShowForm('invoice')">+ CRM Invoice</button>`,
   },
   purchase_bills: {
     title: 'Purchase Bills',
     types: [...HOP_TXN_PURCHASE_BILL],
     empty: 'No purchase bills in this filter.',
     numberLabel: 'Bill no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(2,'standard')">+ Purchase Bill</button>`,
   },
   purchase_payment_out: {
     title: 'Payment-Out',
     types: [...HOP_TXN_PAYMENT_OUT],
     empty: 'No payment-out records in this filter.',
     numberLabel: 'Voucher no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(4,'standard')">+ Payment-Out</button>`,
   },
   purchase_expenses: {
     title: 'Expenses',
     types: [...HOP_TXN_EXPENSE],
     empty: 'No expenses in this filter.',
     numberLabel: 'Expense no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(7,'standard')">+ Expense</button>`,
   },
   purchase_orders: {
     title: 'Purchase Order',
-    types: [],
-    labelQ: 'purchase order',
+    types: [66],
     empty: 'No purchase orders in this filter.',
     numberLabel: 'PO no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(66,'standard')">+ Purchase Order</button>`,
   },
   journal_entries: {
     title: 'Journal Entry',
     types: [...HOP_TXN_JOURNAL],
     empty: 'No journal entries in this filter.',
     numberLabel: 'Entry no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(81,'standard')">+ Journal Entry</button>`,
   },
   purchase_returns: {
     title: 'Purchase Return / Dr. Note',
     types: [...HOP_TXN_PURCHASE_RETURN],
     empty: 'No purchase returns / debit notes in this filter.',
     numberLabel: 'Return no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(16,'standard')">+ Debit Note</button>`,
   },
   purchase_fa: {
     title: 'Purchase FA',
@@ -7123,22 +7156,85 @@ async function renderHopProductsModule(mount) {
     mount.innerHTML = hopModuleShell('Products', 'Catalogue', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
     return;
   }
+  const low = rows.filter((r) => Number(r.stock_qty || 0) <= 0).length;
   const body = `
     <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
-    ${hopTxCards([{ label: 'SKUs', value: rows.length, tone: 'total' }])}
+    ${hopTxCards([
+      { label: 'SKUs', value: rows.length, tone: 'total' },
+      { label: 'Low / zero stock', value: low, tone: low ? 'overdue' : 'paid' },
+    ])}
+    <div class="hop-books-toolbar">
+      <input id="hop-product-q" class="hop-search" type="search" placeholder="Search name, code, HSN…"
+        oninput="hopFilterProductsTable(this.value)" />
+    </div>
     ${hopTable(
-      ['Code', 'Name', 'Brand', 'Category', 'Sell', 'Buy', 'Logistics', 'GST%', 'Comm%', 'Net Profit', 'Margin %', 'Stock', 'Vendor'],
-      rows.map((r) => `<tr>
-        <td>${hopCell(r.code)}</td><td>${hopCell(r.name)}</td><td>${hopCell(r.brand)}</td><td>${hopCell(r.category)}</td>
-        <td class="inv-num">${hopMoney(r.selling_price)}</td><td class="inv-num">${hopMoney(r.purchase_price)}</td><td class="inv-num">${hopMoney(r.logistics_cost)}</td>
-        <td>${hopCell(r.gst_pct)}</td><td>${hopCell(r.commission_pct)}</td>
-        <td class="inv-num">${hopMoney(r.net_profit)}</td><td>${hopCell(r.margin_pct)}</td><td>${hopCell(r.stock_qty)}</td>
+      ['Code', 'Name', 'HSN', 'Brand', 'Category', 'Sell', 'Buy', 'GST%', 'Stock', 'Vendor', ''],
+      rows.map((r) => `<tr data-hop-product-row="${foEscapeAttr(`${r.code||''} ${r.name||''} ${r.hsn||''}`.toLowerCase())}">
+        <td>${hopCell(r.code)}</td><td>${hopCell(r.name)}</td><td>${hopCell(r.hsn)}</td>
+        <td>${hopCell(r.brand)}</td><td>${hopCell(r.category)}</td>
+        <td class="inv-num">${hopMoney(r.selling_price)}</td><td class="inv-num">${hopMoney(r.purchase_price)}</td>
+        <td>${hopCell(r.gst_pct)}</td>
+        <td class="${Number(r.stock_qty||0) <= 0 ? 'is-due' : ''}">${hopCell(r.stock_qty)}</td>
         <td>${hopCell(r.vendor_company)}</td>
+        <td><button type="button" class="nx-btn" onclick="hopEditProduct(${r.id})">Edit</button></td>
       </tr>`).join(''),
       { label: 'Catalogue', count: rows.length },
     )}`;
-  mount.innerHTML = hopModuleShell('Products', 'Product Catalogue', '',
+  hopState._productsCache = rows;
+  mount.innerHTML = hopModuleShell('Products', 'Product Catalogue', 'HSN, GST%, rates and stock — Vyapar-style item master',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('product')">+ New Product</button>`, body);
+}
+
+function hopFilterProductsTable(q) {
+  const needle = String(q || '').trim().toLowerCase();
+  document.querySelectorAll('[data-hop-product-row]').forEach((tr) => {
+    const hay = tr.getAttribute('data-hop-product-row') || '';
+    tr.style.display = !needle || hay.includes(needle) ? '' : 'none';
+  });
+}
+
+async function hopEditProduct(productId) {
+  const rows = hopState._productsCache || [];
+  const r = rows.find((x) => Number(x.id) === Number(productId));
+  if (!r) return;
+  hopShowForm('product');
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+  set('f-prname', r.name); set('f-prcode', r.code); set('f-prbrand', r.brand); set('f-prcat', r.category);
+  set('f-prsell', r.selling_price); set('f-prbuy', r.purchase_price); set('f-prlog', r.logistics_cost);
+  set('f-prgst', r.gst_pct); set('f-prhsn', r.hsn); set('f-prcomm', r.commission_pct);
+  set('f-prstock', r.stock_qty); set('f-prvendor', r.vendor_id || ''); set('f-prmoq', r.moq);
+  hopState._editingProductId = Number(productId);
+  const title = document.querySelector('#hop-form-slot strong');
+  if (title) title.textContent = 'Edit Product';
+  const saveBtn = document.querySelector('#hop-form-slot .nx-btn-primary');
+  if (saveBtn) saveBtn.setAttribute('onclick', 'hopSaveProductEdit()');
+}
+
+async function hopSaveProductEdit() {
+  const id = hopState._editingProductId;
+  if (!id) return hopSave('product');
+  const payload = {
+    name: document.getElementById('f-prname')?.value,
+    code: document.getElementById('f-prcode')?.value,
+    brand: document.getElementById('f-prbrand')?.value,
+    category: document.getElementById('f-prcat')?.value,
+    selling_price: document.getElementById('f-prsell')?.value,
+    purchase_price: document.getElementById('f-prbuy')?.value,
+    logistics_cost: document.getElementById('f-prlog')?.value,
+    gst_pct: document.getElementById('f-prgst')?.value,
+    hsn: document.getElementById('f-prhsn')?.value,
+    commission_pct: document.getElementById('f-prcomm')?.value,
+    stock_qty: document.getElementById('f-prstock')?.value,
+    vendor_id: document.getElementById('f-prvendor')?.value,
+    moq: document.getElementById('f-prmoq')?.value,
+  };
+  try {
+    await hopApi(`/api/v1/hop/products/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    hopState._editingProductId = null;
+    openHopView('products');
+  } catch (e) {
+    if (typeof nexoraToast === 'function') nexoraToast(e.message || 'Update failed', 'err');
+  }
 }
 
 async function renderHopFabricPreviewModule(mount) {
@@ -9401,6 +9497,7 @@ async function hopShowForm(kind, editRow) {
         <label>Purchase Price<input id="f-prbuy" type="number" /></label>
         <label>Logistics<input id="f-prlog" type="number" /></label>
         <label>GST %<input id="f-prgst" type="number" /></label>
+        <label>HSN / SAC<input id="f-prhsn" /></label>
         <label>Commission %<input id="f-prcomm" type="number" /></label>
         <label>Stock<input id="f-prstock" type="number" /></label>
         <label>Vendor<select id="f-prvendor">${hopVendorOptions()}</select></label>
@@ -9693,6 +9790,7 @@ async function hopSave(kind) {
         purchase_price: document.getElementById('f-prbuy')?.value,
         logistics_cost: document.getElementById('f-prlog')?.value,
         gst_pct: document.getElementById('f-prgst')?.value,
+        hsn: document.getElementById('f-prhsn')?.value,
         commission_pct: document.getElementById('f-prcomm')?.value,
         stock_qty: document.getElementById('f-prstock')?.value,
         vendor_id: document.getElementById('f-prvendor')?.value,
@@ -9891,6 +9989,297 @@ window.hopPartySetCreditLimitMode = hopPartySetCreditLimitMode;
 window.hopPartyCopyBillingToShipping = hopPartyCopyBillingToShipping;
 window.hopPartyGroupOpenMenu = hopPartyGroupOpenMenu;
 window.hopPartyGroupCloseMenu = hopPartyGroupCloseMenu;
+/* ---------- Books: Banking / Stock / GST / Accounts ---------- */
+async function renderHopBankingModule(mount) {
+  let data = { accounts: [], cash_available: 0 };
+  let entries = [];
+  try {
+    data = await hopApi('/api/v1/hop/bank-accounts') || data;
+    entries = await hopApi('/api/v1/hop/bank-entries') || [];
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('Books', 'Banking', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const accounts = data.accounts || [];
+  const body = `
+    <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
+    ${hopTxCards([
+      { label: 'Cash available', value: hopMoney(data.cash_available), tone: 'paid' },
+      { label: 'Accounts', value: accounts.length, tone: 'total' },
+    ])}
+    <div class="hop-books-actions">
+      <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowBankAccountForm()">+ Account</button>
+      <button type="button" class="nx-btn" onclick="hopShowBankEntryForm()">+ Entry</button>
+    </div>
+    ${hopTable(
+      ['Name', 'Type', 'Number', 'IFSC', 'Balance'],
+      accounts.map((a) => `<tr>
+        <td>${hopCell(a.name)}</td><td>${hopCell(a.account_type)}</td>
+        <td>${hopCell(a.account_number)}</td><td>${hopCell(a.ifsc)}</td>
+        <td class="inv-num">${hopMoney(a.current_balance)}</td>
+      </tr>`).join(''),
+      { label: 'Accounts', count: accounts.length },
+    )}
+    ${hopTable(
+      ['Date', 'Account', 'Type', 'Amount', 'Reference', 'Notes'],
+      entries.map((e) => `<tr>
+        <td>${hopCell(e.entry_date)}</td><td>${hopCell(e.account_id)}</td>
+        <td>${hopCell(e.entry_type)}</td><td class="inv-num">${hopMoney(e.amount)}</td>
+        <td>${hopCell(e.reference)}</td><td>${hopCell(e.notes)}</td>
+      </tr>`).join(''),
+      { label: 'Recent entries', count: entries.length },
+    )}`;
+  hopState._bankAccounts = accounts;
+  mount.innerHTML = hopModuleShell('Books', 'Banking', 'Cash, bank and transfers', '', body);
+}
+
+function hopShowBankAccountForm() {
+  const slot = document.getElementById('hop-form-slot');
+  if (!slot) return;
+  slot.classList.remove('hidden');
+  slot.innerHTML = `
+    <strong>New bank / cash account</strong>
+    <div class="hop-form-grid" style="margin-top:10px;">
+      <label>Name *<input id="f-ba-name" /></label>
+      <label>Type<select id="f-ba-type"><option value="bank">Bank</option><option value="cash">Cash</option></select></label>
+      <label>Account no<input id="f-ba-num" /></label>
+      <label>IFSC<input id="f-ba-ifsc" /></label>
+      <label>Opening balance<input id="f-ba-open" type="number" value="0" /></label>
+    </div>
+    <div class="hop-form-actions">
+      <button type="button" class="nx-btn nx-btn-primary" onclick="hopSaveBankAccount()">Save</button>
+      <button type="button" class="nx-btn" onclick="document.getElementById('hop-form-slot').classList.add('hidden')">Cancel</button>
+    </div>`;
+}
+
+async function hopSaveBankAccount() {
+  await hopApi('/api/v1/hop/bank-accounts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: document.getElementById('f-ba-name')?.value,
+      account_type: document.getElementById('f-ba-type')?.value,
+      account_number: document.getElementById('f-ba-num')?.value,
+      ifsc: document.getElementById('f-ba-ifsc')?.value,
+      opening_balance: document.getElementById('f-ba-open')?.value,
+    }),
+  });
+  openHopView('banking');
+}
+
+function hopShowBankEntryForm() {
+  const slot = document.getElementById('hop-form-slot');
+  if (!slot) return;
+  const opts = (hopState._bankAccounts || []).map((a) =>
+    `<option value="${a.id}">${foEscapeText(a.name)}</option>`).join('');
+  slot.classList.remove('hidden');
+  slot.innerHTML = `
+    <strong>Bank entry</strong>
+    <div class="hop-form-grid" style="margin-top:10px;">
+      <label>Account<select id="f-be-acct">${opts}</select></label>
+      <label>Type<select id="f-be-type"><option value="in">Money in</option><option value="out">Money out</option><option value="transfer">Transfer</option></select></label>
+      <label>Amount<input id="f-be-amt" type="number" /></label>
+      <label>Date<input id="f-be-date" type="date" value="${new Date().toISOString().slice(0,10)}" /></label>
+      <label>To account (transfer)<select id="f-be-to"><option value="">—</option>${opts}</select></label>
+      <label>Reference<input id="f-be-ref" /></label>
+      <label class="hop-form-span-2">Notes<input id="f-be-notes" /></label>
+    </div>
+    <div class="hop-form-actions">
+      <button type="button" class="nx-btn nx-btn-primary" onclick="hopSaveBankEntry()">Save</button>
+      <button type="button" class="nx-btn" onclick="document.getElementById('hop-form-slot').classList.add('hidden')">Cancel</button>
+    </div>`;
+}
+
+async function hopSaveBankEntry() {
+  await hopApi('/api/v1/hop/bank-entries', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      account_id: document.getElementById('f-be-acct')?.value,
+      entry_type: document.getElementById('f-be-type')?.value,
+      amount: document.getElementById('f-be-amt')?.value,
+      entry_date: document.getElementById('f-be-date')?.value,
+      counterparty_account_id: document.getElementById('f-be-to')?.value || null,
+      reference: document.getElementById('f-be-ref')?.value,
+      notes: document.getElementById('f-be-notes')?.value,
+    }),
+  });
+  openHopView('banking');
+}
+
+async function renderHopStockModule(mount) {
+  let rows = [];
+  try { rows = await hopApi('/api/v1/hop/stock') || []; } catch (e) {
+    mount.innerHTML = hopModuleShell('Books', 'Stock', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const body = `
+    <div id="hop-form-slot" class="nx-card hop-form-card hidden"></div>
+    ${hopTxCards([
+      { label: 'Items', value: rows.length, tone: 'total' },
+      { label: 'Zero / negative', value: rows.filter((r) => Number(r.stock_qty||0) <= 0).length, tone: 'overdue' },
+    ])}
+    <div class="hop-books-actions">
+      <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowStockJournalForm()">+ Stock adjustment</button>
+    </div>
+    ${hopTable(
+      ['Code', 'Name', 'HSN', 'GST%', 'Stock', 'Sell', 'Buy'],
+      rows.map((r) => `<tr>
+        <td>${hopCell(r.code)}</td><td>${hopCell(r.name)}</td><td>${hopCell(r.hsn)}</td>
+        <td>${hopCell(r.gst_pct)}</td>
+        <td class="${Number(r.stock_qty||0) <= 0 ? 'is-due' : ''}">${hopCell(r.stock_qty)}</td>
+        <td class="inv-num">${hopMoney(r.selling_price)}</td>
+        <td class="inv-num">${hopMoney(r.purchase_price)}</td>
+      </tr>`).join(''),
+      { label: 'Stock', count: rows.length },
+    )}`;
+  hopState._stockRows = rows;
+  mount.innerHTML = hopModuleShell('Books', 'Stock', 'Live quantities and stock journal', '', body);
+}
+
+function hopShowStockJournalForm() {
+  const slot = document.getElementById('hop-form-slot');
+  if (!slot) return;
+  const opts = (hopState._stockRows || []).map((r) =>
+    `<option value="${r.id}">${foEscapeText(r.name)} (${hopCell(r.stock_qty)})</option>`).join('');
+  slot.classList.remove('hidden');
+  slot.innerHTML = `
+    <strong>Stock adjustment</strong>
+    <div class="hop-form-grid" style="margin-top:10px;">
+      <label>Item<select id="f-sj-prod">${opts}</select></label>
+      <label>Qty delta (+/-)<input id="f-sj-qty" type="number" /></label>
+      <label>Date<input id="f-sj-date" type="date" value="${new Date().toISOString().slice(0,10)}" /></label>
+      <label>Reason<input id="f-sj-reason" placeholder="Opening / damage / count…" /></label>
+    </div>
+    <div class="hop-form-actions">
+      <button type="button" class="nx-btn nx-btn-primary" onclick="hopSaveStockJournal()">Save</button>
+      <button type="button" class="nx-btn" onclick="document.getElementById('hop-form-slot').classList.add('hidden')">Cancel</button>
+    </div>`;
+}
+
+async function hopSaveStockJournal() {
+  await hopApi('/api/v1/hop/stock/journal', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      product_id: document.getElementById('f-sj-prod')?.value,
+      qty_delta: document.getElementById('f-sj-qty')?.value,
+      entry_date: document.getElementById('f-sj-date')?.value,
+      reason: document.getElementById('f-sj-reason')?.value,
+    }),
+  });
+  openHopView('stock');
+}
+
+async function renderHopGstReportsModule(mount) {
+  let hsn = { rows: [] };
+  let gstr1 = { invoices: [] };
+  try {
+    [hsn, gstr1] = await Promise.all([
+      hopApi('/api/v1/hop/reports/gst-hsn'),
+      hopApi('/api/v1/hop/reports/gstr1'),
+    ]);
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('Books', 'GST', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const body = `
+    ${hopTxCards([
+      { label: 'Taxable (HSN)', value: hopMoney(hsn.taxable_total), tone: 'total' },
+      { label: 'Tax', value: hopMoney(hsn.tax_total), tone: 'unpaid' },
+      { label: 'GSTR-1 invoices', value: gstr1.invoice_count || 0, tone: 'paid' },
+    ])}
+    ${hopTable(
+      ['HSN', 'Tax %', 'Taxable', 'Tax', 'Line total', 'Lines'],
+      (hsn.rows || []).map((r) => `<tr>
+        <td>${hopCell(r.hsn)}</td><td>${hopCell(r.tax_pct)}</td>
+        <td class="inv-num">${hopMoney(r.taxable)}</td>
+        <td class="inv-num">${hopMoney(r.tax_amount)}</td>
+        <td class="inv-num">${hopMoney(r.line_total)}</td>
+        <td>${hopCell(r.lines)}</td>
+      </tr>`).join(''),
+      { label: 'HSN summary', count: (hsn.rows || []).length },
+    )}
+    ${hopTable(
+      ['Date', 'Invoice', 'Party', 'Amount', 'Balance', 'Status'],
+      (gstr1.invoices || []).map((r) => `<tr>
+        <td>${hopCell(r.txn_date)}</td><td>${hopCell(r.txn_number)}</td>
+        <td>${hopCell(r.party_name)}</td>
+        <td class="inv-num">${hopMoney(r.total_amount)}</td>
+        <td class="inv-num">${hopMoney(r.balance_amount)}</td>
+        <td>${hopCell(r.status_text)}</td>
+      </tr>`).join(''),
+      { label: 'GSTR-1 (sale invoices)', count: (gstr1.invoices || []).length },
+    )}`;
+  mount.innerHTML = hopModuleShell('Books', 'GST reports', 'HSN summary and GSTR-1 style sale list', '', body);
+}
+
+async function renderHopBooksModule(mount) {
+  let tb = { rows: [] };
+  let pnl = {};
+  let bs = {};
+  try {
+    [tb, pnl, bs] = await Promise.all([
+      hopApi('/api/v1/hop/reports/trial-balance'),
+      hopApi('/api/v1/hop/reports/profit-loss'),
+      hopApi('/api/v1/hop/reports/balance-sheet'),
+    ]);
+  } catch (e) {
+    mount.innerHTML = hopModuleShell('Books', 'Accounts', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+    return;
+  }
+  const body = `
+    ${hopTxCards([
+      { label: 'Net sales', value: hopMoney(pnl.net_sales), tone: 'paid' },
+      { label: 'Gross profit', value: hopMoney(pnl.gross_profit), tone: 'total' },
+      { label: 'Net profit', value: hopMoney(pnl.net_profit), tone: Number(pnl.net_profit) >= 0 ? 'paid' : 'overdue' },
+      { label: 'Assets', value: hopMoney(bs.assets?.total), tone: 'unpaid' },
+    ])}
+    <div class="hop-books-grid">
+      <div>
+        <h3 class="hop-books-h">Trial Balance</h3>
+        ${hopTable(
+          ['Code', 'Account', 'Debit', 'Credit'],
+          (tb.rows || []).map((r) => `<tr>
+            <td>${hopCell(r.code)}</td><td>${hopCell(r.name)}</td>
+            <td class="inv-num">${hopMoney(r.debit)}</td>
+            <td class="inv-num">${hopMoney(r.credit)}</td>
+          </tr>`).join('') + `<tr><td></td><td><strong>Total</strong></td>
+            <td class="inv-num"><strong>${hopMoney(tb.total_debit)}</strong></td>
+            <td class="inv-num"><strong>${hopMoney(tb.total_credit)}</strong></td></tr>`,
+          { label: 'Trial Balance', count: (tb.rows || []).length },
+        )}
+      </div>
+      <div>
+        <h3 class="hop-books-h">Profit &amp; Loss</h3>
+        <div class="nx-card hop-books-card">
+          <div class="pty-meta-row"><span>Sales</span><strong>${hopMoney(pnl.sales)}</strong></div>
+          <div class="pty-meta-row"><span>Sale returns</span><strong>${hopMoney(pnl.sale_returns)}</strong></div>
+          <div class="pty-meta-row"><span>Net sales</span><strong>${hopMoney(pnl.net_sales)}</strong></div>
+          <div class="pty-meta-row"><span>Purchases</span><strong>${hopMoney(pnl.purchases)}</strong></div>
+          <div class="pty-meta-row"><span>Expenses</span><strong>${hopMoney(pnl.expenses)}</strong></div>
+          <div class="pty-meta-row"><span>Gross profit</span><strong>${hopMoney(pnl.gross_profit)}</strong></div>
+          <div class="pty-meta-row"><span>Net profit</span><strong>${hopMoney(pnl.net_profit)}</strong></div>
+        </div>
+        <h3 class="hop-books-h" style="margin-top:18px;">Balance Sheet</h3>
+        <div class="nx-card hop-books-card">
+          <div class="pty-meta-row"><span>Cash / Bank</span><strong>${hopMoney(bs.assets?.cash_bank)}</strong></div>
+          <div class="pty-meta-row"><span>Receivables</span><strong>${hopMoney(bs.assets?.receivables)}</strong></div>
+          <div class="pty-meta-row"><span>Total assets</span><strong>${hopMoney(bs.assets?.total)}</strong></div>
+          <div class="pty-meta-row"><span>Payables</span><strong>${hopMoney(bs.liabilities?.payables)}</strong></div>
+          <div class="pty-meta-row"><span>Equity</span><strong>${hopMoney(bs.equity?.capital_and_reserves)}</strong></div>
+        </div>
+      </div>
+    </div>`;
+  mount.innerHTML = hopModuleShell('Books', 'Accounts', 'Trial Balance, P&L and Balance Sheet from your HoP ledgers', '', body);
+}
+
+window.hopFilterProductsTable = hopFilterProductsTable;
+window.hopEditProduct = hopEditProduct;
+window.hopSaveProductEdit = hopSaveProductEdit;
+window.hopShowBankAccountForm = hopShowBankAccountForm;
+window.hopSaveBankAccount = hopSaveBankAccount;
+window.hopShowBankEntryForm = hopShowBankEntryForm;
+window.hopSaveBankEntry = hopSaveBankEntry;
+window.hopShowStockJournalForm = hopShowStockJournalForm;
+window.hopSaveStockJournal = hopSaveStockJournal;
 window.hopPartyGroupOnInput = hopPartyGroupOnInput;
 window.hopPartyGroupSelect = hopPartyGroupSelect;
 window.hopPartyGroupCreateNew = hopPartyGroupCreateNew;
