@@ -1163,7 +1163,7 @@ async function login() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, device_label: webDeviceLabel() }),
       credentials: 'same-origin',
     });
 
@@ -1201,7 +1201,8 @@ async function login() {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({ username, password }).toString(),
+        // Same sign-in as the API login above (one approval request, not two).
+        body: new URLSearchParams({ username, password, access_token: data.data.access_token }).toString(),
         credentials: 'same-origin',
       });
     } catch (e) {
@@ -1287,19 +1288,46 @@ function clearAuthLocalState() {
   saveUserId(null);
 }
 
+/** "Web browser · Chrome on Windows" — shown to the company owner on sign-in requests. */
+function webDeviceLabel() {
+  const ua = navigator.userAgent || '';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone / iPad'
+    : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
+  return `Web browser · ${browser}${os ? ` on ${os}` : ''}`;
+}
+
 async function logout(reason) {
   // Manual logout (any UI / any id) — confirm first. Session timeout skips confirm.
   const skipConfirm = reason === 'timeout' || reason === 'session-expired' || reason === 'forced';
   if (!skipConfirm) {
+    // Team members: the next sign-in needs the company owner again.
+    const needsOwner = !!(window.nxSubscription && window.nxSubscription.signInNeedsOwner && window.nxSubscription.signInNeedsOwner());
+    const question = needsOwner
+      ? 'Your company owner must approve your next sign-in. Log out only if you are changing device or were asked to.'
+      : 'Log out of NEXORA? You will need to sign in again.';
     const ok = typeof nexoraConfirm === 'function'
-      ? await nexoraConfirm('Log out of NEXORA? You will need to sign in again.', {
+      ? await nexoraConfirm(question, {
           title: 'Log out',
           okText: 'Log out',
           cancelText: 'Stay signed in',
           danger: true,
         })
-      : window.confirm('Log out of NEXORA? You will need to sign in again.');
+      : window.confirm(question);
     if (!ok) return;
+  }
+
+  // End this sign-in on the server too (refresh stops; members need approval again).
+  if (authState.accessToken) {
+    try {
+      await fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authState.accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: authState.refreshToken || undefined }),
+        credentials: 'same-origin',
+      });
+    } catch (e) { /* signing out locally anyway */ }
   }
 
   try {

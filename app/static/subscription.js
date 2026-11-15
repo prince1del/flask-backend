@@ -128,8 +128,126 @@
 
   setInterval(() => { if (lastStatus) renderBanner(lastStatus); }, 10 * 60 * 1000);
 
+  // ---------- Sign-in approval (team members) ----------
+
+  let approvalState = null;   // pending / approved / denied / ended / not_needed
+  let approvalTimer = null;
+  let requestTimer = null;
+
+  function signInNeedsOwner() { return approvalState === 'approved' || approvalState === 'pending'; }
+
+  function fullNotice(id, title, text, busy, buttonLabel, onButton) {
+    let el = document.getElementById(id);
+    if (el) el.remove();
+    el = document.createElement('div');
+    el.id = id;
+    el.style.cssText = 'position:fixed;inset:0;z-index:10060;background:rgba(15,23,42,.96);color:#e2e8f0;'
+      + 'display:flex;align-items:center;justify-content:center;padding:24px;';
+    el.innerHTML = `<div style="max-width:440px;">
+        ${busy ? '<div class="nx-spin" style="width:34px;height:34px;border:3px solid rgba(148,163,184,.35);border-top-color:#60a5fa;border-radius:50%;animation:nxspin 1s linear infinite;margin-bottom:18px;"></div><style>@keyframes nxspin{to{transform:rotate(360deg)}}</style>' : ''}
+        <h2 style="margin:0 0 8px;">${esc(title)}</h2>
+        <p style="color:#94a3b8;line-height:1.5;">${esc(text)}</p>
+        <button type="button" class="btn ${busy ? 'btn-secondary' : 'btn-primary'}" data-go style="margin-top:12px;">${esc(buttonLabel)}</button>
+      </div>`;
+    el.querySelector('[data-go]').addEventListener('click', onButton);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function forceSignOut() {
+    approvalState = null;
+    document.getElementById('nx-approval-wait')?.remove();
+    document.getElementById('nx-approval-ended')?.remove();
+    if (typeof logout === 'function') logout('forced');
+  }
+
+  function setApproval(state) {
+    if (state === approvalState) return;
+    approvalState = state;
+    clearInterval(approvalTimer);
+    document.getElementById('nx-approval-wait')?.remove();
+    document.getElementById('nx-approval-ended')?.remove();
+    if (state === 'pending') {
+      fullNotice('nx-approval-wait', 'Waiting for approval',
+        'Your company owner has been asked to allow this sign-in. NEXORA opens by itself as soon as they approve.',
+        true, 'Log out', forceSignOut);
+      approvalTimer = setInterval(async () => {
+        try {
+          const d = await api('/api/v1/auth/approval');
+          if (d.approval !== 'pending') {
+            clearInterval(approvalTimer);
+            if (d.approval === 'approved' || d.approval === 'not_needed') window.location.reload();
+            else setApproval(d.approval);
+          }
+        } catch (e) { /* keep waiting */ }
+      }, 5000);
+    } else if (state === 'denied' || state === 'ended') {
+      fullNotice('nx-approval-ended', state === 'denied' ? 'Sign-in not allowed' : 'You were signed out',
+        state === 'denied' ? 'Your company owner did not allow this sign-in. Contact them if this was a mistake.'
+          : 'This sign-in was ended. Sign in again; your company owner will need to approve it.',
+        false, 'Go to sign in', forceSignOut);
+    }
+  }
+
+  // Any API answer can say the sign-in is waiting or was ended.
+  if (!window.__nxApprovalFetchHook) {
+    window.__nxApprovalFetchHook = true;
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (...args) => {
+      const res = await nativeFetch(...args);
+      if (res.status === 403) {
+        res.clone().json().then((d) => {
+          const c = d && d.error && d.error.code;
+          if (c === 'LOGIN_PENDING') setApproval('pending');
+          else if (c === 'LOGIN_DENIED') setApproval('denied');
+          else if (c === 'SESSION_REVOKED') setApproval('ended');
+        }).catch(() => {});
+      }
+      return res;
+    };
+  }
+
+  /** Owner / admin: a teammate's sign-in waits here (checked every 20 seconds). */
+  function watchLoginRequests() {
+    clearInterval(requestTimer);
+    const shown = new Set();
+    const check = async () => {
+      if (document.getElementById('nx-login-request')) return;
+      let reqs;
+      try { reqs = (await api('/api/v1/invites/login-requests')).requests || []; } catch (e) { clearInterval(requestTimer); return; }
+      const r = reqs.find((x) => !shown.has(x.id));
+      if (!r) return;
+      shown.add(r.id);
+      const when = r.requested_at ? new Date(r.requested_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+      const el = modal('nx-login-request', 'Sign-in request', `
+        <p style="margin-top:0;font-size:1.1rem;"><strong>${esc(r.full_name || r.username)}</strong>
+          <small style="color:#94a3b8;">${esc(r.username)} · ${esc(ROLE_LABELS[r.role] || r.role || '')}</small></p>
+        <p>Device: <strong>${esc(r.device_label || 'Unknown device')}</strong></p>
+        <p style="color:#94a3b8;">${esc([when && `Asked ${when}`, r.phone, r.email].filter(Boolean).join(' · '))}</p>
+        <p style="color:#94a3b8;font-size:0.9rem;">Allow only if this is your team member on their own device. Their earlier device is signed out.</p>
+        ${reqs.length > 1 ? `<p style="color:#60a5fa;">${reqs.length - 1} more waiting</p>` : ''}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+          <button type="button" class="btn btn-secondary" data-deny>Don't allow</button>
+          <button type="button" class="btn btn-primary" data-allow>Allow</button>
+        </div>`);
+      const decide = async (approve) => {
+        try {
+          await api(`/api/v1/invites/login-requests/${r.id}`, { method: 'POST', body: { approve } });
+          toast(approve ? `${r.full_name || r.username} can sign in now` : 'Sign-in not allowed', 'success');
+        } catch (e) { toast(e.message, 'error'); }
+        el.remove();
+        check();
+      };
+      el.querySelector('[data-allow]').addEventListener('click', () => decide(true));
+      el.querySelector('[data-deny]').addEventListener('click', () => decide(false));
+    };
+    check();
+    requestTimer = setInterval(check, 20000);
+  }
+
   async function refresh() {
     try {
+      api('/api/v1/auth/approval').then((d) => setApproval(d.approval)).catch(() => {});
       const st = await api('/api/v1/subscription/status');
       lastStatus = st;
       const show = (id, on) => {
@@ -138,6 +256,8 @@
       };
       show('nx-menu-sub-codes', st.is_super_admin);
       show('nx-menu-invites', st.can_invite);
+      show('nx-menu-team', st.can_invite);
+      if (st.can_invite && !requestTimer) watchLoginRequests();
       show('nx-menu-plan', st.is_super_admin || st.can_invite || st.status !== 'unlimited');
       renderBanner(st);
       if (st.status === 'expired') showLock();
@@ -603,8 +723,13 @@
       const code = ev.target?.getAttribute?.('data-revoke');
       const block = ev.target?.getAttribute?.('data-block');
       const save = ev.target?.getAttribute?.('data-save-access');
+      const signout = ev.target?.getAttribute?.('data-signout');
       try {
-        if (code) {
+        if (signout) {
+          if (!confirm('Sign out this member now? Their next sign-in will need your approval.')) return;
+          await api(`/api/v1/invites/members/${signout}/signout`, { method: 'POST' });
+          toast('Signed out', 'success');
+        } else if (code) {
           await api(`/api/v1/invites/${encodeURIComponent(code)}/revoke`, { method: 'POST' });
         } else if (block) {
           const turnOff = ev.target.getAttribute('data-blocked') !== '1';
@@ -635,7 +760,10 @@
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
           <div><strong>${esc(m.full_name || m.username)}</strong>
             <small style="color:#94a3b8;">${esc(m.username)} · ${esc(ROLE_LABELS[m.role] || m.role || '')}${m.is_owner ? ' · Owner' : ''}${m.is_me ? ' · You' : ''}</small>
-            ${m.blocked ? '<br><small style="color:#f87171;">Login switched off</small>' : ''}</div>
+            ${m.blocked ? '<br><small style="color:#f87171;">Login switched off</small>' : ''}
+            ${!m.is_owner && m.device && (m.device.status === 'approved' || m.device.status === 'pending')
+              ? `<br><small style="color:#94a3b8;">${m.device.status === 'pending' ? 'Waiting to sign in on' : 'Signed in on'}: ${esc(m.device.device || 'Unknown device')}${m.device.since ? ` · since ${esc(fmtDate(m.device.since))}` : ''}</small>`
+              : ''}</div>
           ${fixed ? '' : `<button type="button" class="btn ${m.blocked ? 'btn-primary' : 'btn-secondary'}" data-block="${m.id}" data-blocked="${m.blocked ? 1 : 0}" style="padding:2px 10px;">${m.blocked ? 'Switch on' : 'Switch off'}</button>`}
         </div>
         ${fixed ? '<small style="color:#94a3b8;">Every feature</small>' : `
@@ -643,7 +771,8 @@
             ${catalog.map((f) => `<label style="display:flex;gap:6px;align-items:center;font-size:0.85rem;">
               <input type="checkbox" name="mfeature" value="${esc(f.key)}" ${!feats || feats.includes(f.key) ? 'checked' : ''}> ${esc(f.label)}</label>`).join('')}
           </div>
-          <button type="button" class="btn btn-secondary" data-save-access="${m.id}" style="padding:2px 10px;margin-top:6px;">Save access</button>`}
+          <button type="button" class="btn btn-secondary" data-save-access="${m.id}" style="padding:2px 10px;margin-top:6px;">Save access</button>
+          ${m.device && m.device.status === 'approved' ? `<button type="button" class="btn btn-secondary" data-signout="${m.id}" style="padding:2px 10px;margin-top:6px;">Sign out this device</button>` : ''}`}
       </div>`;
     }).join('');
   }
@@ -664,6 +793,9 @@
         <div class="form-group"><label>Secret question</label><select name="secret_question">
           ${SECRET_QUESTIONS.map((q) => `<option>${esc(q)}</option>`).join('')}</select></div>
         <div class="form-group"><label>Answer</label><input name="secret_answer" required></div>
+        <p style="font-size:0.85rem;color:#94a3b8;line-height:1.45;padding:10px 12px;border-radius:10px;background:rgba(148,163,184,.1);">
+          Your company owner can see the work you do in NEXORA, and your location only while you are on duty
+          (between Start day and End day). Your first sign-in waits for the owner's approval.</p>
         <button type="submit" class="btn btn-primary">Create my login</button>
         <p class="error" data-err style="margin-top:8px;"></p>
       </form>`);
@@ -694,6 +826,7 @@
       errEl.textContent = '';
       const f = new FormData(form);
       const payload = Object.fromEntries(f.entries());
+      if (typeof webDeviceLabel === 'function') payload.device_label = webDeviceLabel();
       try {
         const res = await fetch('/api/v1/signup', {
           method: 'POST',
@@ -717,5 +850,5 @@
     });
   }
 
-  window.nxSubscription = { refresh, showLock, openPlan, openCodeDesk, openInvites, openJoin, openBilling };
+  window.nxSubscription = { refresh, showLock, openPlan, openCodeDesk, openInvites, openJoin, openBilling, signInNeedsOwner };
 })();

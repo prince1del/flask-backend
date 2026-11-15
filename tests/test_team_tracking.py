@@ -223,3 +223,10 @@ def test_missed_end_day_is_off_until_request_approved(app, client):
     _b, hb, _mb, _mhb = _team(app, client, "otherhr", "otherrep", ["attendance"])
     assert client.get("/api/v1/team/attendance/requests", headers=hb).get_json()["data"]["requests"] == []
     assert client.post(f"/api/v1/team/attendance/requests/{req['id']}", headers=hb, json={"approve": True}).status_code == 404
+
+
+def test_days_before_anyone_started_are_blank_not_absent(app, client):
+    _o, h, _m, _mh = _team(app, client, "blankboss", "blankrep", ["attendance"])
+    sheet = client.get("/api/v1/team/attendance?month=2026-10", headers=h).get_json()["data"]
+    for p in sheet["people"]:
+        assert p["absent"] == 0 and {d["status"] for d in p["days"]} == {""}

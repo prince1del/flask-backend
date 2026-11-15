@@ -157,13 +157,28 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
   clears approval so the next login needs it again. Owners and logins without a
   `member_access` row never need approval. Owner can force sign-out:
   `POST /api/v1/invites/members/<id>/signout`.
+  Phone: `ui/plan/PlanGate.kt` (WaitingApprovalScreen, SignInEndedScreen,
+  LoginRequestPrompt for owners, device line + "Sign out this phone" in
+  TeamSection; the sign-out warning is in `SignOutConfirmDialog`). Web:
+  `app/static/subscription.js` (waiting overlay, owner prompt every 20 s, device on
+  Team cards). The web app signs in via `/api/v1/auth/login` and then the cookie
+  form `/login` with `access_token`, so both share **one** approval request; web
+  logout also calls `POST /api/v1/auth/logout` to end the session.
 - **Team duty & live location** (`app/services/team_tracking.py` +
   `app/routes/team.py`): member Start/End day (`/api/v1/team/duty/start|end`),
   location points only while on duty (`POST /api/v1/team/location` → 409
   `NOT_ON_DUTY` otherwise). Owner/admin: live map `GET /api/v1/team/live`, day
   trail `GET /api/v1/team/members/<id>/day`, work places `/api/v1/team/sites*`,
   attendance sheet/rules/requests. Feature keys `attendance` and `live_location`
-  gate these routes. Never across companies.
+  gate these routes. Never across companies. Ending the day away from a work place
+  answers 403 `END_AWAY` until a note + approver are sent; the day is then PEND
+  until approved (`/api/v1/team/attendance/requests*`). A missed End day is NOEND;
+  the member sends `POST /api/v1/team/attendance/me/request`. Days before the
+  company's first Start day or before a person joined are blank, not absent.
+  Phone: `ui/team/` (DutyCard on My Day and the HoP "Team duty" menu,
+  DutyLocationService, TeamScreens: team map, attendance + requests, work places,
+  My attendance). Web: `app/static/team.js` → profile menu "Team on duty"
+  (Leaflet/OSM live map + day route, attendance sheet, requests, work places).
 - **Data inside a company today:** shared per workspace — distributor master,
   Commercial Invoices (order lifecycle), Target vs Achievement, Article Master
   (edit: owner/admin). Per login — Filled Orders, SO matches, payments/Hisaab,

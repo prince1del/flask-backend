@@ -149,3 +149,25 @@ def test_other_company_cannot_approve_my_member(app, client):
     assert client.get("/api/v1/invites/login-requests", headers=hb).get_json()["data"]["requests"] == []
     rid = client.get("/api/v1/invites/login-requests", headers=_auth(a["access_token"])).get_json()["data"]["requests"][0]["id"]
     assert client.post(f"/api/v1/invites/login-requests/{rid}", headers=hb, json={"approve": True}).status_code == 404
+
+
+def test_web_sign_in_makes_one_request_not_two(app, client):
+    """The web app signs in via the API and then the cookie form; both must share one approval."""
+    from tests.test_subscription_and_invites import _allow_team
+
+    owner = _signup(client, "webboss").get_json()["data"]
+    _allow_team(app, owner)
+    h = _auth(owner["access_token"])
+    code = client.post("/api/v1/invites", headers=h, json={"role": "sales_executive"}).get_json()["data"]["code"]
+    _signup(client, "webrep", company_name="", category="", invite_code=code)  # approved phone
+
+    api = client.post("/api/v1/auth/login", json={"username": "webrep", "password": "pass12345",
+                                                   "device_label": "Web browser · Chrome on Windows"})
+    assert api.get_json()["data"]["approval"] == "pending"
+    token = api.get_json()["data"]["access_token"]
+    client.post("/login", data={"username": "webrep", "password": "pass12345", "access_token": token})
+
+    reqs = client.get("/api/v1/invites/login-requests", headers=h).get_json()["data"]["requests"]
+    assert len(reqs) == 1 and reqs[0]["device_label"] == "Web browser · Chrome on Windows"
+    client.post(f"/api/v1/invites/login-requests/{reqs[0]['id']}", headers=h, json={"approve": True})
+    assert client.get("/api/v1/personal-todos", headers=_auth(token)).status_code != 403

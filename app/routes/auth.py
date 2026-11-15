@@ -1047,7 +1047,20 @@ def login() -> str | Response:
             from app.services import login_approval
 
             session["sid"] = None
-            if user_row and login_approval.needs_approval(
+            # The web app signs in through /api/v1/auth/login first and then
+            # here for the cookie; it passes that access token so both share
+            # ONE sign-in (and one approval request) instead of the second
+            # ending the first.
+            linked_sid = None
+            _link = (request.form.get("access_token") or "").strip()
+            if _link and user_row:
+                _p = get_jwt_service().verify_token(_link)
+                if (isinstance(_p, dict) and "error" not in _p and _p.get("sid")
+                        and int(_p.get("user_id") or 0) == int(user_row.get("id") or -1)):
+                    linked_sid = str(_p["sid"])
+            if linked_sid:
+                session["sid"] = linked_sid
+            elif user_row and login_approval.needs_approval(
                 _get_auth_db().db_path, int(user_row.get("id")), bool(user_row.get("is_workspace_owner"))
             ):
                 sid = uuid.uuid4().hex

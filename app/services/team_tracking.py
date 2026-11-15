@@ -671,11 +671,14 @@ def attendance_month(db, manager: dict[str, Any] | None, month: str, member_id: 
     if self_user is not None:
         ws = str(self_user.get("workspace_id") or "default")
         people = [{"id": int(self_user["user_id"]), "username": self_user.get("username"), "full_name": None}]
+        with _connect(db.db_path) as conn:
+            r = conn.execute("SELECT created_at FROM users WHERE id = ?", (int(self_user["user_id"]),)).fetchone()
+            people[0]["created_at"] = r["created_at"] if r else None
     else:
         ws = _manager_check(db, manager)
         with _connect(db.db_path) as conn:
             people = [dict(r) for r in conn.execute(
-                """SELECT id, username, full_name FROM users WHERE workspace_id = ?
+                """SELECT id, username, full_name, created_at FROM users WHERE workspace_id = ?
                    AND lower(username) NOT LIKE 'archived_dup_%' ORDER BY id""", (ws,)).fetchall()]
             if member_id is not None:
                 _member(conn, ws, member_id)
@@ -685,7 +688,18 @@ def attendance_month(db, manager: dict[str, Any] | None, month: str, member_id: 
     end_utc = datetime(nxt.year, nxt.month, 1, tzinfo=IST).astimezone(timezone.utc)
     out = []
     with _connect(db.db_path) as conn:
+        # Days before the company first used Start day, or before a person
+        # joined, are blank — not "absent".
+        first = conn.execute("SELECT MIN(started_at) FROM duty_sessions WHERE workspace_id = ?", (ws,)).fetchone()[0]
+        tracking_from = _parse(first).astimezone(IST).date().isoformat() if first else None
         for person in people:
+            joined = str(person.get("created_at") or "")[:10] or None
+            counts_from = max(x for x in (tracking_from, joined) if x) if tracking_from else None
+            # Their own first Start day always counts (even if older than the join date on file).
+            mine = conn.execute("SELECT MIN(started_at) FROM duty_sessions WHERE user_id = ?", (person["id"],)).fetchone()[0]
+            if mine:
+                own = _parse(mine).astimezone(IST).date().isoformat()
+                counts_from = min(counts_from, own) if counts_from else own
             hours = {d: 0.0 for d in days}
             sessions = conn.execute(
                 """SELECT * FROM duty_sessions WHERE user_id = ? AND started_at < ?
@@ -726,6 +740,9 @@ def attendance_month(db, manager: dict[str, Any] | None, month: str, member_id: 
             row = []
             for d in days:
                 h = round(hours[d], 2)
+                if counts_from is None or d < counts_from:
+                    row.append({"date": d, "hours": h, "status": "", "note": None})
+                    continue
                 status = "" if d > today else ("•" if d == today and h < rules["full_day_hours"] else _status(h, rules))
                 note = None
                 if d in pending_days and status in ("A", "•", ""):
