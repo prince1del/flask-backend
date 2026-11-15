@@ -2390,6 +2390,55 @@ def ai_read_bill():
     return jsonify({"success": True, "data": out})
 
 
+@hop_bp.route("/books", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def books_report_list():
+    from app import hop_reports
+
+    return jsonify({"success": True, "data": {"reports": [{"key": k, "title": v} for k, v in hop_reports.REPORTS.items()]}})
+
+
+@hop_bp.route("/books/<key>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def books_report(key: str):
+    """Vyapar-style reports from the double-entry ledger. Query: from, to, date, party_id,
+    party_type, product_id, txn_type, low_at."""
+    ensure_hop_schema(_db_path())
+    from app import hop_reports
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_reports.run(conn, _ws(), key, request.args.to_dict())
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/books/<key>/insights", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def books_report_insights(key: str):
+    """✨ AI insights: 3–5 short points about the report (one capped Gemini call)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_reports
+    from app.services import hop_ai
+
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_reports.run(conn, _ws(), key, request.args.to_dict())
+        points = hop_ai.report_insights(hop_reports.REPORTS.get(key, key), data, user_id=int(user.get("user_id") or 0))
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"points": points}})
+
+
 @hop_bp.route("/reports/gst-hsn", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

@@ -2215,8 +2215,9 @@ function openHopView(viewName, opts) {
         company_profile: renderHopFirmProfileModule,
         banking: renderHopBankingModule,
         stock: renderHopStockModule,
-        gst_reports: renderHopGstReportsModule,
-        books: renderHopBooksModule,
+        gst_reports: (m) => (window.hopRenderReports ? window.hopRenderReports(m, 'gstr1') : renderHopGstReportsModule(m)),
+        books: (m) => (window.hopRenderReports ? window.hopRenderReports(m, 'profit_loss') : renderHopBooksModule(m)),
+        reports: (m) => window.hopRenderReports(m),
         hop_manual_doc_create: renderHopManualDocCreateModule,
         visiting_card: () => {
           // Visiting card lives under Parties → Add Party → Scan
@@ -4468,7 +4469,7 @@ function hopRenderDocPreviewHtml(data) {
     linesHtml = `
       <div class="hop-doc-missing">
         <strong>No item lines in this preview yet.</strong>
-        <p>${foEscapeText(data.lines_missing_hint || 'Re-import Vyapar backup to load item details.')}</p>
+        <p>${foEscapeText(data.lines_missing_hint || 'Import the backup again to load item details.')}</p>
         <p class="hop-doc-muted">Header total: <strong>${hopPreviewMoney(totals.grand_total || header.total_amount)}</strong>
         · Balance: <strong>${hopPreviewMoney(header.balance_amount)}</strong></p>
       </div>`;
@@ -5053,7 +5054,7 @@ async function renderHopVyaparImportModule(mount) {
 
   mount.innerHTML = hopModuleShell(
     'Migration',
-    'Vyapar Import',
+    'Import old data',
     'Convert & import backup into House of Prizm',
     `<button type="button" class="nx-btn" onclick="openHopView('customers')">← Back</button>`,
     body,
@@ -5140,7 +5141,7 @@ async function hopRunVyaparImport() {
     return;
   }
   if (!(await nexoraConfirm(
-    'Import / refresh from this Vyapar backup?\n\nSafe re-import: existing parties, invoices & transactions update in place — no duplicates. Only new Vyapar rows will be added.',
+    'Import / refresh from this backup?\n\nSafe re-import: existing parties, invoices & transactions update in place — no duplicates. Only new rows will be added.',
     {
     title: 'Confirm Import',
     danger: true,
@@ -5915,7 +5916,7 @@ async function hopShowDealForm(editRow) {
 
         <section class="hop-deal-form-section">
           <p class="hop-deal-form-sec-title">Party</p>
-          <p class="hop-deal-form-sec-hint">Pick an existing Vyapar / CRM party, or add a new one below.</p>
+          <p class="hop-deal-form-sec-hint">Pick an existing party, or add a new one below.</p>
           <div class="hop-deal-form-grid">
             <label class="nx-party-field hop-deal-form-span-2">
               <span>Existing party</span>
@@ -7182,7 +7183,7 @@ async function renderHopProductsModule(mount) {
       { label: 'Catalogue', count: rows.length },
     )}`;
   hopState._productsCache = rows;
-  mount.innerHTML = hopModuleShell('Products', 'Product Catalogue', 'HSN, GST%, rates and stock — Vyapar-style item master',
+  mount.innerHTML = hopModuleShell('Products', 'Product Catalogue', 'HSN, GST%, rates and stock',
     `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('product')">+ New Product</button>`, body);
 }
 
@@ -8169,7 +8170,7 @@ async function renderHopCommissionModule(mount) {
       || !!selectedInv?.expense_source_txn_id || !!selectedInv?.expense_txn_number);
   const statusHint = (entry.expense_txn_number || entry.expense_source_txn_id
     || selectedInv?.expense_txn_number || selectedInv?.expense_source_txn_id)
-    ? `<span class="hop-comm-status-lock nx-text-dim">Vyapar expense${(entry.expense_txn_number || selectedInv?.expense_txn_number) ? ` · ${foEscapeText(entry.expense_txn_number || selectedInv?.expense_txn_number)}` : ''}${entry.vyapar_payment_status ? ` · ${foEscapeText(String(entry.vyapar_payment_status))}` : ''}</span>`
+    ? `<span class="hop-comm-status-lock nx-text-dim">Expense${(entry.expense_txn_number || selectedInv?.expense_txn_number) ? ` · ${foEscapeText(entry.expense_txn_number || selectedInv?.expense_txn_number)}` : ''}${entry.vyapar_payment_status ? ` · ${foEscapeText(String(entry.vyapar_payment_status))}` : ''}</span>`
     : '';
   const agentKey = hopCommissionPartyKey(entry.agent_party_type, entry.agent_party_id);
   // Legacy text-only entries: show matching party by name if possible
@@ -8721,7 +8722,7 @@ async function hopCommissionConfirmUnpaid(sel) {
   let message;
   if (vyaparPaid) {
     message = `This entry is already Paid in your software`
-      + (expNo ? ` (Vyapar expense ${expNo})` : ' (Vyapar)')
+      + (expNo ? ` (expense ${expNo})` : '')
       + `.\n\nAre you still sure you want to change the status to Unpaid?`;
   } else {
     message = 'This commission is currently Paid.\n\nAre you sure you want to change it to Unpaid?';
@@ -8979,13 +8980,13 @@ async function renderHopCustomerDashModule(mount) {
         <td class="inv-num">${hopMoney(r.outstanding)}</td>
         <td>${hopCell((r.last_meeting || '').toString().slice(0, 10))}</td>
         <td>${hopCell((r.last_purchase || '').toString().slice(0, 10))}</td>
-      </tr>`).join('') || '<tr><td colspan="9" class="inv-empty">No customers yet. Import from Vyapar to fill this dashboard.</td></tr>',
+      </tr>`).join('') || '<tr><td colspan="9" class="inv-empty">No customers yet. Add parties or import old data to fill this dashboard.</td></tr>',
       { label: 'Customer Dashboard', count: rows.length, className: 'hop-customer-dash-table' },
     )}`;
   mount.innerHTML = hopModuleShell(
     'Reports',
     'Customer Dashboard',
-    'From Vyapar sale invoices · outstanding · last purchase',
+    'From sale invoices · outstanding · last purchase',
     '',
     body,
   );

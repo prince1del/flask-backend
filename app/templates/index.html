@@ -1413,6 +1413,7 @@
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="banking" onclick="openHopView('banking')">Cash &amp; Bank</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="stock" onclick="openHopView('stock')">Stock</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="gst_reports" onclick="openHopView('gst_reports')">GST reports</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="reports" onclick="openHopView('reports')">Reports (all)</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="books" onclick="openHopView('books')">Accounts (TB / P&amp;L / BS)</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="journal_entries" onclick="openHopView('journal_entries')">Journal Entry</button>
                       </div>
@@ -1431,7 +1432,7 @@
                       <div class="hop-nav-fold-items">
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="theme" onclick="openHopView('theme')">Theme</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="company_profile" onclick="openHopView('company_profile')">Company profile</button>
-                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="vyapar_import" onclick="openHopView('vyapar_import')">Import from Vyapar</button>
+                        <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="vyapar_import" onclick="openHopView('vyapar_import')">Import old data</button>
                         <button type="button" class="nx-nav-item hop-nav-btn hop-nav-sub" data-hop-view="wipe_data" onclick="openHopView('wipe_data')">Wipe all data</button>
                       </div>
                     </div>
@@ -3793,5 +3794,6 @@
     <script src="{{ url_for('static', filename='hop_app.js') }}?v=20261115-money1"></script>
     <script src="{{ url_for('static', filename='hop_commercial_web.js') }}?v=20261115-money1"></script>
     <script src="{{ url_for('static', filename='hop_money_web.js') }}?v=20261115-money1"></script>
+    <script src="{{ url_for('static', filename='hop_reports_web.js') }}?v=20261115-reports1"></script>
 </body>
 </html>

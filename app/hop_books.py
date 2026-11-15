@@ -316,105 +316,44 @@ def list_accounts(conn: sqlite3.Connection, workspace_id: str) -> list[dict]:
 
 
 def trial_balance(conn: sqlite3.Connection, workspace_id: str) -> dict:
-    """Simple TB from party transactions mapped to default sales/purchase/cash buckets."""
-    ensure_default_accounts(conn, workspace_id)
-    sales = conn.execute(
-        "SELECT COALESCE(SUM(total_amount),0) FROM hop_party_transactions WHERE workspace_id=? AND txn_type=1",
-        (workspace_id,),
-    ).fetchone()[0]
-    purchases = conn.execute(
-        "SELECT COALESCE(SUM(total_amount),0) FROM hop_party_transactions WHERE workspace_id=? AND txn_type=2",
-        (workspace_id,),
-    ).fetchone()[0]
-    expenses = conn.execute(
-        "SELECT COALESCE(SUM(total_amount),0) FROM hop_party_transactions WHERE workspace_id=? AND txn_type=7",
-        (workspace_id,),
-    ).fetchone()[0]
-    ar = conn.execute(
-        "SELECT COALESCE(SUM(balance_amount),0) FROM hop_party_transactions WHERE workspace_id=? AND txn_type=1",
-        (workspace_id,),
-    ).fetchone()[0]
-    ap = conn.execute(
-        "SELECT COALESCE(SUM(balance_amount),0) FROM hop_party_transactions WHERE workspace_id=? AND txn_type=2",
-        (workspace_id,),
-    ).fetchone()[0]
-    cash = cash_available(conn, workspace_id)
-    rows = [
-        {"code": "1000", "name": "Cash / Bank", "debit": round(cash, 2), "credit": 0.0},
-        {"code": "1100", "name": "Accounts Receivable", "debit": round(float(ar or 0), 2), "credit": 0.0},
-        {"code": "2000", "name": "Accounts Payable", "debit": 0.0, "credit": round(float(ap or 0), 2)},
-        {"code": "4000", "name": "Sales", "debit": 0.0, "credit": round(float(sales or 0), 2)},
-        {"code": "5000", "name": "Purchases", "debit": round(float(purchases or 0), 2), "credit": 0.0},
-        {"code": "5100", "name": "Expenses", "debit": round(float(expenses or 0), 2), "credit": 0.0},
-    ]
-    td = round(sum(r["debit"] for r in rows), 2)
-    tc = round(sum(r["credit"] for r in rows), 2)
-    # Balancing figure into Capital / Suspense
-    if abs(td - tc) > 0.009:
-        if td > tc:
-            rows.append({"code": "3000", "name": "Capital / Balancing", "debit": 0.0, "credit": round(td - tc, 2)})
-        else:
-            rows.append({"code": "3000", "name": "Capital / Balancing", "debit": round(tc - td, 2), "credit": 0.0})
-        td = round(sum(r["debit"] for r in rows), 2)
-        tc = round(sum(r["credit"] for r in rows), 2)
-    return {"rows": rows, "total_debit": td, "total_credit": tc}
+    """Old response shape (phone), numbers from the real double-entry ledger (app.hop_reports)."""
+    from app import hop_reports
+
+    tb = hop_reports.trial_balance(conn, workspace_id)
+    rows = [{"code": "", "name": r["account"], "debit": r["debit"], "credit": r["credit"]} for r in tb["rows"]]
+    return {"rows": rows, "total_debit": tb["total_debit"], "total_credit": tb["total_credit"]}
 
 
 def profit_and_loss(conn: sqlite3.Connection, workspace_id: str, from_date: str = "", to_date: str = "") -> dict:
-    def _sum(txn_types: tuple[int, ...]) -> float:
-        sql = f"SELECT COALESCE(SUM(total_amount),0) FROM hop_party_transactions WHERE workspace_id=? AND txn_type IN ({','.join('?'*len(txn_types))})"
-        params: list[Any] = [workspace_id, *txn_types]
-        if from_date:
-            sql += " AND date(txn_date) >= date(?)"
-            params.append(from_date[:10])
-        if to_date:
-            sql += " AND date(txn_date) <= date(?)"
-            params.append(to_date[:10])
-        return float(conn.execute(sql, params).fetchone()[0] or 0)
+    """Old response shape (phone): ``expenses`` is the total; full detail in /books/profit_loss."""
+    from app import hop_reports
 
-    income = _sum((1,))
-    cogs = _sum((2,))
-    expense = _sum((7,))
-    returns_in = _sum((21,))
-    returns_out = _sum((16,))
-    net_sales = income - returns_in
-    net_purchases = cogs - returns_out
-    gross = net_sales - net_purchases
-    net = gross - expense
+    pl = hop_reports.profit_and_loss(conn, workspace_id, (from_date or "")[:10], (to_date or "")[:10])
     return {
-        "from_date": from_date or None,
-        "to_date": to_date or None,
-        "sales": round(income, 2),
-        "sale_returns": round(returns_in, 2),
-        "net_sales": round(net_sales, 2),
-        "purchases": round(cogs, 2),
-        "purchase_returns": round(returns_out, 2),
-        "net_purchases": round(net_purchases, 2),
-        "gross_profit": round(gross, 2),
-        "expenses": round(expense, 2),
-        "net_profit": round(net, 2),
+        "from_date": pl["from_date"], "to_date": pl["to_date"],
+        "sales": pl["sales"], "sale_returns": pl["sale_returns"], "net_sales": pl["net_sales"],
+        "purchases": pl["purchases"], "purchase_returns": pl["purchase_returns"],
+        "net_purchases": pl["net_purchases"], "opening_stock": pl["opening_stock"],
+        "closing_stock": pl["closing_stock"], "gross_profit": pl["gross_profit"],
+        "expenses": pl["total_expenses"], "net_profit": pl["net_profit"],
     }
 
 
 def balance_sheet(conn: sqlite3.Connection, workspace_id: str) -> dict:
-    tb = trial_balance(conn, workspace_id)
-    by_code = {r["code"]: r for r in tb["rows"]}
-    assets = round(
-        (by_code.get("1000", {}).get("debit") or 0) + (by_code.get("1100", {}).get("debit") or 0),
-        2,
-    )
-    liabilities = round(by_code.get("2000", {}).get("credit") or 0, 2)
-    equity = round(
-        (by_code.get("3000", {}).get("credit") or 0) - (by_code.get("3000", {}).get("debit") or 0),
-        2,
-    )
-    pnl = profit_and_loss(conn, workspace_id)
-    equity = round(equity + float(pnl.get("net_profit") or 0), 2)
+    """Old response shape (phone); full detail in /books/balance_sheet."""
+    from app import hop_reports
+
+    bs = hop_reports.balance_sheet(conn, workspace_id)
+    a = {x["name"]: x["amount"] for x in bs["assets"]}
+    li = {x["name"]: x["amount"] for x in bs["liabilities"]}
+    eq = sum(x["amount"] for x in bs["equity"])
+    cash = sum(v for k, v in a.items() if k not in ("Sundry Debtors (to receive)", "Advances to vendors",
+                                                    "Closing stock", "GST credit (input)"))
     return {
-        "assets": {"cash_bank": by_code.get("1000", {}).get("debit") or 0,
-                   "receivables": by_code.get("1100", {}).get("debit") or 0,
-                   "total": assets},
-        "liabilities": {"payables": liabilities, "total": liabilities},
-        "equity": {"capital_and_reserves": equity, "total": equity},
-        "balanced": abs(assets - (liabilities + equity)) < 1.0,
+        "assets": {"cash_bank": round(cash, 2), "receivables": a.get("Sundry Debtors (to receive)", 0.0),
+                   "stock": a.get("Closing stock", 0.0), "total": bs["total_assets"]},
+        "liabilities": {"payables": li.get("Sundry Creditors (to pay)", 0.0),
+                        "total": round(sum(li.values()), 2)},
+        "equity": {"capital_and_reserves": round(eq, 2), "total": round(eq, 2)},
+        "balanced": bs["balanced"],
     }

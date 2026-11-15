@@ -540,15 +540,20 @@ def _tool_declarations() -> list[dict[str, Any]]:
                 "House of Prizm accounts (only for the House of Prizm business): cash & bank "
                 "balances and open cheques (what=cash_bank), who owes us money (receivables), "
                 "what we owe vendors (payables), unpaid invoices/bills (unpaid_bills), expenses by "
-                "category (expenses), or a summary (overview). Use for 'kitna cash hai', 'kis party "
+                "category (expenses), profit & loss (profit_loss), balance sheet, one day's entries (day_book), "
+                "a party's ledger (party_statement), GST to pay (gst), or a summary (overview). Use for 'kitna cash hai', 'kis party "
                 "ka paisa baaki hai', 'vendor ko kitna dena hai', 'kharcha kitna hua'."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "what": {"type": "string", "enum": ["overview", "cash_bank", "receivables", "payables",
-                                                        "unpaid_bills", "expenses"]},
-                    "party_name": {"type": "string", "description": "Optional party to filter (can be partial)."},
+                                                        "unpaid_bills", "expenses", "profit_loss", "balance_sheet",
+                                                        "day_book", "party_statement", "gst"]},
+                    "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
+                    "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
+                    "to": {"type": "string", "description": "End date YYYY-MM-DD."},
+                    "date": {"type": "string", "description": "Day for day_book, YYYY-MM-DD."},
                 },
                 "required": ["what"],
             },
@@ -1255,7 +1260,8 @@ def _run_tool(
             ensure_hop_schema(_db_path())
             conn.row_factory = sqlite3.Row
             return _sanitize(hop_ai.books_answer(conn, workspace_id, str(args.get("what") or "overview"),
-                                                 str(args.get("party_name") or "")))
+                                                 str(args.get("party_name") or ""),
+                                                 {k: args.get(k) for k in ("from", "to", "date")}))
 
         if name == "get_distributor_zone_summary":
             distributor_name = str(args.get("distributor_name") or "").strip()

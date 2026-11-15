@@ -340,7 +340,7 @@ def _update_if_empty(update_fn, conn, workspace_id, existing: dict, new_data: di
         new_val = _clean(new_data.get(field))
         if not old_val and new_val:
             patch[field] = new_val
-    if _clean(existing.get("products")) == "Imported from Vyapar":
+    if _clean(existing.get("products")) == "Imported":
         patch["products"] = ""
     if patch:
         try:
@@ -484,10 +484,12 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     sql = f"""
         SELECT {", ".join(select_cols)},
                n.full_name AS party_name, n.name_group_id,
+               {"ec.full_name" if "txn_category_id" in cols else "NULL"} AS expense_category_name,
                COALESCE(li.line_total, 0) AS line_total,
                COALESCE(li.line_tax_total, 0) AS line_tax_total
         FROM kb_transactions t
         LEFT JOIN kb_names n ON n.name_id = t.txn_name_id
+        {"LEFT JOIN kb_names ec ON ec.name_id = t.txn_category_id" if "txn_category_id" in cols else ""}
         LEFT JOIN (
             SELECT lineitem_txn_id,
                    COALESCE(SUM(total_amount), 0) AS line_total,
@@ -496,6 +498,7 @@ def _fetch_txns(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             GROUP BY lineitem_txn_id
         ) li ON li.lineitem_txn_id = t.txn_id
         WHERE trim(coalesce(t.txn_ref_number_char, '')) != '' OR t.txn_name_id IS NOT NULL
+              {"OR (t.txn_type = 7 AND t.txn_category_id IS NOT NULL)" if "txn_category_id" in cols else ""}
         ORDER BY t.txn_id
     """
     rows = conn.execute(sql).fetchall()
@@ -840,7 +843,7 @@ def import_vyapar_backup(
                     continue
                 if prefer == "vendor":
                     payload["products"] = ""
-                    payload["remarks"] = "Source: Vyapar Import"
+                    payload["remarks"] = "Source: Import"
                     payload["rating"] = 3
                     row = hop_ops_module.create_vendor(target_conn, workspace_id, payload)
                     existing_vendors[key] = row
@@ -848,7 +851,7 @@ def import_vyapar_backup(
                 else:
                     payload["customer_type"] = _guess_customer_type(name)
                     payload["status"] = "active"
-                    payload["source"] = "Vyapar Import"
+                    payload["source"] = "Import"
                     row = hop_db_module.create_customer(target_conn, workspace_id, payload)
                     existing_customers[key] = row
                     out["customers_created"] += 1
@@ -886,7 +889,7 @@ def import_vyapar_backup(
                 out["errors"].append(f"Item '{name}': {exc}")
 
         def _txn_id_from_notes(notes: Any) -> int | None:
-            m = re.search(r"Vyapar txn\s+(\d+)", _clean(notes), flags=re.I)
+            m = re.search(r"(?:Vyapar txn|Imported txn)\s+(\d+)", _clean(notes), flags=re.I)
             if not m:
                 m = re.search(r"txn_payment_mapping for txn\s+(\d+)", _clean(notes), flags=re.I)
             if not m:
@@ -951,15 +954,26 @@ def import_vyapar_backup(
             ).fetchall()
         }
 
+        from app import hop_money
+
+        expense_links: list[tuple[int, int]] = []
+        expense_cats_with_party: list[tuple[int, int]] = []
         for t in txns:
             txn_id = int(t.get("txn_id") or 0)
             party_name = _clean(t.get("party_name") or t.get("txn_display_name"))
+            expense_cat = None
+            if not party_name and int(t.get("txn_type") or 0) == 7 and _clean(t.get("expense_category_name")):
+                # Vyapar expense with only a category (Rent, Salary…): no party.
+                expense_cat = hop_money.create_expense_category(target_conn, workspace_id, _clean(t.get("expense_category_name")))
+                party_name = expense_cat["name"]
             if not party_name:
                 out["invoices_skipped"] += 1
                 continue
             party_type = "vendor" if int(t.get("name_group_id") or 0) == 2 else "customer"
-            customer = customer_by_name.get(party_name.lower())
-            vendor = vendor_by_name.get(party_name.lower())
+            if expense_cat:
+                party_type = "expense"
+            customer = customer_by_name.get(party_name.lower()) if not expense_cat else None
+            vendor = vendor_by_name.get(party_name.lower()) if not expense_cat else None
             if party_type == "customer" and not customer:
                 existing, match_kind = resolve_existing_party(
                     target_conn,
@@ -990,7 +1004,7 @@ def import_vyapar_backup(
                                 "contact_person": party_name if len(party_name.split()) <= 4 else "",
                                 "customer_type": _guess_customer_type(party_name),
                                 "status": "active",
-                                "source": "Vyapar Import",
+                                "source": "Import",
                             },
                         )
                         customer_by_name[party_name.lower()] = customer
@@ -1025,7 +1039,7 @@ def import_vyapar_backup(
                                 "company": party_name,
                                 "contact_person": party_name if len(party_name.split()) <= 4 else "",
                                 "products": "",
-                                "remarks": "Source: Vyapar Import",
+                                "remarks": "Source: Import",
                                 "rating": 3,
                             },
                         )
@@ -1049,6 +1063,12 @@ def import_vyapar_backup(
             )
             inv_date_key = inv_date[:10] if inv_date else ""
             party_id_val = (customer or {}).get("id") if party_type == "customer" else (vendor or {}).get("id")
+            if expense_cat:
+                expense_links.append((int(expense_cat["id"]), txn_id))
+            elif int(t.get("txn_type") or 0) == 7 and _clean(t.get("expense_category_name")):
+                # Expense with a party AND a category: keep the party, also keep the category.
+                cat = hop_money.create_expense_category(target_conn, workspace_id, _clean(t.get("expense_category_name")))
+                expense_cats_with_party.append((int(cat["id"]), txn_id))
             # Upsert party transaction — always refresh amount/balance so Paid status stays correct.
             # Hard guard: never touch Nexora-created docs (source_txn_id < 0).
             try:
@@ -1154,7 +1174,7 @@ def import_vyapar_backup(
             due = _clean(t.get("txn_due_date"))
             inv_key = f"{inv_no.lower()}|{inv_date_key}"
             inv_status = "paid" if due_amt <= 0.009 else ("partial" if paid_amt > 0.009 else "open")
-            inv_notes = f"[{txn_label}] Imported from Vyapar txn {txn_id}. {note}".strip()
+            inv_notes = f"[{txn_label}] Imported txn {txn_id}. {note}".strip()
             if txn_type in QUOTATION_TYPES:
                 existing_q = existing_quotes_by_txn.get(txn_id) or existing_quotes.get(inv_key)
                 if existing_q:
@@ -1318,6 +1338,17 @@ def import_vyapar_backup(
                     out["errors"].append(f"Txn {txn_id}: invoice import failed ({exc})")
                     out["invoices_skipped"] += 1
 
+        for cat_id, src_id in expense_links:
+            target_conn.execute(
+                "UPDATE hop_party_transactions SET expense_category_id=?, party_type='expense', party_id=NULL "
+                "WHERE workspace_id=? AND source_txn_id=? AND source_txn_id > 0",
+                (cat_id, workspace_id, src_id),
+            )
+        for cat_id, src_id in expense_cats_with_party:
+            target_conn.execute(
+                "UPDATE hop_party_transactions SET expense_category_id=? WHERE workspace_id=? AND source_txn_id=? "
+                "AND source_txn_id > 0", (cat_id, workspace_id, src_id))
+        out["expenses_with_category"] = len(expense_links) + len(expense_cats_with_party)
         out["source_items"] = len(items)
         out["source_parties"] = len(parties)
         out["source_transactions"] = len(txns)

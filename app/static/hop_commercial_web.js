@@ -355,7 +355,7 @@
       linesHtml = `
         <div class="hop-doc-missing">
           <strong>No item lines in this preview yet.</strong>
-          <p>${foEscapeText(data.lines_missing_hint || 'Re-import Vyapar backup to load item details.')}</p>
+          <p>${foEscapeText(data.lines_missing_hint || 'Import the backup again to load item details.')}</p>
           <p class="hop-doc-muted">Header total: <strong>${hopPreviewMoney(totals.grand_total || header.total_amount)}</strong></p>
         </div>`;
     }

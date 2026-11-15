@@ -521,8 +521,8 @@ def build_txn_preview(
         "delivery_terms": delivery_terms,
         "lines_missing": len(lines) == 0,
         "lines_missing_hint": (
-            "Item rows are not loaded yet. Re-import your Vyapar .vyb backup "
-            "(Settings → Import from Vyapar) to fill quantity, rate, HSN and GST lines."
+            "Item rows are not loaded yet. Import the backup again "
+            "(Settings → Import old data) to fill quantity, rate, HSN and GST lines."
             if not lines
             else ""
         ),

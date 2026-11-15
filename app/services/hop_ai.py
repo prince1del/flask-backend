@@ -174,10 +174,12 @@ def read_bill(conn: sqlite3.Connection, ws: str, data: bytes, mime: str, *, user
 
 # ── Ask Nexora: get_hop_books ────────────────────────────────────────────────
 
-def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str = "") -> dict[str, Any]:
+def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str = "",
+                 extra: dict[str, Any] | None = None) -> dict[str, Any]:
     from app import hop_books, hop_money
 
     conn.row_factory = sqlite3.Row
+    extra = extra or {}
     what = (what or "overview").strip().lower()
     party_name = (party_name or "").strip()
 
@@ -213,6 +215,32 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         if party_name:
             rows = [r for r in rows if _similar(party_name, r["party_name"] or "") >= 0.6]
         return {"bills": rows[:30]}
+    if what in ("profit_loss", "balance_sheet", "day_book", "party_statement", "gst"):
+        from datetime import date as _date
+
+        from app import hop_reports
+
+        if what == "profit_loss":
+            return hop_reports.profit_and_loss(conn, ws, str(extra.get("from") or ""), str(extra.get("to") or ""))
+        if what == "balance_sheet":
+            return hop_reports.balance_sheet(conn, ws)
+        if what == "day_book":
+            return hop_reports.day_book(conn, ws, str(extra.get("date") or _date.today().isoformat())[:10])
+        if what == "gst":
+            return hop_reports.gstr3b(conn, ws, str(extra.get("from") or ""), str(extra.get("to") or ""))
+        if not party_name:
+            return {"error": "Which party? Give a party name."}
+        best = None
+        for kind, table in (("customer", "hop_customers"), ("vendor", "hop_vendors")):
+            for r in conn.execute(f"SELECT id, company FROM {table} WHERE workspace_id=?", (ws,)).fetchall():
+                sc = _similar(party_name, r[1] or "")
+                if sc >= 0.6 and (best is None or sc > best[0]):
+                    best = (sc, kind, int(r[0]))
+        if not best:
+            return {"error": f"No party like '{party_name}'."}
+        stmt = hop_reports.party_statement(conn, ws, best[1], best[2], str(extra.get("from") or ""), str(extra.get("to") or ""))
+        stmt["lines"] = stmt["lines"][-30:]
+        return stmt
     if what == "expenses":
         cats = hop_money.list_expense_categories(conn, ws)
         return {"by_category": [{"category": c["name"], "total": c["total"]} for c in cats if c["total"]],
@@ -223,3 +251,60 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
     return {"cash_and_bank": round(sum(float(a["current_balance"] or 0) for a in accts), 2),
             "receivable_total": round(sum(r["due"] for r in rec), 2), "top_receivables": rec[:5],
             "payable_total": round(sum(r["due"] for r in pay), 2), "top_payables": pay[:5]}
+
+
+# ── "AI insights" on a report ────────────────────────────────────────────────
+
+_INSIGHT_PROMPT = (
+    "You are an accountant helping a small Indian furnishing business owner. Below is a report from "
+    "their books as JSON (amounts in rupees). Give 3 to 5 short, practical points in simple English: "
+    "what stands out, anything worrying (losses, unpaid amounts, high expenses, negative cash, GST to pay), "
+    "and one action to take. Use only numbers from the report; do not invent any. "
+    "Return ONLY JSON: {\"points\":[\"…\"]}."
+)
+
+
+def _slim(data: Any, depth: int = 0) -> Any:
+    """Keep the prompt small: cap long lists, drop ids."""
+    if isinstance(data, dict):
+        return {k: _slim(v, depth + 1) for k, v in data.items() if k not in ("id", "txn_id", "party_id", "product_id")}
+    if isinstance(data, list):
+        return [_slim(v, depth + 1) for v in data[:25]] + ([f"… {len(data) - 25} more"] if len(data) > 25 else [])
+    return data
+
+
+def report_insights(title: str, data: dict[str, Any], *, user_id: int) -> list[str]:
+    from app.services import nexora_ai_agent as agent
+    from app.services.dsr_notes_polish import gemini_api_key
+
+    if agent.over_daily_limit(user_id, "ai"):
+        raise ValueError("Daily AI limit reached.")
+    key = gemini_api_key()
+    if not key:
+        raise ValueError("AI is not set up on the server.")
+    text = f"{_INSIGHT_PROMPT}\n\nReport: {title}\n{json.dumps(_slim(data), ensure_ascii=False)[:12000]}"
+    body = json.dumps({"contents": [{"role": "user", "parts": [{"text": text}]}],
+                       "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500,
+                                            "responseMimeType": "application/json"}}).encode("utf-8")
+    for model in agent.agent_gemini_models():
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+            data=body, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                out = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                continue
+            break
+        except Exception:
+            break
+        usage = out.get("usageMetadata") or {}
+        agent._log_usage(user_id=int(user_id), feature="nexora_agent_hop_insights", model=model, rounds=1,
+                         prompt_tokens=int(usage.get("promptTokenCount") or 0),
+                         output_tokens=int(usage.get("candidatesTokenCount") or 0),
+                         total_tokens=int(usage.get("totalTokenCount") or 0), query=f"hop insights {title}")
+        parts = ((out.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        pts = _parse_json("".join(p.get("text", "") for p in parts if isinstance(p, dict))).get("points") or []
+        return [str(p).strip()[:300] for p in pts if str(p).strip()][:5]
+    raise ValueError("AI insights are not available right now.")
