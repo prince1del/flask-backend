@@ -230,3 +230,18 @@ def test_days_before_anyone_started_are_blank_not_absent(app, client):
     sheet = client.get("/api/v1/team/attendance?month=2026-10", headers=h).get_json()["data"]
     for p in sheet["people"]:
         assert p["absent"] == 0 and {d["status"] for d in p["days"]} == {""}
+
+
+def test_attendance_works_before_any_member_access_table_exists(app, client):
+    """Production had no member_access table until someone was invited with features."""
+    import sqlite3
+
+    from tests.test_subscription_and_invites import _signup
+
+    owner = _signup(client, "freshco").get_json()["data"]
+    with sqlite3.connect(app.config["DATABASE_PATH"]) as conn:
+        conn.execute("DROP TABLE IF EXISTS member_access")
+    from app.services import member_access
+    member_access.invalidate()
+    r = client.get("/api/v1/team/attendance/me?month=2026-11", headers={"Authorization": f"Bearer {owner['access_token']}"})
+    assert r.status_code == 200, r.get_json()

@@ -650,6 +650,8 @@ def _tracks_attendance(db_path, user_id: int) -> bool:
     from app.services import member_access
 
     with _connect(db_path) as conn:
+        # A company that never invited anyone with chosen features has no table yet.
+        member_access.ensure_schema(conn)
         r = conn.execute("SELECT features FROM member_access WHERE user_id = ?", (int(user_id),)).fetchone()
     if r is None or not r["features"]:
         return True
