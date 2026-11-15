@@ -62,7 +62,12 @@ def _join(app, client, owner, username, role="sales_executive"):
     code = client.post(
         "/api/v1/invites", json={"role": role}, headers=_auth(owner["access_token"])
     ).get_json()["data"]["code"]
-    return _signup(client, username, company_name="", category="", invite_code=code)
+    member = _signup(client, username, company_name="", category="", invite_code=code)
+    # Invited sign-ins wait for the owner; approve it like the owner would.
+    reqs = client.get("/api/v1/invites/login-requests", headers=_auth(owner["access_token"])).get_json()["data"]["requests"]
+    for r in reqs:
+        client.post(f"/api/v1/invites/login-requests/{r['id']}", headers=_auth(owner["access_token"]), json={"approve": True})
+    return member
 
 
 ARTICLE = {"category": "Bed", "product_type": "Bedsheet", "brand": "ASTER", "size": "DB BS", "mrp": 999}
