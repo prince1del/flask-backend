@@ -45,3 +45,18 @@ def test_all_new_reports_listed():
     for k in ("party_pl", "item_pl", "party_item", "group_sale", "group_purchase", "category_report",
               "discount_report", "expense_items", "sale_orders", "purchase_orders", "gstr9"):
         assert k in R.REPORTS
+
+
+def test_credit_limit_warning(co):
+    from app import hop_settings
+
+    with connect(co["path"]) as conn:
+        conn.execute("UPDATE hop_customers SET credit_limit=3000, credit_no_limit=0 WHERE id=?", (co["cust"]["id"],))
+        create(conn, WS, {"txn_type": 1, "customer_id": co["cust"]["id"], "lines": [{"item_name": "x", "qty": 1, "rate": 2500}]})
+        w = hop_settings.invoice_entry_warnings(conn, WS, {"txn_type": 1, "party_type": "customer", "party_id": co["cust"]["id"],
+                                                           "lines": [{"item_name": "y", "qty": 1, "rate": 1000}]})
+        assert any(x["code"] == "credit_limit" for x in w)
+        ok = hop_settings.invoice_entry_warnings(conn, WS, {"txn_type": 1, "party_type": "customer", "party_id": co["cust"]["id"],
+                                                            "received_amount": 1000,
+                                                            "lines": [{"item_name": "y", "qty": 1, "rate": 400}]})
+        assert not any(x["code"] == "credit_limit" for x in ok)

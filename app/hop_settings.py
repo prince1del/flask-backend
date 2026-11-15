@@ -331,6 +331,31 @@ def invoice_entry_warnings(
                     "message": f"{prow['company'] or 'Party'} looks registered but GSTIN is missing or incomplete.",
                 })
 
+    # Credit limit: customer's unpaid bills + this invoice (less what is received now) over the limit.
+    if txn_type == 1 and party_id and party_type == "customer":
+        crow = conn.execute("SELECT company, credit_limit, credit_no_limit FROM hop_customers WHERE workspace_id=? AND id=?",
+                            (ws, int(party_id))).fetchone()
+        limit = _f(crow["credit_limit"]) if crow else 0.0
+        if crow and limit > 0 and not int(crow["credit_no_limit"] or 0):
+            q = """SELECT COALESCE(SUM(balance_amount),0) FROM hop_party_transactions
+                   WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=? AND txn_type=1
+                     AND party_type='customer' AND party_id=?"""
+            params2: list[Any] = [ws, int(party_id)]
+            if exclude_id:
+                q += " AND id!=?"
+                params2.append(exclude_id)
+            due_now = _f(conn.execute(q, params2).fetchone()[0])
+            this_bill = sum(_f(l.get("qty")) * _f(l.get("rate")) * (1 + _f(l.get("tax_pct") or l.get("gst_pct")) / 100)
+                            for l in (payload.get("lines") or []) if isinstance(l, dict))
+            this_bill = max(0.0, this_bill - _f(payload.get("received_amount")))
+            if due_now + this_bill > limit + 0.5:
+                warnings.append({
+                    "code": "credit_limit",
+                    "level": "warn",
+                    "message": (f"{crow['company']}: credit limit ₹{limit:,.0f} will be crossed — already due "
+                                f"₹{due_now:,.0f}, this bill ₹{this_bill:,.0f}. Take payment first or raise the limit."),
+                })
+
     for ln in payload.get("lines") or []:
         if not isinstance(ln, dict):
             continue
