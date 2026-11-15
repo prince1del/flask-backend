@@ -22,6 +22,10 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
     monkeypatch.setenv("AUTH_ENABLED", "false")
+    # Boot creates the House of Prizm admin login only when its password is
+    # set; set it so "only the boot-seeded admin exists" holds on any machine.
+    monkeypatch.setenv("HOP_ADMIN_USERNAME", "boot_admin")
+    monkeypatch.setenv("HOP_ADMIN_PASSWORD", "boot-admin-pass")
     
     app = create_app()
     app.config["TESTING"] = True

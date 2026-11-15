@@ -137,7 +137,9 @@ def signup():
         ci.record_redemption(db, invite["id"], user_id, created["username"])
     else:
         db.set_company_owner(company_id, user_id)
-    trial_ends_at = subs.start_trial(db.db_path, user_id)
+    # A new company gets the 7-day trial; a teammate joining by invite follows
+    # the company's plan instead (subscriptions._effective_plan).
+    trial_ends_at = None if invite else subs.start_trial(db.db_path, user_id)
     # Deliberately NOT is_workspace_owner=True: the Android app treats
     # that flag as "show the Founder's multi-shell Hub Chooser" (incl.
     # Admin Zone) — UserSession.usesFounderShellHub() == isWorkspaceOwner.

@@ -662,12 +662,13 @@ def rematch_filled_order_items(conn, user_id, filled_order_id):
     order_stream = order.get("order_stream")
     items = conn.execute(
         """SELECT id, brand, size, product_type, raw_qty_value, ex_mill_price,
-                  sheet_ex_mill_price, sheet_line_value
+                  sheet_ex_mill_price, sheet_line_value, mrp, ptr, bale_size_used
            FROM filled_order_items WHERE filled_order_id = ? ORDER BY id""",
         (filled_order_id,),
     ).fetchall()
     for row in items:
-        item_id, brand, size, product_type, raw_qty, ex_mill, sheet_ex_mill, sheet_line_value = row
+        (item_id, brand, size, product_type, raw_qty, ex_mill, sheet_ex_mill, sheet_line_value,
+         mrp, ptr, bale_size) = row
         sheet_ex = sheet_ex_mill if foparser._safe_float(sheet_ex_mill) else ex_mill
         extra = {}
         if foparser._safe_float(sheet_line_value):
@@ -679,6 +680,12 @@ def rematch_filled_order_items(conn, user_id, filled_order_id):
                 "size": size,
                 "product_type": product_type,
                 "ex_mill_price": sheet_ex,
+                # Kept for lines that still match nothing: without them a rematch
+                # wiped the sheet's MRP/PTR/bale size (a matched line takes the
+                # Article Master values instead).
+                "mrp": mrp,
+                "ptr": ptr,
+                "bale_pack_size": bale_size,
             },
             "extra_attributes": extra,
             "raw_qty_value": raw_qty,

@@ -132,7 +132,9 @@ class PaymentCollectionTests(unittest.TestCase):
         cat = board[0]["seasons"][0]["categories"][0]
         # Latest run only — bill incl. GST (1_050_000), not net (1_000_000).
         self.assertEqual(cat["so_total"], 1_050_000.0)
-        self.assertEqual(cat["outstanding"], 1_050_000.0)
+        # Collectible = bill − TDS 194Q 0.1% (on by default) = 1_050_000 − 1_050.
+        self.assertEqual(cat["tds_amount"], 1_050.0)
+        self.assertEqual(cat["outstanding"], 1_048_950.0)
 
     def test_fy_so_achievement_uses_order_desk_match_not_filled_orders(self) -> None:
         """Achievement SO channel must follow matched SO, not FO ex-mill uploads."""

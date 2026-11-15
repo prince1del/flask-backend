@@ -167,7 +167,7 @@ def test_upload_requires_season_then_commits(tmp_path, monkeypatch):
     unmatched_item = next(i for i in items if not i["matched"])
     assert matched_item["mrp"] == 999  # snapshotted from Article Master, not the file's own 999 (same here) 
     assert matched_item["is_clean_bale_multiple"] is True
-    assert unmatched_item["is_clean_bale_multiple"] is False
+    assert unmatched_item["is_clean_bale_multiple"] is False, unmatched_item
     assert unmatched_item["article_id"] is None
 
     # manual correction via PATCH

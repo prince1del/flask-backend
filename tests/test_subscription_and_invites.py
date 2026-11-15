@@ -224,7 +224,9 @@ def test_invite_code_joins_existing_company(app, client):
     assert data["workspace_id"] == owner["workspace_id"]
     assert data["role"] == "sales_executive"
     assert data["joined_existing_company"] is True
-    assert data["trial_ends_at"]
+    assert data["trial_ends_at"] is None  # a teammate follows the company's plan
+    plan = client.get("/api/v1/subscription/status", headers=_auth(data["access_token"])).get_json()["data"]
+    assert plan["status"] == "active" and plan.get("via_company") is True
 
     # Single-use code is now spent.
     second = _signup(client, "late", company_name="", category="", invite_code=code)
@@ -338,7 +340,7 @@ def test_new_company_needs_nexora_approval_for_a_team(app, client):
     ).status_code == 403
 
 
-def test_long_lived_invite_still_gives_member_only_a_7_day_trial(app, client):
+def test_long_lived_invite_member_follows_company_plan(app, client):
     owner = _signup(client, "longcode").get_json()["data"]
     _allow_team(app, owner)
     code = client.post(
@@ -348,8 +350,11 @@ def test_long_lived_invite_still_gives_member_only_a_7_day_trial(app, client):
     ).get_json()["data"]
     assert datetime.fromisoformat(code["expires_at"]) - datetime.now(timezone.utc) <= timedelta(days=30)
     member = _signup(client, "longmember", company_name="", category="", invite_code=code["code"])
-    ends = datetime.fromisoformat(member.get_json()["data"]["trial_ends_at"])
-    assert ends - datetime.now(timezone.utc) <= timedelta(days=7)
+    m = member.get_json()["data"]
+    owner_plan = client.get("/api/v1/subscription/status", headers=_auth(owner["access_token"])).get_json()["data"]
+    member_plan = client.get("/api/v1/subscription/status", headers=_auth(m["access_token"])).get_json()["data"]
+    # The member gets exactly the company's time, never more because the invite lived long.
+    assert member_plan["ends_at"] == owner_plan["ends_at"]
 
 
 def test_only_super_admin_grants_team_places(app, client):
@@ -361,3 +366,31 @@ def test_only_super_admin_grants_team_places(app, client):
         headers=_auth(owner["access_token"]),
     )
     assert res.status_code == 403
+
+
+
+def test_member_is_blocked_and_unblocked_with_the_company_plan(app, client):
+    owner = _signup(client, "planco").get_json()["data"]
+    _allow_team(app, owner)
+    code = client.post("/api/v1/invites", json={"role": "sales_executive", "max_uses": 1},
+                       headers=_auth(owner["access_token"])).get_json()["data"]["code"]
+    member = _signup(client, "planrep", company_name="", category="", invite_code=code).get_json()["data"]
+    probe = "/api/v1/article-master/list"
+    assert client.get(probe, headers=_auth(member["access_token"])).status_code == 200
+
+    _expire(app, "planco")  # the company's plan ends
+    assert client.get(probe, headers=_auth(member["access_token"])).status_code == 402
+
+    _activate(app, "planco", days=30)  # the owner renews
+    assert client.get(probe, headers=_auth(member["access_token"])).status_code == 200
+
+
+def test_member_own_code_counts_when_longer_than_company(app, client):
+    owner = _signup(client, "shortco").get_json()["data"]
+    _allow_team(app, owner)
+    code = client.post("/api/v1/invites", json={"role": "sales_executive", "max_uses": 1},
+                       headers=_auth(owner["access_token"])).get_json()["data"]["code"]
+    member = _signup(client, "longrep", company_name="", category="", invite_code=code).get_json()["data"]
+    _activate(app, "longrep", days=90)
+    plan = client.get("/api/v1/subscription/status", headers=_auth(member["access_token"])).get_json()["data"]
+    assert plan["days_left"] >= 89 and not plan.get("via_company")

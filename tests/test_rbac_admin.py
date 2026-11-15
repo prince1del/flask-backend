@@ -29,9 +29,11 @@ def client(app):
     return app.test_client()
 
 
-def make_token(app, role, username="user", workspace_id="default"):
+def make_token(app, role, username="user", workspace_id="default", user_id=999):
+    # Not 1: user 1 is the seeded founder, and the server looks the owner flag
+    # up by user_id, so a token with id 1 would act as the owner whatever its role.
     service = JWTService(secret_key=app.config["SECRET_KEY"])
-    token, _ = service.create_tokens(user_id=1, username=username, role=role, workspace_id=workspace_id)
+    token, _ = service.create_tokens(user_id=user_id, username=username, role=role, workspace_id=workspace_id)
     return token
 
 

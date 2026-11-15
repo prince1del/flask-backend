@@ -100,7 +100,13 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
   (table `team_requests`); the super admin sees
   `GET /api/v1/subscription/team-requests` and allows with
   `POST /api/v1/subscription/companies/<id>/team {max_members}`. Invite codes
-  expire within 30 days; every member who joins gets their own 7-day trial.
+  expire within 30 days.
+- **Members follow the company plan:** a login that joined by invite gets no
+  trial of its own; its access is the company owner's (`companies.owner_user_id`)
+  trial/paid date (`subscriptions._effective_plan`, `/status` shows
+  `via_company: true`). Owner renews → every member is unblocked at once (cache
+  cleared on redeem). A member's own code counts only if it runs longer.
+  Companies without an owner (House of Prizm, Bombay Dyeing) are untouched.
 
 ---
 

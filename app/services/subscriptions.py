@@ -9,6 +9,11 @@ single-use codes worth N days. A user types the code into their app and their
 own access is extended by N days from today, or from their current end date
 if it is still in the future.
 
+Team members follow their company's plan: a login that joined a company
+(not its owner) has access as long as the company owner has, or longer if the
+member redeemed a code of their own. Companies without an owner (House of
+Prizm, Bombay Dyeing, legacy) are untouched.
+
 Once a login's access has ended, every authenticated API call except the
 allow-list below answers 402 SUBSCRIPTION_EXPIRED until a code is redeemed.
 """
@@ -139,15 +144,51 @@ def start_trial(db_path, user_id: int, days: int = TRIAL_DAYS) -> str:
     return ends
 
 
+def _company_owner_plan(conn: sqlite3.Connection, user_id: int) -> dict[str, Any] | None:
+    """Plan row of the company owner when this login is a member (not the owner)."""
+    try:
+        row = conn.execute(
+            """SELECT o.id, o.trial_ends_at, o.paid_until
+               FROM users u
+               JOIN workspace_registry w ON w.workspace_id = u.workspace_id
+               JOIN companies c ON c.id = w.company_id
+               JOIN users o ON o.id = c.owner_user_id
+               WHERE u.id = ? AND c.owner_user_id IS NOT NULL AND c.owner_user_id <> u.id""",
+            (int(user_id),),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None  # no company tables (fresh or legacy database)
+    return dict(row) if row else None
+
+
+def _effective_plan(conn: sqlite3.Connection, row) -> dict[str, Any]:
+    """trial_ends_at / paid_until that count for this login (company plan for members)."""
+    own = {"trial_ends_at": row["trial_ends_at"], "paid_until": row["paid_until"]}
+    owner = _company_owner_plan(conn, row["id"])
+    if owner is None:
+        return own
+    owner_ends = access_ends_at(owner["trial_ends_at"], owner["paid_until"])
+    if owner_ends is None:  # owner unlimited -> the whole company is
+        return {"trial_ends_at": None, "paid_until": None, "via_company": True}
+    own_ends = access_ends_at(own["trial_ends_at"], own["paid_until"])
+    if own_ends is not None and own_ends > owner_ends:
+        return own  # member bought more time for themselves
+    return {"trial_ends_at": owner["trial_ends_at"], "paid_until": owner["paid_until"], "via_company": True}
+
+
 def status_for_user(db_path, user_id: int) -> dict[str, Any]:
     with _connect(db_path) as conn:
         row = conn.execute(
             "SELECT id, username, trial_ends_at, paid_until FROM users WHERE id = ?",
             (int(user_id),),
         ).fetchone()
-    if row is None:
-        return {"status": "unknown"}
-    return _status_from_row(row)
+        if row is None:
+            return {"status": "unknown"}
+        plan = _effective_plan(conn, row)
+    out = _status_from_row(plan)
+    if plan.get("via_company"):
+        out["via_company"] = True  # app: "Your company's plan"
+    return out
 
 
 def _status_from_row(row) -> dict[str, Any]:
@@ -174,9 +215,10 @@ def _cached_ends_at(db_path, user_id: int) -> str | None:
             return hit[1]
     with _connect(db_path) as conn:
         row = conn.execute(
-            "SELECT trial_ends_at, paid_until FROM users WHERE id = ?", (int(user_id),)
+            "SELECT id, trial_ends_at, paid_until FROM users WHERE id = ?", (int(user_id),)
         ).fetchone()
-    ends = access_ends_at(row["trial_ends_at"], row["paid_until"]) if row else None
+        plan = _effective_plan(conn, row) if row else None
+    ends = access_ends_at(plan["trial_ends_at"], plan["paid_until"]) if plan else None
     value = ends.isoformat() if ends else None
     with _cache_lock:
         _cache[int(user_id)] = (now, value)
@@ -319,7 +361,7 @@ def redeem_code(db_path, user_id: int, username: str, code: str) -> dict[str, An
             (int(user_id), username, now.isoformat(), row["id"]),
         )
         conn.commit()
-    _invalidate(user_id)
+    clear_cache()  # members of this owner's company follow the new date at once
     return {"duration_days": int(row["duration_days"]), **status_for_user(db_path, user_id)}
 
 
@@ -332,16 +374,18 @@ def list_user_plans(db_path) -> list[dict[str, Any]]:
                WHERE lower(username) NOT LIKE 'archived_dup_%'
                ORDER BY id"""
         ).fetchall()
-    out = []
-    for r in rows:
-        out.append({
-            "user_id": r["id"],
-            "username": r["username"],
-            "role": r["role"],
-            "workspace_id": r["workspace_id"],
-            "created_at": r["created_at"],
-            **_status_from_row(r),
-        })
+        out = []
+        for r in rows:
+            plan = _effective_plan(conn, r)
+            out.append({
+                "user_id": r["id"],
+                "username": r["username"],
+                "role": r["role"],
+                "workspace_id": r["workspace_id"],
+                "created_at": r["created_at"],
+                **_status_from_row(plan),
+                "via_company": bool(plan.get("via_company")),
+            })
     return out
 
 
