@@ -68,11 +68,30 @@ def test_entry_warnings_duplicate_and_unusual_price(db):
         warns = hop_settings.invoice_entry_warnings(conn, WS, {
             "txn_type": 1, "party_type": "customer", "party_id": cust["id"],
             "txn_number": "INV-DUP-1",
-            "lines": [{"item_name": "Sofa Set", "product_id": prod["id"], "rate": 20000}],
+            "lines": [{"item_name": "Sofa Set", "product_id": prod["id"], "rate": 20000, "tax_pct": 5, "hsn": "9401"}],
         })
         codes = {w["code"] for w in warns}
         assert "duplicate_bill_no" in codes
         assert "unusual_price" in codes
+
+
+def test_entry_warnings_gst_guards(db):
+    with connect(db) as conn:
+        cust = create_customer(conn, WS, {"company": "Hotel GST"})
+        conn.execute(
+            "UPDATE hop_customers SET gst_type=?, gst_no=? WHERE id=?",
+            ("Registered Business - Regular", "22AAAAA0000A1Z", cust["id"]),
+        )
+        conn.commit()
+        warns = hop_settings.invoice_entry_warnings(conn, WS, {
+            "txn_type": 1, "party_type": "customer", "party_id": cust["id"],
+            "txn_number": "INV-GST-1",
+            "lines": [{"item_name": "Curtain", "rate": 500, "tax_pct": 9}],
+        })
+        codes = {w["code"] for w in warns}
+        assert "missing_gstin" in codes
+        assert "missing_hsn" in codes
+        assert "unusual_gst_rate" in codes
 
 
 def test_due_date_from_credit_days(db):

@@ -281,18 +281,22 @@ def suggest_party_rate(
     }
 
 
+_COMMON_GST_RATES = {0.0, 0.1, 0.25, 1.0, 1.5, 3.0, 5.0, 7.5, 12.0, 18.0, 28.0}
+
+
 def invoice_entry_warnings(
     conn: sqlite3.Connection,
     ws: str,
     payload: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Soft warnings for sale/purchase entry: duplicate bill no, unusual rates."""
+    """Soft warnings: duplicate bill no, unusual rates, missing GSTIN/HSN, odd GST%."""
     warnings: list[dict[str, Any]] = []
     txn_type = int(payload.get("txn_type") or 0)
     party_type = _s(payload.get("party_type")).lower() or ("vendor" if txn_type in (2, 4, 16) else "customer")
     party_id = _i(payload.get("party_id") or payload.get("customer_id") or payload.get("vendor_id")) or 0
     txn_number = _s(payload.get("txn_number"))
     exclude_id = _i(payload.get("exclude_txn_id") or payload.get("party_txn_id"))
+    tax_doc = txn_type in (1, 2, 16, 21)  # invoices / returns that feed GST reports
 
     if txn_number:
         q = """SELECT id, txn_number, party_name, txn_date FROM hop_party_transactions
@@ -310,15 +314,59 @@ def invoice_entry_warnings(
                 "txn_id": dup["id"],
             })
 
+    if tax_doc and party_id and party_type in ("customer", "vendor"):
+        table = "hop_vendors" if party_type == "vendor" else "hop_customers"
+        prow = conn.execute(
+            f"SELECT company, gst_no, gst_type FROM {table} WHERE workspace_id=? AND id=?",
+            (ws, int(party_id)),
+        ).fetchone()
+        if prow:
+            gst_no = _s(prow["gst_no"] if "gst_no" in prow.keys() else "")
+            gst_type = _s(prow["gst_type"] if "gst_type" in prow.keys() else "").lower()
+            registered = ("registered" in gst_type) or (len(gst_no) == 15)
+            if registered and len(gst_no) != 15:
+                warnings.append({
+                    "code": "missing_gstin",
+                    "level": "warn",
+                    "message": f"{prow['company'] or 'Party'} looks registered but GSTIN is missing or incomplete.",
+                })
+
     for ln in payload.get("lines") or []:
         if not isinstance(ln, dict):
             continue
         rate = _f(ln.get("rate"))
-        if rate <= 0:
-            continue
         pid = _i(ln.get("product_id"))
         name = _s(ln.get("item_name"))
+        hsn = _s(ln.get("hsn"))
+        tax_pct = ln.get("tax_pct")
+        if tax_pct is None:
+            tax_pct = ln.get("gst_pct")
+        tax_f = _f(tax_pct) if tax_pct not in (None, "") else None
         if not pid and not name:
+            continue
+
+        if tax_doc and rate > 0 and not hsn:
+            label = name or f"item #{pid}"
+            warnings.append({
+                "code": "missing_hsn",
+                "level": "warn",
+                "message": f"{label}: HSN/SAC missing — needed for GST reports.",
+                "item_name": name,
+                "product_id": pid,
+            })
+
+        if tax_doc and tax_f is not None and tax_f not in _COMMON_GST_RATES:
+            label = name or f"item #{pid}"
+            warnings.append({
+                "code": "unusual_gst_rate",
+                "level": "warn",
+                "message": f"{label}: GST {tax_f:g}% is unusual (common: 0/5/12/18/28).",
+                "item_name": name,
+                "product_id": pid,
+                "tax_pct": tax_f,
+            })
+
+        if rate <= 0:
             continue
         try:
             sug = suggest_party_rate(
