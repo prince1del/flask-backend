@@ -1223,6 +1223,36 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             """
         )
 
+        # Phase 3 — items & settings: categories, units, due dates, credit days
+        for col, ddl in (
+            ("unit", "TEXT"),
+            ("category_id", "INTEGER"),
+            ("unit_id", "INTEGER"),
+        ):
+            _ensure_column(conn, "hop_products", col, ddl)
+        _ensure_column(conn, "hop_party_transactions", "due_date", "TEXT")
+        for table in ("hop_customers", "hop_vendors"):
+            _ensure_column(conn, table, "credit_days", "INTEGER")
+            _ensure_column(conn, table, "payment_terms", "TEXT")
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS hop_item_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(workspace_id, name)
+            );
+            CREATE TABLE IF NOT EXISTS hop_units (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(workspace_id, name)
+            );
+            """
+        )
+
         # Heal stale product_key / size so Delete & vendor matrix never drift after upgrades
         try:
             from app import hop_ops as _hop_ops

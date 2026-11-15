@@ -2176,7 +2176,8 @@ function openHopView(viewName, opts) {
     foldId = 'purchase';
   } else if (v === 'journal_entries') {
     foldId = 'accounting';
-  } else if (v === 'vyapar_import' || v === 'wipe_data' || v === 'theme' || v === 'company_profile') {
+  } else if (v === 'vyapar_import' || v === 'wipe_data' || v === 'theme' || v === 'company_profile'
+    || v === 'item_settings' || v === 'overdue_bills' || v === 'stock_reorder') {
     foldId = 'settings';
   } else if (v === 'hop_manual_doc_create') {
     foldId = 'sale';
@@ -2213,6 +2214,15 @@ function openHopView(viewName, opts) {
         wipe_data: renderHopWipeDataModule,
         theme: renderHopThemeModule,
         company_profile: renderHopFirmProfileModule,
+        item_settings: (m) => (window.hopRenderItemSettingsModule
+          ? window.hopRenderItemSettingsModule(m)
+          : m && (m.innerHTML = '<p class="nx-text-dim">Items & units loading…</p>')),
+        overdue_bills: (m) => (window.hopRenderOverdueModule
+          ? window.hopRenderOverdueModule(m)
+          : m && (m.innerHTML = '<p class="nx-text-dim">Overdue loading…</p>')),
+        stock_reorder: (m) => (window.hopRenderReorderModule
+          ? window.hopRenderReorderModule(m)
+          : m && (m.innerHTML = '<p class="nx-text-dim">Reorder loading…</p>')),
         banking: renderHopBankingModule,
         stock: renderHopStockModule,
         gst_reports: (m) => (window.hopRenderReports ? window.hopRenderReports(m, 'gstr1') : renderHopGstReportsModule(m)),
@@ -7195,6 +7205,25 @@ function hopFilterProductsTable(q) {
   });
 }
 
+async function hopFillProductMasterLists() {
+  try {
+    const [cats, units] = await Promise.all([
+      hopApi('/api/v1/hop/item-categories').catch(() => null),
+      hopApi('/api/v1/hop/units').catch(() => null),
+    ]);
+    const catList = document.getElementById('hop-item-cat-list');
+    const unitList = document.getElementById('hop-unit-list');
+    if (catList) {
+      catList.innerHTML = ((cats && cats.categories) || [])
+        .map((c) => `<option value="${foEscapeAttr(c.name)}"></option>`).join('');
+    }
+    if (unitList) {
+      unitList.innerHTML = ((units && units.units) || [])
+        .map((u) => `<option value="${foEscapeAttr(u.name)}"></option>`).join('');
+    }
+  } catch (_e) { /* optional */ }
+}
+
 async function hopEditProduct(productId) {
   const rows = hopState._productsCache || [];
   const r = rows.find((x) => Number(x.id) === Number(productId));
@@ -7202,7 +7231,9 @@ async function hopEditProduct(productId) {
   hopShowForm('product');
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
   set('f-prname', r.name); set('f-prcode', r.code); set('f-prbrand', r.brand); set('f-prcat', r.category);
+  set('f-prunit', r.unit);
   set('f-prsell', r.selling_price); set('f-prbuy', r.purchase_price); set('f-prlog', r.logistics_cost);
+  hopFillProductMasterLists();
   set('f-prgst', r.gst_pct); set('f-prhsn', r.hsn); set('f-prcomm', r.commission_pct);
   set('f-prstock', r.stock_qty); set('f-prvendor', r.vendor_id || ''); set('f-prmoq', r.moq);
   hopState._editingProductId = Number(productId);
@@ -7220,6 +7251,7 @@ async function hopSaveProductEdit() {
     code: document.getElementById('f-prcode')?.value,
     brand: document.getElementById('f-prbrand')?.value,
     category: document.getElementById('f-prcat')?.value,
+    unit: document.getElementById('f-prunit')?.value,
     selling_price: document.getElementById('f-prsell')?.value,
     purchase_price: document.getElementById('f-prbuy')?.value,
     logistics_cost: document.getElementById('f-prlog')?.value,
@@ -9494,7 +9526,10 @@ async function hopShowForm(kind, editRow) {
         <label>Name *<input id="f-prname" /></label>
         <label>Code<input id="f-prcode" /></label>
         <label>Brand<input id="f-prbrand" /></label>
-        <label>Category<input id="f-prcat" placeholder="Bed Linen / Fabric…" /></label>
+        <label>Category<input id="f-prcat" list="hop-item-cat-list" placeholder="Bed Linen / Fabric…" /></label>
+        <label>Unit<input id="f-prunit" list="hop-unit-list" placeholder="Pcs / MTR…" /></label>
+        <datalist id="hop-item-cat-list"></datalist>
+        <datalist id="hop-unit-list"></datalist>
         <label>Sell Price<input id="f-prsell" type="number" /></label>
         <label>Purchase Price<input id="f-prbuy" type="number" /></label>
         <label>Logistics<input id="f-prlog" type="number" /></label>
@@ -9509,6 +9544,7 @@ async function hopShowForm(kind, editRow) {
         <button type="button" class="nx-btn nx-btn-primary" onclick="hopSave('product')">Save</button>
         <button type="button" class="nx-btn" onclick="${cancel}">Cancel</button>
       </div>`;
+    hopFillProductMasterLists();
   }
   if (kind === 'order') {
     slot.innerHTML = `
@@ -9788,6 +9824,7 @@ async function hopSave(kind) {
         code: document.getElementById('f-prcode')?.value,
         brand: document.getElementById('f-prbrand')?.value,
         category: document.getElementById('f-prcat')?.value,
+        unit: document.getElementById('f-prunit')?.value,
         selling_price: document.getElementById('f-prsell')?.value,
         purchase_price: document.getElementById('f-prbuy')?.value,
         logistics_cost: document.getElementById('f-prlog')?.value,

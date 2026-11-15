@@ -2327,6 +2327,140 @@ def expense_categories():
     return jsonify({"success": True, "data": {"categories": rows}})
 
 
+@hop_bp.route("/item-categories", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def item_categories():
+    ensure_hop_schema(_db_path())
+    from app import hop_settings
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                return jsonify({"success": True, "data": hop_settings.create_item_category(
+                    conn, _ws(), _payload().get("name"))}), 201
+            rows = hop_settings.list_item_categories(conn, _ws())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"categories": rows}})
+
+
+@hop_bp.route("/units", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def units_collection():
+    ensure_hop_schema(_db_path())
+    from app import hop_settings
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                return jsonify({"success": True, "data": hop_settings.create_unit(
+                    conn, _ws(), _payload().get("name"))}), 201
+            rows = hop_settings.list_units(conn, _ws())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"units": rows}})
+
+
+@hop_bp.route("/suggest-rate", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def suggest_rate():
+    ensure_hop_schema(_db_path())
+    from app import hop_settings
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_settings.suggest_party_rate(
+                conn, _ws(),
+                party_type=request.args.get("party_type") or "customer",
+                party_id=int(request.args.get("party_id") or 0),
+                product_id=int(request.args["product_id"]) if request.args.get("product_id") else None,
+                item_name=request.args.get("item_name") or "",
+            )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/entry-warnings", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def entry_warnings():
+    ensure_hop_schema(_db_path())
+    from app import hop_settings
+
+    with hop_db.connect(_db_path()) as conn:
+        warnings = hop_settings.invoice_entry_warnings(conn, _ws(), _payload())
+    return jsonify({"success": True, "data": {"warnings": warnings}})
+
+
+@hop_bp.route("/overdue-bills", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def overdue_bills():
+    ensure_hop_schema(_db_path())
+    from app import hop_settings
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_settings.overdue_bills(
+            conn, _ws(),
+            as_of=request.args.get("as_of"),
+            party_type=request.args.get("party_type"),
+        )
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/ai/payment-reminder", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def ai_payment_reminder():
+    ensure_hop_schema(_db_path())
+    from app.services import hop_ai
+
+    payload = _payload()
+    txn_id = int(payload.get("txn_id") or payload.get("party_txn_id") or 0)
+    if not txn_id:
+        return _json_error("txn_id is required")
+    user = getattr(request, "user", None) or {}
+    with hop_db.connect(_db_path()) as conn:
+        bill = conn.execute(
+            """SELECT id, party_name, txn_number, due_date, balance_amount, txn_date, total_amount
+               FROM hop_party_transactions WHERE workspace_id=? AND id=?""",
+            (_ws(), txn_id),
+        ).fetchone()
+        if not bill:
+            return _json_error("Bill not found", "NOT_FOUND", 404)
+        firm = conn.execute(
+            "SELECT firm_name FROM hop_firm_profile WHERE workspace_id=? LIMIT 1", (_ws(),)
+        ).fetchone()
+        firm_name = (firm["firm_name"] if firm else "") or ""
+        try:
+            out = hop_ai.payment_reminder_text(
+                dict(bill), firm_name=firm_name, user_id=int(user.get("user_id") or 0)
+            )
+        except ValueError as exc:
+            return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/stock/reorder", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def stock_reorder():
+    ensure_hop_schema(_db_path())
+    from app import hop_settings
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_settings.low_stock_reorder(
+            conn, _ws(),
+            days=int(request.args.get("days") or 30),
+            low_at=float(request.args.get("low_at") or 0),
+        )
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/party-transactions/<int:txn_id>/convert", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

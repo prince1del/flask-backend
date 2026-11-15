@@ -917,6 +917,16 @@ def create_manual_party_document(
     replace_txn_lines(conn, workspace_id, source_txn_id, computed_lines)
     if category:
         conn.execute("UPDATE hop_party_transactions SET expense_category_id=? WHERE id=?", (category["id"], party_txn_id))
+    # Due date: explicit payload, else party credit_days from txn_date (sale/purchase bills).
+    due_date = _clean(payload.get("due_date"))[:10] or None
+    if not due_date and meta.get("balance_due") and party_id and party_type in ("customer", "vendor"):
+        from app import hop_settings
+
+        due_date = hop_settings.compute_due_date(
+            txn_date, hop_settings.party_credit_days(conn, workspace_id, party_type, party_id)
+        )
+    if due_date:
+        conn.execute("UPDATE hop_party_transactions SET due_date=? WHERE id=?", (due_date, party_txn_id))
     hop_money.post_document(conn, workspace_id, party_txn_id, payload)
     conn.commit()
     after = dict(conn.execute("SELECT balance_amount, status_text FROM hop_party_transactions WHERE id=?",
@@ -930,6 +940,7 @@ def create_manual_party_document(
         "txn_type": txn_type,
         "txn_label": txn_label,
         "txn_date": txn_date,
+        "due_date": due_date,
         "total_amount": grand,
         "balance_amount": balance,
         "party_type": party_type,
@@ -1057,6 +1068,9 @@ def update_manual_party_document(
     replace_txn_lines(conn, workspace_id, source_txn_id, computed_lines)
     conn.execute("UPDATE hop_party_transactions SET expense_category_id=? WHERE id=?",
                  (category["id"] if category else None, int(party_txn_id)))
+    if "due_date" in payload:
+        due_date = _clean(payload.get("due_date"))[:10] or None
+        conn.execute("UPDATE hop_party_transactions SET due_date=? WHERE id=?", (due_date, int(party_txn_id)))
     hop_money.post_document(conn, workspace_id, int(party_txn_id), payload, is_update=True)
     conn.commit()
     balance = float(conn.execute("SELECT balance_amount FROM hop_party_transactions WHERE id=?",

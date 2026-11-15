@@ -5,15 +5,15 @@ Vyapar software** — same screens, flows and wiring — not just hold Vyapar da
 Own NEXORA / HoP branding (no Vyapar logo). AI help added in every phase.
 Order agreed: Phase 1 → 2 → 3 → 4, each deployed and checked before the next.
 
-_Last updated: 2026-11-15 (by Claude). Update this file whenever a step finishes._
+_Last updated: 2026-11-15 (deploy Phase 1+2 live; Phase 3 started)._
 
 ## Status at a glance
 | Phase | What | State |
 |---|---|---|
-| 1 | Money flow: paid/received, Cash & Bank, cheques, Payment-In/Out against bills, stock from documents, expense categories, Convert, AI bill reader, Ask Nexora `get_hop_books` | **Built + pushed (13f993e).** Full test run in progress → then backup + deploy. |
-| 2 | Accounts & reports (real double-entry: TB, P&L, Balance Sheet, Cash Flow; Day Book, All Transactions, Party Statement, outstanding; sale/purchase/item/stock/bill-wise profit/expense reports; GSTR-1/2/3B, HSN) + Reports screen + AI insights | **Built, tested, checked on a local copy of real HoP data** (TB & BS balance; receivables, payables, expenses match the old software to the rupee except one party ₹2,319 from a journal entry). Server `app/hop_reports.py`, routes `GET /books`, `/books/<key>`, `/books/<key>/insights`; web `app/static/hop_reports_web.js` (menu "Reports (all)"); tests `tests/test_hop_reports.py`. Importer now brings expenses without a party + every expense category, and imported advances. **Next:** commit → full tests → backup → deploy Phase 1+2 → phone screens for Phase 1+2. |
-| 3 | Items & settings: item categories, units, party-wise rates, payment terms + due-date reminders, print themes, Fixed Assets, recycle bin, close financial year, Tally export, loan accounts | Not started |
-| 4 | ~~Phone at the end~~ **Changed (owner, 2026-11-15): phone screens are built in EVERY phase, next to the web.** Phase 1 + 2 phone screens come right after their deploy, before Phase 3 starts. | Phase 1+2 phone: next |
+| 1 | Money flow: paid/received, Cash & Bank, cheques, Payment-In/Out against bills, stock from documents, expense categories, Convert, AI bill reader, Ask Nexora `get_hop_books` | **Deployed** on Lightsail `3.7.170.77` at `f76a9b7` (backup `/var/data/backup_before_phase12_20261115.sqlite3`). Smoke 401 on money routes. |
+| 2 | Accounts & reports (real double-entry: TB, P&L, Balance Sheet, Cash Flow; Day Book, All Transactions, Party Statement, outstanding; sale/purchase/item/stock/bill-wise profit/expense reports; GSTR-1/2/3B, HSN) + Reports screen + AI insights | **Deployed** with Phase 1 (same commit). Smoke 401 on `/books`, `/books/trial_balance`, insights. |
+| 3 | Items & settings: item categories, units, party last-rate + invoice warnings, credit days → due dates + overdue + AI WhatsApp reminder, low-stock reorder. Still pending: print themes, Fixed Assets, recycle bin, close FY, Tally export, loan accounts | **In progress (first slice).** Server `app/hop_settings.py`; routes `/item-categories`, `/units`, `/suggest-rate`, `/entry-warnings`, `/overdue-bills`, `/ai/payment-reminder`, `/stock/reorder`; web `hop_settings_web.js` (Settings → Items & units / Overdue / Reorder). |
+| 4 | Phone screens every phase (owner rule). Owner asked deploy → Phase 3 first (2026-11-15); phone Phase 1–3 follows. | Phone Phase 1+2+3: next after Phase 3 web slice ships |
 
 ## Phase 1 — done (details in docs/NEXORA_APP_MAP.md §4 "Money flow")
 - Server: `app/hop_money.py` (post/undo effects per document, balances recomputed

@@ -273,6 +273,64 @@ def _slim(data: Any, depth: int = 0) -> Any:
     return data
 
 
+def payment_reminder_text(
+    bill: dict[str, Any],
+    *,
+    firm_name: str = "",
+    user_id: int,
+) -> dict[str, Any]:
+    """WhatsApp-ready payment reminder. Uses Gemini when available; else a clear template."""
+    party = str(bill.get("party_name") or "Sir/Madam").strip()
+    bill_no = str(bill.get("txn_number") or "").strip() or "your bill"
+    due = str(bill.get("due_date") or "").strip() or "soon"
+    bal = bill.get("balance_amount")
+    try:
+        bal_s = f"₹{float(bal):,.2f}"
+    except (TypeError, ValueError):
+        bal_s = "the pending amount"
+    firm = (firm_name or "us").strip()
+    template = (
+        f"Namaste {party},\n\n"
+        f"Friendly reminder from {firm}: invoice {bill_no} for {bal_s} was due on {due}. "
+        f"Please arrange payment at your earliest convenience.\n\nThank you."
+    )
+    from app.services import nexora_ai_agent as agent
+    from app.services.dsr_notes_polish import gemini_api_key
+
+    key = gemini_api_key()
+    if not key or agent.over_daily_limit(user_id, "ai"):
+        return {"text": template, "source": "template"}
+    prompt = (
+        "Write a short polite WhatsApp payment reminder in simple English (optionally 1 Hindi greeting). "
+        "Max 500 characters. No markdown. Use only these facts — do not invent amounts or dates:\n"
+        f"party={party}; firm={firm}; bill={bill_no}; due={due}; balance={bal_s}\n"
+        'Return ONLY JSON: {"text":"…"}'
+    )
+    body = json.dumps({
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 250, "responseMimeType": "application/json"},
+    }).encode("utf-8")
+    for model in agent.agent_gemini_models():
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+            data=body, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                out = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            continue
+        usage = out.get("usageMetadata") or {}
+        agent._log_usage(user_id=int(user_id), feature="nexora_agent_hop_payment_reminder", model=model, rounds=1,
+                         prompt_tokens=int(usage.get("promptTokenCount") or 0),
+                         output_tokens=int(usage.get("candidatesTokenCount") or 0),
+                         total_tokens=int(usage.get("totalTokenCount") or 0), query="hop payment reminder")
+        parts = ((out.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        text = str(_parse_json("".join(p.get("text", "") for p in parts if isinstance(p, dict))).get("text") or "").strip()
+        if text:
+            return {"text": text[:700], "source": "ai"}
+    return {"text": template, "source": "template"}
+
+
 def report_insights(title: str, data: dict[str, Any], *, user_id: int) -> list[str]:
     from app.services import nexora_ai_agent as agent
     from app.services.dsr_notes_polish import gemini_api_key

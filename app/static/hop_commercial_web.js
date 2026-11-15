@@ -1000,11 +1000,11 @@
     const perPc = hopManualDocRateAfterDiscLabel(ln);
     return `<tr class="hop-vyp-row" id="hop-comm-row-${si}-${li}">
       <td class="hop-vyp-sl">${li + 1}</td>
-      <td class="hop-vyp-item"><input class="hop-vyp-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" placeholder="Item / article" /></td>
+      <td class="hop-vyp-item"><input class="hop-vyp-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" onblur="hopMaybeSuggestLineRate && hopMaybeSuggestLineRate(${si},${li})" placeholder="Item / article" /></td>
       <td class="hop-vyp-desc"><input class="hop-vyp-inp" value="${foEscapeText(ln.description || '')}" oninput="hopManualDocSetLine(${si},${li},'description',this.value)" placeholder="Description" /></td>
       <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="0" /></td>
-      <td class="hop-vyp-unit"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" placeholder="MTR" /></td>
-      <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="0.00" /></td>
+      <td class="hop-vyp-unit"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" list="hop-unit-list" placeholder="MTR" /></td>
+      <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" data-hop-line-si="${si}" data-hop-line-li="${li}" data-hop-line-field="rate" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="0.00" /></td>
       <td class="hop-vyp-read" id="hop-comm-amt-${si}-${li}">${amts.amount}</td>
       <td class="hop-vyp-read" id="hop-comm-pc-disc-${si}-${li}">${perPc}</td>
       <td class="hop-vyp-pct"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>
@@ -1277,6 +1277,16 @@
       if (errEl) errEl.textContent = partyKind === 'vendor' ? 'Select a vendor' : 'Select a customer';
       return;
     }
+    if (typeof window.hopCheckEntryWarningsBeforeSave === 'function') {
+      // Align draft fields for the warnings helper
+      d.txn_type = md.txnType;
+      d.party_type = partyKind === 'vendor' ? 'vendor' : 'customer';
+      d.party_id = custId;
+      d.txn_number = d.txnNumber || document.getElementById('hop-manual-txn-no')?.value || '';
+      d.party_txn_id = md.editTxnId || d.party_txn_id;
+      const ok = await window.hopCheckEntryWarningsBeforeSave();
+      if (!ok) return;
+    }
     const isComm = md.mode === 'commercial' && md.txnType === 27;
     const meta = hopManualDocMeta(md.txnType);
     const rawLines = [];
@@ -1438,6 +1448,7 @@
   window.hopManualDocFetchNextNumber = hopManualDocFetchNextNumber;
   window.hopManualDocSetSectionTitle = hopManualDocSetSectionTitle;
   window.hopManualDocSetLine = hopManualDocSetLine;
+  window.hopManualDocUpdateLineTotals = hopManualDocUpdateLineTotals;
   window.hopManualDocAddSection = hopManualDocAddSection;
   window.hopManualDocAddLine = hopManualDocAddLine;
   window.hopManualDocRemoveLine = hopManualDocRemoveLine;
