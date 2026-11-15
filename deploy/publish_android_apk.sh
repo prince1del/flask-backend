@@ -30,21 +30,33 @@ SHA=$(sha256sum "$APK" | cut -d' ' -f1)
 SIZE=$(wc -c < "$APK" | tr -d ' ')
 REMOTE_APK="nexora-$CODE.apk"
 STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-NOTES_JSON=$(printf '%s' "$NOTES" | "$PY" -c 'import json,sys; print(json.dumps(sys.stdin.read()))' | tr -d '\r')
+LOCAL_LATEST=$(mktemp)
+"$PY" -c '
+import json, sys
+notes = sys.argv[1]
+meta = {
+  "version_code": int(sys.argv[2]),
+  "version_name": sys.argv[3],
+  "notes": notes,
+  "sha256": sys.argv[4],
+  "size_bytes": int(sys.argv[5]),
+  "file": sys.argv[6],
+  "published_at": sys.argv[7],
+}
+json.dump(meta, open(sys.argv[8], "w", encoding="utf-8"), ensure_ascii=False)
+' "$NOTES" "$CODE" "$NAME" "$SHA" "$SIZE" "$REMOTE_APK" "$STAMP" "$LOCAL_LATEST"
 
 echo "Publishing NEXORA $NAME (code $CODE, $SIZE bytes, sha256 ${SHA:0:12}…) to $SERVER"
 
 SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes "$SSH_USER@$SERVER")
 scp -i "$SSH_KEY" -q "$APK" "$SSH_USER@$SERVER:/tmp/$REMOTE_APK"
+scp -i "$SSH_KEY" -q "$LOCAL_LATEST" "$SSH_USER@$SERVER:/tmp/latest.json"
+rm -f "$LOCAL_LATEST"
 
 "${SSH[@]}" "set -e
   sudo mkdir -p $REMOTE_DIR
   sudo install -m 644 /tmp/$REMOTE_APK $REMOTE_DIR/$REMOTE_APK && rm -f /tmp/$REMOTE_APK
   echo \"\$(sha256sum $REMOTE_DIR/$REMOTE_APK | cut -d' ' -f1)\" | grep -qx '$SHA' || { echo 'checksum mismatch on server'; exit 1; }
-  cat > /tmp/latest.json <<JSON
-{\"version_code\": $CODE, \"version_name\": \"$NAME\", \"notes\": $NOTES_JSON,
- \"sha256\": \"$SHA\", \"size_bytes\": $SIZE, \"file\": \"$REMOTE_APK\", \"published_at\": \"$STAMP\"}
-JSON
   sudo install -m 644 /tmp/latest.json $REMOTE_DIR/latest.json && rm -f /tmp/latest.json
   # history.json: every build's notes, newest first (Settings -> Updates on the phone)
   sudo python3 - $REMOTE_DIR <<'PYH'
