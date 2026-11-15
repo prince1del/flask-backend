@@ -169,3 +169,23 @@ Owner reminders tonight: **mobile is the first priority**; app must be **full of
 3. More AI on the phone: "Read bill" on Purchase Bill already there — add AI to Payment-In
    (suggest which bills from the party's history) and an AI summary on the HoP home.
 4. Waiting on owner: OK to clean the old software name from saved prod data.
+
+## Night 2 (2026-11-16) — owner asleep, said "jitna kheech sakte ho kheecho", no permission needed
+Gap list vs full desktop billing software was given (GST compliance, billing details, items/stock,
+parties, missing reports, roles/audit, multi-firm). Built tonight:
+1. **11 more reports** (`app/hop_reports_more.py`): Party-wise P&L, Item-wise P&L, Party report by item,
+   Sale/Purchase by party group, Item category, Discount, Expense items, Sale/Purchase order report,
+   GSTR-9. Web Reports lists them (+ generic table view for any report).
+2. **Phone Reports screen rebuilt** (`ui/hop/HopReportsScreen.kt`): Cursor's showed only "rows: 12
+   rows" — now real cards, totals, date chips, party/item picker, tap a bill → preview, ✨ AI insights.
+   Menu "Reports (all)" and "GST reports" open it. All 32 server reports work on the phone.
+3. **Credit limit warning** before saving a sale invoice (phone + web via entry-warnings).
+4. **E-Invoice & E-Way Bill files** (`app/hop_einvoice.py`): government JSON (INV-01 v1.1 / bulk
+   e-way format) from sale invoices, problems listed first (GSTIN, PIN, state, HSN, number length),
+   then save IRN / Ack / E-Way no back. Phone + web buttons on the sale invoice preview.
+   No GSP account needed (upload on portal). Direct API needs the owner's GSP signup later.
+Release: full tests → backup → deploy → phone OTA 2.0.459281 (see below for result).
+Still missing (next): place of supply + reverse charge + TCS/TDS on bills; additional charges;
+price lists / MRP; partial order conversion; UPI QR on PDF; WhatsApp share; thermal print; barcode;
+batch/expiry/serial; godowns; Excel import/bulk update; party groups list on server; SMS reminders;
+user roles + audit trail; other income; bank reconciliation; multiple firms; backup/restore.
