@@ -151,3 +151,21 @@ Server + web + phone done and tested (web checked in a browser on made-up data: 
 overdue bill, negative cash, duplicate bill, negative stock). Phone card on My Day + HoP
 home compiles. See docs/NEXORA_APP_MAP.md §4b. Deploy with the next release.
 Owner reminders tonight: **mobile is the first priority**; app must be **full of AI**.
+
+## Released 2026-11-16 (overnight)
+- Full tests: 952 passed, 0 failed (commit 18a4a1a). (An earlier run showed 75 ImportErrors — caused by
+  editing `app/routes/__init__.py` mid-run; not real. Lesson: never edit server files while tests run.)
+- Backup `/var/data/backup_before_guard_fixes_20261115_2005.sqlite3` → deployed `18a4a1a` → service active,
+  no errors. Books balance on prod. HoP section on prod has no data yet (Guard finds nothing there).
+- Phone OTA **2.0.459075** published (Guard card, bank account on payments, cheque deposit/reopen,
+  Received/Paid now on returns, edit pre-fill). Phone wasn't reachable for direct install — it will offer
+  the update by itself.
+- Live AI bill read tested once on prod with a made-up bill: vendor, GSTIN, bill no, date, both items
+  (HSN/qty/unit/rate/GST) and total all correct; warnings correct.
+
+## Next (owner: mobile first, app full of AI)
+1. Check the new phone update on the owner's phone (Guard card, bank payment, cheque deposit).
+2. Guard: add a daily server run + push notification on the phone for new urgent issues.
+3. More AI on the phone: "Read bill" on Purchase Bill already there — add AI to Payment-In
+   (suggest which bills from the party's history) and an AI summary on the HoP home.
+4. Waiting on owner: OK to clean the old software name from saved prod data.
