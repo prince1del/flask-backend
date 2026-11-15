@@ -708,6 +708,7 @@
         : null,
       lines: isComm ? null : [hopEmptyDocLine()],
     };
+    window.hopMoney_?.initDraft(hopState.manualDocDraft, Number(txnType));
   }
 
   function hopOpenManualDocCreate(txnType, mode) {
@@ -720,7 +721,7 @@
     const duplicate = !!opts?.duplicate;
     const d = hopState.manualDocDraft;
     if (!d) return;
-    d.customerId = String(data.customer_id || '');
+    d.customerId = String(data.customer_id || data.party_id || '');
     d.txnDate = duplicate
       ? new Date().toISOString().slice(0, 10)
       : (data.txn_date || d.txnDate);
@@ -756,6 +757,15 @@
     }
     if (editId) hopState.manualDoc.editId = Number(editId);
     else if (duplicate) hopState.manualDoc.editId = null;
+    window.hopMoney_?.applyData(d, data, opts?.convert ? 'convert' : duplicate);
+  }
+
+  /** Convert to …: open the form prefilled from a draft (keeps the link to the source). */
+  function hopOpenManualDocFromDraft(draft) {
+    const txnType = Number(draft.txn_type);
+    hopManualDocInit(txnType, 'standard');
+    hopManualDocApplyApiData(draft, { duplicate: true, convert: true });
+    hopMountManualDocOverlay();
   }
 
   async function hopOpenManualDocEdit(partyTxnId) {
@@ -806,7 +816,13 @@
       const [parties, firm] = await Promise.all([
         hopApi(partyKind === 'vendor' ? '/api/v1/hop/vendors' : '/api/v1/hop/customers'),
         hopApi('/api/v1/hop/firm-profile').catch(() => ({})),
+        window.hopMoney_ ? window.hopMoney_.loadRefs() : null,
       ]);
+      const dd = hopState.manualDocDraft;
+      if (dd && !dd.paymentChoice) {
+        const cash = (hopState.moneyAccounts || []).find((a) => a.account_type === 'cash');
+        if (cash) dd.paymentChoice = `acct:${cash.id}`;
+      }
       customers = parties || [];
       firmTerms = firm?.terms_default || '';
       hopState.manualDocCustomers = customers;
@@ -844,6 +860,7 @@
     document.body.appendChild(el);
     document.body.classList.add('hop-vyp-doc-open');
     if (!isEdit) hopManualDocFetchNextNumber();
+    if (window.hopMoney_?.isPaymentType(md.txnType) && hopState.manualDocDraft?.customerId) window.hopMoney_.loadBills();
   }
 
   async function hopManualDocDelete() {
@@ -1025,6 +1042,7 @@
   }
 
   function hopManualDocRenderBody(customers, firmTerms) {
+    if (window.hopMoney_?.isPaymentType(hopState.manualDoc?.txnType)) return window.hopMoney_.paymentBodyHtml(customers);
     const md = hopState.manualDoc || {};
     const d = hopState.manualDocDraft || {};
     const isComm = md.mode === 'commercial' && md.txnType === 27;
@@ -1086,6 +1104,7 @@
     return `
       <div class="hop-vyp-doc">
         <p id="hop-manual-doc-err" class="nx-oc-error"></p>
+        ${window.hopMoney_ ? window.hopMoney_.aiBarHtml() : ''}
         <div class="hop-vyp-top">
           <div class="hop-vyp-top-left">
             <label class="hop-vyp-field"><span>${(hopState.manualDocPartyKind || hopState.manualDoc?.partyKind) === 'vendor' ? 'Vendor' : 'Customer'} *</span>
@@ -1130,6 +1149,7 @@
               <span>Total</span>
               <strong id="hop-manual-doc-grand">${hopPreviewMoney(grand)}</strong>
             </div>
+            ${window.hopMoney_ ? window.hopMoney_.billPanelHtml(grand) : ''}
           </div>
         </div>
         <div class="hop-vyp-foot">
@@ -1157,6 +1177,7 @@
       shipTaxEl.textContent = v > 0.009 ? hopCommMoney(v) : '—';
     }
     hopManualDocUpdateAllSectionTotals();
+    window.hopMoneyRefreshBalance?.();
   }
 
   function hopManualDocSetCustomer(v) {
@@ -1245,6 +1266,11 @@
     const md = hopState.manualDoc || {};
     const d = hopState.manualDocDraft || {};
     const errEl = document.getElementById('hop-manual-doc-err');
+    if (window.hopMoney_?.isPaymentType(md.txnType)) {
+      const built = window.hopMoney_.paymentPayload();
+      if (built.error) { if (errEl) errEl.textContent = built.error; return; }
+      return hopManualDocSubmit(md, built.payload, errEl);
+    }
     const partyKind = md.partyKind || hopState.manualDocPartyKind || hopManualDocMeta(md.txnType).party;
     const custId = Number(d.customerId || document.getElementById('hop-manual-customer')?.value || 0);
     if (!custId) {
@@ -1304,6 +1330,11 @@
     };
     const txnNum = String(d.txnNumber || document.getElementById('hop-manual-txn-number')?.value || '').trim();
     if (txnNum) payload.txn_number = txnNum;
+    if (window.hopMoney_) Object.assign(payload, window.hopMoney_.billFields());
+    return hopManualDocSubmit(md, payload, errEl);
+  }
+
+  async function hopManualDocSubmit(md, payload, errEl) {
     const editId = Number(md.editId || 0);
     const url = editId ? `/api/v1/hop/party-transactions/${editId}` : '/api/v1/hop/party-transactions';
     const method = editId ? 'PATCH' : 'POST';
@@ -1411,4 +1442,8 @@
   window.hopManualDocAddLine = hopManualDocAddLine;
   window.hopManualDocRemoveLine = hopManualDocRemoveLine;
   window.hopManualDocSave = hopManualDocSave;
+  window.hopOpenManualDocFromDraft = hopOpenManualDocFromDraft;
+  window.hopEmptyDocLine = hopEmptyDocLine;
+  window.hopManualDocCalcGrandPublic = hopManualDocCalcGrand;
+  window.hopManualDocRenderBodyPublic = hopManualDocRenderBody;
 })();

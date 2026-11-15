@@ -35,6 +35,9 @@ def _i(v: Any) -> int | None:
 
 # ----- Banking -----
 def list_bank_accounts(conn: sqlite3.Connection, workspace_id: str) -> list[dict]:
+    from app import hop_money
+
+    hop_money.ensure_cash_account(conn, workspace_id)
     return [
         dict(r)
         for r in conn.execute(
@@ -120,10 +123,15 @@ def add_bank_entry(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             _now(),
         ),
     )
-    conn.execute(
-        "UPDATE hop_bank_accounts SET current_balance = COALESCE(current_balance,0) + ?, updated_at=? WHERE id=? AND workspace_id=?",
-        (delta, _now(), account_id, workspace_id),
-    )
+    from app import hop_money
+
+    if entry_type == "transfer" and not counterparty:
+        raise ValueError("Choose the account to transfer to")
+    if entry_type == "transfer" and counterparty == account_id:
+        raise ValueError("Choose a different account to transfer to")
+    if entry_type == "transfer" and not conn.execute(
+            "SELECT 1 FROM hop_bank_accounts WHERE workspace_id=? AND id=?", (workspace_id, counterparty)).fetchone():
+        raise ValueError("Transfer account not found")
     if entry_type == "transfer" and counterparty:
         conn.execute(
             """
@@ -135,10 +143,8 @@ def add_bank_entry(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             (workspace_id, counterparty, entry_date, amount, account_id,
              _s(payload.get("reference")), _s(payload.get("notes")), _now()),
         )
-        conn.execute(
-            "UPDATE hop_bank_accounts SET current_balance = COALESCE(current_balance,0) + ?, updated_at=? WHERE id=? AND workspace_id=?",
-            (amount, _now(), counterparty, workspace_id),
-        )
+    hop_money.recompute_account(conn, workspace_id, account_id)
+    hop_money.recompute_account(conn, workspace_id, counterparty)
     conn.commit()
     return {"id": int(cur.lastrowid), "account_id": account_id, "amount": amount, "entry_type": entry_type}
 

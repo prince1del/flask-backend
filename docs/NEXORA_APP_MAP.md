@@ -501,8 +501,31 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
 - **Books:** `/bank-accounts`, `/bank-entries`, `/stock`, `/stock/journal`,
   `/reports/gst-hsn`, `/reports/gstr1`, `/accounts`, `/reports/trial-balance`,
   `/reports/profit-loss`, `/reports/balance-sheet`.
+- **Money flow (Vyapar-style, `app/hop_money.py`)** — every manual document posts
+  its effects and can be undone/re-posted on edit or delete:
+  - Invoice / Bill / Returns take `received_amount` + `payment_mode` (cash | bank |
+    cheque) + `payment_account_id`; balance = total − paid now − linked payments;
+    status Paid / Partial / Unpaid.
+  - Payment-In/Out clear bills via `hop_payment_links` (`allocations` in the
+    payload); the rest is `unused_amount`. `GET /open-bills`.
+  - Cash & Bank: a "Cash in hand" account always exists; balances are recomputed
+    from `hop_bank_entries` (`source` doc | cheque | manual). Cheques wait in
+    `hop_cheques` until `POST /cheques/<id>/close` (deposit / withdraw) or `reopen`.
+  - Stock: Sale Invoice / Purchase Return −qty, Purchase Bill / Sale Return +qty
+    (`hop_stock_journals` reference `doc:<id>`), lines matched by product_id → code → name.
+  - Expenses: `hop_expense_categories` (`GET/POST /expense-categories`); an expense
+    can have a category and no party (`party_type='expense'`).
+  - Convert: `GET /party-transactions/<id>/convert?to=<type>` → prefilled draft;
+    saving it with `linked_from_txn_id` marks the source "Converted to …".
+    `GET /party-transactions/<id>/links` → linked payments + convert options.
+  - AI: `POST /ai/read-bill` (photo/PDF → vendor, bill no, items, GST, category;
+    `app/services/hop_ai.py`, Gemini, daily AI limit); Ask Nexora tool
+    `get_hop_books` (cash/bank, receivables, payables, unpaid bills, expenses).
+  - Web: `app/static/hop_money_web.js` (payment panel, Payment-In/Out & Expense
+    forms, Cash & Bank screen, Convert buttons). Phone: Phase 4.
 - Tables: `hop_*` (+ `hop_bank_*`, `hop_stock_journals`, `hop_accounts`,
-  `hop_journal_lines`). Role: `hop_admin`.
+  `hop_journal_lines`, `hop_payment_links`, `hop_cheques`,
+  `hop_expense_categories`). Role: `hop_admin`.
 - Phone: `Hop*.kt` screens. Web: `app/static/hop_app.js`, `hop_commercial_web.js`.
 - Does not touch BD tables.
 

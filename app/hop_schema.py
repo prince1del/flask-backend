@@ -1169,6 +1169,60 @@ def ensure_hop_schema(db_path: str | Path) -> None:
 
         _ensure_column(conn, "hop_products", "hsn", "TEXT")
 
+        # Money flow (Vyapar-style): paid/received now, cash/bank/cheque, links,
+        # Convert, expense categories, stock from documents.
+        for col, ddl in (
+            ("received_amount", "REAL"),        # paid / received at the time of the document
+            ("payment_mode", "TEXT"),           # cash | bank | cheque
+            ("payment_account_id", "INTEGER"),  # hop_bank_accounts.id (cash or bank)
+            ("payment_ref", "TEXT"),            # cheque no / UTR
+            ("cheque_date", "TEXT"),
+            ("unused_amount", "REAL"),          # Payment-In/Out not yet linked to bills
+            ("linked_from_txn_id", "INTEGER"),  # converted from (Estimate → Invoice …)
+            ("converted_to_txn_id", "INTEGER"),
+            ("expense_category_id", "INTEGER"),
+        ):
+            _ensure_column(conn, "hop_party_transactions", col, ddl)
+        _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
+        _ensure_column(conn, "hop_bank_entries", "source", "TEXT")  # NULL manual | doc | cheque
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS hop_payment_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                payment_txn_id INTEGER NOT NULL,
+                bill_txn_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_paylinks_pay ON hop_payment_links(workspace_id, payment_txn_id);
+            CREATE INDEX IF NOT EXISTS idx_hop_paylinks_bill ON hop_payment_links(workspace_id, bill_txn_id);
+
+            CREATE TABLE IF NOT EXISTS hop_cheques (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                party_txn_id INTEGER NOT NULL,
+                direction TEXT NOT NULL,          -- in (received) | out (issued)
+                amount REAL NOT NULL,
+                cheque_no TEXT,
+                cheque_date TEXT,
+                status TEXT NOT NULL DEFAULT 'open',  -- open | closed
+                account_id INTEGER,               -- bank it was deposited to / withdrawn from
+                closed_on TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hop_cheques_ws ON hop_cheques(workspace_id, status);
+
+            CREATE TABLE IF NOT EXISTS hop_expense_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(workspace_id, name)
+            );
+            """
+        )
+
         # Heal stale product_key / size so Delete & vendor matrix never drift after upgrades
         try:
             from app import hop_ops as _hop_ops

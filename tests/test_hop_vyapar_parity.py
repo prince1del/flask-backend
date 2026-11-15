@@ -151,7 +151,8 @@ class HopVyaparParityTests(unittest.TestCase):
             j = hop_books.add_stock_journal(
                 conn, self.ws, {"product_id": pid, "qty_delta": 3, "reason": "opening"}
             )
-            self.assertEqual(float(j["stock_qty"]), 5)
+            # 2 opening − 1 sold on the invoice above + 3 from the journal
+            self.assertEqual(float(j["stock_qty"]), 4)
 
             hsn = hop_books.gst_hsn_summary(conn, self.ws)
             self.assertGreaterEqual(len(hsn["rows"]), 1)

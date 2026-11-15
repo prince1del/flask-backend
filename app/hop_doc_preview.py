@@ -251,9 +251,9 @@ def replace_txn_lines(
             INSERT INTO hop_txn_lines (
                 workspace_id, source_txn_id, line_no, item_name, item_code, description, hsn,
                 qty, unit, rate, discount_amount, discount_pct, section_title,
-                tax_pct, tax_amount, line_total,
+                tax_pct, tax_amount, line_total, product_id,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             """,
             (
                 workspace_id,
@@ -272,6 +272,7 @@ def replace_txn_lines(
                 float(line.get("tax_pct") or 0),
                 float(line.get("tax_amount") or 0),
                 float(line.get("line_total") or 0),
+                line.get("product_id"),
             ),
         )
         n += 1
@@ -596,6 +597,7 @@ def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]],
                 "line_no": i + 1,
                 "item_name": _clean(line.get("item_name")) or "Item",
                 "item_code": _clean(line.get("item_code")),
+                "product_id": int(line["product_id"]) if str(line.get("product_id") or "").isdigit() else None,
                 "description": _clean(line.get("description")),
                 "hsn": _clean(line.get("hsn")),
                 "qty": qty,
@@ -720,6 +722,8 @@ def get_party_transaction_edit_data(
     flat_lines = [
         {
             "item_name": _clean(ln.get("item_name")),
+            "item_code": _clean(ln.get("item_code")),
+            "product_id": ln.get("product_id"),
             "description": _clean(ln.get("description")),
             "qty": float(ln.get("qty") or 0),
             "unit": _clean(ln.get("unit")) or "MTR",
@@ -755,7 +759,26 @@ def get_party_transaction_edit_data(
         "round_off": float(h.get("round_off") or 0),
         "mode": "commercial" if is_commercial else "standard",
         "lines": flat_lines,
+        "party_type": _clean(h.get("party_type")),
+        "party_id": int(h.get("party_id") or 0) or None,
+        "received_amount": h.get("received_amount"),
+        "payment_mode": _clean(h.get("payment_mode")),
+        "payment_account_id": h.get("payment_account_id"),
+        "payment_ref": _clean(h.get("payment_ref")),
+        "cheque_date": _clean(h.get("cheque_date")),
+        "expense_category_id": h.get("expense_category_id"),
+        "balance_amount": float(h.get("balance_amount") or 0),
+        "unused_amount": h.get("unused_amount"),
+        "total_amount": float(h.get("total_amount") or 0),
+        "linked_from_txn_id": h.get("linked_from_txn_id"),
+        "converted_to_txn_id": h.get("converted_to_txn_id"),
     }
+    from app import hop_money
+
+    out["links"] = hop_money.links_of(conn, workspace_id, int(h["id"]))
+    if txn_type in hop_money.PAYMENT_FOR:
+        out["allocations"] = [{"txn_id": l["bill_txn_id"], "amount": l["amount"]} for l in out["links"]
+                              if int(l["payment_txn_id"]) == int(h["id"])]
     if is_commercial:
         out["sections"] = _group_lines_for_edit(lines)
     return out
@@ -784,9 +807,17 @@ def create_manual_party_document(
         raise ValueError("This document requires a vendor")
 
     party_id = int(payload.get("party_id") or payload.get("customer_id") or payload.get("vendor_id") or 0)
-    if not party_id:
-        raise ValueError("party_id is required")
-    if party_type == "vendor":
+    from app import hop_money
+
+    category = hop_money.expense_category(conn, workspace_id, payload.get("expense_category_id")) if txn_type == 7 else None
+    if txn_type == 7 and payload.get("expense_category_id") and not category:
+        raise ValueError("Expense category not found")
+    if not party_id and category:
+        # Vyapar-style expense: a category (Rent, Salary…), no party needed.
+        party_type, party = "expense", {"company": category["name"]}
+    elif not party_id:
+        raise ValueError("Choose a party" + (" or an expense category" if txn_type == 7 else ""))
+    elif party_type == "vendor":
         party = get_vendor(conn, workspace_id, party_id)
         if not party:
             raise ValueError("vendor not found")
@@ -861,7 +892,7 @@ def create_manual_party_document(
         (
             workspace_id,
             party_type,
-            party_id,
+            party_id or None,
             party_name,
             source_txn_id,
             txn_type,
@@ -884,7 +915,13 @@ def create_manual_party_document(
     )
     party_txn_id = int(cur.lastrowid)
     replace_txn_lines(conn, workspace_id, source_txn_id, computed_lines)
+    if category:
+        conn.execute("UPDATE hop_party_transactions SET expense_category_id=? WHERE id=?", (category["id"], party_txn_id))
+    hop_money.post_document(conn, workspace_id, party_txn_id, payload)
     conn.commit()
+    after = dict(conn.execute("SELECT balance_amount, status_text FROM hop_party_transactions WHERE id=?",
+                              (party_txn_id,)).fetchone())
+    balance = float(after.get("balance_amount") or 0)
 
     return {
         "party_txn_id": party_txn_id,
@@ -927,11 +964,19 @@ def update_manual_party_document(
     if not meta or source_txn_id >= 0:
         raise ValueError("Only Nexora-created documents can be edited")
 
+    from app import hop_money
+
     party_type = _clean(payload.get("party_type") or h.get("party_type")).lower() or "customer"
     party_id = int(payload.get("party_id") or payload.get("customer_id") or payload.get("vendor_id") or h.get("party_id") or 0)
-    if not party_id:
-        raise ValueError("party_id is required")
-    if party_type == "vendor":
+    cat_id = payload.get("expense_category_id") if "expense_category_id" in payload else h.get("expense_category_id")
+    category = hop_money.expense_category(conn, workspace_id, cat_id) if txn_type == 7 else None
+    if txn_type == 7 and "party_id" in payload and not payload.get("party_id") and category:
+        party_id = 0
+    if not party_id and category:
+        party_type, party = "expense", {"company": category["name"]}
+    elif not party_id:
+        raise ValueError("Choose a party" + (" or an expense category" if txn_type == 7 else ""))
+    elif party_type == "vendor":
         party = get_vendor(conn, workspace_id, party_id)
         if not party:
             raise ValueError("vendor not found")
@@ -989,7 +1034,7 @@ def update_manual_party_document(
         """,
         (
             party_type,
-            party_id,
+            party_id or None,
             party_name,
             txn_label,
             txn_number,
@@ -1010,7 +1055,12 @@ def update_manual_party_document(
         ),
     )
     replace_txn_lines(conn, workspace_id, source_txn_id, computed_lines)
+    conn.execute("UPDATE hop_party_transactions SET expense_category_id=? WHERE id=?",
+                 (category["id"] if category else None, int(party_txn_id)))
+    hop_money.post_document(conn, workspace_id, int(party_txn_id), payload, is_update=True)
     conn.commit()
+    balance = float(conn.execute("SELECT balance_amount FROM hop_party_transactions WHERE id=?",
+                                 (int(party_txn_id),)).fetchone()[0] or 0)
 
     return {
         "party_txn_id": int(party_txn_id),
@@ -1048,6 +1098,9 @@ def delete_manual_party_document(
     source_txn_id = int(h.get("source_txn_id") or 0)
     if txn_type not in MANUAL_TXN_TYPES or source_txn_id >= 0:
         raise ValueError("Only Nexora-created documents can be deleted")
+    from app import hop_money
+
+    hop_money.unpost_document(conn, workspace_id, int(party_txn_id))
     conn.execute(
         "DELETE FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=?",
         (workspace_id, source_txn_id),

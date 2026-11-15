@@ -2252,6 +2252,144 @@ def stock_journal():
     return jsonify({"success": True, "data": row}), 201
 
 
+# ── Money flow (Vyapar-style): bills a payment clears, cheques, expense categories, Convert ──
+
+@hop_bp.route("/open-bills", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def open_bills_list():
+    """?payment_type=3|4&party_type=customer|vendor&party_id=…[&payment_txn_id=…]"""
+    ensure_hop_schema(_db_path())
+    from app import hop_money
+
+    pay_type = request.args.get("payment_type", type=int) or 3
+    party_type = (request.args.get("party_type") or ("vendor" if pay_type == 4 else "customer")).strip().lower()
+    party_id = request.args.get("party_id", type=int)
+    if not party_id:
+        return _json_error("party_id is required")
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_money.open_bills(conn, _ws(), pay_type, party_type, party_id,
+                                    request.args.get("payment_txn_id", type=int))
+    return jsonify({"success": True, "data": {"bills": rows, "total_due": round(sum(r["due"] for r in rows), 2)}})
+
+
+@hop_bp.route("/cheques", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def cheques_list():
+    ensure_hop_schema(_db_path())
+    from app import hop_money
+
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_money.list_cheques(conn, _ws(), (request.args.get("status") or "").strip().lower() or None)
+    return jsonify({"success": True, "data": {"cheques": rows}})
+
+
+@hop_bp.route("/cheques/<int:cheque_id>/<action>", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def cheque_action(cheque_id: int, action: str):
+    """close = deposit (received) / withdraw (issued) into a bank or cash account; reopen = undo."""
+    ensure_hop_schema(_db_path())
+    from app import hop_money
+
+    body = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if action == "close":
+                out = hop_money.close_cheque(conn, _ws(), cheque_id, body.get("account_id"), body.get("date") or "")
+            elif action == "reopen":
+                out = hop_money.reopen_cheque(conn, _ws(), cheque_id)
+            else:
+                return _json_error("Unknown cheque action", "NOT_FOUND", 404)
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/expense-categories", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def expense_categories():
+    ensure_hop_schema(_db_path())
+    from app import hop_money
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                return jsonify({"success": True, "data": hop_money.create_expense_category(
+                    conn, _ws(), _payload().get("name"))}), 201
+            rows = hop_money.list_expense_categories(conn, _ws())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"categories": rows}})
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/convert", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_convert(txn_id: int):
+    """?to=<txn_type> → a prefilled draft; save it with POST /party-transactions (keeps linked_from_txn_id)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_money
+
+    to_type = request.args.get("to", type=int)
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            draft = hop_money.convert_draft(conn, _ws(), txn_id, int(to_type or 0))
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": draft})
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/links", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_links(txn_id: int):
+    ensure_hop_schema(_db_path())
+    from app import hop_money
+
+    with hop_db.connect(_db_path()) as conn:
+        t = conn.execute("SELECT txn_type, converted_to_txn_id, linked_from_txn_id FROM hop_party_transactions "
+                         "WHERE workspace_id=? AND id=?", (_ws(), txn_id)).fetchone()
+        if not t:
+            return _json_error("Document not found", "NOT_FOUND", 404)
+        links = hop_money.links_of(conn, _ws(), txn_id)
+    return jsonify({"success": True, "data": {
+        "links": links,
+        "convert_to": [{"txn_type": k, "label": hop_money.LABELS[k]} for k in hop_money.CONVERT_TO.get(int(t[0]), ())]
+        if not t[1] else [],
+        "converted_to_txn_id": t[1], "linked_from_txn_id": t[2],
+    }})
+
+
+@hop_bp.route("/ai/read-bill", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def ai_read_bill():
+    """Multipart file (PDF / photo) → form values for a Purchase Bill or Expense. Nothing is saved."""
+    ensure_hop_schema(_db_path())
+    from app.services import hop_ai
+
+    f = request.files.get("file")
+    if not f or not getattr(f, "filename", None):
+        return _json_error("Choose a bill photo or PDF")
+    mime = (f.mimetype or "").lower()
+    if not (mime.startswith("image/") or mime == "application/pdf"):
+        return _json_error("Use a PDF or a photo (JPG / PNG)")
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_ai.read_bill(conn, _ws(), f.read(), mime, user_id=int(user.get("user_id") or 0))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
 @hop_bp.route("/reports/gst-hsn", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

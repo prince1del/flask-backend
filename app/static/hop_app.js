@@ -4364,6 +4364,7 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
     if (body) body.innerHTML = (window.hopRenderDocPreviewHtml || hopRenderDocPreviewHtml)(data);
     hopUpdateDocPreviewHead(data);
     hopUpdateDocPreviewFoot(data, pid);
+    window.hopMoney_?.previewExtras(pid);
   } catch (e) {
     const body = document.getElementById('hop-doc-preview-body');
     if (body) {
@@ -9991,6 +9992,7 @@ window.hopPartyGroupOpenMenu = hopPartyGroupOpenMenu;
 window.hopPartyGroupCloseMenu = hopPartyGroupCloseMenu;
 /* ---------- Books: Banking / Stock / GST / Accounts ---------- */
 async function renderHopBankingModule(mount) {
+  if (typeof window.hopRenderCashBank === 'function') return window.hopRenderCashBank(mount);
   let data = { accounts: [], cash_available: 0 };
   let entries = [];
   try {

@@ -534,6 +534,25 @@ def _tool_declarations() -> list[dict[str, Any]]:
                 "required": ["distributor_name"],
             },
         },
+        {
+            "name": "get_hop_books",
+            "description": (
+                "House of Prizm accounts (only for the House of Prizm business): cash & bank "
+                "balances and open cheques (what=cash_bank), who owes us money (receivables), "
+                "what we owe vendors (payables), unpaid invoices/bills (unpaid_bills), expenses by "
+                "category (expenses), or a summary (overview). Use for 'kitna cash hai', 'kis party "
+                "ka paisa baaki hai', 'vendor ko kitna dena hai', 'kharcha kitna hua'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "what": {"type": "string", "enum": ["overview", "cash_bank", "receivables", "payables",
+                                                        "unpaid_bills", "expenses"]},
+                    "party_name": {"type": "string", "description": "Optional party to filter (can be partial)."},
+                },
+                "required": ["what"],
+            },
+        },
     ]
 
 
@@ -1226,6 +1245,17 @@ def _run_tool(
             conn.row_factory = None
             grievances = [dict(r) for r in rows]
             return {"grievances": _sanitize(grievances), "count": len(grievances)}
+
+        if name == "get_hop_books":
+            from app.hop_schema import HOP_WORKSPACE_ID, ensure_hop_schema
+            from app.services import hop_ai
+
+            if workspace_id != HOP_WORKSPACE_ID:
+                return {"error": "House of Prizm accounts are not part of this login."}
+            ensure_hop_schema(_db_path())
+            conn.row_factory = sqlite3.Row
+            return _sanitize(hop_ai.books_answer(conn, workspace_id, str(args.get("what") or "overview"),
+                                                 str(args.get("party_name") or "")))
 
         if name == "get_distributor_zone_summary":
             distributor_name = str(args.get("distributor_name") or "").strip()
