@@ -820,6 +820,9 @@ REPORTS = {
     "gstr1": "GSTR-1", "gstr2": "GSTR-2", "gstr3b": "GSTR-3B", "hsn_sale": "HSN Summary (Sales)",
     "hsn_purchase": "HSN Summary (Purchases)",
 }
+from app.hop_reports_more import MORE_REPORTS as _MORE  # noqa: E402
+
+REPORTS.update(_MORE)
 
 
 def run(conn: sqlite3.Connection, ws: str, key: str, a: dict[str, Any]) -> dict[str, Any]:
@@ -827,6 +830,11 @@ def run(conn: sqlite3.Connection, ws: str, key: str, a: dict[str, Any]) -> dict[
 
     frm, to = _d(a.get("from")), _d(a.get("to"))
     k = key.replace("-", "_")
+    from app import hop_reports_more
+
+    more = hop_reports_more.run(conn, ws, k, a)
+    if more is not None:
+        return more
     if k == "trial_balance":
         return trial_balance(conn, ws, to)
     if k == "profit_loss":

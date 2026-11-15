@@ -7,10 +7,10 @@
 
   const GROUPS = [
     ['Accounts', ['profit_loss', 'balance_sheet', 'trial_balance', 'cash_flow']],
-    ['Transactions', ['day_book', 'all_transactions', 'sale_report', 'purchase_report', 'expense_report', 'bill_profit']],
-    ['Parties', ['party_statement', 'outstanding']],
-    ['Items & stock', ['stock_summary', 'low_stock', 'stock_movement', 'item_report']],
-    ['GST', ['gstr1', 'gstr2', 'gstr3b', 'hsn_sale', 'hsn_purchase']],
+    ['Transactions', ['day_book', 'all_transactions', 'sale_report', 'purchase_report', 'expense_report', 'expense_items', 'bill_profit', 'discount_report', 'sale_orders', 'purchase_orders']],
+    ['Parties', ['party_statement', 'outstanding', 'party_pl', 'party_item', 'group_sale', 'group_purchase']],
+    ['Items & stock', ['stock_summary', 'low_stock', 'stock_movement', 'item_report', 'item_pl', 'category_report']],
+    ['GST', ['gstr1', 'gstr2', 'gstr3b', 'gstr9', 'hsn_sale', 'hsn_purchase']],
   ];
   const TITLES = {
     trial_balance: 'Trial Balance', profit_loss: 'Profit & Loss', balance_sheet: 'Balance Sheet', cash_flow: 'Cash Flow',
@@ -19,10 +19,15 @@
     item_report: 'Item-wise Report', stock_summary: 'Stock Summary', low_stock: 'Low Stock',
     stock_movement: 'Stock Movement', bill_profit: 'Bill-wise Profit', expense_report: 'Expense Report',
     gstr1: 'GSTR-1', gstr2: 'GSTR-2', gstr3b: 'GSTR-3B', hsn_sale: 'HSN Summary (Sales)', hsn_purchase: 'HSN Summary (Purchases)',
+    party_pl: 'Party-wise Profit & Loss', item_pl: 'Item-wise Profit & Loss', party_item: 'Party Report by Item',
+    group_sale: 'Sale by Party Group', group_purchase: 'Purchase by Party Group', category_report: 'Item Category Report',
+    discount_report: 'Discount Report', expense_items: 'Expense Item Report', sale_orders: 'Sale Order Report',
+    purchase_orders: 'Purchase Order Report', gstr9: 'GSTR-9 (Annual)',
   };
   const AS_OF = new Set(['trial_balance', 'balance_sheet', 'outstanding']);
   const NO_DATES = new Set(['stock_summary', 'low_stock']);
-  const AI_OK = new Set(['profit_loss', 'balance_sheet', 'cash_flow', 'outstanding', 'expense_report', 'bill_profit', 'sale_report', 'gstr3b']);
+  const AI_OK = new Set(['profit_loss', 'balance_sheet', 'cash_flow', 'outstanding', 'expense_report', 'bill_profit', 'sale_report', 'gstr3b',
+    'party_pl', 'item_pl', 'category_report', 'discount_report', 'sale_orders', 'gstr9']);
 
   const esc = (v) => (typeof foEscapeText === 'function' ? foEscapeText(v) : String(v ?? ''));
   const money = (v) => (typeof hopMoney === 'function' ? hopMoney(v) : Number(v || 0).toFixed(2));
@@ -142,6 +147,27 @@
     hsn_purchase: (d) => R.hsn_sale(d),
   };
 
+  // Any report: totals first, then each list as a table.
+  const HIDE = new Set(['id', 'txn_id', 'party_id', 'product_id', 'party_type', 'txn_type']);
+  const NOT_MONEY = /(^|_)(qty|count|bills|rate|pct|lines|in|out|invoices|notes)$|^(date|number|hsn|gstin|status|type|kind)$/;
+  function generic(d) {
+    const label = (k) => k.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    const val = (k, v) => (typeof v === 'number' && !NOT_MONEY.test(k) ? money(v) : esc(v ?? ''));
+    const scal = Object.entries(d).filter(([k, v]) => v !== null && typeof v !== 'object' && !HIDE.has(k));
+    let html = scal.length ? `<table class="hop-vyp-table hop-vyp-table--simple hop-rep-table" style="max-width:620px;margin:8px 0 16px;"><tbody>
+      ${scal.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td class="inv-num" style="text-align:right">${val(k, v)}</td></tr>`).join('')}</tbody></table>` : '';
+    Object.entries(d).forEach(([k, v]) => {
+      if (Array.isArray(v)) {
+        const cols = v.length && typeof v[0] === 'object' ? Object.keys(v[0]).filter((c) => !HIDE.has(c) && (typeof v[0][c] !== 'object' || v[0][c] === null)) : [];
+        html += `<h3>${esc(label(k))} (${v.length})</h3>` + table(cols.map((c) => ({ k: c, label: label(c), num: typeof v[0][c] === 'number' && !NOT_MONEY.test(c) })),
+          v.map((r) => ({ ...r, id: r.id || r.txn_id })), { clickId: 'id', title: label(k) });
+      } else if (v && typeof v === 'object') {
+        html += `<h3>${esc(label(k))}</h3>` + stmt(Object.entries(v).map(([a, b]) => [label(a), typeof b === 'number' ? b : null]));
+      }
+    });
+    return html;
+  }
+
   // ---------- screen ----------
   async function loadPickers() {
     if (hopState.repParties) return;
@@ -163,7 +189,7 @@
       parts.push(`<label>From <input type="date" value="${esc(s.from)}" onchange="hopRepSet('from',this.value)"></label>`);
       parts.push(`<label>To <input type="date" value="${esc(s.to)}" onchange="hopRepSet('to',this.value)"></label>`);
     }
-    if (['party_statement', 'sale_report', 'purchase_report', 'all_transactions'].includes(k)) {
+    if (['party_statement', 'party_item', 'sale_report', 'purchase_report', 'all_transactions'].includes(k)) {
       parts.push(`<label>Party <select onchange="hopRepSet('partyKey',this.value)"><option value="">${k === 'party_statement' ? 'Choose party' : 'All parties'}</option>
         ${(hopState.repParties || []).map((p) => `<option value="${p.key}"${s.partyKey === p.key ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>`);
     }
@@ -210,12 +236,12 @@
       <style>@media (max-width:820px){.hop-rep-grid{grid-template-columns:1fr !important;}}</style>`;
     mount.innerHTML = hopModuleShell('Books', 'Reports', 'Accounts, transactions, parties, stock and GST', '', body);
     const out = document.getElementById('hop-rep-body');
-    if (s.key === 'party_statement' && !s.partyKey) { out.innerHTML = '<p class="hop-doc-muted">Choose a party to see its statement.</p>'; return; }
+    if ((s.key === 'party_statement' || s.key === 'party_item') && !s.partyKey) { out.innerHTML = '<p class="hop-doc-muted">Choose a party to see this report.</p>'; return; }
     if (s.key === 'stock_movement' && !s.productId) { out.innerHTML = '<p class="hop-doc-muted">Choose an item to see its movement.</p>'; return; }
     try {
       const data = await hopApi(`/api/v1/hop/books/${s.key}?${query(s)}`);
       hopState.repData = data;
-      out.innerHTML = (R[s.key] || ((d) => `<pre>${esc(JSON.stringify(d, null, 2))}</pre>`))(data);
+      out.innerHTML = (R[s.key] || generic)(data);
     } catch (e) {
       out.innerHTML = `<p class="nx-oc-error">${esc(e?.message || 'Could not load the report')}</p>`;
     }
