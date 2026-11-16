@@ -1310,7 +1310,17 @@ def _run_tool(
             if p["areas"].get(area) == "none":
                 return {"error": "This login has no permission for that part of the books. Ask the owner."}
             conn.row_factory = sqlite3.Row
-            return _sanitize(hop_ai.books_answer(conn, workspace_id, str(args.get("what") or "overview"),
+            firm_ws = workspace_id
+            try:   # the firm chosen on the phone / web (multiple firms)
+                from flask import has_request_context, request as _rq
+
+                from app import hop_firms
+
+                if has_request_context():
+                    firm_ws = hop_firms.active_ws(conn, workspace_id, _rq.headers.get("X-Hop-Firm"))
+            except Exception:
+                firm_ws = workspace_id
+            return _sanitize(hop_ai.books_answer(conn, firm_ws, str(args.get("what") or "overview"),
                                                  str(args.get("party_name") or ""),
                                                  {k: args.get(k) for k in ("from", "to", "date")}))
 

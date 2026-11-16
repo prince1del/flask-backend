@@ -221,9 +221,13 @@ def _hop_permission_denied(user: dict) -> str | None:
 
         from app import hop_db, hop_permissions
 
+        from app import hop_firms
+
         body = request.get_json(silent=True) if request.is_json else None
         with hop_db.connect(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")) as conn:
-            return hop_permissions.check(conn, user, request.method, request.path, body, request.args)
+            active = hop_firms.active_ws(conn, str(user.get("workspace_id") or ""), request.headers.get("X-Hop-Firm"))
+            return hop_permissions.check(conn, {**user, "hop_active_ws": active}, request.method, request.path,
+                                         body, request.args)
     except Exception:  # never lock people out because the check itself failed
         current_app.logger.exception("hop permission check failed")
         return None

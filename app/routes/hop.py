@@ -37,8 +37,28 @@ def _ws() -> str:
     already carries workspace_id="house_of_prizm" in its JWT, so this is
     a no-op for that account — only a NEW hop_admin signup (a different
     "business" category tenant) now correctly gets its own workspace
-    instead of colliding with this one."""
-    return get_workspace_id()
+    instead of colliding with this one.
+
+    Multiple firms: the phone / web send the chosen firm in ``X-Hop-Firm``; only a firm of
+    this login's own company is accepted (see app/hop_firms.py)."""
+    from flask import g
+
+    cached = getattr(g, "hop_active_ws", None)
+    if cached:
+        return cached
+    base = get_workspace_id()
+    req = request.headers.get("X-Hop-Firm") or ""
+    ws = base
+    if req and req != base:
+        from app import hop_firms
+
+        try:
+            with hop_db.connect(_db_path()) as conn:
+                ws = hop_firms.active_ws(conn, base, req)
+        except Exception:
+            ws = base
+    g.hop_active_ws = ws
+    return ws
 
 
 @hop_bp.before_request
@@ -2589,6 +2609,31 @@ def hop_godown_transfer():
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/firms", methods=["GET", "POST", "PATCH"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_firms_route():
+    """Firms (companies) of this login. POST {name, gstin, state} adds one (owner only); PATCH renames."""
+    from app import hop_firms, hop_permissions
+
+    base = get_workspace_id()
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method in ("POST", "PATCH"):
+                if not hop_permissions.is_owner(conn, user):
+                    return _json_error("Only the owner can add or rename firms", "FORBIDDEN", 403)
+                b = _payload()
+                if request.method == "POST":
+                    hop_firms.create(conn, base, b.get("name"), b.get("gstin") or "", b.get("state") or "")
+                else:
+                    hop_firms.rename(conn, base, str(b.get("firm_ws") or ""), b.get("name"))
+            firms = hop_firms.list_firms(conn, base)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"firms": firms, "active": _ws()}})
+
+
 @hop_bp.route("/my-permissions", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -2612,9 +2657,9 @@ def hop_staff_permissions():
         with hop_db.connect(_db_path()) as conn:
             if request.method == "PUT":
                 b = _payload()
-                hop_permissions.save(conn, _ws(), getattr(request, "user", None) or {}, int(b.get("user_id") or 0),
+                hop_permissions.save(conn, get_workspace_id(), getattr(request, "user", None) or {}, int(b.get("user_id") or 0),
                                      b.get("areas") or {}, b.get("preset"))
-            data = hop_permissions.staff_list(conn, _ws())
+            data = hop_permissions.staff_list(conn, get_workspace_id())
     except PermissionError as exc:
         return _json_error(str(exc), "FORBIDDEN", 403)
     except (ValueError, TypeError) as exc:

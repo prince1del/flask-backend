@@ -56,7 +56,7 @@ PREFIX_AREA = [
     ("books", "reports"), ("reports", "reports"), ("gst-files", "reports"), ("tally", "reports"), ("gst", "reports"),
     ("app-settings", "settings"), ("firm-profile", "settings"), ("company-profile", "settings"),
     ("audit-log", "settings"), ("financial-year", "settings"), ("recycle-bin", "settings"), ("print-theme", "settings"),
-    ("my-permissions", "_any"),
+    ("my-permissions", "_any"), ("firms", "_any"),
 ]
 
 
@@ -144,7 +144,7 @@ def area_for(conn: sqlite3.Connection, ws: str, method: str, path: str, body: An
 def check(conn: sqlite3.Connection, user: dict[str, Any], method: str, path: str, body: Any = None,
           args: Any = None) -> str | None:
     """None = allowed, else the message to show."""
-    ws = str(user.get("workspace_id") or "")
+    ws = str(user.get("hop_active_ws") or user.get("workspace_id") or "")
     p = perms_for(conn, user)
     area = area_for(conn, ws, method, path, body, args)
     if p["owner"] or area == "_any":
