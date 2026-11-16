@@ -74,15 +74,15 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 ### Item
 | Setting | State |
 |---|---|
-| Product / service items | 🟡 (no service flag) |
+| Product / service items | ✅ (service items never move stock) |
 | Stock maintenance on/off | ✅ (stock moves with bills) |
 | Item category, units | ✅ (Cursor) |
-| Unit conversion (1 box = 10 pcs) | ❌ |
-| MRP, wholesale price, price lists | ❌ |
-| Barcode | ❌ |
+| Unit conversion (1 box = 10 pcs) | ✅ 2nd unit on the item; a bill line in BOX moves qty × factor |
+| MRP, wholesale price, price lists | ✅ MRP + wholesale (auto at min qty); party-wise rates = price list |
+| Barcode | ✅ field + lookup API (phone camera scanner ❌) |
 | Batch / expiry, serial numbers | ❌ |
 | Godowns / multiple stores | ❌ |
-| Item custom fields | ❌ |
+| Item custom fields | ✅ (name: value list) |
 
 ## B. Features (outside settings)
 | Feature | State |
@@ -123,3 +123,6 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Bill extras — additional charges (own GST), free qty, PO no/date, bill time, TCS on
   sale invoices and purchase bills (books: TCS payable / TCS paid). Phone form + preview + PDF, web
   form + preview. AI bill reader also reads charges, free qty and TCS.
+- 2026-11-16: Items — service items, MRP, wholesale price (suggested at the minimum qty), 2nd unit
+  with conversion, barcode (+ lookup), custom fields, item checks (above MRP, wholesale below cost…).
+  Phone + web item forms; unit + free qty on phone bill lines. Ask Nexora: "items" topic.

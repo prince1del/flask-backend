@@ -185,6 +185,7 @@
         party_type: partyType,
         party_id: String(partyId),
         item_name: String(ln.item_name || '').trim(),
+        qty: String(Number(ln.qty || 0)),
       });
       if (ln.product_id) q.set('product_id', String(ln.product_id));
       const sug = await hopApi(`/api/v1/hop/suggest-rate?${q}`);
@@ -202,7 +203,7 @@
         nexoraToast(
           sug.source === 'party_last'
             ? `Rate from last bill: ₹${sug.suggested_rate}`
-            : `Catalogue rate: ₹${sug.suggested_rate}`,
+            : (sug.source === 'wholesale' ? `Wholesale rate: ₹${sug.suggested_rate}` : `Catalogue rate: ₹${sug.suggested_rate}`),
           'ok'
         );
       }

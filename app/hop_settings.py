@@ -203,6 +203,11 @@ def suggest_party_rate(
             catalogue = dict(r)
             if not item_name:
                 item_name = _s(catalogue.get("name"))
+    elif item_name:
+        r = conn.execute("SELECT * FROM hop_products WHERE workspace_id=? AND lower(trim(name))=lower(?) "
+                         "AND (deleted_at IS NULL OR trim(deleted_at)='') LIMIT 1", (ws, item_name)).fetchone()
+        if r:
+            catalogue = dict(r)
 
     params: list[Any] = [ws, party_type, party_id]
     where = ["t.workspace_id=?", "t.party_type=?", "t.party_id=?", "t.txn_type IN (1,2,16,21,27,65,83)"]

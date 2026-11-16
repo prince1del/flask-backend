@@ -7233,6 +7233,22 @@ async function hopFillProductMasterLists() {
   } catch (_e) { /* optional */ }
 }
 
+/** Service flag, MRP, wholesale, 2nd unit, barcode, custom fields (same fields as the phone). */
+function hopProductExtrasPayload() {
+  const v = (id) => document.getElementById(id)?.value ?? '';
+  const custom = {};
+  String(v('f-prcustom')).split('\n').forEach((line) => {
+    const i = line.indexOf(':');
+    if (i > 0 && line.slice(0, i).trim()) custom[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  });
+  return {
+    item_type: v('f-prtype') || 'product',
+    mrp: v('f-prmrp'), wholesale_price: v('f-prwhole'), wholesale_min_qty: v('f-prwholemin'),
+    alt_unit: v('f-pralt'), alt_unit_factor: v('f-praltf'), barcode: v('f-prbarcode'),
+    custom_fields: custom,
+  };
+}
+
 async function hopEditProduct(productId) {
   const rows = hopState._productsCache || [];
   const r = rows.find((x) => Number(x.id) === Number(productId));
@@ -7245,6 +7261,12 @@ async function hopEditProduct(productId) {
   hopFillProductMasterLists();
   set('f-prgst', r.gst_pct); set('f-prhsn', r.hsn); set('f-prcomm', r.commission_pct);
   set('f-prstock', r.stock_qty); set('f-prvendor', r.vendor_id || ''); set('f-prmoq', r.moq);
+  set('f-prtype', r.item_type || 'product'); set('f-prmrp', r.mrp); set('f-prwhole', r.wholesale_price);
+  set('f-prwholemin', r.wholesale_min_qty); set('f-pralt', r.alt_unit); set('f-praltf', r.alt_unit_factor);
+  set('f-prbarcode', r.barcode);
+  set('f-prcustom', Object.entries(r.custom_fields || {}).map(([k, v]) => `${k}: ${v}`).join('\n'));
+  const chk = document.getElementById('f-prchecks');
+  if (chk) chk.innerHTML = (r.checks || []).map((c) => `⚠ ${foEscapeText(c)}`).join('<br>');
   hopState._editingProductId = Number(productId);
   const title = document.querySelector('#hop-form-slot strong');
   if (title) title.textContent = 'Edit Product';
@@ -7270,6 +7292,7 @@ async function hopSaveProductEdit() {
     stock_qty: document.getElementById('f-prstock')?.value,
     vendor_id: document.getElementById('f-prvendor')?.value,
     moq: document.getElementById('f-prmoq')?.value,
+    ...hopProductExtrasPayload(),
   };
   try {
     await hopApi(`/api/v1/hop/products/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -9548,6 +9571,15 @@ async function hopShowForm(kind, editRow) {
         <label>Stock<input id="f-prstock" type="number" /></label>
         <label>Vendor<select id="f-prvendor">${hopVendorOptions()}</select></label>
         <label>MOQ<input id="f-prmoq" /></label>
+        <label>Item type<select id="f-prtype"><option value="product">Product (keeps stock)</option><option value="service">Service (no stock)</option></select></label>
+        <label>MRP<input id="f-prmrp" type="number" /></label>
+        <label>Wholesale price<input id="f-prwhole" type="number" /></label>
+        <label>Wholesale from qty<input id="f-prwholemin" type="number" /></label>
+        <label>2nd unit<input id="f-pralt" list="hop-unit-list" placeholder="BOX" /></label>
+        <label>1 2nd unit = how many base units<input id="f-praltf" type="number" /></label>
+        <label>Barcode<input id="f-prbarcode" /></label>
+        <label style="grid-column:1/-1;">More details (one per line, Name: value)<textarea id="f-prcustom" rows="2" class="nx-input"></textarea></label>
+        <div id="f-prchecks" class="nx-oc-error" style="grid-column:1/-1;"></div>
       </div>
       <div class="hop-form-actions">
         <button type="button" class="nx-btn nx-btn-primary" onclick="hopSave('product')">Save</button>
@@ -9843,6 +9875,7 @@ async function hopSave(kind) {
         stock_qty: document.getElementById('f-prstock')?.value,
         vendor_id: document.getElementById('f-prvendor')?.value,
         moq: document.getElementById('f-prmoq')?.value,
+        ...hopProductExtrasPayload(),
       }),
     },
     order: {

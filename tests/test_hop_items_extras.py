@@ -86,3 +86,11 @@ def test_ask_nexora_items(db):
         out = hop_ai.books_answer(conn, WS, "items", "777")
         assert out["items"][0]["name"] == "Sofa" and out["low_or_negative_stock"][0]["name"] == "Sofa"
         assert "above MRP" in out["item_problems"][0]["problems"][0]
+
+
+def test_wholesale_by_item_name(db):
+    p, cust = db
+    with connect(p) as conn:
+        create_product(conn, WS, {"name": "Blind", "selling_price": 800, "wholesale_price": 650, "wholesale_min_qty": 5})
+        r = hop_settings.suggest_party_rate(conn, WS, party_type="customer", party_id=cust, item_name="blind", qty=6)
+        assert (r["suggested_rate"], r["source"]) == (650, "wholesale")
