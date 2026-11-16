@@ -2127,7 +2127,16 @@ function openHopView(viewName, opts) {
     }
     viewName = 'dashboard';
   }
-  const next = viewName || 'dashboard';
+  let next = viewName || 'dashboard';
+  // Staff permissions: a screen this login cannot open goes to the dashboard.
+  if (typeof window.hopPermsCanOpen === 'function' && !window.hopPermsCanOpen(next)) {
+    if (typeof nexoraToast === 'function') nexoraToast("You don't have permission for this screen. Ask the owner.", 'err');
+    next = 'dashboard';
+  }
+  if (!hopState._permsApplied && typeof window.hopPermsApply === 'function') {
+    hopState._permsApplied = true;
+    window.hopPermsApply();
+  }
   const prev = hopState.view;
 
   // Leaving Theme with an unsaved preview → ask keep / discard first
@@ -2219,6 +2228,7 @@ function openHopView(viewName, opts) {
         app_settings: (m) => window.renderHopAppSettingsModule(m),
         audit_log: (m) => window.renderHopAuditModule(m),
         godowns: (m) => window.renderHopGodownsModule(m),
+        staff_permissions: (m) => window.renderHopStaffPermsModule(m),
         item_settings: (m) => (window.hopRenderItemSettingsModule
           ? window.hopRenderItemSettingsModule(m)
           : m && (m.innerHTML = '<p class="nx-text-dim">Items & units loading…</p>')),

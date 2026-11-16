@@ -97,7 +97,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Excel import (items, parties), bulk update | ✅ .xlsx / .csv, preview with checks, bulk update of items (phone + web) |
 | Tally export | ✅ (Cursor) |
 | Recycle bin | ✅ |
-| User roles & permissions for staff, audit trail | 🟡 audit trail ✅ (phone + web + Ask Nexora); staff roles per HoP screen ❌ |
+| User roles & permissions for staff, audit trail | ✅ staff permissions (8 areas × none / can see / can change, quick choices) + audit trail |
 | Online store / catalogue sharing | 🟡 (catalogue exists) |
 | Payment link / UPI QR on invoice | ✅ UPI QR picture + link on bills (web, phone preview, phone PDF) and WhatsApp |
 | Share invoice on WhatsApp | ✅ (text + UPI link; PDF attach is by the phone share sheet) |
@@ -155,3 +155,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Date format (4 choices) and amounts with paise / whole rupees on bills (preview, print, PDF).
 - 2026-11-16: UPI QR picture on bills (server library segno) and phone barcode scanner (Google code
   scanner — no camera permission). Owner approved both libraries.
+- 2026-11-16: Staff permissions — owner (company owner flag, else first HoP login) sets each staff
+  login to No access / Can see / Can change for 8 areas, or a quick choice (Salesperson, Accountant,
+  Store keeper, View only). Checked on the server for every HoP request and in Ask Nexora; menus hide
+  on phone and web. Backup, wipe and permissions are owner only. Staff with nothing set keep full access.

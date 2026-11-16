@@ -545,6 +545,9 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
   → template text, party WhatsApp number, `wa.me` link, UPI link; preview gets `upi`.
 - Ask Nexora `get_hop_books` topics also: profit_loss, balance_sheet, day_book,
   party_statement, gst, items, other_income (cash_bank shows reconciliation).
+- **Staff permissions** (`app/hop_permissions.py`): checked inside `require_role` for every
+  `/api/v1/hop` call; `GET /my-permissions`, owner-only `GET/PUT /staff-permissions`; table
+  `hop_staff_permissions`. Phone `ui/hop/HopPermissions.kt`, web `hop_perms_web.js`.
 - Tables: `hop_*` (+ `hop_bank_*`, `hop_stock_journals`, `hop_accounts`,
   `hop_journal_lines`, `hop_payment_links`, `hop_cheques`,
   `hop_expense_categories`). Role: `hop_admin`.
