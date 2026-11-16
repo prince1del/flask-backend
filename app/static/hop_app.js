@@ -2216,6 +2216,7 @@ function openHopView(viewName, opts) {
         wipe_data: renderHopWipeDataModule,
         theme: renderHopThemeModule,
         company_profile: renderHopFirmProfileModule,
+        app_settings: (m) => window.renderHopAppSettingsModule(m),
         item_settings: (m) => (window.hopRenderItemSettingsModule
           ? window.hopRenderItemSettingsModule(m)
           : m && (m.innerHTML = '<p class="nx-text-dim">Items & units loading…</p>')),
