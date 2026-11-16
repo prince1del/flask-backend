@@ -2589,6 +2589,51 @@ def hop_godown_transfer():
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/my-permissions", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_my_permissions():
+    """What this login may open (screens hide the rest)."""
+    from app import hop_permissions
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_permissions.perms_for(conn, getattr(request, "user", None) or {})
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/staff-permissions", methods=["GET", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_staff_permissions():
+    """Owner only: staff logins with their permissions; PUT {user_id, areas | preset} saves one."""
+    from app import hop_permissions
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "PUT":
+                b = _payload()
+                hop_permissions.save(conn, _ws(), getattr(request, "user", None) or {}, int(b.get("user_id") or 0),
+                                     b.get("areas") or {}, b.get("preset"))
+            data = hop_permissions.staff_list(conn, _ws())
+    except PermissionError as exc:
+        return _json_error(str(exc), "FORBIDDEN", 403)
+    except (ValueError, TypeError) as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/staff-permissions/check", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_staff_permissions_check():
+    """Plain summary + warnings for a set of permissions before saving (no change)."""
+    from app import hop_permissions
+
+    areas = (_payload().get("areas") or {})
+    return jsonify({"success": True, "data": {"summary": hop_permissions.summary(areas),
+                                              "warnings": hop_permissions.risky(areas)}})
+
+
 @hop_bp.route("/suggest-rate", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

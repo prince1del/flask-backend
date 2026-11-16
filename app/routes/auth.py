@@ -215,6 +215,20 @@ def deny_signup_tenants():
     return None
 
 
+def _hop_permission_denied(user: dict) -> str | None:
+    try:
+        from flask import current_app
+
+        from app import hop_db, hop_permissions
+
+        body = request.get_json(silent=True) if request.is_json else None
+        with hop_db.connect(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")) as conn:
+            return hop_permissions.check(conn, user, request.method, request.path, body, request.args)
+    except Exception:  # never lock people out because the check itself failed
+        current_app.logger.exception("hop permission check failed")
+        return None
+
+
 def require_role(*allowed_roles):
     def decorator(fn):
         @wraps(fn)
@@ -238,12 +252,14 @@ def require_role(*allowed_roles):
                     403,
                 )
             role = user.get("role")
-            if role in allowed_roles:
-                return fn(*args, **kwargs)
-            # Supreme workspace owner may use admin-gated APIs while keeping BD role.
-            if user.get("is_workspace_owner") and (
+            if role in allowed_roles or (user.get("is_workspace_owner") and (
                 "admin" in allowed_roles or "hop_admin" in allowed_roles
-            ):
+            )):
+                # HoP staff permissions (owner sets per area: none / view / edit).
+                if "hop_admin" in allowed_roles and request.path.startswith("/api/v1/hop"):
+                    denied = _hop_permission_denied(user)
+                    if denied:
+                        return jsonify({"success": False, "error": {"code": "FORBIDDEN", "message": denied}}), 403
                 return fn(*args, **kwargs)
             return (
                 jsonify(

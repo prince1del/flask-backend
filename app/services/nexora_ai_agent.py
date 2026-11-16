@@ -1300,6 +1300,15 @@ def _run_tool(
                                               "workspace_id": workspace_id}):
                 return {"error": "House of Prizm accounts are not part of this login."}
             ensure_hop_schema(_db_path())
+            from app import hop_permissions
+
+            what = str(args.get("what") or "overview")
+            area = {"cash_bank": "money", "items": "items", "audit": "settings", "other_income": "purchase",
+                    "expenses": "purchase"}.get(what, "reports")
+            p = hop_permissions.perms_for(conn, {"user_id": int(user_id), "workspace_id": workspace_id,
+                                                 "is_workspace_owner": bool(r[1]) if r else False})
+            if p["areas"].get(area) == "none":
+                return {"error": "This login has no permission for that part of the books. Ask the owner."}
             conn.row_factory = sqlite3.Row
             return _sanitize(hop_ai.books_answer(conn, workspace_id, str(args.get("what") or "overview"),
                                                  str(args.get("party_name") or ""),
