@@ -11,7 +11,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 |---|---|
 | Business name, GSTIN, address, logo, signature, bank, terms (Company profile) | ✅ |
 | Financial year + year close / lock | ✅ (Cursor, Phase 3) |
-| Passcode / app lock | ❌ |
+| Passcode / app lock | ✅ phone PIN (Settings → App lock; on open + after 1 min away; Forgot PIN = log in again). Web: login only |
 | Multiple firms (companies) in one login | ❌ |
 | Backup / restore by the user | ❌ (server backups only) |
 | Date format, decimal places (qty, amount) | ❌ |
@@ -140,3 +140,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   Party groups now come from Settings on web and phone.
 - 2026-11-16: Audit trail — every change on phone or web is logged (who, when, old vs new amount for
   bills); screen under Settings on both; Ask Nexora "kisne bill badla?".
+- 2026-11-16: Phone app lock — 4–6 digit PIN kept only on the phone (salted hash). Note: a pop-up
+  window that was already open stays above the lock screen until closed.
