@@ -32,6 +32,7 @@
       hopApi('/api/v1/hop/expense-categories?kind=income').catch(() => ({ categories: [] })),
     ]);
     hopState.moneyIncomeCategories = inc?.categories || [];
+    try { hopState.moneyGodowns = (await hopApi('/api/v1/hop/godowns')).godowns || []; } catch (_) { hopState.moneyGodowns = []; }
     hopState.moneyAccounts = acc?.accounts || [];
     hopState.moneyCategories = cats?.categories || [];
   }
@@ -41,7 +42,7 @@
       receivedAmount: '', paymentChoice: '', paymentRef: '', chequeDate: '',
       amount: '', allocations: {}, openBills: null, expenseCategoryId: '', linkedFromTxnId: null, linkedFromLabel: '',
       placeOfSupply: '', reverseCharge: false,
-      charges: [], poNumber: '', poDate: '', txnTime: '', tcsPct: '', tdsPct: '',
+      charges: [], poNumber: '', poDate: '', txnTime: '', tcsPct: '', tdsPct: '', godownId: '',
     });
     const cash = (hopState.moneyAccounts || []).find((a) => a.account_type === 'cash');
     if (cash) d.paymentChoice = `acct:${cash.id}`;
@@ -66,6 +67,7 @@
       txnTime: duplicate ? '' : (data.txn_time || ''),
       tcsPct: Number(data.tcs_pct || 0) > 0 ? String(data.tcs_pct) : '',
       tdsPct: Number(data.tds_pct || 0) > 0 ? String(data.tds_pct) : '',
+      godownId: data.godown_id ? String(data.godown_id) : '',
       allocations: {},
     });
     if (!duplicate) (data.allocations || []).forEach((a) => { d.allocations[a.txn_id] = String(a.amount); });
@@ -127,6 +129,10 @@
       </div>`).join('');
     return `
       <div class="hop-vyp-money" id="hop-extras-panel">
+        ${BILL_TYPES[ty] && (hopState.moneyGodowns || []).length > 1 ? `<div class="hop-vyp-sum-row"><span>Godown</span>
+          <select class="hop-vyp-control hop-vyp-control--sm" onchange="hopMoneySet('godownId',this.value)">
+            ${(hopState.moneyGodowns || []).map((g) => `<option value="${g.is_default ? '' : g.id}"${String(d.godownId || '') === String(g.is_default ? '' : g.id) ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}
+          </select></div>` : ''}
         <div class="hop-vyp-sum-row"><strong>Additional charges</strong></div>
         ${rows}
         <div class="hop-vyp-sum-row" style="gap:4px;flex-wrap:wrap;">
@@ -528,6 +534,7 @@
     }
     if (d.linkedFromTxnId && !md.editId) out.linked_from_txn_id = d.linkedFromTxnId;
     Object.assign(out, extrasFields());
+    if (BILL_TYPES[Number(md.txnType)]) out.godown_id = d.godownId ? Number(d.godownId) : 0;
     if (BILL_TYPES[Number(md.txnType)]) {
       out.place_of_supply = d.placeOfSupply || '';
       if (Number(md.txnType) === 2) out.reverse_charge = !!d.reverseCharge;

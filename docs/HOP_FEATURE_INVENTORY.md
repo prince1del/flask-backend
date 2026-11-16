@@ -81,7 +81,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | MRP, wholesale price, price lists | ✅ MRP + wholesale (auto at min qty); party-wise rates = price list |
 | Barcode | ✅ field + lookup API (phone camera scanner ❌) |
 | Batch / expiry, serial numbers | ❌ |
-| Godowns / multiple stores | ❌ |
+| Godowns / multiple stores | ✅ stock per godown, move stock, godown on bills, short-stock warning per godown |
 | Item custom fields | ✅ (name: value list) |
 
 ## B. Features (outside settings)
@@ -148,3 +148,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   (customer deducts; "to claim"); bill balance comes down by the TDS. Phone + web fields and preview.
 - 2026-11-16: Backup download — Settings → Backup on phone and web gives one zip (CSV per table,
   this company's rows only). Restore stays with support so live data is never overwritten by mistake.
+- 2026-11-16: Godowns — "Main godown" + any number more; stock per godown; move stock between them;
+  pick the godown on sale / purchase bills and returns; warning when that godown is short. Phone + web.
