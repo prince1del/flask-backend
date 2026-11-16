@@ -79,7 +79,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Item category, units | ✅ (Cursor) |
 | Unit conversion (1 box = 10 pcs) | ✅ 2nd unit on the item; a bill line in BOX moves qty × factor |
 | MRP, wholesale price, price lists | ✅ MRP + wholesale (auto at min qty); party-wise rates = price list |
-| Barcode | ✅ field + lookup API (phone camera scanner ❌) |
+| Barcode | ✅ field, lookup, phone camera scanner |
 | Batch / expiry, serial numbers | ✅ on bill lines (printed), Expiring Batches report (left = bought − sold per batch) |
 | Godowns / multiple stores | ✅ stock per godown, move stock, godown on bills, short-stock warning per godown |
 | Item custom fields | ✅ (name: value list) |
@@ -99,10 +99,10 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Recycle bin | ✅ |
 | User roles & permissions for staff, audit trail | 🟡 audit trail ✅ (phone + web + Ask Nexora); staff roles per HoP screen ❌ |
 | Online store / catalogue sharing | 🟡 (catalogue exists) |
-| Payment link / UPI QR on invoice | 🟡 UPI payment link on bill + WhatsApp; QR picture needs a QR library (owner OK) |
+| Payment link / UPI QR on invoice | ✅ UPI QR picture + link on bills (web, phone preview, phone PDF) and WhatsApp |
 | Share invoice on WhatsApp | ✅ (text + UPI link; PDF attach is by the phone share sheet) |
 | Thermal printing | 🟡 thermal paper layout from web print; Bluetooth printer from phone ❌ |
-| Barcode scanning on phone | ❌ |
+| Barcode scanning on phone | ✅ Scan on bill lines (adds the item / +1 qty) and on the item form |
 | Offline mode | ❌ |
 | AI: bill reading, insights, Guard, Ask Nexora | ✅ |
 
@@ -153,3 +153,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Batch / expiry / serial numbers on bill lines (phone + web), printed under the item,
   "Expiring / Expired Batches" report.
 - 2026-11-16: Date format (4 choices) and amounts with paise / whole rupees on bills (preview, print, PDF).
+- 2026-11-16: UPI QR picture on bills (server library segno) and phone barcode scanner (Google code
+  scanner — no camera permission). Owner approved both libraries.

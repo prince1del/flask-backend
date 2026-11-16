@@ -91,7 +91,6 @@ godowns (stock per godown, transfers, godown on bills); batch / expiry / serial 
 Batches report.
 
 **Still left:**
-- Needs owner OK to add a library: UPI **QR picture** on bills; **barcode scanner** with the phone camera.
 - Needs owner's accounts: direct e-invoice / e-way bill portal upload (GSP), SMS.
 - Bigger pieces: staff permissions per HoP screen; multiple firms in one login; offline mode; Bluetooth thermal printer from the phone; restore from backup (with support).
 
