@@ -26,11 +26,11 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Default payment terms / due days | 🟡 (party credit days only) |
 | Show last sale / purchase price while billing | ✅ (rate suggestion) |
 | Cash sale by default (fully received) | ❌ |
-| Additional charges on bills (packing, freight…) | 🟡 (shipping only) |
+| Additional charges on bills (packing, freight…) | ✅ any number, each with own GST (no stock) |
 | Discount on bill + per item | ✅ |
-| Free quantity, item description on bill | 🟡 (description yes, free qty no) |
-| Transaction time on bills | ❌ |
-| PO number/date on sale invoice | ❌ |
+| Free quantity, item description on bill | ✅ (free qty moves stock, not charged) |
+| Transaction time on bills | ✅ |
+| PO number/date on sale invoice | ✅ (invoice, sale order, challan) |
 | Estimate / Sale order / Challan / Proforma / Purchase order on/off | ✅ (all available) |
 | Link payment to invoices | ✅ |
 | Warn on duplicate bill number | ✅ |
@@ -43,7 +43,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Place of supply, reverse charge | ✅ (Night 2) |
 | Composition scheme | ❌ |
 | Additional cess | ❌ |
-| TCS on sales / TDS on purchases | 🟡 (TDS on commission only) |
+| TCS on sales / TDS on purchases | ✅ TCS on sale invoice (liability) + purchase bill (to claim); TDS on commission only |
 | E-Invoice / E-Way Bill | 🟡 (JSON files; direct portal API needs owner's GSP account) |
 
 ### Print
@@ -115,3 +115,6 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 3. Other income, bank reconciliation, payment link/UPI QR, WhatsApp share.
 4. Barcode (+ phone scanner), batch/expiry/serial, godowns.
 5. Excel import / bulk update, staff roles + audit trail, multiple firms, passcode, backup/restore.
+- 2026-11-16: Bill extras — additional charges (own GST), free qty, PO no/date, bill time, TCS on
+  sale invoices and purchase bills (books: TCS payable / TCS paid). Phone form + preview + PDF, web
+  form + preview. AI bill reader also reads charges, free qty and TCS.
