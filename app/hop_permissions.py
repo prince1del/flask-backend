@@ -52,7 +52,7 @@ PREFIX_AREA = [
     ("units", "items"), ("import/items", "items"),
     ("bank-accounts", "money"), ("bank-entries", "money"), ("cheques", "money"), ("loans", "money"),
     ("fixed-assets", "money"),
-    ("expense-categories", "purchase"), ("ai/read-bill", "purchase"),
+    ("expense-categories", "purchase"), ("ai/read-bill", "_docs"),
     ("books", "reports"), ("reports", "reports"), ("gst-files", "reports"), ("tally", "reports"), ("gst", "reports"),
     ("app-settings", "settings"), ("firm-profile", "settings"), ("company-profile", "settings"),
     ("audit-log", "settings"), ("financial-year", "settings"), ("recycle-bin", "settings"), ("print-theme", "settings"),

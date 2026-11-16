@@ -34,6 +34,21 @@ _PROMPT = (
 )
 
 
+_PROMPT_SALE = (
+    "This picture / PDF is something we SELL from: a customer's order, a bill or estimate, a rate list, "
+    "or a HANDWRITTEN note or parcha (may be in Hindi, Hinglish or English, may be untidy). Read every item. "
+    "Return ONLY JSON: {\"customer\":\"\",\"customer_phone\":\"\",\"gstin\":\"\",\"doc_no\":\"\","
+    "\"date\":\"YYYY-MM-DD\",\"lines\":[{\"item\":\"\",\"description\":\"\",\"hsn\":\"\",\"qty\":0,"
+    "\"unit\":\"\",\"rate\":0,\"tax_pct\":0,\"discount_pct\":0,\"rate_includes_gst\":false,\"unsure\":false}],"
+    "\"total\":0,\"notes\":\"\",\"handwritten\":false}. "
+    "customer = the buyer the goods are for (not the seller). item = short product name in English letters "
+    "(write Hindi words in English letters). rate = price per unit; if the paper shows a price with GST set "
+    "rate_includes_gst true. Use 0 or \"\" for anything not written; never guess a number. "
+    "unsure = true when the handwriting of that line is hard to read. qty with unit (MTR, PCS, SET, ROLL, KG). "
+    "notes = delivery / payment words written on the paper. At most 40 lines."
+)
+
+
 def _parse_json(text: str) -> dict[str, Any]:
     m = re.search(r"\{.*\}", text or "", re.S)
     if not m:
@@ -61,7 +76,7 @@ def _similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def _ask_gemini(data: bytes, mime: str, user_id: int) -> dict[str, Any]:
+def _ask_gemini(data: bytes, mime: str, user_id: int, prompt: str | None = None) -> dict[str, Any]:
     from app.services import nexora_ai_agent as agent
     from app.services.dsr_notes_polish import gemini_api_key
 
@@ -74,10 +89,10 @@ def _ask_gemini(data: bytes, mime: str, user_id: int) -> dict[str, Any]:
         raise ValueError("File is too big (max 8 MB).")
     body = json.dumps({
         "contents": [{"role": "user", "parts": [
-            {"text": _PROMPT},
+            {"text": prompt or _PROMPT},
             {"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("ascii")}},
         ]}],
-        "generationConfig": {"temperature": 0, "maxOutputTokens": 2000, "responseMimeType": "application/json"},
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 3000, "responseMimeType": "application/json"},
     }).encode("utf-8")
     for model in agent.agent_gemini_models():
         req = urllib.request.Request(
@@ -177,8 +192,89 @@ def match_bill(conn: sqlite3.Connection, ws: str, fields: dict[str, Any]) -> dic
     }
 
 
-def read_bill(conn: sqlite3.Connection, ws: str, data: bytes, mime: str, *, user_id: int) -> dict[str, Any]:
+def read_bill(conn: sqlite3.Connection, ws: str, data: bytes, mime: str, *, user_id: int,
+              kind: str = "purchase") -> dict[str, Any]:
+    """kind = purchase (bill / expense we received) | sale (invoice) | quote (quotation / estimate)."""
+    if kind in ("sale", "quote"):
+        return match_sale(conn, ws, _ask_gemini(data, mime, user_id, _PROMPT_SALE), kind)
     return match_bill(conn, ws, _ask_gemini(data, mime, user_id))
+
+
+def match_sale(conn: sqlite3.Connection, ws: str, fields: dict[str, Any], kind: str = "sale") -> dict[str, Any]:
+    """AI-read order / handwritten note → Sale Invoice or Quotation form, matched to this firm's
+    customers and items. Missing rates / GST come from the catalogue and are marked; nothing is saved."""
+    from app import hop_items
+
+    name = str(fields.get("customer") or "").strip()[:120]
+    phone = re.sub(r"\D", "", str(fields.get("customer_phone") or ""))[-10:]
+    gstin = re.sub(r"\s", "", str(fields.get("gstin") or "")).upper()[:15]
+    custs = [dict(r) for r in conn.execute("SELECT * FROM hop_customers WHERE workspace_id=?", (ws,)).fetchall()]
+    cust = None
+    if gstin:
+        cust = next((c for c in custs if str(c.get("gst_no") or "").upper() == gstin), None)
+    if cust is None and phone:
+        cust = next((c for c in custs if re.sub(r"\D", "", str(c.get("mobile") or ""))[-10:] == phone), None)
+    if cust is None and name:
+        best = max(custs, key=lambda c: _similar(name, str(c.get("company") or "")), default=None)
+        if best and _similar(name, str(best.get("company") or "")) >= 0.75:
+            cust = best
+    products = [dict(r) for r in conn.execute(
+        "SELECT * FROM hop_products WHERE workspace_id=? AND (deleted_at IS NULL OR trim(deleted_at)='')", (ws,)).fetchall()]
+    lines, notes = [], []
+    for ln in (fields.get("lines") or [])[:40]:
+        if not isinstance(ln, dict):
+            continue
+        item = str(ln.get("item") or "").strip()[:120]
+        qty = _num(ln.get("qty")) or 1.0
+        if not item:
+            continue
+        prod = max(products, key=lambda p: _similar(item, str(p.get("name") or "")), default=None)
+        if prod and _similar(item, str(prod.get("name") or "")) < 0.75:
+            prod = None
+        rate, tax = _num(ln.get("rate")), _num(ln.get("tax_pct"))
+        rate_from = "paper"
+        if not rate and prod:
+            r2, src = hop_items.price_for_qty(prod, qty, "customer")
+            rate, rate_from = float(r2 or 0), (src or "catalogue")
+        if not tax and prod:
+            tax = float(prod.get("gst_pct") or 0)
+        if ln.get("rate_includes_gst") and rate and tax:
+            rate = round(rate / (1 + tax / 100.0), 2)
+        if not rate:
+            rate_from = "missing"
+        lines.append({"item_name": prod["name"] if prod else item, "product_id": prod["id"] if prod else None,
+                      "matched_item": bool(prod), "description": str(ln.get("description") or "").strip()[:200],
+                      "hsn": str(ln.get("hsn") or (prod or {}).get("hsn") or "").strip()[:12], "qty": qty,
+                      "unit": (str(ln.get("unit") or (prod or {}).get("unit") or "PCS").strip()[:12] or "PCS").upper(),
+                      "rate": rate, "tax_pct": tax, "discount_pct": _num(ln.get("discount_pct")),
+                      "rate_from": rate_from, "unsure": bool(ln.get("unsure"))})
+    if name and not cust:
+        notes.append(f"Customer \"{name}\" is not in your parties yet — add it, then pick it.")
+    if not name and not cust:
+        notes.append("No customer name on the paper — pick the customer.")
+    missing = [l["item_name"] for l in lines if l["rate_from"] == "missing"]
+    if missing:
+        notes.append("No rate for: " + ", ".join(missing[:6]) + ". Type the rate.")
+    cat = [l["item_name"] for l in lines if l["rate_from"] in ("catalogue", "wholesale")]
+    if cat:
+        notes.append("Rate taken from your catalogue for: " + ", ".join(cat[:6]) + ".")
+    unsure = [l["item_name"] for l in lines if l["unsure"]]
+    if unsure:
+        notes.append("Hard to read, please check: " + ", ".join(unsure[:6]) + ".")
+    computed = round(sum(l["qty"] * l["rate"] * (1 - l["discount_pct"] / 100) * (1 + l["tax_pct"] / 100) for l in lines), 2)
+    total = _num(fields.get("total"))
+    if lines and total and abs(computed - total) > max(2.0, total * 0.01):
+        notes.append(f"Items add up to ₹{computed:,.2f} but the paper says ₹{total:,.2f}. Check rates / GST.")
+    date = str(fields.get("date") or "")
+    return {
+        "kind": kind, "customer_name": name, "customer_id": cust["id"] if cust else None,
+        "customer_match": cust.get("company") if cust else None, "customer_phone": phone, "gstin": gstin,
+        "doc_no": str(fields.get("doc_no") or "").strip()[:40],
+        "date": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else "",
+        "lines": lines, "total": total, "items_total": computed,
+        "notes": str(fields.get("notes") or "").strip()[:300], "handwritten": bool(fields.get("handwritten")),
+        "checks": notes,
+    }
 
 
 # ── Ask Nexora: get_hop_books ────────────────────────────────────────────────

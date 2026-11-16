@@ -3038,7 +3038,8 @@ def party_transaction_links(txn_id: int):
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def ai_read_bill():
-    """Multipart file (PDF / photo) → form values for a Purchase Bill or Expense. Nothing is saved."""
+    """Multipart file (PDF / photo, printed or handwritten) → form values. Nothing is saved.
+    form field kind = purchase (bill / expense) | sale (sale invoice) | quote (quotation / estimate)."""
     ensure_hop_schema(_db_path())
     from app.services import hop_ai
 
@@ -3051,7 +3052,10 @@ def ai_read_bill():
     user = getattr(request, "user", None) or {}
     try:
         with hop_db.connect(_db_path()) as conn:
-            out = hop_ai.read_bill(conn, _ws(), f.read(), mime, user_id=int(user.get("user_id") or 0))
+            kind = (request.form.get("kind") or request.args.get("kind") or "purchase").strip().lower()
+            if kind not in ("purchase", "sale", "quote"):
+                kind = "purchase"
+            out = hop_ai.read_bill(conn, _ws(), f.read(), mime, user_id=int(user.get("user_id") or 0), kind=kind)
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": out})
