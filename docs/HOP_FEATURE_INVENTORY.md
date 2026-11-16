@@ -91,7 +91,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Purchase: bill, order, return, payment-out, expense | ✅ |
 | Cash & Bank, cheques, transfers, loans, fixed assets | ✅ |
 | Other income | ✅ (own categories; money in; shown in P&L; Other Income report) |
-| Bank reconciliation | ❌ |
+| Bank reconciliation | ✅ tick entries (cleared date), statement CSV auto-match + hints for missing lines |
 | 32 reports + AI insights | ✅ |
 | GSTR-1/2/3B/9, HSN | ✅ |
 | Excel import (items, parties), bulk update | ❌ |
@@ -128,3 +128,6 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   Phone + web item forms; unit + free qty on phone bill lines. Ask Nexora: "items" topic.
 - 2026-11-16: Other Income (rent received, interest, scrap sale…) — income categories, money into
   Cash/Bank, P&L "other income", report, Ask Nexora topic. Web menu + phone drawer.
+- 2026-11-16: Bank reconciliation — cleared date per entry (kept when a bill is edited), book vs bank
+  balance, statement CSV upload auto-matches (same amount, ±5 days), hints for bank charges /
+  interest. Phone: tap a bank account. Web: Cash & Bank → account → Reconcile. Ask Nexora shows it.

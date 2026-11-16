@@ -614,6 +614,73 @@
     } catch (e) { toast(e?.message || 'Could not save', 'err'); }
   }
 
+  // ---------- Bank reconciliation ----------
+  const recon = { id: 0, data: null, picked: new Set(), notInBooks: [], msg: '' };
+
+  async function reconcileOpen(id) {
+    Object.assign(recon, { id, data: null, picked: new Set(), notInBooks: [], msg: '' });
+    try { recon.data = await hopApi(`/api/v1/hop/bank-accounts/${id}/reconcile`); } catch (e) { toast(e?.message || 'Could not load', 'err'); return; }
+    reconcileRender();
+  }
+
+  function reconcileRender() {
+    const slot = document.getElementById('hop-form-slot');
+    const d = recon.data;
+    if (!slot || !d) return;
+    slot.classList.remove('hidden');
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = (d.entries || []).map((e) => {
+      const on = !!e.cleared_on || recon.picked.has(e.id);
+      return `<tr><td><input type="checkbox" ${on ? 'checked' : ''} onchange="hopReconcileTick(${e.id},this.checked,${e.cleared_on ? 'true' : 'false'})" /></td>
+        <td>${esc(e.date)}</td><td>${e.type === 'in' ? 'In' : 'Out'}</td><td>${esc(e.notes)}</td><td>${esc(e.reference)}</td>
+        <td class="inv-num">${money(e.amount)}</td><td>${e.cleared_on ? esc(e.cleared_on) : ''}</td></tr>`;
+    }).join('');
+    const missing = (recon.notInBooks || []).map((m) => `<tr><td>${esc(m.date)}</td><td>${esc(m.description)}</td>
+        <td class="inv-num">${money(m.amount)}</td><td>${esc(m.hint)}</td></tr>`).join('');
+    slot.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <strong>Reconcile · ${esc(d.account?.name || '')}</strong><span style="flex:1"></span>
+        <button type="button" class="nx-btn" onclick="hopReconcileClose()">Close</button>
+      </div>
+      <p>In your books <strong>${money(d.book_balance)}</strong> · Ticked (as per bank) <strong>${money(d.cleared_balance)}</strong>
+        · Not yet ticked: in ${money(d.uncleared_in)}, out ${money(d.uncleared_out)}</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;">
+        <label class="nx-btn">✨ Match bank statement (CSV)<input type="file" accept=".csv,text/csv" hidden onchange="hopReconcileUpload(this.files[0])" /></label>
+        <span>Cleared on</span><input type="date" id="hop-recon-date" class="nx-input" value="${today}" style="max-width:170px;" />
+        <button type="button" class="nx-btn nx-btn-primary" ${recon.picked.size ? '' : 'disabled'} onclick="hopReconcileSave()">Save ticks (${recon.picked.size})</button>
+        ${recon.msg ? `<span class="hop-doc-muted">${esc(recon.msg)}</span>` : ''}
+      </div>
+      ${missing ? `<h4>On the statement but not in your books</h4>${hopTable(['Date', 'Description', 'Amount', 'What to do'], missing, 4, { label: 'Missing in books', count: recon.notInBooks.length })}` : ''}
+      ${hopTable(['', 'Date', 'Type', 'Details', 'Reference', 'Amount', 'Cleared'], rows, 7, { label: 'Entries', count: (d.entries || []).length })}`;
+  }
+
+  async function reconcileMark(ids, date) {
+    try {
+      recon.data = await hopApi(`/api/v1/hop/bank-accounts/${recon.id}/reconcile`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_ids: ids, cleared_on: date }),
+      });
+      recon.picked = new Set();
+      recon.msg = date ? `Ticked ${ids.length}` : 'Unticked';
+    } catch (e) { toast(e?.message || 'Could not save', 'err'); }
+    reconcileRender();
+  }
+
+  async function reconcileUpload(file) {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetchWithAuth(`/api/v1/hop/bank-accounts/${recon.id}/reconcile/match`, { method: 'POST', body: fd });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || out.success === false) throw new Error(out.error?.message || 'Could not read the statement');
+      const m = out.data || {};
+      recon.picked = new Set((m.matches || []).map((x) => x.entry_id));
+      recon.notInBooks = m.not_in_books || [];
+      recon.msg = `${m.summary || ''} Check the ticks, then Save ticks.`;
+    } catch (e) { toast(e?.message || 'Could not read the statement', 'err'); }
+    reconcileRender();
+  }
+
   // ---------- Cash & Bank ----------
   async function renderCashBank(mount) {
     let data; let entries; let cheques;
@@ -675,7 +742,8 @@
         ? hopTable(['Cheque date', 'Party', 'Cheque no.', 'Type', 'Amount', 'Status', ''], chqRows, 7, { label: 'Cheques', count: (cheques?.cheques || []).length })
         : `${hopTable(['Account', 'Type', 'Number', 'Balance'], accRows, 4, { label: 'Accounts — click one for its statement', count: accounts.length })}
            ${sel ? `<p style="margin:8px 0;"><strong>${esc(sel.name)}</strong> statement · opening ${money(sel.opening_balance)} · now ${money(sel.current_balance)}
-             <button type="button" class="nx-btn" onclick="hopMoneyPickAccount(0)">Show all accounts</button></p>` : ''}
+             <button type="button" class="nx-btn" onclick="hopMoneyPickAccount(0)">Show all accounts</button>
+             ${sel.account_type !== 'cash' ? `<button type="button" class="nx-btn nx-btn-primary" onclick="hopReconcileOpen(${sel.id})">Reconcile with bank statement</button>` : ''}</p>` : ''}
            ${hopTable(['Date', 'Account', 'Type', 'Details', 'Reference', 'Amount'], entRows, 6, { label: sel ? `${sel.name} entries` : 'All entries', count: (entries || []).length })}`}`;
     mount.innerHTML = hopModuleShell('Books', 'Cash & Bank', 'Cash in hand, bank accounts, transfers and cheques', '', body);
   }
@@ -794,4 +862,13 @@
     d.charges.splice(i, 1);
     rerenderForm();
   };
+  window.hopReconcileOpen = reconcileOpen;
+  window.hopReconcileClose = () => { const el = document.getElementById('hop-form-slot'); if (el) { el.innerHTML = ''; el.classList.add('hidden'); } };
+  window.hopReconcileTick = (id, on, wasCleared) => {
+    if (wasCleared) { if (!on) reconcileMark([id], null); return; }
+    if (on) recon.picked.add(id); else recon.picked.delete(id);
+    reconcileRender();
+  };
+  window.hopReconcileSave = () => reconcileMark([...recon.picked], document.getElementById('hop-recon-date')?.value || null);
+  window.hopReconcileUpload = reconcileUpload;
 })();
