@@ -751,6 +751,7 @@
       hsn: ln.hsn || '',
       free_qty: Number(ln.free_qty || 0) > 0 ? String(ln.free_qty) : '',
       cess_pct: Number(ln.cess_pct || 0) > 0 ? String(ln.cess_pct) : '',
+      batch_no: ln.batch_no || '', expiry_date: ln.expiry_date || '', serial_no: ln.serial_no || '',
     });
     const mode = hopState.manualDoc?.mode || 'standard';
     if (mode === 'commercial' && data.sections?.length) {
@@ -1008,7 +1009,12 @@
     return `<tr class="hop-vyp-row" id="hop-comm-row-${si}-${li}">
       <td class="hop-vyp-sl">${li + 1}</td>
       <td class="hop-vyp-item"><input class="hop-vyp-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" onblur="hopMaybeSuggestLineRate && hopMaybeSuggestLineRate(${si},${li})" placeholder="Item / article" /></td>
-      <td class="hop-vyp-desc"><input class="hop-vyp-inp" value="${foEscapeText(ln.description || '')}" oninput="hopManualDocSetLine(${si},${li},'description',this.value)" placeholder="Description" /></td>
+      <td class="hop-vyp-desc"><input class="hop-vyp-inp" value="${foEscapeText(ln.description || '')}" oninput="hopManualDocSetLine(${si},${li},'description',this.value)" placeholder="Description" />
+        <div style="display:flex;gap:3px;margin-top:2px;font-size:.75rem;">
+          <input class="hop-vyp-inp" style="opacity:.85;" value="${foEscapeText(ln.batch_no || '')}" oninput="hopManualDocSetLine(${si},${li},'batch_no',this.value)" placeholder="Batch" />
+          <input class="hop-vyp-inp" type="date" style="opacity:.85;" value="${foEscapeText(ln.expiry_date || '')}" oninput="hopManualDocSetLine(${si},${li},'expiry_date',this.value)" title="Expiry date" />
+          <input class="hop-vyp-inp" style="opacity:.85;" value="${foEscapeText(ln.serial_no || '')}" oninput="hopManualDocSetLine(${si},${li},'serial_no',this.value)" placeholder="Serial no." />
+        </div></td>
       <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="0" />
         <input class="hop-vyp-inp hop-vyp-inp--num" style="font-size:.75rem;opacity:.85;" value="${foEscapeText(ln.free_qty || '')}" oninput="hopManualDocSetLine(${si},${li},'free_qty',this.value)" inputmode="decimal" placeholder="+ free" title="Free quantity (moves stock, not charged)" /></td>
       <td class="hop-vyp-unit"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" list="hop-unit-list" placeholder="MTR" /></td>
@@ -1315,6 +1321,7 @@
             section_title: String(sec.title || '').trim(),
             free_qty: Number(ln.free_qty || 0),
             cess_pct: Number(ln.cess_pct || 0),
+            batch_no: String(ln.batch_no || '').trim(), expiry_date: ln.expiry_date || '', serial_no: String(ln.serial_no || '').trim(),
           });
         }
       }
@@ -1330,6 +1337,7 @@
           hsn: String(ln.hsn || '').trim(),
           free_qty: Number(ln.free_qty || 0),
           cess_pct: Number(ln.cess_pct || 0),
+          batch_no: String(ln.batch_no || '').trim(), expiry_date: ln.expiry_date || '', serial_no: String(ln.serial_no || '').trim(),
         });
       }
     }

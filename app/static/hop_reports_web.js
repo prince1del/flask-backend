@@ -9,7 +9,7 @@
     ['Accounts', ['profit_loss', 'balance_sheet', 'trial_balance', 'cash_flow']],
     ['Transactions', ['day_book', 'all_transactions', 'sale_report', 'purchase_report', 'expense_report', 'other_income', 'expense_items', 'bill_profit', 'discount_report', 'sale_orders', 'purchase_orders']],
     ['Parties', ['party_statement', 'outstanding', 'party_pl', 'party_item', 'group_sale', 'group_purchase']],
-    ['Items & stock', ['stock_summary', 'low_stock', 'stock_movement', 'item_report', 'item_pl', 'category_report']],
+    ['Items & stock', ['stock_summary', 'low_stock', 'stock_movement', 'item_report', 'item_pl', 'category_report', 'expiry']],
     ['GST', ['gstr1', 'gstr2', 'gstr3b', 'gstr9', 'hsn_sale', 'hsn_purchase']],
   ];
   const TITLES = {
@@ -17,7 +17,7 @@
     day_book: 'Day Book', all_transactions: 'All Transactions', party_statement: 'Party Statement',
     outstanding: 'Party-wise Outstanding', sale_report: 'Sale Report', purchase_report: 'Purchase Report',
     item_report: 'Item-wise Report', stock_summary: 'Stock Summary', low_stock: 'Low Stock',
-    stock_movement: 'Stock Movement', bill_profit: 'Bill-wise Profit', expense_report: 'Expense Report', other_income: 'Other Income',
+    stock_movement: 'Stock Movement', bill_profit: 'Bill-wise Profit', expense_report: 'Expense Report', other_income: 'Other Income', expiry: 'Expiring Batches',
     gstr1: 'GSTR-1', gstr2: 'GSTR-2', gstr3b: 'GSTR-3B', hsn_sale: 'HSN Summary (Sales)', hsn_purchase: 'HSN Summary (Purchases)',
     party_pl: 'Party-wise Profit & Loss', item_pl: 'Item-wise Profit & Loss', party_item: 'Party Report by Item',
     group_sale: 'Sale by Party Group', group_purchase: 'Purchase by Party Group', category_report: 'Item Category Report',
@@ -25,7 +25,7 @@
     purchase_orders: 'Purchase Order Report', gstr9: 'GSTR-9 (Annual)',
   };
   const AS_OF = new Set(['trial_balance', 'balance_sheet', 'outstanding']);
-  const NO_DATES = new Set(['stock_summary', 'low_stock']);
+  const NO_DATES = new Set(['stock_summary', 'low_stock', 'expiry']);
   const AI_OK = new Set(['profit_loss', 'balance_sheet', 'cash_flow', 'outstanding', 'expense_report', 'other_income', 'bill_profit', 'sale_report', 'gstr3b',
     'party_pl', 'item_pl', 'category_report', 'discount_report', 'sale_orders', 'gstr9']);
 

@@ -80,7 +80,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Unit conversion (1 box = 10 pcs) | ✅ 2nd unit on the item; a bill line in BOX moves qty × factor |
 | MRP, wholesale price, price lists | ✅ MRP + wholesale (auto at min qty); party-wise rates = price list |
 | Barcode | ✅ field + lookup API (phone camera scanner ❌) |
-| Batch / expiry, serial numbers | ❌ |
+| Batch / expiry, serial numbers | ✅ on bill lines (printed), Expiring Batches report (left = bought − sold per batch) |
 | Godowns / multiple stores | ✅ stock per godown, move stock, godown on bills, short-stock warning per godown |
 | Item custom fields | ✅ (name: value list) |
 
@@ -150,3 +150,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   this company's rows only). Restore stays with support so live data is never overwritten by mistake.
 - 2026-11-16: Godowns — "Main godown" + any number more; stock per godown; move stock between them;
   pick the godown on sale / purchase bills and returns; warning when that godown is short. Phone + web.
+- 2026-11-16: Batch / expiry / serial numbers on bill lines (phone + web), printed under the item,
+  "Expiring / Expired Batches" report.
