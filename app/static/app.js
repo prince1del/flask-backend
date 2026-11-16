@@ -1394,6 +1394,11 @@ async function fetchWithAuth(url, options = {}, alreadyRetried = false) {
   if (authState.accessToken) {
     headers.Authorization = `Bearer ${authState.accessToken}`;
   }
+  // House of Prizm: the chosen firm (multiple firms) goes with every HoP / Ask Nexora call.
+  try {
+    const firm = localStorage.getItem('nx_hop_firm') || '';
+    if (firm && /^\/api\/v1\/(hop|ai)/.test(String(url))) headers['X-Hop-Firm'] = firm;
+  } catch (_) { /* storage blocked: main firm */ }
   const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
 
   if (response.status === 401 && !alreadyRetried) {

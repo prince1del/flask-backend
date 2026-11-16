@@ -30,8 +30,40 @@
     return (perms.areas[areaOf(view)] || 'edit') !== 'none';
   }
 
+  // ---------- Multiple firms: switcher at the top of the HoP menu ----------
+  async function firmSwitch() {
+    const box = document.getElementById('hop-firm-switch');
+    if (!box) return;
+    let d;
+    try { d = await hopApi('/api/v1/hop/firms'); } catch (_) { return; }
+    const firms = d.firms || [];
+    const activeIsMain = firms.find((f) => f.firm_ws === d.active)?.is_main;
+    try { localStorage.setItem('nx_hop_firm', activeIsMain ? '' : d.active); } catch (_) { /* ignore */ }
+    box.innerHTML = `<select class="nx-input" style="width:100%;" onchange="hopFirmPick(this.value)" title="Firm you are working in">
+      ${firms.map((f) => `<option value="${esc(f.is_main ? '' : f.firm_ws)}"${f.firm_ws === d.active ? ' selected' : ''}>🏢 ${esc(f.name)}${f.is_main ? ' (main)' : ''}</option>`).join('')}
+      ${perms?.owner ? '<option value="__add">+ Add a firm…</option>' : ''}</select>`;
+  }
+
+  window.hopFirmPick = async (v) => {
+    if (v === '__add') {
+      const name = (window.prompt('New firm name (a separate company with its own parties, items, bills, bank and GST)') || '').trim();
+      if (name) {
+        const gstin = (window.prompt('GSTIN of the new firm (leave blank if none)') || '').trim();
+        try {
+          await hopApi('/api/v1/hop/firms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, gstin }) });
+          toast(`Added ${name}`);
+        } catch (e) { toast(e?.message || 'Could not add the firm', 'err'); }
+      }
+      firmSwitch();
+      return;
+    }
+    try { localStorage.setItem('nx_hop_firm', v || ''); } catch (_) { /* ignore */ }
+    window.location.reload();   // every screen reloads with the chosen firm
+  };
+
   async function apply() {
     try { perms = await hopApi('/api/v1/hop/my-permissions'); } catch (_) { return; }
+    firmSwitch();
     document.querySelectorAll('[data-hop-view]').forEach((b) => {
       const v = b.getAttribute('data-hop-view');
       if (v === 'staff_permissions') b.style.display = perms.owner ? '' : 'none';
