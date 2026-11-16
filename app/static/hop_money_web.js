@@ -11,6 +11,13 @@
   'use strict';
 
   const BILL_TYPES = { 1: 'Received', 21: 'Paid', 2: 'Paid', 16: 'Received' };
+  const STATES = [['01', 'Jammu and Kashmir'], ['02', 'Himachal Pradesh'], ['03', 'Punjab'], ['04', 'Chandigarh'],
+    ['05', 'Uttarakhand'], ['06', 'Haryana'], ['07', 'Delhi'], ['08', 'Rajasthan'], ['09', 'Uttar Pradesh'], ['10', 'Bihar'],
+    ['11', 'Sikkim'], ['12', 'Arunachal Pradesh'], ['13', 'Nagaland'], ['14', 'Manipur'], ['15', 'Mizoram'], ['16', 'Tripura'],
+    ['17', 'Meghalaya'], ['18', 'Assam'], ['19', 'West Bengal'], ['20', 'Jharkhand'], ['21', 'Odisha'], ['22', 'Chhattisgarh'],
+    ['23', 'Madhya Pradesh'], ['24', 'Gujarat'], ['26', 'Dadra & Nagar Haveli and Daman & Diu'], ['27', 'Maharashtra'],
+    ['29', 'Karnataka'], ['30', 'Goa'], ['31', 'Lakshadweep'], ['32', 'Kerala'], ['33', 'Tamil Nadu'], ['34', 'Puducherry'],
+    ['35', 'Andaman and Nicobar Islands'], ['36', 'Telangana'], ['37', 'Andhra Pradesh'], ['38', 'Ladakh']];
   const PAYMENT_TYPES = new Set([3, 4, 7]);
   const esc = (v) => (typeof foEscapeText === 'function' ? foEscapeText(v) : String(v ?? ''));
   const money = (v) => (typeof hopMoney === 'function' ? hopMoney(v) : `₹${Number(v || 0).toFixed(2)}`);
@@ -31,6 +38,7 @@
     Object.assign(d, {
       receivedAmount: '', paymentChoice: '', paymentRef: '', chequeDate: '',
       amount: '', allocations: {}, openBills: null, expenseCategoryId: '', linkedFromTxnId: null, linkedFromLabel: '',
+      placeOfSupply: '', reverseCharge: false,
     });
     const cash = (hopState.moneyAccounts || []).find((a) => a.account_type === 'cash');
     if (cash) d.paymentChoice = `acct:${cash.id}`;
@@ -47,6 +55,8 @@
       chequeDate: duplicate ? '' : (data.cheque_date || ''),
       amount: data.total_amount ? String(data.total_amount) : '',
       expenseCategoryId: data.expense_category_id ? String(data.expense_category_id) : '',
+      placeOfSupply: data.place_of_supply || '',
+      reverseCharge: !!data.reverse_charge,
       allocations: {},
     });
     if (!duplicate) (data.allocations || []).forEach((a) => { d.allocations[a.txn_id] = String(a.amount); });
@@ -98,6 +108,16 @@
           <span>Balance</span><strong id="hop-money-balance">${money(Math.max(0, grand - got))}</strong>
         </div>
         ${d.linkedFromLabel ? `<p class="hop-doc-muted">Converted from ${esc(d.linkedFromLabel)}</p>` : ''}
+        <div class="hop-vyp-sum-row">
+          <span>Place of supply</span>
+          <select class="hop-vyp-control hop-vyp-control--sm" onchange="hopMoneySet('placeOfSupply',this.value)">
+            <option value="">From party (auto)</option>
+            ${STATES.map(([c, n]) => `<option value="${c}"${d.placeOfSupply === c ? ' selected' : ''}>${esc(n)} (${c})</option>`).join('')}
+          </select>
+        </div>
+        ${Number(md.txnType) === 2 ? `<div class="hop-vyp-sum-row"><label style="display:flex;gap:6px;align-items:center;">
+          <input type="checkbox" ${d.reverseCharge ? 'checked' : ''} onchange="hopMoneySet('reverseCharge',this.checked)" />
+          Reverse charge (we pay the GST)</label></div>` : ''}
       </div>`;
   }
 
@@ -414,6 +434,10 @@
       else Object.assign(out, { payment_mode: '', payment_account_id: null });
     }
     if (d.linkedFromTxnId && !md.editId) out.linked_from_txn_id = d.linkedFromTxnId;
+    if (BILL_TYPES[Number(md.txnType)]) {
+      out.place_of_supply = d.placeOfSupply || '';
+      if (Number(md.txnType) === 2) out.reverse_charge = !!d.reverseCharge;
+    }
     return out;
   }
 
