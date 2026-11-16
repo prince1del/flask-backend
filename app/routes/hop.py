@@ -41,12 +41,11 @@ def _ws() -> str:
 
     Multiple firms: the phone / web send the chosen firm in ``X-Hop-Firm``; only a firm of
     this login's own company is accepted (see app/hop_firms.py)."""
-    from flask import g
-
-    cached = getattr(g, "hop_active_ws", None)
-    if cached:
-        return cached
     base = get_workspace_id()
+    # Cache on this request only (never flask.g: an app context can outlive one request).
+    cached = getattr(request, "_hop_active_ws", None)
+    if cached and cached[0] == base:
+        return cached[1]
     req = request.headers.get("X-Hop-Firm") or ""
     ws = base
     if req and req != base:
@@ -57,7 +56,10 @@ def _ws() -> str:
                 ws = hop_firms.active_ws(conn, base, req)
         except Exception:
             ws = base
-    g.hop_active_ws = ws
+    try:
+        request._hop_active_ws = (base, ws)
+    except Exception:
+        pass
     return ws
 
 
