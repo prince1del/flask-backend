@@ -225,9 +225,10 @@ def _match_product(conn, ws, line: dict[str, Any]) -> int | None:
         r = conn.execute("SELECT id FROM hop_products WHERE workspace_id=? AND id=?", (ws, int(pid))).fetchone()
         if r:
             return int(r[0])
-    code = _s(line.get("item_code"))
+    code = _s(line.get("item_code")) or _s(line.get("barcode"))
     if code:
-        r = conn.execute("SELECT id FROM hop_products WHERE workspace_id=? AND lower(code)=lower(?) LIMIT 1", (ws, code)).fetchone()
+        r = conn.execute("SELECT id FROM hop_products WHERE workspace_id=? AND (lower(code)=lower(?) OR barcode=?) LIMIT 1",
+                         (ws, code, code)).fetchone()
         if r:
             return int(r[0])
     name = _s(line.get("item_name"))
@@ -250,9 +251,13 @@ def _post_stock(conn, ws, txn: dict[str, Any]) -> None:
         if ln.get("is_charge"):
             continue  # packing / freight charges are not items
         pid = _match_product(conn, ws, ln)
-        qty = _f(ln.get("qty")) + _f(ln.get("free_qty"))
-        if not pid or qty <= 0:
-            continue  # services / free-text lines do not move stock
+        if not pid:
+            continue  # free-text lines do not move stock
+        from app import hop_items
+
+        qty = hop_items.stock_qty_for_line(conn, ws, pid, ln)  # None = service item; 2nd unit → base units
+        if qty is None or qty <= 0:
+            continue
         if not ln.get("product_id"):
             conn.execute("UPDATE hop_txn_lines SET product_id=? WHERE id=?", (pid, int(ln["id"])))
         delta = sign * qty

@@ -250,6 +250,20 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         stmt = hop_reports.party_statement(conn, ws, best[1], best[2], str(extra.get("from") or ""), str(extra.get("to") or ""))
         stmt["lines"] = stmt["lines"][-30:]
         return stmt
+    if what == "items":
+        from app import hop_ops
+
+        q = str(party_name or "").strip()
+        rows = hop_ops.list_products(conn, ws, q or None)
+        def slim(r):
+            return {k: r.get(k) for k in ("name", "code", "barcode", "item_type", "unit", "stock_qty", "selling_price",
+                                          "purchase_price", "mrp", "wholesale_price", "wholesale_min_qty", "alt_unit",
+                                          "alt_unit_factor", "hsn", "gst_pct", "custom_fields") if r.get(k) not in (None, "", {})}
+        goods = [r for r in rows if r.get("item_type") != "service"]
+        return {"items": [slim(r) for r in rows[:25]], "count": len(rows),
+                "low_or_negative_stock": [{"name": r["name"], "stock": r.get("stock_qty")} for r in goods
+                                          if float(r.get("stock_qty") or 0) <= 0][:15],
+                "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15]}
     if what == "expenses":
         cats = hop_money.list_expense_categories(conn, ws)
         return {"by_category": [{"category": c["name"], "total": c["total"]} for c in cats if c["total"]],

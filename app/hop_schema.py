@@ -1243,6 +1243,9 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("unit_id", "INTEGER"),
         ):
             _ensure_column(conn, "hop_products", col, ddl)
+        from app import hop_items
+
+        hop_items.ensure_columns(conn)   # service flag, MRP, wholesale, 2nd unit, barcode, custom fields
         _ensure_column(conn, "hop_party_transactions", "due_date", "TEXT")
         for table in ("hop_customers", "hop_vendors"):
             _ensure_column(conn, table, "credit_days", "INTEGER")

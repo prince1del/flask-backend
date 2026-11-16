@@ -560,7 +560,9 @@ def _tool_declarations() -> list[dict[str, Any]]:
                 "balances and open cheques (what=cash_bank), who owes us money (receivables), "
                 "what we owe vendors (payables), unpaid invoices/bills (unpaid_bills), expenses by "
                 "category (expenses), profit & loss (profit_loss), balance sheet, one day's entries (day_book), "
-                "a party's ledger (party_statement), GST to pay (gst), or a summary (overview). Use for 'kitna cash hai', 'kis party "
+                "a party's ledger (party_statement), GST to pay (gst), items & stock with MRP / wholesale / barcode and item problems "
+                "(items; put an item name or barcode in party_name to search), or a summary (overview). Use for 'kitna cash hai', "
+                "'kaunsa maal khatam hai', 'is barcode ka item kya hai', 'kis party "
                 "ka paisa baaki hai', 'vendor ko kitna dena hai', 'kharcha kitna hua'."
             ),
             "parameters": {
@@ -568,7 +570,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                 "properties": {
                     "what": {"type": "string", "enum": ["overview", "cash_bank", "receivables", "payables",
                                                         "unpaid_bills", "expenses", "profit_loss", "balance_sheet",
-                                                        "day_book", "party_statement", "gst"]},
+                                                        "day_book", "party_statement", "gst", "items"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},

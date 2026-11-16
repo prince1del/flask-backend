@@ -1249,8 +1249,8 @@ def list_products(conn: sqlite3.Connection, workspace_id: str, q: str | None = N
     params: list[Any] = [workspace_id]
     if q:
         like = f"%{q.strip()}%"
-        sql += " AND (pr.name LIKE ? OR pr.code LIKE ? OR pr.brand LIKE ? OR pr.category LIKE ?)"
-        params.extend([like, like, like, like])
+        sql += " AND (pr.name LIKE ? OR pr.code LIKE ? OR pr.brand LIKE ? OR pr.category LIKE ? OR pr.barcode = ?)"
+        params.extend([like, like, like, like, q.strip()])
     sql += " ORDER BY pr.updated_at DESC, pr.id DESC"
     rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     for r in rows:
@@ -1262,6 +1262,10 @@ def list_products(conn: sqlite3.Connection, workspace_id: str, q: str | None = N
         net = sell - buy - logi - (sell * gst / 100.0) - (sell * comm / 100.0)
         r["net_profit"] = round(net, 2)
         r["margin_pct"] = round((net / sell * 100.0), 2) if sell else None
+        from app import hop_items
+
+        hop_items.decorate(r)
+        r["checks"] = hop_items.item_checks(r)
     return rows
 
 
@@ -1309,8 +1313,15 @@ def create_product(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             now,
         ),
     )
-    conn.commit()
     pid = int(cur.lastrowid)
+    from app import hop_items
+
+    try:
+        hop_items.save_extras(conn, workspace_id, pid, payload)
+    except ValueError:
+        conn.rollback()  # don't leave a half-saved item
+        raise
+    conn.commit()
     return next((r for r in list_products(conn, workspace_id) if r["id"] == pid), {"id": pid})
 
 
@@ -1370,6 +1381,9 @@ def update_product(conn: sqlite3.Connection, workspace_id: str, product_id: int,
             _now(), workspace_id, int(product_id),
         ),
     )
+    from app import hop_items
+
+    hop_items.save_extras(conn, workspace_id, int(product_id), payload)
     conn.commit()
     return next((r for r in list_products(conn, workspace_id) if r["id"] == int(product_id)), {"id": product_id})
 

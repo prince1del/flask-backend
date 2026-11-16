@@ -181,8 +181,9 @@ def suggest_party_rate(
     party_id: int,
     product_id: int | None = None,
     item_name: str = "",
+    qty: float = 0.0,
 ) -> dict[str, Any]:
-    """Last rate this party paid/charged for the item, plus catalogue sell/buy."""
+    """Last rate this party paid/charged for the item, plus catalogue sell/buy (wholesale for big qty)."""
     party_type = _s(party_type).lower() or "customer"
     party_id = int(party_id or 0)
     product_id = _i(product_id)
@@ -195,7 +196,7 @@ def suggest_party_rate(
     catalogue: dict[str, Any] | None = None
     if product_id:
         r = conn.execute(
-            "SELECT id, name, selling_price, purchase_price, unit, hsn, gst_pct FROM hop_products WHERE workspace_id=? AND id=?",
+            "SELECT * FROM hop_products WHERE workspace_id=? AND id=?",
             (ws, product_id),
         ).fetchone()
         if r:
@@ -228,12 +229,13 @@ def suggest_party_rate(
     if last:
         suggested = _f(last.get("rate"))
         source = "party_last"
-    elif catalogue:
-        if party_type == "vendor":
-            suggested = _f(catalogue.get("purchase_price")) or _f(catalogue.get("selling_price"))
-        else:
-            suggested = _f(catalogue.get("selling_price"))
-        source = "catalogue" if suggested else None
+    if catalogue:
+        from app import hop_items
+
+        cat_rate, cat_src = hop_items.price_for_qty(catalogue, float(qty or 0), party_type)
+        # Wholesale for a big quantity beats the party's last (retail) rate.
+        if not last or (cat_src == "wholesale" and cat_rate and cat_rate < (suggested or 0)):
+            suggested, source = cat_rate, cat_src
 
     # Typical rates for unusual-price check (same product, any party, last 20)
     rates: list[float] = []
@@ -370,14 +372,19 @@ def invoice_entry_warnings(
                     continue
                 r = None
                 if _i(ln.get("product_id")):
-                    r = conn.execute("SELECT name, stock_qty FROM hop_products WHERE workspace_id=? AND id=?",
+                    r = conn.execute("SELECT name, stock_qty, id FROM hop_products WHERE workspace_id=? AND id=?",
                                      (ws, _i(ln.get("product_id")))).fetchone()
                 elif _s(ln.get("item_name")):
-                    r = conn.execute("SELECT name, stock_qty FROM hop_products WHERE workspace_id=? AND lower(trim(name))=lower(?)",
+                    r = conn.execute("SELECT name, stock_qty, id FROM hop_products WHERE workspace_id=? AND lower(trim(name))=lower(?)",
                                      (ws, _s(ln.get("item_name")))).fetchone()
-                if r is not None and _f(r[1]) < _f(ln.get("qty")):
+                if r is None:
+                    continue
+                from app import hop_items
+
+                need = hop_items.stock_qty_for_line(conn, ws, int(r[2]), ln)
+                if need is not None and _f(r[1]) < need:
                     warnings.append({"code": "short_stock", "level": "block" if mode == "block" else "warn",
-                                     "message": f"{r[0]}: only {_f(r[1]):g} in stock, bill has {_f(ln.get('qty')):g}."})
+                                     "message": f"{r[0]}: only {_f(r[1]):g} in stock, bill needs {need:g}."})
 
     for ln in payload.get("lines") or []:
         if not isinstance(ln, dict):

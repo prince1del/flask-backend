@@ -2375,6 +2375,21 @@ def units_collection():
     return jsonify({"success": True, "data": {"units": rows}})
 
 
+@hop_bp.route("/products/by-barcode", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_by_barcode():
+    """Phone scanner / web: find the item for a barcode (or item code)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_items
+
+    with hop_db.connect(_db_path()) as conn:
+        row = hop_items.find_by_barcode(conn, _ws(), request.args.get("code") or "")
+    if not row:
+        return _json_error("No item has this barcode", "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": row})
+
+
 @hop_bp.route("/suggest-rate", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -2390,6 +2405,7 @@ def suggest_rate():
                 party_id=int(request.args.get("party_id") or 0),
                 product_id=int(request.args["product_id"]) if request.args.get("product_id") else None,
                 item_name=request.args.get("item_name") or "",
+                qty=float(request.args.get("qty") or 0),
             )
     except ValueError as exc:
         return _json_error(str(exc))
