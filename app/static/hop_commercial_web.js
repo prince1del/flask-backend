@@ -390,6 +390,7 @@
             </div>
             ${data.terms ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Terms and Conditions</div><div>${foEscapeText(data.terms)}</div></div>` : ''}
             ${bankHtml}
+            ${data.upi ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Pay by UPI</div><div>${foEscapeText(data.upi.upi_id)} · ${hopPreviewMoney(data.upi.amount)} · <a href="${foEscapeText(data.upi.link)}">Open in UPI app</a></div></div>` : ''}
           </div>
           <div class="hop-doc-totals">
             <div class="hop-doc-tot-row"><span>Sub Total</span><strong>${hopPreviewMoney(totals.sub_total)}</strong></div>

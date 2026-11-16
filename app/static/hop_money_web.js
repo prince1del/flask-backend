@@ -546,6 +546,13 @@
         `<button type="button" class="nx-btn" onclick="hopMoneyConvert(${partyTxnId},${c.txn_type})">Convert to ${esc(c.label)}</button>`).join('');
       foot.insertBefore(wrap, foot.firstChild);
     }
+    if (foot) {
+      const sh = document.createElement('span');
+      sh.className = 'hop-money-share';
+      sh.innerHTML = `<button type="button" class="nx-btn" onclick="hopMoneyShare(${partyTxnId},'bill')">WhatsApp bill</button>
+        <button type="button" class="nx-btn" onclick="hopMoneyShare(${partyTxnId},'reminder')">Payment reminder</button>`;
+      foot.insertBefore(sh, foot.firstChild);
+    }
     if (foot && Number(info.txn_type) === 1) {
       const g = document.createElement('span');
       g.className = 'hop-money-gst';
@@ -871,4 +878,12 @@
   };
   window.hopReconcileSave = () => reconcileMark([...recon.picked], document.getElementById('hop-recon-date')?.value || null);
   window.hopReconcileUpload = reconcileUpload;
+  // Share on WhatsApp: the owner's message (Settings → Sharing) with the UPI link; the user taps Send.
+  window.hopMoneyShare = async (id, kind) => {
+    try {
+      const d = await hopApi(`/api/v1/hop/party-transactions/${id}/share?kind=${kind}`);
+      window.open(d.whatsapp_url, '_blank', 'noopener');
+      if (!d.phone) toast('No mobile number on this party — pick the chat in WhatsApp.', 'warn');
+    } catch (e) { toast(e?.message || 'Could not prepare the message', 'err'); }
+  };
 })();

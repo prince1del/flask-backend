@@ -58,9 +58,9 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 ### Messages & reminders
 | Setting | State |
 |---|---|
-| WhatsApp / SMS after saving a bill | ❌ |
+| WhatsApp / SMS after saving a bill | ✅ WhatsApp bill + reminder buttons (opens WhatsApp with your message; SMS ❌) |
 | Automatic payment reminders | 🟡 (overdue list + WhatsApp link, Cursor) |
-| Message templates | ❌ |
+| Message templates | ✅ Settings → Sharing (bill + reminder, with {party} {amount} {due} {upi_link}…) |
 
 ### Party
 | Setting | State |
@@ -99,8 +99,8 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Recycle bin | ✅ |
 | User roles & permissions for staff, audit trail | ❌ |
 | Online store / catalogue sharing | 🟡 (catalogue exists) |
-| Payment link / UPI QR on invoice | ❌ |
-| Share invoice on WhatsApp | ❌ |
+| Payment link / UPI QR on invoice | 🟡 UPI payment link on bill + WhatsApp; QR picture needs a QR library (owner OK) |
+| Share invoice on WhatsApp | ✅ (text + UPI link; PDF attach is by the phone share sheet) |
 | Thermal printing | ❌ |
 | Barcode scanning on phone | ❌ |
 | Offline mode | ❌ |
@@ -131,3 +131,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Bank reconciliation — cleared date per entry (kept when a bill is edited), book vs bank
   balance, statement CSV upload auto-matches (same amount, ±5 days), hints for bank charges /
   interest. Phone: tap a bank account. Web: Cash & Bank → account → Reconcile. Ask Nexora shows it.
+- 2026-11-16: Sharing — UPI ID in Settings, "Pay by UPI" link on sale invoices with money due,
+  WhatsApp bill / payment reminder buttons (phone + web) using the owner's message templates.
