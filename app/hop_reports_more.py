@@ -45,7 +45,7 @@ def _lines(conn, ws, types: tuple[int, ...], frm="", to="", party_id: int | None
     sql = f"""SELECT l.*, t.id AS txn_id, t.txn_type, t.txn_number, t.txn_date, t.party_name, t.party_id, t.party_type
               FROM hop_txn_lines l JOIN hop_party_transactions t
                 ON t.workspace_id=l.workspace_id AND t.source_txn_id=l.source_txn_id
-              WHERE l.workspace_id=? AND {LIVE} AND t.txn_type IN ({','.join('?' * len(types))}){rng}"""
+              WHERE l.workspace_id=? AND {LIVE} AND COALESCE(l.is_charge,0)=0 AND t.txn_type IN ({','.join('?' * len(types))}){rng}"""
     params: list[Any] = [ws, *types, *p]
     if party_id:
         sql += " AND t.party_id=?"

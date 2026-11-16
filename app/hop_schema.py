@@ -1187,9 +1187,16 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("eway_bill_no", "TEXT"),
             ("place_of_supply", "TEXT"),        # 2-digit state code; decides IGST vs CGST+SGST
             ("reverse_charge", "INTEGER"),      # 1 = buyer pays the GST (purchase under RCM)
+            ("po_number", "TEXT"),              # customer's PO no. on a sale invoice
+            ("po_date", "TEXT"),
+            ("txn_time", "TEXT"),               # HH:MM on the bill
+            ("tcs_pct", "REAL"),                # TCS collected on a sale invoice
+            ("tcs_amount", "REAL"),
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
+        _ensure_column(conn, "hop_txn_lines", "is_charge", "INTEGER")   # additional charge (packing, freight…)
+        _ensure_column(conn, "hop_txn_lines", "free_qty", "REAL")       # free quantity given with the item
         _ensure_column(conn, "hop_bank_entries", "source", "TEXT")  # NULL manual | doc | cheque | loan | asset
         conn.executescript(
             """

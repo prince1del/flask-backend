@@ -251,9 +251,9 @@ def replace_txn_lines(
             INSERT INTO hop_txn_lines (
                 workspace_id, source_txn_id, line_no, item_name, item_code, description, hsn,
                 qty, unit, rate, discount_amount, discount_pct, section_title,
-                tax_pct, tax_amount, line_total, product_id,
+                tax_pct, tax_amount, line_total, product_id, is_charge, free_qty,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             """,
             (
                 workspace_id,
@@ -273,6 +273,8 @@ def replace_txn_lines(
                 float(line.get("tax_amount") or 0),
                 float(line.get("line_total") or 0),
                 line.get("product_id"),
+                1 if line.get("is_charge") else 0,
+                float(line.get("free_qty") or 0),
             ),
         )
         n += 1
@@ -529,6 +531,41 @@ def build_txn_preview(
     })
 
 
+def _with_charges(lines: list[Any], payload: dict[str, Any]) -> list[Any]:
+    """Additional charges (packing, freight, labour…) become bill lines marked is_charge, each with its own GST."""
+    out = list(lines or [])
+    for c in payload.get("charges") or []:
+        if not isinstance(c, dict):
+            continue
+        amt = float(c.get("amount") or 0)
+        name = _clean(c.get("name"))[:60]
+        if amt <= 0 or not name:
+            continue
+        out.append({"item_name": name, "qty": 1, "unit": "NOS", "rate": amt, "tax_pct": float(c.get("tax_pct") or 0),
+                    "hsn": _clean(c.get("hsn")), "is_charge": 1, "section_title": ""})
+    return out
+
+
+def _tcs(payload: dict[str, Any], txn_type: int, grand: float) -> tuple[float, float]:
+    if int(txn_type) not in (1, 2):  # sale invoice (we collect) / purchase bill (seller collected)
+        return 0.0, 0.0
+    pct = float(payload.get("tcs_pct") or 0)
+    if pct < 0 or pct > 5:
+        raise ValueError("TCS % must be between 0 and 5")
+    return pct, round(grand * pct / 100.0, 2)
+
+
+def _save_header_extras(conn, workspace_id, txn_id, payload, tcs_pct, tcs_amount, is_update):
+    """PO no / PO date / time / TCS on the bill (on edit, only what was sent)."""
+    sets, vals = ["tcs_pct=?", "tcs_amount=?"], [tcs_pct or None, tcs_amount or None]
+    for k in ("po_number", "po_date", "txn_time"):
+        if k in payload or not is_update:
+            sets.append(f"{k}=?")
+            vals.append(_clean(payload.get(k))[:40] or None)
+    conn.execute(f"UPDATE hop_party_transactions SET {', '.join(sets)} WHERE workspace_id=? AND id=?",
+                 (*vals, workspace_id, int(txn_id)))
+
+
 def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dict[str, Any]) -> dict[str, Any]:
     """Settings → Print: hide amount in words / bank / signature / terms, add footer text;
     composition scheme sale invoices are a "Bill of Supply"."""
@@ -539,6 +576,14 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
     except Exception:
         return data
     firm, totals = data.get("firm") or {}, data.get("totals") or {}
+    hid = (data.get("header") or {}).get("id")
+    if hid:
+        r = conn.execute("SELECT po_number, po_date, txn_time, tcs_pct, tcs_amount FROM hop_party_transactions "
+                         "WHERE workspace_id=? AND id=?", (workspace_id, int(hid))).fetchone()
+        if r:
+            data["header"].update({"po_number": r[0], "po_date": r[1], "txn_time": r[2]})
+            if r[4]:
+                totals["tcs_pct"], totals["tcs_amount"] = r[3], r[4]
     if not s.get("print_amount_words"):
         totals["amount_in_words"] = ""
     if not s.get("print_bank"):
@@ -685,6 +730,8 @@ def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]],
                 "discount_pct": disc_pct,
                 "discount_amount": disc,
                 "section_title": _clean(line.get("section_title")),
+                "is_charge": 1 if line.get("is_charge") else 0,
+                "free_qty": float(line.get("free_qty") or 0),
                 "tax_pct": tax_pct,
                 "tax_amount": tax_amt,
                 "line_total": line_total,
@@ -743,6 +790,7 @@ def _group_lines_for_edit(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "tax_pct": ln.get("tax_pct") or 0,
                 "hsn": ln.get("hsn") or "",
                 "section_title": title,
+                "free_qty": ln.get("free_qty") or 0,
             }
         )
     return sections
@@ -798,6 +846,9 @@ def get_party_transaction_edit_data(
             (workspace_id, source_txn_id),
         ).fetchall()
     ]
+    charges = [{"name": _clean(ln.get("item_name")), "amount": float(ln.get("rate") or 0),
+                "tax_pct": float(ln.get("tax_pct") or 0)} for ln in lines if ln.get("is_charge")]
+    lines = [ln for ln in lines if not ln.get("is_charge")]
     flat_lines = [
         {
             "item_name": _clean(ln.get("item_name")),
@@ -811,6 +862,7 @@ def get_party_transaction_edit_data(
             "tax_pct": float(ln.get("tax_pct") or 0),
             "hsn": _clean(ln.get("hsn")),
             "section_title": _clean(ln.get("section_title")),
+            "free_qty": float(ln.get("free_qty") or 0),
         }
         for ln in lines
     ]
@@ -851,6 +903,11 @@ def get_party_transaction_edit_data(
         "total_amount": float(h.get("total_amount") or 0),
         "linked_from_txn_id": h.get("linked_from_txn_id"),
         "place_of_supply": h.get("place_of_supply"),
+        "charges": charges,
+        "po_number": h.get("po_number"),
+        "po_date": h.get("po_date"),
+        "txn_time": h.get("txn_time"),
+        "tcs_pct": h.get("tcs_pct"),
         "reverse_charge": bool(h.get("reverse_charge")),
         "converted_to_txn_id": h.get("converted_to_txn_id"),
     }
@@ -921,7 +978,7 @@ def create_manual_party_document(
     txn_label = _clean(payload.get("txn_label")) or default_label
     notes = _clean(payload.get("notes"))
 
-    raw_lines = payload.get("lines") or []
+    raw_lines = _with_charges(payload.get("lines") or [], payload)
     if (not isinstance(raw_lines, list) or not raw_lines) and meta.get("payment"):
         amount = float(payload.get("total_amount") or payload.get("amount") or 0)
         if amount <= 0:
@@ -944,6 +1001,8 @@ def create_manual_party_document(
     doc_discount_pct = totals["doc_discount_pct"]
     round_off = totals["round_off"]
     grand = totals["grand"]
+    tcs_pct, tcs_amount = _tcs(payload, txn_type, grand)
+    grand = round(grand + tcs_amount, 2)
     balance = grand if meta.get("balance_due") else 0.0
     status_text = "Unpaid" if meta.get("balance_due") else ("Paid" if meta.get("payment") else "Open")
 
@@ -1017,6 +1076,7 @@ def create_manual_party_document(
         )
     if due_date:
         conn.execute("UPDATE hop_party_transactions SET due_date=? WHERE id=?", (due_date, party_txn_id))
+    _save_header_extras(conn, workspace_id, party_txn_id, payload, tcs_pct, tcs_amount, False)
     hop_money.post_document(conn, workspace_id, party_txn_id, payload)
     conn.commit()
     after = dict(conn.execute("SELECT balance_amount, status_text FROM hop_party_transactions WHERE id=?",
@@ -1091,7 +1151,7 @@ def update_manual_party_document(
     txn_label = _clean(payload.get("txn_label")) or _clean(h.get("txn_label")) or default_label
     notes = _clean(payload.get("notes")) if "notes" in payload else _clean(h.get("notes"))
 
-    raw_lines = payload.get("lines") or []
+    raw_lines = _with_charges(payload.get("lines") or [], payload)
     if (not isinstance(raw_lines, list) or not raw_lines) and meta.get("payment"):
         amount = float(payload.get("total_amount") or payload.get("amount") or h.get("total_amount") or 0)
         if amount <= 0:
@@ -1113,6 +1173,8 @@ def update_manual_party_document(
     doc_discount_pct = totals["doc_discount_pct"]
     round_off = totals["round_off"]
     grand = totals["grand"]
+    tcs_pct, tcs_amount = _tcs(payload, txn_type, grand)
+    grand = round(grand + tcs_amount, 2)
     balance = grand if meta.get("balance_due") else 0.0
 
     if "doc_terms" in payload or "terms" in payload:
@@ -1163,6 +1225,7 @@ def update_manual_party_document(
     if "due_date" in payload:
         due_date = _clean(payload.get("due_date"))[:10] or None
         conn.execute("UPDATE hop_party_transactions SET due_date=? WHERE id=?", (due_date, int(party_txn_id)))
+    _save_header_extras(conn, workspace_id, int(party_txn_id), payload, tcs_pct, tcs_amount, True)
     hop_money.post_document(conn, workspace_id, int(party_txn_id), payload, is_update=True)
     conn.commit()
     balance = float(conn.execute("SELECT balance_amount FROM hop_party_transactions WHERE id=?",

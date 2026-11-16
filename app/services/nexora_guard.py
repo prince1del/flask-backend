@@ -171,7 +171,7 @@ def hop_findings(conn: sqlite3.Connection, ws: str, today: date | None = None) -
                     JOIN hop_customers c ON c.id=t.party_id AND c.workspace_id=t.workspace_id
                     JOIN hop_txn_lines l ON l.workspace_id=t.workspace_id AND l.source_txn_id=t.source_txn_id
                     WHERE t.workspace_id=? AND (t.deleted_at IS NULL OR trim(t.deleted_at)='') AND t.txn_type=1
-                      AND t.party_type='customer' AND trim(coalesce(c.gst_no,''))!='' AND trim(coalesce(l.hsn,''))=''
+                      AND t.party_type='customer' AND trim(coalesce(c.gst_no,''))!='' AND trim(coalesce(l.hsn,''))='' AND COALESCE(l.is_charge,0)=0
                       AND date(t.txn_date) >= date(?)""", (ws, (today - timedelta(days=120)).isoformat()))
     if miss:
         out.append(_issue("hop:gst:hsn", "GST", "warn", f"{len(miss)} B2B invoice(s) have items without HSN",

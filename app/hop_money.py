@@ -247,8 +247,10 @@ def _post_stock(conn, ws, txn: dict[str, Any]) -> None:
                          (ws, int(txn["source_txn_id"]))).fetchall()
     for ln in lines:
         ln = dict(ln)
+        if ln.get("is_charge"):
+            continue  # packing / freight charges are not items
         pid = _match_product(conn, ws, ln)
-        qty = _f(ln.get("qty"))
+        qty = _f(ln.get("qty")) + _f(ln.get("free_qty"))
         if not pid or qty <= 0:
             continue  # services / free-text lines do not move stock
         if not ln.get("product_id"):

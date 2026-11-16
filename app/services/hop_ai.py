@@ -22,8 +22,10 @@ from typing import Any
 _PROMPT = (
     "This is a purchase bill / tax invoice / expense receipt received by our business. "
     "Return ONLY JSON: {\"party\":\"\",\"gstin\":\"\",\"bill_no\":\"\",\"bill_date\":\"YYYY-MM-DD\","
-    "\"lines\":[{\"item\":\"\",\"hsn\":\"\",\"qty\":0,\"unit\":\"\",\"rate\":0,\"tax_pct\":0}],"
+    "\"lines\":[{\"item\":\"\",\"hsn\":\"\",\"qty\":0,\"unit\":\"\",\"rate\":0,\"tax_pct\":0,\"free_qty\":0}],"
+    "\"charges\":[{\"name\":\"\",\"amount\":0,\"tax_pct\":0}],\"tcs_amount\":0,"
     "\"total\":0,\"expense_category\":\"\"}. "
+    "charges = freight, packing, loading, labour etc. charged separately (amount before GST); free_qty = free units. "
     "party = the seller who issued the bill (not us). rate = price per unit BEFORE GST. "
     "tax_pct = GST % of that line (CGST+SGST together, or IGST). total = grand total in rupees. "
     "expense_category = one or two words if this is an expense like rent, electricity, petrol, "
@@ -135,8 +137,13 @@ def match_bill(conn: sqlite3.Connection, ws: str, fields: dict[str, Any]) -> dic
             "matched_item": bool(prod),
             "hsn": str(ln.get("hsn") or (prod or {}).get("hsn") or "").strip()[:12],
             "qty": qty, "unit": str(ln.get("unit") or "Pcs").strip()[:12] or "Pcs",
-            "rate": rate, "tax_pct": _num(ln.get("tax_pct")),
+            "rate": rate, "tax_pct": _num(ln.get("tax_pct")), "free_qty": _num(ln.get("free_qty")),
         })
+    charges = []
+    for c in (fields.get("charges") or [])[:10]:
+        if isinstance(c, dict) and str(c.get("name") or "").strip() and _num(c.get("amount")) > 0:
+            charges.append({"name": str(c["name"]).strip()[:60], "amount": _num(c.get("amount")),
+                            "tax_pct": _num(c.get("tax_pct"))})
 
     cat_name = str(fields.get("expense_category") or "").strip()
     category = None
@@ -147,7 +154,9 @@ def match_bill(conn: sqlite3.Connection, ws: str, fields: dict[str, Any]) -> dic
             category = None
     date = str(fields.get("bill_date") or "")
     total = _num(fields.get("total"))
-    computed = round(sum(l["qty"] * l["rate"] * (1 + l["tax_pct"] / 100) for l in lines), 2)
+    tcs = _num(fields.get("tcs_amount"))
+    computed = round(sum(l["qty"] * l["rate"] * (1 + l["tax_pct"] / 100) for l in lines)
+                     + sum(c["amount"] * (1 + c["tax_pct"] / 100) for c in charges) + tcs, 2)
     notes = []
     if party and not vendor:
         notes.append(f"Seller \"{party}\" is not in your vendors yet — add it, then pick it.")
@@ -161,7 +170,7 @@ def match_bill(conn: sqlite3.Connection, ws: str, fields: dict[str, Any]) -> dic
         "vendor_id": vendor["id"] if vendor else None, "vendor_name": vendor.get("company") if vendor else None,
         "bill_no": str(fields.get("bill_no") or "").strip()[:40],
         "bill_date": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else "",
-        "lines": lines, "total": total, "items_total": computed,
+        "lines": lines, "charges": charges, "tcs_amount": tcs, "total": total, "items_total": computed,
         "expense_category_id": category["id"] if category else None,
         "expense_category": category["name"] if category else cat_name,
         "checks": notes,

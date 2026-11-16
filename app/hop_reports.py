@@ -79,9 +79,9 @@ def _account_kind(name: str, bank_names: set[str]) -> str:
         return "asset"
     if name.startswith("Loan: "):
         return "liability"
-    if name == DEBTORS or name == IN_GST:
+    if name in (DEBTORS, IN_GST, "TCS receivable"):
         return "asset"
-    if name in (CREDITORS, OUT_GST, CHQ_OUT):
+    if name in (CREDITORS, OUT_GST, CHQ_OUT, "TCS payable"):
         return "liability"
     if name in (CAPITAL, DRAWINGS, OBE):
         return "equity"
@@ -157,7 +157,8 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
         imported = int(t.get("source_txn_id") or 0) > 0
         gst = min(max(tax.get(int(t.get("source_txn_id") or 0), 0.0) + _f(t.get("shipping_tax_amount")), 0.0), total) \
             if total >= 0 else 0.0
-        taxable = total - gst
+        tcs = _f(t.get("tcs_amount")) if ty in (1, 2) else 0.0
+        taxable = total - gst - tcs
         party = party_of(t)
         label = LABELS.get(ty, t.get("txn_label") or "Document")
         pa = party_acct(t)
@@ -172,6 +173,7 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
                 post(day, pa, dr=total, t=t, kind=label, party=party)
                 post(day, SALES, cr=taxable, t=t, kind=label)
                 post(day, OUT_GST, cr=gst, t=t, kind=label)
+                post(day, "TCS payable", cr=tcs, t=t, kind=label)
                 if paid_now:
                     post(day, money_acct(t, "in"), dr=paid_now, t=t, kind=label, party=party)
                     post(day, pa, cr=paid_now, t=t, kind=label, party=party)
@@ -185,6 +187,7 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
             elif ty == 2:
                 post(day, PURCH, dr=taxable, t=t, kind=label)
                 post(day, IN_GST, dr=gst, t=t, kind=label)
+                post(day, "TCS receivable", dr=tcs, t=t, kind=label)
                 post(day, pa, cr=total, t=t, kind=label, party=party)
                 if paid_now:
                     post(day, pa, dr=paid_now, t=t, kind=label, party=party)
@@ -414,11 +417,13 @@ def balance_sheet(conn: sqlite3.Connection, ws: str, as_of: str = "") -> dict[st
               {"name": "Advances to vendors", "amount": adv_to_vendor},
               {"name": "Closing stock", "amount": closing_stock},
               {"name": "GST credit (input)", "amount": _r2(net_gst) if net_gst > 0 else 0.0},
+              {"name": "TCS paid (to claim)", "amount": _r2(bal["TCS receivable"])},
               *fa_assets, *fa_contra]
     liabilities = [{"name": "Sundry Creditors (to pay)", "amount": creditors},
                    {"name": "Advances from customers", "amount": adv_from_cust},
                    {"name": "GST payable", "amount": _r2(-net_gst) if net_gst < 0 else 0.0},
                    {"name": "Cheques issued (not yet withdrawn)", "amount": _r2(cheques_issued)},
+                   {"name": "TCS collected (to deposit)", "amount": _r2(-bal["TCS payable"])},
                    *loan_liab]
     equity = [{"name": "Opening balance equity", "amount": _r2(-bal[OBE])},
               {"name": "Capital added", "amount": _r2(-bal[CAPITAL])},
@@ -602,7 +607,7 @@ def item_report(conn, ws, frm="", to="") -> dict[str, Any]:
                     SUM(COALESCE(l.line_total,0) - COALESCE(l.tax_amount,0)) AS amount
              FROM hop_txn_lines l JOIN hop_party_transactions t
                ON t.workspace_id=l.workspace_id AND t.source_txn_id=l.source_txn_id
-             WHERE l.workspace_id=? AND t.txn_type IN (1,2,16,21)"""
+             WHERE l.workspace_id=? AND t.txn_type IN (1,2,16,21) AND COALESCE(l.is_charge,0)=0"""
     params: list[Any] = [ws]
     if frm:
         sql += " AND date(t.txn_date) >= date(?)"
