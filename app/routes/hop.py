@@ -2484,6 +2484,22 @@ def overdue_bills():
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/party-transactions/<int:party_txn_id>/share", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_txn_share(party_txn_id: int):
+    """WhatsApp text (owner's template), party number, wa.me link and UPI payment link for a bill."""
+    ensure_hop_schema(_db_path())
+    from app import hop_share
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_share.share_payload(conn, _ws(), party_txn_id, request.args.get("kind") or "bill")
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/ai/payment-reminder", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

@@ -595,6 +595,15 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
         data["terms"] = ""
         data["delivery_terms"] = ""
     data["footer"] = s.get("print_footer") or ""
+    if hid:
+        try:
+            from app import hop_share
+
+            t = conn.execute("SELECT * FROM hop_party_transactions WHERE workspace_id=? AND id=?",
+                             (workspace_id, int(hid))).fetchone()
+            data["upi"] = hop_share.bill_upi(conn, workspace_id, dict(t)) if t else None
+        except Exception:
+            data["upi"] = None
     header = data.get("header") or {}
     if s.get("composition_scheme") and int(header.get("txn_type") or 0) == 1:
         header["doc_title"] = "Bill of Supply"

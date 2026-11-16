@@ -41,6 +41,18 @@ SCHEMA: list[dict[str, Any]] = [
     {"key": "print_terms", "section": "Print", "label": "Show terms & conditions", "type": "bool", "default": True},
     {"key": "print_footer", "section": "Print", "label": "Footer text on every bill", "type": "text", "default": "",
      "help": "e.g. Thank you for your business!"},
+    # Sharing
+    {"key": "upi_id", "section": "Sharing", "label": "Your UPI ID (for payment link on bills)", "type": "text",
+     "default": "", "help": "e.g. yourshop@okbank. Customers tap the link and pay in any UPI app."},
+    {"key": "upi_name", "section": "Sharing", "label": "Name shown in the UPI app", "type": "text", "default": "",
+     "help": "Blank = your business name."},
+    {"key": "print_upi", "section": "Sharing", "label": "Show 'Pay by UPI' on sale invoices with money due",
+     "type": "bool", "default": True},
+    {"key": "msg_bill", "section": "Sharing", "label": "WhatsApp message when sharing a bill", "type": "text",
+     "default": "", "help": "Use {party} {doc} {number} {date} {amount} {due} {due_date} {firm} {upi_link}. Blank = standard message."},
+    {"key": "msg_reminder", "section": "Sharing", "label": "WhatsApp payment reminder message", "type": "text",
+     "default": "Dear {party}, a gentle reminder: ₹{due} is due on {doc} {number} dated {date}. {upi_link} — {firm}",
+     "help": "Same words in {…} as above."},
     # Party
     {"key": "party_groups", "section": "Party", "label": "Party groups", "type": "list",
      "default": ["Buyer", "Supplier", "Architect", "Hotel", "Retail"], "help": "Shown when you add or edit a party."},
@@ -101,6 +113,13 @@ def _clean(spec: dict[str, Any], value: Any) -> Any:
                 out.append(x)
         return out[:50]
     text = str(value or "").strip()
+    if spec["key"] == "upi_id" and text:
+        from app import hop_share
+
+        if not hop_share.valid_upi(text):
+            raise ValueError("UPI ID looks wrong — it should be like name@bank")
+    if spec["key"].startswith("msg_"):
+        return text[:600]
     if spec["key"].startswith("prefix_"):
         text = text.upper().replace(" ", "")[:12]
         if text and not all(c.isalnum() or c in "-_" for c in text):
