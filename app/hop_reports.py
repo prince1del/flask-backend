@@ -79,9 +79,9 @@ def _account_kind(name: str, bank_names: set[str]) -> str:
         return "asset"
     if name.startswith("Loan: "):
         return "liability"
-    if name in (DEBTORS, IN_GST, "TCS receivable"):
+    if name in (DEBTORS, IN_GST, "TCS receivable", "TDS receivable"):
         return "asset"
-    if name in (CREDITORS, OUT_GST, CHQ_OUT, "TCS payable"):
+    if name in (CREDITORS, OUT_GST, CHQ_OUT, "TCS payable", "TDS payable"):
         return "liability"
     if name in (CAPITAL, DRAWINGS, OBE):
         return "equity"
@@ -176,6 +176,10 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
                 post(day, SALES, cr=taxable, t=t, kind=label)
                 post(day, OUT_GST, cr=gst, t=t, kind=label)
                 post(day, "TCS payable", cr=tcs, t=t, kind=label)
+                tds = _f(t.get("tds_amount"))
+                if tds:   # customer deducted TDS: they owe us less, we claim it from the government
+                    post(day, "TDS receivable", dr=tds, t=t, kind=label)
+                    post(day, pa, cr=tds, t=t, kind=label, party=party)
                 if paid_now:
                     post(day, money_acct(t, "in"), dr=paid_now, t=t, kind=label, party=party)
                     post(day, pa, cr=paid_now, t=t, kind=label, party=party)
@@ -191,6 +195,10 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
                 post(day, IN_GST, dr=gst, t=t, kind=label)
                 post(day, "TCS receivable", dr=tcs, t=t, kind=label)
                 post(day, pa, cr=total, t=t, kind=label, party=party)
+                tds = _f(t.get("tds_amount"))
+                if tds:   # we deducted TDS: we owe the vendor less and must deposit it
+                    post(day, pa, dr=tds, t=t, kind=label, party=party)
+                    post(day, "TDS payable", cr=tds, t=t, kind=label)
                 if paid_now:
                     post(day, pa, dr=paid_now, t=t, kind=label, party=party)
                     post(day, money_acct(t, "out"), cr=paid_now, t=t, kind=label, party=party)
@@ -431,12 +439,14 @@ def balance_sheet(conn: sqlite3.Connection, ws: str, as_of: str = "") -> dict[st
               {"name": "Closing stock", "amount": closing_stock},
               {"name": "GST credit (input)", "amount": _r2(net_gst) if net_gst > 0 else 0.0},
               {"name": "TCS paid (to claim)", "amount": _r2(bal["TCS receivable"])},
+              {"name": "TDS deducted by customers (to claim)", "amount": _r2(bal["TDS receivable"])},
               *fa_assets, *fa_contra]
     liabilities = [{"name": "Sundry Creditors (to pay)", "amount": creditors},
                    {"name": "Advances from customers", "amount": adv_from_cust},
                    {"name": "GST payable", "amount": _r2(-net_gst) if net_gst < 0 else 0.0},
                    {"name": "Cheques issued (not yet withdrawn)", "amount": _r2(cheques_issued)},
                    {"name": "TCS collected (to deposit)", "amount": _r2(-bal["TCS payable"])},
+                   {"name": "TDS deducted (to deposit)", "amount": _r2(-bal["TDS payable"])},
                    *loan_liab]
     equity = [{"name": "Opening balance equity", "amount": _r2(-bal[OBE])},
               {"name": "Capital added", "amount": _r2(-bal[CAPITAL])},

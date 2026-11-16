@@ -107,3 +107,26 @@ def test_additional_cess(db):
         assert get_party_transaction_edit_data(conn, WS, inv["party_txn_id"])["lines"][0]["cess_pct"] == 12
         tb = hop_reports.trial_balance(conn, WS)
         assert round(tb["total_debit"], 2) == round(tb["total_credit"], 2)
+
+
+def test_tds_on_purchase_and_sale(db):
+    from app.hop_ops import create_vendor
+
+    p, cust = db
+    with connect(p) as conn:
+        v = create_vendor(conn, WS, {"company": "Contractor T"})
+        bill = create(conn, WS, {"txn_type": 2, "vendor_id": v["id"], "txn_date": "2026-11-16", "tds_pct": 2,
+                                 "lines": [{"item_name": "Labour job", "qty": 1, "rate": 10000, "tax_pct": 18}]})
+        b = dict(conn.execute("SELECT * FROM hop_party_transactions WHERE id=?", (bill["party_txn_id"],)).fetchone())
+        assert (b["total_amount"], b["tds_amount"], b["balance_amount"]) == (11800, 200, 11600)
+        inv = create(conn, WS, {"txn_type": 1, "customer_id": cust, "txn_date": "2026-11-16", "tds_pct": 1,
+                                "lines": [{"item_name": "Design fee", "qty": 1, "rate": 5000, "tax_pct": 18}]})
+        i = dict(conn.execute("SELECT * FROM hop_party_transactions WHERE id=?", (inv["party_txn_id"],)).fetchone())
+        assert (i["tds_amount"], i["balance_amount"]) == (50, 5850)
+        bs = hop_reports.balance_sheet(conn, WS)
+        a = {x["name"]: x["amount"] for x in bs["assets"]}
+        l = {x["name"]: x["amount"] for x in bs["liabilities"]}
+        assert a["TDS deducted by customers (to claim)"] == 50 and l["TDS deducted (to deposit)"] == 200
+        assert a["Sundry Debtors (to receive)"] == 5850 and l["Sundry Creditors (to pay)"] == 11600
+        assert bs["balanced"]
+        assert build_txn_preview(conn, WS, party_txn_id=bill["party_txn_id"])["totals"]["tds_amount"] == 200

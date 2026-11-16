@@ -164,7 +164,8 @@ def recompute_balance(conn: sqlite3.Connection, ws: str, txn_id: int) -> None:
         if t.get("received_amount") is None and _linked_total(conn, ws, bill=txn_id) <= EPS:
             return  # untouched imported bill: keep its own balance
         _freeze_received(conn, ws, t)
-        bal = round(max(0.0, total - _f(t.get("received_amount")) - _linked_total(conn, ws, bill=txn_id)), 2)
+        tds = _f(t.get("tds_amount")) if ty in (1, 2) else 0.0   # TDS deducted is not paid in money
+        bal = round(max(0.0, total - tds - _f(t.get("received_amount")) - _linked_total(conn, ws, bill=txn_id)), 2)
         status = "Paid" if bal <= EPS else ("Partial" if bal < total - EPS else "Unpaid")
         if ty in (16, 21):
             status = {"Paid": "Settled", "Partial": "Partly settled", "Unpaid": "Not settled"}[status]

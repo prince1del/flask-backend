@@ -43,7 +43,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Place of supply, reverse charge | ✅ (Night 2) |
 | Composition scheme | ✅ Settings (Bill of Supply, no GST on sales) |
 | Additional cess | ✅ cess % per item / line; split out in GSTR-1 and the e-invoice file |
-| TCS on sales / TDS on purchases | ✅ TCS on sale invoice (liability) + purchase bill (to claim); TDS on commission only |
+| TCS on sales / TDS on purchases | ✅ TCS + TDS on sale invoices and purchase bills (balance and books follow) |
 | E-Invoice / E-Way Bill | 🟡 (JSON files; direct portal API needs owner's GSP account) |
 
 ### Print
@@ -144,3 +144,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   window that was already open stays above the lock screen until closed.
 - 2026-11-16: Additional cess — cess % on items and bill lines (phone + web); GST reports and the
   e-invoice file show it on its own (CesRt / CesAmt). E-invoice also carries TCS and marks SAC (99…) as service.
+- 2026-11-16: TDS on bills — purchase bill (we deduct; "TDS deducted (to deposit)") and sale invoice
+  (customer deducts; "to claim"); bill balance comes down by the TDS. Phone + web fields and preview.

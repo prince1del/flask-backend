@@ -566,6 +566,19 @@ def _save_header_extras(conn, workspace_id, txn_id, payload, tcs_pct, tcs_amount
             vals.append(_clean(payload.get(k))[:40] or None)
     conn.execute(f"UPDATE hop_party_transactions SET {', '.join(sets)} WHERE workspace_id=? AND id=?",
                  (*vals, workspace_id, int(txn_id)))
+    # TDS: deducted on the value before GST (purchase bill = we deduct; sale invoice = customer deducts).
+    t = conn.execute("SELECT txn_type, source_txn_id, discount_amount FROM hop_party_transactions WHERE workspace_id=? AND id=?",
+                     (workspace_id, int(txn_id))).fetchone()
+    pct = float(payload.get("tds_pct") or 0) if t and int(t[0]) in (1, 2) else 0.0
+    if pct < 0 or pct > 30:
+        raise ValueError("TDS % must be between 0 and 30")
+    amt = 0.0
+    if pct:
+        base = conn.execute("SELECT SUM(COALESCE(line_total,0)-COALESCE(tax_amount,0)) FROM hop_txn_lines "
+                            "WHERE workspace_id=? AND source_txn_id=?", (workspace_id, int(t[1]))).fetchone()[0] or 0
+        amt = round(max(0.0, float(base) - float(t[2] or 0)) * pct / 100.0, 2)
+    conn.execute("UPDATE hop_party_transactions SET tds_pct=?, tds_amount=? WHERE workspace_id=? AND id=?",
+                 (pct or None, amt or None, workspace_id, int(txn_id)))
 
 
 def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -580,12 +593,14 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
     firm, totals = data.get("firm") or {}, data.get("totals") or {}
     hid = (data.get("header") or {}).get("id")
     if hid:
-        r = conn.execute("SELECT po_number, po_date, txn_time, tcs_pct, tcs_amount FROM hop_party_transactions "
-                         "WHERE workspace_id=? AND id=?", (workspace_id, int(hid))).fetchone()
+        r = conn.execute("SELECT po_number, po_date, txn_time, tcs_pct, tcs_amount, tds_pct, tds_amount "
+                         "FROM hop_party_transactions WHERE workspace_id=? AND id=?", (workspace_id, int(hid))).fetchone()
         if r:
             data["header"].update({"po_number": r[0], "po_date": r[1], "txn_time": r[2]})
             if r[4]:
                 totals["tcs_pct"], totals["tcs_amount"] = r[3], r[4]
+            if r[6]:
+                totals["tds_pct"], totals["tds_amount"] = r[5], r[6]
     if not s.get("print_amount_words"):
         totals["amount_in_words"] = ""
     if not s.get("print_bank"):
@@ -933,6 +948,7 @@ def get_party_transaction_edit_data(
         "po_date": h.get("po_date"),
         "txn_time": h.get("txn_time"),
         "tcs_pct": h.get("tcs_pct"),
+        "tds_pct": h.get("tds_pct"),
         "reverse_charge": bool(h.get("reverse_charge")),
         "converted_to_txn_id": h.get("converted_to_txn_id"),
     }

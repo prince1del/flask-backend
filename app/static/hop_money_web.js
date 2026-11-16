@@ -41,7 +41,7 @@
       receivedAmount: '', paymentChoice: '', paymentRef: '', chequeDate: '',
       amount: '', allocations: {}, openBills: null, expenseCategoryId: '', linkedFromTxnId: null, linkedFromLabel: '',
       placeOfSupply: '', reverseCharge: false,
-      charges: [], poNumber: '', poDate: '', txnTime: '', tcsPct: '',
+      charges: [], poNumber: '', poDate: '', txnTime: '', tcsPct: '', tdsPct: '',
     });
     const cash = (hopState.moneyAccounts || []).find((a) => a.account_type === 'cash');
     if (cash) d.paymentChoice = `acct:${cash.id}`;
@@ -65,6 +65,7 @@
       poDate: data.po_date || '',
       txnTime: duplicate ? '' : (data.txn_time || ''),
       tcsPct: Number(data.tcs_pct || 0) > 0 ? String(data.tcs_pct) : '',
+      tdsPct: Number(data.tds_pct || 0) > 0 ? String(data.tds_pct) : '',
       allocations: {},
     });
     if (!duplicate) (data.allocations || []).forEach((a) => { d.allocations[a.txn_id] = String(a.amount); });
@@ -139,7 +140,9 @@
         <div class="hop-vyp-sum-row"><span>Time</span>
           <input type="time" class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.txnTime)}" onchange="hopMoneySet('txnTime',this.value)" /></div>
         ${TCS_TYPES.has(ty) ? `<div class="hop-vyp-sum-row"><span>TCS % <small class="hop-doc-muted">(added to total)</small></span>
-          <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.tcsPct)}" inputmode="decimal" placeholder="0" oninput="hopMoneySet('tcsPct',this.value);hopMoneyRefreshTotal()" /></div>` : ''}
+          <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.tcsPct)}" inputmode="decimal" placeholder="0" oninput="hopMoneySet('tcsPct',this.value);hopMoneyRefreshTotal()" /></div>
+          <div class="hop-vyp-sum-row"><span>TDS % <small class="hop-doc-muted">(${ty === 2 ? 'we deduct from the vendor' : 'customer deducts'})</small></span>
+          <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.tdsPct)}" inputmode="decimal" placeholder="0" oninput="hopMoneySet('tdsPct',this.value)" /></div>` : ''}
       </div>`;
   }
 
@@ -153,7 +156,7 @@
       txn_time: d.txnTime || '',
     };
     if (PO_TYPES.has(ty)) Object.assign(out, { po_number: String(d.poNumber || '').trim(), po_date: d.poDate || '' });
-    if (TCS_TYPES.has(ty)) out.tcs_pct = num(d.tcsPct);
+    if (TCS_TYPES.has(ty)) { out.tcs_pct = num(d.tcsPct); out.tds_pct = num(d.tdsPct); }
     return out;
   }
 

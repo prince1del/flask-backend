@@ -1192,6 +1192,8 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("txn_time", "TEXT"),               # HH:MM on the bill
             ("tcs_pct", "REAL"),                # TCS collected on a sale invoice
             ("tcs_amount", "REAL"),
+            ("tds_pct", "REAL"),                # TDS deducted on the bill (we on a purchase / customer on a sale)
+            ("tds_amount", "REAL"),
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
