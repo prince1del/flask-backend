@@ -232,7 +232,42 @@ def gstr9(conn, ws, fy_start: str = "", fy_end: str = "") -> dict[str, Any]:
             "note": "Summary from NEXORA documents for the year; tally with your monthly GSTR-1/3B before filing GSTR-9."}
 
 
+def expiry_report(conn, ws, days: int = 60) -> dict[str, Any]:
+    """Batches bought with an expiry date: what is left (bought − sold of that batch) and days to expiry."""
+    from datetime import date
+
+    rows = conn.execute(f"""SELECT l.item_name, COALESCE(l.batch_no,'') AS batch, l.expiry_date,
+                                   SUM(CASE WHEN t.txn_type IN (2,21) THEN l.qty + COALESCE(l.free_qty,0)
+                                            WHEN t.txn_type IN (1,16) THEN -(l.qty + COALESCE(l.free_qty,0)) ELSE 0 END) AS left_qty
+                            FROM hop_txn_lines l JOIN hop_party_transactions t
+                              ON t.workspace_id=l.workspace_id AND t.source_txn_id=l.source_txn_id
+                            WHERE l.workspace_id=? AND {LIVE} AND COALESCE(l.is_charge,0)=0
+                              AND (COALESCE(l.batch_no,'')!='' OR COALESCE(l.expiry_date,'')!='')
+                            GROUP BY lower(l.item_name), COALESCE(l.batch_no,'')""", (ws,)).fetchall()
+    # Expiry comes from the purchase line of that batch (sales lines may not repeat it).
+    today = date.today()
+    out = []
+    for r in rows:
+        exp = r[2] or conn.execute("SELECT expiry_date FROM hop_txn_lines WHERE workspace_id=? AND lower(item_name)=lower(?) "
+                                   "AND COALESCE(batch_no,'')=? AND COALESCE(expiry_date,'')!='' LIMIT 1",
+                                   (ws, r[0], r[1])).fetchone()
+        exp = exp if isinstance(exp, str) else (exp[0] if exp else "")
+        if not exp or float(r[3] or 0) <= 0:
+            continue
+        try:
+            left = (date.fromisoformat(exp[:10]) - today).days
+        except ValueError:
+            continue
+        if left <= days:
+            out.append({"item": r[0], "batch": r[1], "expiry": exp[:10], "qty_left": round(float(r[3]), 3),
+                        "days_left": left, "state": "Expired" if left < 0 else "Expiring soon"})
+    out.sort(key=lambda x: x["days_left"])
+    return {"days": days, "rows": out, "expired": sum(1 for x in out if x["days_left"] < 0),
+            "expiring": sum(1 for x in out if x["days_left"] >= 0)}
+
+
 MORE_REPORTS = {
+    "expiry": "Expiring / Expired Batches",
     "party_pl": "Party-wise Profit & Loss", "item_pl": "Item-wise Profit & Loss",
     "party_item": "Party Report by Item", "group_sale": "Sale by Party Group", "group_purchase": "Purchase by Party Group",
     "category_report": "Item Category Report", "discount_report": "Discount Report",
@@ -243,6 +278,8 @@ MORE_REPORTS = {
 
 def run(conn, ws, k: str, a: dict[str, Any]) -> dict[str, Any] | None:
     frm, to = str(a.get("from") or "")[:10], str(a.get("to") or "")[:10]
+    if k == "expiry":
+        return expiry_report(conn, ws, int(a.get("days") or 60))
     if k == "party_pl":
         return party_pl(conn, ws, frm, to)
     if k == "item_pl":

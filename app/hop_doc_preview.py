@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from typing import Any
 
@@ -252,8 +253,8 @@ def replace_txn_lines(
                 workspace_id, source_txn_id, line_no, item_name, item_code, description, hsn,
                 qty, unit, rate, discount_amount, discount_pct, section_title,
                 tax_pct, tax_amount, line_total, product_id, is_charge, free_qty, cess_pct, cess_amount,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                batch_no, expiry_date, serial_no, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             """,
             (
                 workspace_id,
@@ -277,6 +278,9 @@ def replace_txn_lines(
                 float(line.get("free_qty") or 0),
                 float(line.get("cess_pct") or 0) or None,
                 float(line.get("cess_amount") or 0) or None,
+                _clean(line.get("batch_no")) or None,
+                _clean(line.get("expiry_date")) or None,
+                _clean(line.get("serial_no")) or None,
             ),
         )
         n += 1
@@ -367,6 +371,15 @@ def build_txn_preview(
     tax_total = 0.0
     qty_total = 0.0
     for ln in lines:
+        # Batch / expiry / serial / free qty print under the item (every bill layout shows the description).
+        extra = [x for x in (
+            f"Batch {ln['batch_no']}" if ln.get("batch_no") else "",
+            f"Exp {ln['expiry_date']}" if ln.get("expiry_date") else "",
+            f"S.No. {ln['serial_no']}" if ln.get("serial_no") else "",
+            f"+ {float(ln['free_qty']):g} free" if float(ln.get("free_qty") or 0) > 0 else "",
+        ) if x]
+        if extra:
+            ln["description"] = " · ".join([x for x in [str(ln.get("description") or "").strip(), *extra] if x])
         qty = float(ln.get("qty") or 0)
         rate = float(ln.get("rate") or 0)
         disc = float(ln.get("discount_amount") or 0)
@@ -752,6 +765,9 @@ def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]],
         if cess_pct < 0 or cess_pct > 300:
             raise ValueError("Cess % must be between 0 and 300")
         cess_amt = round(taxable * cess_pct / 100.0, 2) if cess_pct else 0.0
+        exp = _clean(line.get("expiry_date"))
+        if exp and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", exp):
+            raise ValueError(f"{_clean(line.get('item_name')) or 'Item'}: expiry date must be YYYY-MM-DD")
         tax_amt = round(tax_amt + cess_amt, 2)
         line_total = round(line_total + cess_amt, 2)
         disc = amounts["discount_amount"]
@@ -775,6 +791,9 @@ def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]],
                 "free_qty": float(line.get("free_qty") or 0),
                 "cess_pct": cess_pct,
                 "cess_amount": cess_amt,
+                "batch_no": _clean(line.get("batch_no"))[:40],
+                "expiry_date": _clean(line.get("expiry_date"))[:10],
+                "serial_no": _clean(line.get("serial_no"))[:300],
                 "tax_pct": tax_pct,
                 "tax_amount": tax_amt,
                 "line_total": line_total,
@@ -908,6 +927,9 @@ def get_party_transaction_edit_data(
             "section_title": _clean(ln.get("section_title")),
             "free_qty": float(ln.get("free_qty") or 0),
             "cess_pct": float(ln.get("cess_pct") or 0),
+            "batch_no": ln.get("batch_no") or "",
+            "expiry_date": ln.get("expiry_date") or "",
+            "serial_no": ln.get("serial_no") or "",
         }
         for ln in lines
     ]

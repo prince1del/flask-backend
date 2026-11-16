@@ -1201,6 +1201,9 @@ def ensure_hop_schema(db_path: str | Path) -> None:
         _ensure_column(conn, "hop_txn_lines", "free_qty", "REAL")       # free quantity given with the item
         _ensure_column(conn, "hop_txn_lines", "cess_pct", "REAL")       # additional cess on the line
         _ensure_column(conn, "hop_txn_lines", "cess_amount", "REAL")    # (inside tax_amount; split out in GST reports)
+        _ensure_column(conn, "hop_txn_lines", "batch_no", "TEXT")       # batch / lot no.
+        _ensure_column(conn, "hop_txn_lines", "expiry_date", "TEXT")    # YYYY-MM-DD
+        _ensure_column(conn, "hop_txn_lines", "serial_no", "TEXT")      # serial / IMEI (comma separated)
         _ensure_column(conn, "hop_bank_entries", "source", "TEXT")  # NULL manual | doc | cheque | loan | asset
         conn.executescript(
             """
