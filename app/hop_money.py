@@ -254,6 +254,18 @@ def _post_stock(conn, ws, txn: dict[str, Any]) -> None:
         if not ln.get("product_id"):
             conn.execute("UPDATE hop_txn_lines SET product_id=? WHERE id=?", (pid, int(ln["id"])))
         delta = sign * qty
+        if delta < 0:
+            # Settings → "When stock is not enough": block the sale.
+            try:
+                from app import hop_app_settings
+
+                if hop_app_settings.get(conn, ws, "short_stock") == "block":
+                    have = _f(conn.execute("SELECT stock_qty FROM hop_products WHERE id=?", (pid,)).fetchone()[0])
+                    if have + delta < -1e-9:
+                        raise ValueError(f"Only {have:g} {ln.get('unit') or ''} of {ln.get('item_name')} in stock "
+                                         "(Settings: don't allow the sale).")
+            except sqlite3.OperationalError:
+                pass
         conn.execute(
             """INSERT INTO hop_stock_journals (workspace_id, product_id, entry_date, qty_delta, reason, reference, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -319,6 +331,16 @@ def post_document(conn: sqlite3.Connection, ws: str, txn_id: int, payload: dict[
 
     # 1) What was paid / received now, and how.
     has_money_fields = any(k in payload for k in ("received_amount", "payment_mode", "payment_account_id"))
+    if ty == 1 and not is_update and not has_money_fields:
+        # Settings → "New sale invoice = fully received (cash sale)"
+        try:
+            from app import hop_app_settings
+
+            if hop_app_settings.get(conn, ws, "cash_sale_default"):
+                payload = {**payload, "received_amount": total, "payment_mode": "cash"}
+                has_money_fields = True
+        except sqlite3.OperationalError:
+            pass
     if ty in FULL_AMOUNT:
         amount = total
     elif ty in MONEY_IN | MONEY_OUT:
@@ -368,6 +390,20 @@ def post_document(conn: sqlite3.Connection, ws: str, txn_id: int, payload: dict[
                           cheque_date or (t.get("txn_date") or "")[:10], _now()))
     elif amount > EPS:
         _bank_entry(conn, ws, account_id, direction, amount, t.get("txn_date"), t, "doc", reference=ref)
+
+    # Settings → credit limit "don't allow the bill": enforced here too, not only as a warning.
+    if ty == 1 and not is_update and t.get("party_type") == "customer":
+        try:
+            from app import hop_settings
+
+            w = hop_settings.invoice_entry_warnings(conn, ws, {**payload, "txn_type": 1, "party_type": "customer",
+                                                               "party_id": t.get("party_id"), "exclude_txn_id": txn_id,
+                                                               "received_amount": amount})
+            blocked = next((x for x in w if x.get("code") == "credit_limit" and x.get("level") == "block"), None)
+            if blocked:
+                raise ValueError(blocked["message"])
+        except sqlite3.OperationalError:
+            pass
 
     # 2) Stock.
     _post_stock(conn, ws, t)

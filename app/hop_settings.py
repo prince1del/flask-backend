@@ -349,12 +349,35 @@ def invoice_entry_warnings(
                             for l in (payload.get("lines") or []) if isinstance(l, dict))
             this_bill = max(0.0, this_bill - _f(payload.get("received_amount")))
             if due_now + this_bill > limit + 0.5:
+                from app import hop_app_settings
+
+                block = hop_app_settings.get(conn, ws, "credit_limit_action") == "block"
                 warnings.append({
                     "code": "credit_limit",
-                    "level": "warn",
+                    "level": "block" if block else "warn",
                     "message": (f"{crow['company']}: credit limit ₹{limit:,.0f} will be crossed — already due "
                                 f"₹{due_now:,.0f}, this bill ₹{this_bill:,.0f}. Take payment first or raise the limit."),
                 })
+
+    # Settings → "When stock is not enough": warn while billing.
+    if txn_type in (1, 16):
+        from app import hop_app_settings
+
+        mode = hop_app_settings.get(conn, ws, "short_stock")
+        if mode in ("warn", "block"):
+            for ln in payload.get("lines") or []:
+                if not isinstance(ln, dict) or _f(ln.get("qty")) <= 0:
+                    continue
+                r = None
+                if _i(ln.get("product_id")):
+                    r = conn.execute("SELECT name, stock_qty FROM hop_products WHERE workspace_id=? AND id=?",
+                                     (ws, _i(ln.get("product_id")))).fetchone()
+                elif _s(ln.get("item_name")):
+                    r = conn.execute("SELECT name, stock_qty FROM hop_products WHERE workspace_id=? AND lower(trim(name))=lower(?)",
+                                     (ws, _s(ln.get("item_name")))).fetchone()
+                if r is not None and _f(r[1]) < _f(ln.get("qty")):
+                    warnings.append({"code": "short_stock", "level": "block" if mode == "block" else "warn",
+                                     "message": f"{r[0]}: only {_f(r[1]):g} in stock, bill has {_f(ln.get('qty')):g}."})
 
     for ln in payload.get("lines") or []:
         if not isinstance(ln, dict):

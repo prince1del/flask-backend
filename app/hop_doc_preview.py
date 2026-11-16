@@ -443,7 +443,7 @@ def build_txn_preview(
         txn_type=h.get("txn_type"),
     )
 
-    return {
+    return _apply_print_settings(conn, workspace_id, {
         "header": {
             "id": h.get("id"),
             "source_txn_id": src_id,
@@ -526,7 +526,78 @@ def build_txn_preview(
             if not lines
             else ""
         ),
-    }
+    })
+
+
+def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Settings → Print: hide amount in words / bank / signature / terms, add footer text;
+    composition scheme sale invoices are a "Bill of Supply"."""
+    try:
+        from app import hop_app_settings
+
+        s = hop_app_settings.get_all(conn, workspace_id)
+    except Exception:
+        return data
+    firm, totals = data.get("firm") or {}, data.get("totals") or {}
+    if not s.get("print_amount_words"):
+        totals["amount_in_words"] = ""
+    if not s.get("print_bank"):
+        for k in ("bank_name", "bank_account", "bank_ifsc", "bank_holder"):
+            firm[k] = ""
+    if not s.get("print_signature"):
+        firm["signature_url"] = ""
+    if not s.get("print_terms"):
+        data["terms"] = ""
+        data["delivery_terms"] = ""
+    data["footer"] = s.get("print_footer") or ""
+    header = data.get("header") or {}
+    if s.get("composition_scheme") and int(header.get("txn_type") or 0) == 1:
+        header["doc_title"] = "Bill of Supply"
+        header["composition_note"] = "Composition taxable person, not eligible to collect tax on supplies."
+    return data
+
+
+def _apply_line_settings(conn, workspace_id, txn_type, raw_lines, payload):
+    """Settings → Transaction "rates include GST" and Taxes "composition scheme" applied to typed lines."""
+    try:
+        from app import hop_app_settings
+
+        s = hop_app_settings.get_all(conn, workspace_id)
+    except Exception:
+        return raw_lines
+    inclusive = payload.get("rates_include_tax")
+    inclusive = s.get("tax_inclusive_rates") if inclusive is None else inclusive in (True, 1, "1", "true")
+    composition = bool(s.get("composition_scheme")) and int(txn_type) in (1, 21, 27, 83, 65, 30, 82)
+    if not inclusive and not composition:
+        return raw_lines
+    out = []
+    for ln in raw_lines or []:
+        if not isinstance(ln, dict):
+            out.append(ln)
+            continue
+        ln = dict(ln)
+        tax = float(ln.get("tax_pct") or 0)
+        if composition:
+            ln["tax_pct"] = 0  # composition dealers don't charge GST on sales
+        elif inclusive and tax > 0 and int(txn_type) not in (3, 4, 7, 81):
+            ln["rate"] = round(float(ln.get("rate") or 0) / (1 + tax / 100.0), 4)
+        out.append(ln)
+    return out
+
+
+def _apply_round_setting(conn, workspace_id, payload, sub_total, line_tax_total):
+    """Settings → Transaction "round off to nearest ₹1" when the user didn't type a round-off."""
+    if abs(float(payload.get("round_off") or 0)) > 0.0001:
+        return payload
+    try:
+        from app import hop_app_settings
+
+        if not hop_app_settings.get(conn, workspace_id, "auto_round_off"):
+            return payload
+    except Exception:
+        return payload
+    base = _finalize_manual_doc_totals(sub_total, line_tax_total, {**payload, "round_off": 0})["grand"]
+    return {**payload, "round_off": round(round(base) - base, 2)}
 
 
 def next_manual_source_txn_id(conn: sqlite3.Connection, workspace_id: str) -> int:
@@ -551,6 +622,14 @@ def next_manual_doc_number(
     from app.hop_doc_numbers import HOP_DOC_PREFIX_BY_TYPE, indian_fy_label
 
     prefix = HOP_DOC_PREFIX_BY_TYPE.get(int(txn_type))
+    try:
+        from app import hop_app_settings
+
+        custom = hop_app_settings.get(conn, workspace_id, f"prefix_{30 if int(txn_type) == 82 else int(txn_type)}")
+        if custom:
+            prefix = str(custom)
+    except Exception:
+        pass
     fy = indian_fy_label(txn_date)
     if not prefix or not fy:
         return str(int(txn_type))
@@ -851,11 +930,13 @@ def create_manual_party_document(
     if not isinstance(raw_lines, list) or not raw_lines:
         raise ValueError("At least one line item is required")
 
-    computed_lines, sub_total, line_tax_total = _parse_manual_doc_lines(raw_lines)
+    computed_lines, sub_total, line_tax_total = _parse_manual_doc_lines(
+        _apply_line_settings(conn, workspace_id, txn_type, raw_lines, payload))
     if not computed_lines:
         raise ValueError("At least one valid line item is required")
 
-    totals = _finalize_manual_doc_totals(sub_total, line_tax_total, payload)
+    totals = _finalize_manual_doc_totals(sub_total, line_tax_total, _apply_round_setting(
+        conn, workspace_id, payload, sub_total, line_tax_total))
     shipping = totals["shipping"]
     shipping_tax_pct = totals["shipping_tax_pct"]
     shipping_tax_amount = totals["shipping_tax_amount"]
@@ -928,8 +1009,11 @@ def create_manual_party_document(
     if not due_date and meta.get("balance_due") and party_id and party_type in ("customer", "vendor"):
         from app import hop_settings
 
+        from app import hop_app_settings as _set
+
         due_date = hop_settings.compute_due_date(
             txn_date, hop_settings.party_credit_days(conn, workspace_id, party_type, party_id)
+            or (int(_set.get(conn, workspace_id, "default_due_days") or 0) or None)
         )
     if due_date:
         conn.execute("UPDATE hop_party_transactions SET due_date=? WHERE id=?", (due_date, party_txn_id))
@@ -1015,11 +1099,13 @@ def update_manual_party_document(
         raw_lines = [{"item_name": default_label, "qty": 1, "unit": "NOS", "rate": amount, "tax_pct": 0}]
     if not isinstance(raw_lines, list) or not raw_lines:
         raise ValueError("At least one line item is required")
-    computed_lines, sub_total, line_tax_total = _parse_manual_doc_lines(raw_lines)
+    computed_lines, sub_total, line_tax_total = _parse_manual_doc_lines(
+        _apply_line_settings(conn, workspace_id, txn_type, raw_lines, payload))
     if not computed_lines:
         raise ValueError("At least one valid line item is required")
 
-    totals = _finalize_manual_doc_totals(sub_total, line_tax_total, payload)
+    totals = _finalize_manual_doc_totals(sub_total, line_tax_total, _apply_round_setting(
+        conn, workspace_id, payload, sub_total, line_tax_total))
     shipping = totals["shipping"]
     shipping_tax_pct = totals["shipping_tax_pct"]
     shipping_tax_amount = totals["shipping_tax_amount"]

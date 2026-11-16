@@ -2764,6 +2764,24 @@ def gst_refs(txn_id: int):
     return jsonify({"success": True, "data": out})
 
 
+@hop_bp.route("/app-settings", methods=["GET", "PUT", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def app_settings():
+    """Settings screen (web + phone are built from the same list). PUT/POST {key: value, …}."""
+    ensure_hop_schema(_db_path())
+    from app import hop_app_settings
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method != "GET":
+                hop_app_settings.save(conn, _ws(), _payload())
+            data = hop_app_settings.payload(conn, _ws())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/books", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
