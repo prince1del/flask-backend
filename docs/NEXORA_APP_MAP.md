@@ -522,7 +522,29 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
     `app/services/hop_ai.py`, Gemini, daily AI limit); Ask Nexora tool
     `get_hop_books` (cash/bank, receivables, payables, unpaid bills, expenses).
   - Web: `app/static/hop_money_web.js` (payment panel, Payment-In/Out & Expense
-    forms, Cash & Bank screen, Convert buttons). Phone: Phase 4.
+    forms, Cash & Bank screen, Convert buttons, reconcile, share). Phone: `HopDocumentCreateScreen`,
+    `HopModuleHost` (Cash & Bank, reconcile), `ui/hop/*` (reports, settings, GST files, share, reconcile).
+- **Settings** (`app/hop_app_settings.py`, `GET/PUT /app-settings`): one list drives the web
+  and phone Settings screens; every setting changes real behaviour (prefixes, round-off,
+  GST-inclusive rates, due days, cash sale, short stock, composition, print options, party
+  groups, credit limit, Sharing: UPI ID + WhatsApp templates).
+- **Bill extras** (2026-11-16): `payload.charges` [{name, amount, tax_pct}] become lines with
+  `is_charge=1` (no stock, kept out of item reports); line `free_qty` moves stock; header
+  `po_number`, `po_date`, `txn_time`, `tcs_pct` → `tcs_amount` (sale: "TCS payable"
+  liability; purchase: "TCS receivable" asset).
+- **Item extras** (`app/hop_items.py`): `item_type` product|service (service never moves
+  stock), `mrp`, `wholesale_price` + `wholesale_min_qty` (suggested by `/suggest-rate?qty=`),
+  `alt_unit` + `alt_unit_factor` (a line in the 2nd unit moves qty × factor), `barcode`
+  (`GET /products/by-barcode?code=`), `custom_fields` JSON, `checks` warnings.
+- **Other Income** (txn type 29): income categories (`/expense-categories?kind=income`),
+  money in, P&L "other income", report `other_income`.
+- **Bank reconciliation** (`app/hop_reconcile.py`): `hop_bank_entries.cleared_on`;
+  `GET/POST /bank-accounts/<id>/reconcile`, `POST …/reconcile/match` (statement CSV →
+  suggested ticks + hints). Ticks survive editing the bill.
+- **Sharing** (`app/hop_share.py`): `GET /party-transactions/<id>/share?kind=bill|reminder`
+  → template text, party WhatsApp number, `wa.me` link, UPI link; preview gets `upi`.
+- Ask Nexora `get_hop_books` topics also: profit_loss, balance_sheet, day_book,
+  party_statement, gst, items, other_income (cash_bank shows reconciliation).
 - Tables: `hop_*` (+ `hop_bank_*`, `hop_stock_journals`, `hop_accounts`,
   `hop_journal_lines`, `hop_payment_links`, `hop_cheques`,
   `hop_expense_categories`). Role: `hop_admin`.
