@@ -1894,9 +1894,22 @@ def party_transactions_collection():
     if request.method == "POST":
         from app.hop_doc_preview import create_manual_party_document
 
+        payload = _payload()
+        client_ref = str(payload.get("client_ref") or "").strip()[:64]
         try:
             with hop_db.connect(_db_path()) as conn:
-                row = create_manual_party_document(conn, _ws(), _payload())
+                if client_ref:
+                    # Offline bill sent again (phone lost the answer): return the one already saved.
+                    old = conn.execute("SELECT id, txn_number, source_txn_id FROM hop_party_transactions "
+                                       "WHERE workspace_id=? AND client_ref=?", (_ws(), client_ref)).fetchone()
+                    if old:
+                        return jsonify({"success": True, "data": {"party_txn_id": old[0], "txn_number": old[1],
+                                                                  "source_txn_id": old[2], "already_saved": True}})
+                row = create_manual_party_document(conn, _ws(), payload)
+                if client_ref and row.get("party_txn_id"):
+                    conn.execute("UPDATE hop_party_transactions SET client_ref=? WHERE workspace_id=? AND id=?",
+                                 (client_ref, _ws(), int(row["party_txn_id"])))
+                    conn.commit()
         except ValueError as exc:
             return _json_error(str(exc))
         return jsonify({"success": True, "data": row}), 201

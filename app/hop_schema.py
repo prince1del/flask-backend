@@ -1194,6 +1194,7 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("tcs_amount", "REAL"),
             ("tds_pct", "REAL"),                # TDS deducted on the bill (we on a purchase / customer on a sale)
             ("tds_amount", "REAL"),
+            ("client_ref", "TEXT"),             # phone's id for a bill made offline (no double save on re-sync)
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
