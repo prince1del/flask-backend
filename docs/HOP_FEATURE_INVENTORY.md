@@ -20,12 +20,12 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 ### Transaction
 | Setting | State |
 |---|---|
-| Document number prefix per type (Invoice, Estimate, Order, Challan, Bill…) | ❌ (fixed HOP/FY/n) |
-| Auto round-off of total (nearest ₹1) | ❌ (manual round-off only) |
-| Rates include GST (tax-inclusive entry) | ❌ |
-| Default payment terms / due days | 🟡 (party credit days only) |
+| Document number prefix per type (Invoice, Estimate, Order, Challan, Proforma, Receipt) | ✅ Settings |
+| Auto round-off of total (nearest ₹1) | ✅ Settings |
+| Rates include GST (tax-inclusive entry) | ✅ Settings |
+| Default payment terms / due days | ✅ Settings (party credit days first) |
 | Show last sale / purchase price while billing | ✅ (rate suggestion) |
-| Cash sale by default (fully received) | ❌ |
+| Cash sale by default (fully received) | ✅ Settings |
 | Additional charges on bills (packing, freight…) | 🟡 (shipping only) |
 | Discount on bill + per item | ✅ |
 | Free quantity, item description on bill | 🟡 (description yes, free qty no) |
@@ -34,14 +34,14 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Estimate / Sale order / Challan / Proforma / Purchase order on/off | ✅ (all available) |
 | Link payment to invoices | ✅ |
 | Warn on duplicate bill number | ✅ |
-| Allow / block sale when stock is short | ❌ |
+| Allow / block sale when stock is short | ✅ Settings (warn / block, enforced on server) |
 
 ### Taxes & GST
 | Setting | State |
 |---|---|
 | GST on/off, HSN/SAC on items | ✅ |
 | Place of supply, reverse charge | ✅ (Night 2) |
-| Composition scheme | ❌ |
+| Composition scheme | ✅ Settings (Bill of Supply, no GST on sales) |
 | Additional cess | ❌ |
 | TCS on sales / TDS on purchases | 🟡 (TDS on commission only) |
 | E-Invoice / E-Way Bill | 🟡 (JSON files; direct portal API needs owner's GSP account) |
@@ -51,7 +51,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 |---|---|
 | Print theme / colour | ✅ (Cursor) |
 | Paper size (A4 / A5 / thermal 2"/3") | ❌ |
-| Show/hide: amount in words, signature, bank details, terms, HSN column, tax breakup | 🟡 (always shown) |
+| Show/hide: amount in words, signature, bank details, terms + footer text | ✅ Settings (HSN/tax breakup columns ❌) |
 | Copies (Original / Duplicate / Triplicate) | ❌ |
 | Header/footer text, page margins | ❌ |
 
@@ -65,9 +65,9 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 ### Party
 | Setting | State |
 |---|---|
-| Party groups (list on server) | 🟡 (group saved on customer; list only in browser) |
+| Party groups (list on server) | 🟡 list in Settings; party form still reads browser list |
 | Shipping address | ✅ |
-| Credit limit warning | ✅ (Night 2) |
+| Credit limit warn / block | ✅ (block enforced on server) |
 | Party custom fields | ✅ (additional fields) |
 | Party-wise item rates | ✅ (Cursor) |
 
@@ -115,3 +115,8 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 3. Other income, bank reconciliation, payment link/UPI QR, WhatsApp share.
 4. Barcode (+ phone scanner), batch/expiry/serial, godowns.
 5. Excel import / bulk update, staff roles + audit trail, multiple firms, passcode, backup/restore.
+
+## Changelog
+- 2026-11-16: Settings system (server + web + phone, same list): prefixes, round-off, GST-inclusive
+  rates, due days, cash sale, short stock, composition, print options, party groups, credit limit.
+  Place of supply + reverse charge. Guard: HoP and BD inboxes separate.
