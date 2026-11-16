@@ -25,6 +25,8 @@ def test_upi_and_whatsapp(tmp_path: Path):
         S.save(conn, WS, {"upi_id": "testshop@okbank", "upi_name": "Test Shop"})
         pv = build_txn_preview(conn, WS, party_txn_id=inv["party_txn_id"])
         assert pv["upi"]["link"].startswith("upi://pay?pa=testshop%40okbank") and "am=1000.00" in pv["upi"]["link"]
+        import base64
+        assert base64.b64decode(pv["upi"]["qr_png"])[1:4] == b"PNG"
         sh = hop_share.share_payload(conn, WS, inv["party_txn_id"])
         assert sh["phone"] == "919876543210" and sh["whatsapp_url"].startswith("https://wa.me/919876543210?text=")
         assert "Hotel W" in sh["text"] and "upi://pay" in sh["text"]

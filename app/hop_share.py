@@ -69,8 +69,23 @@ def bill_upi(conn: sqlite3.Connection, ws: str, txn: dict[str, Any]) -> dict[str
     if due <= 0.009:
         return None
     payee = s.get("upi_name") or _firm(conn, ws).get("firm_name") or ""
-    return {"upi_id": upi_id, "amount": round(due, 2),
-            "link": upi_link(upi_id, payee, due, f"{txn.get('txn_number') or ''}".strip())}
+    link = upi_link(upi_id, payee, due, f"{txn.get('txn_number') or ''}".strip())
+    return {"upi_id": upi_id, "amount": round(due, 2), "link": link, "qr_png": qr_png_base64(link)}
+
+
+def qr_png_base64(text: str) -> str | None:
+    """QR picture (PNG, base64) for the UPI link — any UPI app scans it with the amount filled."""
+    try:
+        import base64
+        import io
+
+        import segno
+
+        buf = io.BytesIO()
+        segno.make(text, error="m").save(buf, kind="png", scale=6, border=2)
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:  # library missing or text too long: the link still works
+        return None
 
 
 def share_payload(conn: sqlite3.Connection, ws: str, party_txn_id: int, kind: str = "bill") -> dict[str, Any]:
