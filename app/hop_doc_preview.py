@@ -566,6 +566,11 @@ def _save_header_extras(conn, workspace_id, txn_id, payload, tcs_pct, tcs_amount
             vals.append(_clean(payload.get(k))[:40] or None)
     conn.execute(f"UPDATE hop_party_transactions SET {', '.join(sets)} WHERE workspace_id=? AND id=?",
                  (*vals, workspace_id, int(txn_id)))
+    if "godown_id" in payload or not is_update:
+        from app import hop_godowns
+
+        conn.execute("UPDATE hop_party_transactions SET godown_id=? WHERE workspace_id=? AND id=?",
+                     (hop_godowns.check(conn, workspace_id, payload.get("godown_id")), workspace_id, int(txn_id)))
     # TDS: deducted on the value before GST (purchase bill = we deduct; sale invoice = customer deducts).
     t = conn.execute("SELECT txn_type, source_txn_id, discount_amount FROM hop_party_transactions WHERE workspace_id=? AND id=?",
                      (workspace_id, int(txn_id))).fetchone()
@@ -949,6 +954,7 @@ def get_party_transaction_edit_data(
         "txn_time": h.get("txn_time"),
         "tcs_pct": h.get("tcs_pct"),
         "tds_pct": h.get("tds_pct"),
+        "godown_id": h.get("godown_id"),
         "reverse_charge": bool(h.get("reverse_charge")),
         "converted_to_txn_id": h.get("converted_to_txn_id"),
     }

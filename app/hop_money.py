@@ -289,11 +289,12 @@ def _post_stock(conn, ws, txn: dict[str, Any]) -> None:
             except sqlite3.OperationalError:
                 pass
         conn.execute(
-            """INSERT INTO hop_stock_journals (workspace_id, product_id, entry_date, qty_delta, reason, reference, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO hop_stock_journals (workspace_id, product_id, entry_date, qty_delta, reason, reference, created_at,
+                                               godown_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (ws, pid, (txn.get("txn_date") or _now())[:10], delta,
              f"{LABELS.get(int(txn['txn_type']), 'Document')} {txn.get('txn_number') or ''}".strip(),
-             f"doc:{int(txn['id'])}", _now()))
+             f"doc:{int(txn['id'])}", _now(), txn.get("godown_id") or None))
         conn.execute("UPDATE hop_products SET stock_qty=COALESCE(stock_qty,0)+?, updated_at=? WHERE workspace_id=? AND id=?",
                      (delta, _now(), ws, pid))
 

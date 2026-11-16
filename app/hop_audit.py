@@ -19,7 +19,7 @@ ENTITY = {
     "party-transactions": "Document", "products": "Item", "customers": "Party", "vendors": "Vendor",
     "bank-accounts": "Bank account", "bank-entries": "Bank entry", "cheques": "Cheque", "app-settings": "Settings",
     "expense-categories": "Category", "import": "Import", "loans": "Loan", "fixed-assets": "Fixed asset",
-    "stock": "Stock", "firm-profile": "Company profile", "financial-year": "Financial year", "recycle-bin": "Recycle bin",
+    "stock": "Stock", "godowns": "Godown", "firm-profile": "Company profile", "financial-year": "Financial year", "recycle-bin": "Recycle bin",
 }
 SAFE_KEYS = ("txn_type", "txn_number", "txn_date", "total_amount", "amount", "received_amount", "name", "company",
              "party_name", "party_id", "customer_id", "vendor_id", "selling_price", "purchase_price", "stock_qty",

@@ -183,6 +183,18 @@ def read_bill(conn: sqlite3.Connection, ws: str, data: bytes, mime: str, *, user
 
 # ── Ask Nexora: get_hop_books ────────────────────────────────────────────────
 
+def _godown_summary(conn, ws, q: str = "") -> list[dict[str, Any]]:
+    from app import hop_godowns
+
+    gs = hop_godowns.list_godowns(conn, ws)
+    if len(gs) < 2:
+        return []
+    names = {g["id"]: g["name"] for g in gs}
+    stock = [s for s in hop_godowns.stock_by_godown(conn, ws) if not q or q.lower() in s["name"].lower()][:20]
+    return [{"godown": g["name"], "items": g["items"], "stock_value": g["stock_value"]} for g in gs] + [
+        {"item": s["name"], "by_godown": {names.get(k, k): v for k, v in s["by_godown"].items() if v}} for s in stock]
+
+
 def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str = "",
                  extra: dict[str, Any] | None = None) -> dict[str, Any]:
     from app import hop_books, hop_money
@@ -272,7 +284,8 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         return {"items": [slim(r) for r in rows[:25]], "count": len(rows),
                 "low_or_negative_stock": [{"name": r["name"], "stock": r.get("stock_qty")} for r in goods
                                           if float(r.get("stock_qty") or 0) <= 0][:15],
-                "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15]}
+                "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15],
+                "godowns": _godown_summary(conn, ws, q)}
     if what == "audit":
         from app import hop_audit
 

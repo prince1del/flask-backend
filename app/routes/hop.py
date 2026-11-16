@@ -2552,6 +2552,43 @@ def hop_backup_download():
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
+@hop_bp.route("/godowns", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_godowns_route():
+    """GET: godowns with item count + stock value, and stock per godown. POST {name, address}: add one."""
+    ensure_hop_schema(_db_path())
+    from app import hop_godowns
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                b = _payload()
+                return jsonify({"success": True, "data": hop_godowns.create(conn, _ws(), b.get("name"), b.get("address") or "")}), 201
+            data = {"godowns": hop_godowns.list_godowns(conn, _ws()), "stock": hop_godowns.stock_by_godown(conn, _ws())}
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/godowns/transfer", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_godown_transfer():
+    ensure_hop_schema(_db_path())
+    from app import hop_godowns
+
+    b = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_godowns.transfer(conn, _ws(), int(b.get("product_id") or 0), int(b.get("from_godown_id") or 0),
+                                        int(b.get("to_godown_id") or 0), float(b.get("qty") or 0), b.get("date") or "",
+                                        b.get("note") or "")
+    except (ValueError, TypeError) as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/suggest-rate", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

@@ -390,6 +390,17 @@ def invoice_entry_warnings(
                 if need is not None and _f(r[1]) < need:
                     warnings.append({"code": "short_stock", "level": "block" if mode == "block" else "warn",
                                      "message": f"{r[0]}: only {_f(r[1]):g} in stock, bill needs {need:g}."})
+                elif need is not None and payload.get("godown_id"):
+                    from app import hop_godowns
+
+                    gid = hop_godowns.check(conn, ws, payload.get("godown_id"))
+                    if gid:
+                        row = hop_godowns.stock_by_godown(conn, ws, int(r[2]))
+                        have = row[0]["by_godown"].get(gid, 0.0) if row else 0.0
+                        if have < need:
+                            warnings.append({"code": "short_stock_godown", "level": "warn",
+                                             "message": f"{r[0]}: only {have:g} in this godown (bill needs {need:g}). "
+                                                        "Move stock first or pick another godown."})
 
     for ln in payload.get("lines") or []:
         if not isinstance(ln, dict):
