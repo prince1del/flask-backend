@@ -264,6 +264,10 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                 "low_or_negative_stock": [{"name": r["name"], "stock": r.get("stock_qty")} for r in goods
                                           if float(r.get("stock_qty") or 0) <= 0][:15],
                 "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15]}
+    if what == "other_income":
+        cats = hop_money.list_expense_categories(conn, ws, "income")
+        return {"by_category": [{"category": c["name"], "total": c["total"]} for c in cats if c["total"]],
+                "total": round(sum(float(c["total"] or 0) for c in cats), 2)}
     if what == "expenses":
         cats = hop_money.list_expense_categories(conn, ws)
         return {"by_category": [{"category": c["name"], "total": c["total"]} for c in cats if c["total"]],

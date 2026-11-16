@@ -2331,9 +2331,10 @@ def expense_categories():
     try:
         with hop_db.connect(_db_path()) as conn:
             if request.method == "POST":
+                body = _payload()
                 return jsonify({"success": True, "data": hop_money.create_expense_category(
-                    conn, _ws(), _payload().get("name"))}), 201
-            rows = hop_money.list_expense_categories(conn, _ws())
+                    conn, _ws(), body.get("name"), body.get("kind") or request.args.get("kind") or "expense")}), 201
+            rows = hop_money.list_expense_categories(conn, _ws(), request.args.get("kind") or "expense")
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": {"categories": rows}})

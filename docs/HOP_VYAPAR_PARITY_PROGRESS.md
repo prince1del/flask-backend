@@ -95,6 +95,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Phone | Same AI buttons on the phone screens | ⏳ Phase 4 |
 | Bill extras (charges, free qty, TCS) | ✨ Bill reader fills charges, free qty, TCS; total-mismatch check counts them | ✅ 2026-11-16 |
 | Items (service, MRP, wholesale, 2nd unit, barcode) | Ask Nexora `items` (stock, barcode lookup, item problems); rule checks on the item form | ✅ 2026-11-16 |
+| Other income | Ask Nexora `other_income`; P&L insights include it | ✅ 2026-11-16 |
 | Rest of NEXORA (BD side) | NEXORA Guard plan (rules + AI explain, issues inbox, daily digest) — agreed earlier, after tracking | ⏳ after HoP phases |
 
 ## How to deploy (for whoever continues)

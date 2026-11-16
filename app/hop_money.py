@@ -25,9 +25,9 @@ from typing import Any
 
 # Which documents move money, and which way (amount comes from received_amount
 # for invoices/bills/returns, from the total for payments and expenses).
-MONEY_IN = {1, 3, 16}      # Sale Invoice, Payment-In, Purchase Return
+MONEY_IN = {1, 3, 16, 29}  # Sale Invoice, Payment-In, Purchase Return, Other Income
 MONEY_OUT = {2, 4, 7, 21}  # Purchase Bill, Payment-Out, Expense, Sale Return
-FULL_AMOUNT = {3, 4, 7}    # the whole document is the payment
+FULL_AMOUNT = {3, 4, 7, 29}  # the whole document is the payment
 BILLS = {1, 2, 16, 21}     # documents with a balance that payments can clear
 PAYMENT_FOR = {3: 1, 4: 2}  # Payment-In clears Sale Invoices, Payment-Out clears Purchase Bills
 STOCK_SIGN = {1: -1, 16: -1, 2: 1, 21: 1}
@@ -42,7 +42,7 @@ CONVERT_TO: dict[int, tuple[int, ...]] = {
     66: (2,),          # Purchase Order → Purchase Bill
 }
 LABELS = {
-    1: "Sale Invoice", 2: "Purchase Bill", 3: "Payment-In", 4: "Payment-Out", 7: "Expense",
+    1: "Sale Invoice", 2: "Purchase Bill", 3: "Payment-In", 4: "Payment-Out", 7: "Expense", 29: "Other Income",
     16: "Purchase Return", 21: "Sale Return", 27: "Estimate", 30: "Delivery Challan",
     65: "Sale Order", 66: "Purchase Order", 81: "Journal Entry", 82: "Delivery Challan",
     83: "Proforma Invoice",
@@ -577,30 +577,44 @@ def convert_draft(conn: sqlite3.Connection, ws: str, txn_id: int, to_type: int) 
 
 # ── Expense categories ───────────────────────────────────────────────────────
 
+DEFAULT_INCOME_CATEGORIES = ("Interest received", "Rent received", "Commission received", "Scrap sale",
+                             "Discount received", "Other income")
 DEFAULT_EXPENSE_CATEGORIES = ("Rent", "Salary", "Electricity", "Transport", "Office supplies",
                               "Telephone & Internet", "Repairs", "Commission", "Petrol", "Other")
 
 
-def list_expense_categories(conn: sqlite3.Connection, ws: str) -> list[dict[str, Any]]:
-    if not conn.execute("SELECT 1 FROM hop_expense_categories WHERE workspace_id=? LIMIT 1", (ws,)).fetchone():
-        for n in DEFAULT_EXPENSE_CATEGORIES:
-            conn.execute("INSERT OR IGNORE INTO hop_expense_categories (workspace_id, name, created_at) VALUES (?, ?, ?)",
-                         (ws, n, _now()))
+def _kind(kind: Any) -> str:
+    k = _s(kind).lower() or "expense"
+    if k not in ("expense", "income"):
+        raise ValueError("Category kind must be expense or income")
+    return k
+
+
+def list_expense_categories(conn: sqlite3.Connection, ws: str, kind: str = "expense") -> list[dict[str, Any]]:
+    """Expense categories (Rent, Salary…) or, with kind='income', other-income categories."""
+    kind = _kind(kind)
+    where = "COALESCE(kind,'expense')=?"
+    if not conn.execute(f"SELECT 1 FROM hop_expense_categories WHERE workspace_id=? AND {where} LIMIT 1", (ws, kind)).fetchone():
+        for n in (DEFAULT_EXPENSE_CATEGORIES if kind == "expense" else DEFAULT_INCOME_CATEGORIES):
+            conn.execute("INSERT OR IGNORE INTO hop_expense_categories (workspace_id, name, created_at, kind) VALUES (?, ?, ?, ?)",
+                         (ws, n, _now(), kind))
         conn.commit()
+    ty = 7 if kind == "expense" else 29
     rows = conn.execute(
-        """SELECT c.id, c.name,
+        f"""SELECT c.id, c.name, COALESCE(c.kind,'expense') AS kind,
                   COALESCE((SELECT SUM(t.total_amount) FROM hop_party_transactions t
-                            WHERE (t.deleted_at IS NULL OR trim(t.deleted_at)='') AND t.workspace_id=c.workspace_id AND t.txn_type=7 AND t.expense_category_id=c.id), 0) AS total
-           FROM hop_expense_categories c WHERE c.workspace_id=? ORDER BY lower(c.name)""", (ws,)).fetchall()
+                            WHERE (t.deleted_at IS NULL OR trim(t.deleted_at)='') AND t.workspace_id=c.workspace_id AND t.txn_type={ty} AND t.expense_category_id=c.id), 0) AS total
+           FROM hop_expense_categories c WHERE c.workspace_id=? AND {where} ORDER BY lower(c.name)""", (ws, kind)).fetchall()
     return [dict(r) for r in rows]
 
 
-def create_expense_category(conn: sqlite3.Connection, ws: str, name: str) -> dict[str, Any]:
+def create_expense_category(conn: sqlite3.Connection, ws: str, name: str, kind: str = "expense") -> dict[str, Any]:
     name = _s(name)[:60]
+    kind = _kind(kind)
     if not name:
         raise ValueError("Category name is required")
-    conn.execute("INSERT OR IGNORE INTO hop_expense_categories (workspace_id, name, created_at) VALUES (?, ?, ?)",
-                 (ws, name, _now()))
+    conn.execute("INSERT OR IGNORE INTO hop_expense_categories (workspace_id, name, created_at, kind) VALUES (?, ?, ?, ?)",
+                 (ws, name, _now(), kind))
     conn.commit()
     r = conn.execute("SELECT id, name FROM hop_expense_categories WHERE workspace_id=? AND name=?", (ws, name)).fetchone()
     return dict(r)

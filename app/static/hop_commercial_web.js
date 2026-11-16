@@ -674,6 +674,7 @@
     2: { title: 'Purchase Bill', view: 'purchase_bills', party: 'vendor', label: 'Purchase Bill' },
     4: { title: 'Payment-Out', view: 'purchase_payment_out', party: 'vendor', label: 'Payment-Out' },
     7: { title: 'Expense', view: 'purchase_expenses', party: 'vendor', label: 'Expense' },
+    29: { title: 'Other Income', view: 'other_income', party: 'customer', label: 'Other Income' },
     66: { title: 'Purchase Order', view: 'purchase_orders', party: 'vendor', label: 'Purchase Order' },
     16: { title: 'Purchase Return / Dr. Note', view: 'purchase_returns', party: 'vendor', label: 'Purchase Return / Debit Note' },
     81: { title: 'Journal Entry', view: 'journal_entries', party: 'customer', label: 'Journal Entry' },

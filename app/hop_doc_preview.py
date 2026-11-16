@@ -812,6 +812,7 @@ MANUAL_TXN_META: dict[int, dict[str, Any]] = {
     66: {"label": "Purchase Order", "party_kind": "vendor"},
     16: {"label": "Purchase Return / Debit Note", "party_kind": "vendor"},
     81: {"label": "Journal Entry", "party_kind": "either", "payment": True},
+    29: {"label": "Other Income", "party_kind": "either", "payment": True},
 }
 MANUAL_TXN_TYPES = frozenset(MANUAL_TXN_META)
 
@@ -947,14 +948,14 @@ def create_manual_party_document(
     party_id = int(payload.get("party_id") or payload.get("customer_id") or payload.get("vendor_id") or 0)
     from app import hop_money
 
-    category = hop_money.expense_category(conn, workspace_id, payload.get("expense_category_id")) if txn_type == 7 else None
-    if txn_type == 7 and payload.get("expense_category_id") and not category:
-        raise ValueError("Expense category not found")
+    category = hop_money.expense_category(conn, workspace_id, payload.get("expense_category_id")) if txn_type in (7, 29) else None
+    if txn_type in (7, 29) and payload.get("expense_category_id") and not category:
+        raise ValueError("Category not found")
     if not party_id and category:
         # Vyapar-style expense: a category (Rent, Salary…), no party needed.
         party_type, party = "expense", {"company": category["name"]}
     elif not party_id:
-        raise ValueError("Choose a party" + (" or an expense category" if txn_type == 7 else ""))
+        raise ValueError("Choose a party" + (" or a category" if txn_type in (7, 29) else ""))
     elif party_type == "vendor":
         party = get_vendor(conn, workspace_id, party_id)
         if not party:
@@ -1130,13 +1131,13 @@ def update_manual_party_document(
     party_type = _clean(payload.get("party_type") or h.get("party_type")).lower() or "customer"
     party_id = int(payload.get("party_id") or payload.get("customer_id") or payload.get("vendor_id") or h.get("party_id") or 0)
     cat_id = payload.get("expense_category_id") if "expense_category_id" in payload else h.get("expense_category_id")
-    category = hop_money.expense_category(conn, workspace_id, cat_id) if txn_type == 7 else None
-    if txn_type == 7 and "party_id" in payload and not payload.get("party_id") and category:
+    category = hop_money.expense_category(conn, workspace_id, cat_id) if txn_type in (7, 29) else None
+    if txn_type in (7, 29) and "party_id" in payload and not payload.get("party_id") and category:
         party_id = 0
     if not party_id and category:
         party_type, party = "expense", {"company": category["name"]}
     elif not party_id:
-        raise ValueError("Choose a party" + (" or an expense category" if txn_type == 7 else ""))
+        raise ValueError("Choose a party" + (" or a category" if txn_type in (7, 29) else ""))
     elif party_type == "vendor":
         party = get_vendor(conn, workspace_id, party_id)
         if not party:

@@ -90,7 +90,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Sales: invoice, estimate, proforma, order, challan, return, payment-in, convert | ✅ |
 | Purchase: bill, order, return, payment-out, expense | ✅ |
 | Cash & Bank, cheques, transfers, loans, fixed assets | ✅ |
-| Other income | ❌ |
+| Other income | ✅ (own categories; money in; shown in P&L; Other Income report) |
 | Bank reconciliation | ❌ |
 | 32 reports + AI insights | ✅ |
 | GSTR-1/2/3B/9, HSN | ✅ |
@@ -126,3 +126,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Items — service items, MRP, wholesale price (suggested at the minimum qty), 2nd unit
   with conversion, barcode (+ lookup), custom fields, item checks (above MRP, wholesale below cost…).
   Phone + web item forms; unit + free qty on phone bill lines. Ask Nexora: "items" topic.
+- 2026-11-16: Other Income (rent received, interest, scrap sale…) — income categories, money into
+  Cash/Bank, P&L "other income", report, Ask Nexora topic. Web menu + phone drawer.

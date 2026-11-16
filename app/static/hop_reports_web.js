@@ -7,7 +7,7 @@
 
   const GROUPS = [
     ['Accounts', ['profit_loss', 'balance_sheet', 'trial_balance', 'cash_flow']],
-    ['Transactions', ['day_book', 'all_transactions', 'sale_report', 'purchase_report', 'expense_report', 'expense_items', 'bill_profit', 'discount_report', 'sale_orders', 'purchase_orders']],
+    ['Transactions', ['day_book', 'all_transactions', 'sale_report', 'purchase_report', 'expense_report', 'other_income', 'expense_items', 'bill_profit', 'discount_report', 'sale_orders', 'purchase_orders']],
     ['Parties', ['party_statement', 'outstanding', 'party_pl', 'party_item', 'group_sale', 'group_purchase']],
     ['Items & stock', ['stock_summary', 'low_stock', 'stock_movement', 'item_report', 'item_pl', 'category_report']],
     ['GST', ['gstr1', 'gstr2', 'gstr3b', 'gstr9', 'hsn_sale', 'hsn_purchase']],
@@ -17,7 +17,7 @@
     day_book: 'Day Book', all_transactions: 'All Transactions', party_statement: 'Party Statement',
     outstanding: 'Party-wise Outstanding', sale_report: 'Sale Report', purchase_report: 'Purchase Report',
     item_report: 'Item-wise Report', stock_summary: 'Stock Summary', low_stock: 'Low Stock',
-    stock_movement: 'Stock Movement', bill_profit: 'Bill-wise Profit', expense_report: 'Expense Report',
+    stock_movement: 'Stock Movement', bill_profit: 'Bill-wise Profit', expense_report: 'Expense Report', other_income: 'Other Income',
     gstr1: 'GSTR-1', gstr2: 'GSTR-2', gstr3b: 'GSTR-3B', hsn_sale: 'HSN Summary (Sales)', hsn_purchase: 'HSN Summary (Purchases)',
     party_pl: 'Party-wise Profit & Loss', item_pl: 'Item-wise Profit & Loss', party_item: 'Party Report by Item',
     group_sale: 'Sale by Party Group', group_purchase: 'Purchase by Party Group', category_report: 'Item Category Report',
@@ -26,7 +26,7 @@
   };
   const AS_OF = new Set(['trial_balance', 'balance_sheet', 'outstanding']);
   const NO_DATES = new Set(['stock_summary', 'low_stock']);
-  const AI_OK = new Set(['profit_loss', 'balance_sheet', 'cash_flow', 'outstanding', 'expense_report', 'bill_profit', 'sale_report', 'gstr3b',
+  const AI_OK = new Set(['profit_loss', 'balance_sheet', 'cash_flow', 'outstanding', 'expense_report', 'other_income', 'bill_profit', 'sale_report', 'gstr3b',
     'party_pl', 'item_pl', 'category_report', 'discount_report', 'sale_orders', 'gstr9']);
 
   const esc = (v) => (typeof foEscapeText === 'function' ? foEscapeText(v) : String(v ?? ''));
@@ -85,6 +85,8 @@
       ['Less: Purchase returns', -d.purchase_returns, { indent: true }], ['Less: Closing stock', -d.closing_stock, { indent: true }],
       ['Cost of goods sold', d.cost_of_goods_sold, { bold: true }],
       ['Gross profit', d.gross_profit, { bold: true, tone: d.gross_profit < 0 ? 'neg' : 'pos' }],
+      ...(d.other_income || []).map((e) => [`Other income: ${e.category}`, e.amount, { indent: true }]),
+      ...((d.other_income || []).length ? [['Total other income', d.total_other_income, { bold: true }]] : []),
       ...d.expenses.map((e) => [`Expense: ${e.category}`, e.amount, { indent: true }]),
       ['Total expenses', d.total_expenses, { bold: true }],
       [d.net_profit < 0 ? 'Net loss' : 'Net profit', d.net_profit, { bold: true, tone: d.net_profit < 0 ? 'neg' : 'pos' }],
@@ -111,6 +113,7 @@
     sale_report: (d) => table(docCols, d.rows, { clickId: 'id', title: 'Sale Report', totals: { taxable: d.net_taxable, gst: d.net_gst, total: d.net_total } })
       + `<h3>By party</h3>${table([{ k: 'party', label: 'Party' }, { k: 'amount', label: 'Amount', num: true }], d.by_party)}`,
     purchase_report: (d) => R.sale_report(d).replace('Sale Report', 'Purchase Report'),
+    other_income: (d) => `<h3>By category</h3>${table([{ k: 'category', label: 'Category' }, { k: 'amount', label: 'Amount', num: true }], d.by_category, { totals: { amount: d.total } })}`,
     expense_report: (d) => `<h3>By category</h3>${table([{ k: 'category', label: 'Category' }, { k: 'amount', label: 'Amount', num: true }], d.by_category, { totals: { amount: d.total } })}`
       + `<h3>All expenses</h3>${table([{ k: 'date', label: 'Date' }, { k: 'number', label: 'No.' }, { k: 'category', label: 'Category' }, { k: 'party', label: 'Party' }, { k: 'notes', label: 'Notes' }, { k: 'amount', label: 'Amount', num: true }], d.rows, { clickId: 'id' })}`,
     bill_profit: (d) => `<p class="hop-doc-muted">${esc(d.note)}</p>` + table([...docCols.slice(0, 4), { k: 'taxable', label: 'Sale (taxable)', num: true }, { k: 'cost', label: 'Cost', num: true }, { k: 'profit', label: 'Profit', num: true }, { k: 'lines_without_cost', label: 'Items without cost' }],

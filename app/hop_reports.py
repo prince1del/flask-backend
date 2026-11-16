@@ -87,6 +87,8 @@ def _account_kind(name: str, bank_names: set[str]) -> str:
         return "equity"
     if name in INCOME:
         return "income"
+    if name.startswith("Other Income: "):
+        return "income"
     return "expense"  # Sales Returns, Purchases, Opening Stock, Expense: …
 
 
@@ -225,6 +227,12 @@ def ledger(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
                 party = None
             post(day, f"Expense: {cat}", dr=total, t=t, kind=f"Expense · {cat}", party=party)
             post(day, money_acct(t, "out"), cr=total, t=t, kind=f"Expense · {cat}", party=party)
+        elif ty == 29:
+            cat = cats.get(int(t.get("expense_category_id") or 0)) or (t.get("party_name") or "Other")
+            if t.get("party_type") == "expense":
+                party = None
+            post(day, money_acct(t, "in"), dr=total, t=t, kind=f"Other Income · {cat}", party=party)
+            post(day, f"Other Income: {cat}", cr=total, t=t, kind=f"Other Income · {cat}", party=party)
         # Estimates, orders, challans, proformas, journal entries: no postings.
 
     # Loans: opening outstanding, money received, EMI / principal, interest & fees.
@@ -381,13 +389,18 @@ def profit_and_loss(conn: sqlite3.Connection, ws: str, frm: str = "", to: str = 
                        for k, v in mv.items() if k.startswith("Expense: ") and abs(v) > 0.005),
                       key=lambda x: -x["amount"])
     exp_total = sum(e["amount"] for e in expenses)
+    other_income = sorted(({"category": k.replace("Other Income: ", ""), "amount": _r2(-v)}
+                           for k, v in mv.items() if k.startswith("Other Income: ") and abs(v) > 0.005),
+                          key=lambda x: -x["amount"])
+    oi_total = sum(e["amount"] for e in other_income)
     return {
         "from_date": frm or None, "to_date": to or None,
         "sales": _r2(sales), "sale_returns": _r2(sales_ret), "net_sales": _r2(net_sales),
         "opening_stock": _r2(opening_stock), "purchases": _r2(purch), "purchase_returns": _r2(purch_ret),
         "net_purchases": _r2(net_purch), "closing_stock": _r2(closing_stock), "cost_of_goods_sold": _r2(cogs),
-        "gross_profit": _r2(gross), "expenses": expenses, "total_expenses": _r2(exp_total),
-        "net_profit": _r2(gross - exp_total),
+        "gross_profit": _r2(gross), "other_income": other_income, "total_other_income": _r2(oi_total),
+        "expenses": expenses, "total_expenses": _r2(exp_total),
+        "net_profit": _r2(gross + oi_total - exp_total),
     }
 
 
@@ -686,6 +699,20 @@ def bill_wise_profit(conn, ws, frm="", to="") -> dict[str, Any]:
             "note": "Cost = qty × the item's purchase price. Lines whose item has no purchase price count as 0 cost."}
 
 
+def other_income_report(conn, ws, frm="", to="") -> dict[str, Any]:
+    cats = {int(c["id"]): c["name"] for c in _rows(conn, "SELECT id, name FROM hop_expense_categories WHERE workspace_id=?", (ws,))}
+    rows, by_cat = [], defaultdict(float)
+    for t in _docs(conn, ws, frm, to, (29,)):
+        cat = cats.get(int(t.get("expense_category_id") or 0)) or "Other"
+        rows.append({"id": t["id"], "date": _d(t["txn_date"]), "number": t.get("txn_number"), "category": cat,
+                     "party": t.get("party_name") if t.get("party_type") != "expense" else "",
+                     "amount": _r2(_f(t["total_amount"])), "notes": t.get("notes") or ""})
+        by_cat[cat] += _f(t["total_amount"])
+    return {"from_date": frm or None, "to_date": to or None, "rows": rows,
+            "by_category": [{"category": k, "amount": _r2(v)} for k, v in sorted(by_cat.items(), key=lambda x: -x[1])],
+            "total": _r2(sum(by_cat.values()))}
+
+
 def expense_report(conn, ws, frm="", to="") -> dict[str, Any]:
     cats = {int(c["id"]): c["name"] for c in _rows(conn, "SELECT id, name FROM hop_expense_categories WHERE workspace_id=?", (ws,))}
     rows, by_cat = [], defaultdict(float)
@@ -834,7 +861,7 @@ REPORTS = {
     "party_statement": "Party Statement", "outstanding": "Party-wise Outstanding",
     "sale_report": "Sale Report", "purchase_report": "Purchase Report", "item_report": "Item-wise Report",
     "stock_summary": "Stock Summary", "low_stock": "Low Stock", "stock_movement": "Stock Movement",
-    "bill_profit": "Bill-wise Profit", "expense_report": "Expense Report",
+    "bill_profit": "Bill-wise Profit", "expense_report": "Expense Report", "other_income": "Other Income",
     "gstr1": "GSTR-1", "gstr2": "GSTR-2", "gstr3b": "GSTR-3B", "hsn_sale": "HSN Summary (Sales)",
     "hsn_purchase": "HSN Summary (Purchases)",
 }
@@ -889,6 +916,8 @@ def run(conn: sqlite3.Connection, ws: str, key: str, a: dict[str, Any]) -> dict[
         return bill_wise_profit(conn, ws, frm, to)
     if k == "expense_report":
         return expense_report(conn, ws, frm, to)
+    if k == "other_income":
+        return other_income_report(conn, ws, frm, to)
     if k == "gstr1":
         return gstr1(conn, ws, frm, to)
     if k == "gstr2":

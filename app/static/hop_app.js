@@ -2257,6 +2257,7 @@ function openHopView(viewName, opts) {
         purchase_bills: (m) => renderHopSaleLedgerModule(m, 'purchase_bills'),
         purchase_payment_out: (m) => renderHopSaleLedgerModule(m, 'purchase_payment_out'),
         purchase_expenses: (m) => renderHopSaleLedgerModule(m, 'purchase_expenses'),
+        other_income: (m) => renderHopSaleLedgerModule(m, 'other_income'),
         purchase_orders: (m) => renderHopSaleLedgerModule(m, 'purchase_orders'),
         purchase_returns: (m) => renderHopSaleLedgerModule(m, 'purchase_returns'),
         purchase_fa: (m) => renderHopSaleLedgerModule(m, 'purchase_fa'),
@@ -3926,6 +3927,7 @@ const HOP_TXN_PAYMENT_IN = new Set([3]);            // Payment-In (Vyapar type 3
 const HOP_TXN_PAYMENT_OUT = new Set([4]);           // Payment-Out (Vyapar type 4)
 const HOP_TXN_PURCHASE_BILL = new Set([2]);
 const HOP_TXN_EXPENSE = new Set([7]);
+const HOP_TXN_OTHER_INCOME = new Set([29]);
 const HOP_TXN_PURCHASE_RETURN = new Set([16]);
 const HOP_TXN_OTHER_DOCS = new Set([65, 81, 82, 83, 30]); // SO, Journal, Challan, Proforma
 const HOP_TXN_SALE_ORDER = new Set([65]);
@@ -4159,6 +4161,7 @@ function hopTxnModuleViewForType(ty) {
   if (HOP_TXN_PURCHASE_BILL.has(t)) return 'purchase_bills';
   if (HOP_TXN_PAYMENT_OUT.has(t)) return 'purchase_payment_out';
   if (HOP_TXN_EXPENSE.has(t)) return 'purchase_expenses';
+  if (HOP_TXN_OTHER_INCOME.has(t)) return 'other_income';
   if (HOP_TXN_PURCHASE_RETURN.has(t)) return 'purchase_returns';
   if (HOP_TXN_JOURNAL.has(t)) return 'journal_entries';
   return null;
@@ -6272,6 +6275,13 @@ const HOP_SALE_LEDGER = {
     empty: 'No expenses in this filter.',
     numberLabel: 'Expense no',
     addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(7,'standard')">+ Expense</button>`,
+  },
+  other_income: {
+    title: 'Other Income',
+    types: [...HOP_TXN_OTHER_INCOME],
+    empty: 'No other income in this filter (rent received, interest, scrap sale…).',
+    numberLabel: 'Receipt no',
+    addHtml: `<button type="button" class="nx-btn nx-btn-primary inv-add-btn" onclick="hopOpenManualDocCreate(29,'standard')">+ Other Income</button>`,
   },
   purchase_orders: {
     title: 'Purchase Order',

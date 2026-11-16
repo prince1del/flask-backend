@@ -18,7 +18,7 @@
     ['23', 'Madhya Pradesh'], ['24', 'Gujarat'], ['26', 'Dadra & Nagar Haveli and Daman & Diu'], ['27', 'Maharashtra'],
     ['29', 'Karnataka'], ['30', 'Goa'], ['31', 'Lakshadweep'], ['32', 'Kerala'], ['33', 'Tamil Nadu'], ['34', 'Puducherry'],
     ['35', 'Andaman and Nicobar Islands'], ['36', 'Telangana'], ['37', 'Andhra Pradesh'], ['38', 'Ladakh']];
-  const PAYMENT_TYPES = new Set([3, 4, 7]);
+  const PAYMENT_TYPES = new Set([3, 4, 7, 29]);
   const esc = (v) => (typeof foEscapeText === 'function' ? foEscapeText(v) : String(v ?? ''));
   const money = (v) => (typeof hopMoney === 'function' ? hopMoney(v) : `₹${Number(v || 0).toFixed(2)}`);
   const num = (v) => { const n = Number(String(v ?? '').replace(/,/g, '')); return Number.isFinite(n) ? n : 0; };
@@ -26,10 +26,12 @@
 
   // ---------- Reference data for the form ----------
   async function loadRefs() {
-    const [acc, cats] = await Promise.all([
+    const [acc, cats, inc] = await Promise.all([
       hopApi('/api/v1/hop/bank-accounts').catch(() => ({ accounts: [] })),
       hopApi('/api/v1/hop/expense-categories').catch(() => ({ categories: [] })),
+      hopApi('/api/v1/hop/expense-categories?kind=income').catch(() => ({ categories: [] })),
     ]);
+    hopState.moneyIncomeCategories = inc?.categories || [];
     hopState.moneyAccounts = acc?.accounts || [];
     hopState.moneyCategories = cats?.categories || [];
   }
@@ -43,7 +45,7 @@
     });
     const cash = (hopState.moneyAccounts || []).find((a) => a.account_type === 'cash');
     if (cash) d.paymentChoice = `acct:${cash.id}`;
-    if (txnType === 7) d.customerId = '';
+    if (txnType === 7 || txnType === 29) d.customerId = '';
   }
 
   function applyData(d, data, duplicate) {
@@ -70,7 +72,7 @@
       d.linkedFromTxnId = data.linked_from_txn_id;
       d.linkedFromLabel = data.linked_from_label || '';
     }
-    if (Number(hopState.manualDoc?.txnType) === 7 && data.party_type === 'expense') d.customerId = '';
+    if ([7, 29].includes(Number(hopState.manualDoc?.txnType)) && data.party_type === 'expense') d.customerId = '';
   }
 
   function paymentOptions(d) {
@@ -244,9 +246,10 @@
     const md = hopState.manualDoc || {};
     const d = hopState.manualDocDraft || {};
     const ty = Number(md.txnType);
-    const isExpense = ty === 7;
+    const isIncome = ty === 29;
+    const isExpense = ty === 7 || isIncome;   // category-based: no bills to link
     const isEdit = !!md.editId;
-    const docNoLabel = ty === 3 ? 'Receipt No.' : (ty === 4 ? 'Payment No.' : 'Expense No.');
+    const docNoLabel = ty === 3 ? 'Receipt No.' : (ty === 4 ? 'Payment No.' : (isIncome ? 'Receipt No.' : 'Expense No.'));
     const amount = num(d.amount);
     const linked = Object.values(d.allocations || {}).reduce((s, v) => s + num(v), 0);
     let billsHtml = '';
@@ -273,14 +276,14 @@
           </div>`;
       }
     }
-    const cats = hopState.moneyCategories || [];
+    const cats = (isIncome ? hopState.moneyIncomeCategories : hopState.moneyCategories) || [];
     return `
       <div class="hop-vyp-doc">
         <p id="hop-manual-doc-err" class="nx-oc-error"></p>
         ${aiBarHtml()}
         <div class="hop-vyp-top">
           <div class="hop-vyp-top-left">
-            ${isExpense ? `<label class="hop-vyp-field"><span>Expense category</span>
+            ${isExpense ? `<label class="hop-vyp-field"><span>${isIncome ? 'Income category' : 'Expense category'}</span>
               <select class="hop-vyp-control" onchange="hopMoneyPickCategory(this.value)">
                 <option value="">— choose —</option>
                 ${cats.map((c) => `<option value="${c.id}"${String(d.expenseCategoryId) === String(c.id) ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
@@ -306,7 +309,7 @@
           </div>
           <div class="hop-vyp-bottom-right">
             <div class="hop-vyp-sum-row hop-vyp-sum-grand">
-              <span>${ty === 3 ? 'Received' : 'Paid'}</span>
+              <span>${ty === 3 || isIncome ? 'Received' : 'Paid'}</span>
               <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.amount)}" inputmode="decimal" placeholder="0.00" oninput="hopMoneySet('amount',this.value);hopMoneyRefreshLinked()" />
             </div>
             ${paymentFieldsHtml(d)}
@@ -326,7 +329,7 @@
     const md = hopState.manualDoc || {};
     const d = hopState.manualDocDraft;
     const ty = Number(md.txnType);
-    if (!d || !PAYMENT_TYPES.has(ty) || ty === 7) return;
+    if (!d || !PAYMENT_TYPES.has(ty) || ty === 7 || ty === 29) return;
     d.openBills = d.customerId ? null : [];
     rerenderForm();
     if (!d.customerId) return;
@@ -398,11 +401,13 @@
     const d = hopState.manualDocDraft;
     if (!d) return;
     if (val !== '__new') { d.expenseCategoryId = val; return; }
-    const name = (window.prompt('New expense category (e.g. Rent, Salary)') || '').trim();
+    const income = Number(hopState.manualDoc?.txnType) === 29;
+    const name = (window.prompt(income ? 'New income category (e.g. Rent received, Interest)' : 'New expense category (e.g. Rent, Salary)') || '').trim();
     if (!name) { rerenderForm(); return; }
     try {
       const c = await hopApi('/api/v1/hop/expense-categories', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, kind: income ? 'income' : 'expense' }),
       });
       await loadRefs();
       d.expenseCategoryId = String(c.id);
@@ -482,8 +487,9 @@
     const amount = num(d.amount);
     const partyId = Number(d.customerId || 0);
     if (amount <= 0) return { error: 'Enter the amount' };
-    if (ty === 7 && !partyId && !d.expenseCategoryId) return { error: 'Choose an expense category or a party' };
-    if (ty !== 7 && !partyId) return { error: ty === 3 ? 'Select a customer' : 'Select a vendor' };
+    const catDoc = ty === 7 || ty === 29;
+    if (catDoc && !partyId && !d.expenseCategoryId) return { error: 'Choose a category or a party' };
+    if (!catDoc && !partyId) return { error: ty === 3 ? 'Select a customer' : 'Select a vendor' };
     const partyKind = ty === 3 ? 'customer' : (ty === 4 ? 'vendor' : (hopState.manualDocPartyKind || 'vendor'));
     const payload = {
       txn_type: ty, txn_date: d.txnDate, amount, total_amount: amount,
@@ -497,8 +503,8 @@
     } else {
       payload.party_id = 0;
     }
-    if (ty === 7) payload.expense_category_id = d.expenseCategoryId ? Number(d.expenseCategoryId) : null;
-    if (ty !== 7) {
+    if (catDoc) payload.expense_category_id = d.expenseCategoryId ? Number(d.expenseCategoryId) : null;
+    if (!catDoc) {
       payload.allocations = Object.entries(d.allocations || {})
         .filter(([, v]) => num(v) > 0).map(([k, v]) => ({ txn_id: Number(k), amount: num(v) }));
     }
