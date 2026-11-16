@@ -97,7 +97,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Excel import (items, parties), bulk update | ✅ .xlsx / .csv, preview with checks, bulk update of items (phone + web) |
 | Tally export | ✅ (Cursor) |
 | Recycle bin | ✅ |
-| User roles & permissions for staff, audit trail | ❌ |
+| User roles & permissions for staff, audit trail | 🟡 audit trail ✅ (phone + web + Ask Nexora); staff roles per HoP screen ❌ |
 | Online store / catalogue sharing | 🟡 (catalogue exists) |
 | Payment link / UPI QR on invoice | 🟡 UPI payment link on bill + WhatsApp; QR picture needs a QR library (owner OK) |
 | Share invoice on WhatsApp | ✅ (text + UPI link; PDF attach is by the phone share sheet) |
@@ -138,3 +138,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Import from Excel / CSV — items and parties, columns matched by name, every row checked
   (missing name, bad GSTIN / mobile, odd GST rate, duplicates); bulk update of existing items.
   Party groups now come from Settings on web and phone.
+- 2026-11-16: Audit trail — every change on phone or web is logged (who, when, old vs new amount for
+  bills); screen under Settings on both; Ask Nexora "kisne bill badla?".
