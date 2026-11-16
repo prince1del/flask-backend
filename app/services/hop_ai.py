@@ -273,6 +273,12 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                 "low_or_negative_stock": [{"name": r["name"], "stock": r.get("stock_qty")} for r in goods
                                           if float(r.get("stock_qty") or 0) <= 0][:15],
                 "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15]}
+    if what == "audit":
+        from app import hop_audit
+
+        q = str(party_name or "").strip()
+        log = hop_audit.list_log(conn, ws, q=q, frm=str(extra.get("from") or ""), to=str(extra.get("to") or ""), limit=40)
+        return {"changes": [{"when": r["at"], "what": r["text"]} for r in log["rows"]], "people": log["users"]}
     if what == "other_income":
         cats = hop_money.list_expense_categories(conn, ws, "income")
         return {"by_category": [{"category": c["name"], "total": c["total"]} for c in cats if c["total"]],

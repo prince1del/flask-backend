@@ -41,6 +41,48 @@ def _ws() -> str:
     return get_workspace_id()
 
 
+@hop_bp.before_request
+def _audit_before():
+    """Keep a bill's old number / amount before it is edited or deleted (audit trail)."""
+    from flask import g
+
+    from app import hop_audit
+
+    g.hop_audit_before = None
+    if request.method in ("PATCH", "PUT", "DELETE") and hop_audit.should_log(request.method, request.path):
+        try:
+            with hop_db.connect(_db_path()) as conn:
+                g.hop_audit_before = hop_audit.snapshot(conn, request.path)
+        except Exception:
+            g.hop_audit_before = None
+
+
+@hop_bp.after_request
+def _audit_after(response):
+    """Audit trail: record every successful change (phone and web)."""
+    from flask import g
+
+    from app import hop_audit
+
+    try:
+        if 200 <= response.status_code < 300 and hop_audit.should_log(request.method, request.path):
+            user = getattr(request, "user", None) or {}
+            if isinstance(user, dict) and user:
+                ws = _ws()
+                before = getattr(g, "hop_audit_before", None)
+                if before and before.pop("workspace_id", None) != ws:
+                    before = None
+                body = request.get_json(silent=True) if request.is_json else None
+                result = None
+                if response.is_json:
+                    result = (response.get_json(silent=True) or {}).get("data")
+                with hop_db.connect(_db_path()) as conn:
+                    hop_audit.record(conn, ws, user, request.method, request.path, body, result, before)
+    except Exception:  # the audit log must never break the real request
+        current_app.logger.exception("hop audit log failed")
+    return response
+
+
 def _json_error(message: str, code: str = "BAD_REQUEST", status: int = 400):
     return jsonify({"success": False, "error": {"code": code, "message": message}}), status
 
@@ -2473,6 +2515,21 @@ def hop_import_commit(kind: str):
             data = hop_import.commit(conn, _ws(), kind, body.get("rows") or [], bool(body.get("update_existing")))
     except ValueError as exc:
         return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/audit-log", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_audit_log():
+    """Who created / changed / deleted what (filters: q, entity, user, from, to)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_audit
+
+    a = request.args
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_audit.list_log(conn, _ws(), q=a.get("q") or "", entity=a.get("entity") or "", user=a.get("user") or "",
+                                  frm=a.get("from") or "", to=a.get("to") or "", limit=int(a.get("limit") or 200))
     return jsonify({"success": True, "data": data})
 
 
