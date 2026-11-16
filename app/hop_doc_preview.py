@@ -631,6 +631,7 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
         data["delivery_terms"] = ""
     data["footer"] = s.get("print_footer") or ""
     data["print"] = {"paper": s.get("print_paper") or "a4", "copies": int(s.get("print_copies") or 1),
+                     "date_format": s.get("date_format") or "dd-mm-yyyy", "decimals": int(s.get("amount_decimals") or 2),
                      "copy_labels": ["Original for Recipient", "Duplicate for Transporter", "Triplicate for Supplier"]
                      [: int(s.get("print_copies") or 1)]}
     if hid:

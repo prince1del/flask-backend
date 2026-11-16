@@ -44,6 +44,10 @@ SCHEMA: list[dict[str, Any]] = [
      "help": "Thermal prints a narrow receipt from the web; the phone PDF uses A4 for thermal."},
     {"key": "print_copies", "section": "Print", "label": "Copies when printing", "type": "select", "default": "1",
      "options": [["1", "Original only"], ["2", "Original + Duplicate"], ["3", "Original + Duplicate + Triplicate"]]},
+    {"key": "date_format", "section": "Print", "label": "Date format on bills", "type": "select", "default": "dd-mm-yyyy",
+     "options": [["dd-mm-yyyy", "16-11-2026"], ["dd/mm/yyyy", "16/11/2026"], ["yyyy-mm-dd", "2026-11-16"], ["dd mmm yyyy", "16 Nov 2026"]]},
+    {"key": "amount_decimals", "section": "Print", "label": "Amounts on bills", "type": "select", "default": "2",
+     "options": [["2", "With paise (1,234.50)"], ["0", "Whole rupees (1,235)"]]},
     {"key": "print_footer", "section": "Print", "label": "Footer text on every bill", "type": "text", "default": "",
      "help": "e.g. Thank you for your business!"},
     # Sharing

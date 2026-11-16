@@ -93,8 +93,7 @@ Batches report.
 **Still left:**
 - Needs owner OK to add a library: UPI **QR picture** on bills; **barcode scanner** with the phone camera.
 - Needs owner's accounts: direct e-invoice / e-way bill portal upload (GSP), SMS.
-- Bigger pieces: staff permissions per HoP screen; multiple firms in one login; date format / decimal
-  places setting; offline mode; Bluetooth thermal printer from the phone; restore from backup (with support).
+- Bigger pieces: staff permissions per HoP screen; multiple firms in one login; offline mode; Bluetooth thermal printer from the phone; restore from backup (with support).
 
 ## AI checklist (owner's rule: every feature ships with AI help — never "later")
 Before a phase is called done, every row must be ✅ or have a written reason.

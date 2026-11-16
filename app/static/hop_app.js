@@ -4216,15 +4216,22 @@ function hopOpenPartyTxnInModule(txnId) {
   openHopView(view);
 }
 
+/* Bill money / dates follow Settings → Print (amounts with or without paise, date format). */
 function hopPreviewMoney(n) {
   const v = Number(n || 0);
-  return `₹ ${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const dp = Number(hopState.docPreviewPrint?.decimals ?? 2) === 0 ? 0 : 2;
+  return `₹ ${v.toLocaleString('en-IN', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 }
 
 function hopPreviewDate(ymd) {
   const s = String(ymd || '').slice(0, 10);
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return s || '—';
+  const fmt = hopState.docPreviewPrint?.date_format || 'dd-mm-yyyy';
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1];
+  if (fmt === 'dd/mm/yyyy') return `${m[3]}/${m[2]}/${m[1]}`;
+  if (fmt === 'yyyy-mm-dd') return s;
+  if (fmt === 'dd mmm yyyy') return `${m[3]} ${mon} ${m[1]}`;
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
@@ -4419,6 +4426,7 @@ async function hopOpenSaleDocPreview(partyTxnId, sourceTxnId) {
       ? `/api/v1/hop/party-transactions/${pid}/preview`
       : `/api/v1/hop/documents/preview?source_txn_id=${sid}`;
     const data = await hopApi(url);
+    hopState.docPreviewPrint = data?.print || null;   // date format / decimals for this bill
     const body = document.getElementById('hop-doc-preview-body');
     if (body) body.innerHTML = (window.hopRenderDocPreviewHtml || hopRenderDocPreviewHtml)(data);
     hopUpdateDocPreviewHead(data);

@@ -14,7 +14,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Passcode / app lock | ✅ phone PIN (Settings → App lock; on open + after 1 min away; Forgot PIN = log in again). Web: login only |
 | Multiple firms (companies) in one login | ❌ |
 | Backup / restore by the user | 🟡 download backup zip (phone + web, Settings); restore with support (no one-click overwrite) |
-| Date format, decimal places (qty, amount) | ❌ |
+| Date format, decimal places (qty, amount) | 🟡 bills: date format + paise / whole rupees (phone + web); app screens keep ₹0.00 |
 | Currency symbol | ❌ (₹ fixed) |
 
 ### Transaction
@@ -152,3 +152,4 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   pick the godown on sale / purchase bills and returns; warning when that godown is short. Phone + web.
 - 2026-11-16: Batch / expiry / serial numbers on bill lines (phone + web), printed under the item,
   "Expiring / Expired Batches" report.
+- 2026-11-16: Date format (4 choices) and amounts with paise / whole rupees on bills (preview, print, PDF).
