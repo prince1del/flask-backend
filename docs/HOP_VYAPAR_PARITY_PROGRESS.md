@@ -79,6 +79,23 @@ Still showing the old name: data already on prod saved by the old importer (cust
 text update on prod — **ask the owner first** (no bulk data changes without OK).
 Phone app strings: change during the phone work.
 
+## Status — 2026-11-16 (morning)
+**Live on server + phone (OTA 2.0.459499):** settings system; bill extras (additional charges with GST,
+free qty, PO no/date, bill time, TCS); items (service, MRP, wholesale price, 2nd unit, barcode field, custom
+fields); Other Income; bank reconciliation (CSV auto-match); WhatsApp bill / reminder + UPI payment link;
+print paper size + copies; Excel / CSV import of items and parties (+ bulk update); audit trail; phone
+app lock (PIN); additional cess.
+
+**Built and tested, going live next:** TDS on purchase bills and sale invoices; backup download (zip);
+godowns (stock per godown, transfers, godown on bills); batch / expiry / serial on lines + Expiring
+Batches report.
+
+**Still left:**
+- Needs owner OK to add a library: UPI **QR picture** on bills; **barcode scanner** with the phone camera.
+- Needs owner's accounts: direct e-invoice / e-way bill portal upload (GSP), SMS.
+- Bigger pieces: staff permissions per HoP screen; multiple firms in one login; date format / decimal
+  places setting; offline mode; Bluetooth thermal printer from the phone; restore from backup (with support).
+
 ## AI checklist (owner's rule: every feature ships with AI help — never "later")
 Before a phase is called done, every row must be ✅ or have a written reason.
 | Area | AI help | State |
