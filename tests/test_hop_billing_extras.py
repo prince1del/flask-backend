@@ -93,3 +93,17 @@ def test_tcs_on_purchase_bill_is_an_asset(db):
         bs = hop_reports.balance_sheet(conn, WS)
         assert {a["name"]: a["amount"] for a in bs["assets"]}.get("TCS paid (to claim)") == 1.0
         assert bs["balanced"]
+
+
+def test_additional_cess(db):
+    p, cust = db
+    with connect(p) as conn:
+        inv = create(conn, WS, {"txn_type": 1, "customer_id": cust, "txn_date": "2026-11-16",
+                                "lines": [{"item_name": "Lamp", "qty": 1, "rate": 1000, "tax_pct": 28, "cess_pct": 12}]})
+        t = dict(conn.execute("SELECT * FROM hop_party_transactions WHERE id=?", (inv["party_txn_id"],)).fetchone())
+        assert round(t["total_amount"], 2) == 1400          # 1000 + 280 GST + 120 cess
+        g = hop_reports.gstr1(conn, WS)
+        assert g["totals"]["cess"] == 120 and g["totals"]["cgst"] + g["totals"]["sgst"] + g["totals"]["igst"] == 280
+        assert get_party_transaction_edit_data(conn, WS, inv["party_txn_id"])["lines"][0]["cess_pct"] == 12
+        tb = hop_reports.trial_balance(conn, WS)
+        assert round(tb["total_debit"], 2) == round(tb["total_credit"], 2)

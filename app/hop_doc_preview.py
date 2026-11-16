@@ -251,9 +251,9 @@ def replace_txn_lines(
             INSERT INTO hop_txn_lines (
                 workspace_id, source_txn_id, line_no, item_name, item_code, description, hsn,
                 qty, unit, rate, discount_amount, discount_pct, section_title,
-                tax_pct, tax_amount, line_total, product_id, is_charge, free_qty,
+                tax_pct, tax_amount, line_total, product_id, is_charge, free_qty, cess_pct, cess_amount,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             """,
             (
                 workspace_id,
@@ -275,6 +275,8 @@ def replace_txn_lines(
                 line.get("product_id"),
                 1 if line.get("is_charge") else 0,
                 float(line.get("free_qty") or 0),
+                float(line.get("cess_pct") or 0) or None,
+                float(line.get("cess_amount") or 0) or None,
             ),
         )
         n += 1
@@ -725,6 +727,13 @@ def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]],
         taxable = amounts["taxable"]
         tax_amt = amounts["tax_amount"]
         line_total = amounts["line_total"]
+        # Additional cess (on top of GST) — kept inside the tax, split out in GST reports.
+        cess_pct = float(line.get("cess_pct") or 0)
+        if cess_pct < 0 or cess_pct > 300:
+            raise ValueError("Cess % must be between 0 and 300")
+        cess_amt = round(taxable * cess_pct / 100.0, 2) if cess_pct else 0.0
+        tax_amt = round(tax_amt + cess_amt, 2)
+        line_total = round(line_total + cess_amt, 2)
         disc = amounts["discount_amount"]
         sub_total += taxable
         tax_total += tax_amt
@@ -744,6 +753,8 @@ def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]],
                 "section_title": _clean(line.get("section_title")),
                 "is_charge": 1 if line.get("is_charge") else 0,
                 "free_qty": float(line.get("free_qty") or 0),
+                "cess_pct": cess_pct,
+                "cess_amount": cess_amt,
                 "tax_pct": tax_pct,
                 "tax_amount": tax_amt,
                 "line_total": line_total,
@@ -876,6 +887,7 @@ def get_party_transaction_edit_data(
             "hsn": _clean(ln.get("hsn")),
             "section_title": _clean(ln.get("section_title")),
             "free_qty": float(ln.get("free_qty") or 0),
+            "cess_pct": float(ln.get("cess_pct") or 0),
         }
         for ln in lines
     ]

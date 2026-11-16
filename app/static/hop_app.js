@@ -7291,7 +7291,7 @@ function hopProductExtrasPayload() {
   return {
     item_type: v('f-prtype') || 'product',
     mrp: v('f-prmrp'), wholesale_price: v('f-prwhole'), wholesale_min_qty: v('f-prwholemin'),
-    alt_unit: v('f-pralt'), alt_unit_factor: v('f-praltf'), barcode: v('f-prbarcode'),
+    alt_unit: v('f-pralt'), alt_unit_factor: v('f-praltf'), barcode: v('f-prbarcode'), cess_pct: v('f-prcess'),
     custom_fields: custom,
   };
 }
@@ -7310,7 +7310,7 @@ async function hopEditProduct(productId) {
   set('f-prstock', r.stock_qty); set('f-prvendor', r.vendor_id || ''); set('f-prmoq', r.moq);
   set('f-prtype', r.item_type || 'product'); set('f-prmrp', r.mrp); set('f-prwhole', r.wholesale_price);
   set('f-prwholemin', r.wholesale_min_qty); set('f-pralt', r.alt_unit); set('f-praltf', r.alt_unit_factor);
-  set('f-prbarcode', r.barcode);
+  set('f-prbarcode', r.barcode); set('f-prcess', r.cess_pct);
   set('f-prcustom', Object.entries(r.custom_fields || {}).map(([k, v]) => `${k}: ${v}`).join('\n'));
   const chk = document.getElementById('f-prchecks');
   if (chk) chk.innerHTML = (r.checks || []).map((c) => `⚠ ${foEscapeText(c)}`).join('<br>');
@@ -9625,6 +9625,7 @@ async function hopShowForm(kind, editRow) {
         <label>2nd unit<input id="f-pralt" list="hop-unit-list" placeholder="BOX" /></label>
         <label>1 2nd unit = how many base units<input id="f-praltf" type="number" /></label>
         <label>Barcode<input id="f-prbarcode" /></label>
+        <label>Additional cess %<input id="f-prcess" type="number" /></label>
         <label style="grid-column:1/-1;">More details (one per line, Name: value)<textarea id="f-prcustom" rows="2" class="nx-input"></textarea></label>
         <div id="f-prchecks" class="nx-oc-error" style="grid-column:1/-1;"></div>
       </div>

@@ -22,6 +22,7 @@ COLUMNS = (
     ("alt_unit_factor", "REAL"),      # 1 alt unit = factor base units
     ("barcode", "TEXT"),
     ("custom_fields", "TEXT"),        # JSON {"Colour": "Red", ...}
+    ("cess_pct", "REAL"),             # additional cess % on top of GST
 )
 
 
@@ -55,7 +56,7 @@ def save_extras(conn: sqlite3.Connection, ws: str, product_id: int, payload: dic
         if t not in ("product", "service"):
             raise ValueError("Item type must be product or service")
         sets["item_type"] = t
-    for k in ("mrp", "wholesale_price", "wholesale_min_qty", "alt_unit_factor"):
+    for k in ("mrp", "wholesale_price", "wholesale_min_qty", "alt_unit_factor", "cess_pct"):
         if k in payload:
             v = _f(payload.get(k))
             if v is not None and v < 0:

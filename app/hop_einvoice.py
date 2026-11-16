@@ -103,25 +103,30 @@ def _amounts(t: dict, firm: dict, party: dict, lines: list[dict]):
     buyer_st = _state(pg, party.get("state"))
     pos = _s(t.get("place_of_supply")) or buyer_st
     inter = bool(seller_st and pos and seller_st != pos)
-    items, tot = [], {"ass": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "disc": 0.0}
+    items, tot = [], {"ass": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "disc": 0.0, "cess": 0.0}
     for i, ln in enumerate(lines, 1):
         qty, rate = _f(ln.get("qty")), _f(ln.get("rate"))
         gross = _r(qty * rate)
         disc = _r(_f(ln.get("discount_amount")))
         ass = _r(gross - disc)
-        tax = _r(_f(ln.get("tax_amount")))
+        cess = _r(_f(ln.get("cess_amount")))
+        tax = _r(_f(ln.get("tax_amount")) - cess)   # cess is reported on its own
         cg = sg = 0.0 if inter else _r(tax / 2)
         ig = tax if inter else 0.0
         items.append({"sl": i, "name": _s(ln.get("item_name"))[:300], "hsn": _s(ln.get("hsn")), "qty": qty,
                       "unit": UQC.get(_s(ln.get("unit")).lower(), "OTH"), "rate": rate, "gross": gross, "disc": disc,
                       "ass": ass, "gst_rt": _f(ln.get("tax_pct")), "igst": ig, "cgst": cg, "sgst": sg,
-                      "total": _r(ass + tax)})
+                      "cess_rt": _f(ln.get("cess_pct")), "cess": cess,
+                      "service": _s(ln.get("hsn")).startswith("99"),
+                      "total": _r(ass + tax + cess)})
+        tot["cess"] += cess
         tot["ass"] += ass
         tot["cgst"] += cg
         tot["sgst"] += sg
         tot["igst"] += ig
         tot["disc"] += disc
-    other = _r(_f(t.get("shipping_amount")) + _f(t.get("shipping_tax_amount")) - _f(t.get("discount_amount")))
+    other = _r(_f(t.get("shipping_amount")) + _f(t.get("shipping_tax_amount")) + _f(t.get("tcs_amount"))
+               - _f(t.get("discount_amount")))
     return seller_st, buyer_st, inter, items, {k: _r(v) for k, v in tot.items()}, other
 
 
@@ -143,11 +148,13 @@ def einvoice_json(conn: sqlite3.Connection, ws: str, txn_ids: list[int]) -> dict
                           "Pos": _s(t.get("place_of_supply")) or buyer_st, "Addr1": (_s(party.get("address")) or "-")[:100],
                           "Loc": (_s(party.get("city") or party.get("state")) or "-")[:50],
                           "Pin": int(_pin(party.get("address"), party.get("shipping_address")) or 0), "Stcd": buyer_st},
-            "ItemList": [{"SlNo": str(i["sl"]), "PrdDesc": i["name"], "IsServc": "N", "HsnCd": i["hsn"], "Qty": i["qty"],
+            "ItemList": [{"SlNo": str(i["sl"]), "PrdDesc": i["name"], "IsServc": "Y" if i["service"] else "N", "HsnCd": i["hsn"], "Qty": i["qty"],
                           "Unit": i["unit"], "UnitPrice": i["rate"], "TotAmt": i["gross"], "Discount": i["disc"],
                           "AssAmt": i["ass"], "GstRt": i["gst_rt"], "IgstAmt": i["igst"], "CgstAmt": i["cgst"],
-                          "SgstAmt": i["sgst"], "TotItemVal": i["total"]} for i in items],
+                          "SgstAmt": i["sgst"], "CesRt": i["cess_rt"], "CesAmt": i["cess"],
+                          "TotItemVal": i["total"]} for i in items],
             "ValDtls": {"AssVal": tot["ass"], "CgstVal": tot["cgst"], "SgstVal": tot["sgst"], "IgstVal": tot["igst"],
+                    "CesVal": tot["cess"],
                         "OthChrg": max(other, 0.0), "Discount": max(-other, 0.0),
                         "RndOffAmt": _r(_f(t.get("round_off"))), "TotInvVal": _r(_f(t.get("total_amount")))},
         })

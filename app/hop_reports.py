@@ -754,7 +754,8 @@ def _gst_docs(conn, ws, types, frm, to):
             inter = bool(pstate and firm_state and pstate != firm_state) or bool(
                 not pstate and party and party[1] and firm_state_name and party[1].strip().lower() != firm_state_name)
         lines = _rows(conn, "SELECT tax_pct, SUM(COALESCE(line_total,0)-COALESCE(tax_amount,0)) AS taxable, "
-                            "SUM(COALESCE(tax_amount,0)) AS tax FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=? "
+                            "SUM(COALESCE(tax_amount,0)-COALESCE(cess_amount,0)) AS tax, SUM(COALESCE(cess_amount,0)) AS cess "
+                            "FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=? "
                             "GROUP BY tax_pct", (ws, int(t["source_txn_id"])))
         if _f(t.get("shipping_amount")):
             lines.append({"tax_pct": _f(t.get("shipping_tax_pct")), "taxable": _f(t.get("shipping_amount")),
@@ -765,6 +766,7 @@ def _gst_docs(conn, ws, types, frm, to):
                         "gstin": gstin, "txn_type": int(t["txn_type"]), "rate": _f(ln["tax_pct"]),
                         "taxable": _r2(_f(ln["taxable"])), "igst": _r2(tax if inter else 0),
                         "cgst": _r2(0 if inter else tax / 2), "sgst": _r2(0 if inter else tax / 2),
+                        "cess": _r2(_f(ln.get("cess"))),
                         "invoice_value": _r2(_f(t["total_amount"])), "place_of_supply": pos or None,
                         "reverse_charge": bool(t.get("reverse_charge"))})
     return out
@@ -772,7 +774,7 @@ def _gst_docs(conn, ws, types, frm, to):
 
 def _sum(rows, sign=None):
     s = lambda r: (sign or {}).get(r["txn_type"], 1)
-    return {k: _r2(sum(r[k] * s(r) for r in rows)) for k in ("taxable", "igst", "cgst", "sgst")}
+    return {k: _r2(sum(r.get(k, 0) * s(r) for r in rows)) for k in ("taxable", "igst", "cgst", "sgst", "cess")}
 
 
 def gstr1(conn, ws, frm="", to="") -> dict[str, Any]:
@@ -782,8 +784,8 @@ def gstr1(conn, ws, frm="", to="") -> dict[str, Any]:
     cdn = [r for r in rows if r["txn_type"] == 21]
     b2c_rate: dict[float, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for r in b2c:
-        for k in ("taxable", "igst", "cgst", "sgst"):
-            b2c_rate[r["rate"]][k] += r[k]
+        for k in ("taxable", "igst", "cgst", "sgst", "cess"):
+            b2c_rate[r["rate"]][k] += r.get(k, 0)
     return {"from_date": frm or None, "to_date": to or None, "b2b": b2b,
             "b2c_by_rate": [{"rate": k, **{x: _r2(v) for x, v in d.items()}} for k, d in sorted(b2c_rate.items())],
             "credit_notes": cdn, "totals": _sum(rows, {21: -1})}

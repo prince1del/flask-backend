@@ -749,6 +749,7 @@
       tax_pct: ln.tax_pct != null ? String(ln.tax_pct) : '5',
       hsn: ln.hsn || '',
       free_qty: Number(ln.free_qty || 0) > 0 ? String(ln.free_qty) : '',
+      cess_pct: Number(ln.cess_pct || 0) > 0 ? String(ln.cess_pct) : '',
     });
     const mode = hopState.manualDoc?.mode || 'standard';
     if (mode === 'commercial' && data.sections?.length) {
@@ -924,7 +925,7 @@
       const discPct = Number(ln.discount_pct || 0);
       const disc = discPct > 0 ? round2(gross * discPct / 100) : 0;
       const taxable = Math.max(0, gross - disc);
-      const gst = Number(ln.tax_pct || 0);
+      const gst = Number(ln.tax_pct || 0) + Number(ln.cess_pct || 0);
       const tax = round2(taxable * gst / 100);
       return sum + round2(taxable + tax);
     }, 0));
@@ -941,7 +942,7 @@
     const discPct = Number(ln.discount_pct || 0);
     const disc = discPct > 0 ? round2(gross * discPct / 100) : 0;
     const taxable = Math.max(0, gross - disc);
-    const gst = Number(ln.tax_pct || 0);
+    const gst = Number(ln.tax_pct || 0) + Number(ln.cess_pct || 0);
     const tax = round2(taxable * gst / 100);
     const net = round2(taxable + tax);
     return { gross, net };
@@ -1014,7 +1015,8 @@
       <td class="hop-vyp-read" id="hop-comm-amt-${si}-${li}">${amts.amount}</td>
       <td class="hop-vyp-read" id="hop-comm-pc-disc-${si}-${li}">${perPc}</td>
       <td class="hop-vyp-pct"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.discount_pct)}" oninput="hopManualDocSetLine(${si},${li},'discount_pct',this.value)" inputmode="decimal" /></td>
-      <td class="hop-vyp-pct"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" /></td>
+      <td class="hop-vyp-pct"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.tax_pct)}" oninput="hopManualDocSetLine(${si},${li},'tax_pct',this.value)" inputmode="decimal" />
+        <input class="hop-vyp-inp hop-vyp-inp--cen" style="font-size:.75rem;opacity:.85;" value="${foEscapeText(ln.cess_pct || '')}" oninput="hopManualDocSetLine(${si},${li},'cess_pct',this.value)" inputmode="decimal" placeholder="+ cess" title="Additional cess %" /></td>
       <td class="hop-vyp-read hop-vyp-net" id="hop-comm-net-${si}-${li}">${amts.net}</td>
       <td class="hop-vyp-act"><button type="button" class="hop-vyp-trash" onclick="hopManualDocRemoveLine(${si},${li})" title="Remove row">🗑</button></td>
     </tr>`;
@@ -1311,6 +1313,7 @@
             hsn: String(ln.hsn || '').trim(),
             section_title: String(sec.title || '').trim(),
             free_qty: Number(ln.free_qty || 0),
+            cess_pct: Number(ln.cess_pct || 0),
           });
         }
       }
@@ -1325,6 +1328,7 @@
           tax_pct: Number(ln.tax_pct || 0),
           hsn: String(ln.hsn || '').trim(),
           free_qty: Number(ln.free_qty || 0),
+          cess_pct: Number(ln.cess_pct || 0),
         });
       }
     }
