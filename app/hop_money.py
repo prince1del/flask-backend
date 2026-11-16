@@ -113,7 +113,12 @@ def _account(conn: sqlite3.Connection, ws: str, account_id: Any) -> dict[str, An
     return dict(r)
 
 
+# Reconciliation marks of a document's old bank entries, kept while its money is re-posted.
+_CLEARED_CARRY: dict[tuple[str, int], dict[tuple[int, str, float], str]] = {}
+
+
 def _bank_entry(conn, ws, account_id, direction, amount, date, txn, source, reference="", notes=""):
+    carry = _CLEARED_CARRY.get((ws, int(txn["id"])), {}).pop((int(account_id), direction, round(amount, 2)), None)
     conn.execute(
         """INSERT INTO hop_bank_entries (workspace_id, account_id, entry_date, entry_type, amount,
                party_type, party_id, party_txn_id, reference, notes, source, created_at)
@@ -122,6 +127,8 @@ def _bank_entry(conn, ws, account_id, direction, amount, date, txn, source, refe
          txn.get("party_type"), txn.get("party_id"), int(txn["id"]), reference,
          notes or f"{LABELS.get(int(txn.get('txn_type') or 0), 'Document')} {txn.get('txn_number') or ''}".strip(),
          source, _now()))
+    if carry:
+        conn.execute("UPDATE hop_bank_entries SET cleared_on=? WHERE id=last_insert_rowid()", (carry,))
     recompute_account(conn, ws, account_id)
 
 
@@ -203,6 +210,13 @@ def _undo_money(conn, ws, txn_id: int, *, keep_closed_cheque: bool) -> None:
     accts = {int(r[0]) for r in conn.execute(
         "SELECT DISTINCT account_id FROM hop_bank_entries WHERE workspace_id=? AND party_txn_id=? AND source='doc'",
         (ws, int(txn_id)))}
+    try:
+        _CLEARED_CARRY[(ws, int(txn_id))] = {
+            (int(r[0]), r[1], round(float(r[2]), 2)): r[3] for r in conn.execute(
+                "SELECT account_id, entry_type, amount, cleared_on FROM hop_bank_entries WHERE workspace_id=? "
+                "AND party_txn_id=? AND source='doc' AND cleared_on IS NOT NULL AND cleared_on!=''", (ws, int(txn_id)))}
+    except sqlite3.OperationalError:
+        pass
     conn.execute("DELETE FROM hop_bank_entries WHERE workspace_id=? AND party_txn_id=? AND source='doc'", (ws, int(txn_id)))
     for a in accts:
         recompute_account(conn, ws, a)

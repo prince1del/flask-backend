@@ -2217,6 +2217,49 @@ def bank_accounts_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/bank-accounts/<int:account_id>/reconcile", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bank_reconcile(account_id: int):
+    """GET: book vs bank balance + entries. POST {entry_ids, cleared_on|null}: tick / untick."""
+    ensure_hop_schema(_db_path())
+    from app import hop_reconcile
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                body = _payload()
+                hop_reconcile.mark(conn, _ws(), account_id, body.get("entry_ids") or [], body.get("cleared_on"))
+            data = hop_reconcile.statement(conn, _ws(), account_id, request.args.get("as_of") or "")
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/bank-accounts/<int:account_id>/reconcile/match", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bank_reconcile_match(account_id: int):
+    """Upload the bank statement (CSV) → suggested matches; nothing is saved."""
+    ensure_hop_schema(_db_path())
+    from app import hop_reconcile
+
+    try:
+        f = request.files.get("file")
+        if f:
+            raw = f.read(3 * 1024 * 1024 + 1)
+            if len(raw) > 3 * 1024 * 1024:
+                raise ValueError("File is too big (max 3 MB)")
+            rows = hop_reconcile.parse_csv(raw.decode("utf-8-sig", errors="replace"))
+        else:
+            rows = (_payload().get("rows") or [])[:2000]
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_reconcile.match_rows(conn, _ws(), account_id, rows)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/bank-entries", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

@@ -206,7 +206,16 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
     if what == "cash_bank":
         accts = hop_books.list_bank_accounts(conn, ws)
         cheques = hop_money.list_cheques(conn, ws, "open")
+        from app import hop_reconcile
+
+        recon = []
+        for a in accts:
+            if a.get("account_type") != "cash":
+                st = hop_reconcile.statement(conn, ws, a["id"])
+                recon.append({"account": a["name"], "bank_balance_ticked": st["cleared_balance"],
+                              "not_yet_ticked_in": st["uncleared_in"], "not_yet_ticked_out": st["uncleared_out"]})
         return {"accounts": [{"name": a["name"], "type": a["account_type"], "balance": a["current_balance"]} for a in accts],
+                "reconciliation": recon,
                 "total": round(sum(float(a["current_balance"] or 0) for a in accts), 2),
                 "open_cheques": [{"party": c["party_name"], "amount": c["amount"], "cheque_no": c["cheque_no"],
                                   "type": "received" if c["direction"] == "in" else "issued"} for c in cheques]}
