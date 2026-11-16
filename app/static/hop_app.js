@@ -4216,13 +4216,28 @@ function hopPrintPartyTxnPreview() {
     ? `${meta.docTitle || 'Document'} — ${meta.docNumber}`
     : (meta.docTitle || 'Document Preview');
   const styles = (window.hopDocPrintStylesheet || hopDocPrintStylesheetFallback)();
+  const pr = hopState.docPreviewPrint || {};
+  const paper = pr.paper || 'a4';
+  const pageCss = {
+    a4: '@page{size:A4;margin:10mm;}',
+    a5: '@page{size:A5;margin:7mm;} body{font-size:11px;}',
+    thermal80: '@page{size:80mm auto;margin:3mm;} body{font-size:10px;padding:0;} .hop-doc-preview-sheet{max-width:74mm;}',
+    thermal58: '@page{size:58mm auto;margin:2mm;} body{font-size:9px;padding:0;} .hop-doc-preview-sheet{max-width:54mm;}',
+  }[paper] || '';
+  const narrowCss = paper.startsWith('thermal')
+    ? '.hop-doc-meta,.hop-doc-bottom,.hop-doc-firm{display:block!important;} .hop-doc-meta-right{text-align:left!important;} .hop-doc-logo,.hop-doc-logo-img,.hop-doc-sign-img{display:none!important;} th,td{padding:2px 3px!important;font-size:inherit!important;}'
+    : '';
+  const labels = (pr.copy_labels && pr.copy_labels.length) ? pr.copy_labels : [''];
+  const copies = labels.map((lb, i) => `<div class="hop-print-copy" style="${i ? 'page-break-before:always;' : ''}">
+      ${lb && labels.length > 1 ? `<div style="text-align:right;font-size:10px;font-weight:700;color:#475569;">${foEscapeText(lb)}</div>` : ''}
+      ${sheet.outerHTML}</div>`).join('');
   const w = window.open('', '_blank', 'noopener,noreferrer,width=920,height=1100');
   if (!w) {
     window.print();
     return;
   }
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${foEscapeText(title)}</title>
-    <style>${styles}</style></head><body>${sheet.outerHTML}</body></html>`);
+    <style>${styles}${pageCss}${narrowCss}</style></head><body>${copies}</body></html>`);
   w.document.close();
   w.focus();
   setTimeout(() => { w.print(); }, 350);
@@ -4302,6 +4317,7 @@ async function hopDownloadDocPreview() {
 }
 
 function hopUpdateDocPreviewHead(data) {
+  if (data) hopState.docPreviewPrint = data.print || null;
   const head = document.querySelector('#hop-party-txn-overlay .hop-doc-preview-head-title');
   if (!head || !data) return;
   const header = data.header || {};

@@ -50,9 +50,9 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Setting | State |
 |---|---|
 | Print theme / colour | ✅ (Cursor) |
-| Paper size (A4 / A5 / thermal 2"/3") | ❌ |
+| Paper size (A4 / A5 / thermal 2"/3") | ✅ Settings → Print (web prints all; phone PDF A4/A5) |
 | Show/hide: amount in words, signature, bank details, terms + footer text | ✅ Settings (HSN/tax breakup columns ❌) |
-| Copies (Original / Duplicate / Triplicate) | ❌ |
+| Copies (Original / Duplicate / Triplicate) | ✅ Settings → Print (web print + phone PDF) |
 | Header/footer text, page margins | ❌ |
 
 ### Messages & reminders
@@ -101,7 +101,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Online store / catalogue sharing | 🟡 (catalogue exists) |
 | Payment link / UPI QR on invoice | 🟡 UPI payment link on bill + WhatsApp; QR picture needs a QR library (owner OK) |
 | Share invoice on WhatsApp | ✅ (text + UPI link; PDF attach is by the phone share sheet) |
-| Thermal printing | ❌ |
+| Thermal printing | 🟡 thermal paper layout from web print; Bluetooth printer from phone ❌ |
 | Barcode scanning on phone | ❌ |
 | Offline mode | ❌ |
 | AI: bill reading, insights, Guard, Ask Nexora | ✅ |
@@ -133,3 +133,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   interest. Phone: tap a bank account. Web: Cash & Bank → account → Reconcile. Ask Nexora shows it.
 - 2026-11-16: Sharing — UPI ID in Settings, "Pay by UPI" link on sale invoices with money due,
   WhatsApp bill / payment reminder buttons (phone + web) using the owner's message templates.
+- 2026-11-16: Print — paper size (A4, A5, thermal 80/58 mm) and copies (Original / Duplicate /
+  Triplicate) in Settings; web print and phone PDF follow them.

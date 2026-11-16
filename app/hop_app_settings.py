@@ -39,6 +39,11 @@ SCHEMA: list[dict[str, Any]] = [
     {"key": "print_bank", "section": "Print", "label": "Show bank details", "type": "bool", "default": True},
     {"key": "print_signature", "section": "Print", "label": "Show signature", "type": "bool", "default": True},
     {"key": "print_terms", "section": "Print", "label": "Show terms & conditions", "type": "bool", "default": True},
+    {"key": "print_paper", "section": "Print", "label": "Paper size", "type": "select", "default": "a4",
+     "options": [["a4", "A4"], ["a5", "A5"], ["thermal80", "Thermal 3 inch (80 mm)"], ["thermal58", "Thermal 2 inch (58 mm)"]],
+     "help": "Thermal prints a narrow receipt from the web; the phone PDF uses A4 for thermal."},
+    {"key": "print_copies", "section": "Print", "label": "Copies when printing", "type": "select", "default": "1",
+     "options": [["1", "Original only"], ["2", "Original + Duplicate"], ["3", "Original + Duplicate + Triplicate"]]},
     {"key": "print_footer", "section": "Print", "label": "Footer text on every bill", "type": "text", "default": "",
      "help": "e.g. Thank you for your business!"},
     # Sharing
