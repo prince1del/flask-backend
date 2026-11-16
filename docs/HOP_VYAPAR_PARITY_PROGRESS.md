@@ -93,6 +93,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | GST | Flag missing GSTIN / HSN / wrong rate before filing | ⏳ Phase 2 follow-up |
 | Stock | Low-stock reorder suggestion from sales speed | ⏳ Phase 3 |
 | Phone | Same AI buttons on the phone screens | ⏳ Phase 4 |
+| Bill extras (charges, free qty, TCS) | ✨ Bill reader fills charges, free qty, TCS; total-mismatch check counts them | ✅ 2026-11-16 |
 | Rest of NEXORA (BD side) | NEXORA Guard plan (rules + AI explain, issues inbox, daily digest) — agreed earlier, after tracking | ⏳ after HoP phases |
 
 ## How to deploy (for whoever continues)

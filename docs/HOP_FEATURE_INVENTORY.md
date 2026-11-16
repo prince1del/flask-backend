@@ -26,11 +26,11 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Default payment terms / due days | ✅ Settings (party credit days first) |
 | Show last sale / purchase price while billing | ✅ (rate suggestion) |
 | Cash sale by default (fully received) | ✅ Settings |
-| Additional charges on bills (packing, freight…) | 🟡 (shipping only) |
+| Additional charges on bills (packing, freight…) | ✅ any number, each with own GST (no stock) |
 | Discount on bill + per item | ✅ |
-| Free quantity, item description on bill | 🟡 (description yes, free qty no) |
-| Transaction time on bills | ❌ |
-| PO number/date on sale invoice | ❌ |
+| Free quantity, item description on bill | ✅ (free qty moves stock, not charged) |
+| Transaction time on bills | ✅ |
+| PO number/date on sale invoice | ✅ (invoice, sale order, challan) |
 | Estimate / Sale order / Challan / Proforma / Purchase order on/off | ✅ (all available) |
 | Link payment to invoices | ✅ |
 | Warn on duplicate bill number | ✅ |
@@ -43,7 +43,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Place of supply, reverse charge | ✅ (Night 2) |
 | Composition scheme | ✅ Settings (Bill of Supply, no GST on sales) |
 | Additional cess | ❌ |
-| TCS on sales / TDS on purchases | 🟡 (TDS on commission only) |
+| TCS on sales / TDS on purchases | ✅ TCS on sale invoice (liability) + purchase bill (to claim); TDS on commission only |
 | E-Invoice / E-Way Bill | 🟡 (JSON files; direct portal API needs owner's GSP account) |
 
 ### Print
@@ -120,3 +120,6 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Settings system (server + web + phone, same list): prefixes, round-off, GST-inclusive
   rates, due days, cash sale, short stock, composition, print options, party groups, credit limit.
   Place of supply + reverse charge. Guard: HoP and BD inboxes separate.
+- 2026-11-16: Bill extras — additional charges (own GST), free qty, PO no/date, bill time, TCS on
+  sale invoices and purchase bills (books: TCS payable / TCS paid). Phone form + preview + PDF, web
+  form + preview. AI bill reader also reads charges, free qty and TCS.

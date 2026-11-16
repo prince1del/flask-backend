@@ -251,7 +251,7 @@
           </div>
           <div class="hop-doc-meta-right">
             <div><span class="hop-doc-meta-label">No.</span> ${foEscapeText(header.doc_number || '—')}</div>
-            <div><span class="hop-doc-meta-label">Date</span> ${foEscapeText(hopPreviewDate(header.doc_date))}</div>
+            <div><span class="hop-doc-meta-label">Date</span> ${foEscapeText(hopPreviewDate(header.doc_date))}</div>${header.txn_time ? `<div><span class="hop-doc-meta-label">Time</span> ${foEscapeText(header.txn_time)}</div>` : ''}${header.po_number ? `<div><span class="hop-doc-meta-label">PO No.</span> ${foEscapeText(header.po_number)}${header.po_date ? ` (${foEscapeText(hopPreviewDate(header.po_date))})` : ''}</div>` : ''}
           </div>
         </div>
         ${notes ? `<div class="hop-doc-letter">${hopCommIntroHtml(notes)}</div>` : ''}
@@ -307,7 +307,7 @@
         </div>
         <div class="hop-doc-meta-right">
           <div><span class="hop-doc-meta-label">${foEscapeText(title)} No.</span> ${foEscapeText(header.doc_number || '—')}</div>
-          <div><span class="hop-doc-meta-label">Date</span> ${foEscapeText(hopPreviewDate(header.doc_date))}</div>
+          <div><span class="hop-doc-meta-label">Date</span> ${foEscapeText(hopPreviewDate(header.doc_date))}</div>${header.txn_time ? `<div><span class="hop-doc-meta-label">Time</span> ${foEscapeText(header.txn_time)}</div>` : ''}${header.po_number ? `<div><span class="hop-doc-meta-label">PO No.</span> ${foEscapeText(header.po_number)}${header.po_date ? ` (${foEscapeText(hopPreviewDate(header.po_date))})` : ''}</div>` : ''}
           ${header.status ? `<div><span class="hop-doc-meta-label">Status</span> ${foEscapeText(header.status)}</div>` : ''}
         </div>
       </div>`;
@@ -396,6 +396,7 @@
             ${Number(totals.discount_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>Discount</span><strong>${hopPreviewMoney(totals.discount_amount)}</strong></div>` : ''}
             ${Number(totals.shipping_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>Shipping</span><strong>${hopPreviewMoney(totals.shipping_amount)}</strong></div>` : ''}
             <div class="hop-doc-tot-row"><span>${foEscapeText(taxLabel)}</span><strong>${hopPreviewMoney(totals.tax_total)}</strong></div>
+            ${Number(totals.tcs_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>TCS @${foEscapeText(totals.tcs_pct)}%</span><strong>${hopPreviewMoney(totals.tcs_amount)}</strong></div>` : ''}
             <div class="hop-doc-tot-row hop-doc-tot-grand"><span>Total</span><strong>${hopPreviewMoney(totals.grand_total)}</strong></div>
             <div class="hop-doc-sign">
               <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
@@ -745,6 +746,7 @@
       discount_pct: ln.discount_pct != null ? String(ln.discount_pct) : '0',
       tax_pct: ln.tax_pct != null ? String(ln.tax_pct) : '5',
       hsn: ln.hsn || '',
+      free_qty: Number(ln.free_qty || 0) > 0 ? String(ln.free_qty) : '',
     });
     const mode = hopState.manualDoc?.mode || 'standard';
     if (mode === 'commercial' && data.sections?.length) {
@@ -926,7 +928,8 @@
     }, 0));
     const ship = Number(d.shippingAmount || 0);
     const shipTax = hopManualDocShippingTaxAmount(d);
-    return round2(itemsTotal + ship + shipTax);
+    const base = round2(itemsTotal + ship + shipTax);
+    return window.hopMoney_?.withExtras ? window.hopMoney_.withExtras(d, base) : base;
   }
 
   function hopManualDocLineCalc(ln) {
@@ -1002,7 +1005,8 @@
       <td class="hop-vyp-sl">${li + 1}</td>
       <td class="hop-vyp-item"><input class="hop-vyp-inp" value="${foEscapeText(ln.item_name)}" oninput="hopManualDocSetLine(${si},${li},'item_name',this.value)" onblur="hopMaybeSuggestLineRate && hopMaybeSuggestLineRate(${si},${li})" placeholder="Item / article" /></td>
       <td class="hop-vyp-desc"><input class="hop-vyp-inp" value="${foEscapeText(ln.description || '')}" oninput="hopManualDocSetLine(${si},${li},'description',this.value)" placeholder="Description" /></td>
-      <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="0" /></td>
+      <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" value="${foEscapeText(ln.qty)}" oninput="hopManualDocSetLine(${si},${li},'qty',this.value)" inputmode="decimal" placeholder="0" />
+        <input class="hop-vyp-inp hop-vyp-inp--num" style="font-size:.75rem;opacity:.85;" value="${foEscapeText(ln.free_qty || '')}" oninput="hopManualDocSetLine(${si},${li},'free_qty',this.value)" inputmode="decimal" placeholder="+ free" title="Free quantity (moves stock, not charged)" /></td>
       <td class="hop-vyp-unit"><input class="hop-vyp-inp hop-vyp-inp--cen" value="${foEscapeText(ln.unit)}" oninput="hopManualDocSetLine(${si},${li},'unit',this.value)" list="hop-unit-list" placeholder="MTR" /></td>
       <td class="hop-vyp-num"><input class="hop-vyp-inp hop-vyp-inp--num" data-hop-line-si="${si}" data-hop-line-li="${li}" data-hop-line-field="rate" value="${foEscapeText(ln.rate)}" oninput="hopManualDocSetLine(${si},${li},'rate',this.value)" inputmode="decimal" placeholder="0.00" /></td>
       <td class="hop-vyp-read" id="hop-comm-amt-${si}-${li}">${amts.amount}</td>
@@ -1304,6 +1308,7 @@
             discount_pct: Number(ln.discount_pct || 0),
             hsn: String(ln.hsn || '').trim(),
             section_title: String(sec.title || '').trim(),
+            free_qty: Number(ln.free_qty || 0),
           });
         }
       }
@@ -1317,6 +1322,7 @@
           rate: Number(ln.rate),
           tax_pct: Number(ln.tax_pct || 0),
           hsn: String(ln.hsn || '').trim(),
+          free_qty: Number(ln.free_qty || 0),
         });
       }
     }

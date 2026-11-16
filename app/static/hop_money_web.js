@@ -39,6 +39,7 @@
       receivedAmount: '', paymentChoice: '', paymentRef: '', chequeDate: '',
       amount: '', allocations: {}, openBills: null, expenseCategoryId: '', linkedFromTxnId: null, linkedFromLabel: '',
       placeOfSupply: '', reverseCharge: false,
+      charges: [], poNumber: '', poDate: '', txnTime: '', tcsPct: '',
     });
     const cash = (hopState.moneyAccounts || []).find((a) => a.account_type === 'cash');
     if (cash) d.paymentChoice = `acct:${cash.id}`;
@@ -57,6 +58,11 @@
       expenseCategoryId: data.expense_category_id ? String(data.expense_category_id) : '',
       placeOfSupply: data.place_of_supply || '',
       reverseCharge: !!data.reverse_charge,
+      charges: (data.charges || []).map((c) => ({ name: c.name || '', amount: String(c.amount ?? ''), tax_pct: String(c.tax_pct ?? 0) })),
+      poNumber: data.po_number || '',
+      poDate: data.po_date || '',
+      txnTime: duplicate ? '' : (data.txn_time || ''),
+      tcsPct: Number(data.tcs_pct || 0) > 0 ? String(data.tcs_pct) : '',
       allocations: {},
     });
     if (!duplicate) (data.allocations || []).forEach((a) => { d.allocations[a.txn_id] = String(a.amount); });
@@ -87,8 +93,82 @@
         <input type="date" class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.chequeDate)}" onchange="hopMoneySet('chequeDate',this.value)" /></div>` : ''}`;
   }
 
+  // ---------- Bill extras: additional charges, PO no/date, time, TCS ----------
+  const TCS_TYPES = new Set([1, 2]);
+  const PO_TYPES = new Set([1, 65, 30]);
+
+  function chargesTotal(d) {
+    return (d.charges || []).reduce((s, c) => {
+      const a = num(c.amount);
+      return String(c.name || '').trim() && a > 0 ? s + Math.round(a * (1 + num(c.tax_pct) / 100) * 100) / 100 : s;
+    }, 0);
+  }
+
+  function withExtras(d, base) {
+    const ty = Number(hopState.manualDoc?.txnType);
+    const before = Math.round((base + chargesTotal(d)) * 100) / 100;
+    const tcs = TCS_TYPES.has(ty) ? Math.round(before * num(d.tcsPct)) / 100 : 0;
+    return Math.round((before + tcs) * 100) / 100;
+  }
+
+  function extrasHtml() {
+    const md = hopState.manualDoc || {};
+    const d = hopState.manualDocDraft || {};
+    const ty = Number(md.txnType);
+    const rows = (d.charges || []).map((c, i) => `
+      <div class="hop-vyp-sum-row" style="gap:6px;">
+        <input class="hop-vyp-control hop-vyp-control--sm" style="flex:1.4;" value="${esc(c.name)}" placeholder="Charge name" oninput="hopMoneyCharge(${i},'name',this.value)" />
+        <input class="hop-vyp-control hop-vyp-control--sm" style="flex:1;" value="${esc(c.amount)}" placeholder="₹" inputmode="decimal" oninput="hopMoneyCharge(${i},'amount',this.value)" />
+        <input class="hop-vyp-control hop-vyp-control--sm" style="flex:.7;" value="${esc(c.tax_pct)}" placeholder="GST %" inputmode="decimal" oninput="hopMoneyCharge(${i},'tax_pct',this.value)" />
+        <button type="button" class="hop-vyp-trash" onclick="hopMoneyChargeRemove(${i})" title="Remove">✕</button>
+      </div>`).join('');
+    return `
+      <div class="hop-vyp-money" id="hop-extras-panel">
+        <div class="hop-vyp-sum-row"><strong>Additional charges</strong></div>
+        ${rows}
+        <div class="hop-vyp-sum-row" style="gap:4px;flex-wrap:wrap;">
+          ${['Freight', 'Packing', 'Labour'].map((n) => `<button type="button" class="nx-btn" onclick="hopMoneyChargeAdd('${n}')">+ ${n}</button>`).join('')}
+          <button type="button" class="nx-btn" onclick="hopMoneyChargeAdd('')">+ Other</button>
+        </div>
+        ${PO_TYPES.has(ty) ? `<div class="hop-vyp-sum-row"><span>PO no.</span>
+          <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.poNumber)}" oninput="hopMoneySet('poNumber',this.value)" /></div>
+          <div class="hop-vyp-sum-row"><span>PO date</span>
+          <input type="date" class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.poDate)}" onchange="hopMoneySet('poDate',this.value)" /></div>` : ''}
+        <div class="hop-vyp-sum-row"><span>Time</span>
+          <input type="time" class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.txnTime)}" onchange="hopMoneySet('txnTime',this.value)" /></div>
+        ${TCS_TYPES.has(ty) ? `<div class="hop-vyp-sum-row"><span>TCS % <small class="hop-doc-muted">(added to total)</small></span>
+          <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.tcsPct)}" inputmode="decimal" placeholder="0" oninput="hopMoneySet('tcsPct',this.value);hopMoneyRefreshTotal()" /></div>` : ''}
+      </div>`;
+  }
+
+  function extrasFields() {
+    const ty = Number(hopState.manualDoc?.txnType);
+    const d = hopState.manualDocDraft || {};
+    if (PAYMENT_TYPES.has(ty)) return {};
+    const out = {
+      charges: (d.charges || []).filter((c) => String(c.name || '').trim() && num(c.amount) > 0)
+        .map((c) => ({ name: String(c.name).trim(), amount: num(c.amount), tax_pct: num(c.tax_pct) })),
+      txn_time: d.txnTime || '',
+    };
+    if (PO_TYPES.has(ty)) Object.assign(out, { po_number: String(d.poNumber || '').trim(), po_date: d.poDate || '' });
+    if (TCS_TYPES.has(ty)) out.tcs_pct = num(d.tcsPct);
+    return out;
+  }
+
+  function refreshTotal() {
+    const el = document.getElementById('hop-manual-doc-grand');
+    if (el && typeof window.hopManualDocCalcGrandPublic === 'function') {
+      el.textContent = typeof hopPreviewMoney === 'function' ? hopPreviewMoney(window.hopManualDocCalcGrandPublic()) : money(window.hopManualDocCalcGrandPublic());
+    }
+    refreshBalance();
+  }
+
   // ---------- Invoice / bill: received or paid now + balance ----------
   function billPanelHtml(grand) {
+    return extrasHtml() + billMoneyHtml(grand);
+  }
+
+  function billMoneyHtml(grand) {
     const md = hopState.manualDoc || {};
     const d = hopState.manualDocDraft || {};
     const word = BILL_TYPES[Number(md.txnType)];
@@ -364,8 +444,12 @@
           d.lines = r.lines.map((l) => ({
             item_name: l.item_name, description: '', qty: String(l.qty), unit: l.unit || 'Pcs',
             rate: String(l.rate), discount_pct: '0', tax_pct: String(l.tax_pct || 0), hsn: l.hsn || '',
+            free_qty: Number(l.free_qty || 0) > 0 ? String(l.free_qty) : '',
           })).concat([typeof hopEmptyDocLine === 'function' ? hopEmptyDocLine() : { item_name: '', qty: '', rate: '' }]);
         }
+        if (r.charges?.length) d.charges = r.charges.map((c) => ({ name: c.name, amount: String(c.amount), tax_pct: String(c.tax_pct || 0) }));
+        const tcs = Number(r.tcs_amount || 0), tot = Number(r.total || 0);
+        if (tcs > 0 && tot > tcs) d.tcsPct = String(Math.round(tcs / (tot - tcs) * 100000) / 1000);
       } else {
         if (r.total) d.amount = String(r.total);
         if (r.expense_category_id) d.expenseCategoryId = String(r.expense_category_id);
@@ -434,6 +518,7 @@
       else Object.assign(out, { payment_mode: '', payment_account_id: null });
     }
     if (d.linkedFromTxnId && !md.editId) out.linked_from_txn_id = d.linkedFromTxnId;
+    Object.assign(out, extrasFields());
     if (BILL_TYPES[Number(md.txnType)]) {
       out.place_of_supply = d.placeOfSupply || '';
       if (Number(md.txnType) === 2) out.reverse_charge = !!d.reverseCharge;
@@ -658,6 +743,7 @@
   }
 
   window.hopMoney_ = {
+    withExtras,
     loadRefs, initDraft, applyData, billPanelHtml, paymentBodyHtml, paymentPayload, billFields,
     isPaymentType: (t) => PAYMENT_TYPES.has(Number(t)), previewExtras, refreshBalance, loadBills, aiBarHtml,
   };
@@ -683,4 +769,23 @@
     hopMoneyCloseCheque: closeCheque,
     hopMoneyReopenCheque: reopenCheque,
   });
+  window.hopMoneyRefreshTotal = refreshTotal;
+  window.hopMoneyCharge = (i, k, v) => {
+    const d = hopState.manualDocDraft;
+    if (!d?.charges?.[i]) return;
+    d.charges[i][k] = v;
+    refreshTotal();
+  };
+  window.hopMoneyChargeAdd = (name) => {
+    const d = hopState.manualDocDraft;
+    if (!d) return;
+    (d.charges = d.charges || []).push({ name, amount: '', tax_pct: name ? '18' : '0' });
+    rerenderForm();
+  };
+  window.hopMoneyChargeRemove = (i) => {
+    const d = hopState.manualDocDraft;
+    if (!d?.charges) return;
+    d.charges.splice(i, 1);
+    rerenderForm();
+  };
 })();
