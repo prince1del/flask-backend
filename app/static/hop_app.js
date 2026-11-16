@@ -4649,6 +4649,7 @@ async function renderHopPartiesModule(mount) {
             <span class="pty-topbar-sub">${parties.length} contacts</span>
           </div>
           <div class="pty-topbar-actions">
+            <button type="button" class="nx-btn" onclick="hopImportOpen('parties')">Import from Excel</button>
             <button type="button" class="nx-btn nx-btn-primary" onclick="hopOpenAddPartyChooser()">+ Add Party</button>
           </div>
         </div>
@@ -7247,7 +7248,8 @@ async function renderHopProductsModule(mount) {
     )}`;
   hopState._productsCache = rows;
   mount.innerHTML = hopModuleShell('Products', 'Product Catalogue', 'HSN, GST%, rates and stock',
-    `<button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('product')">+ New Product</button>`, body);
+    `<button type="button" class="nx-btn" onclick="hopImportOpen('items')">Import from Excel</button>
+     <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('product')">+ New Product</button>`, body);
 }
 
 function hopFilterProductsTable(q) {

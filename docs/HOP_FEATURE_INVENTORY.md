@@ -94,7 +94,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Bank reconciliation | ✅ tick entries (cleared date), statement CSV auto-match + hints for missing lines |
 | 32 reports + AI insights | ✅ |
 | GSTR-1/2/3B/9, HSN | ✅ |
-| Excel import (items, parties), bulk update | ❌ |
+| Excel import (items, parties), bulk update | ✅ .xlsx / .csv, preview with checks, bulk update of items (phone + web) |
 | Tally export | ✅ (Cursor) |
 | Recycle bin | ✅ |
 | User roles & permissions for staff, audit trail | ❌ |
@@ -135,3 +135,6 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   WhatsApp bill / payment reminder buttons (phone + web) using the owner's message templates.
 - 2026-11-16: Print — paper size (A4, A5, thermal 80/58 mm) and copies (Original / Duplicate /
   Triplicate) in Settings; web print and phone PDF follow them.
+- 2026-11-16: Import from Excel / CSV — items and parties, columns matched by name, every row checked
+  (missing name, bad GSTIN / mobile, odd GST rate, duplicates); bulk update of existing items.
+  Party groups now come from Settings on web and phone.

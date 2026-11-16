@@ -98,6 +98,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Other income | Ask Nexora `other_income`; P&L insights include it | ✅ 2026-11-16 |
 | Bank reconciliation | ✨ Statement auto-match + plain hints for lines missing in books; Ask Nexora cash_bank shows unticked totals | ✅ 2026-11-16 (rule based, no AI cost) |
 | Sharing (WhatsApp, UPI link) | Existing ✨ AI reminder text (`/ai/payment-reminder`) + owner's templates | ✅ 2026-11-16 |
+| Excel import | Smart column matching (Hinglish names too) + row checks before saving | ✅ 2026-11-16 (rule based, no AI cost) |
 | Rest of NEXORA (BD side) | NEXORA Guard plan (rules + AI explain, issues inbox, daily digest) — agreed earlier, after tracking | ⏳ after HoP phases |
 
 ## How to deploy (for whoever continues)
