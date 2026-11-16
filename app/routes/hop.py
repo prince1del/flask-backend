@@ -2434,6 +2434,48 @@ def product_by_barcode():
     return jsonify({"success": True, "data": row})
 
 
+@hop_bp.route("/import/<kind>/preview", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_import_preview(kind: str):
+    """Excel / CSV of items or parties → matched columns + checked rows. Nothing is saved."""
+    ensure_hop_schema(_db_path())
+    from app import hop_import
+
+    f = request.files.get("file")
+    if not f:
+        return _json_error("Choose an Excel or CSV file")
+    raw = f.read(5 * 1024 * 1024 + 1)
+    if len(raw) > 5 * 1024 * 1024:
+        return _json_error("File is too big (max 5 MB)")
+    try:
+        table = hop_import.read_table(raw, f.filename or "")
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_import.preview(conn, _ws(), kind, table)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except Exception:  # unreadable spreadsheet
+        return _json_error("Could not read this file. Save it as .xlsx or .csv and try again.")
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/import/<kind>/commit", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_import_commit(kind: str):
+    """Save the rows the user confirmed in the preview."""
+    ensure_hop_schema(_db_path())
+    from app import hop_import
+
+    body = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_import.commit(conn, _ws(), kind, body.get("rows") or [], bool(body.get("update_existing")))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/suggest-rate", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
