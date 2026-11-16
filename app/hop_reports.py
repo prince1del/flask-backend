@@ -713,8 +713,14 @@ def _gst_docs(conn, ws, types, frm, to):
                              (ws, int(t.get("party_id") or 0))).fetchone() if t.get("party_id") else None
         gstin = (party[0] or "").strip().upper() if party else ""
         pstate = _state_code(gstin)
-        inter = bool(pstate and firm_state and pstate != firm_state) or bool(
-            not pstate and party and party[1] and firm_state_name and party[1].strip().lower() != firm_state_name)
+        pos = str(t.get("place_of_supply") or "").strip()
+        if pos:
+            # Place of supply on the bill decides: supplier state vs where goods/services are supplied.
+            supplier = firm_state if int(t["txn_type"]) in (1, 21) else pstate
+            inter = bool(supplier and supplier != pos)
+        else:
+            inter = bool(pstate and firm_state and pstate != firm_state) or bool(
+                not pstate and party and party[1] and firm_state_name and party[1].strip().lower() != firm_state_name)
         lines = _rows(conn, "SELECT tax_pct, SUM(COALESCE(line_total,0)-COALESCE(tax_amount,0)) AS taxable, "
                             "SUM(COALESCE(tax_amount,0)) AS tax FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=? "
                             "GROUP BY tax_pct", (ws, int(t["source_txn_id"])))
@@ -727,7 +733,8 @@ def _gst_docs(conn, ws, types, frm, to):
                         "gstin": gstin, "txn_type": int(t["txn_type"]), "rate": _f(ln["tax_pct"]),
                         "taxable": _r2(_f(ln["taxable"])), "igst": _r2(tax if inter else 0),
                         "cgst": _r2(0 if inter else tax / 2), "sgst": _r2(0 if inter else tax / 2),
-                        "invoice_value": _r2(_f(t["total_amount"]))})
+                        "invoice_value": _r2(_f(t["total_amount"])), "place_of_supply": pos or None,
+                        "reverse_charge": bool(t.get("reverse_charge"))})
     return out
 
 
@@ -760,12 +767,18 @@ def gstr2(conn, ws, frm="", to="") -> dict[str, Any]:
 
 def gstr3b(conn, ws, frm="", to="") -> dict[str, Any]:
     out_rows = _gst_docs(conn, ws, (1, 21), frm, to)
-    in_rows = [r for r in _gst_docs(conn, ws, (2, 16), frm, to) if r["gstin"]]
+    all_in = _gst_docs(conn, ws, (2, 16), frm, to)
+    rcm_rows = [r for r in all_in if r["reverse_charge"]]
+    # Reverse charge: we pay that GST in cash, and it is also eligible as ITC.
+    in_rows = [r for r in all_in if r["gstin"] or r["reverse_charge"]]
     outward, itc = _sum(out_rows, {21: -1}), _sum(in_rows, {16: -1})
+    rcm = _sum(rcm_rows, {16: -1})
     payable, carry = _set_off(outward, itc)
     return {"from_date": frm or None, "to_date": to or None, "outward_supplies": outward, "eligible_itc": itc,
             "tax_payable": payable, "credit_carried_forward": carry,
-            "total_payable": _r2(sum(payable.values())),
+            "reverse_charge_inward": rcm,
+            "rcm_tax_to_pay_in_cash": _r2(rcm["igst"] + rcm["cgst"] + rcm["sgst"]),
+            "total_payable": _r2(sum(payable.values()) + rcm["igst"] + rcm["cgst"] + rcm["sgst"]),
             "note": "ITC used in the GST order: IGST credit → IGST, CGST, SGST; CGST credit → CGST, IGST; "
                     "SGST credit → SGST, IGST (CGST and SGST never against each other). Check before filing."}
 

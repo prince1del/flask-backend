@@ -305,6 +305,15 @@ def post_document(conn: sqlite3.Connection, ws: str, txn_id: int, payload: dict[
         return
     if t.get("deleted_at"):
         raise ValueError("This document is in the recycle bin. Restore it first.")
+    if "place_of_supply" in payload or "reverse_charge" in payload:
+        pos = _s(payload.get("place_of_supply"))[:2] if "place_of_supply" in payload else t.get("place_of_supply")
+        if pos and not (len(pos) == 2 and pos.isdigit()):
+            raise ValueError("Place of supply must be a 2-digit state code (e.g. 07 for Delhi)")
+        rcm = (1 if payload.get("reverse_charge") in (True, 1, "1", "true", "yes") else 0) \
+            if "reverse_charge" in payload else t.get("reverse_charge")
+        conn.execute("UPDATE hop_party_transactions SET place_of_supply=?, reverse_charge=? WHERE workspace_id=? AND id=?",
+                     (pos or None, rcm, ws, int(txn_id)))
+        t = _row(conn, ws, txn_id)
     ty = int(t.get("txn_type") or 0)
     total = _f(t.get("total_amount"))
 

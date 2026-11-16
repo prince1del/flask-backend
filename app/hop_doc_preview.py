@@ -771,6 +771,8 @@ def get_party_transaction_edit_data(
         "unused_amount": h.get("unused_amount"),
         "total_amount": float(h.get("total_amount") or 0),
         "linked_from_txn_id": h.get("linked_from_txn_id"),
+        "place_of_supply": h.get("place_of_supply"),
+        "reverse_charge": bool(h.get("reverse_charge")),
         "converted_to_txn_id": h.get("converted_to_txn_id"),
     }
     from app import hop_money

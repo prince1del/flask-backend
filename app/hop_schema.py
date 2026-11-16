@@ -1185,6 +1185,8 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("ack_no", "TEXT"),
             ("ack_date", "TEXT"),
             ("eway_bill_no", "TEXT"),
+            ("place_of_supply", "TEXT"),        # 2-digit state code; decides IGST vs CGST+SGST
+            ("reverse_charge", "INTEGER"),      # 1 = buyer pays the GST (purchase under RCM)
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")

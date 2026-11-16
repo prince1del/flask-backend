@@ -101,7 +101,8 @@ def _amounts(t: dict, firm: dict, party: dict, lines: list[dict]):
     fg, pg = _s(firm.get("gstin")).upper(), _s(party.get("gst_no")).upper()
     seller_st = _state(fg, firm.get("state"))
     buyer_st = _state(pg, party.get("state"))
-    inter = bool(seller_st and buyer_st and seller_st != buyer_st)
+    pos = _s(t.get("place_of_supply")) or buyer_st
+    inter = bool(seller_st and pos and seller_st != pos)
     items, tot = [], {"ass": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "disc": 0.0}
     for i, ln in enumerate(lines, 1):
         qty, rate = _f(ln.get("qty")), _f(ln.get("rate"))
@@ -132,13 +133,14 @@ def einvoice_json(conn: sqlite3.Connection, ws: str, txn_ids: list[int]) -> dict
         seller_st, buyer_st, inter, items, tot, other = _amounts(t, firm, party, lines)
         out.append({
             "Version": "1.1",
-            "TranDtls": {"TaxSch": "GST", "SupTyp": "B2B", "RegRev": "N", "IgstOnIntra": "N"},
+            "TranDtls": {"TaxSch": "GST", "SupTyp": "B2B", "RegRev": "Y" if t.get("reverse_charge") else "N",
+                         "IgstOnIntra": "N"},
             "DocDtls": {"Typ": "INV", "No": _s(t.get("txn_number"))[:16], "Dt": _date(t.get("txn_date"))},
             "SellerDtls": {"Gstin": _s(firm.get("gstin")).upper(), "LglNm": _s(firm.get("firm_name")) or "Seller",
                            "Addr1": (_s(firm.get("address")) or "-")[:100], "Loc": (_s(firm.get("state")) or "-")[:50],
                            "Pin": int(_pin(firm.get("pincode"), firm.get("address")) or 0), "Stcd": seller_st},
             "BuyerDtls": {"Gstin": _s(party.get("gst_no")).upper(), "LglNm": _s(party.get("billing_name") or party.get("company")) or "Buyer",
-                          "Pos": buyer_st, "Addr1": (_s(party.get("address")) or "-")[:100],
+                          "Pos": _s(t.get("place_of_supply")) or buyer_st, "Addr1": (_s(party.get("address")) or "-")[:100],
                           "Loc": (_s(party.get("city") or party.get("state")) or "-")[:50],
                           "Pin": int(_pin(party.get("address"), party.get("shipping_address")) or 0), "Stcd": buyer_st},
             "ItemList": [{"SlNo": str(i["sl"]), "PrdDesc": i["name"], "IsServc": "N", "HsnCd": i["hsn"], "Qty": i["qty"],
