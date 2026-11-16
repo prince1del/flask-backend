@@ -65,7 +65,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 ### Party
 | Setting | State |
 |---|---|
-| Party groups (list on server) | 🟡 list in Settings; party form still reads browser list |
+| Party groups (list on server) | ✅ Settings list; web party form reads it and adds new groups to it |
 | Shipping address | ✅ |
 | Credit limit warn / block | ✅ (block enforced on server) |
 | Party custom fields | ✅ (additional fields) |

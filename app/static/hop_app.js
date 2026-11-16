@@ -3162,11 +3162,29 @@ function hopPartyGroupSavedList() {
   }
 }
 
+/** Party groups live in Settings → Party on the server (same list as the phone). */
+function hopPartyGroupServerList() {
+  const v = hopState.appSettings?.party_groups;
+  if (!Array.isArray(v) && !hopState._appSettingsLoading) {
+    hopState._appSettingsLoading = true;
+    hopApi('/api/v1/hop/app-settings').then((d) => { hopState.appSettings = d.values; })
+      .catch(() => {}).finally(() => { hopState._appSettingsLoading = false; });
+  }
+  return Array.isArray(v) ? v : [];
+}
+
 function hopPartyGroupPersist(name) {
   const n = String(name || '').trim();
   if (!n) return;
   const all = new Set([...HOP_DEFAULT_PARTY_GROUPS, ...hopPartyGroupSavedList(), n]);
   localStorage.setItem(hopPartyGroupStorageKey(), JSON.stringify([...all].sort((a, b) => a.localeCompare(b))));
+  const server = hopPartyGroupServerList();
+  if (!server.some((g) => g.toLowerCase() === n.toLowerCase())) {
+    const next = [...server, n];
+    hopApi('/api/v1/hop/app-settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ party_groups: next }),
+    }).then((d) => { hopState.appSettings = d.values; }).catch(() => {});
+  }
 }
 
 function hopPartyGroupAllOptions() {
@@ -3178,7 +3196,7 @@ function hopPartyGroupAllOptions() {
     if (p.customer_type) fromData.push(String(p.customer_type).trim());
     if (p._type === 'vendor') fromData.push('Supplier');
   });
-  const set = new Set([...HOP_DEFAULT_PARTY_GROUPS, ...hopPartyGroupSavedList(), ...fromData.filter(Boolean)]);
+  const set = new Set([...HOP_DEFAULT_PARTY_GROUPS, ...hopPartyGroupServerList(), ...hopPartyGroupSavedList(), ...fromData.filter(Boolean)]);
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
