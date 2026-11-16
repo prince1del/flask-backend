@@ -427,14 +427,41 @@
   // ---------- AI: read a bill photo / PDF into the form ----------
   function aiBarHtml() {
     const ty = Number(hopState.manualDoc?.txnType);
-    if (ty !== 2 && ty !== 7) return '';
+    const kind = scanKind(ty);
+    if (!kind || hopState.manualDoc?.editId) return '';
     const st = hopState.manualDocDraft?.aiStatus || '';
+    const hint = kind === 'purchase'
+      ? 'Upload a photo or PDF of the bill — AI fills the form, you check and save.'
+      : 'Photo or PDF of any bill, order or handwritten note (Hindi / English) — AI fills customer and items; you check and save.';
     return `
       <div class="hop-vyp-ai" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border-radius:12px;background:rgba(124,58,237,.08);">
-        <input type="file" id="hop-ai-bill" accept="application/pdf,image/*" hidden onchange="hopMoneyReadBill(this.files[0])" />
-        <button type="button" class="hop-vyp-btn hop-vyp-btn--sm" onclick="document.getElementById('hop-ai-bill').click()">✨ Read bill with AI</button>
-        <span class="hop-doc-muted" style="flex:1;min-width:200px;">${st ? esc(st) : 'Upload a photo or PDF of the bill — AI fills the form, you check and save.'}</span>
+        <input type="file" id="hop-ai-bill" accept="application/pdf,image/*" capture="environment" hidden onchange="hopMoneyReadBill(this.files[0])" />
+        <button type="button" class="hop-vyp-btn hop-vyp-btn--sm" onclick="document.getElementById('hop-ai-bill').click()">✨ ${kind === 'purchase' ? 'Read bill with AI' : 'Scan bill / note with AI'}</button>
+        <span class="hop-doc-muted" style="flex:1;min-width:200px;">${st ? esc(st) : hint}</span>
       </div>`;
+  }
+
+  function scanKind(ty) {
+    if ([2, 7, 66].includes(ty)) return 'purchase';
+    if ([1, 65, 30].includes(ty)) return 'sale';
+    if ([27, 83].includes(ty)) return 'quote';
+    return '';
+  }
+
+  /** Sale invoice / quotation: AI-read lines go into the form (standard lines or commercial sections). */
+  function applySaleScan(d, r) {
+    if (r.customer_id) d.customerId = String(r.customer_id);
+    if (r.date) d.txnDate = r.date;
+    if (r.notes) d.notes = [d.notes, r.notes].filter(Boolean).join('\n');
+    const rows = (r.lines || []).map((l) => ({
+      item_name: l.item_name, description: l.description || '', qty: String(l.qty || 1), unit: l.unit || 'PCS',
+      rate: l.rate ? String(l.rate) : '', discount_pct: String(l.discount_pct || 0), tax_pct: String(l.tax_pct || 0),
+      hsn: l.hsn || '', product_id: l.product_id || undefined,
+    }));
+    const blank = typeof hopEmptyDocLine === 'function' ? hopEmptyDocLine() : { item_name: '', qty: '', rate: '' };
+    if (!rows.length) return;
+    if (Array.isArray(d.sections) && d.sections.length) d.sections = [{ title: d.sections[0].title || 'Shortlisted-1', lines: rows.concat([blank]) }];
+    else d.lines = rows.concat([blank]);
   }
 
   async function readBill(file) {
@@ -446,10 +473,20 @@
     try {
       const fd = new FormData();
       fd.append('file', file);
+      const kind = scanKind(Number(md.txnType));
+      fd.append('kind', kind || 'purchase');
       const res = await fetchWithAuth('/api/v1/hop/ai/read-bill', { method: 'POST', body: fd });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.success === false) throw new Error(out.error?.message || 'Could not read the bill');
       const r = out.data || {};
+      if (kind === 'sale' || kind === 'quote') {
+        applySaleScan(d, r);
+        const checks = r.checks || [];
+        d.aiStatus = `Read ${r.lines?.length || 0} item(s)${r.handwritten ? ' from handwriting' : ''}.`
+          + (checks.length ? ` Check: ${checks.join(' ')}` : ' Check the details, then save.');
+        rerenderForm();
+        return;
+      }
       if (r.vendor_id) d.customerId = String(r.vendor_id);
       if (r.bill_date) d.txnDate = r.bill_date;
       if (Number(md.txnType) === 2) {

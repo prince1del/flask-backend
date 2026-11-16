@@ -116,6 +116,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Excel import | Smart column matching (Hinglish names too) + row checks before saving | ✅ 2026-11-16 (rule based, no AI cost) |
 | Godowns, TDS, cess, audit, backup | Ask Nexora `items` shows godown stock, `audit` answers who changed what; rule warnings (godown short, odd TDS/cess %) | ✅ 2026-11-16 |
 | Staff permissions | Plain summary of what a person can do + warnings before saving (e.g. can change bank but cannot see reports); Ask Nexora obeys permissions | ✅ 2026-11-16 |
+| Sale invoice / quotation from any paper | ✨ Scan any bill, order or handwritten note → form filled (customer + catalogue matched, unclear lines flagged) | ✅ 2026-11-16 |
 | Rest of NEXORA (BD side) | NEXORA Guard plan (rules + AI explain, issues inbox, daily digest) — agreed earlier, after tracking | ⏳ after HoP phases |
 
 ## How to deploy (for whoever continues)

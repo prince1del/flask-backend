@@ -104,7 +104,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Thermal printing | 🟡 thermal paper layout from web print; Bluetooth printer from phone ❌ |
 | Barcode scanning on phone | ✅ Scan on bill lines (adds the item / +1 qty) and on the item form |
 | Offline mode | 🟡 phone: new bills / payments / expenses saved with no internet and sent by themselves later (no double save); parties kept for offline bills; lists and reports need internet |
-| AI: bill reading, insights, Guard, Ask Nexora | ✅ |
+| AI: bill reading, insights, Guard, Ask Nexora | ✅ + scan any bill / order / handwritten note into a Sale Invoice or Quotation |
 
 ## Order of work
 1. **Settings engine** — one server list of settings, one screen on web + phone (built from the same
@@ -165,3 +165,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-16: Offline mode (phone) — with no internet a new bill is kept on the phone, shown as
   "waiting to send", and sent by itself when the internet is back (even with the app closed). The
   server never saves the same bill twice (client_ref).
+- 2026-11-16: ✨ AI scan for Sale Invoice, Sale Order, Challan, Quotation, Proforma (and purchase):
+  camera / photo / PDF of any bill, order or HANDWRITTEN note (Hindi / Hinglish / English) → customer,
+  items, qty, unit, rate, GST filled; missing rates from the catalogue (marked), unclear lines flagged,
+  total checked. One capped AI call inside the daily limit; nothing is saved by AI. Phone + web.
