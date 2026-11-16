@@ -48,10 +48,25 @@
         <h3 style="margin:0 0 10px;">${esc(s.title)}</h3>
         ${s.fields.map((f) => `<div style="padding:8px 0;border-top:1px solid rgba(148,163,184,.15);">${fieldHtml(f)}</div>`).join('')}
       </div>`).join('');
-    mount.innerHTML = hopModuleShell('Settings', 'Settings', 'Bills, GST, print and parties — applies on phone and web', '', body);
+    const backup = `<div class="nx-card" style="padding:14px;margin-bottom:12px;"><h3 style="margin:0 0 10px;">Backup</h3>
+      <p class="hop-doc-muted">Download all your House of Prizm data (parties, items, bills, payments, bank…) as one zip file.</p>
+      <button type="button" class="nx-btn" onclick="hopBackupDownload()">Download backup</button></div>`;
+    mount.innerHTML = hopModuleShell('Settings', 'Settings', 'Bills, GST, print and parties — applies on phone and web', '', body + backup);
   }
 
   window.renderHopAppSettingsModule = render;
+  window.hopBackupDownload = async () => {
+    try {
+      const res = await fetchWithAuth('/api/v1/hop/backup');
+      if (!res.ok) throw new Error(`Backup failed (${res.status})`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `nexora_hop_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) { toast(e?.message || 'Backup failed', 'err'); }
+  };
   window.hopAppSettingSave = (key, value, type) => save(key, type === 'number' ? Number(value || 0) : value);
 })();
 

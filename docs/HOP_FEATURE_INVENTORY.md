@@ -13,7 +13,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Financial year + year close / lock | ✅ (Cursor, Phase 3) |
 | Passcode / app lock | ✅ phone PIN (Settings → App lock; on open + after 1 min away; Forgot PIN = log in again). Web: login only |
 | Multiple firms (companies) in one login | ❌ |
-| Backup / restore by the user | ❌ (server backups only) |
+| Backup / restore by the user | 🟡 download backup zip (phone + web, Settings); restore with support (no one-click overwrite) |
 | Date format, decimal places (qty, amount) | ❌ |
 | Currency symbol | ❌ (₹ fixed) |
 
@@ -146,3 +146,5 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   e-invoice file show it on its own (CesRt / CesAmt). E-invoice also carries TCS and marks SAC (99…) as service.
 - 2026-11-16: TDS on bills — purchase bill (we deduct; "TDS deducted (to deposit)") and sale invoice
   (customer deducts; "to claim"); bill balance comes down by the TDS. Phone + web fields and preview.
+- 2026-11-16: Backup download — Settings → Backup on phone and web gives one zip (CSV per table,
+  this company's rows only). Restore stays with support so live data is never overwritten by mistake.

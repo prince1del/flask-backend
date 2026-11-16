@@ -2533,6 +2533,25 @@ def hop_audit_log():
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/backup", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_backup_download():
+    """Download all of this company's HoP data (CSV per table, zipped)."""
+    ensure_hop_schema(_db_path())
+    from datetime import date
+
+    from flask import Response
+
+    from app import hop_backup
+
+    with hop_db.connect(_db_path()) as conn:
+        data, _counts = hop_backup.build_zip(conn, _ws())
+    name = f"nexora_hop_backup_{date.today().isoformat()}.zip"
+    return Response(data, mimetype="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @hop_bp.route("/suggest-rate", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
