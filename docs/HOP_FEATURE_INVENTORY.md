@@ -12,7 +12,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Business name, GSTIN, address, logo, signature, bank, terms (Company profile) | ✅ |
 | Financial year + year close / lock | ✅ (Cursor, Phase 3) |
 | Passcode / app lock | ✅ phone PIN (Settings → App lock; on open + after 1 min away; Forgot PIN = log in again). Web: login only |
-| Multiple firms (companies) in one login | ❌ |
+| Multiple firms (companies) in one login | ✅ firm switcher (phone + web); each firm has its own parties, items, bills, bank, GST, settings, numbering |
 | Backup / restore by the user | 🟡 download backup zip (phone + web, Settings); restore with support (no one-click overwrite) |
 | Date format, decimal places (qty, amount) | 🟡 bills: date format + paise / whole rupees (phone + web); app screens keep ₹0.00 |
 | Currency symbol | ❌ (₹ fixed) |
@@ -103,7 +103,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Share invoice on WhatsApp | ✅ (text + UPI link; PDF attach is by the phone share sheet) |
 | Thermal printing | 🟡 thermal paper layout from web print; Bluetooth printer from phone ❌ |
 | Barcode scanning on phone | ✅ Scan on bill lines (adds the item / +1 qty) and on the item form |
-| Offline mode | ❌ |
+| Offline mode | 🟡 phone: new bills / payments / expenses saved with no internet and sent by themselves later (no double save); parties kept for offline bills; lists and reports need internet |
 | AI: bill reading, insights, Guard, Ask Nexora | ✅ |
 
 ## Order of work
@@ -159,3 +159,9 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   login to No access / Can see / Can change for 8 areas, or a quick choice (Salesperson, Accountant,
   Store keeper, View only). Checked on the server for every HoP request and in Ask Nexora; menus hide
   on phone and web. Backup, wipe and permissions are owner only. Staff with nothing set keep full access.
+- 2026-11-16: Multiple firms — owner adds firms; the switcher at the top of the HoP menu (phone + web)
+  picks the firm; every HoP and Ask Nexora call works on that firm only. Settings are copied to a new
+  firm, numbering starts fresh. Staff permissions apply in every firm.
+- 2026-11-16: Offline mode (phone) — with no internet a new bill is kept on the phone, shown as
+  "waiting to send", and sent by itself when the internet is back (even with the app closed). The
+  server never saves the same bill twice (client_ref).

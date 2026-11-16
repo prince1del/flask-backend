@@ -548,6 +548,11 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
 - **Staff permissions** (`app/hop_permissions.py`): checked inside `require_role` for every
   `/api/v1/hop` call; `GET /my-permissions`, owner-only `GET/PUT /staff-permissions`; table
   `hop_staff_permissions`. Phone `ui/hop/HopPermissions.kt`, web `hop_perms_web.js`.
+- **Multiple firms** (`app/hop_firms.py`): `X-Hop-Firm` header picks the firm in `_ws()` (only firms of
+  the login's company, table `hop_firms`); `GET/POST/PATCH /firms`. Phone `HopFirmInterceptor` +
+  `ui/hop/HopFirmSwitcher.kt`; web `fetchWithAuth` + `hop_perms_web.js`.
+- **Offline bills** (phone `ui/hop/HopOffline.kt`): queue file + WorkManager; server dedupes by
+  `hop_party_transactions.client_ref`.
 - Tables: `hop_*` (+ `hop_bank_*`, `hop_stock_journals`, `hop_accounts`,
   `hop_journal_lines`, `hop_payment_links`, `hop_cheques`,
   `hop_expense_categories`). Role: `hop_admin`.

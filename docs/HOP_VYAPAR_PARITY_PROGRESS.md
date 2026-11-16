@@ -92,7 +92,7 @@ Batches report.
 
 **Still left:**
 - Needs owner's accounts: direct e-invoice / e-way bill portal upload (GSP), SMS.
-- Bigger pieces: multiple firms in one login; offline mode; Bluetooth thermal printer from the phone; restore from backup (with support).
+- Bigger pieces: offline lists / reports (offline bills are done); Bluetooth thermal printer from the phone; restore from backup (with support).
 
 ## AI checklist (owner's rule: every feature ships with AI help — never "later")
 Before a phase is called done, every row must be ✅ or have a written reason.
