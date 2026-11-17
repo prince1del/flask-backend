@@ -2258,7 +2258,7 @@ def fabric_preview_fabrics():
                 "engine": preview_engine(),
                 "demo_fabrics": list_demo_fabrics(),
                 "catalogue": products,
-                "hint": "Demo bank works offline/free. Catalogue row still needs a fabric photo until swatches are stored.",
+                "hint": "Pick a fabric to preview it. Your own catalogue fabrics show once their photos are added.",
             },
         }
     )

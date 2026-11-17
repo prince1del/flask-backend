@@ -103,10 +103,10 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Cash, dues, expenses | Ask Nexora `get_hop_books` (cash_bank, receivables, payables, unpaid_bills, expenses) | ✅ Phase 1 |
 | Reports (P&L, BS, cash flow, outstanding, expenses, bill profit, sales, GSTR-3B) | ✨ AI insights button (3–5 points + one action) | ✅ Phase 2 (live test on prod pending) |
 | Reports via chat | Ask Nexora: profit & loss, balance sheet, party statement, day book, GST | ✅ Phase 2 |
-| Sale invoice entry | Suggest item rate from party's last price; warn on unusual price / duplicate bill no. | ⏳ Phase 3 (with party-wise rates) |
-| Party payments | Due-date reminders + AI-written WhatsApp payment reminder text | ⏳ Phase 3 |
-| GST | Flag missing GSTIN / HSN / wrong rate before filing | ⏳ Phase 2 follow-up |
-| Stock | Low-stock reorder suggestion from sales speed | ⏳ Phase 3 |
+| Sale invoice entry | Suggest item rate from party's last price; warn on unusual price / duplicate bill no. | ✅ (`/suggest-rate`; `/entry-warnings`: duplicate_bill_no, unusual_price, credit_limit, short_stock) — checked 2026-11-18 |
+| Party payments | Due-date reminders + AI-written WhatsApp payment reminder text | ✅ Reminders screen + `/ai/payment-reminder` (2026-11-17) |
+| GST | Flag missing GSTIN / HSN / wrong rate before filing | ✅ entry warnings missing_gstin / missing_hsn / unusual_gst_rate + e-invoice problem list before export / IRN — checked 2026-11-18 |
+| Stock | Low-stock reorder suggestion from sales speed | ✅ `/stock/reorder` (Reorder stock screen) — checked 2026-11-18 |
 | Phone | Same AI buttons on the phone screens | ⏳ Phase 4 |
 | Bill extras (charges, free qty, TCS) | ✨ Bill reader fills charges, free qty, TCS; total-mismatch check counts them | ✅ 2026-11-16 |
 | Items (service, MRP, wholesale, 2nd unit, barcode) | Ask Nexora `items` (stock, barcode lookup, item problems); rule checks on the item form | ✅ 2026-11-16 |

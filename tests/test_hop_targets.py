@@ -70,3 +70,20 @@ def test_routes(tmp_path, monkeypatch):
     snap = client.get("/api/v1/hop/executive/snapshot", headers=owner)
     if snap.status_code == 200:
         assert "yearly" in snap.get_json()["data"]
+
+
+def test_profitability_from_bills(tmp_path):
+    from app import hop_ops
+
+    p = str(tmp_path / "pf.sqlite3")
+    ensure_hop_schema(p)
+    with connect(p) as conn:
+        c = create_customer(conn, WS, {"company": "B"})
+        prod = hop_ops.create_product(conn, WS, {"name": "Rod", "purchase_price": 60, "selling_price": 100})
+        d = date.today().isoformat()
+        create(conn, WS, {"txn_type": 1, "customer_id": c["id"], "txn_date": d,
+                          "lines": [{"item_name": "Rod", "product_id": prod["id"], "qty": 10, "rate": 100, "tax_pct": 18}]})
+        conn.commit()
+        r = hop_ops.report_profitability(conn, WS)
+    assert r["revenue"] == pytest.approx(1000) and r["cogs"] == pytest.approx(600) and r["gross_profit"] == pytest.approx(400)
+    assert r["gross_margin_pct"] == pytest.approx(40)

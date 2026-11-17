@@ -106,4 +106,4 @@ MORE: dict[str, dict[str, Any]] = {
                 "steps": ["+ Vendor: company, contact, GSTIN, payment terms, Save."], "tips": [], "ai": "",
                 "shows": ["Each vendor — company, contact, terms and performance."]},
 }
-ALIASES_MORE = {"customers": "parties", "print": "print_theme"}
+ALIASES_MORE = {"customers": "parties", "print": "print_theme", "hop_orders": "orders"}

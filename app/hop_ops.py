@@ -3306,7 +3306,9 @@ def report_customer_dashboard(conn: sqlite3.Connection, workspace_id: str) -> li
 
 
 def report_daily_activity(conn: sqlite3.Connection, workspace_id: str, day: str | None = None) -> dict:
-    day = day or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from datetime import timedelta as _td
+
+    day = day or (datetime.now(timezone.utc) + _td(hours=5, minutes=30)).strftime("%Y-%m-%d")   # India date
     meetings = _count_day(conn, "hop_meetings", "scheduled_at", workspace_id, day)
     leads = _count_day(conn, "hop_leads", "created_at", workspace_id, day)
     samples = _count_day(conn, "hop_samples", "sent_at", workspace_id, day)
@@ -3319,6 +3321,16 @@ def report_daily_activity(conn: sqlite3.Connection, workspace_id: str, day: str 
         "SELECT COALESCE(SUM(amount),0) FROM hop_payments WHERE workspace_id=? AND date(paid_at)=date(?)",
         (workspace_id, day),
     ).fetchone()
+    # Billing: Payment-In and money received on sale invoices today; sale orders taken today.
+    billed_in = conn.execute(
+        """SELECT COALESCE(SUM(CASE WHEN txn_type=3 THEN total_amount ELSE total_amount - balance_amount END), 0)
+           FROM hop_party_transactions WHERE workspace_id=? AND txn_type IN (1, 3) AND (source_txn_id IS NULL OR source_txn_id < 0)
+             AND (deleted_at IS NULL OR trim(deleted_at)='') AND date(txn_date)=date(?)""", (workspace_id, day)).fetchone()
+    sale_orders = conn.execute(
+        """SELECT COUNT(*) FROM hop_party_transactions WHERE workspace_id=? AND txn_type=65
+             AND (deleted_at IS NULL OR trim(deleted_at)='') AND date(txn_date)=date(?)""", (workspace_id, day)).fetchone()
+    collections = (float(collections[0] or 0) + float(billed_in[0] or 0),)
+    orders = (int(orders[0] or 0) + int(sale_orders[0] or 0),)
     followups = conn.execute(
         """
         SELECT COUNT(*) FROM hop_leads
@@ -3349,6 +3361,38 @@ def _count_day(conn, table, col, workspace_id, day) -> int:
 
 
 def report_profitability(conn: sqlite3.Connection, workspace_id: str) -> dict:
+    """This financial year from the bills: sales − returns, cost of what was sold, expenses, other income."""
+    from app import hop_targets
+
+    fy = hop_targets.fy_of(datetime.now(timezone.utc).date())
+    start, end = f"{fy}-04-01", f"{fy + 1}-03-31"
+    live = "(t.deleted_at IS NULL OR trim(t.deleted_at)='') AND date(t.txn_date) BETWEEN date(?) AND date(?)"
+    sales = conn.execute(f"""SELECT COALESCE(SUM(CASE WHEN t.txn_type=21 THEN -(t.total_amount) ELSE t.total_amount END), 0),
+                                    COUNT(*) FROM hop_party_transactions t WHERE t.workspace_id=? AND t.txn_type IN (1, 21) AND {live}""",
+                         (workspace_id, start, end)).fetchone()
+    if sales and int(sales[1] or 0) > 0:
+        taxable = conn.execute(f"""SELECT COALESCE(SUM(CASE WHEN t.txn_type=21 THEN -(l.line_total - COALESCE(l.tax_amount,0))
+                                                         ELSE l.line_total - COALESCE(l.tax_amount,0) END), 0)
+                                   FROM hop_txn_lines l JOIN hop_party_transactions t ON t.workspace_id=l.workspace_id
+                                        AND t.source_txn_id=l.source_txn_id
+                                   WHERE l.workspace_id=? AND t.txn_type IN (1, 21) AND {live}""", (workspace_id, start, end)).fetchone()
+        cost = conn.execute(f"""SELECT COALESCE(SUM(CASE WHEN t.txn_type=21 THEN -1 ELSE 1 END * l.qty * COALESCE(p.purchase_price,0)), 0)
+                                FROM hop_txn_lines l JOIN hop_party_transactions t ON t.workspace_id=l.workspace_id AND t.source_txn_id=l.source_txn_id
+                                LEFT JOIN hop_products p ON p.workspace_id=l.workspace_id AND (p.id=l.product_id OR
+                                     (l.product_id IS NULL AND lower(trim(p.name))=lower(trim(l.item_name))))
+                                WHERE l.workspace_id=? AND t.txn_type IN (1, 21) AND {live}""", (workspace_id, start, end)).fetchone()
+        exp = conn.execute(f"""SELECT COALESCE(SUM(CASE WHEN t.txn_type=7 THEN t.total_amount ELSE 0 END),0),
+                                      COALESCE(SUM(CASE WHEN t.txn_type=29 THEN t.total_amount ELSE 0 END),0)
+                               FROM hop_party_transactions t WHERE t.workspace_id=? AND t.txn_type IN (7, 29) AND {live}""",
+                           (workspace_id, start, end)).fetchone()
+        rev = round(float(taxable[0] or 0) or float(sales[0] or 0), 2)
+        cogs = round(float(cost[0] or 0), 2)
+        gp = round(rev - cogs, 2)
+        net = round(gp - float(exp[0] or 0) + float(exp[1] or 0), 2)
+        return {"revenue": rev, "cogs": cogs, "gross_profit": gp, "expenses": round(float(exp[0] or 0), 2),
+                "other_income": round(float(exp[1] or 0), 2), "net_profit": net,
+                "gross_margin_pct": round(gp / rev * 100, 2) if rev else None, "period": f"FY{fy}-{str(fy + 1)[-2:]}",
+                "notes": {"cogs": "Cost = qty sold × item purchase price", "revenue": "Sales without GST, less returns"}}
     revenue = conn.execute(
         "SELECT COALESCE(SUM(order_value),0) FROM hop_orders WHERE workspace_id=? AND won_at IS NOT NULL",
         (workspace_id,),
