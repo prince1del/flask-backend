@@ -617,6 +617,17 @@ def customers_list():
     ensure_hop_schema(_db_path())
     with hop_db.connect(_db_path()) as conn:
         rows = hop_db.list_customers(conn, _ws(), q=request.args.get("q"))
+        try:   # quick "money due" for the list: unpaid bills + opening − advances not used yet
+            due = {int(r[0]): float(r[1] or 0) for r in conn.execute(
+                """SELECT party_id, SUM(CASE WHEN txn_type IN (1, 83) THEN balance_amount
+                                             WHEN txn_type = 3 THEN -COALESCE(unused_amount, 0)
+                                             WHEN txn_type = 21 THEN -balance_amount ELSE 0 END)
+                   FROM hop_party_transactions WHERE workspace_id=? AND party_type='customer'
+                     AND (deleted_at IS NULL OR trim(deleted_at)='') GROUP BY party_id""", (_ws(),)).fetchall() if r[0]}
+            rows = [dict(r) | {"current_balance": round(due.get(int(r["id"]), 0.0) + float(r.get("opening_balance") or 0), 2)}
+                    for r in rows]
+        except Exception:
+            pass
     return jsonify({"success": True, "data": rows})
 
 
@@ -706,6 +717,14 @@ def customers_get_or_delete(customer_id: int):
         return jsonify({"success": True, "data": {"deleted": customer_id}})
     with hop_db.connect(_db_path()) as conn:
         row = hop_db.get_customer(conn, _ws(), customer_id)
+        if row:
+            row = dict(row)
+            try:   # what this customer owes now (+) or has paid in advance (−) — from their statement
+                from app import hop_reports
+
+                row["current_balance"] = hop_reports.party_statement(conn, _ws(), "customer", customer_id).get("closing_balance", 0.0)
+            except Exception:
+                pass
     if not row:
         return _json_error("Customer not found", "NOT_FOUND", 404)
     return jsonify({"success": True, "data": row})
