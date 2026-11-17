@@ -408,6 +408,7 @@
             ${Number(totals.tcs_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>TCS @${foEscapeText(totals.tcs_pct)}%</span><strong>${hopPreviewMoney(totals.tcs_amount)}</strong></div>` : ''}
             ${Number(totals.tds_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>TDS deducted @${foEscapeText(totals.tds_pct)}%</span><strong>− ${hopPreviewMoney(totals.tds_amount)}</strong></div>` : ''}
             <div class="hop-doc-tot-row hop-doc-tot-grand"><span>Total</span><strong>${hopPreviewMoney(totals.grand_total)}</strong></div>
+            ${data.loyalty_note ? `<div class="hop-doc-muted" style="font-size:11px;">⭐ ${foEscapeText(data.loyalty_note)}</div>` : ''}
             <div class="hop-doc-sign">
               <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
               ${hopDocSignHtml(firm)}

@@ -2404,6 +2404,22 @@ def product_bom_ai(product_id: int):
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/loyalty", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def loyalty_points():
+    """?customer_id= → that customer's points; no id → every customer with points."""
+    ensure_hop_schema(_db_path())
+    from app import hop_loyalty
+
+    cid = request.args.get("customer_id", type=int)
+    exclude = request.args.get("bill_id", type=int)
+    with hop_db.connect(_db_path()) as conn:
+        data = (hop_loyalty.balance(conn, _ws(), cid, exclude_txn=exclude) if cid
+                else hop_loyalty.top_customers(conn, _ws(), request.args.get("q") or ""))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/manufacture/plan", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

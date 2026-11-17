@@ -76,6 +76,12 @@ SCHEMA: list[dict[str, Any]] = [
     # Party
     {"key": "party_groups", "section": "Party", "label": "Party groups", "type": "list",
      "default": ["Buyer", "Supplier", "Architect", "Hotel", "Retail"], "help": "Shown when you add or edit a party."},
+    {"key": "loyalty_on", "section": "Party", "label": "Loyalty points for customers", "type": "bool", "default": False,
+     "help": "Customers earn points on sale invoices and can use them as a discount later."},
+    {"key": "loyalty_earn_per", "section": "Party", "label": "1 point for every ₹ (bill amount)", "type": "number", "default": 100},
+    {"key": "loyalty_point_value", "section": "Party", "label": "1 point is worth ₹ (when used)", "type": "number", "default": 1},
+    {"key": "loyalty_from", "section": "Party", "label": "Points count from (date)", "type": "text", "default": "",
+     "help": "Filled with today when you turn points on. Bills before this date earn nothing."},
     {"key": "credit_limit_action", "section": "Party", "label": "When a credit limit is crossed", "type": "select",
      "default": "warn", "options": [["warn", "Warn me"], ["block", "Don't allow the bill"]]},
 ]
@@ -138,6 +144,12 @@ def _clean(spec: dict[str, Any], value: Any) -> Any:
 
         if not hop_share.valid_upi(text):
             raise ValueError("UPI ID looks wrong — it should be like name@bank")
+    if spec["key"] == "loyalty_from" and text:
+        try:
+            datetime.strptime(text[:10], "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("Points count from: use a date like 2026-11-17")
+        return text[:10]
     if spec["key"].startswith("msg_"):
         return text[:600]
     if spec["key"].startswith("prefix_"):
@@ -156,6 +168,10 @@ def save(conn: sqlite3.Connection, ws: str, changes: dict[str, Any]) -> dict[str
             raise ValueError(f"Unknown setting: {k}")
         conn.execute("INSERT OR REPLACE INTO hop_app_settings (workspace_id, key, value, updated_at) VALUES (?, ?, ?, ?)",
                      (ws, k, json.dumps(_clean(spec, v)), now))
+    # Turning loyalty on fixes its start date, so old bills do not suddenly give points.
+    if (changes or {}).get("loyalty_on") in (True, 1, "1", "true", "yes", "on") and not get_all(conn, ws).get("loyalty_from"):
+        conn.execute("INSERT OR REPLACE INTO hop_app_settings (workspace_id, key, value, updated_at) VALUES (?, ?, ?, ?)",
+                     (ws, "loyalty_from", json.dumps(now[:10]), now))
     conn.commit()
     return get_all(conn, ws)
 

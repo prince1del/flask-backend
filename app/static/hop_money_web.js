@@ -43,6 +43,7 @@
       amount: '', allocations: {}, openBills: null, expenseCategoryId: '', linkedFromTxnId: null, linkedFromLabel: '',
       placeOfSupply: '', reverseCharge: false,
       charges: [], poNumber: '', poDate: '', txnTime: '', tcsPct: '', tdsPct: '', godownId: '',
+      redeemPoints: '', loyalty: null, loyaltyFor: null,
     });
     const cash = (hopState.moneyAccounts || []).find((a) => a.account_type === 'cash');
     if (cash) d.paymentChoice = `acct:${cash.id}`;
@@ -68,6 +69,8 @@
       tcsPct: Number(data.tcs_pct || 0) > 0 ? String(data.tcs_pct) : '',
       tdsPct: Number(data.tds_pct || 0) > 0 ? String(data.tds_pct) : '',
       godownId: data.godown_id ? String(data.godown_id) : '',
+      redeemPoints: !duplicate && Number(data.redeem_points || 0) > 0 ? String(data.redeem_points) : '',
+      loyalty: null, loyaltyFor: null,
       allocations: {},
     });
     if (!duplicate) (data.allocations || []).forEach((a) => { d.allocations[a.txn_id] = String(a.amount); });
@@ -149,8 +152,38 @@
           <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.tcsPct)}" inputmode="decimal" placeholder="0" oninput="hopMoneySet('tcsPct',this.value);hopMoneyRefreshTotal()" /></div>
           <div class="hop-vyp-sum-row"><span>TDS % <small class="hop-doc-muted">(${ty === 2 ? 'we deduct from the vendor' : 'customer deducts'})</small></span>
           <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.tdsPct)}" inputmode="decimal" placeholder="0" oninput="hopMoneySet('tdsPct',this.value)" /></div>` : ''}
+        ${ty === 1 ? `<div id="hop-loy-row">${loyaltyRow(d)}</div>` : ''}
       </div>`;
   }
+
+  /* Loyalty points (Settings → Party): the customer's points, used as a discount on this sale invoice. */
+  function loyaltyRow(d) {
+    if (!d.customerId) return '';
+    if (String(d.loyaltyFor) !== String(d.customerId)) {
+      d.loyaltyFor = d.customerId;
+      d.loyalty = null;
+      const bill = hopState.manualDoc?.editId ? `&bill_id=${hopState.manualDoc.editId}` : '';
+      hopApi(`/api/v1/hop/loyalty?customer_id=${encodeURIComponent(d.customerId)}${bill}`).then((li) => {
+        if (String(d.loyaltyFor) !== String(d.customerId)) return;
+        d.loyalty = li;
+        const el = document.getElementById('hop-loy-row');
+        if (el) el.innerHTML = loyaltyRow(d);
+      }).catch(() => {});
+      return '';
+    }
+    const li = d.loyalty;
+    if (!li || !li.on) return '';
+    const used = num(d.redeemPoints);
+    const pv = Number(li.point_value || 1);
+    const note = used > Number(li.left) ? `only ${li.left} available` : `${li.left} available${used > 0 ? ` · ₹${(used * pv).toFixed(2)} off` : ''}`;
+    return `<div class="hop-vyp-sum-row"><span>Use loyalty points <small class="hop-doc-muted">(${esc(note)})</small></span>
+      <input class="hop-vyp-control hop-vyp-control--sm" value="${esc(d.redeemPoints)}" inputmode="numeric" placeholder="0"
+        oninput="hopMoneySet('redeemPoints',this.value.replace(/\\D/g,''));" onchange="hopMoneyLoyRefresh()" /></div>`;
+  }
+  window.hopMoneyLoyRefresh = () => {
+    const el = document.getElementById('hop-loy-row');
+    if (el && hopState.manualDocDraft) el.innerHTML = loyaltyRow(hopState.manualDocDraft);
+  };
 
   function extrasFields() {
     const ty = Number(hopState.manualDoc?.txnType);
@@ -163,6 +196,7 @@
     };
     if (PO_TYPES.has(ty)) Object.assign(out, { po_number: String(d.poNumber || '').trim(), po_date: d.poDate || '' });
     if (TCS_TYPES.has(ty)) { out.tcs_pct = num(d.tcsPct); out.tds_pct = num(d.tdsPct); }
+    if (ty === 1 && d.loyalty && d.loyalty.on) out.redeem_points = num(d.redeemPoints);
     return out;
   }
 

@@ -665,6 +665,15 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
         data["hsn_summary"] = hsn_summary(data, inter) if s.get("print_hsn_summary") else []
     except Exception:
         data["gst_split"], data["hsn_summary"] = [], []
+    if hid:
+        try:
+            from app import hop_loyalty
+
+            used = hop_loyalty.used_on_bill(conn, workspace_id, int(hid))
+            data["loyalty_note"] = (f"Discount includes {used['points']:g} loyalty points (₹{used['value']:,.2f})"
+                                    if used else "")
+        except Exception:
+            data["loyalty_note"] = ""
     header = data.get("header") or {}
     if s.get("composition_scheme") and int(header.get("txn_type") or 0) == 1:
         header["doc_title"] = "Bill of Supply"
@@ -961,6 +970,9 @@ def get_party_transaction_edit_data(
         "commercial" in label.lower()
         or any(_clean(ln.get("section_title")) for ln in lines)
     )
+    from app import hop_loyalty
+
+    _loy = hop_loyalty.used_on_bill(conn, workspace_id, int(party_txn_id))
     out: dict[str, Any] = {
         "party_txn_id": int(h.get("id") or 0),
         "source_txn_id": source_txn_id,
@@ -975,8 +987,10 @@ def get_party_transaction_edit_data(
         "shipping_amount": float(h.get("shipping_amount") or 0),
         "shipping_tax_pct": float(h.get("shipping_tax_pct") or 0),
         "shipping_tax_amount": float(h.get("shipping_tax_amount") or 0),
-        "discount_amount": float(h.get("discount_amount") or 0),
+        # Points used on this bill are shown on their own (not inside the discount).
+        "discount_amount": round(float(h.get("discount_amount") or 0) - float((_loy or {}).get("value") or 0), 2),
         "discount_pct": float(h.get("discount_pct") or 0),
+        "redeem_points": float((_loy or {}).get("points") or 0),
         "round_off": float(h.get("round_off") or 0),
         "mode": "commercial" if is_commercial else "standard",
         "lines": flat_lines,
@@ -1083,6 +1097,10 @@ def create_manual_party_document(
         _apply_line_settings(conn, workspace_id, txn_type, raw_lines, payload))
     if not computed_lines:
         raise ValueError("At least one valid line item is required")
+    from app import hop_loyalty
+
+    payload = dict(payload)
+    hop_loyalty.apply_redeem(conn, workspace_id, txn_type, party_id if party_type == "customer" else 0, payload, sub_total)
 
     totals = _finalize_manual_doc_totals(sub_total, line_tax_total, _apply_round_setting(
         conn, workspace_id, payload, sub_total, line_tax_total))
@@ -1169,6 +1187,7 @@ def create_manual_party_document(
     if due_date:
         conn.execute("UPDATE hop_party_transactions SET due_date=? WHERE id=?", (due_date, party_txn_id))
     _save_header_extras(conn, workspace_id, party_txn_id, payload, tcs_pct, tcs_amount, False)
+    hop_loyalty.record(conn, workspace_id, party_txn_id, payload)
     hop_money.post_document(conn, workspace_id, party_txn_id, payload)
     conn.commit()
     after = dict(conn.execute("SELECT balance_amount, status_text FROM hop_party_transactions WHERE id=?",
@@ -1255,6 +1274,15 @@ def update_manual_party_document(
         _apply_line_settings(conn, workspace_id, txn_type, raw_lines, payload))
     if not computed_lines:
         raise ValueError("At least one valid line item is required")
+    from app import hop_loyalty
+
+    payload = dict(payload)
+    if "redeem_points" not in payload:
+        # Edit forms that do not know points keep the points already used on this bill.
+        old = hop_loyalty.used_on_bill(conn, workspace_id, int(party_txn_id))
+        payload["redeem_points"] = old["points"] if old else 0
+    hop_loyalty.apply_redeem(conn, workspace_id, txn_type, party_id if party_type == "customer" else 0, payload,
+                             sub_total, int(party_txn_id))
 
     totals = _finalize_manual_doc_totals(sub_total, line_tax_total, _apply_round_setting(
         conn, workspace_id, payload, sub_total, line_tax_total))
@@ -1318,6 +1346,7 @@ def update_manual_party_document(
         due_date = _clean(payload.get("due_date"))[:10] or None
         conn.execute("UPDATE hop_party_transactions SET due_date=? WHERE id=?", (due_date, int(party_txn_id)))
     _save_header_extras(conn, workspace_id, int(party_txn_id), payload, tcs_pct, tcs_amount, True)
+    hop_loyalty.record(conn, workspace_id, int(party_txn_id), payload)
     hop_money.post_document(conn, workspace_id, int(party_txn_id), payload, is_update=True)
     conn.commit()
     balance = float(conn.execute("SELECT balance_amount FROM hop_party_transactions WHERE id=?",

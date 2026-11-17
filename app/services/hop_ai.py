@@ -382,6 +382,10 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                                           if float(r.get("stock_qty") or 0) <= 0][:15],
                 "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15],
                 "godowns": _godown_summary(conn, ws, q)}
+    if what == "loyalty":
+        from app import hop_loyalty
+
+        return hop_loyalty.top_customers(conn, ws, str(party_name or "").strip())
     if what == "manufacturing":
         from app import hop_manufacture
 
