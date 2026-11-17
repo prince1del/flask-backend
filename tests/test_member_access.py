@@ -171,3 +171,30 @@ def test_web_sign_in_makes_one_request_not_two(app, client):
     assert len(reqs) == 1 and reqs[0]["device_label"] == "Web browser · Chrome on Windows"
     client.post(f"/api/v1/invites/login-requests/{reqs[0]['id']}", headers=h, json={"approve": True})
     assert client.get("/api/v1/personal-todos", headers=_auth(token)).status_code != 403
+
+
+def test_owner_sets_designation_and_resets_password(app, client):
+    _owner, h, member, mh = _team(app, client, "boss3", "rep3", ["todo"])
+    team = client.get("/api/v1/invites/team", headers=h).get_json()["data"]
+    row = next(m for m in team["members"] if m["username"] == "rep3")
+    owner_row = next(m for m in team["members"] if m["username"] == "boss3")
+
+    r = client.post(f"/api/v1/invites/members/{row['id']}/designation", headers=h, json={"designation": "Area Sales Manager"})
+    assert r.status_code == 200 and r.get_json()["data"]["designation"] == "Area Sales Manager"
+    team = client.get("/api/v1/invites/team", headers=h).get_json()["data"]
+    assert next(m for m in team["members"] if m["username"] == "rep3")["designation"] == "Area Sales Manager"
+
+    assert client.post(f"/api/v1/invites/members/{row['id']}/password", headers=h,
+                       json={"new_password": "short"}).status_code == 400
+    assert client.post(f"/api/v1/invites/members/{row['id']}/password", headers=h,
+                       json={"new_password": "NewPass1234"}).status_code == 200
+    assert client.post("/api/v1/auth/login", json={"username": "rep3", "password": "pass12345"}).status_code != 200
+    assert _login(client, "rep3", "NewPass1234")
+    # A member cannot reset the owner's password; nobody outside the company can touch it.
+    fresh = client.post("/api/v1/auth/login", json={"username": "rep3", "password": "NewPass1234"}).get_json()
+    mh = _auth(fresh["data"]["access_token"]) if fresh.get("success") and fresh["data"].get("access_token") else mh
+    assert client.post(f"/api/v1/invites/members/{owner_row['id']}/password", headers=mh,
+                       json={"new_password": "Hijack12345"}).status_code in (401, 403)
+    _o2, h2, _m2, _mh2 = _team(app, client, "boss4", "rep4", ["todo"])
+    assert client.post(f"/api/v1/invites/members/{row['id']}/password", headers=h2,
+                       json={"new_password": "Other12345"}).status_code in (403, 404)

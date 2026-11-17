@@ -180,6 +180,40 @@ def set_member_access(member_id: int):
     return jsonify({"success": True, "data": out}), 200
 
 
+@invites_bp.route("/members/<int:member_id>/designation", methods=["POST"])
+@require_jwt_auth
+def set_member_designation(member_id: int):
+    from app.services import member_access
+
+    data = request.get_json(silent=True) or {}
+    try:
+        out = member_access.set_designation(_get_auth_db(), {**_user(), "workspace_id": get_workspace_id()},
+                                            member_id, str(data.get("designation") or ""))
+    except LookupError as exc:
+        return _err(str(exc), 404)
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+    return jsonify({"success": True, "data": out}), 200
+
+
+@invites_bp.route("/members/<int:member_id>/password", methods=["POST"])
+@require_jwt_auth
+def reset_member_password(member_id: int):
+    from app.services import member_access
+
+    data = request.get_json(silent=True) or {}
+    try:
+        out = member_access.reset_password(_get_auth_db(), {**_user(), "workspace_id": get_workspace_id()},
+                                           member_id, str(data.get("new_password") or ""))
+    except LookupError as exc:
+        return _err(str(exc), 404)
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    return jsonify({"success": True, "data": out}), 200
+
+
 # ── Sign-in approvals ───────────────────────────────────────────────────────
 
 @invites_bp.route("/login-requests", methods=["GET"])

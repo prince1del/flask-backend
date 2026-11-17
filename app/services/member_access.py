@@ -275,6 +275,16 @@ def team_dashboard(db, manager: dict[str, Any]) -> list[dict[str, Any]]:
     from app.services import login_approval
 
     devices = login_approval.device_of(db.db_path, ws)
+    extra: dict[int, tuple] = {}
+    with _connect(db.db_path) as conn:
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+            pick = [c for c in ("designation", "active_session_at", "email", "phone") if c in cols]
+            if pick:
+                for r in conn.execute(f"SELECT id, {', '.join(pick)} FROM users WHERE workspace_id = ?", (ws,)).fetchall():
+                    extra[int(r[0])] = dict(zip(pick, r[1:]))
+        except sqlite3.OperationalError:
+            pass
     out = []
     for m in members:
         acc = rows.get(m["id"])
@@ -287,5 +297,61 @@ def team_dashboard(db, manager: dict[str, Any]) -> list[dict[str, Any]]:
                 json.loads(acc["features"]) if acc["features"] else list(FEATURE_KEYS)),
             "blocked": bool(acc["blocked"]) if acc else False,
             "device": devices.get(m["id"]),
+            "designation": (extra.get(int(m["id"])) or {}).get("designation"),
+            "last_active": (extra.get(int(m["id"])) or {}).get("active_session_at"),
+            "email": (extra.get(int(m["id"])) or {}).get("email") or m.get("email"),
+            "phone": (extra.get(int(m["id"])) or {}).get("phone"),
         })
     return out
+
+
+def _check_manager_of(db, manager: dict[str, Any], member_id: int, allow_self: bool = False) -> dict[str, Any]:
+    """Same rules as update_member: owner/admin of the same company; owner's login is protected."""
+    from app.services import company_invites as ci
+
+    if not ci.can_manage_invites(db, manager):
+        raise PermissionError("Only your company's owner or admin can do this")
+    if not allow_self and int(member_id) == int(manager.get("user_id") or 0):
+        raise PermissionError("Use your own Profile for this")
+    with _connect(db.db_path) as conn:
+        member = _member_in_my_workspace(conn, manager, member_id)
+        company_owner = None
+        try:
+            r = conn.execute(
+                """SELECT c.owner_user_id FROM workspace_registry w JOIN companies c ON c.id = w.company_id
+                   WHERE w.workspace_id = ?""", (member["workspace_id"],)).fetchone()
+            company_owner = r[0] if r else None
+        except sqlite3.OperationalError:
+            pass
+    is_owner = member["is_owner"] or (company_owner is not None and int(company_owner) == int(member["id"]))
+    if is_owner and int(member_id) != int(manager.get("user_id") or 0):
+        raise PermissionError("The company owner's login cannot be changed by others")
+    if str(member["role"] or "") in ci._ADMIN_ROLES and not (
+        manager.get("is_workspace_owner") or (company_owner and int(company_owner) == int(manager["user_id"]))
+    ) and int(member_id) != int(manager.get("user_id") or 0):
+        raise PermissionError("Only the company owner can change an admin")
+    return member
+
+
+def set_designation(db, manager: dict[str, Any], member_id: int, designation: str) -> dict[str, Any]:
+    """Owner/admin sets a teammate's job title (shown under their name)."""
+    _check_manager_of(db, manager, member_id, allow_self=True)
+    prof = db.update_user_profile(int(member_id), designation=str(designation or "")[:60])
+    return {"id": int(member_id), "designation": prof.get("designation")}
+
+
+def reset_password(db, manager: dict[str, Any], member_id: int, new_password: str) -> dict[str, Any]:
+    """Owner/admin gives a teammate a new password (e.g. they forgot it and have no email / secret question).
+    Their phone is signed out, so the old password stops working everywhere."""
+    _check_manager_of(db, manager, member_id)
+    pw = str(new_password or "").strip()
+    if len(pw) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    db.update_user_profile(int(member_id), password=pw)
+    try:
+        from app.services import login_approval
+
+        login_approval.sign_out_member(db, manager, int(member_id))
+    except Exception:
+        pass
+    return {"id": int(member_id), "password_reset": True}
