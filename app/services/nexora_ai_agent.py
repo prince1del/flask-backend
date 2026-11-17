@@ -188,10 +188,34 @@ def _propose_action_declaration() -> dict[str, Any]:
     }
 
 
+def _contact_action_declaration() -> dict[str, Any]:
+    return {
+        "name": "contact_action",
+        "description": (
+            "Find a person's phone number in this login's own NEXORA data (team, distributors, retailers, "
+            "customers, suppliers) and, when asked, prepare a phone action: call, sms or whatsapp. The phone "
+            "shows it and does it only after the user confirms (tap or says 'haan'). Use for 'X ka number do', "
+            "'X ko call lagao', 'X ko message karo ki …', 'X ko WhatsApp karo …'. For sms / whatsapp put the "
+            "message in plain words in `message`. After a call / sms / whatsapp, answer in one short line asking "
+            "the user to confirm. If several people match, list them and ask which one."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Person or party name, partial or misspelled is fine."},
+                "do": {"type": "string", "enum": ["show", "call", "sms", "whatsapp"]},
+                "message": {"type": "string", "description": "Text for sms / whatsapp (optional)."},
+            },
+            "required": ["name"],
+        },
+    }
+
+
 def _tool_declarations() -> list[dict[str, Any]]:
     return [
         _read_app_declaration(),
         _propose_action_declaration(),
+        _contact_action_declaration(),
         {
             "name": "get_distributor_hisaab",
             "description": (
@@ -914,6 +938,34 @@ def _run_tool(
                 category=str(args.get("category") or ""),
                 season=str(args.get("season") or ""),
             ))
+
+        if name == "contact_action":
+            from app.services import nexora_contacts
+
+            wss = [workspace_id]
+            try:   # the business firm chosen on the phone (multiple firms) is searched too
+                from flask import has_request_context, request as _rq
+
+                from app import hop_firms
+
+                if has_request_context():
+                    with sqlite3.connect(_db_path()) as _c:
+                        fw = hop_firms.active_ws(_c, workspace_id, _rq.headers.get("X-Hop-Firm"))
+                    if fw and fw not in wss:
+                        wss.append(fw)
+            except Exception:
+                pass
+            out = nexora_contacts.contact_action(_db_path(), wss, str(args.get("name") or ""),
+                                                 str(args.get("do") or "show"), str(args.get("message") or ""))
+            if out.get("device_action"):
+                try:
+                    from flask import g, has_request_context
+
+                    if has_request_context():
+                        g.nexora_device_action = out["device_action"]
+                except Exception:
+                    pass
+            return _sanitize(out)
 
         if name == "propose_action":
             from app.services import nexora_actions

@@ -9064,7 +9064,9 @@ def ai_assistant_query() -> Response:
                         {"intent": "ai_followup" if _follow else "ai_order_desk",
                          "query": query, "answer": _ai.strip(),
                          # A change the AI prepared: the app shows Confirm / Cancel.
-                         "action": getattr(_g, "nexora_pending_action", None)},
+                         "action": getattr(_g, "nexora_pending_action", None),
+                         # Call / SMS / WhatsApp the phone does after the user confirms.
+                         "device_action": getattr(_g, "nexora_device_action", None)},
                         ensure_ascii=False,
                     ),
                     mimetype="application/json",
