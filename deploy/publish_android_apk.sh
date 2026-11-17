@@ -66,7 +66,27 @@ json.dump(meta, open(sys.argv[8], "w", encoding="utf-8"), ensure_ascii=False)
 echo "Publishing NEXORA $NAME (code $CODE, $SIZE bytes, sha256 ${SHA:0:12}…) to $SERVER"
 
 SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes "$SSH_USER@$SERVER")
-scp -i "$SSH_KEY" -q "$APK" "$SSH_USER@$SERVER:/tmp/$REMOTE_APK"
+# Upload in 8 MB pieces with retries: a slow or broken connection only resends the piece that failed,
+# and a re-run skips pieces already on the server (same size).
+SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes "$SSH_USER@$SERVER")
+PARTS_LOCAL=$(mktemp -d)
+PARTS_REMOTE="/tmp/nxapk_$CODE"
+split -b 8m -d -a 3 "$APK" "$PARTS_LOCAL/part_"
+"${SSH[@]}" "mkdir -p $PARTS_REMOTE"
+for part in "$PARTS_LOCAL"/part_*; do
+  name=$(basename "$part"); size=$(wc -c < "$part" | tr -d ' ')
+  have=$("${SSH[@]}" "stat -c %s $PARTS_REMOTE/$name 2>/dev/null || echo 0" | tr -d '\r')
+  if [ "$have" = "$size" ]; then echo "  $name already there"; continue; fi
+  ok=0
+  for try in 1 2 3 4 5; do
+    if scp -i "$SSH_KEY" -q -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "$part" "$SSH_USER@$SERVER:$PARTS_REMOTE/$name"; then ok=1; break; fi
+    echo "  $name failed (try $try) - retrying"; sleep 5
+  done
+  [ $ok = 1 ] || { echo "Upload failed for $name - run the same command again to resume"; exit 1; }
+  echo "  $name sent"
+done
+rm -rf "$PARTS_LOCAL"
+"${SSH[@]}" "cat $PARTS_REMOTE/part_* > /tmp/$REMOTE_APK && rm -rf $PARTS_REMOTE"
 scp -i "$SSH_KEY" -q "$LOCAL_LATEST" "$SSH_USER@$SERVER:/tmp/latest.json"
 rm -f "$LOCAL_LATEST"
 
