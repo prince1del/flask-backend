@@ -118,6 +118,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Staff permissions | Plain summary of what a person can do + warnings before saving (e.g. can change bank but cannot see reports); Ask Nexora obeys permissions | ✅ 2026-11-16 |
 | Sale invoice / quotation from any paper | ✨ Scan any bill, order or handwritten note → form filled (customer + catalogue matched, unclear lines flagged) | ✅ 2026-11-16 |
 | Service reminders | Ask Nexora `service` ("kiski AC service due hai"); item form tip "items like this need service every N days" (rule based, no AI cost); due list in the owner's morning email | ✅ 2026-11-17 |
+| SMS + Bluetooth receipt (Batch 3) | SMS uses the same owner templates + ✨ AI reminder text; Ask Nexora already prepares SMS to a person (device action). Printing itself needs no AI (reason: it only prints the saved bill); printer problems get plain hints (Bluetooth off, not paired, not reachable) | ✅ 2026-11-17 |
 | Rest of NEXORA (BD side) | NEXORA Guard plan (rules + AI explain, issues inbox, daily digest) — agreed earlier, after tracking | ⏳ after HoP phases |
 
 ## How to deploy (for whoever continues)

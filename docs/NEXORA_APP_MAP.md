@@ -558,6 +558,10 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
   suggested ticks + hints). Ticks survive editing the bill.
 - **Sharing** (`app/hop_share.py`): `GET /party-transactions/<id>/share?kind=bill|reminder`
   → template text, party WhatsApp number, `wa.me` link, UPI link; preview gets `upi`.
+- **SMS + Bluetooth receipt** (Batch 3, 2026-11-17) — phone `ui/hop/HopShareRow.kt`: SMS bill / SMS reminder
+  (phone's own SMS app via `openSms`, same text as WhatsApp from `/share`); SMS pills on Reminders.
+  "Print receipt": `GET /party-transactions/<id>/receipt?width=32|48` (`app/hop_receipt.py`, ASCII lines +
+  UPI QR) → `util/BluetoothReceiptPrinter.kt` (paired printers only, ESC/POS over SPP, saved printer + 2/3 inch).
 - **Reminders** (Batch 2, 2026-11-17) — phone `ui/hop/HopRemindersScreen.kt` (tabs Payments | Service),
   web `static/hop_reminders_web.js`.
   - Payments: `app/hop_reminders.py` — `GET /reminders`, `POST /reminders/<txn>/email|whatsapp`,
