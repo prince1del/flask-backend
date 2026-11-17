@@ -3624,6 +3624,69 @@ class CentralizedDB:
             ).fetchone()
         return bool(row and row[0])
 
+    def _recovery_row(self, conn, login: str):
+        """Account for "Forgot user ID": user id, email, or mobile number (only when one account has it)."""
+        login = (login or "").strip()
+        if not login:
+            return None
+        cols = ["id", "username", "email", "secret_question", "secret_answer_hash",
+                "recovery_pin_fail_count", "recovery_pin_locked_until"]
+        row = self.resolve_user_login_row(conn, login, cols)
+        if row:
+            return row
+        digits = "".join(c for c in login if c.isdigit())
+        if len(digits) < 10:
+            return None
+        last10 = digits[-10:]
+        rows = [r for r in conn.execute(f"SELECT {', '.join(cols)}, phone FROM users WHERE phone IS NOT NULL").fetchall()
+                if "".join(c for c in str(r["phone"] or "") if c.isdigit())[-10:] == last10]
+        return rows[0] if len(rows) == 1 else None
+
+    def user_id_and_email(self, login: str) -> tuple[str | None, str | None]:
+        """For "send my user ID to my email": (user id, email on file) or (None, None)."""
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = self._recovery_row(conn, login)
+            if not row or not str(row["email"] or "").strip():
+                return None, None
+            return str(row["username"]), str(row["email"]).strip()
+
+    def user_id_recovery_question(self, login: str) -> str | None:
+        """Question text only (never the answer); None when not found or no question set."""
+        self.ensure_user_profile_columns()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = self._recovery_row(conn, login)
+            return row["secret_question"] if row and row["secret_answer_hash"] else None
+
+    def recover_user_id(self, login: str, answer: str) -> tuple[bool, str, str | None]:
+        """Forgot user ID: right secret answer → the user id. 5 wrong answers lock it for 1 hour."""
+        self.ensure_user_profile_columns()
+        normalized = self.normalize_secret_answer(answer)
+        if not normalized:
+            return False, "Answer your secret question", None
+        now = datetime.now(timezone.utc)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = self._recovery_row(conn, login)
+            if not row or not row["secret_answer_hash"]:
+                return False, "No account with a secret question was found — ask your company admin", None
+            locked = str(row["recovery_pin_locked_until"] or "")
+            if locked and locked > now.isoformat():
+                return False, "Too many wrong answers — try again after an hour or ask your company admin", None
+            if not check_password_hash(row["secret_answer_hash"], normalized):
+                fails = int(row["recovery_pin_fail_count"] or 0) + 1
+                until = (now + timedelta(hours=1)).isoformat() if fails >= 5 else None
+                conn.execute("UPDATE users SET recovery_pin_fail_count = ?, recovery_pin_locked_until = ? WHERE id = ?",
+                             (0 if until else fails, until, int(row["id"])))
+                conn.commit()
+                return False, "Incorrect answer", None
+            conn.execute("UPDATE users SET recovery_pin_fail_count = 0, recovery_pin_locked_until = NULL WHERE id = ?",
+                         (int(row["id"]),))
+            conn.commit()
+            return True, "Found your account", str(row["username"])
+
     def get_secret_question_for_login(self, login: str) -> str | None:
         """Public hint for forgot-password UI — question text only, never the answer."""
         self.ensure_user_profile_columns()

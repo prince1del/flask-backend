@@ -557,6 +557,45 @@ def secret_question_hint() -> tuple[Response, int]:
     }), 200
 
 
+@auth_blueprint.route("/api/v1/auth/forgot-user-id/question", methods=["POST"], endpoint="forgot_user_id_question")
+def forgot_user_id_question() -> tuple[Response, int]:
+    """Step 1 of Forgot user ID: email / mobile / user id → the secret question (text only)."""
+    data = request.get_json(silent=True) or {}
+    login = str(data.get("login") or "").strip()
+    question = _get_auth_db().user_id_recovery_question(login) if login else None
+    return jsonify({"success": True, "data": {"secret_question": question}}), 200
+
+
+@auth_blueprint.route("/api/v1/auth/forgot-user-id/email", methods=["POST"], endpoint="forgot_user_id_email")
+def forgot_user_id_email() -> tuple[Response, int]:
+    """Forgot user ID by email: email or mobile → the user id is mailed to the email on file.
+    The answer is the same whether or not an account matched (nobody can test who is registered)."""
+    from app.services.outbound_mail import send_plain_email, smtp_configured
+
+    if not smtp_configured():
+        return jsonify({"success": False, "error": {"code": "EMAIL_UNAVAILABLE",
+                        "message": "Email is not set up yet — use your secret question or ask your company admin."}}), 503
+    data = request.get_json(silent=True) or {}
+    username, email = _get_auth_db().user_id_and_email(str(data.get("login") or ""))
+    if username and email:
+        send_plain_email(to=email, subject="Your NEXORA user ID",
+                         body=(f"Your NEXORA user ID is: {username}\n\n"
+                               "You can also sign in with this email address.\n"
+                               "If you did not ask for this, ignore this email."))
+    return jsonify({"success": True, "message": "If an account matches, its user ID was sent to the email on file.",
+                    "data": {"email_hint": _mask_email(email) if email else None}}), 200
+
+
+@auth_blueprint.route("/api/v1/auth/forgot-user-id", methods=["POST"], endpoint="forgot_user_id")
+def forgot_user_id() -> tuple[Response, int]:
+    """Step 2: right secret answer → the user id (5 wrong answers lock it for an hour)."""
+    data = request.get_json(silent=True) or {}
+    ok, message, username = _get_auth_db().recover_user_id(str(data.get("login") or ""), str(data.get("secret_answer") or ""))
+    if not ok:
+        return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": message}}), 400
+    return jsonify({"success": True, "data": {"username": username}, "message": message}), 200
+
+
 @auth_blueprint.route("/api/v1/me/secret-question", methods=["PUT"], endpoint="set_my_secret_question")
 @require_jwt_auth
 def set_my_secret_question() -> tuple[Response, int]:

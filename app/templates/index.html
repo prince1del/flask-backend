@@ -933,8 +933,8 @@
         <div class="modal-content login-sheet" style="max-height: 85vh; overflow-y: auto;">
             <div class="login-brand" aria-hidden="true">
                 <div class="login-brand-orb"></div>
-                <p class="login-brand-word">PRIZM</p>
-                <p class="login-brand-sub">HOUSE OF PRIZM · NEXORA</p>
+                <p class="login-brand-word">NEXORA</p>
+                <p class="login-brand-sub">ONE LOGIN · EVERY TEAM</p>
             </div>
             <h2>Nexora Login</h2>
             <p class="login-hint nx-text-dim" style="margin:0 0 12px;font-size:0.85rem;color:#94a3b8;">Sign in to continue</p>
@@ -949,6 +949,10 @@
             </div>
             <button type="submit" class="btn btn-primary login-submit-btn">Login</button>
             </form>
+            <div style="display:flex;justify-content:space-between;margin-top:8px;">
+                <button type="button" style="background:none;border:none;color:#60a5fa;cursor:pointer;padding:6px 0;font-weight:600;" onclick="nxForgotUserId()">Forgot user ID?</button>
+                <button type="button" style="background:none;border:none;color:#60a5fa;cursor:pointer;padding:6px 0;font-weight:600;" onclick="nxForgotPassword()">Forgot password?</button>
+            </div>
             <p id="loginError" class="error" role="status"></p>
             <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px;" onclick="window.nxSubscription && nxSubscription.openJoin()">Join with company code</button>
         </div>
@@ -3820,6 +3824,7 @@
     <script src="{{ url_for('static', filename='hop_import_web.js') }}?v=20261116-imp1"></script>
     <script src="{{ url_for('static', filename='hop_godowns_web.js') }}?v=20261116-gd1"></script>
     <script src="{{ url_for('static', filename='hop_manufacture_web.js') }}?v=20261117-mfg1"></script>
+    <script src="{{ url_for('static', filename='nx_recovery_web.js') }}?v=20261117-rec1"></script>
     <script src="{{ url_for('static', filename='hop_perms_web.js') }}?v=20261117-name1"></script>
     <script src="{{ url_for('static', filename='hop_reports_web.js') }}?v=20261116-batch1"></script>
     <script src="{{ url_for('static', filename='hop_app_settings_web.js') }}?v=20261117-name1"></script>
