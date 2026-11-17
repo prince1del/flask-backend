@@ -213,3 +213,15 @@ Still missing (next): place of supply + reverse charge + TCS/TDS on bills; addit
 price lists / MRP; partial order conversion; UPI QR on PDF; WhatsApp share; thermal print; barcode;
 batch/expiry/serial; godowns; Excel import/bulk update; party groups list on server; SMS reminders;
 user roles + audit trail; other income; bank reconciliation; multiple firms; backup/restore.
+
+## 2026-11-17 — help guides, bill look, fingerprint
+- **Help on every screen**: `app/hop_help.py` (one list for phone + web), `GET /api/v1/hop/help`,
+  Ask Nexora `get_hop_help`; phone ⓘ sheet, web "? Help" button.
+- **Bill on the phone**: item cards (no cut-off table), Bill No./Date strip, BILL TO, full-width totals,
+  Share/GST files folded; Duplicate / Edit / Delete as three equal buttons (✕ at top closes);
+  Edit/Duplicate now on every bill made in NEXORA. Printed title is singular ("Sale Invoice").
+- **App lock**: fingerprint unlock (Android 9+, phone's own fingerprint sheet; PIN stays as fallback;
+  Settings → App lock → "Unlock with fingerprint"). PIN box no longer pops Google's saved-password sheet.
+- Still not built (❌ in `docs/HOP_FEATURE_INVENTORY.md`): currency other than ₹, HSN/tax-breakup print
+  columns, header/footer text + margins, SMS, Bluetooth thermal printer, direct GSP e-invoice API
+  (needs owner's GSP signup), bank/cheque/loan lines from old-software backups.
