@@ -2649,6 +2649,20 @@ def hop_firms_route():
     return jsonify({"success": True, "data": {"firms": firms, "active": _ws()}})
 
 
+@hop_bp.route("/help", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_help_route():
+    """In-app guide for every HoP screen (same text on phone and web). ?screen=<key> for one."""
+    from app import hop_help
+
+    key = (request.args.get("screen") or "").strip()
+    if key:
+        t = hop_help.topic(key)
+        return jsonify({"success": True, "data": t}) if t else _json_error("No guide for this screen yet", "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": hop_help.all_topics()})
+
+
 @hop_bp.route("/my-permissions", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

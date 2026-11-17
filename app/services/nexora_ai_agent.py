@@ -554,6 +554,17 @@ def _tool_declarations() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "get_hop_help",
+            "description": (
+                "How to use a House of Prizm screen (steps and tips): making invoices, quotations, payments, "
+                "expenses, items, godowns, reconciliation, GST, settings, staff permissions. Use for "
+                "'invoice kaise banau', 'how do I add a party', 'godown mein stock kaise move karu'."
+            ),
+            "parameters": {"type": "object", "properties": {
+                "question": {"type": "string", "description": "The user's how-to question, in their words."}},
+                "required": ["question"]},
+        },
+        {
             "name": "get_hop_books",
             "description": (
                 "House of Prizm accounts (only for the House of Prizm business): cash & bank "
@@ -1288,6 +1299,12 @@ def _run_tool(
                               "business": "House of Prizm" if who.get("guard_scope") == "hop" else "Bombay Dyeing distribution",
                               "issues": [{k: i.get(k) for k in ("severity", "area", "title", "detail", "amount")}
                                          for i in data["issues"][:25]]})
+
+        if name == "get_hop_help":
+            from app import hop_help
+
+            found = hop_help.search(str(args.get("question") or ""))
+            return {"guides": found} if found else {"note": "No guide matched; describe the screen name."}
 
         if name == "get_hop_books":
             from app.hop_schema import HOP_WORKSPACE_ID, ensure_hop_schema

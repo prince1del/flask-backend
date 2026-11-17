@@ -56,7 +56,7 @@ PREFIX_AREA = [
     ("books", "reports"), ("reports", "reports"), ("gst-files", "reports"), ("tally", "reports"), ("gst", "reports"),
     ("app-settings", "settings"), ("firm-profile", "settings"), ("company-profile", "settings"),
     ("audit-log", "settings"), ("financial-year", "settings"), ("recycle-bin", "settings"), ("print-theme", "settings"),
-    ("my-permissions", "_any"), ("firms", "_any"),
+    ("my-permissions", "_any"), ("firms", "_any"), ("help", "_any"),
 ]
 
 
