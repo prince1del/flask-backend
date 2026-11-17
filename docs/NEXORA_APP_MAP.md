@@ -186,6 +186,21 @@ _Last full survey: 2026-11-12 (574 server routes, 54 phone screens)._
 
 ---
 
+### 2b. Account recovery, sign-up check, Admin Zone, updates (2026-11-17)
+| Feature | Server | Phone | Web |
+|---|---|---|---|
+| Forgot user ID (email it, or secret question → shown; 5 wrong = 1 h lock) | `POST /api/v1/auth/forgot-user-id/question`, `/forgot-user-id/email`, `/forgot-user-id` (`db.recover_user_id`) | `ForgotUserIdDialog.kt` (Login) | `nx_recovery_web.js` (login links) |
+| Forgot password (email code or secret question) | `/auth/request-password-reset`, `/reset-password-with-code`, `/forgot-password` | Login → Forgot password | `nx_recovery_web.js` |
+| Secure your account (secret question + email once) | `/me/secret-question`, `/me/profile` | `ui/lock/RecoverySetup.kt` | `nx_recovery_web.js` |
+| Sign-up email code (6 digits, 15 min, resend 60 s, 5 tries) | `POST /api/v1/signup/send-code`; `/signup` needs `email_code` when email is set up (`services/signup_email_code.py`) | `SignUpScreen.kt` | `subscription.js` (Join) |
+| Email sending | Gmail `mynexora.support@gmail.com` via `SMTP_*` in `/etc/nexora.env` (`services/outbound_mail.py`) | — | — |
+| Designation (job title) | `users.designation`; `/me/profile`; owner: `POST /api/v1/invites/members/<id>/designation` | Profile field; `MyDesignation.kt` | account menu → My designation |
+| Own company / brand name (never fixed) | `GET /api/v1/me/brand`; `hop_firms.business_name` | `CompanyBrand.kt`, `HopBusinessName` | `nxBrand`, `hopBusinessName` |
+| Admin Zone Home (numbers, trials ending, health) | `GET /api/v1/admin/overview` (`services/admin_overview.py`) | `AdminHomePane.kt` | — |
+| Admin Zone Team & access (UI, designation, switch off, new password, sign out phone, sign-in approvals) | `/api/v1/invites/team`, `/members/<id>/access|designation|password|signout`, `/login-requests`, `PUT /workspace/users/<id>/role` | `AdminTeamAccessPane.kt` | Plan & team (web) |
+| Updates per UI | `/api/v1/app/android/releases?ui=` and `/latest?ui=`; notes tagged `[business]/[executive]/[all]` | Settings → Updates (each UI), `ActiveUi` | — |
+| Plan & team | `/api/v1/invites…`, `/subscription…` | `ui/plan/PlanGate.kt` (tabs, folders; Admin tab only in Admin Zone) | `subscription.js` |
+
 ## 3. Modules (BD — Bombay Dyeing distribution)
 
 Each block: what it is → main routes → main code → phone screen → web.
