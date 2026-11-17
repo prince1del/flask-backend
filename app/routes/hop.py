@@ -304,6 +304,16 @@ def hop_gstin_lookup():
     gstin = normalize_gstin(body.get("gstin") or request.args.get("gstin") or "")
     if not gstin:
         return _json_error("gstin is required", "VALIDATION_ERROR", 400)
+    try:   # live from the GST portal when the IRP login is switched on
+        from app import hop_gov_einvoice
+
+        with hop_db.connect(_db_path()) as conn:
+            live = hop_gov_einvoice.gstin_details(conn, _ws(), gstin)
+        if live:
+            base = lookup_gstin(gstin) or {}
+            return jsonify({"success": True, "data": {**base, **{k: v for k, v in live.items() if v}}})
+    except Exception:
+        pass
     data = lookup_gstin(gstin)
     return jsonify({"success": True, "data": data})
 
@@ -335,10 +345,15 @@ def vyapar_import_apply():
     uploaded, err = _uploaded_backup_file()
     if err:
         return err
+    from app import hop_server_backups
     from app.services.vyapar_importer import import_vyapar_backup
 
     try:
         with hop_db.connect(_db_path()) as conn:
+            try:
+                hop_server_backups.snapshot(conn, _ws(), "before_import")   # can be put back from Backups on server
+            except Exception:
+                pass
             result = import_vyapar_backup(
                 file_bytes=uploaded.read(),
                 filename=uploaded.filename or "backup.vyb",
@@ -388,8 +403,13 @@ def settings_wipe_data():
             403,
         )
 
+    from app import hop_permissions, hop_server_backups
+
     try:
         with hop_db.connect(_db_path()) as conn:
+            if not hop_permissions.is_owner(conn, user):
+                return _json_error("Only the owner can wipe the company's data", "FORBIDDEN", 403)
+            hop_server_backups.snapshot(conn, _ws(), "before_wipe", force=True)   # can be put back from Backups on server
             result = hop_ops.wipe_hop_data(conn, _ws())
     except Exception as exc:
         return _json_error(f"Wipe failed: {exc}", "WIPE_FAILED", 500)
@@ -2683,18 +2703,25 @@ def hop_audit_log():
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def hop_backup_download():
-    """Download all of this company's HoP data (CSV per table, zipped)."""
+    """Owner only: this firm's business data (rows of this firm's workspace only — never other firms,
+    other companies or the rest of the server), locked as .kunwar."""
     ensure_hop_schema(_db_path())
     from datetime import date
 
     from flask import Response
 
-    from app import hop_backup
+    from app import hop_backup, hop_permissions
 
+    user = getattr(request, "user", None) or {}
     with hop_db.connect(_db_path()) as conn:
-        data, _counts = hop_backup.build_zip(conn, _ws())
-    name = f"nexora_hop_backup_{date.today().isoformat()}.zip"
-    return Response(data, mimetype="application/zip",
+        owner = hop_permissions.is_owner(conn, user)
+        if not owner and not hop_permissions.perms_for(conn, user).get("can_backup"):
+            return _json_error("Only the owner (or staff the owner allowed) can download the backup", "FORBIDDEN", 403)
+        data, _counts = hop_backup.build_locked(conn, _ws())
+        if not owner:
+            hop_backup.note_staff_download(conn, _ws(), user)
+    name = hop_backup.file_name(date.today().isoformat())   # .kunwar — opens only in NEXORA
+    return Response(data, mimetype="application/octet-stream",
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
@@ -2760,6 +2787,239 @@ def hop_firms_route():
     return jsonify({"success": True, "data": {"firms": firms, "active": _ws()}})
 
 
+@hop_bp.route("/firms/restore", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_firms_restore():
+    """Restore a NEXORA backup zip into a NEW firm (owner only). ?preview=1 only reads the file."""
+    from app import hop_permissions, hop_restore
+
+    uploaded, err = _uploaded_backup_file()
+    if err:
+        return err
+    data = uploaded.read()
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if not hop_permissions.is_owner(conn, user):
+                return _json_error("Only the owner can restore a backup", "FORBIDDEN", 403)
+            if request.args.get("preview") in ("1", "true"):
+                return jsonify({"success": True, "data": hop_restore.preview(conn, data, get_workspace_id())})
+            if (request.form.get("mode") or "new") == "replace":
+                bad = _check_password(user, request.form.get("password") or "")
+                if bad:
+                    return bad
+                res = hop_restore.restore_replace(conn, _ws(), data)
+            else:
+                name = (request.form.get("name") or "").strip()
+                res = hop_restore.restore_into_new_firm(conn, get_workspace_id(), data, name)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": res})
+
+
+def _check_password(user: dict, password: str):
+    """Replace / wipe need the owner's own login password. None = OK, else the error response."""
+    from centralized_db_system.db import CentralizedDB
+
+    if not str(password or "").strip():
+        return _json_error("Type your login password to confirm", "PASSWORD_REQUIRED", 403)
+    if not CentralizedDB(_db_path()).authenticate_user(str(user.get("username") or ""), password):
+        return _json_error("Incorrect password", "INVALID_PASSWORD", 403)
+    return None
+
+
+@hop_bp.route("/backups", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_server_backups_route():
+    """Backups on the server for the firm in use (owner, or staff allowed to download). POST = save one now (owner)."""
+    from app import hop_permissions, hop_server_backups
+
+    user = getattr(request, "user", None) or {}
+    with hop_db.connect(_db_path()) as conn:
+        owner = hop_permissions.is_owner(conn, user)
+        if not owner and not (request.method == "GET" and hop_permissions.perms_for(conn, user).get("can_backup")):
+            return _json_error("Only the owner can see the backups", "FORBIDDEN", 403)
+        saved = None
+        if request.method == "POST":
+            saved = hop_server_backups.snapshot(conn, _ws(), "manual", force=True)
+    return jsonify({"success": True, "data": {"backups": hop_server_backups.list_backups(_ws()), "saved": saved,
+                                              "keep_days": hop_server_backups.KEEP_DAYS, "owner": owner}})
+
+
+@hop_bp.route("/backups/<string:name>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_server_backup_download(name: str):
+    from flask import Response
+
+    from app import hop_backup, hop_permissions, hop_server_backups
+
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            owner = hop_permissions.is_owner(conn, user)
+            if not owner and not hop_permissions.perms_for(conn, user).get("can_backup"):
+                return _json_error("Only the owner can download backups", "FORBIDDEN", 403)
+            data = hop_server_backups.read(_ws(), name)
+            if not owner:
+                hop_backup.note_staff_download(conn, _ws(), user)
+    except ValueError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    return Response(data, mimetype="application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="nexora_backup_{name}"', "Cache-Control": "no-store"})
+
+
+@hop_bp.route("/backups/<string:name>/restore", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_server_backup_restore(name: str):
+    """Owner only. {mode: "new", name} → a new firm; {mode: "replace", password} → put it back into this firm."""
+    from app import hop_permissions, hop_restore, hop_server_backups
+
+    user = getattr(request, "user", None) or {}
+    b = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if not hop_permissions.is_owner(conn, user):
+                return _json_error("Only the owner can restore a backup", "FORBIDDEN", 403)
+            data = hop_server_backups.read(_ws(), name)
+            if (b.get("mode") or "new") == "replace":
+                bad = _check_password(user, b.get("password") or "")
+                if bad:
+                    return bad
+                res = hop_restore.restore_replace(conn, _ws(), data)
+            else:
+                res = hop_restore.restore_into_new_firm(conn, get_workspace_id(), data, str(b.get("name") or "").strip())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": res})
+
+
+@hop_bp.route("/catalog-link", methods=["GET", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_catalog_link_route():
+    """Online catalogue link of this firm. PUT {active, show_prices, hide_out_of_stock, message, new_code} (creates it)."""
+    from app import hop_catalog_link
+
+    with hop_db.connect(_db_path()) as conn:
+        link = hop_catalog_link.save(conn, _ws(), _payload()) if request.method == "PUT" else hop_catalog_link.get(conn, _ws())
+    if link:
+        link["url"] = request.host_url.rstrip("/") + "/c/" + link["token"]
+    return jsonify({"success": True, "data": link})
+
+
+@hop_bp.route("/services-on", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_services_on():
+    """Which approval services are switched on (any login) — screens show those buttons only then."""
+    from app import hop_gov
+
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": {s: bool(hop_gov.live(conn, _ws(), s)) for s in hop_gov.SERVICES}})
+
+
+@hop_bp.route("/gov", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_gov_status():
+    """Owner: Government & approvals — each service, what to apply for, mode and which keys are saved (never the keys)."""
+    from app import hop_gov
+
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": hop_gov.status(conn, _ws(), request.host_url)})
+
+
+@hop_bp.route("/gov/<string:service>", methods=["PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_gov_save(service: str):
+    from app import hop_gov
+
+    b = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            hop_gov.save(conn, _ws(), service, b.get("mode"), b.get("values") or {})
+            return jsonify({"success": True, "data": hop_gov.status(conn, _ws(), request.host_url)})
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/gov/<string:service>/test", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_gov_test(service: str):
+    from app import hop_gov, hop_gov_einvoice, hop_gov_payments, hop_gov_sms
+
+    b = _payload()
+    with hop_db.connect(_db_path()) as conn:
+        if service == "einvoice":
+            ok, msg = hop_gov_einvoice.test_keys(conn, _ws())
+        elif service == "payments":
+            ok, msg = hop_gov_payments.test_keys(conn, _ws())
+        elif service == "sms":
+            ok, msg = hop_gov_sms.test_keys(conn, _ws(), str(b.get("phone") or ""))
+        else:
+            return _json_error("Unknown service")
+        res = hop_gov.note_test(conn, _ws(), service, ok, msg)
+    return jsonify({"success": True, "data": res})
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/pay-link", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_pay_link(txn_id: int):
+    """Online payment link (business's own Razorpay) for the money due on a sale invoice."""
+    from app import hop_gov_payments
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            return jsonify({"success": True, "data": hop_gov_payments.create_link(conn, _ws(), txn_id)})
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/irn", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_irn(txn_id: int):
+    """IRP API: {action: generate | cancel (reason, remark) | eway (distance, vehicle_no, transporter_*)}."""
+    from app import hop_gov_einvoice
+
+    b = _payload()
+    action = b.get("action") or "generate"
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if action == "cancel":
+                data = hop_gov_einvoice.cancel_irn(conn, _ws(), txn_id, str(b.get("reason") or "2"), str(b.get("remark") or ""))
+            elif action == "eway":
+                data = hop_gov_einvoice.eway_by_irn(conn, _ws(), txn_id, b)
+            else:
+                data = hop_gov_einvoice.generate_irn(conn, _ws(), txn_id)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/sms/send", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_sms_send():
+    """NEXORA sends the SMS itself (DLT provider) — only when switched on; else the phone's SMS app is used."""
+    from app import hop_gov_sms
+
+    b = _payload()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_gov_sms.send(conn, _ws(), str(b.get("phone") or ""), str(b.get("text") or ""), str(b.get("kind") or "bill"))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/help", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -2798,7 +3058,8 @@ def hop_staff_permissions():
             if request.method == "PUT":
                 b = _payload()
                 hop_permissions.save(conn, get_workspace_id(), getattr(request, "user", None) or {}, int(b.get("user_id") or 0),
-                                     b.get("areas") or {}, b.get("preset"))
+                                     b.get("areas") or {}, b.get("preset"),
+                                     None if "can_backup" not in b else b.get("can_backup") in (True, 1, "1", "true"))
             data = hop_permissions.staff_list(conn, get_workspace_id())
     except PermissionError as exc:
         return _json_error(str(exc), "FORBIDDEN", 403)

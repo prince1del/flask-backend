@@ -318,6 +318,10 @@ def enforce_auth() -> Response | None:
     # the random token picks the order and Razorpay's signature proves payment.
     if request.path.startswith("/pay/"):
         return None
+    # Online catalogue link shared by a business with its customers: the long random code picks the firm,
+    # and the page shows only what the owner chose to share (app/hop_catalog_link.py).
+    if request.path.startswith("/c/"):
+        return None
     if request.path in {
         "/manifest.json",
         "/service-worker.js",

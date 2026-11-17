@@ -656,6 +656,14 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
             t = conn.execute("SELECT * FROM hop_party_transactions WHERE workspace_id=? AND id=?",
                              (workspace_id, int(hid))).fetchone()
             data["upi"] = hop_share.bill_upi(conn, workspace_id, dict(t)) if t else None
+            td = dict(t) if t else {}
+            if td.get("irn"):   # e-invoice: IRN, Ack, E-Way Bill no. and the signed QR from the IRP
+                qr = td.get("einv_qr") or ""
+                data["einvoice"] = {"irn": td.get("irn"), "ack_no": td.get("ack_no"), "ack_date": td.get("ack_date"),
+                                    "eway_bill_no": td.get("eway_bill_no"),
+                                    "qr_png": hop_share.qr_png_base64(qr) if qr else None}
+            elif td.get("eway_bill_no"):
+                data["einvoice"] = {"eway_bill_no": td.get("eway_bill_no")}
         except Exception:
             data["upi"] = None
     try:

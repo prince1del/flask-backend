@@ -7301,7 +7301,8 @@ async function renderHopProductsModule(mount) {
     )}`;
   hopState._productsCache = rows;
   mount.innerHTML = hopModuleShell('Products', 'Product Catalogue', 'HSN, GST%, rates and stock',
-    `<button type="button" class="nx-btn" onclick="hopImportOpen('items')">Import from Excel</button>
+    `<button type="button" class="nx-btn" onclick="hopCatalogLinkOpen()">Share online catalogue</button>
+<button type="button" class="nx-btn" onclick="hopImportOpen('items')">Import from Excel</button>
      <button type="button" class="nx-btn nx-btn-primary" onclick="hopShowForm('product')">+ New Product</button>`, body);
 }
 
@@ -10496,3 +10497,37 @@ window.hopPreviewVyaparBackup = hopPreviewVyaparBackup;
 window.hopRunVyaparImport = hopRunVyaparImport;
 window.hopPickVyaparBackup = hopPickVyaparBackup;
 window.hopRunWipeData = hopRunWipeData;
+
+
+/** Online catalogue link: customers open it (no login), pick items and send an order → Sale Order. */
+async function hopCatalogLinkOpen(changes) {
+  const esc = (v) => foEscapeText(v);
+  let link;
+  try {
+    link = changes
+      ? await hopApi('/api/v1/hop/catalog-link', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes) })
+      : await hopApi('/api/v1/hop/catalog-link');
+  } catch (e) { if (typeof nexoraToast === 'function') nexoraToast(e.message, 'err'); return; }
+  document.getElementById('hop-cat-link')?.remove();
+  const el = document.createElement('div');
+  el.id = 'hop-cat-link';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  el.onclick = (ev) => { if (ev.target === el) el.remove(); };
+  const sw = (k, label) => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0;"><input type="checkbox" ${link && link[k] ? 'checked' : ''}
+    onchange="hopCatalogLinkOpen({${k}: this.checked})"> ${label}</label>`;
+  el.innerHTML = `<div class="nx-card" style="max-width:520px;width:100%;padding:18px;">
+    <h3 style="margin:0 0 8px;">Online catalogue</h3>
+    <p class="hop-doc-muted">Share one link with customers. They see your items, pick quantities and send an order — it arrives as a Sale Order and you get an email. Nothing is billed by itself.</p>
+    ${!link ? `<button type="button" class="nx-btn nx-btn-primary" onclick="hopCatalogLinkOpen({active: true})">Make my catalogue link</button>` : `
+      <p><a href="${esc(link.url)}" target="_blank" rel="noopener">${esc(link.url)}</a></p>
+      <p class="hop-doc-muted">Online orders so far: ${link.orders || 0}</p>
+      ${sw('active', 'Link is on')}${sw('show_prices', 'Show prices')}${sw('hide_out_of_stock', 'Hide items with no stock')}
+      <div class="hop-books-actions">
+        <button type="button" class="nx-btn" onclick="navigator.clipboard && navigator.clipboard.writeText('${esc(link.url)}'); nexoraToast && nexoraToast('Link copied')">Copy link</button>
+        <a class="nx-btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('See our catalogue and send your order: ' + link.url)}">WhatsApp</a>
+        <button type="button" class="nx-btn" onclick="if (confirm('Make a new link? The old link stops working.')) hopCatalogLinkOpen({new_code: true})">New link</button>
+      </div>`}
+    <div style="text-align:right;margin-top:10px;"><button type="button" class="nx-btn" onclick="document.getElementById('hop-cat-link').remove()">Close</button></div></div>`;
+  document.body.appendChild(el);
+}
+window.hopCatalogLinkOpen = hopCatalogLinkOpen;

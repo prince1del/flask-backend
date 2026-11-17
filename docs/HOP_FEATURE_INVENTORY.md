@@ -13,7 +13,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Financial year + year close / lock | ✅ (Cursor, Phase 3) |
 | Passcode / app lock | ✅ phone PIN (Settings → App lock; on open + after 1 min away; Forgot PIN = log in again). Web: login only |
 | Multiple firms (companies) in one login | ✅ firm switcher (phone + web); each firm has its own parties, items, bills, bank, GST, settings, numbering |
-| Backup / restore by the user | 🟡 download backup zip (phone + web, Settings); restore with support (no one-click overwrite) |
+| Backup / restore by the user | ✅ locked .kunwar backup (owner / allowed staff), backups on server every 6 h, restore into a new firm or replace this firm (password, safety copy) |
 | Date format, decimal places (qty, amount) | 🟡 bills: date format + paise / whole rupees (phone + web); app screens keep ₹0.00 |
 | Currency symbol | ✅ on bills (₹, Rs., $, €, £, AED or none) — accounts stay in rupees |
 
@@ -44,7 +44,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Composition scheme | ✅ Settings (Bill of Supply, no GST on sales) |
 | Additional cess | ✅ cess % per item / line; split out in GSTR-1 and the e-invoice file |
 | TCS on sales / TDS on purchases | ✅ TCS + TDS on sale invoices and purchase bills (balance and books follow) |
-| E-Invoice / E-Way Bill | 🟡 (JSON files; direct portal API needs owner's GSP account) |
+| E-Invoice / E-Way Bill | ✅ JSON files + direct IRP API (IRN, signed QR, cancel, E-Way Bill by IRN) — switched on with the owner's IRP / GSP login |
 
 ### Print
 | Setting | State |
@@ -58,7 +58,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 ### Messages & reminders
 | Setting | State |
 |---|---|
-| WhatsApp / SMS after saving a bill | ✅ WhatsApp bill + reminder buttons (opens WhatsApp with your message; SMS ❌) |
+| WhatsApp / SMS after saving a bill | ✅ WhatsApp + SMS bill / reminder buttons (opens the app with your message) |
 | Automatic payment reminders | ✅ daily list, one-tap WhatsApp/email, morning email, auto customer emails |
 | Service reminders | ✅ item 'Service every (days)' → due list after each sale, WhatsApp + Done |
 | Message templates | ✅ Settings → Sharing (bill + reminder, with {party} {amount} {due} {upi_link}…) |
@@ -100,12 +100,12 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Tally export | ✅ (Cursor) |
 | Recycle bin | ✅ |
 | User roles & permissions for staff, audit trail | ✅ staff permissions (8 areas × none / can see / can change, quick choices) + audit trail |
-| Online store / catalogue sharing | 🟡 (catalogue exists) |
+| Online store / catalogue sharing | ✅ catalogue link — customers order without login → Sale Order + owner email |
 | Payment link / UPI QR on invoice | ✅ UPI QR picture + link on bills (web, phone preview, phone PDF) and WhatsApp |
 | Share invoice on WhatsApp | ✅ (text + UPI link; PDF attach is by the phone share sheet) |
-| Thermal printing | 🟡 thermal paper layout from web print; Bluetooth printer from phone ❌ |
+| Thermal printing | ✅ thermal layout from web print + Bluetooth printer from the phone (58 / 80 mm, UPI QR) |
 | Barcode scanning on phone | ✅ Scan on bill lines (adds the item / +1 qty) and on the item form |
-| Offline mode | 🟡 phone: new bills / payments / expenses saved with no internet and sent by themselves later (no double save); parties kept for offline bills; lists and reports need internet |
+| Offline mode | ✅ phone: new bills / payments / expenses saved with no internet and sent by themselves later (no double save); parties kept for offline bills; ✅ lists, bills and reports opened before show offline with an "Offline — saved at" line |
 | AI: bill reading, insights, Guard, Ask Nexora | ✅ + scan any bill / order / handwritten note into a Sale Invoice or Quotation |
 
 ## Order of work

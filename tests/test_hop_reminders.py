@@ -69,7 +69,7 @@ def test_customers_summary_backup_and_repeat_gap(db):
         to = [m["to"] for m in sent]
         assert "late@hotel.test" in to and "soon@cafe.test" in to and to.count("owner@firm.test") == 2
         backup = next(m for m in sent if m["subject"].startswith("NEXORA daily backup"))
-        assert backup["attachments"][0][0].endswith(".zip")
+        assert backup["attachments"][0][0].endswith(".kunwar")
         sent.clear()
         res = R.run_for_workspace(conn, WS, TODAY)  # same day again: customers not reminded twice
         assert res["customers"] == 0

@@ -393,6 +393,11 @@
             </div>
             ${data.terms ? `<div class="hop-doc-section"><div class="hop-doc-meta-label">Terms and Conditions</div><div>${foEscapeText(data.terms)}</div></div>` : ''}
             ${bankHtml}
+            ${data.einvoice ? `<div class="hop-doc-section" style="display:flex;gap:12px;align-items:center;">
+              ${data.einvoice.qr_png ? `<img src="data:image/png;base64,${data.einvoice.qr_png}" alt="E-invoice QR" style="width:120px;height:120px;image-rendering:pixelated;" />` : ''}
+              <div>${data.einvoice.irn ? `<div class="hop-doc-meta-label">E-Invoice</div><div style="word-break:break-all;">IRN: ${foEscapeText(data.einvoice.irn)}</div>
+              <div>Ack No: ${foEscapeText(data.einvoice.ack_no || '')} · ${foEscapeText(data.einvoice.ack_date || '')}</div>` : ''}
+              ${data.einvoice.eway_bill_no ? `<div>E-Way Bill: ${foEscapeText(data.einvoice.eway_bill_no)}</div>` : ''}</div></div>` : ''}
             ${data.upi ? `<div class="hop-doc-section" style="display:flex;gap:12px;align-items:center;">
               ${data.upi.qr_png ? `<img src="data:image/png;base64,${data.upi.qr_png}" alt="UPI QR" style="width:110px;height:110px;image-rendering:pixelated;" />` : ''}
               <div><div class="hop-doc-meta-label">Scan to pay by UPI</div><div>${foEscapeText(data.upi.upi_id)} · ${hopPreviewMoney(data.upi.amount)}</div>

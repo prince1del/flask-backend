@@ -89,7 +89,9 @@
         <table class="inv-table"><tbody>${(d.areas || []).map((a) => `<tr><td>${esc(a.label)}</td><td>
           <select class="nx-input" onchange="hopStaffArea(${s.user_id},'${a.key}',this.value)">
             ${levels.map(([v, l]) => `<option value="${v}"${s.areas[a.key] === v ? ' selected' : ''}>${l}</option>`).join('')}
-          </select></td></tr>`).join('')}</tbody></table></div>`).join('');
+          </select></td></tr>`).join('')}</tbody></table>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="checkbox" ${s.can_backup ? 'checked' : ''}
+          onchange="hopStaffBackup(${s.user_id}, this.checked)" /> Can download backup (locked .kunwar; you get an email each time) — restore stays owner-only</label></div>`).join('');
     window._hopStaffData = d;
     mount.innerHTML = hopModuleShell('Settings', 'Staff permissions',
       'What each staff login can see or change — you (the owner) always have full access', '',
@@ -107,6 +109,7 @@
 
   window.renderHopStaffPermsModule = render;
   window.hopStaffPreset = (uid, preset) => put({ user_id: uid, preset });
+  window.hopStaffBackup = (uid, on) => put({ user_id: uid, can_backup: !!on });
   window.hopStaffArea = async (uid, key, val) => {
     const s = (window._hopStaffData?.staff || []).find((x) => x.user_id === uid);
     const areas = { ...(s?.areas || {}), [key]: val };
@@ -118,4 +121,6 @@
   };
   window.hopPermsApply = apply;
   window.hopPermsCanOpen = canOpen;
+  window.hopPermsIsOwner = () => !perms || !!perms.owner;
+  window.hopPermsCanBackup = () => !!(perms && (perms.owner || perms.can_backup));
 })();

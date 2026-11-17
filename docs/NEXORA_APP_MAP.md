@@ -562,6 +562,31 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
   (phone's own SMS app via `openSms`, same text as WhatsApp from `/share`); SMS pills on Reminders.
   "Print receipt": `GET /party-transactions/<id>/receipt?width=32|48` (`app/hop_receipt.py`, ASCII lines +
   UPI QR) → `util/BluetoothReceiptPrinter.kt` (paired printers only, ESC/POS over SPP, saved printer + 2/3 inch).
+- **Locked backup + restore into a new firm** (Batch 4, 2026-11-17) — `app/hop_backup.py`: backup zip is locked with
+  AES-256-GCM (`.kunwar`, magic `NEXORA-KUNWAR-1`), key per company = HKDF(`NEXORA_BACKUP_KEY` env, company ws) —
+  opens only in NEXORA, only for the same company. Download `GET /backup`, daily email attachment. `app/hop_restore.py`
+  + `POST /firms/restore` (owner, `?preview=1`): always a NEW firm; every id / link column shifted by one offset.
+  Phone: Settings → Backup (`HopAppSettingsScreen.kt` `RestoreIntoNewFirm`); web: `hop_app_settings_web.js`.
+  ⚠ Keep a copy of `NEXORA_BACKUP_KEY` outside the server — without it old backups cannot be opened.
+- **Government & approvals** (Batch 5, 2026-11-17) — `app/hop_gov.py` (per firm, keys LOCKED with the company key,
+  modes off/test/live, owner-only `GET /gov`, `PUT /gov/<service>`, `POST /gov/<service>/test`; `GET /services-on` for
+  everyone). `hop_gov_einvoice.py` NIC IRP API (RSA auth → SEK, AES-ECB bodies): `POST /party-transactions/<id>/irn
+  {action: generate|cancel|eway}`, IRN + signed QR saved (`einv_qr`) and shown on the bill (`data.einvoice`), live
+  GSTIN in `/gstin-lookup`. `hop_gov_payments.py` business's own Razorpay: `POST /party-transactions/<id>/pay-link`,
+  public signed webhook `/api/v1/public/razorpay-webhook/<ws>` → Payment-In into "Razorpay" account (never twice).
+  `hop_gov_sms.py` MSG91 flow / URL provider: `POST /sms/send`. Phone: `ui/hop/HopGovScreen.kt` (settings + bill buttons);
+  web: `hop_app_settings_web.js` (govRender), `hop_money_web.js` (hopPayLink / hopSmsSend / hopIrn). Tests use a fake
+  NIC server with real encryption and a signed fake webhook.
+- **Backups on server + Replace this firm** (Batch 4, 2026-11-17) — `app/hop_server_backups.py`: per firm under
+  `<data>/hop_backups/<ws>/`, locked `.kunwar`, every 6 h only when data changed (`deploy/nexora-backups.timer`),
+  plus before Vyapar import / wipe / replace; 30 days (newest 5 always). Routes `GET|POST /backups`,
+  `GET /backups/<name>`, `POST /backups/<name>/restore {mode: new|replace, password}`. Replace = `hop_restore.restore_replace`
+  (safety copy first, one transaction). Owner only; staff with `can_backup` (Staff permissions switch) may list / download —
+  audited + owner emailed. Wipe is owner only now (was open to staff).
+- **Online catalogue link** (Batch 4, 2026-11-17) — `app/hop_catalog_link.py`, owner `GET|PUT /catalog-link`,
+  public (no login, `enforce_auth` allows `/c/`) `app/routes/hop_public.py`: page `/c/<code>`, `GET /api/v1/public/catalog/<code>`,
+  `POST …/order` → Sale Order (65), prices from NEXORA, flood limit, owner email. Phone: Catalogue → Share online
+  catalogue (`ui/hop/HopCatalogLink.kt`); web: `hopCatalogLinkOpen`. Ask Nexora `online_orders`.
 - **Vyapar full restore** (Batch 4, 2026-11-17) — `app/services/vyapar_money_import.py`, called at the end of
   `vyapar_importer.import_vyapar_backup`: bank accounts (`kb_paymentTypes`), each payment's cash / bank / cheque
   (`txn_payment_mapping`, `kb_cheque_status`), transfers + adjustments (`kb_bank_adjustments`, `kb_cash_adjustments`),

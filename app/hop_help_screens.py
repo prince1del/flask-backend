@@ -5,6 +5,7 @@ Each line: "Name — what it means". Phone and web show these above "How to use"
 """
 from __future__ import annotations
 
+GOV_BILL = ["Pay online link / Send SMS / Make IRN / E-Way Bill — appear on a sale invoice once switched on in Settings → Government & approvals; a paid link marks the bill paid by itself."]
 DOC_LIST = [
     "Search box — find a document by number, party or status.",
     "Each card — date and status (top), document number, party name, Amount (full total) and Balance (still to pay / receive).",
@@ -30,7 +31,7 @@ SHOWS: dict[str, list[str]] = {
         "Each party — name, group (Hotel, Architect…), phone and balance: they owe you, or you owe them.",
         "Add Party — new customer or supplier. Tap a party to edit it or see its bills and statement.",
     ],
-    "invoices": DOC_LIST + PREVIEW + ["Status — Paid, Partly paid, Unpaid or Overdue."],
+    "invoices": DOC_LIST + PREVIEW + GOV_BILL + ["Status — Paid, Partly paid, Unpaid or Overdue."],
     "sale_estimates": DOC_LIST + PREVIEW + ["Status — Open, Converted (became an order / invoice) or Closed."],
     "sale_proforma": DOC_LIST + PREVIEW,
     "payments": [
@@ -67,6 +68,7 @@ SHOWS: dict[str, list[str]] = {
         "Each item — name, code, sale price, purchase price, GST %, stock and unit; a ⚠ line means something to check.",
         "Margin / profit — what you earn per piece after cost, GST and commission.",
         "+ Product — add an item. Tap an item to edit it (MRP, wholesale, 2nd unit, barcode, service period, custom fields).",
+        "Share online catalogue — one link for customers (no login): they pick items and send an order, which arrives as a Sale Order.",
     ],
     "stock": [
         "Each item — quantity in stock now and its unit; low or negative stock stands out.",
@@ -125,6 +127,8 @@ SHOWS: dict[str, list[str]] = {
     "app_settings": [
         "Sections — Transaction (numbering, due days, round off), Tax / GST, Print (paper, header, HSN, margins), Sharing (WhatsApp / SMS messages, UPI), Party (groups, loyalty), Reminders (morning email, auto emails, backup email), App lock, Backup.",
         "Saving — switches save at once; text boxes save with Save.",
+        "Government & approvals (owner) — E-Invoice / E-Way Bill / GSTIN verify, SMS (DLT) and online payments (your Razorpay): what to apply for, keys (stored locked), Off / Test / Live and a Test button.",
+        "Backup — Download backup (locked .kunwar file, opens only in NEXORA), Restore into a new firm, and Backups on server (every 6 hours + before import / wipe / replace, 30 days; Replace this firm needs your password and saves today's data first). Owner only — or staff the owner allowed to download.",
     ],
     "staff_permissions": [
         "Each staff login — name and quick role (Salesperson, Accountant…).",

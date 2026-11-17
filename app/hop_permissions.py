@@ -42,13 +42,13 @@ PRESETS: dict[str, dict[str, str]] = {
 SALES_TYPES = {1, 3, 21, 27, 30, 65, 82, 83}
 PURCHASE_TYPES = {2, 4, 7, 16, 29, 66}
 MONEY_TYPES = {81}
-OWNER_ONLY = re.compile(r"^/(backup|staff-permissions|wipe|wipe-data|reset)(/|$)")
+OWNER_ONLY = re.compile(r"^/(backup|backups|staff-permissions|wipe|wipe-data|reset|settings/wipe-data|firms/restore|gov)(/|$)")
 # POSTs that only read / prepare (no change) need "view".
 READ_POSTS = re.compile(r"/(preview|entry-warnings|suggest-rate|reconcile/match|import/[a-z]+/preview|ai/read-bill|"
                         r"gst-files/[a-z]+|insights)(/|$)")
 PREFIX_AREA = [
     ("customers", "parties"), ("vendors", "parties"), ("parties", "parties"), ("import/parties", "parties"),
-    ("products", "items"), ("manufacture", "items"), ("loyalty", "sales"), ("reminders", "sales"), ("stock", "items"), ("godowns", "items"), ("item-", "items"), ("categories", "items"),
+    ("products", "items"), ("manufacture", "items"), ("loyalty", "sales"), ("catalog-link", "sales"), ("sms", "sales"), ("reminders", "sales"), ("stock", "items"), ("godowns", "items"), ("item-", "items"), ("categories", "items"),
     ("units", "items"), ("import/items", "items"),
     ("bank-accounts", "money"), ("bank-entries", "money"), ("cheques", "money"), ("loans", "money"),
     ("fixed-assets", "money"),
@@ -56,7 +56,7 @@ PREFIX_AREA = [
     ("books", "reports"), ("reports", "reports"), ("gst-files", "reports"), ("tally", "reports"), ("gst", "reports"),
     ("app-settings", "settings"), ("firm-profile", "settings"), ("company-profile", "settings"),
     ("audit-log", "settings"), ("financial-year", "settings"), ("recycle-bin", "settings"), ("print-theme", "settings"),
-    ("my-permissions", "_any"), ("firms", "_any"), ("help", "_any"),
+    ("my-permissions", "_any"), ("services-on", "_any"), ("firms", "_any"), ("help", "_any"),
 ]
 
 
@@ -92,16 +92,20 @@ def is_owner(conn: sqlite3.Connection, user: dict[str, Any]) -> bool:
 def perms_for(conn: sqlite3.Connection, user: dict[str, Any]) -> dict[str, Any]:
     ensure_schema(conn)
     if is_owner(conn, user):
-        return {"owner": True, "areas": {a: "edit" for a in AREA_KEYS}, "preset": "Owner"}
+        return {"owner": True, "areas": {a: "edit" for a in AREA_KEYS}, "preset": "Owner", "can_backup": True}
     r = conn.execute("SELECT perms, preset FROM hop_staff_permissions WHERE workspace_id=? AND user_id=?",
                      (str(user.get("workspace_id") or ""), int(user["user_id"]))).fetchone()
     areas = dict(FULL_STAFF)
+    can_backup = False
     if r:
         try:
-            areas.update({k: v for k, v in json.loads(r[0]).items() if k in AREA_KEYS and v in LEVELS})
+            saved = json.loads(r[0])
+            areas.update({k: v for k, v in saved.items() if k in AREA_KEYS and v in LEVELS})
+            can_backup = saved.get("_backup") is True
         except ValueError:
             pass
-    return {"owner": False, "areas": areas, "preset": (r[1] if r else None) or ("Full access" if not r else "Custom")}
+    return {"owner": False, "areas": areas, "preset": (r[1] if r else None) or ("Full access" if not r else "Custom"),
+            "can_backup": can_backup}
 
 
 def area_for(conn: sqlite3.Connection, ws: str, method: str, path: str, body: Any, args: Any) -> str:
@@ -150,6 +154,10 @@ def check(conn: sqlite3.Connection, user: dict[str, Any], method: str, path: str
     if p["owner"] or area == "_any":
         return None
     if area == "_owner":
+        # The owner may allow a staff login (e.g. the accountant) to download the locked backup. Restore stays owner-only.
+        rest = path.split("/api/v1/hop", 1)[-1].rstrip("/")
+        if method == "GET" and p.get("can_backup") and (rest == "/backup" or rest.startswith("/backups")):
+            return None
         return "Only the owner can do this."
     need = "view" if method in ("GET", "HEAD", "OPTIONS") or READ_POSTS.search(path) else "edit"
     order = {"none": 0, "view": 1, "edit": 2}
@@ -175,13 +183,14 @@ def staff_list(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
             continue
         p = perms_for(conn, {"user_id": int(r[0]), "workspace_id": ws})
         staff.append({"user_id": int(r[0]), "name": r[1], "areas": p["areas"], "preset": p["preset"],
-                      "summary": summary(p["areas"])})
+                      "can_backup": p["can_backup"],
+                      "summary": summary(p["areas"]) + (" · Can download backup" if p["can_backup"] else "")})
     return {"areas": [{"key": k, "label": l} for k, l in AREAS], "levels": list(LEVELS),
             "presets": PRESETS, "staff": staff}
 
 
 def save(conn: sqlite3.Connection, ws: str, owner: dict[str, Any], user_id: int, areas: dict[str, Any],
-         preset: str | None = None) -> dict[str, Any]:
+         preset: str | None = None, can_backup: bool | None = None) -> dict[str, Any]:
     ensure_schema(conn)
     if not is_owner(conn, owner):
         raise PermissionError("Only the owner can change permissions")
@@ -190,17 +199,23 @@ def save(conn: sqlite3.Connection, ws: str, owner: dict[str, Any], user_id: int,
     r = conn.execute("SELECT 1 FROM users WHERE id=? AND workspace_id=? AND role='hop_admin'", (int(user_id), ws)).fetchone()
     if not r:
         raise ValueError("Staff login not found in this company")
+    old = perms_for(conn, {"user_id": int(user_id), "workspace_id": ws})
+    only_backup = not areas and not preset
+    if only_backup:
+        areas = old["areas"]            # only the backup switch changed
     if preset and preset in PRESETS:
         areas = dict(PRESETS[preset])
     clean = {k: str((areas or {}).get(k) or FULL_STAFF[k]) for k in AREA_KEYS}
+    backup = old["can_backup"] if can_backup is None else bool(can_backup)
     bad = [k for k, v in clean.items() if v not in LEVELS]
     if bad:
         raise ValueError("Each area must be none, view or edit")
+    keep_preset = preset if preset in PRESETS else (old["preset"] if only_backup else "Custom")
     conn.execute("INSERT OR REPLACE INTO hop_staff_permissions (workspace_id, user_id, perms, preset, updated_by, updated_at) "
-                 "VALUES (?, ?, ?, ?, ?, ?)", (ws, int(user_id), json.dumps(clean), preset if preset in PRESETS else "Custom",
+                 "VALUES (?, ?, ?, ?, ?, ?)", (ws, int(user_id), json.dumps({**clean, "_backup": backup}), keep_preset,
                                                owner.get("user_id"), _now()))
     conn.commit()
-    return {"user_id": int(user_id), "areas": clean, "summary": summary(clean)}
+    return {"user_id": int(user_id), "areas": clean, "can_backup": backup, "summary": summary(clean)}
 
 
 def summary(areas: dict[str, str]) -> str:

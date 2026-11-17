@@ -67,3 +67,31 @@ def test_ask_nexora_respects_permissions(tmp_path):
             raise AssertionError("staff changed own permissions")
         except PermissionError:
             pass
+
+
+def test_owner_can_allow_staff_backup_but_never_restore(tmp_path, monkeypatch):
+    import io
+
+    from tests.test_hop_wipe_password import _setup_hop_wipe_client
+
+    client, owner, db_path = _setup_hop_wipe_client(tmp_path, monkeypatch)
+    staff, _ = _staff(client, db_path)
+    assert client.get("/api/v1/hop/backup", headers=staff).status_code == 403          # off by default
+    sid = client.get("/api/v1/hop/staff-permissions", headers=owner).get_json()["data"]["staff"][0]["user_id"]
+    client.put("/api/v1/hop/staff-permissions", headers=owner, json={"user_id": sid, "preset": "Accountant"})
+    r = client.put("/api/v1/hop/staff-permissions", headers=owner, json={"user_id": sid, "can_backup": True})
+    assert r.status_code == 200
+    row = r.get_json()["data"]["staff"][0]
+    assert row["can_backup"] is True and row["preset"] == "Accountant" and "Can download backup" in row["summary"]
+    assert client.get("/api/v1/hop/my-permissions", headers=staff).get_json()["data"]["can_backup"] is True
+    got = client.get("/api/v1/hop/backup", headers=staff)
+    assert got.status_code == 200 and ".kunwar" in got.headers["Content-Disposition"]
+    log = client.get("/api/v1/hop/audit-log", headers=owner)
+    assert log.status_code == 200 and "Backup" in log.get_data(as_text=True)
+    # restore stays owner-only
+    rs = client.post("/api/v1/hop/firms/restore?preview=1", headers=staff,
+                     data={"backup_file": (io.BytesIO(got.data), "b.kunwar")}, content_type="multipart/form-data")
+    assert rs.status_code == 403
+    # owner turns it off again
+    client.put("/api/v1/hop/staff-permissions", headers=owner, json={"user_id": sid, "can_backup": False})
+    assert client.get("/api/v1/hop/backup", headers=staff).status_code == 403

@@ -634,6 +634,23 @@
         <button type="button" class="nx-btn" onclick="hopMoneyShare(${partyTxnId},'reminder')">Payment reminder</button>`;
       foot.insertBefore(sh, foot.firstChild);
     }
+    let on = {};
+    try { on = await hopApi('/api/v1/hop/services-on'); } catch (_) { on = {}; }
+    if (foot && [1, 83].includes(Number(info.txn_type)) && (on.payments || on.sms)) {
+      const o = document.createElement('span');
+      o.className = 'hop-money-online';
+      o.innerHTML = `${on.payments ? `<button type="button" class="nx-btn" onclick="hopPayLink(${partyTxnId})">Pay online link</button>` : ''}
+        ${on.sms ? `<button type="button" class="nx-btn" onclick="hopSmsSend(${partyTxnId})">Send SMS</button>` : ''}`;
+      foot.insertBefore(o, foot.firstChild);
+    }
+    if (foot && Number(info.txn_type) === 1 && on.einvoice) {
+      const e = document.createElement('span');
+      e.className = 'hop-money-irn';
+      e.innerHTML = `<button type="button" class="nx-btn" onclick="hopIrn(${partyTxnId},'generate')">Make IRN (e-invoice)</button>
+        <button type="button" class="nx-btn" onclick="hopIrn(${partyTxnId},'eway')">E-Way Bill</button>
+        <button type="button" class="nx-btn" onclick="hopIrn(${partyTxnId},'cancel')">Cancel IRN</button>`;
+      foot.insertBefore(e, foot.firstChild);
+    }
     if (foot && Number(info.txn_type) === 1) {
       const g = document.createElement('span');
       g.className = 'hop-money-gst';
@@ -960,6 +977,41 @@
   window.hopReconcileSave = () => reconcileMark([...recon.picked], document.getElementById('hop-recon-date')?.value || null);
   window.hopReconcileUpload = reconcileUpload;
   // Share on WhatsApp: the owner's message (Settings → Sharing) with the UPI link; the user taps Send.
+  window.hopPayLink = async (id) => {
+    try {
+      const d = await hopApi(`/api/v1/hop/party-transactions/${id}/pay-link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const sh = await hopApi(`/api/v1/hop/party-transactions/${id}/share?kind=reminder`).catch(() => ({}));
+      const text = `Pay ${money(d.amount)} online: ${d.url}`;
+      window.open((sh.phone ? `https://wa.me/${sh.phone}` : 'https://wa.me/') + `?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+      toast('Payment link ready — when the customer pays, the bill is marked paid by itself');
+    } catch (e) { toast(e?.message || 'Could not make the link', 'err'); }
+  };
+  window.hopSmsSend = async (id) => {
+    try {
+      const sh = await hopApi(`/api/v1/hop/party-transactions/${id}/share?kind=bill`);
+      if (!sh.phone) { toast('No mobile number on this party', 'warn'); return; }
+      await hopApi('/api/v1/hop/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: sh.phone, text: sh.text, kind: 'bill' }) });
+      toast('SMS sent');
+    } catch (e) { toast(e?.message || 'SMS not sent', 'err'); }
+  };
+  window.hopIrn = async (id, action) => {
+    const body = { action };
+    if (action === 'cancel') {
+      const r = window.prompt('Cancel the IRN — reason: 1 duplicate, 2 data entry mistake, 3 order cancelled, 4 other', '2');
+      if (!r) return;
+      body.reason = r.trim(); body.remark = 'Cancelled from NEXORA';
+    }
+    if (action === 'eway') {
+      const v = window.prompt('Vehicle number (e.g. DL01AB1234):', '');
+      if (v === null) return;
+      const km = window.prompt('Distance in km (0 = let the portal work it out):', '0');
+      body.vehicle_no = v; body.distance = Number(km || 0);
+    }
+    try {
+      const d = await hopApi(`/api/v1/hop/party-transactions/${id}/irn`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      toast(action === 'generate' ? `IRN made — Ack ${d.ack_no}` : action === 'eway' ? `E-Way Bill ${d.eway_bill_no}` : 'IRN cancelled');
+    } catch (e) { toast(e?.message || 'The portal said no', 'err'); }
+  };
   window.hopMoneyShare = async (id, kind) => {
     try {
       const d = await hopApi(`/api/v1/hop/party-transactions/${id}/share?kind=${kind}`);

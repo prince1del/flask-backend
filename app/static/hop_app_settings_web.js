@@ -48,10 +48,23 @@
         <h3 style="margin:0 0 10px;">${esc(s.title)}</h3>
         ${s.fields.map((f) => `<div style="padding:8px 0;border-top:1px solid rgba(148,163,184,.15);">${fieldHtml(f)}</div>`).join('')}
       </div>`).join('');
-    const backup = `<div class="nx-card" style="padding:14px;margin-bottom:12px;"><h3 style="margin:0 0 10px;">Backup</h3>
-      <p class="hop-doc-muted">Download all your business data (parties, items, bills, payments, bank…) as one zip file.</p>
-      <button type="button" class="nx-btn" onclick="hopBackupDownload()">Download backup</button></div>`;
+    const isOwner = typeof window.hopPermsIsOwner !== 'function' || window.hopPermsIsOwner();
+    const canBackup = isOwner || (typeof window.hopPermsCanBackup === 'function' && window.hopPermsCanBackup());
+    const backup = !canBackup ? `<div class="nx-card" style="padding:14px;margin-bottom:12px;"><h3 style="margin:0 0 10px;">Backup</h3><p class="hop-doc-muted">Only the company owner can download or restore backups.</p></div>` : `<div class="nx-card" style="padding:14px;margin-bottom:12px;"><h3 style="margin:0 0 10px;">Backup</h3>
+      <p class="hop-doc-muted">Download all your business data (parties, items, bills, payments, bank…) as one locked .kunwar file — it opens only in NEXORA, only for your company.</p>
+      <button type="button" class="nx-btn" onclick="hopBackupDownload()">Download backup</button>
+      ${isOwner ? `<button type="button" class="nx-btn" onclick="document.getElementById('hop-restore-file').click()">Restore a backup into a new firm</button>` : ''}
+      <input type="file" id="hop-restore-file" style="display:none" onchange="hopRestorePick(this)" />
+      <p class="hop-doc-muted">Restoring never changes your current data — the backup becomes a separate firm you can switch to.</p>
+      <div id="hop-restore-out"></div>
+      <h4 style="margin:16px 0 6px;">Backups on server</h4>
+      <p class="hop-doc-muted">Saved every 6 hours when your data changes, and before import / wipe / replace. Kept 30 days — open them from any phone or computer with your login.</p>
+      ${isOwner ? '<button type="button" class="nx-btn" onclick="hopSrvBackupNow()">Save a backup now</button>' : ''}
+      <div id="hop-srv-backups"><p class="hop-doc-muted">Loading…</p></div></div>
+      ${isOwner ? '<div class="nx-card" style="padding:14px;margin-bottom:12px;"><h3 style="margin:0 0 6px;">Government &amp; approvals</h3><p class="hop-doc-muted">E-Invoice, E-Way Bill, GSTIN verify, SMS and online payments. Each starts Off; use Test with the provider\'s sandbox keys, then Live after approval. Keys are stored locked and never shown again.</p><div id="hop-gov"></div></div>' : ''}`;
     mount.innerHTML = hopModuleShell('Settings', 'Settings', 'Bills, GST, print and parties — applies on phone and web', '', body + backup);
+    if (canBackup) srvList(isOwner);
+    if (isOwner) govRender();
   }
 
   window.renderHopAppSettingsModule = render;
@@ -62,10 +75,114 @@
       const blob = await res.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `nexora_hop_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `nexora_backup_${new Date().toISOString().slice(0, 10)}.kunwar`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     } catch (e) { toast(e?.message || 'Backup failed', 'err'); }
+  };
+  const restoreSend = async (file, name, preview) => {
+    const fd = new FormData();
+    fd.append('backup_file', file, file.name || 'backup.kunwar');
+    if (name) fd.append('name', name);
+    return hopApi(`/api/v1/hop/firms/restore${preview ? '?preview=1' : ''}`, { method: 'POST', body: fd });
+  };
+  window.hopRestorePick = async (input) => {
+    const file = input.files && input.files[0];
+    input.value = '';
+    const out = document.getElementById('hop-restore-out');
+    if (!file || !out) return;
+    out.innerHTML = '<p>Reading the backup…</p>';
+    try {
+      const p = await restoreSend(file, '', true);
+      const name = window.prompt(`In this backup: ${p.parties} parties, ${p.items} items, ${p.documents} bills / documents.
+
+Name of the new firm:`,
+        `${p.firm_name || 'Restored firm'} (restored)`);
+      if (!name) { out.innerHTML = ''; return; }
+      out.innerHTML = '<p>Restoring… this can take a minute.</p>';
+      const d = await restoreSend(file, name.trim(), false);
+      out.innerHTML = `<p>✓ “${esc(d.name)}” is ready: ${d.parties} parties, ${d.items} items, ${d.documents} bills. Switch to it from the firm name at the top.</p>`;
+    } catch (e) { out.innerHTML = `<p class="nx-oc-error">${esc(e.message)}</p>`; }
+  };
+  async function srvList(isOwner) {
+    const box = document.getElementById('hop-srv-backups');
+    if (!box) return;
+    try {
+      const d = await hopApi('/api/v1/hop/backups');
+      box.innerHTML = (d.backups || []).length ? `<table class="inv-table"><tbody>${d.backups.slice(0, 15).map((b) => `<tr>
+        <td>${esc(b.at_ist)}</td><td>${esc(b.reason)}</td><td>${esc(b.size_kb)} KB</td><td>
+        <button type="button" class="nx-btn" onclick="hopSrvDownload('${esc(b.name)}')">Download</button>
+        ${isOwner ? `<button type="button" class="nx-btn" onclick="hopSrvRestore('${esc(b.name)}','new')">New firm</button>
+        <button type="button" class="nx-btn" onclick="hopSrvRestore('${esc(b.name)}','replace')">Replace this firm</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="hop-doc-muted">No backup on the server yet.</p>';
+    } catch (e) { box.innerHTML = `<p class="nx-oc-error">${esc(e.message)}</p>`; }
+  }
+  window.hopSrvBackupNow = async () => {
+    try { await hopApi('/api/v1/hop/backups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); toast('Backup saved on the server'); srvList(true); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+  window.hopSrvDownload = async (name) => {
+    try {
+      const res = await fetchWithAuth(`/api/v1/hop/backups/${encodeURIComponent(name)}`);
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = `nexora_backup_${name}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  window.hopSrvRestore = async (name, mode) => {
+    const body = { mode };
+    if (mode === 'new') {
+      const n = window.prompt('Name of the new firm:', 'Restored firm');
+      if (!n) return;
+      body.name = n.trim();
+    } else {
+      if (!window.confirm('Replace the data of this firm with this backup?\n\nToday\'s data is saved first as a backup on the server, so this can be undone.')) return;
+      const pw = window.prompt('Type your login password to confirm:');
+      if (!pw) return;
+      body.password = pw;
+    }
+    try {
+      const d = await hopApi(`/api/v1/hop/backups/${encodeURIComponent(name)}/restore`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      toast(mode === 'new' ? `“${d.name}” is ready — switch to it from the firm name` : 'Done — this firm is back to the backup');
+      srvList(true);
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  async function govRender() {
+    const box = document.getElementById('hop-gov');
+    if (!box) return;
+    let list;
+    try { list = await hopApi('/api/v1/hop/gov'); } catch (e) { box.innerHTML = `<p class="nx-oc-error">${esc(e.message)}</p>`; return; }
+    box.innerHTML = list.map((s) => `<div style="border-top:1px solid rgba(148,163,184,.25);padding:10px 0;">
+      <h4 style="margin:0 0 4px;">${esc(s.title)} — <span class="hop-doc-muted">${esc(s.mode.toUpperCase())}</span></h4>
+      <p class="hop-doc-muted" style="margin:0 0 6px;">${esc(s.apply)} <a href="${esc(s.where)}" target="_blank" rel="noopener">${esc(s.where)}</a></p>
+      ${s.webhook_url ? `<p class="hop-doc-muted">Webhook address for Razorpay: <code>${esc(s.webhook_url)}</code></p>` : ''}
+      ${s.fields.map((f) => `<label style="display:block;margin:4px 0;">${esc(f.label)}
+        ${f.key === 'public_key' ? `<textarea class="nx-input" rows="2" data-gov="${s.service}" data-k="${f.key}" placeholder="${f.saved ? 'saved ✓ — paste again to change' : ''}"></textarea>`
+          : `<input class="nx-input" ${f.secret ? 'type="password"' : ''} data-gov="${s.service}" data-k="${f.key}" value="${esc(f.value)}" placeholder="${esc(f.hint || '')}">`}</label>`).join('')}
+      <div class="hop-books-actions">
+        ${['off', 'test', 'live'].map((m) => `<button type="button" class="nx-btn ${s.mode === m ? 'nx-btn-primary' : ''}" onclick="hopGovSave('${s.service}','${m}')">${m === 'off' ? 'Off' : m === 'test' ? 'Test (sandbox)' : 'Live'}</button>`).join('')}
+        <button type="button" class="nx-btn" onclick="hopGovSave('${s.service}', null)">Save keys</button>
+        <button type="button" class="nx-btn" onclick="hopGovTest('${s.service}')">Test now</button></div>
+      ${s.last_test ? `<p class="${s.last_test.ok ? 'hop-doc-muted' : 'nx-oc-error'}">Last test: ${s.last_test.ok ? '✓' : '✗'} ${esc(s.last_test.message)}</p>` : ''}</div>`).join('');
+  }
+  window.hopGovSave = async (service, mode) => {
+    const values = {};
+    document.querySelectorAll(`[data-gov="${service}"]`).forEach((el) => { values[el.dataset.k] = el.value; });
+    try {
+      await hopApi(`/api/v1/hop/gov/${service}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, values }) });
+      toast('Saved'); govRender();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  window.hopGovTest = async (service) => {
+    const body = {};
+    if (service === 'sms') { const ph = window.prompt('Send a test SMS to which mobile number?'); if (!ph) return; body.phone = ph; }
+    try {
+      const r = await hopApi(`/api/v1/hop/gov/${service}/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      toast(r.message, r.ok ? 'ok' : 'err'); govRender();
+    } catch (e) { toast(e.message, 'err'); }
   };
   window.hopAppSettingSave = (key, value, type) => save(key, type === 'number' ? Number(value || 0) : value);
 })();

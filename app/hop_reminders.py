@@ -197,7 +197,7 @@ def run_for_workspace(conn: sqlite3.Connection, ws: str, today: date | None = No
             sent["summary"] = True
             mark_sent(conn, ws, 0, "summary", owner)
     if want("backup") and (s.get("backup_email_daily") or only) and owner:
-        data, counts = hop_backup.build_zip(conn, ws)
+        data, counts = hop_backup.build_locked(conn, ws)   # locked .kunwar — safe to send by email
         if len(data) > 20 * 1024 * 1024:
             send_email(to=owner, subject=f"NEXORA backup — {firm}",
                        body="Your backup is too big to email today. Download it from Settings → Backup.")
@@ -205,8 +205,9 @@ def run_for_workspace(conn: sqlite3.Connection, ws: str, today: date | None = No
             stamp = (now + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
             ok, _ = send_email(to=owner, subject=f"NEXORA daily backup — {firm} — {stamp}",
                                body=(f"Your NEXORA backup for {firm} is attached ({sum(counts.values())} rows).\n"
-                                     "Keep it safe; it has your business data. Turn this off in Settings → Reminders."),
-                               attachments=[(f"nexora_backup_{stamp}.zip", data, "application/zip")])
+                                     "The file is locked: it opens only in NEXORA (Settings → Backup → Restore into a new firm).\n"
+                                     "Turn this email off in Settings → Reminders."),
+                               attachments=[(hop_backup.file_name(stamp), data, "application/octet-stream")])
             if ok:
                 sent["backup"] = True
                 mark_sent(conn, ws, 0, "backup", owner)
