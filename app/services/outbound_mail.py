@@ -16,7 +16,14 @@ def smtp_configured() -> bool:
     return bool((os.getenv("SMTP_HOST") or "").strip())
 
 
-def send_plain_email(*, to: str, subject: str, body: str) -> tuple[bool, str]:
+def send_email(*, to: str, subject: str, body: str,
+               attachments: list[tuple[str, bytes, str]] | None = None) -> tuple[bool, str]:
+    """Plain email with optional attachments [(file name, bytes, "type/subtype")]."""
+    return send_plain_email(to=to, subject=subject, body=body, attachments=attachments)
+
+
+def send_plain_email(*, to: str, subject: str, body: str,
+                     attachments: list[tuple[str, bytes, str]] | None = None) -> tuple[bool, str]:
     host = (os.getenv("SMTP_HOST") or "").strip()
     if not host:
         return False, "SMTP_HOST is not configured"
@@ -35,6 +42,9 @@ def send_plain_email(*, to: str, subject: str, body: str) -> tuple[bool, str]:
     msg["From"] = mail_from
     msg["To"] = to
     msg.set_content(body)
+    for name, data, mime in attachments or []:
+        main, _, sub = (mime or "application/octet-stream").partition("/")
+        msg.add_attachment(data, maintype=main, subtype=sub or "octet-stream", filename=name)
 
     try:
         with smtplib.SMTP(host, port, timeout=30) as smtp:

@@ -1,0 +1,13 @@
+[Unit]
+Description=NEXORA daily jobs (payment reminders, owner summary, backup email)
+After=network-online.target nexora.service
+
+[Service]
+Type=oneshot
+User=nexora
+Group=nexora
+WorkingDirectory=/opt/nexora
+EnvironmentFile=/etc/nexora.env
+Environment=PYTHONPATH=/opt/nexora
+ExecStart=/opt/nexora/.venv/bin/python -m app.hop_reminders
+TimeoutStartSec=1800

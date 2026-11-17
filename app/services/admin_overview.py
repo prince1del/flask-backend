@@ -64,7 +64,11 @@ def _health(db_path: str) -> dict[str, Any]:
     disk = Path((os.getenv("PERSISTENT_DISK_PATH") or "").strip() or "/var/data")
     h: dict[str, Any] = {"server_up_hours": round((time.time() - _STARTED) / 3600, 1)}
     try:
-        backups = sorted(disk.glob("backup_*.sqlite3"), key=lambda p: p.stat().st_mtime, reverse=True)
+        nightly = Path((os.getenv("NEXORA_BACKUP_DIR") or "/var/backups/nexora").strip())
+        found = list(disk.glob("backup_*.sqlite3"))
+        if nightly.is_dir():
+            found += list(nightly.glob("sqlite_*"))
+        backups = sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
         if backups:
             h["last_backup_at"] = datetime.fromtimestamp(backups[0].stat().st_mtime, timezone.utc).isoformat()
             h["backups_kept"] = len(backups)

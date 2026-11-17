@@ -1,0 +1,9 @@
+[Unit]
+Description=Run NEXORA daily jobs at 9:00 India time
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

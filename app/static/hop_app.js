@@ -2229,6 +2229,7 @@ function openHopView(viewName, opts) {
         audit_log: (m) => window.renderHopAuditModule(m),
         godowns: (m) => window.renderHopGodownsModule(m),
         manufacture: (m) => window.renderHopManufactureModule(m),
+        reminders: (m) => window.renderHopRemindersModule(m),
         staff_permissions: (m) => window.renderHopStaffPermsModule(m),
         item_settings: (m) => (window.hopRenderItemSettingsModule
           ? window.hopRenderItemSettingsModule(m)

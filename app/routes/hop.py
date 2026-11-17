@@ -2885,6 +2885,63 @@ def party_txn_share(party_txn_id: int):
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/reminders", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def reminders_list():
+    """Money to collect: overdue, due today, due soon — each with reminder text, WhatsApp link, email."""
+    ensure_hop_schema(_db_path())
+    from app import hop_reminders
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_reminders.due_list(conn, _ws())
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/reminders/<int:txn_id>/<string:channel>", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def reminders_send(txn_id: int, channel: str):
+    """channel = email (send now) or whatsapp (the phone opened WhatsApp — just note it)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_firms, hop_reminders
+
+    if channel not in ("email", "whatsapp"):
+        return _json_error("Unknown channel", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        if channel == "whatsapp":
+            hop_reminders.mark_sent(conn, _ws(), txn_id, "whatsapp")
+            return jsonify({"success": True, "data": {"noted": True}})
+        dl = hop_reminders.due_list(conn, _ws())
+        item = next((x for g in ("overdue", "today", "soon") for x in dl[g] if int(x["id"]) == txn_id), None)
+        if not item:
+            return _json_error("This bill has nothing due right now", "NOT_FOUND", 404)
+        ok, err = hop_reminders.email_reminder(conn, _ws(), item, hop_firms.business_name(conn, _ws(), "Your business"),
+                                               hop_reminders._owner_email(conn, _ws()))
+    if not ok:
+        return _json_error(err, "EMAIL_FAILED", 400)
+    return jsonify({"success": True, "data": {"sent_to": item["email"]}})
+
+
+@hop_bp.route("/reminders/send-me/<string:what>", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def reminders_send_me(what: str):
+    """Owner taps "Send me today's summary now" / "Email me a backup now"."""
+    ensure_hop_schema(_db_path())
+    from app import hop_reminders
+
+    if what not in ("summary", "backup"):
+        return _json_error("Unknown option", "VALIDATION_ERROR", 400)
+    with hop_db.connect(_db_path()) as conn:
+        res = hop_reminders.run_for_workspace(conn, _ws(), only={what})
+        to = hop_reminders._owner_email(conn, _ws())
+    if not res.get(what):
+        return _json_error("Nothing was sent — " + (", ".join(res.get("skipped") or []) or
+                           ("no bills to collect" if what == "summary" else "no email on your profile")), "NOT_SENT", 400)
+    return jsonify({"success": True, "data": {"sent_to": to}})
+
+
 @hop_bp.route("/ai/payment-reminder", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

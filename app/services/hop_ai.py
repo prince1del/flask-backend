@@ -382,6 +382,13 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                                           if float(r.get("stock_qty") or 0) <= 0][:15],
                 "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15],
                 "godowns": _godown_summary(conn, ws, q)}
+    if what == "reminders":
+        from app import hop_reminders
+
+        dl = hop_reminders.due_list(conn, ws)
+        slim = lambda xs: [{k: x[k] for k in ("party", "number", "balance", "due_date", "days")} for x in xs[:20]]  # noqa: E731
+        return {"overdue": slim(dl["overdue"]), "due_today": slim(dl["today"]), "due_soon": slim(dl["soon"]),
+                "totals": dl["totals"], "as_of": dl["as_of"]}
     if what == "loyalty":
         from app import hop_loyalty
 

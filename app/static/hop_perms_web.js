@@ -8,7 +8,7 @@
   const OWNER_ONLY = new Set(['wipe_data', 'vyapar_import', 'staff_permissions']);
   const AREA = {
     parties: 'parties', invoices: 'sales', commission: 'sales', payments: 'sales',
-    other_income: 'purchase', products: 'items', stock: 'items', godowns: 'items', manufacture: 'items', stock_reorder: 'items', item_settings: 'items',
+    other_income: 'purchase', products: 'items', stock: 'items', godowns: 'items', manufacture: 'items', reminders: 'sales', stock_reorder: 'items', item_settings: 'items',
     banking: 'money', journal_entries: 'money', loans: 'money', fixed_assets: 'money',
     gst_reports: 'reports', books: 'reports', reports: 'reports', receivables: 'reports', overdue_bills: 'reports',
     profit: 'reports', tally_export: 'reports',
