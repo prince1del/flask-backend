@@ -17,7 +17,8 @@ _DOC_STEPS = [
 HELP: dict[str, dict[str, Any]] = {
     "dashboard": {"title": "Dashboard", "what": "Your business at a glance — quotations, orders, money due, cash.",
                   "steps": ["Tap any card to open that list.", "Pull the refresh button to load the latest numbers."],
-                  "tips": ["The firm name at the top of the menu shows which firm you are in."],
+                  "tips": ["The firm name at the top of the menu shows which firm you are in.",
+                           "No internet? Lists you opened before still show (yellow “Offline” line with the time saved); new bills wait on the phone and send themselves later."],
                   "ai": "NEXORA Guard (top card) checks your data and lists mistakes to fix."},
     "parties": {"title": "Parties", "what": "Customers and suppliers you sell to or buy from.",
                 "steps": ["Tap Add Party, fill the name (and GSTIN / phone if you have them), then Save.",

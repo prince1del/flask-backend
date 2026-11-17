@@ -119,6 +119,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Sale invoice / quotation from any paper | ✨ Scan any bill, order or handwritten note → form filled (customer + catalogue matched, unclear lines flagged) | ✅ 2026-11-16 |
 | Service reminders | Ask Nexora `service` ("kiski AC service due hai"); item form tip "items like this need service every N days" (rule based, no AI cost); due list in the owner's morning email | ✅ 2026-11-17 |
 | SMS + Bluetooth receipt (Batch 3) | SMS uses the same owner templates + ✨ AI reminder text; Ask Nexora already prepares SMS to a person (device action). Printing itself needs no AI (reason: it only prints the saved bill); printer problems get plain hints (Bluetooth off, not paired, not reachable) | ✅ 2026-11-17 |
+| Offline lists (Batch 3) | No AI needed offline (reason: no internet = no AI call); Ask Nexora works again as soon as the internet is back; the banner says the data's age | ✅ 2026-11-17 |
 | Rest of NEXORA (BD side) | NEXORA Guard plan (rules + AI explain, issues inbox, daily digest) — agreed earlier, after tracking | ⏳ after HoP phases |
 
 ## How to deploy (for whoever continues)
@@ -236,7 +237,7 @@ approval last main lenge". Every batch ships server + web + phone + AI help + he
 |---|---|---|
 | 1 Print & formats | Currency symbol; HSN + tax-breakup columns on print; header/footer text; page margins; CGST/SGST vs IGST split (phone printed IGST always — fixed) | ✅ built 2026-11-17 (date/decimals stay bill-only) |
 | 2 Business | Manufacturing (raw-material list per item → "Manufacture" entry: raw stock down, finished stock up, cost); loyalty points (earn per ₹, redeem on bill); service reminders (item service period → due list + WhatsApp); automatic payment reminders (daily list + one-tap send); automatic daily backup by e-mail | ✅ 2026-11-17 |
-| 3 Phone | Bluetooth thermal printer (ESC/POS 58/80 mm); SMS bill/reminder via phone's SMS app; offline lists (parties, items, bills readable with no internet) | ⏳ |
+| 3 Phone | Bluetooth thermal printer (ESC/POS 58/80 mm); SMS bill/reminder via phone's SMS app; offline lists (parties, items, bills readable with no internet) | ✅ 2026-11-17 |
 | 4 Data | Old-software backup: bank accounts, cheques, loans also imported; one-tap restore of a NEXORA backup into a NEW firm (never overwrites); online catalogue link (customer sees items, sends an order → Sale Order) | ⏳ |
 | 5 Government / approval APIs — built now, switched on after approval | E-Invoice IRN (generate, cancel, signed QR printed on bill); E-Way Bill (generate, vehicle update Part-B, cancel, extend); GSTIN verify from GST portal; SMS gateway with DLT templates; online payment link (gateway) with auto-match. Settings → "Government & approvals" shows each: what to apply for, where, status, test (sandbox) button | ⏳ |
 | 6 Test everything | Full server tests; web click-through of every HoP screen; phone: every menu screen + every button (bill create/edit/delete, share, PDF, payment in/out, purchase, godown move, AI scan, offline, firm switch, lock + fingerprint); final checklist (feature → screen → test proof) | ⏳ |

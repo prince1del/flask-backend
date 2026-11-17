@@ -562,6 +562,11 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
   (phone's own SMS app via `openSms`, same text as WhatsApp from `/share`); SMS pills on Reminders.
   "Print receipt": `GET /party-transactions/<id>/receipt?width=32|48` (`app/hop_receipt.py`, ASCII lines +
   UPI QR) → `util/BluetoothReceiptPrinter.kt` (paired printers only, ESC/POS over SPP, saved printer + 2/3 inch).
+- **Offline lists** (Batch 3, 2026-11-17) — phone `data/api/HopOfflineCache.kt`: every `GET /api/v1/hop/*` JSON answer
+  is saved on the phone per login + firm; with no internet the same call answers from the saved copy and
+  `HopModuleHost` shows "Offline — showing data saved at HH:MM". Main lists (parties, items, vendors, every bill
+  list) are saved once per session (`prefetch`). `apiWithWakeRetry` no longer refuses offline calls. Cleared on
+  sign-out (`TokenManager.clearTokens`). New bills offline: `ui/hop/HopOffline.kt` queue (sent when online).
 - **Reminders** (Batch 2, 2026-11-17) — phone `ui/hop/HopRemindersScreen.kt` (tabs Payments | Service),
   web `static/hop_reminders_web.js`.
   - Payments: `app/hop_reminders.py` — `GET /reminders`, `POST /reminders/<txn>/email|whatsapp`,
