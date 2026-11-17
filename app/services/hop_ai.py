@@ -382,6 +382,10 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                                           if float(r.get("stock_qty") or 0) <= 0][:15],
                 "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15],
                 "godowns": _godown_summary(conn, ws, q)}
+    if what == "manufacturing":
+        from app import hop_manufacture
+
+        return hop_manufacture.summary_for_ai(conn, ws, str(party_name or "").strip())
     if what == "audit":
         from app import hop_audit
 
@@ -480,6 +484,80 @@ def payment_reminder_text(
         if text:
             return {"text": text[:700], "source": "ai"}
     return {"text": template, "source": "template"}
+
+
+def ask_json(prompt: str, *, user_id: int, feature: str, max_tokens: int = 400) -> dict[str, Any]:
+    """One capped text-only Gemini call inside the daily AI limit; usage logged. Returns parsed JSON."""
+    from app.services import nexora_ai_agent as agent
+    from app.services.dsr_notes_polish import gemini_api_key
+
+    if agent.over_daily_limit(user_id, "ai"):
+        raise ValueError("Daily AI limit reached.")
+    key = gemini_api_key()
+    if not key:
+        raise ValueError("AI is not set up on the server.")
+    body = json.dumps({"contents": [{"role": "user", "parts": [{"text": prompt[:12000]}]}],
+                       "generationConfig": {"temperature": 0.2, "maxOutputTokens": int(max_tokens),
+                                            "responseMimeType": "application/json"}}).encode("utf-8")
+    for model in agent.agent_gemini_models():
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+            data=body, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=40) as resp:
+                out = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                continue
+            break
+        except Exception:
+            break
+        usage = out.get("usageMetadata") or {}
+        agent._log_usage(user_id=int(user_id), feature=feature, model=model, rounds=1,
+                         prompt_tokens=int(usage.get("promptTokenCount") or 0),
+                         output_tokens=int(usage.get("candidatesTokenCount") or 0),
+                         total_tokens=int(usage.get("totalTokenCount") or 0), query=feature)
+        parts = ((out.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        return _parse_json("".join(p.get("text", "") for p in parts if isinstance(p, dict)))
+    raise ValueError("AI is not available right now.")
+
+
+def suggest_bom(conn: sqlite3.Connection, ws: str, product_id: int, *, user_id: int) -> dict[str, Any]:
+    """✨ Raw materials for one piece of an item, picked from the firm's own item list. Nothing is saved."""
+    item = conn.execute("SELECT name, unit, description FROM hop_products WHERE workspace_id=? AND id=?",
+                        (ws, int(product_id))).fetchone()
+    if not item:
+        raise ValueError("Item not found")
+    cat = conn.execute("SELECT id, name, unit FROM hop_products WHERE workspace_id=? AND id<>? "
+                       "AND (deleted_at IS NULL OR deleted_at='') ORDER BY name LIMIT 400", (ws, int(product_id))).fetchall()
+    names = "\n".join(f"{r[0]}|{r[1]}|{r[2] or ''}" for r in cat)
+    prompt = (
+        "You help a small Indian business set up manufacturing. For ONE piece of the finished item below, list the raw "
+        "materials and quantity per piece. Prefer items from the catalogue (id|name|unit); use the catalogue id when one "
+        "fits. Use realistic quantities in the catalogue unit. If something needed is not in the catalogue, give its name "
+        "with id 0. Max 8 lines.\n"
+        f"Finished item: {item[0]} (unit {item[1] or 'pcs'}) {item[2] or ''}\nCatalogue:\n{names}\n"
+        'Return ONLY JSON: {"raw":[{"id":12,"name":"…","qty":2.5,"why":"short reason"}]}'
+    )
+    out = ask_json(prompt, user_id=user_id, feature="nexora_agent_hop_bom", max_tokens=400)
+    ids = {r[0]: (r[1], r[2] or "") for r in cat}
+    rows, missing = [], []
+    for r in (out.get("raw") or [])[:8]:
+        qty = _num(r.get("qty"))
+        rid = int(_num(r.get("id")))
+        if rid not in ids:
+            # Match by name when the id is wrong or 0.
+            best = max(cat, key=lambda c: _similar(str(r.get("name") or ""), c[1] or ""), default=None)
+            rid = best[0] if best and _similar(str(r.get("name") or ""), best[1] or "") >= 0.75 else 0
+        if qty <= 0:
+            continue
+        if rid:
+            rows.append({"raw_product_id": rid, "name": ids[rid][0], "unit": ids[rid][1], "qty": round(qty, 3),
+                         "why": str(r.get("why") or "")[:120]})
+        else:
+            missing.append({"name": str(r.get("name") or "")[:80], "qty": round(qty, 3)})
+    return {"raw": rows, "not_in_items": missing,
+            "note": "Check the quantities before saving. Items not in your list must be added first."}
 
 
 def report_insights(title: str, data: dict[str, Any], *, user_id: int) -> list[str]:

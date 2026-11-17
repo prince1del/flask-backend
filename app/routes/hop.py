@@ -2369,6 +2369,89 @@ def stock_list():
     return jsonify({"success": True, "data": rows})
 
 
+@hop_bp.route("/products/<int:product_id>/bom", methods=["GET", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_bom(product_id: int):
+    """Raw materials for one piece of an item (manufacturing)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_manufacture
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "PUT":
+                data = hop_manufacture.save_bom(conn, _ws(), product_id, (_payload() or {}).get("raw") or [])
+            else:
+                data = hop_manufacture.get_bom(conn, _ws(), product_id)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/products/<int:product_id>/bom/ai-suggest", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_bom_ai(product_id: int):
+    ensure_hop_schema(_db_path())
+    from app.services import hop_ai
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            user = getattr(request, "user", None) or {}
+            data = hop_ai.suggest_bom(conn, _ws(), product_id, user_id=int(user.get("user_id") or 0))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/manufacture/plan", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def manufacture_plan():
+    ensure_hop_schema(_db_path())
+    from app import hop_manufacture
+
+    body = _payload() or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_manufacture.plan(conn, _ws(), int(body.get("product_id") or 0), body.get("qty"), body.get("extra_cost"))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/manufacture", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def manufacture_entries():
+    ensure_hop_schema(_db_path())
+    from app import hop_manufacture
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                return jsonify({"success": True, "data": hop_manufacture.manufacture(conn, _ws(), _payload() or {})}), 201
+            data = {"rows": hop_manufacture.list_entries(conn, _ws())}
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/manufacture/<int:mid>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def manufacture_undo(mid: int):
+    ensure_hop_schema(_db_path())
+    from app import hop_manufacture
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_manufacture.undo(conn, _ws(), mid)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/stock/journal", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

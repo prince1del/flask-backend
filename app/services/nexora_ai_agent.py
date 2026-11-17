@@ -574,14 +574,16 @@ def _tool_declarations() -> list[dict[str, Any]]:
                 "a party's ledger (party_statement), GST to pay (gst), items & stock with MRP / wholesale / barcode and item problems "
                 "(items; put an item name or barcode in party_name to search), or a summary (overview). Use for 'kitna cash hai', "
                 "'kaunsa maal khatam hai', 'is barcode ka item kya hai', 'kis party "
-                "ka paisa baaki hai', 'vendor ko kitna dena hai', 'kharcha kitna hua'."
+                "ka paisa baaki hai', 'vendor ko kitna dena hai', 'kharcha kitna hua', "
+                "'kitne piece bana sakte hain' (manufacturing; item name in party_name)."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "what": {"type": "string", "enum": ["overview", "cash_bank", "receivables", "payables",
                                                         "unpaid_bills", "expenses", "profit_loss", "balance_sheet",
-                                                        "day_book", "party_statement", "gst", "items", "other_income", "audit"]},
+                                                        "day_book", "party_statement", "gst", "items", "other_income", "audit",
+                                                        "manufacturing"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},
@@ -1320,7 +1322,7 @@ def _run_tool(
             from app import hop_permissions
 
             what = str(args.get("what") or "overview")
-            area = {"cash_bank": "money", "items": "items", "audit": "settings", "other_income": "purchase",
+            area = {"cash_bank": "money", "items": "items", "manufacturing": "items", "audit": "settings", "other_income": "purchase",
                     "expenses": "purchase"}.get(what, "reports")
             p = hop_permissions.perms_for(conn, {"user_id": int(user_id), "workspace_id": workspace_id,
                                                  "is_workspace_owner": bool(r[1]) if r else False})

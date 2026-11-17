@@ -83,6 +83,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Batch / expiry, serial numbers | ✅ on bill lines (printed), Expiring Batches report (left = bought − sold per batch) |
 | Godowns / multiple stores | ✅ stock per godown, move stock, godown on bills, short-stock warning per godown |
 | Item custom fields | ✅ (name: value list) |
+| Manufacturing (raw materials → finished item) | ✅ raw-material list per item (✨ AI suggest), manufacture entry moves stock + cost per piece, undo |
 
 ## B. Features (outside settings)
 | Feature | State |
@@ -176,3 +177,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   supply) from the server, cess on its own line; the phone used to print IGST on every bill (fixed). Plus
   currency symbol, header line, footer (was saved but never printed — fixed), HSN column on/off, HSN-wise
   tax summary, page margins. Web print + phone preview + phone PDF.
+- 2026-11-17: Manufacturing — raw materials for one piece of an item (✨ AI suggests from your own items), Check
+  stock & cost (short items warned; blocked if Settings says block), Save moves raw stock down and the item up,
+  cost per piece (raw cost + labour ÷ qty) becomes the item's cost price the first time; Undo. Phone + web
+  (Stock → Manufacturing). Ask Nexora “kitne curtain bana sakte hain?”.
