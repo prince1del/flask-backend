@@ -5270,6 +5270,7 @@ async function hopRunVyaparImport() {
       `<span class="vyp-r-label">All Txns</span> <strong>${data.party_txns_created || 0}</strong> imported, ${data.party_txns_skipped || 0} refreshed`,
       `<span class="vyp-r-label">Fuzzy party match</span> <strong>${data.party_fuzzy_matched || 0}</strong> linked (no duplicate)`,
     ];
+    (data.summary_lines || []).forEach((l) => lines.push(foEscapeText(l)));
     if (data.errors && data.errors.length) {
       lines.push(`<span class="vyp-r-warn">${data.errors.length} error(s) during import</span>`);
     }

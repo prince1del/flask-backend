@@ -562,6 +562,12 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
   (phone's own SMS app via `openSms`, same text as WhatsApp from `/share`); SMS pills on Reminders.
   "Print receipt": `GET /party-transactions/<id>/receipt?width=32|48` (`app/hop_receipt.py`, ASCII lines +
   UPI QR) → `util/BluetoothReceiptPrinter.kt` (paired printers only, ESC/POS over SPP, saved printer + 2/3 inch).
+- **Vyapar full restore** (Batch 4, 2026-11-17) — `app/services/vyapar_money_import.py`, called at the end of
+  `vyapar_importer.import_vyapar_backup`: bank accounts (`kb_paymentTypes`), each payment's cash / bank / cheque
+  (`txn_payment_mapping`, `kb_cheque_status`), transfers + adjustments (`kb_bank_adjustments`, `kb_cash_adjustments`),
+  loans (`loan_accounts`, `loan_transactions`), payment↔bill links (`kb_txn_links`), units + 2nd units, party groups,
+  default due days, terms. Re-run safe via `hop_import_map`. Result `summary_lines` (shown on phone + web) lists
+  "Please check" (best-guess codes) and "Not brought in". Bank entries use source `doc` (reports unchanged).
 - **Offline lists** (Batch 3, 2026-11-17) — phone `data/api/HopOfflineCache.kt`: every `GET /api/v1/hop/*` JSON answer
   is saved on the phone per login + firm; with no internet the same call answers from the saved copy and
   `HopModuleHost` shows "Offline — showing data saved at HH:MM". Main lists (parties, items, vendors, every bill

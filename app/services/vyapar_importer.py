@@ -577,6 +577,15 @@ def _fetch_txn_payments(conn: sqlite3.Connection) -> dict[int, float]:
     return {int(r[0]): float(r[1] or 0) for r in rows}
 
 
+def _books_preview(src: sqlite3.Connection) -> dict[str, int]:
+    try:
+        from app.services.vyapar_money_import import preview_counts
+
+        return preview_counts(src)
+    except Exception:
+        return {}
+
+
 def preview_vyapar_backup(file_bytes: bytes, filename: str) -> dict[str, Any]:
     """Lightweight scan — counts + small samples only (safe for Render timeouts)."""
     sqlite_bytes = _extract_sqlite_bytes(file_bytes, filename)
@@ -722,6 +731,7 @@ def preview_vyapar_backup(file_bytes: bytes, filename: str) -> dict[str, Any]:
                 "transactions_total": txns_total,
                 "group_split": by_group,
                 "txn_type_split": txn_types,
+                "books": _books_preview(src),
             },
             "samples": {
                 "parties": party_samples,
@@ -1372,6 +1382,18 @@ def import_vyapar_backup(
                 )
         except Exception as exc:
             out["errors"].append(f"Document preview data import failed ({exc})")
+
+        # The rest of the books: banks, cash / bank / cheque of every payment, transfers, loans,
+        # payment ↔ bill links, party groups, units, due days, terms (safe to run again).
+        try:
+            from app.services.vyapar_money_import import import_money_and_masters
+
+            from app.services.vyapar_money_import import summary_lines
+
+            out["books"] = import_money_and_masters(src, target_conn, workspace_id)
+            out["summary_lines"] = summary_lines(out["books"])
+        except Exception as exc:
+            out["errors"].append(f"Bank / cash / loan import failed ({exc})")
 
         target_conn.commit()
         try:

@@ -120,6 +120,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Service reminders | Ask Nexora `service` ("kiski AC service due hai"); item form tip "items like this need service every N days" (rule based, no AI cost); due list in the owner's morning email | ✅ 2026-11-17 |
 | SMS + Bluetooth receipt (Batch 3) | SMS uses the same owner templates + ✨ AI reminder text; Ask Nexora already prepares SMS to a person (device action). Printing itself needs no AI (reason: it only prints the saved bill); printer problems get plain hints (Bluetooth off, not paired, not reachable) | ✅ 2026-11-17 |
 | Offline lists (Batch 3) | No AI needed offline (reason: no internet = no AI call); Ask Nexora works again as soon as the internet is back; the banner says the data's age | ✅ 2026-11-17 |
+| Vyapar full restore (Batch 4) | Preview flags unreadable rows; best-guess bank codes listed under “Please check”; nothing saved silently | ✅ 2026-11-17 |
 | Rest of NEXORA (BD side) | NEXORA Guard plan (rules + AI explain, issues inbox, daily digest) — agreed earlier, after tracking | ⏳ after HoP phases |
 
 ## How to deploy (for whoever continues)
