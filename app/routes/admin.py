@@ -619,3 +619,16 @@ def save_settings():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'data': None, 'message': f'Error saving settings: {str(e)}'}), 500
+
+
+@admin_bp.route('/overview', methods=['GET'])
+@require_jwt_auth
+def admin_overview():
+    """Admin Zone home: founder → every company + server health; company owner → own team only."""
+    from app.services import admin_overview as ao
+    from app.services import subscriptions
+
+    requester = _requester()
+    if not (requester.get('is_workspace_owner') or subscriptions.is_super_admin(requester)):
+        return _forbidden('Only the company owner can open Admin Zone')
+    return jsonify({'success': True, 'data': ao.overview(str(_auth_db().db_path), requester)}), 200
