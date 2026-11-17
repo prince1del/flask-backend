@@ -48,7 +48,7 @@ READ_POSTS = re.compile(r"/(preview|entry-warnings|suggest-rate|reconcile/match|
                         r"gst-files/[a-z]+|insights)(/|$)")
 PREFIX_AREA = [
     ("customers", "parties"), ("vendors", "parties"), ("parties", "parties"), ("import/parties", "parties"),
-    ("products", "items"), ("manufacture", "items"), ("loyalty", "sales"), ("catalog-link", "sales"), ("sms", "sales"), ("reminders", "sales"), ("stock", "items"), ("godowns", "items"), ("item-", "items"), ("categories", "items"),
+    ("products", "items"), ("manufacture", "items"), ("loyalty", "sales"), ("catalog-link", "sales"), ("targets", "reports"), ("sms", "sales"), ("reminders", "sales"), ("stock", "items"), ("godowns", "items"), ("item-", "items"), ("categories", "items"),
     ("units", "items"), ("import/items", "items"),
     ("bank-accounts", "money"), ("bank-entries", "money"), ("cheques", "money"), ("loans", "money"),
     ("fixed-assets", "money"),

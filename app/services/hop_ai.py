@@ -389,6 +389,12 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         slim = lambda xs: [{k: x[k] for k in ("party", "number", "balance", "due_date", "days")} for x in xs[:20]]  # noqa: E731
         return {"overdue": slim(dl["overdue"]), "due_today": slim(dl["today"]), "due_soon": slim(dl["soon"]),
                 "totals": dl["totals"], "as_of": dl["as_of"]}
+    if what == "targets":
+        from app import hop_targets
+
+        s = hop_targets.summary(conn, ws)
+        return {k: s[k] for k in ("fy", "yearly_target", "achieved_ytd", "yearly_pct", "gap", "per_month_needed", "current_month")} | {
+            "months": [{k: m[k] for k in ("label", "target", "achieved", "pct")} for m in s["months"] if not m["future"]]}
     if what == "online_orders":
         from app import hop_catalog_link
 

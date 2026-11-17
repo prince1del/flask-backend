@@ -561,6 +561,15 @@ def executive_snapshot():
             (ws, period_label),
         ).fetchone()
         monthly_target = float(target_row[0]) if target_row else 0.0
+        # Achieved = sale invoices − sale returns (real billing); CRM orders only when there are no bills at all.
+        from app import hop_targets
+
+        billed = hop_targets._achieved(conn, ws, month_start, month_end)
+        if billed:
+            monthly_sales = billed
+        tsum = hop_targets.summary(conn, ws)
+        if not monthly_target and tsum["current_month"]:
+            monthly_target = tsum["current_month"]["target"]
         profit = hop_ops.report_profitability(conn, ws)
 
     return jsonify(
@@ -587,6 +596,8 @@ def executive_snapshot():
                     "target": monthly_target,
                     "period_label": period_label,
                 },
+                "yearly": {"fy": tsum["fy"], "target": tsum["yearly_target"], "achieved": tsum["achieved_ytd"],
+                           "pct": tsum["yearly_pct"]},
                 "gross_profit_pct": profit.get("gross_margin_pct"),
                 "cash_available": None,
                 "notes": {
@@ -2156,9 +2167,31 @@ def targets_upsert():
         amount = float(payload.get("target_amount") or 0)
     except (TypeError, ValueError):
         return _json_error("target_amount must be a number")
-    with hop_db.connect(_db_path()) as conn:
-        row = hop_ops.upsert_target(conn, _ws(), period, amount)
+    from app import hop_targets
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if payload.get("split_months"):
+                hop_targets.split_yearly(conn, _ws(), int(hop_targets.parse_period(period)[2:6]), amount)
+                row = {"period_label": hop_targets.parse_period(period), "split": True}
+            else:
+                row = hop_targets.set_target(conn, _ws(), period, amount)
+    except ValueError as exc:
+        return _json_error(str(exc))
     return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/targets/summary", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def targets_summary():
+    """Yearly (Apr–Mar) + monthly targets with achieved from sale invoices. ?fy=2026 for another year."""
+    ensure_hop_schema(_db_path())
+    from app import hop_targets
+
+    fy = request.args.get("fy", type=int)
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": hop_targets.summary(conn, _ws(), fy)})
 
 
 # ---------- Reports ----------

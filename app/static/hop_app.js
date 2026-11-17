@@ -9201,43 +9201,58 @@ async function renderHopProfitModule(mount) {
 }
 
 async function renderHopTargetsModule(mount) {
-  let snap = {};
-  try { snap = await hopApi('/api/v1/hop/executive/snapshot') || {}; } catch (e) {
-    mount.innerHTML = hopModuleShell('Reports', 'Monthly Target', '', '', `<p class="nx-oc-error">${foEscapeText(e.message)}</p>`);
+  const esc = (v) => foEscapeText(v);
+  const fy = hopState._targetsFy ? `?fy=${hopState._targetsFy}` : '';
+  let s;
+  try { s = await hopApi(`/api/v1/hop/targets/summary${fy}`); } catch (e) {
+    mount.innerHTML = hopModuleShell('Reports', 'Targets', '', '', `<p class="nx-oc-error">${esc(e.message)}</p>`);
     return;
   }
-  const m = snap.monthly || {};
-  const sales = Number(m.sales || 0);
-  const target = Number(m.target || 0);
-  const pending = Math.max(0, target - sales);
+  hopState._targetsFy = s.fy_start;
+  const money = (v) => (v == null ? '—' : hopMoney(v));
+  const pct = (v) => (v == null ? '' : `${v}%`);
   const body = `
-    <div class="hop-kpi-grid hop-kpi-grid-sm">
-      ${renderHopKpiCard('Period', m.period_label, null)}
-      ${renderHopKpiCard('Target', target, null)}
-      ${renderHopKpiCard('Achieved', sales, null)}
-      ${renderHopKpiCard('Pending / Gap', pending, null)}
+    <div class="hop-books-actions">
+      <button type="button" class="nx-btn" onclick="hopState._targetsFy=${s.fy_start - 1};openHopView('targets')">‹ ${s.fy_start - 1}</button>
+      <strong style="padding:8px;">${esc(s.fy)}</strong>
+      <button type="button" class="nx-btn" onclick="hopState._targetsFy=${s.fy_start + 1};openHopView('targets')">${s.fy_start + 1} ›</button>
     </div>
+    <div class="hop-kpi-grid hop-kpi-grid-sm">
+      ${renderHopKpiCard('Yearly target', s.yearly_target, null)}
+      ${renderHopKpiCard('Achieved this year', s.achieved_ytd, null)}
+      ${renderHopKpiCard('Gap', s.gap, null)}
+      ${renderHopKpiCard('Needed per month', s.per_month_needed || 0, null)}
+    </div>
+    <table class="inv-table"><thead><tr><th>Month</th><th class="num">Target</th><th class="num">Achieved</th><th class="num">%</th></tr></thead><tbody>
+      ${s.months.map((m) => `<tr style="${m.current ? 'font-weight:700;' : ''}${m.future ? 'opacity:.55;' : ''}">
+        <td>${esc(m.label)}${m.current ? ' •' : ''}</td><td class="num">${m.target ? money(m.target) : '—'}${m.from_yearly ? '*' : ''}</td>
+        <td class="num">${money(m.achieved)}</td><td class="num">${pct(m.pct)}</td></tr>`).join('')}
+    </tbody></table>
+    <p class="hop-doc-muted">* share of the yearly target. Achieved = sale invoices − sale returns.</p>
     <div id="hop-form-slot" class="nx-card hop-form-card">
-      <strong>Set / update monthly target</strong>
+      <strong>Set target</strong>
       <div class="hop-form-grid" style="margin-top:10px;">
-        <label>Period (YYYY-MM)<input id="hop-t-period" value="${foEscapeText(m.period_label || '')}" /></label>
-        <label>Target Amount<input id="hop-t-amount" type="number" step="any" value="${target || ''}" /></label>
+        <label>Period<input id="hop-t-period" value="${esc(s.fy)}" placeholder="FY2026-27 or 2026-11" /></label>
+        <label>Target amount<input id="hop-t-amount" type="number" step="any" value="${s.yearly_target || ''}" /></label>
+        <label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="hop-t-split" checked /> Yearly: split into 12 equal months</label>
       </div>
       <div class="hop-form-actions">
-        <button type="button" class="nx-btn nx-btn-primary" onclick="hopSaveTarget()">Save Target</button>
+        <button type="button" class="nx-btn nx-btn-primary" onclick="hopSaveTarget()">Save target</button>
       </div>
     </div>`;
-  mount.innerHTML = hopModuleShell('Reports', 'Monthly Target', '', '', body);
+  mount.innerHTML = hopModuleShell('Reports', 'Targets (yearly + monthly)', 'Financial year April–March · achieved from your sale invoices', '', body);
 }
 
 async function hopSaveTarget() {
+  const period = String(document.getElementById('hop-t-period')?.value || '').trim();
   try {
     await hopApi('/api/v1/hop/targets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        period_label: document.getElementById('hop-t-period')?.value,
+        period_label: period,
         target_amount: document.getElementById('hop-t-amount')?.value,
+        split_months: /^FY/i.test(period) && !!document.getElementById('hop-t-split')?.checked,
       }),
     });
     openHopView('targets');

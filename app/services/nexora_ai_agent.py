@@ -602,7 +602,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                 "'kitne piece bana sakte hain' (manufacturing; item name in party_name), "
                 "'is customer ke kitne points hain' (loyalty), 'aaj kisko payment reminder bhejna hai' (reminders), "
                 "'kiski AC service due hai' / 'is hafte kitni service hai' (service; customer or item name in party_name), "
-                "'online order aaye kya' / 'catalogue link' (online_orders)."
+                "'online order aaye kya' / 'catalogue link' (online_orders), 'target kitna hua' / 'saal ka target' (targets)."
             ),
             "parameters": {
                 "type": "object",
@@ -610,7 +610,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                     "what": {"type": "string", "enum": ["overview", "cash_bank", "receivables", "payables",
                                                         "unpaid_bills", "expenses", "profit_loss", "balance_sheet",
                                                         "day_book", "party_statement", "gst", "items", "other_income", "audit",
-                                                        "manufacturing", "loyalty", "reminders", "service", "online_orders"]},
+                                                        "manufacturing", "loyalty", "reminders", "service", "online_orders", "targets"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},
@@ -1388,7 +1388,7 @@ def _run_tool(
             from app import hop_permissions
 
             what = str(args.get("what") or "overview")
-            area = {"cash_bank": "money", "items": "items", "manufacturing": "items", "loyalty": "sales", "reminders": "sales", "service": "sales", "online_orders": "sales", "audit": "settings", "other_income": "purchase",
+            area = {"cash_bank": "money", "items": "items", "manufacturing": "items", "loyalty": "sales", "reminders": "sales", "service": "sales", "online_orders": "sales", "targets": "reports", "audit": "settings", "other_income": "purchase",
                     "expenses": "purchase"}.get(what, "reports")
             p = hop_permissions.perms_for(conn, {"user_id": int(user_id), "workspace_id": workspace_id,
                                                  "is_workspace_owner": bool(r[1]) if r else False})

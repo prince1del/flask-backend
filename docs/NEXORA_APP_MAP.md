@@ -568,6 +568,10 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
   + `POST /firms/restore` (owner, `?preview=1`): always a NEW firm; every id / link column shifted by one offset.
   Phone: Settings → Backup (`HopAppSettingsScreen.kt` `RestoreIntoNewFirm`); web: `hop_app_settings_web.js`.
   ⚠ Keep a copy of `NEXORA_BACKUP_KEY` outside the server — without it old backups cannot be opened.
+- **Targets — yearly + monthly** (2026-11-17) — `app/hop_targets.py`: FY Apr–Mar (`FY2026-27`) + months (`2026-11`) in
+  `hop_targets`; month without its own target = yearly ÷ 12; achieved = sale invoices − sale returns; `GET /targets/summary?fy=`,
+  `POST /targets {period_label, target_amount, split_months}`; snapshot gains `yearly` and billed monthly sales.
+  Phone `ui/hop/HopTargetsScreen.kt`, web `renderHopTargetsModule`; Ask Nexora `targets`.
 - **Government & approvals** (Batch 5, 2026-11-17) — `app/hop_gov.py` (per firm, keys LOCKED with the company key,
   modes off/test/live, owner-only `GET /gov`, `PUT /gov/<service>`, `POST /gov/<service>/test`; `GET /services-on` for
   everyone). `hop_gov_einvoice.py` NIC IRP API (RSA auth → SEK, AES-ECB bodies): `POST /party-transactions/<id>/irn
