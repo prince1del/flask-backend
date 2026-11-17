@@ -243,3 +243,21 @@ Approvals the owner applies for at the end (no code change needed then, only key
 1. GSP account (e-invoice + e-way bill + GSTIN API) — or NIC direct API if turnover qualifies; IRP/EWB API user created on the GST e-invoice / e-way bill portal.
 2. DLT registration (TRAI) — entity + sender ID + message templates, then an SMS provider key.
 3. Payment gateway KYC (Razorpay / Cashfree etc.).
+
+## NEXT BATCH — NEXORA remote support (owner, 2026-11-17)
+Owner: "apni aap remotely theek kar sake — har page, tab, button dikhe; service person app operate kar sake;
+founder ko full approval; service centre ko fix roles taaki misuse na ho".
+1. **Get help** button (phone + web): support code + report (app version, phone, current screen, recent errors /
+   crashes, failed calls). Admin Zone → Support inbox.
+2. **Fix from our side**: re-sync, clear the app's cache, send latest update, feature switch for one customer.
+3. **Live view**: every NEXORA page / tab / button / form exactly as the customer sees it, live; support can
+   point ("tap here"). Only NEXORA's own screens — never other apps.
+4. **Remote operate**: support taps / types / scrolls inside NEXORA (the app performs it on its own screens, no
+   accessibility permission). Red banner "Support is using your NEXORA — Stop"; PIN / password / OTP fields
+   hidden and blocked; auto-ends after 15 min.
+5. **Roles (set by the founder)**: Founder = everything + gives/takes rights; Viewer (report only); Helper (+ live
+   view, point); Technician (+ operate, re-sync, cache, update) — never delete, export, change bank/GST/UPI, money
+   actions or see PIN/passwords. Access per assigned customer, time-limited; one-switch cut-off; every action in
+   the audit trail + founder daily summary.
+6. **Consent**: customer taps Allow once per session (or subscription terms + visible banner). Company's own staff
+   logins: founder can set "no need to ask". Customer's books stay the customer's data (DPDP Act).
