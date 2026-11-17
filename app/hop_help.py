@@ -161,6 +161,13 @@ HELP: dict[str, dict[str, Any]] = {
 }
 ALIASES = {"sale_invoices": "invoices", "reports": "books", "purchase_fa": "purchase_bills", "sale_fa": "invoices"}
 
+# The other menu screens (samples, dispatch, complaints, targets, import…) live in hop_help_more.
+from app.hop_help_more import ALIASES_MORE as _AM, MORE as _MORE  # noqa: E402
+
+for _k, _v in _MORE.items():
+    HELP[_k] = {k: v for k, v in _v.items() if k != "shows"}
+ALIASES.update(_AM)
+
 
 def _with_shows(k: str, t: dict[str, Any]) -> dict[str, Any]:
     from app.hop_help_screens import SHOWS

@@ -157,3 +157,9 @@ SHOWS: dict[str, list[str]] = {
     ],
     "print_theme": ["Colours — the accent colour of printed bills; the sample shows how it looks."],
 }
+
+
+from app.hop_help_more import MORE as _MORE  # noqa: E402
+
+for _k, _v in _MORE.items():
+    SHOWS[_k] = _v["shows"]

@@ -28,3 +28,14 @@ def test_every_screen_has_on_this_screen():
         t = topic(k)
         assert t["shows"], f"{k}: no 'On this screen' lines"
         assert all(" — " in x for x in t["shows"]), k
+
+
+def test_every_phone_menu_screen_has_help():
+    # keys of HopShellDrawer (phone menu) + web views — Info must never say "No guide"
+    from app.hop_help import topic
+
+    keys = ["dashboard", "parties", "invoices", "products", "samples", "fabric_preview", "vendor_cmp", "orders",
+            "dispatches", "complaints", "customer_dash", "daily", "profit", "targets", "theme", "team_duty",
+            "vyapar_import", "wipe_data", "reminders", "leads", "meetings", "projects", "vendors", "customers"]
+    for k in keys:
+        assert topic(k) and topic(k)["shows"], k
