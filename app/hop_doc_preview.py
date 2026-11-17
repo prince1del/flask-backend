@@ -436,7 +436,7 @@ def build_txn_preview(
     if tax_pct <= 0 and sub_total > 0.009 and tax_total > 0.009:
         tax_pct = round((tax_total / sub_total) * 100, 2)
 
-    doc_title = _clean(h.get("txn_label")) or "Document"
+    doc_title = _bill_title(h)
     party_name = _clean(party.get("company") or h.get("party_name"))
     party_addr = _clean(party.get("shipping_address") or party.get("address"))
     party_gst = _clean(party.get("gst_no"))
@@ -544,6 +544,16 @@ def build_txn_preview(
             else ""
         ),
     })
+
+
+_PLURAL_FIX = {"sale invoices": "Sale Invoice", "purchase bills": "Purchase Bill", "expenses": "Expense",
+               "sale orders": "Sale Order", "purchase orders": "Purchase Order"}
+
+
+def _bill_title(h: dict[str, Any]) -> str:
+    """Title printed on the bill. A label saved as a list name ("Sale Invoices") becomes singular."""
+    label = _clean(h.get("txn_label"))
+    return _PLURAL_FIX.get(label.lower(), label) or "Document"
 
 
 def _with_charges(lines: list[Any], payload: dict[str, Any]) -> list[Any]:

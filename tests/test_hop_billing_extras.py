@@ -130,3 +130,11 @@ def test_tds_on_purchase_and_sale(db):
         assert a["Sundry Debtors (to receive)"] == 5850 and l["Sundry Creditors (to pay)"] == 11600
         assert bs["balanced"]
         assert build_txn_preview(conn, WS, party_txn_id=bill["party_txn_id"])["totals"]["tds_amount"] == 200
+
+
+def test_bill_title_singular(db):
+    p, cust = db
+    with connect(p) as conn:
+        inv = create(conn, WS, {"txn_type": 1, "customer_id": cust, "txn_label": "Sale Invoices",
+                                "lines": [{"item_name": "x", "qty": 1, "rate": 10}]})
+        assert build_txn_preview(conn, WS, party_txn_id=inv["party_txn_id"])["header"]["doc_title"] == "Sale Invoice"
