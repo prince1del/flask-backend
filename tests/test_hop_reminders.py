@@ -73,3 +73,12 @@ def test_customers_summary_backup_and_repeat_gap(db):
         sent.clear()
         res = R.run_for_workspace(conn, WS, TODAY)  # same day again: customers not reminded twice
         assert res["customers"] == 0
+
+
+def test_bill_without_due_date_uses_bill_date(db):
+    p, _ = db
+    with connect(p) as conn:
+        conn.execute("UPDATE hop_party_transactions SET due_date=NULL, txn_date=? WHERE party_name='Shop Today'",
+                     (TODAY.isoformat(),))
+        dl = R.due_list(conn, WS, TODAY)
+        assert [x["party"] for x in dl["today"]] == ["Shop Today"] and dl["today"][0]["due_date"] == TODAY.isoformat()

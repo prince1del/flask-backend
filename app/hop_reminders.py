@@ -70,6 +70,13 @@ def due_list(conn: sqlite3.Connection, ws: str, today: date | None = None) -> di
         except ValueError:
             due = None
         if due is None:
+            # No due date on the bill: bill date + default due days (Settings → Transaction).
+            try:
+                due = date.fromisoformat((r["txn_date"] or "")[:10]) + timedelta(days=int(s.get("default_due_days") or 0))
+                due_s = due.isoformat()
+            except ValueError:
+                due = None
+        if due is None:
             continue
         days = (due - today).days
         group = "overdue" if days < 0 else "today" if days == 0 else "soon" if days <= soon_days else None

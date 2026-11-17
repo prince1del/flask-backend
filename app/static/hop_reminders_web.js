@@ -16,8 +16,8 @@
     const any = groups.some(([k]) => (d[k] || []).length);
     const body = `
       <div class="hop-books-actions">
-        <button type="button" class="nx-btn" onclick="hopRemSendMe('summary')">Email me today's list</button>
-        <button type="button" class="nx-btn" onclick="hopRemSendMe('backup')">Email me a backup</button>
+        <button type="button" class="nx-btn" onclick="hopRemSendMe('summary')">Email today's list</button>
+        <button type="button" class="nx-btn" onclick="hopRemSendMe('backup')">Email backup</button>
       </div>
       ${any ? '' : '<p>Nothing to collect right now. 🎉</p>'}
       ${groups.map(([k, title, color]) => (d[k] || []).length ? `
