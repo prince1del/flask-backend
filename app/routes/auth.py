@@ -380,7 +380,7 @@ def get_user_row(username: str) -> dict[str, object] | None:
             row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()
         }
         select_columns = ["id", "username", "password_hash"]
-        for col in ("role", "workspace_id", "email", "full_name", "phone", "status", "is_workspace_owner"):
+        for col in ("role", "workspace_id", "email", "full_name", "phone", "designation", "status", "is_workspace_owner"):
             if col in columns:
                 select_columns.append(col)
         row = db.resolve_user_login_row(conn, username, select_columns)
@@ -486,6 +486,7 @@ def api_login() -> tuple[Response, int]:
                         "email": user_row.get("email"),
                         "full_name": user_row.get("full_name"),
                         "phone": user_row.get("phone"),
+                        "designation": user_row.get("designation"),
                         "role": user_row.get("role", "unassigned"),
                         "workspace_id": user_row.get("workspace_id", "default"),
                         "is_workspace_owner": is_owner,
@@ -866,6 +867,7 @@ def put_my_profile() -> tuple[Response, int]:
             phone=data.get("phone") if "phone" in data else None,
             employee_id=data.get("employee_id") if "employee_id" in data else None,
             password=data.get("password") if "password" in data else None,
+            designation=data.get("designation") if "designation" in data else None,
         )
     except ValueError as exc:
         return jsonify({"success": False, "error": {"code": "INVALID", "message": str(exc)}}), 400

@@ -350,11 +350,14 @@ function setUserProfileButton(username) {
   const roleEl = document.getElementById('nx-profile-role');
   if (roleEl) {
     const roleRaw = String(authState.role || '').trim();
-    const workspace = String(authState.workspaceId || '').trim();
-    const roleLabel = roleRaw
+    let designation = '';
+    try { designation = (localStorage.getItem('authDesignation') || '').trim(); } catch (_) { /* private mode */ }
+    // The person's own designation first; then the business / company name — never a raw workspace id.
+    const roleLabel = designation || (roleRaw
       ? roleRaw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-      : '';
-    roleEl.textContent = [roleLabel, workspace].filter(Boolean).join(' · ');
+      : '');
+    const company = String(window.hopBusinessName || window.nxCompanyName || '').trim();
+    roleEl.textContent = [roleLabel, company].filter(Boolean).join(' · ');
   }
   if (window.nxSubscription && authState.accessToken) window.nxSubscription.refresh();
   // Hide any leftover standalone logout buttons across shells
@@ -1176,6 +1179,7 @@ async function login() {
     authState.refreshToken = data.data.refresh_token || null;
     authState.username = data.data.user.username || username;
     authState.role = data.data.user.role || null;
+    try { localStorage.setItem('authDesignation', data.data.user.designation || ''); } catch (_) { /* private mode */ }
     authState.workspaceId = data.data.user.workspace_id || null;
     authState.userId = data.data.user.id != null ? Number(data.data.user.id) : null;
     sessionTimeoutInProgress = false;
@@ -1280,6 +1284,7 @@ function clearAuthLocalState() {
   authState.role = null;
   authState.workspaceId = null;
   authState.userId = null;
+  try { localStorage.removeItem('authDesignation'); } catch (_) { /* private mode */ }
   saveAuthToken(null);
   saveRefreshToken(null);
   saveUsername(null);
@@ -16269,4 +16274,34 @@ document.addEventListener('DOMContentLoaded', initApp);
     }
   }
   if (typeof window !== 'undefined') setTimeout(load, 1200);
+})();
+
+/* Designation (job title) — from the profile; edited from the account menu. */
+(function nxDesignation() {
+  async function refresh() {
+    try {
+      const r = await fetchWithAuth('/api/v1/me/profile');
+      if (!r || !r.ok) return;
+      const d = (await r.json()).data || {};
+      localStorage.setItem('authDesignation', d.designation || '');
+      if (typeof setUserProfileButton === 'function') setUserProfileButton(authState.username);
+    } catch (_) { /* offline or not signed in */ }
+  }
+  window.nxEditDesignation = async () => {
+    let cur = '';
+    try { cur = localStorage.getItem('authDesignation') || ''; } catch (_) { /* private mode */ }
+    const v = window.prompt('Your designation (shown under your name), e.g. Area Sales Manager', cur);
+    if (v === null) return;
+    try {
+      const r = await fetchWithAuth('/api/v1/me/profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ designation: v.trim().slice(0, 60) }),
+      });
+      if (!r.ok) throw new Error('Could not save');
+      await refresh();
+      if (typeof nexoraToast === 'function') nexoraToast('Designation saved', 'ok');
+    } catch (e) {
+      if (typeof nexoraToast === 'function') nexoraToast(e.message || 'Could not save', 'err');
+    }
+  };
+  setTimeout(refresh, 2000);
 })();

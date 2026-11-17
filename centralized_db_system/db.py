@@ -3989,6 +3989,8 @@ class CentralizedDB:
             self._ensure_column_exists(conn, "users", "full_name", "TEXT")
             self._ensure_column_exists(conn, "users", "phone", "TEXT")
             self._ensure_column_exists(conn, "users", "employee_id", "TEXT")
+            # Job title the person types (e.g. "Area Sales Manager") — shown instead of the system role.
+            self._ensure_column_exists(conn, "users", "designation", "TEXT")
             self._ensure_column_exists(conn, "users", "updated_at", "TEXT")
             self._ensure_column_exists(conn, "users", "recovery_pin_hash", "TEXT")
             self._ensure_column_exists(
@@ -4335,6 +4337,7 @@ class CentralizedDB:
                 "full_name",
                 "phone",
                 "employee_id",
+                "designation",
                 "role",
                 "workspace_id",
                 "status",
@@ -4370,6 +4373,7 @@ class CentralizedDB:
         phone: str | None = None,
         employee_id: str | None = None,
         password: str | None = None,
+        designation: str | None = None,
     ) -> dict[str, Any]:
         """Owner/self profile update — fields used when creating a user id."""
         self.ensure_user_profile_columns()
@@ -4432,6 +4436,10 @@ class CentralizedDB:
                         raise ValueError("Employee Id already taken")
                 sets.append("employee_id = ?")
                 params.append(clean_emp or None)
+
+            if designation is not None:
+                sets.append("designation = ?")
+                params.append(str(designation).strip()[:60] or None)
 
             if password is not None and str(password).strip():
                 sets.append("password_hash = ?")

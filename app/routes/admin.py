@@ -261,6 +261,8 @@ def update_user(user_id):
             refreshed = cdb.get_user_profile(int(user.id))
             if refreshed and refreshed.get("email") is not None:
                 user.email = refreshed.get("email")
+        if 'designation' in data:
+            _auth_db().update_user_profile(int(user.id), designation=str(data.get('designation') or ''))
         if 'role' in data:
             if data['role'] not in ['sales_executive', 'distributor', 'retailer', 'unassigned', 'hop_admin']:
                 return jsonify({'success': False, 'data': None, 'message': 'Invalid role'}), 400
