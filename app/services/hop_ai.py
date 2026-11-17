@@ -389,6 +389,10 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         slim = lambda xs: [{k: x[k] for k in ("party", "number", "balance", "due_date", "days")} for x in xs[:20]]  # noqa: E731
         return {"overdue": slim(dl["overdue"]), "due_today": slim(dl["today"]), "due_soon": slim(dl["soon"]),
                 "totals": dl["totals"], "as_of": dl["as_of"]}
+    if what == "service":
+        from app import hop_service_reminders
+
+        return hop_service_reminders.summary_for_ai(conn, ws, str(party_name or "").strip())
     if what == "loyalty":
         from app import hop_loyalty
 

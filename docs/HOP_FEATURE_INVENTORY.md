@@ -59,7 +59,8 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Setting | State |
 |---|---|
 | WhatsApp / SMS after saving a bill | ✅ WhatsApp bill + reminder buttons (opens WhatsApp with your message; SMS ❌) |
-| Automatic payment reminders | 🟡 (overdue list + WhatsApp link, Cursor) |
+| Automatic payment reminders | ✅ daily list, one-tap WhatsApp/email, morning email, auto customer emails |
+| Service reminders | ✅ item 'Service every (days)' → due list after each sale, WhatsApp + Done |
 | Message templates | ✅ Settings → Sharing (bill + reminder, with {party} {amount} {due} {upi_link}…) |
 
 ### Party

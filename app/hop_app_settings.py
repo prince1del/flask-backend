@@ -80,6 +80,8 @@ SCHEMA: list[dict[str, Any]] = [
      "default": 7},
     {"key": "backup_email_daily", "section": "Reminders", "label": "Email me a backup of my data every day", "type": "bool",
      "default": False, "help": "A zip of all your business data, sent to your email each morning."},
+    {"key": "msg_service", "section": "Sharing", "label": "WhatsApp service reminder message", "type": "text",
+     "default": "", "help": "Use {party} {item} {date} {due_date} {number} {firm}. Blank = standard message."},
     {"key": "msg_reminder", "section": "Sharing", "label": "WhatsApp payment reminder message", "type": "text",
      "default": "Dear {party}, a gentle reminder: ₹{due} is due on {doc} {number} dated {date}. {upi_link} — {firm}",
      "help": "Same words in {…} as above."},

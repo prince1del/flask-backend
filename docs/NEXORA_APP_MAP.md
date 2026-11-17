@@ -558,6 +558,17 @@ create/edit for sales & purchase docs, banking, stock, GST summaries, TB/P&L/BS)
   suggested ticks + hints). Ticks survive editing the bill.
 - **Sharing** (`app/hop_share.py`): `GET /party-transactions/<id>/share?kind=bill|reminder`
   → template text, party WhatsApp number, `wa.me` link, UPI link; preview gets `upi`.
+- **Reminders** (Batch 2, 2026-11-17) — phone `ui/hop/HopRemindersScreen.kt` (tabs Payments | Service),
+  web `static/hop_reminders_web.js`.
+  - Payments: `app/hop_reminders.py` — `GET /reminders`, `POST /reminders/<txn>/email|whatsapp`,
+    `POST /reminders/send-me/summary|backup`; daily timer `nexora-daily.timer` → `python -m app.hop_reminders`
+    (owner 9 am email incl. services due, customer emails, backup email). Table `hop_reminder_log`.
+  - Service: `app/hop_service_reminders.py` — item field `service_period_days` (`hop_products`, saved via
+    `hop_items.save_extras`); every sale-invoice line of that item → due `period` days after the sale, then after
+    each "Done". `GET /reminders/service`, `POST /reminders/service/<line_id>/done|whatsapp`,
+    `GET /items/service-suggest?name=` (rule-based tip: AC 180, RO 90…). Table `hop_service_log`.
+    Message template Settings → Sharing `msg_service`. Ask Nexora `get_hop_books what=service`.
+    Item form field "Service every (days)" on phone (`HopOpsForms.kt`) and web (`f-prsvc`).
 - Ask Nexora `get_hop_books` topics also: profit_loss, balance_sheet, day_book,
   party_statement, gst, items, other_income (cash_bank shows reconciliation).
 - **Staff permissions** (`app/hop_permissions.py`): checked inside `require_role` for every

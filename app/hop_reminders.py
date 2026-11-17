@@ -157,6 +157,12 @@ def run_for_workspace(conn: sqlite3.Connection, ws: str, today: date | None = No
     firm = hop_firms.business_name(conn, ws, "Your business")
     owner = _owner_email(conn, ws)
     dl = due_list(conn, ws, today)
+    from app import hop_service_reminders
+
+    try:
+        sv = hop_service_reminders.due_list(conn, ws, today)
+    except sqlite3.Error:
+        sv = {"overdue": [], "today": [], "soon": [], "counts": {}}
     repeat = max(1, int(s.get("reminder_repeat_days") or 7))
     now = datetime.now(timezone.utc)
     want = lambda k: only is None or k in only  # noqa: E731
@@ -170,7 +176,8 @@ def run_for_workspace(conn: sqlite3.Connection, ws: str, today: date | None = No
                     continue
                 ok, _ = email_reminder(conn, ws, it, firm, owner)
                 sent["customers"] += 1 if ok else 0
-    if want("summary") and (s.get("reminder_owner_summary") or only) and owner and (dl["overdue"] or dl["today"] or dl["soon"]):
+    if want("summary") and (s.get("reminder_owner_summary") or only) and owner and (dl["overdue"] or dl["today"] or dl["soon"]
+                                                                                  or sv["overdue"] or sv["today"]):
         lines = [f"Good morning! Money to collect for {firm} — {dl['as_of']}", ""]
         for title, grp in (("Overdue", "overdue"), ("Due today", "today"), (f"Due in {dl['soon_days']} days", "soon")):
             if dl[grp]:
@@ -179,6 +186,11 @@ def run_for_workspace(conn: sqlite3.Connection, ws: str, today: date | None = No
                     extra = f", {-it['days']} days late" if it["days"] < 0 else ""
                     lines.append(f"  • {it['party']} — {it['number']} — {_money(it['balance'])}{extra}")
                 lines.append("")
+        if sv["overdue"] or sv["today"] or sv["soon"]:
+            lines.append(f"Service due: {len(sv['overdue'])} overdue, {len(sv['today'])} today, {len(sv['soon'])} this week")
+            for it in (sv["overdue"] + sv["today"])[:15]:
+                lines.append(f"  • {it['party']} — {it['item']} — due {it['due_date']}")
+            lines.append("")
         lines.append("Open NEXORA → Reminders to send WhatsApp reminders in one tap.")
         ok, _ = send_email(to=owner, subject=f"NEXORA — money to collect today ({firm})", body="\n".join(lines))
         if ok:

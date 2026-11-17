@@ -23,6 +23,7 @@ COLUMNS = (
     ("barcode", "TEXT"),
     ("custom_fields", "TEXT"),        # JSON {"Colour": "Red", ...}
     ("cess_pct", "REAL"),             # additional cess % on top of GST
+    ("service_period_days", "INTEGER"),  # service reminder after each sale (0/None = no reminder)
 )
 
 
@@ -62,6 +63,11 @@ def save_extras(conn: sqlite3.Connection, ws: str, product_id: int, payload: dic
             if v is not None and v < 0:
                 raise ValueError(f"{k.replace('_', ' ')} cannot be negative")
             sets[k] = v
+    if "service_period_days" in payload:
+        v = _f(payload.get("service_period_days"))
+        if v is not None and not (0 <= v <= 3650):
+            raise ValueError("Service period must be 0 to 3650 days")
+        sets["service_period_days"] = int(v) if v else None
     if "alt_unit" in payload:
         sets["alt_unit"] = _s(payload.get("alt_unit")).upper()[:12] or None
     if "barcode" in payload:
@@ -101,6 +107,10 @@ def decorate(row: dict[str, Any]) -> dict[str, Any]:
     elif cf is None:
         row["custom_fields"] = {}
     row["item_type"] = row.get("item_type") or "product"
+    if not row.get("service_period_days"):
+        from app.hop_service_reminders import suggest_days
+
+        row["service_suggest_days"] = suggest_days(row.get("name") or "")
     return row
 
 
@@ -161,4 +171,7 @@ def item_checks(row: dict[str, Any]) -> list[str]:
         out.append("Service items do not keep stock; the stock figure will be ignored.")
     if row.get("alt_unit") and not row.get("alt_unit_factor"):
         out.append("Second unit has no conversion (how many base units in one).")
+    if not row.get("service_period_days") and row.get("service_suggest_days"):
+        out.append(f"Tip: items like this usually need service every {row['service_suggest_days']} days — "
+                   "set 'Service every (days)' to get service reminders.")
     return out

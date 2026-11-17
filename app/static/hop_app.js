@@ -7342,6 +7342,7 @@ function hopProductExtrasPayload() {
     item_type: v('f-prtype') || 'product',
     mrp: v('f-prmrp'), wholesale_price: v('f-prwhole'), wholesale_min_qty: v('f-prwholemin'),
     alt_unit: v('f-pralt'), alt_unit_factor: v('f-praltf'), barcode: v('f-prbarcode'), cess_pct: v('f-prcess'),
+    service_period_days: v('f-prsvc'),
     custom_fields: custom,
   };
 }
@@ -7361,6 +7362,9 @@ async function hopEditProduct(productId) {
   set('f-prtype', r.item_type || 'product'); set('f-prmrp', r.mrp); set('f-prwhole', r.wholesale_price);
   set('f-prwholemin', r.wholesale_min_qty); set('f-pralt', r.alt_unit); set('f-praltf', r.alt_unit_factor);
   set('f-prbarcode', r.barcode); set('f-prcess', r.cess_pct);
+  set('f-prsvc', r.service_period_days || '');
+  const svc = document.getElementById('f-prsvc');
+  if (svc) svc.placeholder = r.service_suggest_days ? `Suggested: ${r.service_suggest_days}` : 'Blank = no service reminder';
   set('f-prcustom', Object.entries(r.custom_fields || {}).map(([k, v]) => `${k}: ${v}`).join('\n'));
   const chk = document.getElementById('f-prchecks');
   if (chk) chk.innerHTML = (r.checks || []).map((c) => `⚠ ${foEscapeText(c)}`).join('<br>');
@@ -9674,6 +9678,7 @@ async function hopShowForm(kind, editRow) {
         <label>Wholesale from qty<input id="f-prwholemin" type="number" /></label>
         <label>2nd unit<input id="f-pralt" list="hop-unit-list" placeholder="BOX" /></label>
         <label>1 2nd unit = how many base units<input id="f-praltf" type="number" /></label>
+        <label>Service every (days)<input id="f-prsvc" type="number" min="0" placeholder="Blank = no service reminder" /></label>
         <label>Barcode<input id="f-prbarcode" /></label>
         <label>Additional cess %<input id="f-prcess" type="number" /></label>
         <label style="grid-column:1/-1;">More details (one per line, Name: value)<textarea id="f-prcustom" rows="2" class="nx-input"></textarea></label>

@@ -2869,6 +2869,23 @@ def overdue_bills():
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/party-transactions/<int:party_txn_id>/receipt", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_txn_receipt(party_txn_id: int):
+    """Thermal receipt lines for the phone's Bluetooth printer (?width=32 for 58 mm, 48 for 80 mm)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_receipt
+    from app.hop_doc_preview import build_txn_preview
+
+    with hop_db.connect(_db_path()) as conn:
+        data = build_txn_preview(conn, _ws(), party_txn_id=party_txn_id)
+    if not data:
+        return _json_error("Bill not found", "NOT_FOUND", 404)
+    width = request.args.get("width", type=int)
+    return jsonify({"success": True, "data": hop_receipt.build(data, width)})
+
+
 @hop_bp.route("/party-transactions/<int:party_txn_id>/share", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -2940,6 +2957,45 @@ def reminders_send_me(what: str):
         return _json_error("Nothing was sent — " + (", ".join(res.get("skipped") or []) or
                            ("no bills to collect" if what == "summary" else "no email on your profile")), "NOT_SENT", 400)
     return jsonify({"success": True, "data": {"sent_to": to}})
+
+
+@hop_bp.route("/reminders/service", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def service_reminders_list():
+    """Services due (items with 'service every N days' sold on invoices): overdue / today / soon."""
+    ensure_hop_schema(_db_path())
+    from app import hop_service_reminders
+
+    with hop_db.connect(_db_path()) as conn:
+        data = hop_service_reminders.due_list(conn, _ws())
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/reminders/service/<int:line_id>/<string:action>", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def service_reminders_mark(line_id: int, action: str):
+    """action = done (service finished; body done_on optional) or whatsapp (the phone opened WhatsApp)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_service_reminders
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            data = hop_service_reminders.mark(conn, _ws(), line_id, action, (_payload().get("done_on") or None))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/items/service-suggest", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def item_service_suggest():
+    """Typical service gap for an item name (rule based) — shown as a tip on the item form."""
+    from app import hop_service_reminders
+
+    return jsonify({"success": True, "data": {"days": hop_service_reminders.suggest_days(request.args.get("name") or "")}})
 
 
 @hop_bp.route("/ai/payment-reminder", methods=["POST"])
