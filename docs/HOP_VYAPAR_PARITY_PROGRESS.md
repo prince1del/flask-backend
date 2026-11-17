@@ -225,3 +225,21 @@ user roles + audit trail; other income; bank reconciliation; multiple firms; bac
 - Still not built (❌ in `docs/HOP_FEATURE_INVENTORY.md`): currency other than ₹, HSN/tax-breakup print
   columns, header/footer text + margins, SMS, Bluetooth thermal printer, direct GSP e-invoice API
   (needs owner's GSP signup), bank/cheque/loan lines from old-software backups.
+
+## FINAL PLAN — nothing left out, everything tested (owner, 2026-11-17)
+Owner: "saare test bhi ho jaye, koi feature reh na jaye; gov site approval wale features bana lo,
+approval last main lenge". Every batch ships server + web + phone + AI help + help guide + tests.
+
+| Batch | Features | State |
+|---|---|---|
+| 1 Print & formats | Currency symbol; HSN + tax-breakup columns on print; header/footer text; page margins; date/decimal format on app screens too | ⏳ |
+| 2 Business | Manufacturing (raw-material list per item → "Manufacture" entry: raw stock down, finished stock up, cost); loyalty points (earn per ₹, redeem on bill); service reminders (item service period → due list + WhatsApp); automatic payment reminders (daily list + one-tap send); automatic daily backup by e-mail | ⏳ |
+| 3 Phone | Bluetooth thermal printer (ESC/POS 58/80 mm); SMS bill/reminder via phone's SMS app; offline lists (parties, items, bills readable with no internet) | ⏳ |
+| 4 Data | Old-software backup: bank accounts, cheques, loans also imported; one-tap restore of a NEXORA backup into a NEW firm (never overwrites); online catalogue link (customer sees items, sends an order → Sale Order) | ⏳ |
+| 5 Government / approval APIs — built now, switched on after approval | E-Invoice IRN (generate, cancel, signed QR printed on bill); E-Way Bill (generate, vehicle update Part-B, cancel, extend); GSTIN verify from GST portal; SMS gateway with DLT templates; online payment link (gateway) with auto-match. Settings → "Government & approvals" shows each: what to apply for, where, status, test (sandbox) button | ⏳ |
+| 6 Test everything | Full server tests; web click-through of every HoP screen; phone: every menu screen + every button (bill create/edit/delete, share, PDF, payment in/out, purchase, godown move, AI scan, offline, firm switch, lock + fingerprint); final checklist (feature → screen → test proof) | ⏳ |
+
+Approvals the owner applies for at the end (no code change needed then, only keys in Settings):
+1. GSP account (e-invoice + e-way bill + GSTIN API) — or NIC direct API if turnover qualifies; IRP/EWB API user created on the GST e-invoice / e-way bill portal.
+2. DLT registration (TRAI) — entity + sender ID + message templates, then an SMS provider key.
+3. Payment gateway KYC (Razorpay / Cashfree etc.).
