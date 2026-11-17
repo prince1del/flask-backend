@@ -602,6 +602,17 @@ def _db_path() -> str:
     return str(current_app.config.get("DATABASE_PATH") or "centralized_db.sqlite3")
 
 
+def _hop_biz_name(workspace_id: str) -> str:
+    """The subscriber's own business name (Company profile); never a fixed brand."""
+    try:
+        from app import hop_db, hop_firms
+
+        with hop_db.connect(_db_path()) as conn:
+            return hop_firms.business_name(conn, workspace_id, "your business")
+    except Exception:
+        return "your business"
+
+
 def _sanitize(obj: Any) -> Any:
     """Drop non-JSON-safe values so json.dumps never chokes mid tool-loop."""
     if isinstance(obj, dict):
@@ -1299,7 +1310,7 @@ def _run_tool(
             except PermissionError as exc:
                 return {"error": str(exc)}
             return _sanitize({"count": len(data["issues"]),
-                              "business": "House of Prizm" if who.get("guard_scope") == "hop" else "Bombay Dyeing distribution",
+                              "business": _hop_biz_name(workspace_id) if who.get("guard_scope") == "hop" else "Bombay Dyeing distribution",
                               "issues": [{k: i.get(k) for k in ("severity", "area", "title", "detail", "amount")}
                                          for i in data["issues"][:25]]})
 
@@ -1318,7 +1329,7 @@ def _run_tool(
             r = conn.execute("SELECT role, is_workspace_owner FROM users WHERE id = ?", (int(user_id),)).fetchone()
             if not nexora_guard.can_open_hop({"role": r[0] if r else None, "is_workspace_owner": bool(r[1]) if r else False,
                                               "workspace_id": workspace_id}):
-                return {"error": "House of Prizm accounts are not part of this login."}
+                return {"error": "Business accounts are not part of this login."}
             ensure_hop_schema(_db_path())
             from app import hop_permissions
 

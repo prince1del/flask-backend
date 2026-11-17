@@ -273,7 +273,7 @@ def _scope(user: dict[str, Any]) -> tuple[str, int, bool]:
         business = "hop" if (user.get("role") == "hop_admin" or ws == HOP_WORKSPACE_ID) else "bd"
     if business == "hop":
         if not can_open_hop(user):
-            raise PermissionError("House of Prizm is not open for this login")
+            raise PermissionError("The business books are not open for this login")
         return ws, 0, True
     return ws, int(user.get("user_id") or 0), False
 
@@ -404,7 +404,7 @@ def explain(db_path: str, user: dict[str, Any], issue_id: int) -> str:
                          (int(issue_id), ws, uid)).fetchone()
     if not r:
         raise LookupError("Issue not found")
-    biz = "an interior furnishing business (House of Prizm)" if is_hop else "a Bombay Dyeing distribution sales executive"
+    biz = "a small business (billing and accounts)" if is_hop else "a Bombay Dyeing distribution sales executive"
     prompt = (f"You help {biz} keep its books right. Explain this warning in simple English (short sentences, "
               "no jargon), why it matters in money terms, and give 2-4 numbered steps to fix it in the NEXORA app. "
               f"Under 120 words.\n\nWarning: {r['title']}\nDetails: {r['detail'] or '-'}\nArea: {r['area']}")

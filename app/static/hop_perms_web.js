@@ -37,6 +37,10 @@
     let d;
     try { d = await hopApi('/api/v1/hop/firms'); } catch (_) { return; }
     const firms = d.firms || [];
+    // The subscriber's own company name — menu brand line, Guard title.
+    window.hopBusinessName = (firms.find((f) => f.firm_ws === d.active) || {}).name || '';
+    const brand = document.getElementById('hop-brand-sub');
+    if (brand) brand.textContent = (window.hopBusinessName || 'My Business').toUpperCase();
     const activeIsMain = firms.find((f) => f.firm_ws === d.active)?.is_main;
     try { localStorage.setItem('nx_hop_firm', activeIsMain ? '' : d.active); } catch (_) { /* ignore */ }
     box.innerHTML = `<select class="nx-input" style="width:100%;" onchange="hopFirmPick(this.value)" title="Firm you are working in">

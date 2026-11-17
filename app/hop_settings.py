@@ -460,6 +460,16 @@ def invoice_entry_warnings(
                     "rate": rate,
                     "baseline": baseline,
                 })
+    if txn_type in (1, 21, 27, 65, 30, 83):
+        try:
+            from app import hop_firms
+
+            if not hop_firms.business_name(conn, ws):
+                warnings.append({"code": "no_business_name", "level": "warn",
+                                 "message": "Your business name is not set — bills print “Your Business Name”. "
+                                            "Add it in Settings → Company profile."})
+        except Exception:
+            pass
     return warnings
 
 

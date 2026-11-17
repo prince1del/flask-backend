@@ -231,7 +231,7 @@
       <div class="hop-doc-preview-sheet" id="hop-doc-preview-sheet">
         <div class="hop-doc-firm">
           <div class="hop-doc-firm-text">
-            <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'House of Prizm')}</div>
+            <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'Your Business Name')}</div>
             ${firm.address ? `<div class="hop-doc-muted">${foEscapeText(firm.address)}</div>` : ''}
             ${firm.phone ? `<div class="hop-doc-muted">Phone: ${foEscapeText(firm.phone)}</div>` : ''}
             ${firm.email ? `<div class="hop-doc-muted">Email: ${foEscapeText(firm.email)}</div>` : ''}
@@ -263,7 +263,7 @@
             ${bankHtml}
           </div>
           <div class="hop-doc-sign-block">
-            <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
+            <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'Your Business Name')}</div>
             ${hopDocSignHtml(firm)}
             <div>Authorized Signatory</div>
           </div>
@@ -286,7 +286,7 @@
     const firmBlock = `${topLine}
       <div class="hop-doc-firm">
         <div class="hop-doc-firm-text">
-          <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'House of Prizm')}</div>
+          <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'Your Business Name')}</div>
           ${firm.address ? `<div class="hop-doc-muted">${foEscapeText(firm.address)}</div>` : ''}
           ${firm.phone ? `<div class="hop-doc-muted">Phone: ${foEscapeText(firm.phone)}</div>` : ''}
           ${firm.email ? `<div class="hop-doc-muted">Email: ${foEscapeText(firm.email)}</div>` : ''}
@@ -410,7 +410,7 @@
             <div class="hop-doc-tot-row hop-doc-tot-grand"><span>Total</span><strong>${hopPreviewMoney(totals.grand_total)}</strong></div>
             ${data.loyalty_note ? `<div class="hop-doc-muted" style="font-size:11px;">⭐ ${foEscapeText(data.loyalty_note)}</div>` : ''}
             <div class="hop-doc-sign">
-              <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
+              <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'Your Business Name')}</div>
               ${hopDocSignHtml(firm)}
               <div>Authorized Signatory</div>
             </div>

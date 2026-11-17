@@ -156,7 +156,7 @@ def patch_firm_profile(conn: sqlite3.Connection, workspace_id: str, payload: dic
         if key in payload:
             merged[key] = _clean(payload.get(key))
     if not _clean(merged.get("firm_name")):
-        merged["firm_name"] = "House of Prizm"
+        merged["firm_name"] = "Your Business Name"
     upsert_firm_profile(conn, workspace_id, merged)
     conn.commit()
     return get_firm_profile(conn, workspace_id)
@@ -297,7 +297,7 @@ def get_firm_profile(conn: sqlite3.Connection, workspace_id: str) -> dict[str, A
     # Sensible HoP defaults until Vyapar firm is imported.
     return {
         "workspace_id": workspace_id,
-        "firm_name": "House of Prizm",
+        "firm_name": "Your Business Name",
         "address": "",
         "phone": "",
         "email": "",
@@ -475,7 +475,7 @@ def build_txn_preview(
             "party_type": ptype,
         },
         "firm": {
-            "name": _clean(firm.get("firm_name")) or "House of Prizm",
+            "name": _clean(firm.get("firm_name")) or "Your Business Name",
             "address": _clean(firm.get("address")),
             "phone": _clean(firm.get("phone")),
             "email": _clean(firm.get("email")),

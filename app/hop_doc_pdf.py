@@ -288,7 +288,7 @@ def _draw_firm_header(pdf: FPDF, firm: dict[str, Any]) -> None:
     pdf.set_font("Helvetica", "B", 13)
     pdf.set_text_color(*C_INK)
     pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(text_w, 6, _t(firm.get("name") or "House of Prizm"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(text_w, 6, _t(firm.get("name") or "Your Business Name"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", size=8)
     pdf.set_text_color(*C_MUTED)
     for bit in (
@@ -681,7 +681,7 @@ def _draw_terms_bank(pdf: _HopPdf, preview: dict) -> None:
     pdf.set_xy(sign_x, y0)
     pdf.set_font("Helvetica", size=8)
     pdf.set_text_color(*C_MUTED)
-    pdf.cell(sign_w, 4, _t(f"For {firm.get('name') or 'House of Prizm'}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(sign_w, 4, _t(f"For {firm.get('name') or 'Your Business Name'}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     sig_y = pdf.get_y() + 1
     if sig_bytes:
         try:

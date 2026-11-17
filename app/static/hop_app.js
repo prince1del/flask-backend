@@ -4493,7 +4493,7 @@ function hopRenderDocPreviewHtml(data) {
   const firmBlock = `
     <div class="hop-doc-firm">
       <div class="hop-doc-firm-text">
-        <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'House of Prizm')}</div>
+        <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'Your Business Name')}</div>
         ${firm.address ? `<div class="hop-doc-muted">${foEscapeText(firm.address)}</div>` : ''}
         ${firm.phone ? `<div class="hop-doc-muted">Phone: ${foEscapeText(firm.phone)}</div>` : ''}
         ${firm.email ? `<div class="hop-doc-muted">Email: ${foEscapeText(firm.email)}</div>` : ''}
@@ -4615,7 +4615,7 @@ function hopRenderDocPreviewHtml(data) {
           <div class="hop-doc-tot-row"><span>${foEscapeText(taxLabel)}</span><strong>${hopPreviewMoney(totals.tax_total)}</strong></div>
           <div class="hop-doc-tot-row hop-doc-tot-grand"><span>Total</span><strong>${hopPreviewMoney(totals.grand_total)}</strong></div>
           <div class="hop-doc-sign">
-            <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'House of Prizm')}</div>
+            <div class="hop-doc-muted">For ${foEscapeText(firm.name || 'Your Business Name')}</div>
             <div class="hop-doc-sign-space"></div>
             <div>Authorized Signatory</div>
           </div>
@@ -5031,7 +5031,7 @@ async function renderHopWipeDataModule(mount) {
   const body = `
     <div class="nx-card" style="max-width:560px;padding:22px 24px;">
       <p class="nx-text-dim" style="margin:0 0 14px;line-height:1.5">
-        This permanently deletes all House of Prizm business data:
+        This permanently deletes all of this business's data:
         parties, invoices, payments, products, quotations, party transactions, and related records.
       </p>
       <p class="nx-text-dim" style="margin:0 0 18px;line-height:1.5">
@@ -5162,7 +5162,7 @@ async function renderHopVyaparImportModule(mount) {
   mount.innerHTML = hopModuleShell(
     'Migration',
     'Import old data',
-    'Convert & import backup into House of Prizm',
+    'Convert & import backup into NEXORA',
     `<button type="button" class="nx-btn" onclick="openHopView('customers')">← Back</button>`,
     body,
   );

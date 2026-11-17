@@ -8,7 +8,7 @@
   const COLORS = { alert: '#dc2626', warn: '#d97706', info: '#2563eb' };
   const biz = () => (document.documentElement.classList.contains('hop-active')
     || document.body.classList.contains('hop-active') ? 'hop' : 'bd');
-  const BIZ_NAME = { hop: 'House of Prizm', bd: 'Distribution' };
+  const BIZ_NAME = { get hop() { return window.hopBusinessName || 'My Business'; }, bd: 'Distribution' };
   const LABEL = { alert: 'Urgent', warn: 'Check', info: 'Tip' };
 
   async function api(url, options = {}) {

@@ -33,7 +33,7 @@ def build_zip(conn: sqlite3.Connection, ws: str) -> tuple[bytes, dict[str, int]]
             w.writerows([list(r) for r in rows])
             z.writestr(f"{t}.csv", out.getvalue())
             counts[t] = len(rows)
-        z.writestr("README.txt", "NEXORA House of Prizm backup\n"
+        z.writestr("README.txt", "NEXORA business backup\n"
                    f"Made: {datetime.now(timezone.utc).isoformat(timespec='seconds')} UTC\n"
                    "One CSV per table. Keep this file safe; it has your business data.\n")
         z.writestr("counts.json", json.dumps(counts, indent=1))

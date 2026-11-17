@@ -49,7 +49,7 @@
         ${s.fields.map((f) => `<div style="padding:8px 0;border-top:1px solid rgba(148,163,184,.15);">${fieldHtml(f)}</div>`).join('')}
       </div>`).join('');
     const backup = `<div class="nx-card" style="padding:14px;margin-bottom:12px;"><h3 style="margin:0 0 10px;">Backup</h3>
-      <p class="hop-doc-muted">Download all your House of Prizm data (parties, items, bills, payments, bank…) as one zip file.</p>
+      <p class="hop-doc-muted">Download all your business data (parties, items, bills, payments, bank…) as one zip file.</p>
       <button type="button" class="nx-btn" onclick="hopBackupDownload()">Download backup</button></div>`;
     mount.innerHTML = hopModuleShell('Settings', 'Settings', 'Bills, GST, print and parties — applies on phone and web', '', body + backup);
   }

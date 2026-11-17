@@ -31,6 +31,11 @@ def _profile_name(conn, ws: str) -> str:
         return ""
 
 
+def business_name(conn: sqlite3.Connection, ws: str, fallback: str = "") -> str:
+    """The subscriber's own business name (Company profile of this firm). Never a fixed brand."""
+    return _profile_name(conn, ws) or fallback
+
+
 def list_firms(conn: sqlite3.Connection, base_ws: str) -> list[dict[str, Any]]:
     ensure_schema(conn)
     if not conn.execute("SELECT 1 FROM hop_firms WHERE firm_ws=?", (base_ws,)).fetchone():

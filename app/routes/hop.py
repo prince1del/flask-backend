@@ -242,6 +242,16 @@ def _uploaded_backup_file():
     return f, None
 
 
+def _business_name() -> str:
+    from app import hop_firms
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            return hop_firms.business_name(conn, _ws())
+    except Exception:
+        return ""
+
+
 @hop_bp.route("/meta", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -251,7 +261,8 @@ def hop_meta():
         {
             "success": True,
             "data": {
-                "product": "House of Prizm",
+                "product": "NEXORA Business",
+                "business_name": _business_name(),
                 "architecture": "project_centric",
                 "workspace_id": _ws(),
                 "project_stages": PROJECT_STAGES,
@@ -272,7 +283,8 @@ def hop_health():
         {
             "success": True,
             "data": {
-                "product": "House of Prizm",
+                "product": "NEXORA Business",
+                "business_name": _business_name(),
                 "role": HOP_ROLE,
                 "workspace_id": _ws(),
                 "schema": "ready",
@@ -352,7 +364,7 @@ def settings_wipe_data():
     password = str(payload.get("password") or "")
     if not password.strip():
         return _json_error(
-            "Password is required to wipe House of Prizm data.",
+            "Password is required to wipe this business's data.",
             "PASSWORD_REQUIRED",
             403,
         )
@@ -1576,7 +1588,7 @@ def rate_cart_place_orders():
                         "status": "open",
                         "production_status": "pending",
                         "notes": notes,
-                        "client_name": "House of Prizm — procurement",
+                        "client_name": f"{__import__('app.hop_firms', fromlist=['x']).business_name(conn, _ws(), 'Own')} — procurement",
                     },
                 )
                 created.append(row)
