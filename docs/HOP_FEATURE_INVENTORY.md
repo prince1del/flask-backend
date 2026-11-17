@@ -169,3 +169,6 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
   camera / photo / PDF of any bill, order or HANDWRITTEN note (Hindi / Hinglish / English) → customer,
   items, qty, unit, rate, GST filled; missing rates from the catalogue (marked), unclear lines flagged,
   total checked. One capped AI call inside the daily limit; nothing is saved by AI. Phone + web.
+- 2026-11-17: In-app help — ⓘ (phone) / ? Help (web) on every HoP screen: what it is, steps, tips and
+  how AI helps (one list on the server, app/hop_help.py). Ask Nexora answers “kaise karein” questions
+  from the same guides (tool get_hop_help). Tutorial videos can be added later as a link per screen.

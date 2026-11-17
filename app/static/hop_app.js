@@ -2547,6 +2547,30 @@ function hopDebouncedReload(kind) {
 }
 
 /** Locked compact page chrome (Vyapar density) for every full-page module. */
+/** ? Help: the same guide as the phone's ⓘ button (GET /api/v1/hop/help?screen=…). */
+async function hopHelpOpen() {
+  const esc = (v) => foEscapeText(v);
+  let t;
+  try { t = await hopApi(`/api/v1/hop/help?screen=${encodeURIComponent(hopState.view || 'dashboard')}`); } catch (e) {
+    if (typeof nexoraToast === 'function') nexoraToast('No guide for this screen yet', 'warn');
+    return;
+  }
+  document.getElementById('hop-help-overlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'hop-help-overlay';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;justify-content:flex-end;';
+  el.onclick = (ev) => { if (ev.target === el) el.remove(); };
+  el.innerHTML = `<div class="nx-card" style="width:min(420px,100%);height:100%;overflow:auto;padding:20px;border-radius:0;">
+    <div style="display:flex;align-items:center;"><h2 style="margin:0;flex:1;">${esc(t.title)}</h2>
+      <button type="button" class="nx-btn" onclick="document.getElementById('hop-help-overlay').remove()">Close</button></div>
+    <p>${esc(t.what)}</p>
+    ${t.steps?.length ? `<h4>How to use</h4><ol>${t.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+    ${t.tips?.length ? `<h4>Tips</h4><ul>${t.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${t.ai ? `<p style="padding:10px 12px;border-radius:10px;background:rgba(124,58,237,.08);">✨ ${esc(t.ai)}</p>` : ''}
+    <p class="hop-doc-muted">Still stuck? Ask Nexora — e.g. “invoice kaise banau?”</p></div>`;
+  document.body.appendChild(el);
+}
+
 function hopModuleShell(eyebrow, title, subtitle, actionsHtml, bodyHtml) {
   const isFullpage = hopState.view && hopState.view !== 'dashboard';
   if (isFullpage) {
@@ -2558,7 +2582,8 @@ function hopModuleShell(eyebrow, title, subtitle, actionsHtml, bodyHtml) {
             ${hopBackButtonHtml('Back')}
             <h2 class="inv-title">${foEscapeText(title)}</h2>
           </div>
-          <div class="inv-topbar-actions">${actionsHtml || ''}</div>
+          <div class="inv-topbar-actions">${actionsHtml || ''}
+            <button type="button" class="nx-btn" title="How this screen works" onclick="hopHelpOpen()">? Help</button></div>
         </div>
         <div class="inv-body hop-tx-body">${bodyHtml || ''}</div>
       </div>
