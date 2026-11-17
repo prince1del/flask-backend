@@ -790,6 +790,10 @@
         <div class="form-group"><label>Phone (optional)</label><input name="phone" type="tel"></div>
         <div class="form-group"><label>Choose a username</label><input name="username" autocomplete="username" autocapitalize="none" required></div>
         <div class="form-group"><label>Email</label><input name="email" type="email" required></div>
+        <div class="form-group" data-code-row><label>6-digit code from your email</label>
+          <div style="display:flex;gap:8px;"><input name="email_code" inputmode="numeric" maxlength="6" placeholder="Tap Send code" style="flex:1;">
+          <button type="button" class="btn btn-secondary" data-send-code>Send code</button></div>
+          <small data-code-msg style="color:#94a3b8;"></small></div>
         <div class="form-group"><label>Password (8+ characters)</label><input name="password" type="password" minlength="8" autocomplete="new-password" required></div>
         <div class="form-group"><label>Secret question</label><select name="secret_question">
           ${SECRET_QUESTIONS.map((q) => `<option>${esc(q)}</option>`).join('')}</select></div>
@@ -803,6 +807,36 @@
     const form = el.querySelector('[data-join]');
     const codeInput = form.querySelector('[name=invite_code]');
     const companyEl = form.querySelector('[data-company]');
+
+    // Email check: a 6-digit code goes to the email; the login is made only with it.
+    const sendBtn = form.querySelector('[data-send-code]');
+    const codeMsg = form.querySelector('[data-code-msg]');
+    sendBtn.addEventListener('click', async () => {
+      const email = form.querySelector('[name=email]').value.trim();
+      codeMsg.style.color = '#94a3b8';
+      if (!email.includes('@')) { codeMsg.textContent = 'Type your email first'; return; }
+      sendBtn.disabled = true;
+      try {
+        const res = await fetch('/api/v1/signup/send-code', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.status === 503) { form.querySelector('[data-code-row]').style.display = 'none'; return; }
+        if (!res.ok || !d.success) throw new Error(d.error?.message || 'Could not send the code');
+        codeMsg.style.color = '#22c55e';
+        codeMsg.textContent = 'Code sent — check your email (and Spam). Valid for 15 minutes.';
+        let left = 60;
+        const t = setInterval(() => {
+          left -= 1;
+          sendBtn.textContent = left > 0 ? `Resend ${left}s` : 'Resend';
+          if (left <= 0) { clearInterval(t); sendBtn.disabled = false; }
+        }, 1000);
+      } catch (e) {
+        codeMsg.style.color = '#ef4444';
+        codeMsg.textContent = e.message;
+        sendBtn.disabled = false;
+      }
+    });
 
     codeInput.addEventListener('blur', async () => {
       const code = codeInput.value.trim();
