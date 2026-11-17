@@ -1782,7 +1782,7 @@
                                         <button type="button" class="dsr-brand-dd-add" id="dsr-add-competitor-btn" onclick="event.stopPropagation(); promptAddDsrCompetitorBrand();">+ Add new brand</button>
                                     </div>
                                     <div class="dsr-brand-dd-list" id="dsr-brand-dd-list">
-                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing" onchange="syncDsrBrandDropdownLabel()"> Bombay Dyeing</label>
+                                        <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Bombay Dyeing" data-own-brand="1" onchange="syncDsrBrandDropdownLabel()"> Bombay Dyeing</label>
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Ddecor" onchange="syncDsrBrandDropdownLabel()"> Ddecor</label>
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Portico" onchange="syncDsrBrandDropdownLabel()"> Portico</label>
                                         <label class="dsr-brand-dd-option"><input type="checkbox" name="dsr-competitor" value="Raymonds" onchange="syncDsrBrandDropdownLabel()"> Raymonds</label>
@@ -2143,7 +2143,7 @@
                         <span class="of-rail-num">9</span>
                         <span class="of-rail-text">
                             <span class="of-rail-label">SO payment mails</span>
-                            <span class="of-rail-hint">Bombay Dyeing mails</span>
+                            <span class="of-rail-hint"><span class="nx-brand-name">Company</span> mails</span>
                         </span>
                     </button>
                     <button type="button" class="back-btn of-rail-back" onclick="goBack()">← Back</button>
@@ -2430,7 +2430,7 @@
                         <div class="nx-card nx-of-panel of-pane-card of-pane-card--fill">
                             <div class="of-pane-card-head">
                                 <h3 class="of-pane-card-title">SO payment mails</h3>
-                                <p class="of-pane-help">Reads Bombay Dyeing "for Cash payment" mails, matches the SOs with your Filled Orders and sets CD, TDS and the due date. Saves on its own when every check passes; otherwise asks you here.</p>
+                                <p class="of-pane-help">Reads <span class="nx-brand-name">your company's</span> "for Cash payment" mails, matches the SOs with your Filled Orders and sets CD, TDS and the due date. Saves on its own when every check passes; otherwise asks you here.</p>
                                 <p id="of-somail-message" class="of-pane-help" aria-live="polite"></p>
                             </div>
                             <div id="of-somail-board" class="of-pay-board">
@@ -2484,7 +2484,7 @@
                     <div class="nx-card nx-settings-company-card bd-company-card">
                         <label class="nx-settings-field bd-company-field" for="bd-company-name">
                             <span class="bd-company-label">Company name</span>
-                            <input type="text" id="bd-company-name" placeholder="e.g. The Bombay Dyeing &amp; Manufacturing Co. Ltd." autocomplete="organization" />
+                            <input type="text" id="bd-company-name" placeholder="e.g. your company's full legal name" autocomplete="organization" />
                         </label>
                         <label class="nx-settings-field bd-company-field" for="bd-company-gst">
                             <span class="bd-company-label">GSTIN</span>
@@ -3804,7 +3804,7 @@
         </div>
     </footer>
     <script src="{{ url_for('static', filename='nx-ymd-picker.js') }}?v=20260807-ymd-manual"></script>
-    <script src="{{ url_for('static', filename='app.js') }}?v=20261116-firm1"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20261117-brand1"></script>
     <script src="{{ url_for('static', filename='subscription.js') }}?v=20261116-guard1"></script>
     <script src="{{ url_for('static', filename='team.js') }}?v=20261115-approval"></script>
     <script src="{{ url_for('static', filename='guard_web.js') }}?v=20261117-name1"></script>

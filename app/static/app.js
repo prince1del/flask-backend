@@ -2066,7 +2066,7 @@ function renderDsrCompetitorBrandChips(brands, selectedNames) {
   );
   const names = (brands || []).map((b) => String(b || '').trim()).filter(Boolean);
   const fallback = [
-    'Bombay Dyeing', 'Ddecor', 'Portico', 'Raymonds', 'Sansar', 'Spaces', 'Swayam', 'Welspun',
+    (window.nxBrand || 'Bombay Dyeing'), 'Ddecor', 'Portico', 'Raymonds', 'Sansar', 'Spaces', 'Swayam', 'Welspun',
   ];
   const finalNames = names.length ? names : fallback;
   list.innerHTML = finalNames.map((name) => {
@@ -9872,7 +9872,7 @@ async function deleteOrderMatchSelectedRun() {
 
 const SO_PACK_ANALYZE_TIPS = [
   'Unpacking ZIP / RAR archive…',
-  'Reading Bombay Dyeing SO PDFs…',
+  'Reading SO PDFs…',
   'Matching product names & sizes…',
   'Rolling up qty, net & GST…',
   'Building Consolidated view…',
@@ -10058,7 +10058,7 @@ function showOfSection(section) {
     },
     'so-mail': {
       title: 'SO payment mails',
-      sub: 'Bombay Dyeing SO mails — match SOs and set CD, TDS and due date.',
+      sub: 'SO payment mails — match SOs and set CD, TDS and due date.',
     },
     'saved-orders': {
       title: 'Saved Orders',
@@ -16245,3 +16245,28 @@ function bindMobileNavDismissGestures() {
 
 document.addEventListener('DOMContentLoaded', initApp);
 
+/* Our own brand / company for the Executive UI (GET /api/v1/me/brand) — never a fixed brand name.
+   Bombay Dyeing workspaces get exactly "Bombay Dyeing", so nothing changes for them. */
+(function nxBrandLoader() {
+  let tries = 0;
+  async function load() {
+    tries += 1;
+    try {
+      const r = await fetchWithAuth('/api/v1/me/brand');
+      if (!r || !r.ok) throw new Error('not yet');
+      const d = (await r.json()).data || {};
+      if (!d.brand) throw new Error('no brand');
+      window.nxBrand = d.brand;
+      window.nxCompanyName = d.company_name || d.brand;
+      document.querySelectorAll('.nx-brand-name').forEach((el) => { el.textContent = d.brand; });
+      document.querySelectorAll('input[name="dsr-competitor"][data-own-brand]').forEach((el) => {
+        el.value = d.brand;
+        if (el.nextSibling) el.nextSibling.textContent = ` ${d.brand}`;
+      });
+      return;
+    } catch (_) {
+      if (tries < 40) setTimeout(load, 5000);   // waits for login, then stops
+    }
+  }
+  if (typeof window !== 'undefined') setTimeout(load, 1200);
+})();

@@ -826,6 +826,30 @@ def get_my_profile() -> tuple[Response, int]:
     return jsonify({"success": True, "data": profile}), 200
 
 
+def workspace_brand(db, workspace_id: str) -> dict:
+    """The brand this workspace's field team sells and its company name — shown instead of a fixed brand.
+    Bombay Dyeing workspaces keep exactly "Bombay Dyeing" so their saved visits and reports stay the same."""
+    ws = str(workspace_id or "")
+    company = None
+    try:
+        from app.services.company_invites import company_name_for_workspace
+
+        company = company_name_for_workspace(db, ws)
+    except Exception:
+        company = None
+    if ws.startswith("bombay_dyeing"):
+        brand = "Bombay Dyeing"
+    else:
+        brand = (company or "").strip()
+    return {"brand": brand, "company_name": (company or brand or "").strip()}
+
+
+@auth_blueprint.route("/api/v1/me/brand", methods=["GET"])
+@require_jwt_auth
+def get_my_brand() -> tuple[Response, int]:
+    return jsonify({"success": True, "data": workspace_brand(_get_auth_db(), get_workspace_id())}), 200
+
+
 @auth_blueprint.route("/api/v1/me/profile", methods=["PUT"])
 @require_jwt_auth
 def put_my_profile() -> tuple[Response, int]:
