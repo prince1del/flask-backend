@@ -48,8 +48,34 @@ def agent_gemini_models() -> tuple[str, ...]:
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
 
+def _business_ui() -> bool:
+    try:
+        from flask import has_request_context, request as _rq
+
+        return has_request_context() and (_rq.headers.get("X-Nexora-UI") or "").lower() == "business"
+    except Exception:
+        return False
+
+
+BUSINESS_PROMPT = """
+THE USER IS IN THE BUSINESS UI (their own billing / accounts books — like Vyapar). Here:
+- "party", "customer", "supplier", "vendor" = THEIR OWN customers / suppliers in the books, NOT Bombay Dyeing distributors.
+- For a party's balance / ledger ("X ka balance", "X ka hisaab") use get_hop_books what=party_statement with party_name.
+- Who owes money → receivables; what we owe → payables; unpaid bills → unpaid_bills; sales / profit → profit_loss;
+  cash / bank → cash_bank; stock / items → items; GST → gst; one day's entries → day_book; reminders → reminders;
+  services due → service; targets → targets; online catalogue orders → online_orders; how-to → get_hop_help.
+- Use the distributor / PJP / MRP tools only if the user clearly asks about Bombay Dyeing distributors.
+"""
+
+
 def _system_prompt() -> str:
     today = datetime.now(timezone.utc).date().isoformat()
+    if _business_ui():
+        return BUSINESS_PROMPT + "\n" + _system_prompt_base(today)
+    return _system_prompt_base(today)
+
+
+def _system_prompt_base(today: str) -> str:
     return f"""You are Nexora's assistant for a textile B2B sales exec (Bombay Dyeing
 workspace). Today's date is {today} (UTC) — use this to resolve relative dates
 ("tomorrow", "kal", "next Monday") into an actual YYYY-MM-DD before calling
