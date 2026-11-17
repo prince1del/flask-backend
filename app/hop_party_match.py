@@ -205,7 +205,10 @@ def name_similarity(a: str, b: str) -> float:
         tfa, tfb = _fold_repeats(re.sub(r"[^a-z0-9]", "", ta[0])), _fold_repeats(re.sub(r"[^a-z0-9]", "", tb[0]))
         if tfa and tfb:
             if tfa == tfb:
-                first_tok = 0.94
+                if len(ta) == 1 or len(tb) == 1:
+                    first_tok = 0.94          # short typing: "sidh" / "siddhi" → Siddhi Chandla
+                else:                         # same first word, the rest must look alike too ("QA Cool" ≠ "QA Night")
+                    first_tok = 0.55 + 0.4 * _levenshtein_ratio(" ".join(ta[1:]), " ".join(tb[1:]))
             else:
                 first_tok = max(_prefix_type_score(tfa, tfb), _levenshtein_ratio(tfa, tfb) * 0.92)
     type_prefix = _prefix_type_score(fa, fb)
