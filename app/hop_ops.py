@@ -3322,10 +3322,15 @@ def report_daily_activity(conn: sqlite3.Connection, workspace_id: str, day: str 
         (workspace_id, day),
     ).fetchone()
     # Billing: Payment-In and money received on sale invoices today; sale orders taken today.
+    # Money in today: Payment-In receipts + cash taken on the bill itself (not money linked later — no double count).
     billed_in = conn.execute(
-        """SELECT COALESCE(SUM(CASE WHEN txn_type=3 THEN total_amount ELSE total_amount - balance_amount END), 0)
+        """SELECT COALESCE(SUM(CASE WHEN txn_type=3 THEN total_amount ELSE COALESCE(received_amount, 0) END), 0)
            FROM hop_party_transactions WHERE workspace_id=? AND txn_type IN (1, 3) AND (source_txn_id IS NULL OR source_txn_id < 0)
              AND (deleted_at IS NULL OR trim(deleted_at)='') AND date(txn_date)=date(?)""", (workspace_id, day)).fetchone()
+    quotes_billing = conn.execute(
+        """SELECT COUNT(*) FROM hop_party_transactions WHERE workspace_id=? AND txn_type IN (27, 83)
+             AND (deleted_at IS NULL OR trim(deleted_at)='') AND date(txn_date)=date(?)""", (workspace_id, day)).fetchone()
+    quotes = int(quotes) + int(quotes_billing[0] or 0)
     sale_orders = conn.execute(
         """SELECT COUNT(*) FROM hop_party_transactions WHERE workspace_id=? AND txn_type=65
              AND (deleted_at IS NULL OR trim(deleted_at)='') AND date(txn_date)=date(?)""", (workspace_id, day)).fetchone()

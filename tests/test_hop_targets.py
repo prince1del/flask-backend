@@ -87,3 +87,22 @@ def test_profitability_from_bills(tmp_path):
         r = hop_ops.report_profitability(conn, WS)
     assert r["revenue"] == pytest.approx(1000) and r["cogs"] == pytest.approx(600) and r["gross_profit"] == pytest.approx(400)
     assert r["gross_margin_pct"] == pytest.approx(40)
+
+
+def test_daily_activity_no_double_count(tmp_path):
+    from app import hop_ops
+
+    p = str(tmp_path / "da.sqlite3")
+    ensure_hop_schema(p)
+    with connect(p) as conn:
+        c = create_customer(conn, WS, {"company": "B"})
+        d = "2026-11-18"
+        bill = create(conn, WS, {"txn_type": 1, "customer_id": c["id"], "txn_date": d,
+                                 "lines": [{"item_name": "x", "qty": 1, "rate": 1000}]})
+        create(conn, WS, {"txn_type": 3, "customer_id": c["id"], "txn_date": d, "amount": 400,
+                          "allocations": [{"txn_id": bill["party_txn_id"], "amount": 400}]})
+        create(conn, WS, {"txn_type": 27, "customer_id": c["id"], "txn_date": d,
+                          "lines": [{"item_name": "x", "qty": 1, "rate": 10}]})
+        conn.commit()
+        r = hop_ops.report_daily_activity(conn, WS, d)
+    assert r["collections"] == pytest.approx(400) and r["quotes_sent"] == 1
