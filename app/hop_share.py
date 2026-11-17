@@ -88,6 +88,16 @@ def qr_png_base64(text: str) -> str | None:
         return None
 
 
+def fmt_date(ymd: str, style: str | None) -> str:
+    """2026-11-18 → the owner's date format (Settings → Print): 18-11-2026, 18/11/2026, 18 Nov 2026 or as is."""
+    try:
+        y, m, d = ymd.split("-")
+        mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(m) - 1]
+    except (ValueError, IndexError):
+        return ymd
+    return {"dd/mm/yyyy": f"{d}/{m}/{y}", "yyyy-mm-dd": ymd, "dd mmm yyyy": f"{d} {mon} {y}"}.get(style or "", f"{d}-{m}-{y}")
+
+
 def share_payload(conn: sqlite3.Connection, ws: str, party_txn_id: int, kind: str = "bill") -> dict[str, Any]:
     from app import hop_app_settings
     from app.hop_money import LABELS
@@ -108,9 +118,9 @@ def share_payload(conn: sqlite3.Connection, ws: str, party_txn_id: int, kind: st
     firm = _firm(conn, ws).get("firm_name") or ""
     values = {
         "party": t.get("party_name") or "", "doc": LABELS.get(int(t.get("txn_type") or 0), t.get("txn_label") or "Bill"),
-        "number": t.get("txn_number") or "", "date": (t.get("txn_date") or "")[:10],
+        "number": t.get("txn_number") or "", "date": fmt_date((t.get("txn_date") or "")[:10], s.get("date_format")),
         "amount": _money(t.get("total_amount")), "due": _money(t.get("balance_amount")),
-        "due_date": t.get("due_date") or "", "firm": firm, "upi_link": upi["link"] if upi else "",
+        "due_date": fmt_date((t.get("due_date") or "")[:10], s.get("date_format")), "firm": firm, "upi_link": upi["link"] if upi else "",
         "upi_line": f" Pay by UPI: {upi['link']}" if upi else "",
     }
     tpl = str(s.get("msg_reminder" if kind == "reminder" else "msg_bill") or "").strip() or DEFAULT_TEMPLATE

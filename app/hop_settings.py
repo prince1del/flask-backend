@@ -330,7 +330,9 @@ def invoice_entry_warnings(
         if prow:
             gst_no = _s(prow["gst_no"] if "gst_no" in prow.keys() else "")
             gst_type = _s(prow["gst_type"] if "gst_type" in prow.keys() else "").lower()
-            registered = ("registered" in gst_type) or (len(gst_no) == 15)
+            # "Unregistered" contains the word "registered" — check for the un- first.
+            registered = (("registered" in gst_type or "regular" in gst_type or "composition" in gst_type)
+                          and "unregistered" not in gst_type and "consumer" not in gst_type)
             if registered and len(gst_no) != 15:
                 warnings.append({
                     "code": "missing_gstin",
