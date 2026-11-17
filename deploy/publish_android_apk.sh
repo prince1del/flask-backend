@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Publish a built NEXORA Android APK as the OTA update every phone will be offered.
 #
-#   bash deploy/publish_android_apk.sh "What changed in this version"
+#   bash deploy/publish_android_apk.sh "[business] New bill screen; [executive] Faster Hisaab; [all] Fingerprint lock"
+#
+# Points are split on ';'. Tag each with the UI it belongs to — [business], [executive] or [all]
+# (app lock, Ask Nexora, updates, watch…). No tag = all UIs. Each UI's Settings → Updates shows only its own
+# points plus [all]; a build with nothing for a UI does not pop the update window there.
 #
 # Build first (Android Studio or ./gradlew assembleDebug in the Nexora20 project).
 # Env overrides: APK_DIR, NEXORA_SERVER (default 3.7.170.77), SSH_KEY, SSH_USER.
@@ -34,7 +38,20 @@ LOCAL_LATEST=$(mktemp)
 "$PY" -c '
 import json, sys
 notes = sys.argv[1]
+TAGS = {"[business]": "business", "[b]": "business", "[executive]": "executive", "[e]": "executive",
+        "[all]": "all", "[a]": "all", "[global]": "all"}
+items = []
+for part in notes.split(";"):
+    text, ui = part.strip(), "all"
+    for tag, val in TAGS.items():
+        if text.lower().startswith(tag):
+            text, ui = text[len(tag):].strip(), val
+            break
+    if text:
+        items.append({"ui": ui, "text": text})
+notes = "; ".join(i["text"] for i in items)
 meta = {
+  "items": items,
   "version_code": int(sys.argv[2]),
   "version_name": sys.argv[3],
   "notes": notes,
@@ -65,7 +82,7 @@ d = pathlib.Path(sys.argv[1]); h = d / 'history.json'
 latest = json.loads((d / 'latest.json').read_text())
 items = json.loads(h.read_text()) if h.is_file() else []
 items = [r for r in items if r.get('version_code') != latest['version_code']]
-items.insert(0, {k: latest.get(k) for k in ('version_code', 'version_name', 'notes', 'published_at')})
+items.insert(0, {k: latest.get(k) for k in ('version_code', 'version_name', 'notes', 'items', 'published_at')})
 h.write_text(json.dumps(items[:200], ensure_ascii=False, indent=1))
 PYH
   # keep the 3 newest APKs (rollback = point latest.json at an older one)

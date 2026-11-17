@@ -17,7 +17,7 @@ import json
 import os
 from pathlib import Path
 
-from flask import Blueprint, jsonify, send_file
+from flask import Blueprint, jsonify, request, send_file
 
 from app.routes.auth import require_jwt_auth
 
@@ -62,12 +62,53 @@ def _load_latest(platform: str = "android") -> dict | None:
     return meta
 
 
+# ---- Which UI a change belongs to: each point is "business", "executive" or "all" (app lock, Ask Nexora…).
+_TAGS = {"[business]": "business", "[b]": "business", "[executive]": "executive", "[e]": "executive",
+         "[all]": "all", "[a]": "all", "[global]": "all"}
+UIS = ("business", "executive", "all")
+
+
+def release_items(r: dict) -> list[dict]:
+    """Points of one build. Uses `items` when published with them; else splits `notes` on ';' and reads a
+    leading [business] / [executive] / [all] tag (no tag = all UIs)."""
+    raw = r.get("items")
+    if isinstance(raw, list) and raw:
+        out = []
+        for i in raw:
+            if isinstance(i, dict) and str(i.get("text") or "").strip():
+                ui = str(i.get("ui") or "all").strip().lower()
+                out.append({"ui": ui if ui in UIS else "all", "text": str(i["text"]).strip()})
+        if out:
+            return out
+    out = []
+    for part in str(r.get("notes") or "").split(";"):
+        text, ui = part.strip(), "all"
+        low = text.lower()
+        for tag, val in _TAGS.items():
+            if low.startswith(tag):
+                text, ui = text[len(tag):].strip(), val
+                break
+        if text:
+            out.append({"ui": ui, "text": text})
+    return out
+
+
+def items_for(items: list[dict], ui: str | None) -> list[dict]:
+    """Only this UI's points plus the ones for every UI. No ui = everything (older phones)."""
+    ui = (ui or "").strip().lower()
+    if not ui:
+        return items
+    return [i for i in items if i["ui"] in ("all", ui)]
+
+
 @app_updates_bp.route("/android/latest", methods=["GET"])
 @require_jwt_auth
 def android_latest():
     meta = _load_latest()
     if meta is None:
         return jsonify({"success": True, "data": {"available": False}}), 200
+    ui = request.args.get("ui")
+    mine = items_for(release_items(meta), ui)
     return jsonify(
         {
             "success": True,
@@ -75,7 +116,10 @@ def android_latest():
                 "available": True,
                 "version_code": meta["version_code"],
                 "version_name": meta.get("version_name") or str(meta["version_code"]),
-                "notes": meta.get("notes") or "",
+                # Nothing for this UI → the phone does not pop the update window (Settings still offers it).
+                "relevant": bool(mine) or not ui,
+                "items": mine,
+                "notes": "; ".join(i["text"] for i in mine) if mine else "Small fixes and improvements",
                 "sha256": meta.get("sha256") or "",
                 "size_bytes": meta.get("size_bytes"),
                 "published_at": meta.get("published_at"),
@@ -102,7 +146,7 @@ def android_download():
     )
 
 
-def _load_history() -> list[dict]:
+def _load_history(ui: str | None = None) -> list[dict]:
     """Every published build (newest first) from history.json; latest.json as fallback."""
     path = _android_release_dir() / "history.json"
     items: list[dict] = []
@@ -121,10 +165,14 @@ def _load_history() -> list[dict]:
             code = int(r.get("version_code"))
         except (TypeError, ValueError):
             continue
+        mine = items_for(release_items(r), ui)
+        if ui and not mine:
+            continue  # nothing in this build for this UI
         out.append({
             "version_code": code,
             "version_name": r.get("version_name") or str(code),
-            "notes": r.get("notes") or "",
+            "notes": "; ".join(i["text"] for i in mine),
+            "items": mine,
             "published_at": r.get("published_at"),
         })
     out.sort(key=lambda r: r["version_code"], reverse=True)
@@ -134,5 +182,6 @@ def _load_history() -> list[dict]:
 @app_updates_bp.route("/android/releases", methods=["GET"])
 @require_jwt_auth
 def android_releases():
-    """What changed in each build - Settings → Updates on the phone."""
-    return jsonify({"success": True, "data": {"releases": _load_history()}}), 200
+    """What changed in each build - Settings → Updates on the phone. ?ui=business|executive → only that
+    UI's changes plus the ones for every UI (app lock, Ask Nexora, updates…)."""
+    return jsonify({"success": True, "data": {"releases": _load_history(request.args.get("ui"))}}), 200
