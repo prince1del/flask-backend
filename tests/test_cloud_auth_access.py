@@ -58,7 +58,7 @@ def test_login_page_uses_branded_approved_ui(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert b"Nexora Login" in response.data
     # Approved branded shell, not the old plain login page.
-    assert b"HOUSE OF PRIZM" in response.data
+    assert b"NEXORA" in response.data and b"HOUSE OF PRIZM" not in response.data  # every customer sees NEXORA, not one company
     assert b"login-brand-sub" in response.data
 
 

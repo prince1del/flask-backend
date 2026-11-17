@@ -44,6 +44,32 @@ def _slugify(text: str) -> str:
     return slug or "company"
 
 
+@signup_bp.route("/signup/send-code", methods=["POST"])
+def signup_send_code():
+    """Step 1 of sign-up: email a 6-digit code to the address typed on the form."""
+    from app.services import signup_email_code as sec
+    from app.services.outbound_mail import send_plain_email, smtp_configured
+
+    if not smtp_configured():
+        return jsonify({"success": False, "error": {"message": "Email codes are not set up — sign up without a code."}}), 503
+    email = (request.get_json(silent=True) or {}).get("email") or ""
+    db = _get_auth_db()
+    if sec.email_taken(str(db.db_path), email):
+        return jsonify({"success": False, "error": {
+            "message": "This email already has an account — sign in, or use Forgot user ID / Forgot password."}}), 409
+    try:
+        code = sec.new_code(str(db.db_path), email)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc)}}), 400
+    ok, err = send_plain_email(
+        to=email.strip(), subject="Your NEXORA sign-up code",
+        body=(f"Your NEXORA sign-up code is: {code}\n\n"
+              "It is valid for 15 minutes. If you did not try to sign up, ignore this email."))
+    if not ok:
+        return jsonify({"success": False, "error": {"message": f"Could not send the email: {err}"}}), 502
+    return jsonify({"success": True, "message": "Code sent — check your email (and Spam)."}), 200
+
+
 @signup_bp.route("/signup", methods=["POST"])
 def signup():
     data = request.get_json(silent=True) or {}
@@ -73,6 +99,15 @@ def signup():
             "success": False,
             "error": {"message": "secret_question and secret_answer are required"},
         }), 400
+    # Email check: with email sending set up, the account is made only with the code from that email.
+    from app.services.outbound_mail import smtp_configured
+
+    if smtp_configured():
+        from app.services import signup_email_code as sec
+
+        ok_code, code_msg = sec.check_code(str(_get_auth_db().db_path), email, data.get("email_code") or "", consume=False)
+        if not ok_code:
+            return jsonify({"success": False, "error": {"code": "EMAIL_CODE", "message": code_msg}}), 400
     role = CATEGORY_TO_ROLE.get(category)
     if not role and not invite_code:
         return jsonify({
