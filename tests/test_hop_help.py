@@ -19,3 +19,12 @@ def test_help_route(tmp_path, monkeypatch):
     client, h, _ = _setup_hop_wipe_client(tmp_path, monkeypatch)
     assert client.get("/api/v1/hop/help?screen=godowns", headers=h).get_json()["data"]["title"] == "Godowns"
     assert "invoices" in client.get("/api/v1/hop/help", headers=h).get_json()["data"]["topics"]
+
+
+def test_every_screen_has_on_this_screen():
+    from app.hop_help import HELP, topic
+
+    for k in HELP:
+        t = topic(k)
+        assert t["shows"], f"{k}: no 'On this screen' lines"
+        assert all(" — " in x for x in t["shows"]), k

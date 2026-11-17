@@ -2566,6 +2566,7 @@ async function hopHelpOpen() {
     <div style="display:flex;align-items:center;"><h2 style="margin:0;flex:1;">${esc(t.title)}</h2>
       <button type="button" class="nx-btn" onclick="document.getElementById('hop-help-overlay').remove()">Close</button></div>
     <p>${esc(t.what)}</p>
+    ${t.shows?.length ? `<h4>On this screen</h4><ul>${t.shows.map((x) => { const i = x.indexOf(' — '); return i > 0 ? `<li><b>${esc(x.slice(0, i))}</b> — ${esc(x.slice(i + 3))}</li>` : `<li>${esc(x)}</li>`; }).join('')}</ul>` : ''}
     ${t.steps?.length ? `<h4>How to use</h4><ol>${t.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
     ${t.tips?.length ? `<h4>Tips</h4><ul>${t.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${t.ai ? `<p style="padding:10px 12px;border-radius:10px;background:rgba(124,58,237,.08);">✨ ${esc(t.ai)}</p>` : ''}

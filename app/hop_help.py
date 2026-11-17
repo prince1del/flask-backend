@@ -85,11 +85,9 @@ HELP: dict[str, dict[str, Any]] = {
                     "steps": ["A new version shows “New” — tap Install now.", "Changes made only for other UIs are not listed here."],
                     "tips": ["The update window pops up only when something changed for you."], "ai": ""},
     "reminders": {"title": "Reminders", "what": "Two tabs. PAYMENTS = customers who owe you money on sale bills. SERVICE = customers whose sold item (AC, RO, generator…) is due for service.",
-                  "steps": ["PAYMENTS tab shows every sale bill with money still due, in 3 groups: Overdue (due date passed), Due today, Due soon (next few days) — with customer, bill no., due date and balance.",
-                            "On a payment card: WhatsApp / SMS sends your payment reminder (opens the app ready to send); Email for customers with an email.",
-                            "SERVICE tab shows items you sold that need service: Service overdue, Service due today, Service in 7 days — with customer, item, sale date and service date.",
-                            "To start service reminders: open the item → “Service every (days)” (e.g. AC 180, RO 90). Every sale of that item then shows here when service is due.",
-                            "On a service card: WhatsApp / SMS asks the customer to book a visit; tap Done after the service — the next one is counted from that day.",
+                  "steps": ["Open Payments, tap WhatsApp / SMS / Email on a card to remind that customer.",
+                            "For services: open the item → “Service every (days)” (AC 180, RO 90…). Every sale of that item then shows in the Service tab when due.",
+                            "After the service visit tap Done — the next one is counted from that day.",
                             "Settings → Reminders: a 9 am email with today's list (payments + services), automatic payment emails, a daily backup email."],
                   "tips": ["Change the words in Settings → Sharing (payment reminder and service reminder messages).",
                            "A customer is not emailed again before the repeat gap you set.",
@@ -164,14 +162,20 @@ HELP: dict[str, dict[str, Any]] = {
 ALIASES = {"sale_invoices": "invoices", "reports": "books", "purchase_fa": "purchase_bills", "sale_fa": "invoices"}
 
 
+def _with_shows(k: str, t: dict[str, Any]) -> dict[str, Any]:
+    from app.hop_help_screens import SHOWS
+
+    return {"key": k, **t, "shows": SHOWS.get(k, [])}
+
+
 def topic(key: str) -> dict[str, Any] | None:
     k = ALIASES.get(key, key)
     t = HELP.get(k)
-    return {"key": k, **t} if t else None
+    return _with_shows(k, t) if t else None
 
 
 def all_topics() -> dict[str, Any]:
-    return {"topics": {k: {"key": k, **v} for k, v in HELP.items()}, "aliases": ALIASES}
+    return {"topics": {k: _with_shows(k, v) for k, v in HELP.items()}, "aliases": ALIASES}
 
 
 def search(q: str) -> list[dict[str, Any]]:
@@ -179,8 +183,10 @@ def search(q: str) -> list[dict[str, Any]]:
     words = [w for w in q.lower().replace("?", " ").split() if len(w) > 2]
     scored = []
     for k, v in HELP.items():
-        text = " ".join([v["title"], v["what"], *v["steps"], *v["tips"], v["ai"]]).lower()
+        from app.hop_help_screens import SHOWS
+
+        text = " ".join([v["title"], v["what"], *SHOWS.get(k, []), *v["steps"], *v["tips"], v["ai"]]).lower()
         s = sum(1 for w in words if w in text) + (3 if any(w in v["title"].lower() for w in words) else 0)
         if s:
-            scored.append((s, {"key": k, **v}))
+            scored.append((s, _with_shows(k, v)))
     return [t for _, t in sorted(scored, key=lambda x: -x[0])[:3]]
