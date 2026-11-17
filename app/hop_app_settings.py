@@ -109,6 +109,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 def get_all(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
     ensure_schema(conn)
     vals = {s["key"]: s["default"] for s in SCHEMA}
+    try:   # number prefixes: this business's own initials unless it already uses a series (see hop_doc_numbers)
+        from app.hop_doc_numbers import default_prefix
+
+        for s in SCHEMA:
+            if s["key"].startswith("prefix_"):
+                vals[s["key"]] = default_prefix(conn, ws, int(s["key"].split("_")[1]))
+    except Exception:
+        pass
     for k, v in conn.execute("SELECT key, value FROM hop_app_settings WHERE workspace_id=?", (ws,)).fetchall():
         if k in BY_KEY:
             try:

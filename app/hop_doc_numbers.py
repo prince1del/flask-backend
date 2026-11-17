@@ -24,6 +24,41 @@ HOP_DOC_PREFIX_BY_TYPE: dict[int, str] = {
     81: "HOPJE",  # Journal Entry
 }
 
+# Short code added after the business's initials for each document (Test firm → TF, TFEST, TFPB …).
+TYPE_SUFFIX: dict[int, str] = {1: "", 27: "EST", 83: "PI", 3: "RC", 65: "SO", 30: "DC", 82: "DC", 21: "CN",
+                               2: "PB", 4: "PAY", 7: "EX", 66: "PO", 16: "DN", 81: "JE", 29: "OI"}
+
+
+def business_code(name: str) -> str:
+    """Initials of the business name: "Sharma Electronics Pvt Ltd" → "SE", "Lumina" → "LUM"."""
+    words = [w for w in re.findall(r"[A-Za-z]+", name or "") if w.lower() not in ("pvt", "ltd", "llp", "the", "and", "co", "private", "limited")]
+    if not words:
+        return "INV"
+    if len(words) == 1:
+        return words[0][:3].upper()
+    return "".join(w[0] for w in words[:3]).upper()
+
+
+def default_prefix(conn: sqlite3.Connection, ws: str, txn_type: int) -> str:
+    """Prefix when the owner has not set one: their own initials — never another company's.
+    House of Prizm, and any business that already has a HOP… series of this type, keep it (no break mid-year)."""
+    t = 30 if int(txn_type) == 82 else int(txn_type)
+    legacy = HOP_DOC_PREFIX_BY_TYPE.get(t)
+    try:
+        from app.hop_schema import HOP_WORKSPACE_ID
+
+        if legacy and (str(ws).split("__f")[0] == HOP_WORKSPACE_ID or conn.execute(
+                "SELECT 1 FROM hop_party_transactions WHERE workspace_id=? AND txn_type=? AND txn_number LIKE ? LIMIT 1",
+                (ws, t, legacy + "/%")).fetchone()):
+            return legacy
+        from app import hop_firms
+
+        name = hop_firms.business_name(conn, ws, "")
+    except Exception:
+        name = ""
+    return business_code(name) + TYPE_SUFFIX.get(t, "")
+
+
 _SHORT_NUMERIC_RE = re.compile(r"^\d{1,6}$")
 _ALREADY_FULL_RE = re.compile(r"[A-Za-z].*/|/.*\d{2,4}")
 

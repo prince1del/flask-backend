@@ -751,17 +751,24 @@ def next_manual_doc_number(
     txn_type: int,
     txn_date: str,
 ) -> str:
-    from app.hop_doc_numbers import HOP_DOC_PREFIX_BY_TYPE, indian_fy_label
+    from app.hop_doc_numbers import default_prefix, indian_fy_label
 
-    prefix = HOP_DOC_PREFIX_BY_TYPE.get(int(txn_type))
+    prefix = None
     try:
         from app import hop_app_settings
 
-        custom = hop_app_settings.get(conn, workspace_id, f"prefix_{30 if int(txn_type) == 82 else int(txn_type)}")
+        saved = conn.execute("SELECT value FROM hop_app_settings WHERE workspace_id=? AND key=?",
+                             (workspace_id, f"prefix_{30 if int(txn_type) == 82 else int(txn_type)}")).fetchone()
+        import json as _json
+
+        custom = _json.loads(saved[0]) if saved and saved[0] else ""
         if custom:
             prefix = str(custom)
+        _ = hop_app_settings
     except Exception:
         pass
+    if not prefix:
+        prefix = default_prefix(conn, workspace_id, int(txn_type))
     fy = indian_fy_label(txn_date)
     if not prefix or not fy:
         return str(int(txn_type))
