@@ -4255,7 +4255,10 @@ function hopOpenPartyTxnInModule(txnId) {
 function hopPreviewMoney(n) {
   const v = Number(n || 0);
   const dp = Number(hopState.docPreviewPrint?.decimals ?? 2) === 0 ? 0 : 2;
-  return `₹ ${v.toLocaleString('en-IN', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
+  const pr = hopState.docPreviewPrint || {};
+  const cur = pr.currency === undefined ? '₹' : String(pr.currency || '');
+  const num = v.toLocaleString('en-IN', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  return cur ? `${cur} ${num}` : num;
 }
 
 function hopPreviewDate(ymd) {
@@ -4280,9 +4283,10 @@ function hopPrintPartyTxnPreview() {
   const styles = (window.hopDocPrintStylesheet || hopDocPrintStylesheetFallback)();
   const pr = hopState.docPreviewPrint || {};
   const paper = pr.paper || 'a4';
+  const mm = Number(pr.margin_mm || 10);
   const pageCss = {
-    a4: '@page{size:A4;margin:10mm;}',
-    a5: '@page{size:A5;margin:7mm;} body{font-size:11px;}',
+    a4: `@page{size:A4;margin:${mm}mm;}`,
+    a5: `@page{size:A5;margin:${Math.max(4, mm - 3)}mm;} body{font-size:11px;}`,
     thermal80: '@page{size:80mm auto;margin:3mm;} body{font-size:10px;padding:0;} .hop-doc-preview-sheet{max-width:74mm;}',
     thermal58: '@page{size:58mm auto;margin:2mm;} body{font-size:9px;padding:0;} .hop-doc-preview-sheet{max-width:54mm;}',
   }[paper] || '';

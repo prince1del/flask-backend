@@ -232,7 +232,7 @@ approval last main lenge". Every batch ships server + web + phone + AI help + he
 
 | Batch | Features | State |
 |---|---|---|
-| 1 Print & formats | Currency symbol; HSN + tax-breakup columns on print; header/footer text; page margins; date/decimal format on app screens too | ⏳ |
+| 1 Print & formats | Currency symbol; HSN + tax-breakup columns on print; header/footer text; page margins; CGST/SGST vs IGST split (phone printed IGST always — fixed) | ✅ built 2026-11-17 (date/decimals stay bill-only) |
 | 2 Business | Manufacturing (raw-material list per item → "Manufacture" entry: raw stock down, finished stock up, cost); loyalty points (earn per ₹, redeem on bill); service reminders (item service period → due list + WhatsApp); automatic payment reminders (daily list + one-tap send); automatic daily backup by e-mail | ⏳ |
 | 3 Phone | Bluetooth thermal printer (ESC/POS 58/80 mm); SMS bill/reminder via phone's SMS app; offline lists (parties, items, bills readable with no internet) | ⏳ |
 | 4 Data | Old-software backup: bank accounts, cheques, loans also imported; one-tap restore of a NEXORA backup into a NEW firm (never overwrites); online catalogue link (customer sees items, sends an order → Sale Order) | ⏳ |

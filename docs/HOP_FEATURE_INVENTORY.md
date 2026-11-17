@@ -15,7 +15,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 | Multiple firms (companies) in one login | ✅ firm switcher (phone + web); each firm has its own parties, items, bills, bank, GST, settings, numbering |
 | Backup / restore by the user | 🟡 download backup zip (phone + web, Settings); restore with support (no one-click overwrite) |
 | Date format, decimal places (qty, amount) | 🟡 bills: date format + paise / whole rupees (phone + web); app screens keep ₹0.00 |
-| Currency symbol | ❌ (₹ fixed) |
+| Currency symbol | ✅ on bills (₹, Rs., $, €, £, AED or none) — accounts stay in rupees |
 
 ### Transaction
 | Setting | State |
@@ -51,9 +51,9 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 |---|---|
 | Print theme / colour | ✅ (Cursor) |
 | Paper size (A4 / A5 / thermal 2"/3") | ✅ Settings → Print (web prints all; phone PDF A4/A5) |
-| Show/hide: amount in words, signature, bank details, terms + footer text | ✅ Settings (HSN/tax breakup columns ❌) |
+| Show/hide: amount in words, signature, bank details, terms + footer text | ✅ Settings; HSN column on/off; HSN-wise tax summary table |
 | Copies (Original / Duplicate / Triplicate) | ✅ Settings → Print (web print + phone PDF) |
-| Header/footer text, page margins | ❌ |
+| Header/footer text, page margins | ✅ header line above company name, footer, margins 5/10/15 mm (web print + phone PDF) |
 
 ### Messages & reminders
 | Setting | State |
@@ -172,3 +172,7 @@ Rule: no setting without real behaviour behind it; every setting shows on web **
 - 2026-11-17: In-app help — ⓘ (phone) / ? Help (web) on every HoP screen: what it is, steps, tips and
   how AI helps (one list on the server, app/hop_help.py). Ask Nexora answers “kaise karein” questions
   from the same guides (tool get_hop_help). Tutorial videos can be added later as a link per screen.
+- 2026-11-17: Print batch — bills now show **CGST + SGST** (same state) or **IGST** (other state / place of
+  supply) from the server, cess on its own line; the phone used to print IGST on every bill (fixed). Plus
+  currency symbol, header line, footer (was saved but never printed — fixed), HSN column on/off, HSN-wise
+  tax summary, page margins. Web print + phone preview + phone PDF.

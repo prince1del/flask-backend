@@ -513,6 +513,7 @@ def build_txn_preview(
                 "section_title": _clean(ln.get("section_title")),
                 "tax_pct": float(ln.get("tax_pct") or 0),
                 "tax_amount": float(ln.get("tax_amount") or 0),
+                "cess_amount": float(ln.get("cess_amount") or 0),
                 "line_total": float(ln.get("line_total") or 0),
             }
             for ln in lines
@@ -640,7 +641,11 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
         data["terms"] = ""
         data["delivery_terms"] = ""
     data["footer"] = s.get("print_footer") or ""
-    data["print"] = {"paper": s.get("print_paper") or "a4", "copies": int(s.get("print_copies") or 1),
+    cur = s.get("currency_symbol") or "₹"
+    data["print"] = {"currency": "" if cur == "none" else cur, "header": s.get("print_header") or "",
+                     "hsn_column": bool(s.get("print_hsn_column", True)),
+                     "margin_mm": {"narrow": 5, "wide": 15}.get(s.get("print_margin") or "normal", 10),
+                     "paper": s.get("print_paper") or "a4", "copies": int(s.get("print_copies") or 1),
                      "date_format": s.get("date_format") or "dd-mm-yyyy", "decimals": int(s.get("amount_decimals") or 2),
                      "copy_labels": ["Original for Recipient", "Duplicate for Transporter", "Triplicate for Supplier"]
                      [: int(s.get("print_copies") or 1)]}
@@ -653,6 +658,13 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
             data["upi"] = hop_share.bill_upi(conn, workspace_id, dict(t)) if t else None
         except Exception:
             data["upi"] = None
+    try:
+        inter = _is_interstate(conn, workspace_id, data)
+        data["gst_split"] = gst_split_rows(data, inter)
+        data["interstate"] = inter
+        data["hsn_summary"] = hsn_summary(data, inter) if s.get("print_hsn_summary") else []
+    except Exception:
+        data["gst_split"], data["hsn_summary"] = [], []
     header = data.get("header") or {}
     if s.get("composition_scheme") and int(header.get("txn_type") or 0) == 1:
         header["doc_title"] = "Bill of Supply"
@@ -1336,3 +1348,93 @@ def delete_manual_party_document(
     from app import hop_phase3_ext
 
     return hop_phase3_ext.soft_delete_document(conn, workspace_id, int(party_txn_id))
+
+
+# ---------------- GST split (CGST + SGST or IGST) and HSN summary for the printed bill ----------------
+_PURCHASE_SIDE = {2, 7, 23, 28, 81}
+
+
+def _is_interstate(conn: sqlite3.Connection, workspace_id: str, data: dict[str, Any]) -> bool | None:
+    """True = IGST, False = CGST + SGST, None = states unknown (bill just says "GST").
+    Place of supply on the bill wins; otherwise the buyer's state."""
+    from app.hop_einvoice import _state
+
+    firm, party, header = data.get("firm") or {}, data.get("party") or {}, data.get("header") or {}
+    firm_st = _state(_clean(firm.get("gstin")).upper(), firm.get("state") or "")
+    party_st = _state(_clean(party.get("gstin")).upper(), party.get("state") or "")
+    pos = ""
+    hid = header.get("id")
+    if hid:
+        try:
+            r = conn.execute("SELECT place_of_supply FROM hop_party_transactions WHERE workspace_id=? AND id=?",
+                             (workspace_id, int(hid))).fetchone()
+            pos = _clean(r[0]) if r else ""
+        except Exception:
+            pos = ""
+    if pos and not pos[:2].isdigit():
+        pos = _state("", pos)
+    pos = pos[:2]
+    purchase = int(header.get("txn_type") or 0) in _PURCHASE_SIDE
+    seller, buyer = (party_st, firm_st) if purchase else (firm_st, party_st)
+    supply = pos or buyer
+    if not seller or not supply:
+        return None
+    return seller != supply
+
+
+def _pct_txt(p: float) -> str:
+    return (f"{p:.2f}".rstrip("0").rstrip(".")) or "0"
+
+
+def gst_split_rows(data: dict[str, Any], inter: bool | None) -> list[dict[str, Any]]:
+    """Tax rows for the totals box: IGST @ 5% / CGST @ 2.5% + SGST @ 2.5% / Cess."""
+    cess_by_pct: dict[float, float] = {}
+    for ln in data.get("lines") or []:
+        c = float(ln.get("cess_amount") or 0)
+        if c:
+            k = round(float(ln.get("tax_pct") or 0), 2)
+            cess_by_pct[k] = cess_by_pct.get(k, 0.0) + c
+    rows: list[dict[str, Any]] = []
+    cess_total = 0.0
+    for b in (data.get("totals") or {}).get("tax_breakdown") or []:
+        pct = round(float(b.get("tax_pct") or 0), 2)
+        cess = round(cess_by_pct.get(pct, 0.0), 2)
+        amt = round(float(b.get("tax_amount") or 0) - cess, 2)
+        cess_total += cess
+        if amt <= 0.009:
+            continue
+        if inter is True:
+            rows.append({"label": f"IGST @ {_pct_txt(pct)}%", "amount": amt})
+        elif inter is False:
+            half = round(amt / 2, 2)
+            rows.append({"label": f"CGST @ {_pct_txt(pct / 2)}%", "amount": half})
+            rows.append({"label": f"SGST @ {_pct_txt(pct / 2)}%", "amount": round(amt - half, 2)})
+        else:
+            rows.append({"label": f"GST @ {_pct_txt(pct)}%", "amount": amt})
+    if cess_total > 0.009:
+        rows.append({"label": "Cess", "amount": round(cess_total, 2)})
+    return rows
+
+
+def hsn_summary(data: dict[str, Any], inter: bool | None) -> list[dict[str, Any]]:
+    """One row per HSN + GST rate: taxable value and the tax split."""
+    groups: dict[tuple[str, float], dict[str, float]] = {}
+    for ln in data.get("lines") or []:
+        pct = round(float(ln.get("tax_pct") or 0), 2)
+        key = (_clean(ln.get("hsn")) or "—", pct)
+        g = groups.setdefault(key, {"taxable": 0.0, "tax": 0.0, "cess": 0.0})
+        tax, cess = float(ln.get("tax_amount") or 0), float(ln.get("cess_amount") or 0)
+        g["taxable"] += float(ln.get("line_total") or 0) - tax
+        g["tax"] += tax - cess
+        g["cess"] += cess
+    out = []
+    for (hsn, pct), g in sorted(groups.items()):
+        tax = round(g["tax"], 2)
+        half = round(tax / 2, 2)
+        igst = tax if inter is True else 0.0
+        cgst = half if inter is False else 0.0
+        sgst = round(tax - half, 2) if inter is False else 0.0
+        out.append({"hsn": hsn, "tax_pct": pct, "taxable": round(g["taxable"], 2), "cgst": cgst, "sgst": sgst,
+                    "igst": igst, "gst": tax if inter is None else 0.0, "cess": round(g["cess"], 2),
+                    "total_tax": round(tax + g["cess"], 2)})
+    return out

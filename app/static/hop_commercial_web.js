@@ -279,8 +279,11 @@
     const lines = data.lines || [];
     const title = header.doc_title || 'Document';
     const forLabel = /purchase|payment\s*out|expense/i.test(title) ? `${title} From` : `${title} For`;
+    const pr = data.print || {};
+    const showHsn = pr.hsn_column !== false;
+    const topLine = pr.header ? `<div class="hop-doc-topline" style="text-align:center;font-weight:600;margin-bottom:6px;">${foEscapeText(pr.header)}</div>` : '';
 
-    const firmBlock = `
+    const firmBlock = `${topLine}
       <div class="hop-doc-firm">
         <div class="hop-doc-firm-text">
           <div class="hop-doc-firm-name">${foEscapeText(firm.name || 'House of Prizm')}</div>
@@ -328,7 +331,7 @@
         return `<tr>
           <td>${i + 1}</td>
           <td><div class="hop-doc-item-name">${foEscapeText(ln.item_name || 'Item')}</div>${ln.description ? `<div class="hop-doc-muted">${foEscapeText(ln.description)}</div>` : ''}</td>
-          <td>${foEscapeText(ln.hsn || '')}</td>
+          ${showHsn ? `<td>${foEscapeText(ln.hsn || '')}</td>` : ''}
           <td class="num">${qty.toLocaleString('en-IN')}</td>
           <td>${foEscapeText(ln.unit || 'Pcs')}</td>
           <td class="num">${hopPreviewMoney(rate)}</td>
@@ -339,18 +342,18 @@
       linesHtml = `
         <table class="hop-doc-table">
           <thead><tr>
-            <th>#</th><th>Item Name</th><th>HSN/SAC</th><th>Quantity</th>
+            <th>#</th><th>Item Name</th>${showHsn ? '<th>HSN/SAC</th>' : ''}<th>Quantity</th>
             <th>Unit</th><th>Price/Unit</th><th>GST</th><th>Amount</th>
           </tr></thead>
           <tbody>${rows}</tbody>
           <tfoot><tr>
-            <td colspan="3" class="num"><strong>Total</strong></td>
+            <td colspan="${showHsn ? 3 : 2}" class="num"><strong>Total</strong></td>
             <td class="num"><strong>${Number(totals.qty || 0).toLocaleString('en-IN')}</strong></td>
             <td></td><td></td>
             <td class="num"><strong>${hopPreviewMoney(totals.tax_total)}</strong></td>
             <td class="num"><strong>${hopPreviewMoney(totals.grand_total)}</strong></td>
           </tr></tfoot>
-        </table>`;
+        </table>${hopDocHsnSummaryHtml(data)}`;
     } else {
       linesHtml = `
         <div class="hop-doc-missing">
@@ -399,7 +402,9 @@
             <div class="hop-doc-tot-row"><span>Sub Total</span><strong>${hopPreviewMoney(totals.sub_total)}</strong></div>
             ${Number(totals.discount_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>Discount</span><strong>${hopPreviewMoney(totals.discount_amount)}</strong></div>` : ''}
             ${Number(totals.shipping_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>Shipping</span><strong>${hopPreviewMoney(totals.shipping_amount)}</strong></div>` : ''}
-            <div class="hop-doc-tot-row"><span>${foEscapeText(taxLabel)}</span><strong>${hopPreviewMoney(totals.tax_total)}</strong></div>
+            ${(data.gst_split && data.gst_split.length)
+    ? data.gst_split.map((g) => `<div class="hop-doc-tot-row"><span>${foEscapeText(g.label)}</span><strong>${hopPreviewMoney(g.amount)}</strong></div>`).join('')
+    : `<div class="hop-doc-tot-row"><span>${foEscapeText(taxLabel)}</span><strong>${hopPreviewMoney(totals.tax_total)}</strong></div>`}
             ${Number(totals.tcs_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>TCS @${foEscapeText(totals.tcs_pct)}%</span><strong>${hopPreviewMoney(totals.tcs_amount)}</strong></div>` : ''}
             ${Number(totals.tds_amount || 0) > 0.009 ? `<div class="hop-doc-tot-row"><span>TDS deducted @${foEscapeText(totals.tds_pct)}%</span><strong>− ${hopPreviewMoney(totals.tds_amount)}</strong></div>` : ''}
             <div class="hop-doc-tot-row hop-doc-tot-grand"><span>Total</span><strong>${hopPreviewMoney(totals.grand_total)}</strong></div>
@@ -410,7 +415,30 @@
             </div>
           </div>
         </div>
+        ${data.footer ? `<div class="hop-doc-footer" style="text-align:center;margin-top:10px;font-size:11px;color:#475569;">${foEscapeText(data.footer)}</div>` : ''}
       </div>`;
+  }
+
+  /** Settings → Print "HSN-wise tax summary": taxable value and the CGST/SGST or IGST split per HSN. */
+  function hopDocHsnSummaryHtml(data) {
+    const rows = data.hsn_summary || [];
+    if (!rows.length) return '';
+    const inter = data.interstate;
+    const cols = inter === true ? ['IGST'] : inter === false ? ['CGST', 'SGST'] : ['GST'];
+    const hasCess = rows.some((r) => Number(r.cess || 0) > 0.009);
+    const body = rows.map((r) => {
+      const half = Number(r.tax_pct || 0) / 2;
+      const cells = inter === true ? [[r.tax_pct, r.igst]] : inter === false ? [[half, r.cgst], [half, r.sgst]] : [[r.tax_pct, r.gst]];
+      return `<tr><td>${foEscapeText(r.hsn)}</td><td class="num">${hopPreviewMoney(r.taxable)}</td>
+        ${cells.map(([p, a]) => `<td class="num">${foEscapeText(String(Math.round(p * 100) / 100))}%</td><td class="num">${hopPreviewMoney(a)}</td>`).join('')}
+        ${hasCess ? `<td class="num">${hopPreviewMoney(r.cess)}</td>` : ''}
+        <td class="num">${hopPreviewMoney(r.total_tax)}</td></tr>`;
+    }).join('');
+    return `<table class="hop-doc-table hop-doc-hsn-summary" style="margin-top:8px;">
+      <thead><tr><th>HSN/SAC</th><th>Taxable value</th>
+        ${cols.map((c) => `<th>${c} rate</th><th>${c} amount</th>`).join('')}
+        ${hasCess ? '<th>Cess</th>' : ''}<th>Total tax</th></tr></thead>
+      <tbody>${body}</tbody></table>`;
   }
 
   /** Replaces basic hop_app.js preview — commercial + Vyapar with logo/signature. */

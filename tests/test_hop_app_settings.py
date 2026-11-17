@@ -102,7 +102,8 @@ def test_print_options_and_composition(db):
         assert pv["totals"]["amount_in_words"] == "" and pv["terms"] == "" and pv["footer"] == "Thank you!"
         assert pv["header"]["doc_title"] == "Bill of Supply"
         assert pv["print"] == {"paper": "a4", "copies": 1, "copy_labels": ["Original for Recipient"],
-                               "date_format": "dd-mm-yyyy", "decimals": 2}
+                               "date_format": "dd-mm-yyyy", "decimals": 2,
+                               "currency": "₹", "header": "", "hsn_column": True, "margin_mm": 10}
         S.save(conn, WS, {"print_paper": "a5", "print_copies": "3"})
         pv = build_txn_preview(conn, WS, party_txn_id=inv["party_txn_id"])
         assert pv["print"]["paper"] == "a5" and len(pv["print"]["copy_labels"]) == 3
