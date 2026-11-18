@@ -210,7 +210,8 @@
       "date": "2026-11-18",
       "passed": [
         "Switch theme (Forest) → active",
-        "PDF uses theme colour"
+        "PDF uses theme colour",
+        "Bill on screen follows the theme; back to Classic blue"
       ],
       "title": "Print theme"
     },
@@ -252,7 +253,8 @@
         "Highest outstanding customer",
         "Tap a bill → opens it",
         "Age cards in 2×2, level",
-        "Tap a customer → only their pending bills, Show all"
+        "Tap a customer → only their pending bills, Show all",
+        "Tap a pending bill → full invoice copy (items, HSN, CGST/SGST, balance, share/edit)"
       ]
     }
   }
