@@ -193,6 +193,12 @@ SHOWS["commission"] = [
     "Use for every bill of this customer — remembers the agent and %; their next bills show as Due.",
     "TDS on commission — section 194H, 2% (it was 5% before Oct 2024).",
 ]
+SHOWS["notes"] = [
+    "Search — finds words in the note, its title or party.",
+    "Each note — title, text, party, remind date; pinned notes stay on top.",
+    "Tap a note — clean view with Edit / Delete / Pin.",
+    "+ Note — write a note; or ask Nexora to write it (you check and Save).",
+]
 SHOWS["samples"] = SHOWS.get("samples", []) + [
     "New sample — pick the party, add every sample in the send (name, qty, unit), sent date, courier and tracking.",
     "Tap a sample — mark it Approved, Rejected or Returned.",

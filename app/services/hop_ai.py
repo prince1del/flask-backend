@@ -411,6 +411,22 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         slim = lambda xs: [{k: x[k] for k in ("party", "number", "balance", "due_date", "days")} for x in xs[:20]]  # noqa: E731
         return {"overdue": slim(dl["overdue"]), "due_today": slim(dl["today"]), "due_soon": slim(dl["soon"]),
                 "totals": dl["totals"], "as_of": dl["as_of"]}
+    if what == "notes":
+        from app import hop_notes
+
+        rows = hop_notes.search(conn, ws, "", party_name or "", 40)
+        return {"notes": [{k: r.get(k) for k in ("title", "body", "party_name", "remind_on", "pinned", "updated_at")} for r in rows]}
+    if what == "commission":
+        from app import hop_ops
+
+        rec = hop_ops.list_commission_records(conn, ws, agent_name=party_name or None)
+        due = [r for r in hop_ops.list_tax_invoices_for_commission(conn, ws) if r.get("commission_due")]
+        return {"summary": rec.get("summary"),
+                "records": [{k: r.get(k) for k in ("agent_name", "invoice_no", "party_name", "commission_pct", "commission_amount",
+                                                   "tds_amount", "net_commission", "payment_status", "paid_on")}
+                            for r in rec.get("records", [])[:30]],
+                "bills_commission_not_entered": [{"invoice_no": r["invoice_no"], "party": r["party_name"],
+                                                  "usual_agent": r.get("suggested_agent")} for r in due[:20]]}
     if what in ("dispatch", "samples", "complaints"):
         from app import hop_ops
 

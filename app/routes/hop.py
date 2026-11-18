@@ -9,7 +9,7 @@ import sqlite3
 from calendar import monthrange
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app import hop_db, hop_ops, hop_deals
 from app.hop_schema import (
@@ -2011,6 +2011,46 @@ def commission_worksheet_save():
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/notes", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def notes_collection():
+    """Business notes: GET ?q=&party= (search), POST {text, title, party_name, remind_on, pinned}."""
+    from app import hop_notes
+
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        if request.method == "GET":
+            return jsonify({"success": True, "data": hop_notes.search(conn, _ws(), request.args.get("q") or "",
+                                                                       request.args.get("party") or "")})
+        try:
+            p = _payload()
+            row = hop_notes.create(conn, _ws(), p, user=str(getattr(g, "user_id", "") or ""))
+        except ValueError as exc:
+            return _json_error(str(exc))
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/notes/<int:note_id>", methods=["PATCH", "PUT", "DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def note_item(note_id: int):
+    from app import hop_notes
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "DELETE":
+                hop_notes.delete(conn, _ws(), note_id)
+                return jsonify({"success": True, "data": {"deleted": note_id}})
+            row = hop_notes.update(conn, _ws(), note_id, _payload())
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row})
 
 
 @hop_bp.route("/commission/entries/<int:entry_id>", methods=["DELETE"])

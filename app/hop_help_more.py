@@ -5,6 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 MORE: dict[str, dict[str, Any]] = {
+    "notes": {"title": "Notes", "what": "Anything you want to remember — party talks, ideas, things to check.",
+              "steps": ["Tap + Note, write it, pick the party if it is about one, set a remind date if needed.",
+                        "Or tell Ask Nexora: \"note karo Sharma ji ko Friday ko rate bhejna hai\" — check and Save."],
+              "tips": ["Pin important notes to keep them on top.", "Search finds words in the note, title or party."],
+              "ai": "Ask Nexora writes the note for you and finds old notes (\"Sharma ke baare mein kya likha tha\").",
+              "shows": ["Search — finds words in the note, its title or party.",
+                        "Each note — title, text, party, remind date; pinned notes stay on top.",
+                        "Tap a note — clean view with Edit / Delete / Pin.",
+                        "+ Note — write a note; or ask Nexora to write it (you check and Save)."]},
     "samples": {"title": "Samples", "what": "Fabric / product samples you sent to customers — courier and approval.",
                 "steps": ["Tap + Sample, pick the customer (and project), write the sample name, courier and date, Save.",
                           "When the customer answers, open the sample and set Approved or Rejected."],

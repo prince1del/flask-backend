@@ -71,6 +71,11 @@ THE USER IS IN THE BUSINESS UI (their own billing / accounts books — like Vyap
   party_name and from/to dates (last month = the whole previous calendar month; is saal = financial year Apr–Mar);
   answer with sales_in_period / net_sales_in_period.
 - If the books tool says not_found, tell the user there is no such party in their books and offer closest_names.
+- EBITDA / "operating profit" → profit_loss (fields ebitda and ebitda_parts: interest paid, depreciation, income tax,
+  interest received); explain it in one line.
+- Commission ("Raju ki kitni commission baaki", "commission dena hai") → commission (party_name = agent name).
+- Notes: "note karo / yaad rakhna / likh lo …" → propose_action add_business_note (text, title, party_name, remind_on,
+  source='ask_nexora'); the user confirms before it is saved. "notes dikhao / X ke baare mein kya likha tha" → notes.
 """
 
 
@@ -643,7 +648,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "unpaid_bills", "expenses", "profit_loss", "balance_sheet",
                                                         "day_book", "party_statement", "gst", "items", "other_income", "audit",
                                                         "manufacturing", "loyalty", "reminders", "service", "online_orders", "targets",
-                                                        "dispatch", "samples", "complaints"]},
+                                                        "dispatch", "samples", "complaints", "notes", "commission"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},

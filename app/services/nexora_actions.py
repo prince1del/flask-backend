@@ -25,6 +25,13 @@ ACTIONS: dict[str, dict[str, Any]] = {
         "fields": "task_title, due_date (YYYY-MM-DD), due_time (HH:MM), priority (low/medium/high), "
                   "category, person_party, remarks",
     },
+    "add_business_note": {
+        "label": "Save a business note (business UI)",
+        "method": "POST", "path": "/api/v1/hop/notes",
+        "required": ["text"],
+        "fields": "text (the note in clear words), title (short), party_name (customer / supplier if it is about one), "
+                  "remind_on (YYYY-MM-DD, optional), source = 'ask_nexora'",
+    },
     "todo_done": {
         "label": "Mark a To-Do done",
         "method": "POST", "path": "/api/v1/personal-todos/{todo_id}/done",
