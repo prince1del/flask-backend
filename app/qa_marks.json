@@ -177,7 +177,8 @@
       "passed": [
         "+ Dispatch (courier, tracking) saved",
         "Tap card → details",
-        "Mark Delivered → date stamped"
+        "Mark Delivered → date stamped",
+        "Edit in place (tracking) + Save changes"
       ]
     },
     "receivables": {
@@ -262,6 +263,16 @@
       "date": "2026-11-19",
       "passed": [
         "Photo shows in the product form; Camera / Gallery / Remove buttons"
+      ]
+    },
+    "invoices": {
+      "title": "Sale invoices",
+      "date": "2026-11-19",
+      "passed": [
+        "Calendar date, PO no./date, e-way, vehicle, transporter",
+        "Drop-downs open under the field, page does not move",
+        "⏸ Hold → Resume",
+        "Print button → Android print"
       ]
     }
   }
