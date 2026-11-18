@@ -53,7 +53,8 @@
       "date": "2026-11-18",
       "passed": [
         "Cash balance correct (in − out)",
-        "Entries: Money in / Money out, dates formatted"
+        "Entries: Money in / Money out, dates formatted",
+        "+ Account adds a bank account"
       ],
       "title": "Cash & bank"
     },
@@ -236,6 +237,31 @@
       "passed": [
         "Opens from menu",
         "+ Note → saved, shows in list"
+      ]
+    },
+    "samples": {
+      "title": "Samples",
+      "date": "2026-11-19",
+      "passed": [
+        "Party from suggestions",
+        "Several samples in one send (name, qty, unit)",
+        "Card shows party + samples",
+        "Tap → Approved / Rejected / Returned"
+      ]
+    },
+    "payments": {
+      "title": "Payment-In",
+      "date": "2026-11-19",
+      "passed": [
+        "Bank payment → UTR / Ref no. field",
+        "Cheque → Cheque no. field"
+      ]
+    },
+    "products": {
+      "title": "Products / catalogue",
+      "date": "2026-11-19",
+      "passed": [
+        "Photo shows in the product form; Camera / Gallery / Remove buttons"
       ]
     }
   }
