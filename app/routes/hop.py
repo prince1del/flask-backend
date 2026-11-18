@@ -3072,6 +3072,24 @@ def hop_sms_send():
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/qa-marks", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_qa_marks():
+    """T&P (Tested & Passed) badges for screens checked on the phone — app/qa_marks.json; show=false hides them all."""
+    import json as _json
+    import os as _os
+
+    path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "qa_marks.json")
+    try:
+        data = _json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {"show": False, "screens": {}}
+    if not data.get("show"):
+        data = {"show": False, "screens": {}}
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/help", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

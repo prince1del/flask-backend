@@ -1,0 +1,25 @@
+{
+  "show": true,
+  "about": "T&P = Tested & Passed on the phone (business UI). Set show=false (or delete this file) to remove every T&P badge.",
+  "screens": {
+    "dashboard": {"date": "2026-11-18", "passed": ["Screen opens, cards load", "Greeting by time of day"]},
+    "parties": {"date": "2026-11-18", "passed": ["Add Party (name, phone) → saved, shows in list", "Party sheet: real balance (To receive / Advance), ledger with formatted amounts and dates", "Similar-name check no longer flags different names"]},
+    "invoices": {"date": "2026-11-18", "passed": ["+ New invoice", "Customer picker", "Item picker from catalogue fills rate, GST, HSN, unit", "Save & preview (totals, GST, balance)", "Edit (qty change → new total)", "Share: WhatsApp bill / SMS bill / Reminder / SMS reminder buttons", "SMS bill opens Messages with number and text", "Print receipt asks Nearby-devices permission once", "Date format from Settings", "List shows Paid / Partial / Unpaid"]},
+    "sale_estimates": {"date": "2026-11-18", "passed": ["+ New quotation with item, qty, rate", "Number uses business's own prefix (TFEST)", "Save & preview", "→ Sale Invoice convert (prefills customer and items)", "Status shows Converted"]},
+    "payments": {"date": "2026-11-18", "passed": ["+ New Payment-In", "Open bills listed for the customer", "Save → bill balance comes down (Partial)", "Receipt preview: Receipt No., Received From, Amount, Against bills"]},
+    "sale_orders": {"date": "2026-11-18", "passed": ["Online catalogue order arrives as a Sale Order (Open)"]},
+    "purchase_bills": {"date": "2026-11-18", "passed": ["+ New purchase bill", "+ Add new supplier from the bill", "Item picker uses purchase price", "Save & preview (BILL FROM)", "Stock goes up"]},
+    "purchase_expenses": {"date": "2026-11-18", "passed": ["+ New expense with category", "Save & preview (PAID TO, no dummy item)", "Delete → Recycle bin (list refreshes)", "Restore from Recycle bin"]},
+    "products": {"date": "2026-11-18", "passed": ["+ Product form", "Service period tip (AI) and Suggested chip", "Edit buy price and stock", "Clean numbers (5, 18%, no .0)", "Share online catalogue → link made, page opens, order works"]},
+    "stock": {"date": "2026-11-18", "passed": ["Stock after sale + purchase is correct"]},
+    "banking": {"date": "2026-11-18", "passed": ["Cash balance correct (in − out)", "Entries: Money in / Money out, dates formatted"]},
+    "books": {"date": "2026-11-18", "passed": ["Profit & Loss figures correct", "Lines in statement order"]},
+    "reminders": {"date": "2026-11-18", "passed": ["Payments tab: overdue / due today with right amounts", "Service tab", "SMS button", "Dates formatted, 1 day late"]},
+    "targets": {"date": "2026-11-18", "passed": ["Yearly target + split into 12 months", "Achieved from bills, % and gap", "Needed per remaining month"]},
+    "profit": {"date": "2026-11-18", "passed": ["Revenue, cost of goods, gross profit match P&L"]},
+    "daily": {"date": "2026-11-18", "passed": ["India date", "Collections without double count"]},
+    "recycle_bin": {"date": "2026-11-18", "passed": ["Deleted bill listed with local time", "Restore"]},
+    "app_settings": {"date": "2026-11-18", "passed": ["Backup: Save a backup now → listed on server"]},
+    "complaints": {"date": "2026-11-18", "passed": ["+ Complaint saves (India date)"]}
+  }
+}
