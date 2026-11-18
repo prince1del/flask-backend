@@ -238,7 +238,7 @@ def add_loan_entry(conn: sqlite3.Connection, ws: str, loan_id: int, payload: dic
     amount = abs(_f(payload.get("amount")))
     if amount <= 0:
         raise ValueError("amount must be > 0")
-    entry_date = _s(payload.get("entry_date"))[:10] or date.today().isoformat()
+    entry_date = _s(payload.get("entry_date"))[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso()
     cur = conn.execute(
         """INSERT INTO hop_loan_entries (
              workspace_id, loan_id, entry_date, entry_type, amount, bank_account_id, notes, created_at
@@ -320,7 +320,7 @@ def create_fixed_asset(conn: sqlite3.Connection, ws: str, payload: dict) -> dict
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)""",
         (
             ws, name, _s(payload.get("category")),
-            _s(payload.get("purchase_date"))[:10] or date.today().isoformat(),
+            _s(payload.get("purchase_date"))[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso(),
             cost, _f(payload.get("salvage_value")),
             int(payload.get("life_months") or 60),
             _s(payload.get("method")) or "slm", now, now,
@@ -334,7 +334,7 @@ def create_fixed_asset(conn: sqlite3.Connection, ws: str, payload: dict) -> dict
         conn.execute("UPDATE hop_fixed_assets SET paid_account_id=? WHERE id=?", (paid_from, aid))
         hop_books.add_bank_entry(conn, ws, {
             "account_id": paid_from, "entry_type": "out", "amount": cost,
-            "entry_date": _s(payload.get("purchase_date"))[:10] or date.today().isoformat(),
+            "entry_date": _s(payload.get("purchase_date"))[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso(),
             "notes": f"Asset bought: {name}", "reference": f"asset:{aid}", "source": "asset",
         })
     conn.commit()
@@ -349,7 +349,7 @@ def compute_monthly_dep(asset: dict) -> float:
 
 
 def run_depreciation(conn: sqlite3.Connection, ws: str, as_of: str = "") -> dict[str, Any]:
-    as_of = _s(as_of)[:10] or date.today().isoformat()
+    as_of = _s(as_of)[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso()
     period = as_of[:7]  # YYYY-MM
     posted = []
     for asset in list_fixed_assets(conn, ws):
@@ -408,7 +408,7 @@ def depreciation_expense_ytd(conn: sqlite3.Connection, ws: str, frm: str, to: st
 # ── Financial year ────────────────────────────────────────────────────────────
 
 def indian_fy_bounds(ref: date | None = None) -> tuple[str, str, str]:
-    d = ref or date.today()
+    d = ref or __import__("app.hop_time", fromlist=["x"]).today_ist()
     start_year = d.year if d.month >= 4 else d.year - 1
     start = date(start_year, 4, 1)
     end = date(start_year + 1, 3, 31)

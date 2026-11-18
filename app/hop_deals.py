@@ -1608,7 +1608,7 @@ def attention_deals(conn: sqlite3.Connection, workspace_id: str) -> dict[str, li
     needs = []
     followups = []
     no_activity = []
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = __import__("app.hop_time", fromlist=["x"]).today_iso()
     for r in rows + holds:
         h = r.get("deal_health") or compute_deal_health(r)
         r["deal_health"] = h

@@ -54,7 +54,7 @@ def _targets(conn, ws) -> dict[str, float]:
 
 
 def summary(conn: sqlite3.Connection, ws: str, fy_start: int | None = None, today: date | None = None) -> dict[str, Any]:
-    today = today or date.today()
+    today = today or __import__("app.hop_time", fromlist=["x"]).today_ist()
     fy = fy_start if fy_start is not None else fy_of(today)
     t = _targets(conn, ws)
     yearly = t.get(fy_label(fy), 0.0)

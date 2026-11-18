@@ -901,7 +901,7 @@ def run(conn: sqlite3.Connection, ws: str, key: str, a: dict[str, Any]) -> dict[
     if k == "cash_flow":
         return cash_flow(conn, ws, frm, to)
     if k == "day_book":
-        return day_book(conn, ws, _d(a.get("date")) or to or date.today().isoformat())
+        return day_book(conn, ws, _d(a.get("date")) or to or __import__("app.hop_time", fromlist=["x"]).today_iso())
     if k == "all_transactions":
         return all_transactions(conn, ws, frm, to, int(a["txn_type"]) if a.get("txn_type") else None,
                                 int(a["party_id"]) if a.get("party_id") else None)

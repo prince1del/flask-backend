@@ -97,7 +97,7 @@ def add_bank_entry(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
     amount = abs(_f(payload.get("amount")))
     if amount <= 0:
         raise ValueError("amount must be > 0")
-    entry_date = _s(payload.get("entry_date")) or _now()[:10]
+    entry_date = _s(payload.get("entry_date")) or __import__("app.hop_time", fromlist=["x"]).today_iso()
     delta = amount if entry_type == "in" else -amount
     counterparty = _i(payload.get("counterparty_account_id"))
     cur = conn.execute(
@@ -200,7 +200,7 @@ def add_stock_journal(conn: sqlite3.Connection, workspace_id: str, payload: dict
     ).fetchone()
     if not prod:
         raise ValueError("product not found")
-    entry_date = _s(payload.get("entry_date")) or _now()[:10]
+    entry_date = _s(payload.get("entry_date")) or __import__("app.hop_time", fromlist=["x"]).today_iso()
     cur = conn.execute(
         """
         INSERT INTO hop_stock_journals (

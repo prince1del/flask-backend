@@ -217,7 +217,7 @@ def gstr9(conn, ws, fy_start: str = "", fy_end: str = "") -> dict[str, Any]:
     from app import hop_reports as R
 
     if not fy_start:
-        t = date.today()
+        t = __import__("app.hop_time", fromlist=["x"]).today_ist()
         y = t.year if t.month >= 4 else t.year - 1
         fy_start, fy_end = f"{y}-04-01", f"{y + 1}-03-31"
     g3 = R.gstr3b(conn, ws, fy_start, fy_end)
@@ -245,7 +245,7 @@ def expiry_report(conn, ws, days: int = 60) -> dict[str, Any]:
                               AND (COALESCE(l.batch_no,'')!='' OR COALESCE(l.expiry_date,'')!='')
                             GROUP BY lower(l.item_name), COALESCE(l.batch_no,'')""", (ws,)).fetchall()
     # Expiry comes from the purchase line of that batch (sales lines may not repeat it).
-    today = date.today()
+    today = __import__("app.hop_time", fromlist=["x"]).today_ist()
     out = []
     for r in rows:
         exp = r[2] or conn.execute("SELECT expiry_date FROM hop_txn_lines WHERE workspace_id=? AND lower(item_name)=lower(?) "

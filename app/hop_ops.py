@@ -368,7 +368,7 @@ def create_quotation(conn: sqlite3.Connection, workspace_id: str, payload: dict)
             project_id,
             quote_no,
             customer_id,
-            _s(payload.get("quote_date")) or now[:10],
+            _s(payload.get("quote_date")) or __import__("app.hop_time", fromlist=["x"]).today_iso(),
             _f(payload.get("value")),
             _f(payload["margin_pct"]) if payload.get("margin_pct") not in (None, "") else None,
             _s(payload.get("status")) or "draft",
@@ -1206,7 +1206,7 @@ def create_sample(conn: sqlite3.Connection, workspace_id: str, payload: dict) ->
             project_id,
             customer_id,
             name,
-            _s(payload.get("sent_at")) or now[:10],
+            _s(payload.get("sent_at")) or __import__("app.hop_time", fromlist=["x"]).today_iso(),
             _s(payload.get("courier")),
             _s(payload.get("tracking_number")),
             _s(payload.get("return_status")),
@@ -2850,7 +2850,7 @@ def create_invoice(conn: sqlite3.Connection, workspace_id: str, payload: dict) -
             paid,
             balance,
             _s(payload.get("status")) or ("paid" if balance <= 0 else "open"),
-            _s(payload.get("invoice_date")) or now[:10],
+            _s(payload.get("invoice_date")) or __import__("app.hop_time", fromlist=["x"]).today_iso(),
             _f(payload.get("gst_amount")),
             _s(payload.get("notes")),
             now,
@@ -3001,7 +3001,7 @@ def create_complaint(conn: sqlite3.Connection, workspace_id: str, payload: dict)
             workspace_id,
             project_id,
             customer_id,
-            _s(payload.get("complaint_date")) or now[:10],
+            _s(payload.get("complaint_date") or payload.get("date"))[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso(),
             issue,
             _s(payload.get("assigned_to")),
             _s(payload.get("status")) or "open",
@@ -3159,7 +3159,7 @@ def report_meetings_dashboard(conn: sqlite3.Connection, workspace_id: str) -> di
 
 
 def report_receivables(conn: sqlite3.Connection, workspace_id: str) -> dict:
-    today = datetime.now(timezone.utc).date()
+    today = __import__("app.hop_time", fromlist=["x"]).today_ist()
     invoices = [i for i in list_invoices(conn, workspace_id) if float(i.get("balance") or 0) > 0]
     buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
     by_customer: dict[str, float] = {}
@@ -3369,7 +3369,7 @@ def report_profitability(conn: sqlite3.Connection, workspace_id: str) -> dict:
     """This financial year from the bills: sales − returns, cost of what was sold, expenses, other income."""
     from app import hop_targets
 
-    fy = hop_targets.fy_of(datetime.now(timezone.utc).date())
+    fy = hop_targets.fy_of(__import__("app.hop_time", fromlist=["x"]).today_ist())
     start, end = f"{fy}-04-01", f"{fy + 1}-03-31"
     live = "(t.deleted_at IS NULL OR trim(t.deleted_at)='') AND date(t.txn_date) BETWEEN date(?) AND date(?)"
     sales = conn.execute(f"""SELECT COALESCE(SUM(CASE WHEN t.txn_type=21 THEN -(t.total_amount) ELSE t.total_amount END), 0),
@@ -3447,7 +3447,7 @@ def report_quotation_kpis(conn: sqlite3.Connection, workspace_id: str) -> dict:
 
 
 def report_repeat_business(conn: sqlite3.Connection, workspace_id: str) -> dict:
-    today = datetime.now(timezone.utc).date()
+    today = __import__("app.hop_time", fromlist=["x"]).today_ist()
     customers = report_customer_dashboard(conn, workspace_id)
     buckets = {"30": [], "60": [], "90": [], "180": []}
     for c in customers:

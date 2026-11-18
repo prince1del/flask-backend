@@ -162,7 +162,7 @@ def manufacture(conn: sqlite3.Connection, ws: str, payload: dict[str, Any]) -> d
             mode = "warn"
         if mode == "block":
             raise ValueError("Not enough raw material: " + "; ".join(p["warnings"][:3]))
-    date = str(payload.get("entry_date") or "")[:10] or _now()[:10]
+    date = str(payload.get("entry_date") or "")[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso()
     cur = conn.execute(
         "INSERT INTO hop_manufacture (workspace_id, entry_date, product_id, product_name, qty, raw_cost, extra_cost, unit_cost, notes, created_at) "
         "VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -206,7 +206,7 @@ def undo(conn: sqlite3.Connection, ws: str, mid: int) -> dict[str, Any]:
     if not r:
         raise ValueError("Manufacture entry not found")
     ref = f"MFG-{int(mid)}"
-    date = _now()[:10]
+    date = __import__("app.hop_time", fromlist=["x"]).today_iso()
     for line in conn.execute("SELECT raw_product_id, qty FROM hop_manufacture_lines WHERE workspace_id=? AND manufacture_id=?",
                              (ws, int(mid))).fetchall():
         _journal(conn, ws, line[0], _f(line[1]), "Manufacture undone", ref, date)
