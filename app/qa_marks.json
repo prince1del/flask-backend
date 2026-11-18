@@ -6,7 +6,9 @@
       "date": "2026-11-18",
       "passed": [
         "Screen opens, cards load",
-        "Greeting by time of day"
+        "Greeting by time of day",
+        "Overview figures from real bills (Outstanding, Collections today, Quotes, Orders)",
+        "Tap a card → opens its screen (Outstanding → Receivables, Collections → Daily)"
       ],
       "title": "Home dashboard"
     },
@@ -163,7 +165,8 @@
     "app_settings": {
       "date": "2026-11-18",
       "passed": [
-        "Backup: Save a backup now → listed on server"
+        "Backup: Save a backup now → listed on server",
+        "T&P list in Settings"
       ],
       "title": "Settings → Backup"
     },
@@ -237,6 +240,15 @@
         "+ Dispatch (courier, tracking) saved",
         "Tap card → details",
         "Mark Delivered → date stamped"
+      ]
+    },
+    "receivables": {
+      "title": "Receivables",
+      "date": "2026-11-18",
+      "passed": [
+        "Amount from real unpaid bills",
+        "Highest outstanding customer",
+        "Tap a bill → opens it"
       ]
     }
   }
