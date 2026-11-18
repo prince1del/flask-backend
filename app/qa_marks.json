@@ -8,7 +8,9 @@
         "Screen opens, cards load",
         "Greeting by time of day",
         "Overview figures from real bills (Outstanding, Collections today, Quotes, Orders)",
-        "Tap a card → opens its screen (Outstanding → Receivables, Collections → Daily)"
+        "Tap a card → opens its screen (Outstanding → Receivables, Collections → Daily)",
+        "Cards same height, ₹ on every amount, Sales vs Target shows % of target",
+        "Cash Available = Cash & bank"
       ],
       "title": "Home dashboard"
     },
@@ -248,7 +250,9 @@
       "passed": [
         "Amount from real unpaid bills",
         "Highest outstanding customer",
-        "Tap a bill → opens it"
+        "Tap a bill → opens it",
+        "Age cards in 2×2, level",
+        "Tap a customer → only their pending bills, Show all"
       ]
     }
   }
