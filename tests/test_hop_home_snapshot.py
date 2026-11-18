@@ -26,3 +26,10 @@ def test_home_from_books(tmp_path, monkeypatch):
     assert t["outstanding_receivables"] == 600
     assert t["payments_received_today"] == 400
     assert t["quotations_pending"] == 1
+
+
+def test_ebitda_adds_back_interest_and_depreciation():
+    from app.hop_reports import ebitda_parts
+    r = ebitda_parts(1000.0, [{"category": "Interest on loan", "amount": 200.0}, {"category": "Depreciation", "amount": 300.0},
+                              {"category": "Rent", "amount": 500.0}], [{"category": "Interest received", "amount": 50.0}])
+    assert r["ebitda"] == 1450.0 and r["ebitda_parts"]["depreciation"] == 300.0

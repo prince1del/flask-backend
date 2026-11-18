@@ -409,7 +409,26 @@ def profit_and_loss(conn: sqlite3.Connection, ws: str, frm: str = "", to: str = 
         "gross_profit": _r2(gross), "other_income": other_income, "total_other_income": _r2(oi_total),
         "expenses": expenses, "total_expenses": _r2(exp_total),
         "net_profit": _r2(gross + oi_total - exp_total),
+        **ebitda_parts(gross + oi_total - exp_total, expenses, other_income),
     }
+
+
+_EBITDA_ADD = ("interest", "depreciation", "amortisation", "amortization", "income tax", "bank charges on loan")
+
+
+def ebitda_parts(net_profit: float, expenses: list[dict], other_income: list[dict]) -> dict[str, Any]:
+    """EBITDA = net profit + interest paid + depreciation / amortisation + income tax − interest received
+    (by expense / income category name)."""
+    def is_(name: str, words) -> bool:
+        n = (name or "").lower()
+        return any(w in n for w in words)
+    interest = sum(e["amount"] for e in expenses if is_(e["category"], ("interest", "bank charges on loan")))
+    dep = sum(e["amount"] for e in expenses if is_(e["category"], ("depreciation", "amortisation", "amortization")))
+    tax = sum(e["amount"] for e in expenses if is_(e["category"], ("income tax",)))
+    int_in = sum(e["amount"] for e in other_income if is_(e["category"], ("interest",)))
+    return {"ebitda": _r2(net_profit + interest + dep + tax - int_in),
+            "ebitda_parts": {"interest_paid": _r2(interest), "depreciation": _r2(dep), "income_tax": _r2(tax),
+                             "interest_received": _r2(int_in)}}
 
 
 def balance_sheet(conn: sqlite3.Connection, ws: str, as_of: str = "") -> dict[str, Any]:

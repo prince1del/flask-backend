@@ -231,6 +231,21 @@ def _sum(conn: sqlite3.Connection, sql: str, params: tuple) -> float:
     return float(row[0] or 0) if row else 0.0
 
 
+def _ebitda_fy(ws: str) -> dict | None:
+    """EBITDA for this financial year so far (India date), from the books."""
+    try:
+        from app import hop_reports, hop_targets
+        from app.hop_time import today_ist
+
+        t = today_ist()
+        fy = hop_targets.fy_of(t)
+        with hop_db.connect(_db_path()) as conn:
+            pl = hop_reports.profit_and_loss(conn, ws, f"{fy}-04-01", t.isoformat())
+        return {"amount": pl["ebitda"], "net_profit": pl["net_profit"], "fy": hop_targets.fy_label(fy), **pl["ebitda_parts"]}
+    except Exception:
+        return None
+
+
 def _cash_available(ws: str) -> float | None:
     """Cash in hand + all bank balances (as on the Cash & bank screen)."""
     try:
@@ -624,6 +639,7 @@ def executive_snapshot():
                 "yearly": {"fy": tsum["fy"], "target": tsum["yearly_target"], "achieved": tsum["achieved_ytd"],
                            "pct": tsum["yearly_pct"]},
                 "gross_profit_pct": profit.get("gross_margin_pct"),
+                "ebitda": _ebitda_fy(ws),
                 "cash_available": _cash_available(ws),   # same figure as Cash & bank
                 "notes": {
                     "gross_profit_pct": profit.get("notes", {}).get("cogs"),
