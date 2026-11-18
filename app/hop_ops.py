@@ -1620,6 +1620,16 @@ def update_complaint(conn: sqlite3.Connection, workspace_id: str, complaint_id: 
     return next(r for r in list_complaints(conn, workspace_id) if int(r["id"]) == int(complaint_id))
 
 
+def delete_ops_row(conn: sqlite3.Connection, workspace_id: str, table: str, row_id: int) -> None:
+    """Delete one dispatch / sample / complaint (the user confirms on the phone first)."""
+    if table not in ("hop_dispatches", "hop_samples", "hop_complaints"):
+        raise ValueError("Not allowed")
+    if not conn.execute(f"SELECT 1 FROM {table} WHERE workspace_id=? AND id=?", (workspace_id, int(row_id))).fetchone():
+        raise ValueError("Not found")
+    conn.execute(f"DELETE FROM {table} WHERE workspace_id=? AND id=?", (workspace_id, int(row_id)))
+    conn.commit()
+
+
 _DISPATCH_EDITABLE = ("status", "tracking_number", "courier", "delivery_status", "dispatched_at", "delivered_at",
                       "invoice_no_link", "eway_bill", "docket_number", "notes")
 

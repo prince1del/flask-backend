@@ -1836,22 +1836,29 @@ def dispatches_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
-@hop_bp.route("/samples/<int:item_id>", methods=["PATCH", "PUT"])
+@hop_bp.route("/samples/<int:item_id>", methods=["PATCH", "PUT", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def sample_update(item_id: int):
-    return _patch_row(hop_ops.update_sample, item_id)
+    return _patch_row(hop_ops.update_sample, item_id, "hop_samples")
 
 
-@hop_bp.route("/complaints/<int:item_id>", methods=["PATCH", "PUT"])
+@hop_bp.route("/complaints/<int:item_id>", methods=["PATCH", "PUT", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def complaint_update(item_id: int):
-    return _patch_row(hop_ops.update_complaint, item_id)
+    return _patch_row(hop_ops.update_complaint, item_id, "hop_complaints")
 
 
-def _patch_row(fn, item_id: int):
+def _patch_row(fn, item_id: int, table: str = ""):
     ensure_hop_schema(_db_path())
+    if request.method == "DELETE":
+        try:
+            with hop_db.connect(_db_path()) as conn:
+                hop_ops.delete_ops_row(conn, _ws(), table, item_id)
+        except ValueError as exc:
+            return _json_error(str(exc), "NOT_FOUND", 404)
+        return jsonify({"success": True, "data": {"deleted": item_id}})
     try:
         with hop_db.connect(_db_path()) as conn:
             row = fn(conn, _ws(), item_id, _payload())
@@ -1861,11 +1868,13 @@ def _patch_row(fn, item_id: int):
     return jsonify({"success": True, "data": row})
 
 
-@hop_bp.route("/dispatches/<int:dispatch_id>", methods=["PATCH", "PUT"])
+@hop_bp.route("/dispatches/<int:dispatch_id>", methods=["PATCH", "PUT", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def dispatch_update(dispatch_id: int):
     ensure_hop_schema(_db_path())
+    if request.method == "DELETE":
+        return _patch_row(hop_ops.update_dispatch, dispatch_id, "hop_dispatches")
     try:
         with hop_db.connect(_db_path()) as conn:
             row = hop_ops.update_dispatch(conn, _ws(), dispatch_id, _payload())

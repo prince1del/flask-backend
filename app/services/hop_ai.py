@@ -24,7 +24,10 @@ _PROMPT = (
     "Return ONLY JSON: {\"party\":\"\",\"gstin\":\"\",\"bill_no\":\"\",\"bill_date\":\"YYYY-MM-DD\","
     "\"lines\":[{\"item\":\"\",\"hsn\":\"\",\"qty\":0,\"unit\":\"\",\"rate\":0,\"tax_pct\":0,\"free_qty\":0}],"
     "\"charges\":[{\"name\":\"\",\"amount\":0,\"tax_pct\":0}],\"tcs_amount\":0,"
-    "\"total\":0,\"expense_category\":\"\"}. "
+    "\"total\":0,\"expense_category\":\"\",\"po_number\":\"\",\"po_date\":\"YYYY-MM-DD\",\"eway_bill_no\":\"\","
+    "\"vehicle_no\":\"\",\"transporter\":\"\",\"utr\":\"\"}. "
+    "po_number / po_date = buyer's order no. printed on the bill; eway_bill_no = 12-digit e-way bill no.; "
+    "vehicle_no / transporter = transport details; utr = bank / UPI reference if a payment is shown. "
     "charges = freight, packing, loading, labour etc. charged separately (amount before GST); free_qty = free units. "
     "party = the seller who issued the bill (not us). rate = price per unit BEFORE GST. "
     "tax_pct = GST % of that line (CGST+SGST together, or IGST). total = grand total in rupees. "
@@ -186,6 +189,13 @@ def match_bill(conn: sqlite3.Connection, ws: str, fields: dict[str, Any]) -> dic
         "bill_no": str(fields.get("bill_no") or "").strip()[:40],
         "bill_date": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else "",
         "lines": lines, "charges": charges, "tcs_amount": tcs, "total": total, "items_total": computed,
+        # transport / order / payment details printed on the bill (filled into the form, user checks and saves)
+        "po_number": str(fields.get("po_number") or "").strip()[:40],
+        "po_date": (lambda d: d if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) else "")(str(fields.get("po_date") or "")),
+        "eway_bill_no": re.sub(r"\D", "", str(fields.get("eway_bill_no") or ""))[:12],
+        "vehicle_no": str(fields.get("vehicle_no") or "").strip().upper()[:20],
+        "transporter": str(fields.get("transporter") or "").strip()[:60],
+        "utr": str(fields.get("utr") or "").strip()[:40],
         "expense_category_id": category["id"] if category else None,
         "expense_category": category["name"] if category else cat_name,
         "checks": notes,

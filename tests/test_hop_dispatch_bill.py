@@ -113,3 +113,13 @@ def test_ask_party_sales_period_and_not_found(co):
             rest["extra"] = {"from": "2026-11-01", "to": "2026-11-30"}
         r2 = fn(**base, what="party_statement", party_name="Hotel A", **rest)
         assert "sales_in_period" in r2 and r2["sales_in_period"] >= 0
+
+
+def test_delete_ops_rows(co):
+    with connect(co["path"]) as conn:
+        d = hop_ops.create_dispatch(conn, WS, {"tracking_number": "DEL1"})
+        hop_ops.delete_ops_row(conn, WS, "hop_dispatches", d["id"])
+        assert not [x for x in hop_ops.list_dispatches(conn, WS) if x["id"] == d["id"]]
+        import pytest
+        with pytest.raises(ValueError):
+            hop_ops.delete_ops_row(conn, WS, "hop_customers", 1)
