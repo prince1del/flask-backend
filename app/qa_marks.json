@@ -10,7 +10,9 @@
         "Overview figures from real bills (Outstanding, Collections today, Quotes, Orders)",
         "Tap a card → opens its screen (Outstanding → Receivables, Collections → Daily)",
         "Cards same height, ₹ on every amount, Sales vs Target shows % of target",
-        "Cash Available = Cash & bank"
+        "Cash Available = Cash & bank",
+        "Month sales vs target says 'This month'",
+        "EBITDA card + breakdown"
       ],
       "title": "Home dashboard"
     },
@@ -215,6 +217,17 @@
         "Supplier bill no. + Bill date (calendar)",
         "E-way / vehicle / transporter",
         "Unit drop-down"
+      ]
+    },
+    "targets": {
+      "title": "Targets",
+      "date": "2026-11-19",
+      "passed": [
+        "Whole year card: Year % of yearly target",
+        "This month card: Month % of month target",
+        "Whole year / One month switch clear (solid ✓)",
+        "Month picker: only the picked month highlighted, opens on this month",
+        "Months list: 0% (not 0.0%), future months without %"
       ]
     }
   }
