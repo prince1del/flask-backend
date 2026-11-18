@@ -116,6 +116,14 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Excel import | Smart column matching (Hinglish names too) + row checks before saving | ✅ 2026-11-16 (rule based, no AI cost) |
 | Godowns, TDS, cess, audit, backup | Ask Nexora `items` shows godown stock, `audit` answers who changed what; rule warnings (godown short, odd TDS/cess %) | ✅ 2026-11-16 |
 | Staff permissions | Plain summary of what a person can do + warnings before saving (e.g. can change bank but cannot see reports); Ask Nexora obeys permissions | ✅ 2026-11-16 |
+| Dispatch / Samples / Complaints | Ask Nexora `dispatch` / `samples` / `complaints` ("maal gaya?", "kitni complaints open") | ✅ 2026-11-18 |
+| Commission | Ask Nexora `commission` (net due per agent, bills with no commission yet); customer's usual agent → bills show Due | ✅ 2026-11-18 |
+| Party sales for a period | Ask Nexora party_statement with dates → sales / returns / net in period; "no such party" + closest names | ✅ 2026-11-18 (checked on phone) |
+| EBITDA | Ask Nexora profit_loss → ebitda + parts (interest, depreciation, tax, interest received); Home card breakdown | ✅ 2026-11-18 |
+| Business notes | Ask Nexora writes a note (add_business_note, user confirms) and finds notes (`notes`) | ✅ server 2026-11-18 · phone screen ⏳ |
+| Targets | Ask Nexora `targets` (year %, month %, needed per month) | ✅ |
+| Bill fields (PO, e-way, UTR, supplier bill no.) | ✨ Bill reader fills supplier bill no. / date on purchase; entry warnings unchanged | ⏳ reader to also fill PO / e-way / UTR |
+| Product photo | — (photo for catalogue; AI tagging later) | ⏳ reason: no AI need yet; idea: read MRP / name from the photo |
 | Sale invoice / quotation from any paper | ✨ Scan any bill, order or handwritten note → form filled (customer + catalogue matched, unclear lines flagged) | ✅ 2026-11-16 |
 | Service reminders | Ask Nexora `service` ("kiski AC service due hai"); item form tip "items like this need service every N days" (rule based, no AI cost); due list in the owner's morning email | ✅ 2026-11-17 |
 | SMS + Bluetooth receipt (Batch 3) | SMS uses the same owner templates + ✨ AI reminder text; Ask Nexora already prepares SMS to a person (device action). Printing itself needs no AI (reason: it only prints the saved bill); printer problems get plain hints (Bluetooth off, not paired, not reachable) | ✅ 2026-11-17 |
