@@ -229,6 +229,14 @@
         "Month picker: only the picked month highlighted, opens on this month",
         "Months list: 0% (not 0.0%), future months without %"
       ]
+    },
+    "notes": {
+      "title": "Notes",
+      "date": "2026-11-19",
+      "passed": [
+        "Opens from menu",
+        "+ Note → saved, shows in list"
+      ]
     }
   }
 }
