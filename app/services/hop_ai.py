@@ -357,15 +357,37 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         if not party_name:
             return {"error": "Which party? Give a party name."}
         best = None
+        scored = []
         for kind, table in (("customer", "hop_customers"), ("vendor", "hop_vendors")):
             for r in conn.execute(f"SELECT id, company FROM {table} WHERE workspace_id=?", (ws,)).fetchall():
                 sc = _similar(party_name, r[1] or "")
+                scored.append((sc, r[1] or ""))
                 if sc >= 0.6 and (best is None or sc > best[0]):
                     best = (sc, kind, int(r[0]))
         if not best:
-            return {"error": f"No party like '{party_name}'."}
-        stmt = hop_reports.party_statement(conn, ws, best[1], best[2], str(extra.get("from") or ""), str(extra.get("to") or ""))
+            closest = [n for _, n in sorted(scored, reverse=True)[:5] if n]
+            return {"not_found": party_name, "parties_in_books": len(scored), "closest_names": closest,
+                    "tell_user": f"There is no party named '{party_name}' in this business's books. "
+                                 "Say so plainly and offer the closest names; do not guess figures."}
+        f_, t_ = str(extra.get("from") or ""), str(extra.get("to") or "")
+        stmt = hop_reports.party_statement(conn, ws, best[1], best[2], f_, t_)
         stmt["lines"] = stmt["lines"][-30:]
+        # "X ka sale kitna tha" for a period: sale bills − sale returns (purchase side for a supplier), by bill date.
+        sale_t, ret_t = (1, 21) if best[1] == "customer" else (2, 16)
+        cond, args = "", [ws, best[1], best[2]]
+        if f_:
+            cond += " AND date(txn_date) >= date(?)"; args.append(f_)
+        if t_:
+            cond += " AND date(txn_date) <= date(?)"; args.append(t_)
+        tot = {int(r[0]): float(r[1] or 0) for r in conn.execute(
+            "SELECT txn_type, SUM(total_amount) FROM hop_party_transactions WHERE workspace_id=? AND party_type=? AND party_id=? "
+            f"AND (deleted_at IS NULL OR trim(deleted_at)='') AND txn_type IN ({sale_t}, {ret_t}){cond} GROUP BY txn_type",
+            args).fetchall()}
+        label = "sales" if best[1] == "customer" else "purchases"
+        stmt[f"{label}_in_period"] = round(tot.get(sale_t, 0.0), 2)
+        stmt["returns_in_period"] = round(tot.get(ret_t, 0.0), 2)
+        stmt[f"net_{label}_in_period"] = round(tot.get(sale_t, 0.0) - tot.get(ret_t, 0.0), 2)
+        stmt["period"] = {"from": f_ or "start", "to": t_ or "today"}
         return stmt
     if what == "items":
         from app import hop_ops

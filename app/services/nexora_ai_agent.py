@@ -67,6 +67,10 @@ THE USER IS IN THE BUSINESS UI (their own billing / accounts books — like Vyap
   goods sent / courier / tracking / delivered ("maal gaya?") → dispatch; samples → samples; customer complaints → complaints
   (party_name narrows any of these to one customer).
 - Use the distributor / PJP / MRP tools only if the user clearly asks about Bombay Dyeing distributors.
+- "X ka sale / kitna becha / kitni sale" for a time ("last month", "is mahine", "is saal") → party_statement with
+  party_name and from/to dates (last month = the whole previous calendar month; is saal = financial year Apr–Mar);
+  answer with sales_in_period / net_sales_in_period.
+- If the books tool says not_found, tell the user there is no such party in their books and offer closest_names.
 """
 
 
@@ -1963,6 +1967,9 @@ def ask_order_desk(
         # Gemini 3 rejects role "function"; tool results go back as a user turn.
         contents.append({"role": "user", "parts": response_parts})
 
+    if _business_ui():
+        return _finish("Iska pakka jawab abhi nahi mil paaya. Party ka poora naam, bill number, item ya "
+                       "date (jaise 'pichhle mahine') saath mein bataiye.")
     return _finish(
         "Iska pakka jawab abhi nahi mil paaya. Kripya distributor, article, "
         "season ya category ka naam saath mein bataiye."

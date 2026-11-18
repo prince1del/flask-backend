@@ -95,3 +95,21 @@ def test_commission_due_from_customer_agent_and_delete(co):
         hop_ops.delete_commission_entry(conn, WS, eid)
         assert not {r["party_txn_id"]: r for r in hop_ops.list_tax_invoices_for_commission(conn, WS)}[inv1["party_txn_id"]]["has_entry"]
         _ = e
+
+
+def test_ask_party_sales_period_and_not_found(co):
+    from app.services import hop_ai
+    import inspect
+
+    fn = next(f for n, f in inspect.getmembers(hop_ai, inspect.isfunction)
+              if "what" in inspect.signature(f).parameters and "party_name" in inspect.signature(f).parameters)
+    params = list(inspect.signature(fn).parameters)
+    with connect(co["path"]) as conn:
+        base = {params[0]: conn, params[1]: WS}
+        rest = {k: None for k in params if k not in (params[0], params[1], "what", "party_name")}
+        r = fn(**base, what="party_statement", party_name="Bernina", **rest)
+        assert r["not_found"] == "Bernina" and "Hotel A" in r["closest_names"]
+        if "extra" in params:
+            rest["extra"] = {"from": "2026-11-01", "to": "2026-11-30"}
+        r2 = fn(**base, what="party_statement", party_name="Hotel A", **rest)
+        assert "sales_in_period" in r2 and r2["sales_in_period"] >= 0
