@@ -673,6 +673,13 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
         data["hsn_summary"] = hsn_summary(data, inter) if s.get("print_hsn_summary") else []
     except Exception:
         data["gst_split"], data["hsn_summary"] = [], []
+    try:   # Print theme colour (Settings → Print theme) so the phone's bill and PDF match the printed one
+        from app import hop_phase3_ext
+
+        r, g, b = hop_phase3_ext.get_print_theme(conn, workspace_id)["accent"]
+        data["accent"] = f"#{r:02X}{g:02X}{b:02X}"
+    except Exception:
+        data["accent"] = None
     if hid:
         try:
             from app import hop_loyalty
@@ -1421,8 +1428,11 @@ def _is_interstate(conn: sqlite3.Connection, workspace_id: str, data: dict[str, 
     purchase = int(header.get("txn_type") or 0) in _PURCHASE_SIDE
     seller, buyer = (party_st, firm_st) if purchase else (firm_st, party_st)
     supply = pos or buyer
-    if not seller or not supply:
+    if not firm_st:
         return None
+    # Firm's state known but the other party's unknown (walk-in / unregistered with no address): place of
+    # supply is the firm's own state → CGST + SGST (as Vyapar does).
+    seller, supply = seller or firm_st, supply or firm_st
     return seller != supply
 
 

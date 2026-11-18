@@ -1765,6 +1765,45 @@ def dispatches_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/samples/<int:item_id>", methods=["PATCH", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def sample_update(item_id: int):
+    return _patch_row(hop_ops.update_sample, item_id)
+
+
+@hop_bp.route("/complaints/<int:item_id>", methods=["PATCH", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def complaint_update(item_id: int):
+    return _patch_row(hop_ops.update_complaint, item_id)
+
+
+def _patch_row(fn, item_id: int):
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = fn(conn, _ws(), item_id, _payload())
+    except ValueError as exc:
+        nf = "not found" in str(exc)
+        return _json_error(str(exc), "NOT_FOUND" if nf else "VALIDATION_ERROR", 404 if nf else 400)
+    return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/dispatches/<int:dispatch_id>", methods=["PATCH", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dispatch_update(dispatch_id: int):
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_ops.update_dispatch(conn, _ws(), dispatch_id, _payload())
+    except ValueError as exc:
+        return _json_error(str(exc), "NOT_FOUND" if "not found" in str(exc) else "VALIDATION_ERROR",
+                           404 if "not found" in str(exc) else 400)
+    return jsonify({"success": True, "data": row})
+
+
 @hop_bp.route("/invoices", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

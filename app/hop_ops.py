@@ -1526,7 +1526,16 @@ def update_order(conn: sqlite3.Connection, workspace_id: str, order_id: int, pay
 # ----- Dispatches -----
 def list_dispatches(conn: sqlite3.Connection, workspace_id: str, q: str | None = None, project_id: int | None = None) -> list[dict]:
     sql = """
-        SELECT d.*, p.project_name, o.po_number
+        SELECT d.*, p.project_name, o.po_number,
+               (SELECT t.party_name FROM hop_party_transactions t
+                 WHERE t.workspace_id=d.workspace_id AND t.txn_type IN (1, 30, 65) AND trim(COALESCE(d.invoice_no_link,''))!=''
+                   AND lower(t.txn_number)=lower(trim(d.invoice_no_link))
+                   AND (t.deleted_at IS NULL OR trim(t.deleted_at)='') ORDER BY t.txn_type LIMIT 1) AS bill_party,
+               (SELECT CASE t.txn_type WHEN 30 THEN 'Challan' WHEN 65 THEN 'Order' ELSE 'Bill' END
+                  FROM hop_party_transactions t
+                 WHERE t.workspace_id=d.workspace_id AND t.txn_type IN (1, 30, 65) AND trim(COALESCE(d.invoice_no_link,''))!=''
+                   AND lower(t.txn_number)=lower(trim(d.invoice_no_link))
+                   AND (t.deleted_at IS NULL OR trim(t.deleted_at)='') ORDER BY t.txn_type LIMIT 1) AS bill_kind
         FROM hop_dispatches d
         LEFT JOIN hop_projects p ON p.id = d.project_id
         LEFT JOIN hop_orders o ON o.id = d.order_id
@@ -1538,10 +1547,71 @@ def list_dispatches(conn: sqlite3.Connection, workspace_id: str, q: str | None =
         params.append(project_id)
     if q:
         like = f"%{q.strip()}%"
-        sql += " AND (d.tracking_number LIKE ? OR d.courier LIKE ? OR d.docket_number LIKE ? OR p.project_name LIKE ?)"
-        params.extend([like, like, like, like])
+        sql += (" AND (d.tracking_number LIKE ? OR d.courier LIKE ? OR d.docket_number LIKE ? OR p.project_name LIKE ?"
+                " OR d.invoice_no_link LIKE ? OR d.eway_bill LIKE ?)")
+        params.extend([like, like, like, like, like, like])
     sql += " ORDER BY d.updated_at DESC, d.id DESC"
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def update_sample(conn: sqlite3.Connection, workspace_id: str, sample_id: int, payload: dict) -> dict:
+    """Sample approval / return status, courier, tracking, notes."""
+    keys = ("approval_status", "return_status", "courier", "tracking_number", "sent_at", "notes")
+    vals = {k: _s(payload.get(k)) for k in keys if k in payload}
+    if not conn.execute("SELECT 1 FROM hop_samples WHERE workspace_id=? AND id=?", (workspace_id, int(sample_id))).fetchone():
+        raise ValueError("Sample not found")
+    if vals:
+        conn.execute(f"UPDATE hop_samples SET {', '.join(k + '=?' for k in vals)}, updated_at=? WHERE workspace_id=? AND id=?",
+                     [*vals.values(), _now(), workspace_id, int(sample_id)])
+        conn.commit()
+    return next(r for r in list_samples(conn, workspace_id) if int(r["id"]) == int(sample_id))
+
+
+def update_complaint(conn: sqlite3.Connection, workspace_id: str, complaint_id: int, payload: dict) -> dict:
+    """Complaint status (open → in progress → resolved), assigned to, feedback. Resolving records the hours taken."""
+    row = conn.execute("SELECT * FROM hop_complaints WHERE workspace_id=? AND id=?", (workspace_id, int(complaint_id))).fetchone()
+    if not row:
+        raise ValueError("Complaint not found")
+    vals: dict[str, Any] = {k: _s(payload.get(k)) for k in ("status", "assigned_to", "feedback", "issue") if k in payload}
+    if vals.get("status") == "resolved" and row["resolution_time_hours"] is None:
+        try:
+            start = datetime.fromisoformat(_s(row["created_at"]).replace("Z", "+00:00"))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            vals["resolution_time_hours"] = round((datetime.now(timezone.utc) - start).total_seconds() / 3600, 1)
+        except Exception:
+            pass
+    if vals:
+        conn.execute(f"UPDATE hop_complaints SET {', '.join(k + '=?' for k in vals)}, updated_at=? WHERE workspace_id=? AND id=?",
+                     [*vals.values(), _now(), workspace_id, int(complaint_id)])
+        conn.commit()
+    return next(r for r in list_complaints(conn, workspace_id) if int(r["id"]) == int(complaint_id))
+
+
+_DISPATCH_EDITABLE = ("status", "tracking_number", "courier", "delivery_status", "dispatched_at", "delivered_at",
+                      "invoice_no_link", "eway_bill", "docket_number", "notes")
+
+
+def update_dispatch(conn: sqlite3.Connection, workspace_id: str, dispatch_id: int, payload: dict) -> dict:
+    """Change a dispatch (status, tracking, bill no. …). Marking it delivered stamps today's India date."""
+    row = conn.execute("SELECT * FROM hop_dispatches WHERE workspace_id=? AND id=?", (workspace_id, int(dispatch_id))).fetchone()
+    if not row:
+        raise ValueError("Dispatch not found")
+    vals = {k: _s(payload.get(k)) for k in _DISPATCH_EDITABLE if k in payload}
+    if vals.get("delivery_status") == "delivered":
+        vals.setdefault("status", "delivered")
+        if not _s(row["delivered_at"]) and not vals.get("delivered_at"):
+            vals["delivered_at"] = __import__("app.hop_time", fromlist=["x"]).today_iso()
+    elif vals.get("delivery_status") == "in_transit":
+        vals.setdefault("status", "dispatched")
+    if "pod_received" in payload:
+        vals["pod_received"] = 1 if payload.get("pod_received") in (True, 1, "1", "true") else 0
+    if vals:
+        sets = ", ".join(f"{k}=?" for k in vals)
+        conn.execute(f"UPDATE hop_dispatches SET {sets}, updated_at=? WHERE workspace_id=? AND id=?",
+                     [*vals.values(), _now(), workspace_id, int(dispatch_id)])
+        conn.commit()
+    return next(d for d in list_dispatches(conn, workspace_id) if int(d["id"]) == int(dispatch_id))
 
 
 def create_dispatch(conn: sqlite3.Connection, workspace_id: str, payload: dict) -> dict:
@@ -3001,7 +3071,7 @@ def create_complaint(conn: sqlite3.Connection, workspace_id: str, payload: dict)
             workspace_id,
             project_id,
             customer_id,
-            _s(payload.get("complaint_date") or payload.get("date"))[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso(),
+            (_s(payload.get("complaint_date") or payload.get("date")) or "")[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso(),
             issue,
             _s(payload.get("assigned_to")),
             _s(payload.get("status")) or "open",
@@ -3159,8 +3229,18 @@ def report_meetings_dashboard(conn: sqlite3.Connection, workspace_id: str) -> di
 
 
 def report_receivables(conn: sqlite3.Connection, workspace_id: str) -> dict:
+    """Unpaid sale bills by age (from the due date, or the bill date when there is none)."""
     today = __import__("app.hop_time", fromlist=["x"]).today_ist()
-    invoices = [i for i in list_invoices(conn, workspace_id) if float(i.get("balance") or 0) > 0]
+    invoices = [
+        {"id": r["id"], "party_txn_id": r["id"], "invoice_no": r["txn_number"], "customer_id": r["party_id"],
+         "customer_company": r["party_name"], "invoice_date": r["txn_date"], "due_date": r["due_date"],
+         "total": float(r["total_amount"] or 0), "balance": round(float(r["balance_amount"] or 0), 2)}
+        for r in conn.execute(
+            """SELECT id, txn_number, party_id, party_name, txn_date, due_date, total_amount, balance_amount
+               FROM hop_party_transactions
+               WHERE workspace_id=? AND txn_type=1 AND COALESCE(balance_amount,0)>0.005
+                 AND (deleted_at IS NULL OR trim(deleted_at)='')
+               ORDER BY date(txn_date), id""", (workspace_id,)).fetchall()]
     buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
     by_customer: dict[str, float] = {}
     for inv in invoices:

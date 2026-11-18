@@ -47,3 +47,11 @@ def test_print_options_reach_the_bill(co):
         assert (pr["currency"], pr["header"], pr["hsn_column"], pr["margin_mm"]) == ("", "|| Shree Ganeshaya Namah ||", False, 15)
         S.save(conn, WS, {"currency_symbol": "$"})
         assert build_txn_preview(conn, WS, party_txn_id=co["inv"]["party_txn_id"])["print"]["currency"] == "$"
+
+
+def test_firm_state_known_party_state_unknown_is_cgst_sgst(co):
+    with connect(co["path"]) as conn:
+        conn.execute("UPDATE hop_customers SET gst_no='' WHERE workspace_id=?", (WS,))
+        data = build_txn_preview(conn, WS, party_txn_id=co["inv"]["party_txn_id"])
+        assert data["interstate"] is False
+        assert [r["label"] for r in data["gst_split"]] == ["CGST @ 9%", "SGST @ 9%"]

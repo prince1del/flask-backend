@@ -189,6 +189,9 @@ def create_app() -> Flask:
         static_folder="static",
         static_url_path="/static",
     )
+    # Keep fields in the order the code builds them (reports read top to bottom: sales → … → net profit,
+    # GSTR-3B: outward supplies → ITC → payable). Flask would otherwise sort them A–Z.
+    app.json.sort_keys = False
     secret_key = os.getenv("SECRET_KEY")
     if not secret_key:
         raise RuntimeError(

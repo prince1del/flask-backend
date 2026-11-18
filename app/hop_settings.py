@@ -64,16 +64,32 @@ def list_item_categories(conn: sqlite3.Connection, ws: str) -> list[dict[str, An
                   COALESCE((SELECT COUNT(*) FROM hop_products p
                             WHERE p.workspace_id=c.workspace_id
                               AND (p.category_id=c.id OR lower(trim(COALESCE(p.category,'')))=lower(c.name))), 0) AS product_count
-           FROM hop_item_categories c WHERE c.workspace_id=? ORDER BY lower(c.name)""",
+           FROM hop_item_categories c WHERE c.workspace_id=? ORDER BY lower(c.name), c.id""",
         (ws,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return _one_per_name([dict(r) for r in rows])
+
+
+def _one_per_name(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """"PCS" and "Pcs" are the same unit — show it once (the first one made)."""
+    seen: set[str] = set()
+    out = []
+    for r in rows:
+        k = _s(r.get("name")).lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(r)
+    return out
 
 
 def create_item_category(conn: sqlite3.Connection, ws: str, name: str) -> dict[str, Any]:
     name = _s(name)[:60]
     if not name:
         raise ValueError("Category name is required")
+    same = conn.execute("SELECT id, name FROM hop_item_categories WHERE workspace_id=? AND lower(trim(name))=lower(?) "
+                        "ORDER BY id LIMIT 1", (ws, name)).fetchone()
+    if same:
+        return dict(same)
     conn.execute(
         "INSERT OR IGNORE INTO hop_item_categories (workspace_id, name, created_at) VALUES (?, ?, ?)",
         (ws, name, _now()),
@@ -124,15 +140,19 @@ def _seed_units(conn: sqlite3.Connection, ws: str) -> None:
 def list_units(conn: sqlite3.Connection, ws: str) -> list[dict[str, Any]]:
     _seed_units(conn, ws)
     rows = conn.execute(
-        "SELECT id, name FROM hop_units WHERE workspace_id=? ORDER BY lower(name)", (ws,)
+        "SELECT id, name FROM hop_units WHERE workspace_id=? ORDER BY lower(name), id", (ws,)
     ).fetchall()
-    return [dict(r) for r in rows]
+    return _one_per_name([dict(r) for r in rows])
 
 
 def create_unit(conn: sqlite3.Connection, ws: str, name: str) -> dict[str, Any]:
     name = _s(name)[:30]
     if not name:
         raise ValueError("Unit name is required")
+    same = conn.execute("SELECT id, name FROM hop_units WHERE workspace_id=? AND lower(trim(name))=lower(?) "
+                        "ORDER BY id LIMIT 1", (ws, name)).fetchone()
+    if same:
+        return dict(same)
     conn.execute(
         "INSERT OR IGNORE INTO hop_units (workspace_id, name, created_at) VALUES (?, ?, ?)",
         (ws, name, _now()),
@@ -506,10 +526,11 @@ def overdue_bills(
     as_of: str | None = None,
     party_type: str | None = None,
 ) -> dict[str, Any]:
-    as_of = _s(as_of)[:10] or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    as_of = _s(as_of)[:10] or __import__("app.hop_time", fromlist=["x"]).today_iso()
     params: list[Any] = [ws, as_of]
     where = [
         "workspace_id=?",
+        "(deleted_at IS NULL OR trim(deleted_at)='')",
         "txn_type IN (1,2)",
         "COALESCE(balance_amount,0)>0.005",
         "due_date IS NOT NULL AND trim(due_date)!=''",
