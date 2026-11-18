@@ -673,6 +673,17 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
         data["hsn_summary"] = hsn_summary(data, inter) if s.get("print_hsn_summary") else []
     except Exception:
         data["gst_split"], data["hsn_summary"] = [], []
+    data["converted_to"] = None   # already converted → the phone shows a link to that bill instead of Convert buttons
+    if hid:
+        try:
+            r = conn.execute("""SELECT c.id, c.txn_label, c.txn_number FROM hop_party_transactions t
+                                JOIN hop_party_transactions c ON c.workspace_id=t.workspace_id AND c.id=t.converted_to_txn_id
+                                WHERE t.workspace_id=? AND t.id=? AND (c.deleted_at IS NULL OR trim(c.deleted_at)='')""",
+                             (workspace_id, int(hid))).fetchone()
+            if r:
+                data["converted_to"] = {"id": int(r[0]), "label": f"{r[1] or ''} {r[2] or ''}".strip()}
+        except Exception:
+            pass
     try:   # Print theme colour (Settings → Print theme) so the phone's bill and PDF match the printed one
         from app import hop_phase3_ext
 

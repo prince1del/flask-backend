@@ -560,8 +560,10 @@ def convert_draft(conn: sqlite3.Connection, ws: str, txn_id: int, to_type: int) 
     ty = int(t.get("txn_type") or 0)
     if int(to_type) not in CONVERT_TO.get(ty, ()):
         raise ValueError(f"{LABELS.get(ty, 'This document')} cannot be converted to {LABELS.get(int(to_type), 'that')}")
-    if t.get("converted_to_txn_id") and _row(conn, ws, int(t["converted_to_txn_id"])):
-        raise ValueError(f"Already {t.get('status_text') or 'converted'}")
+    done = _row(conn, ws, int(t["converted_to_txn_id"])) if t.get("converted_to_txn_id") else None
+    if done and not _s(done.get("deleted_at")):
+        raise ValueError(f"{t.get('txn_number') or 'This document'} is already converted to "
+                         f"{done.get('txn_label') or 'a bill'} {done.get('txn_number') or ''} — open that one instead.".replace("  ", " "))
     lines = conn.execute("SELECT * FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=? ORDER BY line_no, id",
                          (ws, int(t["source_txn_id"]))).fetchall()
     return {

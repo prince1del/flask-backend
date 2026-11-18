@@ -53,3 +53,17 @@ def test_ask_nexora_dispatch_samples_complaints(co):
         assert d["dispatches"][0]["courier"] == "DTDC" and d["not_delivered"] == 1
         c = fn(**args, what="complaints", **{k: v for k, v in kw.items() if k not in args})
         assert c["open"] == 1
+
+
+def test_converted_estimate_says_where_it_went(co):
+    import pytest
+    from app import hop_money
+    from app.hop_doc_preview import build_txn_preview, create_manual_party_document as create
+    with connect(co["path"]) as conn:
+        cid = conn.execute("SELECT id FROM hop_customers WHERE workspace_id=? LIMIT 1", (WS,)).fetchone()[0]
+        e = create(conn, WS, {"txn_type": 27, "customer_id": cid, "lines": [{"item_name": "Rod", "qty": 1, "rate": 100}]})
+        inv = create(conn, WS, hop_money.convert_draft(conn, WS, e["party_txn_id"], 1))
+        pv = build_txn_preview(conn, WS, party_txn_id=e["party_txn_id"])
+        assert pv["converted_to"]["id"] == inv["party_txn_id"] and inv["txn_number"] in pv["converted_to"]["label"]
+        with pytest.raises(ValueError, match="already converted to Sale Invoice"):
+            hop_money.convert_draft(conn, WS, e["party_txn_id"], 65)
