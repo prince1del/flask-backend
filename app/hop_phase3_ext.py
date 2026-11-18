@@ -14,6 +14,15 @@ PRINT_THEMES = {
     "slate": {"id": "slate", "name": "Slate", "accent": [51, 65, 85]},
     "forest": {"id": "forest", "name": "Forest", "accent": [22, 101, 52]},
     "maroon": {"id": "maroon", "name": "Maroon", "accent": [127, 29, 29]},
+    # more colours (owner 18-11)
+    "royal_purple": {"id": "royal_purple", "name": "Royal purple", "accent": [91, 33, 182]},
+    "teal": {"id": "teal", "name": "Teal", "accent": [15, 118, 110]},
+    "saffron": {"id": "saffron", "name": "Saffron", "accent": [194, 65, 12]},
+    "gold": {"id": "gold", "name": "Gold", "accent": [161, 98, 7]},
+    "rose": {"id": "rose", "name": "Rose", "accent": [190, 18, 60]},
+    "sky": {"id": "sky", "name": "Sky blue", "accent": [3, 105, 161]},
+    "indigo": {"id": "indigo", "name": "Indigo", "accent": [55, 48, 163]},
+    "charcoal": {"id": "charcoal", "name": "Charcoal (black & white)", "accent": [31, 41, 55]},
 }
 
 
