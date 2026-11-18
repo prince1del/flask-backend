@@ -375,6 +375,21 @@ def _draw_doc_meta_right(pdf: FPDF, y0: float, header: dict[str, Any]) -> float:
     return y
 
 
+def _place_of_supply(party: dict[str, Any], firm: dict[str, Any] | None) -> str:
+    """'07-Delhi': from the buyer's GSTIN / state, else the seller's own state (as on a GST bill)."""
+    try:
+        from app.hop_einvoice import STATE_CODES, _state
+
+        code = _state(str(party.get("gstin") or "").upper(), str(party.get("state") or "")) or (
+            _state(str((firm or {}).get("gstin") or "").upper(), str((firm or {}).get("state") or "")) if firm else "")
+        if not code:
+            return ""
+        name = next((k.title() for k, v in STATE_CODES.items() if v == code and len(k) > 3), "")
+        return f"{code}-{name}" if name else code
+    except Exception:
+        return ""
+
+
 def _draw_party_meta(pdf: FPDF, title: str, party: dict[str, Any], header: dict[str, Any]) -> None:
     epw = float(pdf.epw)
     left_w = epw * 0.55
@@ -392,6 +407,7 @@ def _draw_party_meta(pdf: FPDF, title: str, party: dict[str, Any], header: dict[
         party.get("address"),
         party.get("gstin") and f"GSTIN: {party.get('gstin')}",
         party.get("phone") and f"Phone: {party.get('phone')}",
+        (lambda pos: pos and f"Place of supply: {pos}")(_place_of_supply(party, header.get("_firm"))),
     ):
         if bit:
             pdf.set_x(pdf.l_margin)
@@ -441,7 +457,7 @@ def build_preview_pdf(preview: dict[str, Any], theme: dict[str, Any] | None = No
     pdf.set_text_color(*C_INK)
 
     pdf.ln(2)
-    _draw_party_meta(pdf, title, party, header)
+    _draw_party_meta(pdf, title, party, {**header, "_firm": firm})
 
     notes = _t(header.get("notes"))
     if notes:
