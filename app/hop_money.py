@@ -598,7 +598,10 @@ def convert_draft(conn: sqlite3.Connection, ws: str, txn_id: int, to_type: int) 
 DEFAULT_INCOME_CATEGORIES = ("Interest received", "Rent received", "Commission received", "Scrap sale",
                              "Discount received", "Other income")
 DEFAULT_EXPENSE_CATEGORIES = ("Rent", "Salary", "Electricity", "Transport", "Office supplies",
-                              "Telephone & Internet", "Repairs", "Commission", "Petrol", "Other")
+                              "Telephone & Internet", "Repairs", "Commission", "Petrol", "Interest paid", "Income tax",
+                              "Other")
+# Suggested (not auto-created) in the Expenses form for firms made before these were defaults — EBITDA reads them.
+EBITDA_CATEGORY_HINTS = ("Interest paid", "Income tax", "Amortisation")
 
 
 def _kind(kind: Any) -> str:
