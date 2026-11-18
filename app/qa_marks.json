@@ -198,6 +198,24 @@
         "Saved card: agent, bill, commission ₹, TDS ₹, net, paid status",
         "Tap card → clean copy with Open bill / Edit / Delete"
       ]
+    },
+    "sale_returns": {
+      "title": "Sale Return / Credit Note",
+      "date": "2026-11-18",
+      "passed": [
+        "Customer drop-down (tinted, screen does not jump)",
+        "Against invoice lists the customer's bills",
+        "Unit drop-down on lines"
+      ]
+    },
+    "purchase_bills": {
+      "title": "Purchase bills",
+      "date": "2026-11-18",
+      "passed": [
+        "Supplier bill no. + Bill date (calendar)",
+        "E-way / vehicle / transporter",
+        "Unit drop-down"
+      ]
     }
   }
 }
