@@ -20,7 +20,9 @@ def test_home_from_books(tmp_path, monkeypatch):
                           "lines": [{"item_name": "Rod", "qty": 1, "rate": 1000}]})
         create(conn, WS, {"txn_type": 27, "customer_id": c["id"], "txn_date": d,
                           "lines": [{"item_name": "Rod", "qty": 1, "rate": 500}]})
-    t = client.get("/api/v1/hop/executive/snapshot", headers=owner).get_json()["data"]["today"]
+    data = client.get("/api/v1/hop/executive/snapshot", headers=owner).get_json()["data"]
+    assert isinstance(data["cash_available"], float)
+    t = data["today"]
     assert t["outstanding_receivables"] == 600
     assert t["payments_received_today"] == 400
     assert t["quotations_pending"] == 1

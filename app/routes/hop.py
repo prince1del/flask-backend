@@ -231,6 +231,18 @@ def _sum(conn: sqlite3.Connection, sql: str, params: tuple) -> float:
     return float(row[0] or 0) if row else 0.0
 
 
+def _cash_available(ws: str) -> float | None:
+    """Cash in hand + all bank balances (as on the Cash & bank screen)."""
+    try:
+        from app import hop_books
+
+        with hop_db.connect(_db_path()) as conn:
+            hop_books.list_bank_accounts(conn, ws)   # makes sure the Cash account exists
+            return round(hop_books.cash_available(conn, ws), 2)
+    except Exception:
+        return None
+
+
 def _payload():
     return request.get_json(silent=True) or {}
 
@@ -612,10 +624,9 @@ def executive_snapshot():
                 "yearly": {"fy": tsum["fy"], "target": tsum["yearly_target"], "achieved": tsum["achieved_ytd"],
                            "pct": tsum["yearly_pct"]},
                 "gross_profit_pct": profit.get("gross_margin_pct"),
-                "cash_available": None,
+                "cash_available": _cash_available(ws),   # same figure as Cash & bank
                 "notes": {
                     "gross_profit_pct": profit.get("notes", {}).get("cogs"),
-                    "cash_available": "Unavailable until banking/cash ledger is connected",
                 },
             },
         }
