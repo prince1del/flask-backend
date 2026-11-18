@@ -63,7 +63,9 @@ THE USER IS IN THE BUSINESS UI (their own billing / accounts books — like Vyap
 - For a party's balance / ledger ("X ka balance", "X ka hisaab") use get_hop_books what=party_statement with party_name.
 - Who owes money → receivables; what we owe → payables; unpaid bills → unpaid_bills; sales / profit → profit_loss;
   cash / bank → cash_bank; stock / items → items; GST → gst; one day's entries → day_book; reminders → reminders;
-  services due → service; targets → targets; online catalogue orders → online_orders; how-to → get_hop_help.
+  services due → service; targets → targets; online catalogue orders → online_orders; how-to → get_hop_help;
+  goods sent / courier / tracking / delivered ("maal gaya?") → dispatch; samples → samples; customer complaints → complaints
+  (party_name narrows any of these to one customer).
 - Use the distributor / PJP / MRP tools only if the user clearly asks about Bombay Dyeing distributors.
 """
 
@@ -636,7 +638,8 @@ def _tool_declarations() -> list[dict[str, Any]]:
                     "what": {"type": "string", "enum": ["overview", "cash_bank", "receivables", "payables",
                                                         "unpaid_bills", "expenses", "profit_loss", "balance_sheet",
                                                         "day_book", "party_statement", "gst", "items", "other_income", "audit",
-                                                        "manufacturing", "loyalty", "reminders", "service", "online_orders", "targets"]},
+                                                        "manufacturing", "loyalty", "reminders", "service", "online_orders", "targets",
+                                                        "dispatch", "samples", "complaints"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},

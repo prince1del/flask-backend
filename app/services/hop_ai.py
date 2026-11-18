@@ -389,6 +389,28 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         slim = lambda xs: [{k: x[k] for k in ("party", "number", "balance", "due_date", "days")} for x in xs[:20]]  # noqa: E731
         return {"overdue": slim(dl["overdue"]), "due_today": slim(dl["today"]), "due_soon": slim(dl["soon"]),
                 "totals": dl["totals"], "as_of": dl["as_of"]}
+    if what in ("dispatch", "samples", "complaints"):
+        from app import hop_ops
+
+        def hit(*vals: Any) -> bool:
+            return not party_name or any(v and _similar(party_name, str(v)) >= 0.6 for v in vals)
+
+        if what == "dispatch":
+            rows = [{"bill_or_challan": d.get("invoice_no_link"), "customer": d.get("bill_party"), "courier": d.get("courier"),
+                     "tracking": d.get("tracking_number"), "eway_bill": d.get("eway_bill"), "sent": d.get("dispatched_at"),
+                     "status": d.get("delivery_status") or d.get("status"), "delivered": d.get("delivered_at")}
+                    for d in hop_ops.list_dispatches(conn, ws)
+                    if hit(d.get("bill_party"), d.get("invoice_no_link"), d.get("project_name"))]
+            return {"dispatches": rows[:30], "not_delivered": sum(1 for r in rows if (r["status"] or "") != "delivered")}
+        if what == "samples":
+            rows = [{"sample": s.get("sample_name"), "customer": s.get("customer_company"), "sent": s.get("sent_at"),
+                     "courier": s.get("courier"), "approval": s.get("approval_status") or "pending", "return": s.get("return_status")}
+                    for s in hop_ops.list_samples(conn, ws) if hit(s.get("customer_company"), s.get("sample_name"))]
+            return {"samples": rows[:30]}
+        rows = [{"issue": c.get("issue"), "customer": c.get("customer_company"), "status": c.get("status"),
+                 "priority": c.get("priority"), "date": c.get("complaint_date"), "assigned_to": c.get("assigned_to")}
+                for c in hop_ops.list_complaints(conn, ws) if hit(c.get("customer_company"))]
+        return {"complaints": rows[:30], "open": sum(1 for r in rows if (r["status"] or "open") != "resolved")}
     if what == "targets":
         from app import hop_targets
 

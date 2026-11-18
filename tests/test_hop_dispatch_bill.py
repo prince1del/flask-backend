@@ -33,3 +33,23 @@ def test_sample_and_complaint_status(co):
         c = hop_ops.create_complaint(conn, WS, {"issue": "Rod loose"})
         r = hop_ops.update_complaint(conn, WS, c["id"], {"status": "resolved"})
         assert r["status"] == "resolved"
+
+
+def test_ask_nexora_dispatch_samples_complaints(co):
+    from app.services import hop_ai
+    import inspect
+
+    fn = next(f for n, f in inspect.getmembers(hop_ai, inspect.isfunction)
+              if "what" in inspect.signature(f).parameters and "party_name" in inspect.signature(f).parameters)
+    with connect(co["path"]) as conn:
+        no = conn.execute("SELECT txn_number FROM hop_party_transactions WHERE workspace_id=? AND txn_type=1 LIMIT 1",
+                          (WS,)).fetchone()[0]
+        hop_ops.create_dispatch(conn, WS, {"invoice_no_link": no, "courier": "DTDC"})
+        hop_ops.create_complaint(conn, WS, {"issue": "Rod loose"})
+        kw = {p: None for p in inspect.signature(fn).parameters if p not in ("conn", "ws", "workspace_id", "what")}
+        first = list(inspect.signature(fn).parameters)
+        args = {first[0]: conn, first[1]: WS}
+        d = fn(**args, what="dispatch", **{k: v for k, v in kw.items() if k not in args})
+        assert d["dispatches"][0]["courier"] == "DTDC" and d["not_delivered"] == 1
+        c = fn(**args, what="complaints", **{k: v for k, v in kw.items() if k not in args})
+        assert c["open"] == 1
