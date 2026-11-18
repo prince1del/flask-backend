@@ -7,7 +7,8 @@
       "passed": [
         "Screen opens, cards load",
         "Greeting by time of day"
-      ]
+      ],
+      "title": "Home dashboard"
     },
     "parties": {
       "date": "2026-11-18",
@@ -15,7 +16,8 @@
         "Add Party (name, phone) → saved, shows in list",
         "Party sheet: real balance (To receive / Advance), ledger with formatted amounts and dates",
         "Similar-name check no longer flags different names"
-      ]
+      ],
+      "title": "Parties"
     },
     "invoices": {
       "date": "2026-11-18",
@@ -30,7 +32,8 @@
         "Print receipt asks Nearby-devices permission once",
         "Date format from Settings",
         "List shows Paid / Partial / Unpaid"
-      ]
+      ],
+      "title": "Sale invoices"
     },
     "sale_estimates": {
       "date": "2026-11-18",
@@ -40,7 +43,8 @@
         "Save & preview",
         "→ Sale Invoice convert (prefills customer and items)",
         "Status shows Converted"
-      ]
+      ],
+      "title": "Quotations / Estimates"
     },
     "payments": {
       "date": "2026-11-18",
@@ -49,13 +53,15 @@
         "Open bills listed for the customer",
         "Save → bill balance comes down (Partial)",
         "Receipt preview: Receipt No., Received From, Amount, Against bills"
-      ]
+      ],
+      "title": "Payment-In"
     },
     "sale_orders": {
       "date": "2026-11-18",
       "passed": [
         "Online catalogue order arrives as a Sale Order (Open)"
-      ]
+      ],
+      "title": "Sale orders"
     },
     "purchase_bills": {
       "date": "2026-11-18",
@@ -65,7 +71,8 @@
         "Item picker uses purchase price",
         "Save & preview (BILL FROM)",
         "Stock goes up"
-      ]
+      ],
+      "title": "Purchase bills"
     },
     "purchase_expenses": {
       "date": "2026-11-18",
@@ -74,7 +81,8 @@
         "Save & preview (PAID TO, no dummy item)",
         "Delete → Recycle bin (list refreshes)",
         "Restore from Recycle bin"
-      ]
+      ],
+      "title": "Expenses"
     },
     "products": {
       "date": "2026-11-18",
@@ -84,27 +92,31 @@
         "Edit buy price and stock",
         "Clean numbers (5, 18%, no .0)",
         "Share online catalogue → link made, page opens, order works"
-      ]
+      ],
+      "title": "Products / catalogue"
     },
     "stock": {
       "date": "2026-11-18",
       "passed": [
         "Stock after sale + purchase is correct"
-      ]
+      ],
+      "title": "Stock"
     },
     "banking": {
       "date": "2026-11-18",
       "passed": [
         "Cash balance correct (in − out)",
         "Entries: Money in / Money out, dates formatted"
-      ]
+      ],
+      "title": "Cash & bank"
     },
     "books": {
       "date": "2026-11-18",
       "passed": [
         "Profit & Loss figures correct",
         "Lines in statement order"
-      ]
+      ],
+      "title": "Books (P&L)"
     },
     "reminders": {
       "date": "2026-11-18",
@@ -113,7 +125,8 @@
         "Service tab",
         "SMS button",
         "Dates formatted, 1 day late"
-      ]
+      ],
+      "title": "Reminders"
     },
     "targets": {
       "date": "2026-11-18",
@@ -121,39 +134,45 @@
         "Yearly target + split into 12 months",
         "Achieved from bills, % and gap",
         "Needed per remaining month"
-      ]
+      ],
+      "title": "Targets"
     },
     "profit": {
       "date": "2026-11-18",
       "passed": [
         "Revenue, cost of goods, gross profit match P&L"
-      ]
+      ],
+      "title": "Profitability"
     },
     "daily": {
       "date": "2026-11-18",
       "passed": [
         "India date",
         "Collections without double count"
-      ]
+      ],
+      "title": "Daily activity"
     },
     "recycle_bin": {
       "date": "2026-11-18",
       "passed": [
         "Deleted bill listed with local time",
         "Restore"
-      ]
+      ],
+      "title": "Recycle bin"
     },
     "app_settings": {
       "date": "2026-11-18",
       "passed": [
         "Backup: Save a backup now → listed on server"
-      ]
+      ],
+      "title": "Settings → Backup"
     },
     "complaints": {
       "date": "2026-11-18",
       "passed": [
         "+ Complaint saves (India date)"
-      ]
+      ],
+      "title": "Complaints"
     },
     "godowns": {
       "date": "2026-11-18",
@@ -161,7 +180,8 @@
         "+ Godown (name) saved",
         "Move stock between godowns",
         "Stock per godown after move"
-      ]
+      ],
+      "title": "Godowns"
     },
     "manufacture": {
       "date": "2026-11-18",
@@ -169,7 +189,8 @@
         "Raw material list for a product",
         "Make 2 → finished stock up, raw stock down",
         "Undo restores stock"
-      ]
+      ],
+      "title": "Manufacturing"
     },
     "item_settings": {
       "date": "2026-11-18",
@@ -177,31 +198,45 @@
         "Add category",
         "Add unit",
         "Same name in other case (PCS / Pcs) shown once"
-      ]
+      ],
+      "title": "Items & units"
     },
     "print_theme": {
       "date": "2026-11-18",
       "passed": [
         "Switch theme (Forest) → active",
         "PDF uses theme colour"
-      ]
+      ],
+      "title": "Print theme"
     },
     "tally_export": {
       "date": "2026-11-18",
       "passed": [
         "Download XML → file made, share sheet opens"
-      ]
+      ],
+      "title": "Export to Tally"
     },
     "staff_permissions": {
       "date": "2026-11-18",
       "passed": [
         "Clear message when no staff yet"
-      ]
+      ],
+      "title": "Staff permissions"
     },
     "overdue": {
       "date": "2026-11-18",
       "passed": [
         "Opens, empty state"
+      ],
+      "title": "Overdue bills"
+    },
+    "dispatches": {
+      "title": "Dispatch",
+      "date": "2026-11-18",
+      "passed": [
+        "+ Dispatch (courier, tracking) saved",
+        "Tap card → details",
+        "Mark Delivered → date stamped"
       ]
     }
   }
