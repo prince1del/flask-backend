@@ -23,60 +23,12 @@
       ],
       "title": "Parties"
     },
-    "invoices": {
-      "date": "2026-11-18",
-      "passed": [
-        "+ New invoice",
-        "Customer picker",
-        "Item picker from catalogue fills rate, GST, HSN, unit",
-        "Save & preview (totals, GST, balance)",
-        "Edit (qty change → new total)",
-        "Share: WhatsApp bill / SMS bill / Reminder / SMS reminder buttons",
-        "SMS bill opens Messages with number and text",
-        "Print receipt asks Nearby-devices permission once",
-        "Date format from Settings",
-        "List shows Paid / Partial / Unpaid"
-      ],
-      "title": "Sale invoices"
-    },
-    "sale_estimates": {
-      "date": "2026-11-18",
-      "passed": [
-        "+ New quotation with item, qty, rate",
-        "Number uses business's own prefix (TFEST)",
-        "Save & preview",
-        "→ Sale Invoice convert (prefills customer and items)",
-        "Status shows Converted"
-      ],
-      "title": "Quotations / Estimates"
-    },
-    "payments": {
-      "date": "2026-11-18",
-      "passed": [
-        "+ New Payment-In",
-        "Open bills listed for the customer",
-        "Save → bill balance comes down (Partial)",
-        "Receipt preview: Receipt No., Received From, Amount, Against bills"
-      ],
-      "title": "Payment-In"
-    },
     "sale_orders": {
       "date": "2026-11-18",
       "passed": [
         "Online catalogue order arrives as a Sale Order (Open)"
       ],
       "title": "Sale orders"
-    },
-    "purchase_bills": {
-      "date": "2026-11-18",
-      "passed": [
-        "+ New purchase bill",
-        "+ Add new supplier from the bill",
-        "Item picker uses purchase price",
-        "Save & preview (BILL FROM)",
-        "Stock goes up"
-      ],
-      "title": "Purchase bills"
     },
     "purchase_expenses": {
       "date": "2026-11-18",
@@ -87,17 +39,6 @@
         "Restore from Recycle bin"
       ],
       "title": "Expenses"
-    },
-    "products": {
-      "date": "2026-11-18",
-      "passed": [
-        "+ Product form",
-        "Service period tip (AI) and Suggested chip",
-        "Edit buy price and stock",
-        "Clean numbers (5, 18%, no .0)",
-        "Share online catalogue → link made, page opens, order works"
-      ],
-      "title": "Products / catalogue"
     },
     "stock": {
       "date": "2026-11-18",
@@ -131,15 +72,6 @@
         "Dates formatted, 1 day late"
       ],
       "title": "Reminders"
-    },
-    "targets": {
-      "date": "2026-11-18",
-      "passed": [
-        "Yearly target + split into 12 months",
-        "Achieved from bills, % and gap",
-        "Needed per remaining month"
-      ],
-      "title": "Targets"
     },
     "profit": {
       "date": "2026-11-18",
