@@ -167,3 +167,46 @@ from app.hop_help_more import MORE as _MORE  # noqa: E402
 
 for _k, _v in _MORE.items():
     SHOWS[_k] = _v["shows"]
+
+
+# ── 18-11-2026: what changed on these screens (kept in the Info sheet) ─────────────────────────────
+SHOWS["invoices"] = SHOWS["invoices"] + [
+    "Date — tap it to pick from the calendar (every date in the app works the same way).",
+    "Customer PO no. and PO date — your customer's order number; printed on the bill.",
+    "E-way bill no., Vehicle no., Transporter — printed on the bill when filled in.",
+    "Time — saved automatically; type one only to change it.",
+    "Converted quotation — shows 'Converted to Sale Invoice …', tap it to open that bill.",
+]
+SHOWS["sale_estimates"] = SHOWS.get("sale_estimates", []) + [
+    "Convert → Sale Order / Invoice / Proforma — a quotation can be converted once; after that it links to the new bill.",
+]
+SHOWS["payments"] = SHOWS["payments"] + ["UTR / Ref no. — for bank or UPI payments (cheque no. for a cheque); printed on the receipt."]
+SHOWS["purchase_payment_out"] = SHOWS.get("purchase_payment_out", []) + ["UTR / Ref no. — for bank or UPI payments; printed on the voucher."]
+SHOWS["purchase_bills"] = SHOWS["purchase_bills"] + [
+    "Supplier bill no. and Bill date — the number printed on the supplier's own bill (our ref no. is separate).",
+]
+SHOWS["sale_returns"] = SHOWS["sale_returns"] + ["Against invoice — pick the original bill (GST needs it on a credit note)."]
+SHOWS["commission"] = [
+    "Top — total commission, TDS and net still to pay.",
+    "Each card — who gets it, on which bill, commission % and ₹, TDS % and ₹, net, paid or not. Tap → clean copy with Open bill / Edit / Delete.",
+    "+ Commission — pick the bill: Due (customer has a usual agent), No commission, or All; search by bill, party or agent.",
+    "Use for every bill of this customer — remembers the agent and %; their next bills show as Due.",
+    "TDS on commission — section 194H, 2% (it was 5% before Oct 2024).",
+]
+SHOWS["samples"] = SHOWS.get("samples", []) + [
+    "New sample — pick the party, add every sample in the send (name, qty, unit), sent date, courier and tracking.",
+    "Tap a sample — mark it Approved, Rejected or Returned.",
+]
+SHOWS["dispatches"] = SHOWS.get("dispatches", []) + [
+    "Bill / Challan no. — pick from your sale bills or delivery challans (PO is optional); customer shows on the card.",
+    "Tap a dispatch — mark it In transit or Delivered (today's date is stamped).",
+]
+SHOWS["products"] = SHOWS["products"] + ["Photo — 📷 Camera or 🖼 Gallery in the product form; used in the online catalogue."]
+SHOWS["receivables"] = SHOWS["receivables"] + [
+    "Tap a customer — only their pending bills are listed; Show all to go back.",
+    "Tap a bill — opens the full invoice copy.",
+]
+SHOWS["dashboard"] = SHOWS["dashboard"] + [
+    "Cards — every card opens its screen (Outstanding → Receivables, Collections → Daily activity, Sales vs Target → Targets…).",
+    "Cash Available — cash in hand + all bank balances (same as Cash & bank).",
+]

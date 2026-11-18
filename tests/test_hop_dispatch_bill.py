@@ -77,3 +77,21 @@ def test_sample_with_party_and_several_items(co):
         row = next(r for r in hop_ops.list_samples(conn, WS) if r["id"] == s["id"])
         assert row["customer_company"] == "Hotel A" and len(row["items"]) == 2
         assert "Blackout fabric × 2" in row["sample_name"]
+
+
+def test_commission_due_from_customer_agent_and_delete(co):
+    from app.hop_doc_preview import create_manual_party_document as create
+    with connect(co["path"]) as conn:
+        cid = co["cust"]["id"]
+        inv1 = create(conn, WS, {"txn_type": 1, "customer_id": cid, "lines": [{"item_name": "Rod", "qty": 1, "rate": 1000}]})
+        e = hop_ops.upsert_commission_entry(conn, WS, {"party_txn_id": inv1["party_txn_id"], "agent_name": "Raju",
+                                                       "commission_pct": 3, "tds_pct": 2})
+        hop_ops.set_customer_commission_agent(conn, WS, inv1["party_txn_id"], "Raju", 3, 2)
+        inv2 = create(conn, WS, {"txn_type": 1, "customer_id": cid, "lines": [{"item_name": "Rod", "qty": 2, "rate": 1000}]})
+        rows = {r["party_txn_id"]: r for r in hop_ops.list_tax_invoices_for_commission(conn, WS)}
+        assert rows[inv2["party_txn_id"]]["commission_due"] and rows[inv2["party_txn_id"]]["suggested_agent"] == "Raju"
+        assert not rows[inv1["party_txn_id"]]["commission_due"]
+        eid = rows[inv1["party_txn_id"]]["entry_id"]
+        hop_ops.delete_commission_entry(conn, WS, eid)
+        assert not {r["party_txn_id"]: r for r in hop_ops.list_tax_invoices_for_commission(conn, WS)}[inv1["party_txn_id"]]["has_entry"]
+        _ = e

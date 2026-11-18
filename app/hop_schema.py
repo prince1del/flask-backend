@@ -1203,6 +1203,10 @@ def ensure_hop_schema(db_path: str | Path) -> None:
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
         _ensure_column(conn, "hop_samples", "items_json", "TEXT")
+        # Customer's commission agent: every bill of this customer is "commission due" to them (Commission screen).
+        _ensure_column(conn, "hop_customers", "commission_agent", "TEXT")
+        _ensure_column(conn, "hop_customers", "commission_pct", "REAL")
+        _ensure_column(conn, "hop_customers", "commission_tds_pct", "REAL")
         _ensure_column(conn, "hop_products", "photo_v", "TEXT")     # product photo version (hop_product_photos)   # several samples in one send: [{name, qty, unit, notes}]
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
         _ensure_column(conn, "hop_txn_lines", "is_charge", "INTEGER")   # additional charge (packing, freight…)

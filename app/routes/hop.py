@@ -1988,9 +1988,26 @@ def commission_worksheet_save():
     try:
         with hop_db.connect(_db_path()) as conn:
             data = hop_ops.upsert_commission_entry(conn, _ws(), payload)
+            if payload.get("remember_for_party"):
+                hop_ops.set_customer_commission_agent(conn, _ws(), int(payload.get("party_txn_id") or 0),
+                                                      str(payload.get("agent_name") or ""),
+                                                      float(payload.get("commission_pct") or 0), float(payload.get("tds_pct") or 0))
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/commission/entries/<int:entry_id>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def commission_entry_delete(entry_id: int):
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            hop_ops.delete_commission_entry(conn, _ws(), entry_id)
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": {"deleted": entry_id}})
 
 
 @hop_bp.route("/commission/sale-invoices", methods=["GET"])

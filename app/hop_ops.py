@@ -2331,11 +2331,16 @@ def list_tax_invoices_for_commission(
             e.origin,
             e.agent_party_id,
             e.agent_party_type,
-            e.id AS entry_id
+            e.id AS entry_id,
+            c.commission_agent AS default_agent,
+            c.commission_pct AS default_pct,
+            c.commission_tds_pct AS default_tds_pct
         FROM hop_party_transactions t
         LEFT JOIN hop_commission_entries e
             ON e.workspace_id = t.workspace_id
            AND e.source_txn_id = t.source_txn_id
+        LEFT JOIN hop_customers c
+            ON c.workspace_id = t.workspace_id AND c.id = t.party_id AND t.party_type = 'customer'
         WHERE (t.deleted_at IS NULL OR trim(t.deleted_at)='') AND t.workspace_id = ?
           AND t.txn_type = 1
         ORDER BY date(t.txn_date) DESC, t.id DESC
@@ -2382,9 +2387,33 @@ def list_tax_invoices_for_commission(
                 "origin": ((d.get("origin") or "manual") if d.get("entry_id") else None),
                 "agent_party_id": d.get("agent_party_id") if d.get("entry_id") else None,
                 "agent_party_type": d.get("agent_party_type") if d.get("entry_id") else None,
+                # The customer's usual agent → this bill is "commission due" until an entry is saved.
+                "suggested_agent": (d.get("default_agent") or None),
+                "suggested_pct": _f(d.get("default_pct")) or None,
+                "suggested_tds_pct": _f(d.get("default_tds_pct")) if d.get("default_tds_pct") is not None else None,
+                "commission_due": bool(d.get("default_agent")) and not d.get("entry_id"),
             }
         )
     return out
+
+
+def set_customer_commission_agent(conn: sqlite3.Connection, workspace_id: str, party_txn_id: int, agent: str,
+                                  pct: float, tds_pct: float) -> None:
+    """Remember the agent + % for the customer of this bill (their next bills show as commission due)."""
+    r = conn.execute("SELECT party_type, party_id FROM hop_party_transactions WHERE workspace_id=? AND id=?",
+                     (workspace_id, int(party_txn_id))).fetchone()
+    if r and r[0] == "customer" and r[1]:
+        conn.execute("UPDATE hop_customers SET commission_agent=?, commission_pct=?, commission_tds_pct=? "
+                     "WHERE workspace_id=? AND id=?", ((agent or "").strip() or None, pct or None, tds_pct, workspace_id, int(r[1])))
+        conn.commit()
+
+
+def delete_commission_entry(conn: sqlite3.Connection, workspace_id: str, entry_id: int) -> None:
+    if not conn.execute("SELECT 1 FROM hop_commission_entries WHERE workspace_id=? AND id=?",
+                        (workspace_id, int(entry_id))).fetchone():
+        raise LookupError("Commission entry not found")
+    conn.execute("DELETE FROM hop_commission_entries WHERE workspace_id=? AND id=?", (workspace_id, int(entry_id)))
+    conn.commit()
 
 
 def list_commission_records(
