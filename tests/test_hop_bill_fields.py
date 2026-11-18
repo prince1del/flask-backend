@@ -28,3 +28,10 @@ def test_fields_saved_and_shown(co):
                                "party_bill_date": "2026-11-12", "lines": [{"item_name": "Rod", "qty": 1, "rate": 600}]})
         d = get_manual_party_document(conn, WS, pb["party_txn_id"])
         assert d["party_bill_no"] == "MILL/552" and d["party_bill_date"] == "2026-11-12"
+
+
+def test_amount_in_words_indian():
+    from app.hop_doc_pdf import amount_in_words
+    assert amount_in_words(81420) == "Rupees Eighty One Thousand Four Hundred Twenty Only"
+    assert amount_in_words(12500000.5) == "Rupees One Crore Twenty Five Lakh and Fifty Paise Only"
+    assert amount_in_words(0) == "Rupees Zero Only"

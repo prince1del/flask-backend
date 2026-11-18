@@ -425,12 +425,18 @@ def build_preview_pdf(preview: dict[str, Any], theme: dict[str, Any] | None = No
     totals = preview.get("totals") or {}
     lines = preview.get("lines") or []
 
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.set_text_color(*C_MUTED)
+    pdf.cell(0, 3, _t((preview.get("print") or {}).get("copy_label") or "ORIGINAL FOR RECIPIENT"), align="R",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     _draw_firm_header(pdf, firm)
 
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(*_accent())
     title = _t(header.get("doc_title") or "Document")
+    if title == "Sale Invoice" and firm.get("gstin"):
+        title = "Tax Invoice"   # what a GST-registered seller's bill is called (Vyapar does the same)
     pdf.cell(0, 9, title, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_text_color(*C_INK)
 
@@ -450,11 +456,16 @@ def build_preview_pdf(preview: dict[str, Any], theme: dict[str, Any] | None = No
         _draw_commercial_table(pdf, lines)
     elif lines:
         _draw_standard_table(pdf, lines)
+        _draw_total_row(pdf, lines, totals)
     else:
         pdf.set_font("Helvetica", "I", 9)
         _full_width_text(pdf, 5, preview.get("lines_missing_hint") or "No line items.")
 
-    _draw_totals_block(pdf, totals, commercial)
+    if commercial:
+        _draw_totals_block(pdf, totals, commercial)
+    else:
+        _draw_totals_full(pdf, preview)
+        _draw_hsn_summary(pdf, preview)
     _draw_terms_bank(pdf, preview)
     return bytes(pdf.output())
 
@@ -684,6 +695,33 @@ def _draw_terms_bank(pdf: _HopPdf, preview: dict) -> None:
         )
         if b
     ]
+    upi = preview.get("upi") or {}
+    if upi.get("upi_id"):
+        bank_bits.append(f"UPI: {upi.get('upi_id')}")
+    if not terms:
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(left_w, 5, "Terms and Conditions", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", size=8)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(left_w, 4, "Thank you for doing business with us.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(1)
+    if upi.get("qr_png"):
+        try:
+            import base64 as _b64
+
+            qy = pdf.get_y()
+            raw = str(upi["qr_png"]).split(",")[-1]
+            pdf.image(io.BytesIO(_b64.b64decode(raw)), x=pdf.l_margin, y=qy, w=24, h=24)
+            pdf.set_xy(pdf.l_margin + 26, qy + 8)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(left_w - 26, 4, "Scan to pay by UPI", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_xy(pdf.l_margin + 26, qy + 12)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.cell(left_w - 26, 4, _t(f"{upi.get('upi_id')} · {_money(upi.get('amount'))}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_y(qy + 26)
+        except Exception:
+            pass
     if bank_bits:
         pdf.set_x(pdf.l_margin)
         pdf.set_font("Helvetica", "B", 8)
@@ -717,3 +755,181 @@ def _draw_terms_bank(pdf: _HopPdf, preview: dict) -> None:
     pdf.set_text_color(*C_INK)
     pdf.cell(sign_w, 4, "Authorized Signatory", align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_y(max(y_left, pdf.get_y()) + 2)
+
+
+
+# ── Vyapar-style blocks (owner 18-11: "bill kitna khali khali hai") ──────────────────────────────────────
+
+_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
+         "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+
+def _words_99(n: int) -> str:
+    return _ONES[n] if n < 20 else (_TENS[n // 10] + (" " + _ONES[n % 10] if n % 10 else ""))
+
+
+def _words_999(n: int) -> str:
+    h, r = divmod(n, 100)
+    return ((_ONES[h] + " Hundred" + (" " if r else "")) if h else "") + (_words_99(r) if r else "")
+
+
+def amount_in_words(amount: float) -> str:
+    """Indian numbering: 81420.5 → 'Rupees Eighty One Thousand Four Hundred Twenty and Fifty Paise Only'."""
+    amount = round(abs(float(amount or 0)), 2)
+    rupees, paise = int(amount), int(round((amount - int(amount)) * 100))
+    if rupees == 0 and paise == 0:
+        return "Rupees Zero Only"
+    parts = []
+    crore, rest = divmod(rupees, 10_000_000)
+    lakh, rest = divmod(rest, 100_000)
+    thousand, rest = divmod(rest, 1000)
+    if crore:
+        parts.append(_words_999(crore) + " Crore")
+    if lakh:
+        parts.append(_words_99(lakh) + " Lakh")
+    if thousand:
+        parts.append(_words_99(thousand) + " Thousand")
+    if rest:
+        parts.append(_words_999(rest))
+    out = "Rupees " + " ".join(parts) if parts else "Rupees Zero"
+    if paise:
+        out += " and " + _words_99(paise) + " Paise"
+    return out + " Only"
+
+
+def _draw_total_row(pdf: _HopPdf, lines: list[dict], totals: dict) -> None:
+    """'Total' line under the items: total qty and total amount (like Vyapar)."""
+    qty = sum(float(ln.get("qty") or 0) for ln in lines if not ln.get("is_charge"))
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*C_INK)
+    pdf.set_fill_color(241, 245, 249)
+    pdf.set_x(pdf.l_margin)
+    pdf.cell(float(pdf.epw) * 0.55, 6, "  Total", border=1, fill=True)
+    pdf.cell(float(pdf.epw) * 0.12, 6, (f"{qty:g}" if qty else ""), border=1, align="R", fill=True)
+    pdf.cell(float(pdf.epw) * 0.33, 6, _money(totals.get("grand_total")) + " ", border=1, align="R", fill=True,
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(3)
+
+
+def _draw_totals_full(pdf: _HopPdf, preview: dict) -> None:
+    """Left: amount in words + payment mode. Right: Sub total, discount, CGST / SGST or IGST, cess, TCS, round off,
+    Total, Received, Balance."""
+    totals = preview.get("totals") or {}
+    header = preview.get("header") or {}
+    if not totals:
+        return
+    y0 = pdf.get_y()
+    left_w = float(pdf.epw) * 0.55
+    block_w = float(pdf.epw) - left_w - 4
+    x = pdf.l_margin + left_w + 4
+    rows: list[tuple[str, str, bool]] = [("Sub Total", _money(totals.get("sub_total")), False)]
+    if float(totals.get("discount_amount") or 0) > 0.009:
+        rows.append(("Discount", "- " + _money(totals.get("discount_amount")), False))
+    split = preview.get("gst_split") or []
+    if split:
+        rows += [(_t(r.get("label")), _money(r.get("amount")), False) for r in split]
+    elif float(totals.get("tax_total") or 0) > 0.009:
+        rows.append(("GST", _money(totals.get("tax_total")), False))
+    if float(totals.get("shipping_amount") or 0) > 0.009:
+        rows.append(("Shipping / freight", _money(totals.get("shipping_amount")), False))
+    if float(totals.get("tcs_amount") or 0) > 0.009:
+        rows.append((f"TCS @ {float(totals.get('tcs_pct') or 0):g}%", _money(totals.get("tcs_amount")), False))
+    if abs(float(totals.get("round_off") or 0)) > 0.009:
+        rows.append(("Round off", _money(totals.get("round_off")), False))
+    rows.append(("Total", _money(totals.get("grand_total")), True))
+    balance = totals.get("balance") if totals.get("balance") is not None else header.get("balance_amount")
+    received = totals.get("received_amount") if totals.get("received_amount") is not None else header.get("received_amount")
+    if received in (None, "") and balance not in (None, ""):
+        received = round(float(totals.get("grand_total") or 0) - float(balance or 0), 2)
+    if received not in (None, "") and float(received or 0) > 0.009:
+        rows.append(("Received", _money(received), False))
+    if balance not in (None, ""):
+        rows.append(("Balance", _money(balance), False))
+    if float(totals.get("tds_amount") or 0) > 0.009:
+        rows.append((f"TDS @ {float(totals.get('tds_pct') or 0):g}% (deducted)", _money(totals.get("tds_amount")), False))
+
+    pdf.set_draw_color(203, 213, 225)
+    for label, val, big in rows:
+        pdf.set_x(x)
+        if big:
+            pdf.set_fill_color(*_accent())
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(block_w * 0.55, 7, "  " + label, fill=True)
+            pdf.cell(block_w * 0.45, 7, val + " ", align="R", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_text_color(*C_INK)
+        else:
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_text_color(*C_INK)
+            pdf.cell(block_w * 0.55, 5, "  " + label, border="B")
+            pdf.cell(block_w * 0.45, 5, val + " ", align="R", border="B", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    y_right = pdf.get_y()
+
+    pdf.set_xy(pdf.l_margin, y0)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*C_MUTED)
+    pdf.cell(left_w, 4, "Invoice Amount In Words", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*C_INK)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(left_w, 4, _t(amount_in_words(totals.get("grand_total") or 0)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    mode = _t(header.get("payment_mode"))
+    if mode and received not in (None, "") and float(received or 0) > 0.009:
+        pdf.ln(1)
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(*C_MUTED)
+        pdf.cell(left_w, 4, "Payment Mode", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(*C_INK)
+        pdf.set_x(pdf.l_margin)
+        pdf.cell(left_w, 4, mode.capitalize(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_y(max(y_right, pdf.get_y()) + 3)
+
+
+def _draw_hsn_summary(pdf: _HopPdf, preview: dict) -> None:
+    """HSN / SAC tax summary (GST bills): HSN · taxable · CGST · SGST (or IGST) · total tax."""
+    lines = [ln for ln in (preview.get("lines") or []) if float(ln.get("tax_pct") or 0) > 0]
+    if not lines or not (preview.get("firm") or {}).get("gstin"):
+        return
+    inter = preview.get("interstate") is True
+    rows: dict[tuple[str, float], list[float]] = {}
+    for ln in lines:
+        key = (_t(ln.get("hsn")) or "-", round(float(ln.get("tax_pct") or 0), 2))
+        # line_total includes GST → taxable = line_total − GST
+        taxable = float(ln.get("taxable_amount") or 0) or (
+            float(ln.get("line_total") or ln.get("amount") or 0) - float(ln.get("tax_amount") or 0))
+        r = rows.setdefault(key, [0.0, 0.0])
+        r[0] += taxable
+        r[1] += float(ln.get("tax_amount") or 0) - float(ln.get("cess_amount") or 0)
+    if not rows:
+        return
+    _ensure_space(pdf, 14 + 5 * len(rows))
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*C_INK)
+    pdf.cell(0, 5, "Tax summary (HSN / SAC)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    cols = ["HSN / SAC", "Taxable", "IGST" if inter else "CGST", "" if inter else "SGST", "Total tax"]
+    w = [0.24, 0.22, 0.18, 0.18, 0.18]
+    pdf.set_fill_color(*_accent())
+    pdf.set_text_color(255, 255, 255)
+    for c, f in zip(cols, w):
+        pdf.cell(float(pdf.epw) * f, 6, c, border=1, align="C", fill=True)
+    pdf.ln(6)
+    pdf.set_text_color(*C_INK)
+    pdf.set_font("Helvetica", "", 8)
+    tot = [0.0, 0.0]
+    for (hsn, pct), (taxable, tax) in rows.items():
+        half = tax / 2
+        cells = [hsn, _money(taxable),
+                 (f"{pct:g}% · {_money(tax)}" if inter else f"{pct / 2:g}% · {_money(half)}"),
+                 ("" if inter else f"{pct / 2:g}% · {_money(tax - half)}"), _money(tax)]
+        for c, f in zip(cells, w):
+            pdf.cell(float(pdf.epw) * f, 5, c, border=1, align="R" if c != hsn else "L")
+        pdf.ln(5)
+        tot[0] += taxable
+        tot[1] += tax
+    pdf.set_font("Helvetica", "B", 8)
+    for c, f in zip(["Total", _money(tot[0]), "", "", _money(tot[1])], w):
+        pdf.cell(float(pdf.epw) * f, 5, c, border=1, align="R" if c != "Total" else "L")
+    pdf.ln(8)
