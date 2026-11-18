@@ -1202,6 +1202,8 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("ref_txn_id", "INTEGER"),          # credit / debit note: the original invoice / bill
         ):
             _ensure_column(conn, "hop_party_transactions", col, ddl)
+        _ensure_column(conn, "hop_samples", "items_json", "TEXT")
+        _ensure_column(conn, "hop_products", "photo_v", "TEXT")     # product photo version (hop_product_photos)   # several samples in one send: [{name, qty, unit, notes}]
         _ensure_column(conn, "hop_txn_lines", "product_id", "INTEGER")
         _ensure_column(conn, "hop_txn_lines", "is_charge", "INTEGER")   # additional charge (packing, freight…)
         _ensure_column(conn, "hop_txn_lines", "free_qty", "REAL")       # free quantity given with the item

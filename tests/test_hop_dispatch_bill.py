@@ -67,3 +67,13 @@ def test_converted_estimate_says_where_it_went(co):
         assert pv["converted_to"]["id"] == inv["party_txn_id"] and inv["txn_number"] in pv["converted_to"]["label"]
         with pytest.raises(ValueError, match="already converted to Sale Invoice"):
             hop_money.convert_draft(conn, WS, e["party_txn_id"], 65)
+
+
+def test_sample_with_party_and_several_items(co):
+    with connect(co["path"]) as conn:
+        cid = co["cust"]["id"]
+        s = hop_ops.create_sample(conn, WS, {"customer_id": cid, "items": [
+            {"name": "Blackout fabric", "qty": 2, "unit": "MTR"}, {"name": "Sheer swatch", "qty": 1}]})
+        row = next(r for r in hop_ops.list_samples(conn, WS) if r["id"] == s["id"])
+        assert row["customer_company"] == "Hotel A" and len(row["items"]) == 2
+        assert "Blackout fabric × 2" in row["sample_name"]

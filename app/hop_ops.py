@@ -1182,14 +1182,40 @@ def list_samples(conn: sqlite3.Connection, workspace_id: str, q: str | None = No
         sql += " AND (s.sample_name LIKE ? OR s.tracking_number LIKE ? OR c.company LIKE ?)"
         params.extend([like, like, like])
     sql += " ORDER BY s.updated_at DESC, s.id DESC"
-    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    import json as _json
+
+    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    for r in rows:
+        try:
+            r["items"] = _json.loads(r.get("items_json") or "[]")
+        except Exception:
+            r["items"] = []
+        r.pop("items_json", None)
+    return rows
+
+
+def _sample_items(payload: dict) -> list[dict]:
+    """Several samples in one send (Vyapar-like lines): name, qty, unit, notes."""
+    out = []
+    for it in payload.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        n = (_s(it.get("name")) or "").strip()
+        if n:
+            out.append({"name": n[:120], "qty": _f(it.get("qty")) or 1, "unit": (_s(it.get("unit")) or "")[:12],
+                        "notes": (_s(it.get("notes")) or "")[:200]})
+    return out[:50]
 
 
 def create_sample(conn: sqlite3.Connection, workspace_id: str, payload: dict) -> dict:
+    import json as _json
+
     now = _now()
-    name = _s(payload.get("sample_name"))
+    items = _sample_items(payload)
+    name = _s(payload.get("sample_name")) or ", ".join(
+        i["name"] + (f" × {i['qty']:g}" if i["qty"] != 1 else "") for i in items)[:200]
     if not name:
-        raise ValueError("sample_name is required")
+        raise ValueError("Add at least one sample item")
     project_id = _i(payload.get("project_id"))
     customer_id = _i(payload.get("customer_id"))
     if project_id and not customer_id:
@@ -1216,6 +1242,8 @@ def create_sample(conn: sqlite3.Connection, workspace_id: str, payload: dict) ->
             now,
         ),
     )
+    if items:
+        conn.execute("UPDATE hop_samples SET items_json=? WHERE id=?", (_json.dumps(items), cur.lastrowid))
     sid = int(cur.lastrowid)
     log_activity(
         conn,

@@ -1710,6 +1710,37 @@ def products_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/products/<int:product_id>/photo", methods=["GET", "POST", "DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_photo(product_id: int):
+    """Product photo: POST a file (field "photo") from camera or gallery, GET the JPEG, DELETE to remove."""
+    import os
+
+    from flask import send_file
+
+    from app import hop_product_photos as PH
+
+    ensure_hop_schema(_db_path())
+    if request.method == "GET":
+        p = PH.path_for(_db_path(), _ws(), product_id)
+        if not os.path.exists(p):
+            return _json_error("No photo yet", "NOT_FOUND", 404)
+        return send_file(p, mimetype="image/jpeg", max_age=3600)
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "DELETE":
+                PH.remove(conn, _db_path(), _ws(), product_id)
+                return jsonify({"success": True, "data": {"product_id": product_id, "photo_v": None}})
+            f = request.files.get("photo") or request.files.get("file") or request.files.get("image")
+            data = PH.save(conn, _db_path(), _ws(), product_id, f.read() if f else b"")
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
 @hop_bp.route("/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
