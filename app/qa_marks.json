@@ -188,6 +188,16 @@
         "Tap a customer → only their pending bills, Show all",
         "Tap a pending bill → full invoice copy (items, HSN, CGST/SGST, balance, share/edit)"
       ]
+    },
+    "commission": {
+      "title": "Commission",
+      "date": "2026-11-18",
+      "passed": [
+        "+ Commission → pick bill → value before GST shown",
+        "Agent drop-down, %, TDS 2% → live net",
+        "Saved card: agent, bill, commission ₹, TDS ₹, net, paid status",
+        "Tap card → clean copy with Open bill / Edit / Delete"
+      ]
     }
   }
 }
