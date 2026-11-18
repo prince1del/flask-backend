@@ -334,15 +334,31 @@ def _draw_doc_meta_right(pdf: FPDF, y0: float, header: dict[str, Any]) -> float:
     epw = float(pdf.epw)
     block_w = 92.0
     x0 = pdf.l_margin + epw - block_w
-    label_w = 18.0
-    gap = 4.0
+    label_w = 26.0
+    gap = 3.0
     val_w = block_w - label_w - gap
-    row_h = 6.0
+    row_h = 5.6
 
-    rows = (
+    rows = [
         ("No.", _t(header.get("doc_number") or "-")),
         ("Date", _format_doc_date(header.get("doc_date") or "")),
-    )
+    ]
+    # Filled-in extras only (Vyapar shows the same): time, customer PO, transport, supplier's bill, original invoice, UTR.
+    against = header.get("against") or {}
+    for label, val in (
+        ("Time", header.get("txn_time")),
+        ("PO No.", header.get("po_number")),
+        ("PO Date", _format_doc_date(header.get("po_date") or "") if header.get("po_date") else ""),
+        ("E-way Bill", header.get("eway_bill_no")),
+        ("Vehicle No.", header.get("vehicle_no")),
+        ("Transporter", header.get("transporter_name")),
+        ("Supplier Bill", header.get("party_bill_no")),
+        ("Bill Date", _format_doc_date(header.get("party_bill_date") or "") if header.get("party_bill_date") else ""),
+        ("Against", against.get("label")),
+        ("Ref / UTR", header.get("payment_ref")),
+    ):
+        if val and str(val).strip():
+            rows.append((label, _t(str(val))))
     y = y0
     for label, value in rows:
         pdf.set_xy(x0, y)

@@ -582,12 +582,20 @@ def _tcs(payload: dict[str, Any], txn_type: int, grand: float) -> tuple[float, f
 
 
 def _save_header_extras(conn, workspace_id, txn_id, payload, tcs_pct, tcs_amount, is_update):
-    """PO no / PO date / time / TCS on the bill (on edit, only what was sent)."""
+    """PO no / date, time, e-way + transport, supplier's bill no / date, original invoice (credit note), TCS
+    (on edit, only what was sent)."""
     sets, vals = ["tcs_pct=?", "tcs_amount=?"], [tcs_pct or None, tcs_amount or None]
-    for k in ("po_number", "po_date", "txn_time"):
+    for k in ("po_number", "po_date", "txn_time", "eway_bill_no", "vehicle_no", "transporter_name",
+              "party_bill_no", "party_bill_date"):
         if k in payload or not is_update:
             sets.append(f"{k}=?")
-            vals.append(_clean(payload.get(k))[:40] or None)
+            vals.append(_clean(payload.get(k))[:60] or None)
+    if "ref_txn_id" in payload or not is_update:
+        sets.append("ref_txn_id=?")
+        try:
+            vals.append(int(payload.get("ref_txn_id") or 0) or None)
+        except (TypeError, ValueError):
+            vals.append(None)
     conn.execute(f"UPDATE hop_party_transactions SET {', '.join(sets)} WHERE workspace_id=? AND id=?",
                  (*vals, workspace_id, int(txn_id)))
     if "godown_id" in payload or not is_update:
@@ -622,10 +630,18 @@ def _apply_print_settings(conn: sqlite3.Connection, workspace_id: str, data: dic
     firm, totals = data.get("firm") or {}, data.get("totals") or {}
     hid = (data.get("header") or {}).get("id")
     if hid:
-        r = conn.execute("SELECT po_number, po_date, txn_time, tcs_pct, tcs_amount, tds_pct, tds_amount "
+        r = conn.execute("SELECT po_number, po_date, txn_time, tcs_pct, tcs_amount, tds_pct, tds_amount, "
+                         "eway_bill_no, vehicle_no, transporter_name, party_bill_no, party_bill_date, payment_ref, ref_txn_id "
                          "FROM hop_party_transactions WHERE workspace_id=? AND id=?", (workspace_id, int(hid))).fetchone()
         if r:
-            data["header"].update({"po_number": r[0], "po_date": r[1], "txn_time": r[2]})
+            data["header"].update({"po_number": r[0], "po_date": r[1], "txn_time": r[2], "eway_bill_no": r[7],
+                                   "vehicle_no": r[8], "transporter_name": r[9], "party_bill_no": r[10],
+                                   "party_bill_date": r[11], "payment_ref": r[12]})
+            if r[13]:
+                o = conn.execute("SELECT txn_label, txn_number, txn_date FROM hop_party_transactions WHERE workspace_id=? AND id=?",
+                                 (workspace_id, int(r[13]))).fetchone()
+                if o:
+                    data["header"]["against"] = {"id": int(r[13]), "label": f"{o[0] or ''} {o[1] or ''}".strip(), "date": o[2]}
             if r[4]:
                 totals["tcs_pct"], totals["tcs_amount"] = r[3], r[4]
             if r[6]:
@@ -1044,6 +1060,12 @@ def get_party_transaction_edit_data(
         "po_number": h.get("po_number"),
         "po_date": h.get("po_date"),
         "txn_time": h.get("txn_time"),
+        "eway_bill_no": h.get("eway_bill_no"),
+        "vehicle_no": h.get("vehicle_no"),
+        "transporter_name": h.get("transporter_name"),
+        "party_bill_no": h.get("party_bill_no"),
+        "party_bill_date": h.get("party_bill_date"),
+        "ref_txn_id": h.get("ref_txn_id"),
         "tcs_pct": h.get("tcs_pct"),
         "tds_pct": h.get("tds_pct"),
         "godown_id": h.get("godown_id"),
