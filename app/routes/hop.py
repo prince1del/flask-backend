@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 from calendar import monthrange
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -422,7 +422,7 @@ def settings_wipe_data():
 def executive_snapshot():
     ensure_hop_schema(_db_path())
     ws = _ws()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)   # India date for "today" / "this month"
     today_prefix = now.strftime("%Y-%m-%d")
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d")
     last_day = monthrange(now.year, now.month)[1]
@@ -547,6 +547,19 @@ def executive_snapshot():
             "SELECT COALESCE(SUM(amount), 0) FROM hop_payments WHERE workspace_id = ? AND date(paid_at) = date(?)",
             (ws, today_prefix),
         )
+        # Businesses billing in NEXORA (sale bills exist): Home counts come from the real books, not the old CRM lists.
+        _live = "(deleted_at IS NULL OR trim(deleted_at)='')"
+        if _count(conn, f"SELECT COUNT(*) FROM hop_party_transactions WHERE workspace_id=? AND txn_type IN (1, 27, 65, 83) AND {_live}", (ws,)):
+            quotations_pending = _count(conn, f"""SELECT COUNT(*) FROM hop_party_transactions WHERE workspace_id=?
+                AND txn_type IN (27, 83) AND {_live} AND lower(coalesce(status_text,'')) NOT LIKE 'converted%'
+                AND lower(coalesce(status_text,'')) NOT LIKE 'closed%'""", (ws,))
+            quotations_sent = _count(conn, f"""SELECT COUNT(*) FROM hop_party_transactions WHERE workspace_id=?
+                AND txn_type IN (27, 83) AND {_live} AND date(txn_date) BETWEEN date(?) AND date(?)""", (ws, month_start, month_end))
+            orders_won = _count(conn, f"""SELECT COUNT(*) FROM hop_party_transactions WHERE workspace_id=?
+                AND txn_type=65 AND {_live} AND date(txn_date) BETWEEN date(?) AND date(?)""", (ws, month_start, month_end))
+            outstanding = _sum(conn, f"""SELECT COALESCE(SUM(balance_amount), 0) FROM hop_party_transactions
+                WHERE workspace_id=? AND txn_type=1 AND {_live} AND COALESCE(balance_amount,0)>0""", (ws,))
+            payments_today = float(hop_ops.report_daily_activity(conn, ws, day=today_prefix).get("collections") or 0)
         monthly_sales = _sum(
             conn,
             """
