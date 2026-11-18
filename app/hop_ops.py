@@ -1563,7 +1563,11 @@ def list_dispatches(conn: sqlite3.Connection, workspace_id: str, q: str | None =
                   FROM hop_party_transactions t
                  WHERE t.workspace_id=d.workspace_id AND t.txn_type IN (1, 30, 65) AND trim(COALESCE(d.invoice_no_link,''))!=''
                    AND lower(t.txn_number)=lower(trim(d.invoice_no_link))
-                   AND (t.deleted_at IS NULL OR trim(t.deleted_at)='') ORDER BY t.txn_type LIMIT 1) AS bill_kind
+                   AND (t.deleted_at IS NULL OR trim(t.deleted_at)='') ORDER BY t.txn_type LIMIT 1) AS bill_kind,
+               (SELECT t.id FROM hop_party_transactions t
+                 WHERE t.workspace_id=d.workspace_id AND t.txn_type IN (1, 30, 65) AND trim(COALESCE(d.invoice_no_link,''))!=''
+                   AND lower(t.txn_number)=lower(trim(d.invoice_no_link))
+                   AND (t.deleted_at IS NULL OR trim(t.deleted_at)='') ORDER BY t.txn_type LIMIT 1) AS bill_txn_id
         FROM hop_dispatches d
         LEFT JOIN hop_projects p ON p.id = d.project_id
         LEFT JOIN hop_orders o ON o.id = d.order_id
