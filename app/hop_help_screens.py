@@ -241,7 +241,7 @@ SHOWS["dist_orders"] = [
     "SO without my order — SOs that came without a matching order.",
 ]
 SHOWS["dist_ledger"] = [
-    "Billed / Paid / To pay / Overdue — your account with the company.",
+    "Totals — Billed, Paid, To pay, Overdue: your account with the company.",
     "Unpaid company invoices — with days overdue; tap to open.",
     "Ledger — every entry with running balance; Pay the company opens Payment-Out.",
 ]
@@ -251,8 +251,8 @@ SHOWS["dist_retailer_goods"] = [
 ]
 SHOWS["dist_warehouse"] = ["Totals — stock value and out-of-stock count.", "Item list — qty and value; search; What to order / Godowns / Stock entries."]
 SHOWS["dist_forecast"] = [
-    "Look at sales of the last 30 / 90 / 180 days; keep stock for 15 / 30 / 60 days.",
-    "Order now / Order soon / Suggested value.",
+    "Days — look at sales of the last 30 / 90 / 180 days; keep stock for 15 / 30 / 60 days.",
+    "Totals — Order now, Order soon, Suggested value.",
     "Each item — stock, on order, sale per day, days left, trend, order qty and order-by date.",
     "✨ Make the suggested order — you check, then a Purchase Order is saved.",
 ]
