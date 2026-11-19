@@ -106,6 +106,25 @@ Items & Stock · Cash, Bank & Accounts · Reports & GST · Sales team & Service 
   (fixed at the source: `MenuScrollStop` on every ExposedDropdownMenuBox — see `Nexora20/docs/SCROLL_DRIFT_NOTES.md`),
   camera buttons ask for permission first.
 
+## 4b. Built — Distributor UI (19-11, owner's choice: the distributor's own firm)
+
+Same books engine as the Business UI, with its own menu and Home (`HopMode.distributor` on the phone). The company the
+distributor buys from is a **principal** supplier (`hop_vendors.is_principal`).
+- **Flow:** my order to the company = Purchase Order (66) → company's SO (`hop_dist_so`; ✨ AI reads the SO PDF) →
+  company's invoice CI = Purchase Bill (convert the order, or Link CI to the SO).
+- **Screens:** Orders → SO → CI (status per order: Ordered / SO received / Part billed / Billed, days waiting); company
+  ledger + payment status (billed / paid / to pay / overdue); goods per retailer; warehouse; forecast (sale speed →
+  days left → order qty / order-by date → ✨ make the suggested PO after you check it).
+- **AI:** Guard alerts on Home, ✨ AI insights on every screen, and Ask Nexora `dist_*` tools.
+- **Code:** `app/hop_distributor.py`, routes `/api/v1/hop/dist/*`, phone `ui/hop/HopDistributorScreens.kt`,
+  tests `tests/test_hop_distributor.py`.
+- **Not done yet:**
+  - The SO PDF file itself is not kept (only its data).
+  - Web screens.
+  - Check against the company ledger (SOA upload, like Executive Hisaab).
+  - Schemes / claims.
+  - Separate firm per UI (Distributor uses the firm chosen in the menu).
+
 ## 5. Planned / open
 
 **Pending from 19-11 (built, not fully checked or waiting on the owner):**
