@@ -232,3 +232,27 @@ SHOWS["bulk_bills"] = [
     "Summary — how many bills and copies; a warning when purchase bills have no copy yet.",
     "Print all / Save PDF / Share — one PDF with every bill.",
 ]
+
+SHOWS["dist_orders"] = [
+    "Company — the brand you distribute for (Set company / Change).",
+    "Filters — Open, Ordered, SO received, Part billed, Billed, All with counts.",
+    "Each order — number, date, amount, pieces, days waiting, its SO and CI; tap to open.",
+    "+ SO received — type it or ✨ let AI read the SO PDF; Link CI — put the company's invoice on the SO.",
+    "SO without my order — SOs that came without a matching order.",
+]
+SHOWS["dist_ledger"] = [
+    "Billed / Paid / To pay / Overdue — your account with the company.",
+    "Unpaid company invoices — with days overdue; tap to open.",
+    "Ledger — every entry with running balance; Pay the company opens Payment-Out.",
+]
+SHOWS["dist_retailer_goods"] = [
+    "Dates — this month, last month, this financial year, or your own.",
+    "Each retailer — pieces, amount, bills, last date; tap for item-wise list.",
+]
+SHOWS["dist_warehouse"] = ["Totals — stock value and out-of-stock count.", "Item list — qty and value; search; What to order / Godowns / Stock entries."]
+SHOWS["dist_forecast"] = [
+    "Look at sales of the last 30 / 90 / 180 days; keep stock for 15 / 30 / 60 days.",
+    "Order now / Order soon / Suggested value.",
+    "Each item — stock, on order, sale per day, days left, trend, order qty and order-by date.",
+    "✨ Make the suggested order — you check, then a Purchase Order is saved.",
+]
