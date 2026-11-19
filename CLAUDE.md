@@ -108,6 +108,42 @@ Items & Stock · Cash, Bank & Accounts · Reports & GST · Sales team & Service 
 
 ## 5. Planned / open
 
+**Pending from 19-11 (built, not fully checked or waiting on the owner):**
+- **Partners and team access**: the plan is in `docs/PARTNERS_AND_ROLES_PLAN.md` and in its note. Waiting on the
+  owner's 3 answers:
+  1. Is a partner equal to the owner?
+  2. Shared notes for partners only, or for the whole team?
+  3. Which roles first?
+  Then build batch A (partner role, private notes and settings).
+- **Supplier bill copy**:
+  - The owner should add one real supplier bill (Gallery / Camera / PDF) to check the upload; I didn't pick from
+    his gallery because it holds personal photos.
+  - Next: ✨ Fill with AI on a purchase bill keeps the scanned photo as its copy on Save.
+- **Print many bills**: the owner can choose from these next steps:
+  - email the PDF to the CA from that screen;
+  - Ask Nexora "last month bills PDF bhejo";
+  - a cover page with totals per type.
+- **Welcome (sign-up) screen**:
+  - The status-bar icons stay dark on the dark background, because the app theme sets them back.
+  - Ask the owner whether Login should get the same navy-gold style.
+  - To see it without signing out (debug build):
+    `adb shell am start -n com.princeoberoi.nexora20/.MainActivity --es nx_preview signup`
+- **Link Payment-In / Out to a bill**: the server is tested. No real link has been tried on the phone, because
+  Test firm has no free payment.
+- **Not verified on the phone yet**:
+  - reading a real barcode;
+  - a real print (the printer was asleep);
+  - AI bill reader with PO / e-way / UTR (costs AI, ask first);
+  - Ask Nexora writing a note;
+  - Delete on dispatch / sample / complaint sheets;
+  - Market Visit date display.
+- **Web workspace parity** for the newest phone features: note photos, replies and done; hold warning; link payments;
+  supplier bill copies + Copy pending; Print many bills; commission screen; targets switch.
+- **Notes inbox**:
+  - 4 notes from 19-11 show "Done by User" instead of Claude. The work and replies are right; comments can't be edited.
+  - Reply script: scratchpad `note_reply.py` (sets By = Claude first, types, Send, Mark as done).
+- The phone's Wi-Fi debug address changes with the network: check `adb devices`, then use the port the owner gives.
+
 **Next session (from the owner's list):**
 1. Full T&P re-audit: every button on every Business UI screen, then Executive UI; marks only on full pass.
 2. Study Vyapar on the owner's PC screen by screen → field checklist; compare every NEXORA screen to it.
