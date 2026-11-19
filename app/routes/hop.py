@@ -4110,6 +4110,145 @@ def books_report(key: str):
     return jsonify({"success": True, "data": data})
 
 
+# ── Distributor UI (distributor's own firm; the company = a principal supplier) ──────────────────────────
+def _dist_call(fn):
+    from app import hop_distributor as D
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            D.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(D, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/dist/home", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_home():
+    """Distributor Home: open orders, SO waiting for CI, money to pay the company, retailer sales, stock, forecast alerts."""
+    return _dist_call(lambda D, c: D.home(c, _ws()))
+
+
+@hop_bp.route("/dist/principals", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_principals():
+    return _dist_call(lambda D, c: D.principals(c, _ws()))
+
+
+@hop_bp.route("/dist/principals/<int:vendor_id>", methods=["PUT", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_principal_set(vendor_id: int):
+    """{on: true|false} — this supplier is a company I distribute for."""
+    on = (_payload() or {}).get("on", True) in (True, 1, "1", "true")
+    return _dist_call(lambda D, c: D.set_principal(c, _ws(), vendor_id, on))
+
+
+@hop_bp.route("/dist/pipeline", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_pipeline():
+    """My orders to the company → SO → CI (purchase bill) with status per order."""
+    return _dist_call(lambda D, c: D.pipeline(c, _ws(), request.args.get("vendor_id", type=int)))
+
+
+@hop_bp.route("/dist/so", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_so_create():
+    """Company's Sales Order: {so_number, so_date, po_txn_id?, vendor_id?, amount?, lines:[{item_name, qty, rate}]}."""
+    return _dist_call(lambda D, c: D.create_so(c, _ws(), _payload() or {}))
+
+
+@hop_bp.route("/dist/so/<int:so_id>", methods=["GET", "DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_so_item(so_id: int):
+    if request.method == "DELETE":
+        return _dist_call(lambda D, c: (D.delete_so(c, _ws(), so_id), {"deleted": so_id})[1])
+    return _dist_call(lambda D, c: D.get_so(c, _ws(), so_id))
+
+
+@hop_bp.route("/dist/so/<int:so_id>/bills", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_so_link_bill(so_id: int):
+    """Link the company's invoice (CI, saved as a Purchase Bill): {bill_txn_id}."""
+    bill = int((_payload() or {}).get("bill_txn_id") or 0)
+    return _dist_call(lambda D, c: D.link_bill(c, _ws(), so_id, bill))
+
+
+@hop_bp.route("/dist/ledger", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_ledger():
+    """?vendor_id=&from=&to= — company ledger with running balance + payment status (to pay, overdue)."""
+    vid = request.args.get("vendor_id", type=int) or 0
+    return _dist_call(lambda D, c: D.company_ledger(c, _ws(), vid, request.args.get("from", ""), request.args.get("to", "")))
+
+
+@hop_bp.route("/dist/retailer-goods", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_retailer_goods():
+    """?from=&to=&party_id=&q= — which retailer got which goods (sale invoices + challans)."""
+    return _dist_call(lambda D, c: D.retailer_goods(c, _ws(), request.args.get("from", ""), request.args.get("to", ""),
+                                                    request.args.get("party_id", type=int), request.args.get("q", "")))
+
+
+@hop_bp.route("/dist/warehouse", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_warehouse():
+    return _dist_call(lambda D, c: D.warehouse(c, _ws()))
+
+
+@hop_bp.route("/dist/forecast", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_forecast():
+    """?lookback=90&cover=30 — sale speed → days of stock left → what to order and by when."""
+    return _dist_call(lambda D, c: D.forecast(c, _ws(), request.args.get("lookback", type=int) or 90,
+                                              request.args.get("cover", type=int) or 30))
+
+
+@hop_bp.route("/dist/<key>/insights", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_insights(key: str):
+    """✨ 3–5 AI points on a distributor screen (one capped call, inside the daily AI limit)."""
+    from app import hop_distributor as D
+    from app.services import hop_ai
+
+    titles = {"forecast": "Stock forecast and what to order", "pipeline": "Orders to the company, SO and invoices",
+              "ledger": "Company ledger and payment status", "retailer-goods": "Goods sent to each retailer",
+              "home": "Distributor overview"}
+    if key not in titles:
+        return _json_error("Unknown screen", "NOT_FOUND", 404)
+    user = getattr(request, "user", None) or {}
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            D.ensure_schema(conn)
+            a = request.args
+            data = {"forecast": lambda: D.forecast(conn, _ws()),
+                    "pipeline": lambda: D.pipeline(conn, _ws()),
+                    "ledger": lambda: D.company_ledger(conn, _ws(), a.get("vendor_id", type=int) or 0),
+                    "retailer-goods": lambda: D.retailer_goods(conn, _ws(), a.get("from", ""), a.get("to", "")),
+                    "home": lambda: D.home(conn, _ws())}[key]()
+        points = hop_ai.report_insights(titles[key], data, user_id=int(user.get("user_id") or 0))
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"points": points}})
+
+
 @hop_bp.route("/books/<key>/insights", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

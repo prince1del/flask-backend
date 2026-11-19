@@ -57,6 +57,8 @@ PREFIX_AREA = [
     ("app-settings", "settings"), ("firm-profile", "settings"), ("company-profile", "settings"),
     ("audit-log", "settings"), ("financial-year", "settings"), ("recycle-bin", "settings"), ("print-theme", "settings"),
     ("bills/bulk", "reports"), ("purchase-copies", "purchase"),
+    ("dist/so", "purchase"), ("dist/principals", "parties"), ("dist/pipeline", "purchase"), ("dist/ledger", "purchase"),
+    ("dist/retailer-goods", "sales"), ("dist/warehouse", "items"), ("dist/forecast", "items"), ("dist", "reports"),
     ("my-permissions", "_any"), ("services-on", "_any"), ("qa-marks", "_any"), ("firms", "_any"), ("help", "_any"),
 ]
 
