@@ -150,3 +150,18 @@ def test_staff_and_profit(firm):
         assert t["sales"] == 2960 and t["cost"] == 2500 and t["gross_profit"] == 460
         assert pf["sold_below_cost"][0]["item"] == "Double Bedsheet"
         assert pf["companies"][0]["company"] == "Brand Mills"
+
+
+def test_ask_nexora_part2_tools(firm):
+    from app.services import hop_ai
+
+    path, ids = firm
+    with connect(path) as conn:
+        a = hop_ai.books_answer(conn, WS, "dist_articles", party_name="T-100")
+        assert a["articles"][0]["code"] == "T-100"
+        d = hop_ai.books_answer(conn, WS, "dist_retailer_dues", party_name="sharma")
+        assert d["retailers"][0]["party"] == "Sharma Store" and d["call_today"]
+        p = hop_ai.books_answer(conn, WS, "dist_profit")
+        assert p["totals"]["gross_profit"] == 460
+        s = hop_ai.books_answer(conn, WS, "dist_staff")
+        assert "staff" in s

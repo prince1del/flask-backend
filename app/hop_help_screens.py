@@ -256,3 +256,23 @@ SHOWS["dist_forecast"] = [
     "Each item — stock, on order, sale per day, days left, trend, order qty and order-by date.",
     "✨ Make the suggested order — you check, then a Purchase Order is saved.",
 ]
+
+SHOWS["dist_articles"] = [
+    "✨ Read company price list — Excel read directly, PDF / photo read by AI; preview before saving.",
+    "AI check on the master — articles without DP, above MRP, below cost, codes used twice.",
+    "Each article — code, name, MRP, DP, price to retailer, margin %, category, season, stock, price changes.",
+]
+SHOWS["dist_retailer_dues"] = [
+    "Totals — to collect and overdue.",
+    "✨ Call today — who to call first and why.",
+    "Each retailer — due by age (0-30 / 31-60 / 61-90 / 90+), last payment, promise, broken promises; tap for call / WhatsApp / follow-up.",
+]
+SHOWS["dist_staff"] = ["Dates — from / to.", "Each person — sales, bills, collections, orders, follow-ups, edits, deletes, active days."]
+SHOWS["dist_profit"] = [
+    "Totals — sales, gross profit, margin, expenses, net profit.",
+    "AI check — sales below cost, items without buying price, low margins.",
+    "Month by month — sales, gross profit, net.",
+    "Tabs — items, retailers, companies, sales below cost (tap to open the bill).",
+]
+SHOWS["dist_ledger"] = SHOWS["dist_ledger"] + ["✨ Check with the company's ledger — upload their statement; AI lists missing invoices, payments and amount differences."]
+SHOWS["dist_orders"] = SHOWS["dist_orders"] + ["✨ SO check — before saving, the SO is compared with your order and the Article Master (items, qty, rate, dates)."]

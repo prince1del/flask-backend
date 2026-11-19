@@ -462,6 +462,31 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                 items = [i for i in items if _similar(party_name, str(i.get("item") or "")) >= 0.5]
             return {"total_value": wh["total_value"], "out_of_stock": wh["out_of_stock"], "count": wh["count"],
                     "items": [{k: i[k] for k in ("item", "code", "qty", "stock_value")} for i in items[:40]]}
+        if what in ("dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff"):
+            from app import hop_dist_extra as X
+
+            X.ensure_schema(conn)
+            if what == "dist_articles":
+                a = X.articles(conn, ws, party_name or "")
+                keep = ("code", "name", "category", "season", "mrp", "purchase_price", "selling_price", "margin_pct", "stock_qty")
+                return {"count": a["count"], "problems": a["problems"], "articles": [{k: r.get(k) for k in keep} for r in a["articles"][:40]]}
+            if what == "dist_retailer_dues":
+                d = X.retailer_dues(conn, ws)
+                rows = d["retailers"]
+                if party_name:
+                    rows = [r for r in rows if _similar(party_name, r["party"] or "") >= 0.5]
+                keep = ("party", "due", "overdue", "oldest_days", "buckets", "broken_promises", "why")
+                return {"total_due": d["total_due"], "total_overdue": d["total_overdue"], "call_today": d["call_today"],
+                        "retailers": [{**{k: r.get(k) for k in keep},
+                                       "last_payment": r.get("last_payment"), "open_promise": (r.get("open_promise") or {}).get("promise_date")}
+                                      for r in rows[:25]]}
+            if what == "dist_profit":
+                p = X.profitability(conn, ws, str(extra.get("from") or ""), str(extra.get("to") or ""))
+                return {"from": p["from"], "to": p["to"], "totals": p["totals"], "months": p["months"],
+                        "top_items": p["items"][:10], "low_margin_items": p["low_margin_items"][:10],
+                        "sold_below_cost": p["sold_below_cost"][:10], "companies": p["companies"], "top_retailers": p["retailers"][:10]}
+            st = X.staff_performance(conn, ws, str(extra.get("from") or ""), str(extra.get("to") or ""))
+            return st
         h = D.home(conn, ws)
         return {k: v for k, v in h.items() if k != "principals"} | {"companies": [p["company"] for p in h["principals"]]}
     if what == "notes":
