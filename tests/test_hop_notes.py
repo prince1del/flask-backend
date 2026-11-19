@@ -70,3 +70,26 @@ def test_note_mark_done_and_reopen(tmp_path):
     assert [n["id"] for n in hop_notes.search(conn, "ws")] == [b["id"], a["id"]]   # done ones go last
     d = hop_notes.update(conn, "ws", a["id"], {"done": False})
     assert d["done"] is False and d["done_by"] is None
+
+
+def test_link_later_payment_to_saved_bill(tmp_path):
+    """Bill saved first, payment made later without a bill → linked to the bill afterwards."""
+    from app import hop_money
+    from app.hop_db import connect, create_customer
+    from app.hop_doc_preview import create_manual_party_document as create
+    from app.hop_schema import HOP_WORKSPACE_ID as WS, ensure_hop_schema
+
+    path = str(tmp_path / "later.sqlite3")
+    ensure_hop_schema(path)
+    with connect(path) as conn:
+        cid = create_customer(conn, WS, {"company": "Later Buyer"})["id"]
+        inv = create(conn, WS, {"txn_type": 1, "customer_id": cid, "txn_date": "2026-11-05",
+                                "lines": [{"item_name": "Cloth", "qty": 1, "rate": 1000, "tax_pct": 0}]})
+        pay = create(conn, WS, {"txn_type": 3, "customer_id": cid, "txn_date": "2026-11-10", "amount": 400,
+                                "payment_mode": "cash", "allocations": []})
+        unused = {u["id"]: u["unused_amount"] for u in hop_money.unused_payments(conn, WS, 1, "customer", cid)}
+        if pay["party_txn_id"] not in unused:
+            pytest.fail("payment had no unused money")
+        hop_money.link_payments_to_bill(conn, WS, inv["party_txn_id"], [{"payment_txn_id": pay["party_txn_id"], "amount": 400}])
+        bal = conn.execute("SELECT balance_amount FROM hop_party_transactions WHERE id=?", (inv["party_txn_id"],)).fetchone()[0]
+        assert round(bal, 2) == 600

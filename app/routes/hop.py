@@ -2271,6 +2271,42 @@ def party_transaction_preview(txn_id: int):
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/party-transactions/<int:txn_id>/unused-payments", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_unused_payments(txn_id: int):
+    """Payments of this bill's party that still have money not on any bill (to link to this bill)."""
+    from app import hop_money
+
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        bill = conn.execute("SELECT txn_type, party_type, party_id, balance_amount FROM hop_party_transactions "
+                            "WHERE workspace_id=? AND id=?", (_ws(), txn_id)).fetchone()
+        if not bill:
+            return _json_error("Bill not found", "NOT_FOUND", 404)
+        rows = hop_money.unused_payments(conn, _ws(), int(bill[0] or 0), bill[1] or "customer", int(bill[2] or 0))             if bill[2] else []
+    return jsonify({"success": True, "data": {"payments": rows, "bill_due": float(bill[3] or 0)}})
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/link-payments", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_link_payments(txn_id: int):
+    """Put an earlier / later Payment-In (or Out) on a saved bill: {links: [{payment_txn_id, amount}]}."""
+    from app import hop_money
+
+    ensure_hop_schema(_db_path())
+    links = (_payload() or {}).get("links") or []
+    if not links:
+        return _json_error("Choose a payment to link")
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            hop_money.link_payments_to_bill(conn, _ws(), txn_id, links)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"linked": len(links)}})
+
+
 @hop_bp.route("/party-transactions/<int:txn_id>/download.pdf", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
