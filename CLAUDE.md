@@ -7,6 +7,9 @@ This repo is **public**: never put server addresses, keys, passwords, PINs or re
 
 _Last updated: 2026-11-19._
 
+**Notes inbox:** the owner writes tasks in Business UI → Notes (Test firm) tagged `claude`. When the phone is connected,
+read them, do the work, reply in that note (what was done / a plan) and **mark it done** — through the app only.
+
 ---
 
 ## 1. Owner's rules (always)
@@ -62,7 +65,8 @@ Items & Stock · Cash, Bank & Accounts · Reports & GST · Sales team & Service 
   on every date, customer PO no./date, e-way bill no., vehicle, transporter, supplier bill no./date (purchase), UTR /
   cheque no. (payments), credit / debit note *against invoice* (items fill in from it), charges (freight / packing /
   labour), TCS / TDS, place of supply, reverse charge, godown, loyalty points, received now + payment mode, time auto,
-  **⏸ Hold → Resume** (park a half-made bill on the phone — not in Vyapar), ✨ Fill with AI (photo / PDF of any bill →
+  **⏸ Hold → Resume** (park a half-made bill on the phone — not in Vyapar; a new bill asks first while one is on hold),
+  link earlier / later Payment-In / Out to a bill (in the form or from the saved bill copy), ✨ Fill with AI (photo / PDF of any bill →
   form, incl. PO / e-way / vehicle / UTR), entry warnings (duplicate no., unusual price, credit limit, short stock,
   missing GSTIN / HSN).
 - **Bill copy / PDF:** Vyapar-style — Tax Invoice title, Original for recipient, item table + total row, CGST / SGST or
