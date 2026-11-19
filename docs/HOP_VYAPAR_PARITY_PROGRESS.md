@@ -120,7 +120,9 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Commission | Ask Nexora `commission` (net due per agent, bills with no commission yet); customer's usual agent → bills show Due | ✅ 2026-11-18 |
 | Party sales for a period | Ask Nexora party_statement with dates → sales / returns / net in period; "no such party" + closest names | ✅ 2026-11-18 (checked on phone) |
 | EBITDA | Ask Nexora profit_loss → ebitda + parts (interest, depreciation, tax, interest received); Home card breakdown | ✅ 2026-11-18 |
-| Business notes | Ask Nexora writes a note (add_business_note, user confirms) and finds notes (`notes`) | ✅ server 2026-11-18 · phone screen ⏳ |
+| Business notes | Ask Nexora writes a note (add_business_note, user confirms) and finds notes (`notes`); photos, replies, mark done | ✅ server + phone 2026-11-19 |
+| Supplier bill copy | Copy pending list on purchase bills / expenses; next: Fill with AI keeps the scanned bill as its copy | ✅ list 2026-11-19 · AI attach ⏳ |
+| Print many bills | Warns when purchase bills in the dates have no copy; GST pack preset | ✅ 2026-11-19 · Ask Nexora "bills ki PDF bhejo" ⏳ |
 | Targets | Ask Nexora `targets` (year %, month %, needed per month) | ✅ |
 | Bill fields (PO, e-way, UTR, supplier bill no.) | ✨ Bill reader fills supplier bill no. / date on purchase; entry warnings unchanged | ⏳ reader to also fill PO / e-way / UTR |
 | Product photo | — (photo for catalogue; AI tagging later) | ⏳ reason: no AI need yet; idea: read MRP / name from the photo |

@@ -187,6 +187,8 @@ SHOWS["payments"] = SHOWS["payments"] + ["UTR / Ref no. — for bank or UPI paym
 SHOWS["purchase_payment_out"] = SHOWS.get("purchase_payment_out", []) + ["UTR / Ref no. — for bank or UPI payments; printed on the voucher."]
 SHOWS["purchase_bills"] = SHOWS["purchase_bills"] + [
     "Link a Payment-Out — on a saved bill with balance, put a payment made earlier or later on this bill.",
+    "Copy pending — purchase bills without the supplier's bill photo / PDF are listed at the top; tap one to add it.",
+    "Supplier's bill copy — on a saved purchase bill: Camera, Gallery or PDF keeps the supplier's own bill with it (Settings → Transaction switches this on / off).",
     "Supplier bill no. and Bill date — the number printed on the supplier's own bill (our ref no. is separate).",
 ]
 SHOWS["sale_returns"] = SHOWS["sale_returns"] + ["Against invoice — pick the original bill (GST needs it on a credit note)."]
@@ -221,4 +223,12 @@ SHOWS["receivables"] = SHOWS["receivables"] + [
 SHOWS["dashboard"] = SHOWS["dashboard"] + [
     "Cards — every card opens its screen (Outstanding → Receivables, Collections → Daily activity, Sales vs Target → Targets…).",
     "Cash Available — cash in hand + all bank balances (same as Cash & bank).",
+]
+
+SHOWS["bulk_bills"] = [
+    "Dates — From / To, or a quick range (this month, last month, this or last financial year).",
+    "Include — the kinds of bills to put in the PDF.",
+    "Add supplier's bill copies — each purchase bill / expense is followed by the copy saved with it.",
+    "Summary — how many bills and copies; a warning when purchase bills have no copy yet.",
+    "Print all / Save PDF / Share — one PDF with every bill.",
 ]
