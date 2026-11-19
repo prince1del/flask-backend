@@ -744,6 +744,9 @@ def profitability(conn: sqlite3.Connection, ws: str, frm: str = "", to: str = ""
 
     months = [{"month": m, **gp(v), "net": _r2(v["sales"] - v["cost"] - v["expenses"])} for m, v in sorted(month.items())]
     items = sorted(({"item": k, **gp(v)} for k, v in item.items()), key=lambda x: -x["gross_profit"])
+    for i in items:
+        if i.get("no_cost"):
+            i["margin_pct"] = None     # no buying price → margin unknown, not 100%
     parties = sorted(({"party_id": k, **gp(v)} for k, v in party.items()), key=lambda x: -x["gross_profit"])
     comps = sorted(({"company": k, **gp(v)} for k, v in comp.items()), key=lambda x: -x["gross_profit"])
     tot_s = sum(m["sales"] for m in months)
