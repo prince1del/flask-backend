@@ -733,3 +733,41 @@ def report_insights(title: str, data: dict[str, Any], *, user_id: int) -> list[s
         pts = _parse_json("".join(p.get("text", "") for p in parts if isinstance(p, dict))).get("points") or []
         return [str(p).strip()[:300] for p in pts if str(p).strip()][:5]
     raise ValueError("AI insights are not available right now.")
+
+
+# ── Distributor: company price list + company ledger (SOA) readers (one capped call, daily AI limit) ─────
+_PROMPT_PRICE_LIST = """You read a company's price list (PDF or photo) for a distributor.
+Return ONLY JSON: {"season": "", "rows": [{"code": "", "name": "", "category": "", "mrp": 0, "dp": 0, "retailer_price": 0}]}
+- code = article / item / design number; name = article name as printed; category = range / group if printed.
+- mrp = MRP; dp = the distributor's buying price (DP / NLC / dealer / billing rate); retailer_price = price to retailers
+  (RLP / wholesale) if printed. Numbers only, no commas or ₹. Leave 0 when not printed. Never invent rows."""
+
+_PROMPT_SOA = """You read a company's ledger / statement of account for one of its customers (a distributor).
+Return ONLY JSON: {"rows": [{"date": "YYYY-MM-DD", "doc_no": "", "narration": "", "debit": 0, "credit": 0}],
+"opening_balance": 0, "closing_balance": 0}
+- debit = invoices / debit notes to the customer; credit = payments received, credit notes, discounts.
+- doc_no = invoice / document / reference number as printed. Numbers only. Skip total and balance rows. Never invent rows."""
+
+
+def read_price_list(data: bytes, mime: str, *, user_id: int) -> list[dict[str, Any]]:
+    out = _ask_gemini(data, mime, user_id, _PROMPT_PRICE_LIST)
+    season = str(out.get("season") or "").strip()[:20]
+    rows = []
+    for r in (out.get("rows") or [])[:600]:
+        if not isinstance(r, dict):
+            continue
+        rows.append({"code": str(r.get("code") or "").strip()[:60], "name": str(r.get("name") or "").strip()[:160],
+                     "category": str(r.get("category") or "").strip()[:60], "season": season,
+                     "mrp": _num(r.get("mrp")), "purchase_price": _num(r.get("dp")), "selling_price": _num(r.get("retailer_price"))})
+    return rows
+
+
+def read_soa(data: bytes, mime: str, *, user_id: int) -> dict[str, Any]:
+    out = _ask_gemini(data, mime, user_id, _PROMPT_SOA)
+    rows = []
+    for r in (out.get("rows") or [])[:800]:
+        if isinstance(r, dict):
+            rows.append({"date": str(r.get("date") or "")[:10], "doc_no": str(r.get("doc_no") or "").strip()[:40],
+                         "narration": str(r.get("narration") or "").strip()[:160],
+                         "debit": _num(r.get("debit")), "credit": _num(r.get("credit"))})
+    return {"rows": rows, "opening_balance": _num(out.get("opening_balance")), "closing_balance": _num(out.get("closing_balance"))}

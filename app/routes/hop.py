@@ -3571,7 +3571,15 @@ def entry_warnings():
     from app import hop_settings
 
     with hop_db.connect(_db_path()) as conn:
-        warnings = hop_settings.invoice_entry_warnings(conn, _ws(), _payload())
+        payload = _payload()
+        warnings = hop_settings.invoice_entry_warnings(conn, _ws(), payload)
+        if int(payload.get("txn_type") or 0) == 2:
+            from app import hop_dist_extra
+
+            try:
+                warnings = list(warnings) + hop_dist_extra.check_ci(conn, _ws(), payload)
+            except Exception:
+                pass   # a check must never stop the bill
     return jsonify({"success": True, "data": {"warnings": warnings}})
 
 
@@ -4217,6 +4225,148 @@ def dist_forecast():
                                               request.args.get("cover", type=int) or 30))
 
 
+def _dist2(fn):
+    from app import hop_dist_extra as X
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            X.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(X, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+def _user_label() -> str:
+    u = getattr(request, "user", None) or {}
+    return str(u.get("full_name") or u.get("username") or u.get("email") or "")[:60]
+
+
+@hop_bp.route("/dist/articles", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_articles():
+    """GET ?q=&category=&season= — Article Master with margins + AI checks. POST {id?, code, name, mrp, purchase_price, …}."""
+    if request.method == "POST":
+        return _dist2(lambda X, c: X.save_article(c, _ws(), _payload() or {}, user=_user_label()))
+    a = request.args
+    return _dist2(lambda X, c: X.articles(c, _ws(), a.get("q", ""), a.get("category", ""), a.get("season", "")))
+
+
+@hop_bp.route("/dist/articles/<int:pid>/history", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_article_history(pid: int):
+    return _dist2(lambda X, c: X.price_history(c, _ws(), pid))
+
+
+@hop_bp.route("/dist/price-list/read", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_price_list_read():
+    """Company price list → preview of new articles / changed prices. Excel: read directly; PDF / photo: ✨ AI."""
+    from app.services import hop_ai
+
+    f = request.files.get("file")
+    if not f:
+        return _json_error("Choose the price list (Excel, PDF or photo)")
+    data, mime, name = f.read(), (f.mimetype or "").lower(), (f.filename or "").lower()
+    user = getattr(request, "user", None) or {}
+
+    def run(X, c):
+        if name.endswith((".xlsx", ".xlsm")) or "spreadsheet" in mime:
+            rows, by = X.read_price_list_excel(data), "excel"
+        elif mime.startswith("image/") or mime == "application/pdf" or name.endswith(".pdf"):
+            rows, by = hop_ai.read_price_list(data, "application/pdf" if name.endswith(".pdf") else mime,
+                                              user_id=int(user.get("user_id") or 0)), "ai"
+        else:
+            raise ValueError("Use an Excel file, a PDF or a photo of the price list")
+        return {**X.price_list_preview(c, _ws(), rows), "read_by": by}
+    return _dist2(run)
+
+
+@hop_bp.route("/dist/price-list/apply", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_price_list_apply():
+    """Save the rows the user checked: {rows: [...preview rows...]}."""
+    rows = (_payload() or {}).get("rows") or []
+    return _dist2(lambda X, c: X.price_list_apply(c, _ws(), rows, user=_user_label()))
+
+
+@hop_bp.route("/dist/check-so", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_check_so():
+    """✨ Before saving a company SO: compare with my order and the Article Master → warnings."""
+    return _dist2(lambda X, c: X.check_so(c, _ws(), _payload() or {}))
+
+
+@hop_bp.route("/dist/ledger-check", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_ledger_check():
+    """Company's ledger (PDF / photo via ✨ AI, or Excel) vs my books with that company. Form: file, vendor_id."""
+    from app.services import hop_ai
+
+    f = request.files.get("file")
+    vid = request.form.get("vendor_id", type=int) or request.args.get("vendor_id", type=int) or 0
+    if not f:
+        return _json_error("Choose the company's ledger (PDF, photo or Excel)")
+    data, mime, name = f.read(), (f.mimetype or "").lower(), (f.filename or "").lower()
+    user = getattr(request, "user", None) or {}
+
+    def run(X, c):
+        if name.endswith((".xlsx", ".xlsm")) or "spreadsheet" in mime:
+            rows = X.read_ledger_excel(data)
+        else:
+            rows = hop_ai.read_soa(data, "application/pdf" if name.endswith(".pdf") else mime,
+                                   user_id=int(user.get("user_id") or 0))["rows"]
+        return {**X.ledger_check(c, _ws(), vid, rows), "rows_read": len(rows)}
+    return _dist2(run)
+
+
+@hop_bp.route("/dist/retailer-dues", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_retailer_dues():
+    """Retailers with money due: overdue age, last payment, follow-ups, promises, who to call today."""
+    return _dist2(lambda X, c: X.retailer_dues(c, _ws()))
+
+
+@hop_bp.route("/dist/retailers/<int:pid>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_retailer_detail(pid: int):
+    return _dist2(lambda X, c: X.retailer_detail(c, _ws(), pid))
+
+
+@hop_bp.route("/dist/followups", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_followup_add():
+    """{party_id, mode: call|visit|whatsapp|sms, note, promise_date?, promise_amount?}"""
+    return _dist2(lambda X, c: X.add_followup(c, _ws(), _payload() or {}, user=_user_label()))
+
+
+@hop_bp.route("/dist/staff", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_staff():
+    """?from=&to= — staff performance from the audit trail + follow-ups."""
+    return _dist2(lambda X, c: X.staff_performance(c, _ws(), request.args.get("from", ""), request.args.get("to", "")))
+
+
+@hop_bp.route("/dist/profit", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_profit():
+    """?from=&to= — sales, cost, gross profit, expenses, net by month / item / retailer / company."""
+    return _dist2(lambda X, c: X.profitability(c, _ws(), request.args.get("from", ""), request.args.get("to", "")))
+
+
 @hop_bp.route("/dist/<key>/insights", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -4227,7 +4377,9 @@ def dist_insights(key: str):
 
     titles = {"forecast": "Stock forecast and what to order", "pipeline": "Orders to the company, SO and invoices",
               "ledger": "Company ledger and payment status", "retailer-goods": "Goods sent to each retailer",
-              "home": "Distributor overview"}
+              "home": "Distributor overview", "articles": "Article Master (prices and margins)",
+              "retailer-dues": "Retailer payments and follow-ups", "staff": "Staff performance",
+              "profit": "Business profitability"}
     if key not in titles:
         return _json_error("Unknown screen", "NOT_FOUND", 404)
     user = getattr(request, "user", None) or {}
@@ -4240,7 +4392,11 @@ def dist_insights(key: str):
                     "pipeline": lambda: D.pipeline(conn, _ws()),
                     "ledger": lambda: D.company_ledger(conn, _ws(), a.get("vendor_id", type=int) or 0),
                     "retailer-goods": lambda: D.retailer_goods(conn, _ws(), a.get("from", ""), a.get("to", "")),
-                    "home": lambda: D.home(conn, _ws())}[key]()
+                    "home": lambda: D.home(conn, _ws()),
+                    "articles": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).articles(conn, _ws()),
+                    "retailer-dues": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).retailer_dues(conn, _ws()),
+                    "staff": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).staff_performance(conn, _ws(), a.get("from", ""), a.get("to", "")),
+                    "profit": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).profitability(conn, _ws(), a.get("from", ""), a.get("to", ""))}[key]()
         points = hop_ai.report_insights(titles[key], data, user_id=int(user.get("user_id") or 0))
     except LookupError as exc:
         return _json_error(str(exc), "NOT_FOUND", 404)
