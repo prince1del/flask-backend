@@ -135,12 +135,17 @@ def articles(conn: sqlite3.Connection, ws: str, q: str = "", category: str = "",
     rows = [_art(dict(r)) for r in conn.execute(sql + " ORDER BY lower(COALESCE(category,'')), lower(name)", args).fetchall()]
     changes = {int(r[0]): int(r[1]) for r in conn.execute(
         "SELECT product_id, COUNT(*) FROM hop_dist_price_history WHERE workspace_id=? GROUP BY product_id", (ws,))}
+    recent = latest_change_by_article(conn, ws)
     for r in rows:
         r["price_changes"] = changes.get(int(r["id"]), 0)
+        r["last_change"] = recent.get(int(r["id"]))   # badge on the card: "DP up 8% on 12-11"
     cats = sorted({r["category"] for r in rows if r.get("category")})
     seasons = sorted({r["season"] for r in rows if r.get("season")})
     problems = article_problems(rows)
-    return {"articles": rows, "count": len(rows), "categories": cats, "seasons": seasons, "problems": problems}
+    pc = price_changes(conn, ws, 30)
+    return {"articles": rows, "count": len(rows), "categories": cats, "seasons": seasons, "problems": problems,
+            "recent_changes": {"count": pc["count"], "ups": pc["ups"], "downs": pc["downs"],
+                               "articles_changed": pc["articles_changed"], "margin_alerts": len(pc["margin_alerts"])}}
 
 
 def article_problems(rows: list[dict]) -> list[str]:
@@ -800,4 +805,92 @@ def read_ledger_excel(data: bytes) -> list[dict]:
         out.append({"date": ds, "doc_no": _s(row[cm["doc_no"]]) if "doc_no" in cm and cm["doc_no"] < len(row) else "",
                     "narration": _s(row[cm["narration"]])[:160] if "narration" in cm and cm["narration"] < len(row) else "",
                     "debit": dr, "credit": cr})
+    return out
+
+
+# == Price changes: what changed, by how much, what it does to stock value and margin ===================
+def price_changes(conn: sqlite3.Connection, ws: str, days: int = 30, field: str = "") -> dict[str, Any]:
+    """Every Article Master price change in the last `days`: old -> new, %, source, and its effect: stock value
+    (DP change x stock), margin now vs before, and a suggested retailer price that keeps the old margin %."""
+    ensure_schema(conn)
+    days = max(1, min(int(days or 30), 730))
+    since = (_today() - timedelta(days=days)).isoformat()
+    sql = """SELECT h.id, h.product_id, h.field, h.old_value, h.new_value, h.season, h.source, h.by_user, h.at,
+                    p.code, p.name, p.category, p.stock_qty, p.mrp, p.purchase_price, p.selling_price
+             FROM hop_dist_price_history h JOIN hop_products p ON p.workspace_id=h.workspace_id AND p.id=h.product_id
+             WHERE h.workspace_id=? AND substr(h.at,1,10) >= ?"""
+    args: list[Any] = [ws, since]
+    if field in ("mrp", "purchase_price", "selling_price"):
+        sql += " AND h.field=?"
+        args.append(field)
+    rows = [dict(r) for r in conn.execute(sql + " ORDER BY h.at DESC, h.id DESC", args).fetchall()]
+    changes, ups, downs, stock_effect = [], 0, 0, 0.0
+    by_cat: dict[str, list[float]] = defaultdict(list)
+    for r in rows:
+        old, new = _f(r["old_value"]), _f(r["new_value"])
+        pct = round((new - old) / old * 100, 1) if old else None
+        if old and new > old:
+            ups += 1
+        elif old and new < old:
+            downs += 1
+        eff = 0.0
+        if r["field"] == "purchase_price" and old:
+            eff = (new - old) * max(_f(r["stock_qty"]), 0)
+            stock_effect += eff
+        if pct is not None:
+            by_cat[r.get("category") or "Other"].append(pct)
+        changes.append({"id": r["id"], "product_id": r["product_id"], "code": r.get("code"), "name": r["name"],
+                        "category": r.get("category"), "field": r["field"], "old": old or None, "new": new, "pct": pct,
+                        "season": r.get("season"), "source": r.get("source"), "by": r.get("by_user"), "at": r["at"],
+                        "stock_effect": _r2(eff) if eff else None, "first_price": not old})
+    margin_alerts = []
+    seen: set[int] = set()
+    for c in changes:
+        if c["field"] != "purchase_price" or not c["old"] or c["product_id"] in seen:
+            continue
+        seen.add(c["product_id"])
+        p = conn.execute("SELECT name, code, purchase_price, selling_price, mrp FROM hop_products WHERE workspace_id=? AND id=?",
+                         (ws, c["product_id"])).fetchone()
+        if not p:
+            continue
+        dp, sell, mrp = _f(p["purchase_price"]), _f(p["selling_price"]), _f(p["mrp"])
+        if not sell:
+            continue
+        if conn.execute("SELECT 1 FROM hop_dist_price_history WHERE workspace_id=? AND product_id=? AND field='selling_price' "
+                        "AND id > ?", (ws, c["product_id"], c["id"])).fetchone():
+            continue          # the retailer price was already updated after this DP change
+        old_margin = (sell - c["old"]) / sell * 100
+        new_margin = (sell - dp) / sell * 100
+        if new_margin >= old_margin - 0.5:
+            continue
+        keep = round(dp / (1 - old_margin / 100)) if old_margin < 100 else round(sell)
+        capped = bool(mrp and keep >= mrp)
+        if capped:
+            keep = round(mrp)
+        margin_alerts.append({"product_id": c["product_id"], "name": p["name"], "code": p["code"], "dp": dp,
+                              "selling_price": sell, "mrp": mrp or None, "old_margin_pct": round(old_margin, 1),
+                              "new_margin_pct": round(new_margin, 1), "suggested_selling_price": keep, "capped_at_mrp": capped,
+                              "why": f"DP went up {c['pct']}% but your price to retailers is still {_inr(sell)}: margin fell "
+                                     f"from {old_margin:.1f}% to {new_margin:.1f}%."})
+    cats = [{"category": k, "changes": len(v), "avg_pct": round(sum(v) / len(v), 1)} for k, v in by_cat.items()]
+    cats.sort(key=lambda x: -abs(x["avg_pct"]))
+    latest: dict[int, dict] = {}
+    for c in changes:
+        latest.setdefault(int(c["product_id"]), c)
+    return {"days": days, "since": since, "count": len(changes), "ups": ups, "downs": downs,
+            "articles_changed": len(latest), "stock_value_effect": _r2(stock_effect), "categories": cats,
+            "changes": changes[:300], "margin_alerts": margin_alerts}
+
+
+def latest_change_by_article(conn: sqlite3.Connection, ws: str, days: int = 60) -> dict[int, dict]:
+    since = (_today() - timedelta(days=days)).isoformat()
+    out: dict[int, dict] = {}
+    for r in conn.execute("""SELECT product_id, field, old_value, new_value, at FROM hop_dist_price_history
+                             WHERE workspace_id=? AND substr(at,1,10) >= ? AND old_value IS NOT NULL AND old_value > 0
+                             ORDER BY at DESC, id DESC""", (ws, since)):
+        pid = int(r[0])
+        if pid in out:
+            continue
+        old, new = _f(r[2]), _f(r[3])
+        out[pid] = {"field": r[1], "old": old, "new": new, "pct": round((new - old) / old * 100, 1) if old else None, "at": r[4]}
     return out

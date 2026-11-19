@@ -166,3 +166,24 @@ def test_ask_nexora_part2_tools(firm):
         assert p["totals"]["gross_profit"] == 460
         s = hop_ai.books_answer(conn, WS, "dist_staff")
         assert "staff" in s
+
+
+def test_price_changes_effect_and_margin_alert(firm):
+    path, ids = firm
+    with connect(path) as conn:
+        conn.execute("UPDATE hop_products SET stock_qty=90 WHERE id=?", (ids["towel"],))
+        X.save_article(conn, WS, {"id": ids["towel"], "purchase_price": 165}, user="Owner")   # DP 150 -> 165 (+10%)
+        X.save_article(conn, WS, {"id": ids["sheet"], "mrp": 950}, user="Owner")             # MRP 1000 -> 950
+        pc = X.price_changes(conn, WS, 30)
+        towel = next(c for c in pc["changes"] if c["product_id"] == ids["towel"] and c["field"] == "purchase_price"
+                     and not c["first_price"])
+        assert towel["old"] == 150 and towel["new"] == 165 and towel["pct"] == 10.0 and towel["stock_effect"] == 1350
+        assert pc["ups"] >= 1 and pc["downs"] >= 1 and pc["stock_value_effect"] == 1350
+        al = next(a for a in pc["margin_alerts"] if a["product_id"] == ids["towel"])
+        # sold at 200: margin 25% -> 17.5%; keeping 25% needs 165 / 0.75 = 220
+        assert al["old_margin_pct"] == 25.0 and al["new_margin_pct"] == 17.5 and al["suggested_selling_price"] == 220
+        X.save_article(conn, WS, {"id": ids["towel"], "selling_price": 220})
+        assert not [a for a in X.price_changes(conn, WS, 30)["margin_alerts"] if a["product_id"] == ids["towel"]]
+        art = next(a for a in X.articles(conn, WS)["articles"] if a["id"] == ids["towel"])
+        assert art["last_change"]["field"] == "selling_price" and art["last_change"]["pct"] == 10.0
+        assert X.articles(conn, WS)["recent_changes"]["articles_changed"] == 2

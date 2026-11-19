@@ -462,6 +462,17 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                 items = [i for i in items if _similar(party_name, str(i.get("item") or "")) >= 0.5]
             return {"total_value": wh["total_value"], "out_of_stock": wh["out_of_stock"], "count": wh["count"],
                     "items": [{k: i[k] for k in ("item", "code", "qty", "stock_value")} for i in items[:40]]}
+        if what == "dist_price_changes":
+            from app import hop_dist_extra as X
+
+            pc = X.price_changes(conn, ws, int(extra.get("days") or 30))
+            rows = pc["changes"]
+            if party_name:
+                rows = [r for r in rows if _similar(party_name, f"{r.get('code') or ''} {r['name']}") >= 0.5
+                        or (r.get("code") and party_name.lower() in str(r["code"]).lower())]
+            keep = ("code", "name", "field", "old", "new", "pct", "at", "source", "stock_effect")
+            return {k: pc[k] for k in ("days", "count", "ups", "downs", "articles_changed", "stock_value_effect", "categories")} | {
+                "changes": [{k: r.get(k) for k in keep} for r in rows[:30]], "margin_alerts": pc["margin_alerts"][:15]}
         if what in ("dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff"):
             from app import hop_dist_extra as X
 

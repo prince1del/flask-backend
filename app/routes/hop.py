@@ -4255,6 +4255,14 @@ def dist_articles():
     return _dist2(lambda X, c: X.articles(c, _ws(), a.get("q", ""), a.get("category", ""), a.get("season", "")))
 
 
+@hop_bp.route("/dist/price-changes", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_price_changes():
+    """?days=30&field=mrp|purchase_price|selling_price: price changes, stock-value effect, margin alerts."""
+    return _dist2(lambda X, c: X.price_changes(c, _ws(), request.args.get("days", type=int) or 30, request.args.get("field", "")))
+
+
 @hop_bp.route("/dist/articles/<int:pid>/history", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -4379,7 +4387,7 @@ def dist_insights(key: str):
               "ledger": "Company ledger and payment status", "retailer-goods": "Goods sent to each retailer",
               "home": "Distributor overview", "articles": "Article Master (prices and margins)",
               "retailer-dues": "Retailer payments and follow-ups", "staff": "Staff performance",
-              "profit": "Business profitability"}
+              "profit": "Business profitability", "price-changes": "Article price changes and their effect on margins"}
     if key not in titles:
         return _json_error("Unknown screen", "NOT_FOUND", 404)
     user = getattr(request, "user", None) or {}
@@ -4396,7 +4404,8 @@ def dist_insights(key: str):
                     "articles": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).articles(conn, _ws()),
                     "retailer-dues": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).retailer_dues(conn, _ws()),
                     "staff": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).staff_performance(conn, _ws(), a.get("from", ""), a.get("to", "")),
-                    "profit": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).profitability(conn, _ws(), a.get("from", ""), a.get("to", ""))}[key]()
+                    "profit": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).profitability(conn, _ws(), a.get("from", ""), a.get("to", "")),
+                    "price-changes": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).price_changes(conn, _ws(), a.get("days", type=int) or 30)}[key]()
         points = hop_ai.report_insights(titles[key], data, user_id=int(user.get("user_id") or 0))
     except LookupError as exc:
         return _json_error(str(exc), "NOT_FOUND", 404)

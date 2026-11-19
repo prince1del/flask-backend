@@ -85,6 +85,8 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
   ("kisse paisa lena hai", "Sharma ka payment kab aayega", "aaj kisko call karu").
 - dist_profit: profit by month / item / retailer / company, items sold below cost ("is saal kitna kamaya", "kis
   maal pe loss hai"); from/to dates.
+- dist_price_changes: which article prices changed (old -> new, %), effect on stock value, articles whose margin fell
+  and the retailer price that keeps the old margin ("kis article ka rate badla", "DP kitna badha", "margin pe kya asar").
 - dist_staff: staff performance — bills, sales, collections, follow-ups per person ("Ravi ne kitna kaam kiya").
 Answer with numbers, short, in the user's language (Hinglish ok). Never create anything yourself.
 """
@@ -689,7 +691,8 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "dispatch", "samples", "complaints", "notes", "commission",
                                                         "dist_orders", "dist_company_ledger", "dist_retailer_goods",
                                                         "dist_forecast", "dist_warehouse", "dist_overview",
-                                                        "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff"]},
+                                                        "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff",
+                                                        "dist_price_changes"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},
