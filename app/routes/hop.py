@@ -2353,6 +2353,106 @@ def party_transaction_link_payments(txn_id: int):
     return jsonify({"success": True, "data": {"linked": len(links)}})
 
 
+@hop_bp.route("/party-transactions/<int:txn_id>/copies", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bill_copies(txn_id: int):
+    """Supplier's bill copy: GET the list, POST a photo / PDF (multipart field "file")."""
+    from app import hop_bill_copies as BC
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "GET":
+                BC._bill(conn, _ws(), txn_id)
+                return jsonify({"success": True, "data": {"txn_id": txn_id, "copies": BC.list_copies(conn, _ws(), txn_id)}})
+            f = request.files.get("file") or request.files.get("photo") or request.files.get("image")
+            data = BC.add_copy(conn, _db_path(), _ws(), txn_id, f.read() if f else b"",
+                               (f.filename if f else "") or "", str(getattr(g, "user_email", "") or ""))
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": data})
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/copies/<copy_id>", methods=["GET", "DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bill_copy_item(txn_id: int, copy_id: str):
+    """GET the photo / PDF of one supplier copy; DELETE removes it."""
+    from flask import send_file
+
+    from app import hop_bill_copies as BC
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "DELETE":
+                return jsonify({"success": True, "data": BC.remove_copy(conn, _db_path(), _ws(), txn_id, copy_id)})
+            p, mime = BC.get_copy(conn, _db_path(), _ws(), txn_id, copy_id)
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    return send_file(p, mimetype=mime, max_age=3600)
+
+
+@hop_bp.route("/purchase-copies/pending", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def purchase_copies_pending():
+    """Purchase bills / expenses whose supplier copy is not on the server yet ({on: false} when switched off)."""
+    from app import hop_bill_copies as BC
+
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": BC.pending(conn, _ws())})
+
+
+def _bulk_args():
+    kinds = [k.strip() for k in (request.args.get("kinds") or "").split(",") if k.strip()]
+    return (request.args.get("from") or "").strip(), (request.args.get("to") or "").strip(), kinds, \
+        (request.args.get("with_copies") or "").strip() in ("1", "true", "yes")
+
+
+@hop_bp.route("/bills/bulk-summary", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bills_bulk_summary():
+    """How many bills a bulk PDF would hold: ?from=YYYY-MM-DD&to=…&kinds=sale,purchase,expense"""
+    from app import hop_bill_copies as BC
+
+    ensure_hop_schema(_db_path())
+    d1, d2, kinds, _ = _bulk_args()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            return jsonify({"success": True, "data": BC.bulk_summary(conn, _ws(), d1, d2, kinds)})
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/bills/bulk.pdf", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def bills_bulk_pdf():
+    """Every chosen bill between two dates in one PDF (print / download), optional supplier copies after each."""
+    from flask import Response
+
+    from app import hop_bill_copies as BC
+    from app import hop_phase3_ext
+
+    ensure_hop_schema(_db_path())
+    d1, d2, kinds, with_copies = _bulk_args()
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            theme = hop_phase3_ext.get_print_theme(conn, _ws())
+            pdf, n = BC.build_bulk_pdf(conn, _db_path(), _ws(), d1, d2, kinds, with_copies, theme=theme)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    fname = f"Bills_{d1}_to_{d2}.pdf"
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"', "X-Bill-Count": str(n)})
+
+
 @hop_bp.route("/party-transactions/<int:txn_id>/download.pdf", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

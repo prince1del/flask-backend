@@ -31,6 +31,9 @@ SCHEMA: list[dict[str, Any]] = [
      "type": "bool", "default": False},
     {"key": "short_stock", "section": "Transaction", "label": "When stock is not enough", "type": "select",
      "default": "warn", "options": [["warn", "Warn me"], ["block", "Don't allow the sale"], ["off", "Do nothing"]]},
+    {"key": "purchase_copy_track", "section": "Transaction",
+     "label": "Keep the supplier's bill copy with every purchase bill", "type": "bool", "default": True,
+     "help": "Purchase bills and expenses without a photo / PDF of the supplier's bill show as Copy pending."},
     # Taxes
     {"key": "composition_scheme", "section": "Taxes & GST", "label": "Composition scheme (Bill of Supply, no GST on sales)",
      "type": "bool", "default": False},
