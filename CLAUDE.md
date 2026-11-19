@@ -118,6 +118,15 @@ distributor buys from is a **principal** supplier (`hop_vendors.is_principal`).
 - **AI:** Guard alerts on Home, ✨ AI insights on every screen, and Ask Nexora `dist_*` tools.
 - **Code:** `app/hop_distributor.py`, routes `/api/v1/hop/dist/*`, phone `ui/hop/HopDistributorScreens.kt`,
   tests `tests/test_hop_distributor.py`.
+- **Part 2 (19-11):**
+  - Article Master: margins, price history, company price list read by AI (PDF / photo) or directly (Excel), with a
+    preview before saving.
+  - ✨ AI checks before saving: the SO against my order + the Article Master; the CI (purchase bill from the principal)
+    against its SO / order + the Article Master, through the normal entry warnings; the company ledger (SOA) against
+    my books.
+  - Retailer payments + follow-up: promises kept / broken, "Call today".
+  - Staff performance, counted from the audit trail.
+  - Profitability. Code: `app/hop_dist_extra.py`, phone `HopDistributorMore.kt`.
 - **Not done yet:**
   - The SO PDF file itself is not kept (only its data).
   - Web screens.
