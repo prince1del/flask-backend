@@ -44,6 +44,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     if "done_at" not in cols:   # marked done (the work in the note is finished)
         conn.execute("ALTER TABLE hop_notes ADD COLUMN done_at TEXT")
         conn.execute("ALTER TABLE hop_notes ADD COLUMN done_by TEXT")
+    if "photos_json" not in cols:   # photos / screenshots kept with the note: [{id, at}]
+        conn.execute("ALTER TABLE hop_notes ADD COLUMN photos_json TEXT")
 
 
 def _party(conn: sqlite3.Connection, ws: str, payload: dict) -> tuple[str | None, int | None, str | None]:
@@ -90,6 +92,11 @@ def _with_comments(d: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         d["comments"] = []
     d.pop("comments_json", None)
+    try:
+        d["photos"] = _json.loads(d.get("photos_json") or "[]")
+    except Exception:
+        d["photos"] = []
+    d.pop("photos_json", None)
     d["done"] = bool(d.get("done_at"))
     return d
 
@@ -165,3 +172,65 @@ def search(conn: sqlite3.Connection, ws: str, q: str = "", party_name: str = "",
     sql += " ORDER BY (done_at IS NOT NULL), pinned DESC, datetime(updated_at) DESC LIMIT ?"
     args.append(int(limit))
     return [_with_comments(dict(r)) for r in conn.execute(sql, args).fetchall()]
+
+
+# -- photos / screenshots on a note (owner: "notes main screenshot ya photo add karne ka option do") --
+MAX_PHOTOS = 8
+
+
+def _photo_dir(db_path: str, ws: str) -> str:
+    import os
+    import re
+
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(ws))[:80] or "main"
+    d = os.path.join(os.path.dirname(os.path.abspath(db_path)), "note_photos", safe)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def photo_path(db_path: str, ws: str, note_id: int, photo_id: str) -> str:
+    import os
+    import re
+
+    pid = re.sub(r"[^0-9a-z]", "", str(photo_id).lower())[:32]
+    if not pid:
+        raise LookupError("Photo not found")
+    return os.path.join(_photo_dir(db_path, ws), f"{int(note_id)}_{pid}.jpg")
+
+
+def _set_photos(conn: sqlite3.Connection, ws: str, note_id: int, items: list) -> None:
+    import json as _json
+
+    conn.execute("UPDATE hop_notes SET photos_json=?, updated_at=? WHERE workspace_id=? AND id=?",
+                 (_json.dumps(items), _now(), ws, int(note_id)))
+    conn.commit()
+
+
+def add_photo(conn: sqlite3.Connection, db_path: str, ws: str, note_id: int, data: bytes) -> dict[str, Any]:
+    import uuid
+
+    from app.hop_product_photos import to_jpeg
+
+    note = get(conn, ws, note_id)
+    items = note.get("photos") or []
+    if len(items) >= MAX_PHOTOS:
+        raise ValueError(f"A note can keep up to {MAX_PHOTOS} photos")
+    jpg = to_jpeg(data, 1600)   # screenshots stay readable
+    pid = uuid.uuid4().hex[:12]
+    with open(photo_path(db_path, ws, note_id, pid), "wb") as f:
+        f.write(jpg)
+    items.append({"id": pid, "at": _now()})
+    _set_photos(conn, ws, note_id, items)
+    return get(conn, ws, note_id)
+
+
+def remove_photo(conn: sqlite3.Connection, db_path: str, ws: str, note_id: int, photo_id: str) -> dict[str, Any]:
+    import os
+
+    note = get(conn, ws, note_id)
+    items = [p for p in (note.get("photos") or []) if p.get("id") != photo_id]
+    p = photo_path(db_path, ws, note_id, photo_id)
+    if os.path.exists(p):
+        os.remove(p)
+    _set_photos(conn, ws, note_id, items)
+    return get(conn, ws, note_id)

@@ -93,3 +93,29 @@ def test_link_later_payment_to_saved_bill(tmp_path):
         hop_money.link_payments_to_bill(conn, WS, inv["party_txn_id"], [{"payment_txn_id": pay["party_txn_id"], "amount": 400}])
         bal = conn.execute("SELECT balance_amount FROM hop_party_transactions WHERE id=?", (inv["party_txn_id"],)).fetchone()[0]
         assert round(bal, 2) == 600
+
+
+def test_note_photos_add_and_remove(tmp_path):
+    import io
+    import os
+    import sqlite3
+
+    from PIL import Image
+
+    from app import hop_notes
+
+    db = str(tmp_path / "p.db")
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    n = hop_notes.create(conn, "ws", {"text": "see screenshot"})
+    buf = io.BytesIO()
+    Image.new("RGB", (2400, 1200), "white").save(buf, "PNG")
+    n = hop_notes.add_photo(conn, db, "ws", n["id"], buf.getvalue())
+    assert len(n["photos"]) == 1
+    pid = n["photos"][0]["id"]
+    path = hop_notes.photo_path(db, "ws", n["id"], pid)
+    assert os.path.exists(path) and max(Image.open(path).size) == 1600
+    with pytest.raises(ValueError):
+        hop_notes.add_photo(conn, db, "ws", n["id"], b"not an image")
+    n = hop_notes.remove_photo(conn, db, "ws", n["id"], pid)
+    assert n["photos"] == [] and not os.path.exists(path)

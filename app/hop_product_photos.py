@@ -38,6 +38,17 @@ def save(conn: sqlite3.Connection, db_path: str, ws: str, product_id: int, data:
     ensure_column(conn)
     if not conn.execute("SELECT 1 FROM hop_products WHERE workspace_id=? AND id=?", (ws, int(product_id))).fetchone():
         raise LookupError("Product not found")
+    jpg = to_jpeg(data)
+    with open(path_for(db_path, ws, product_id), "wb") as f:
+        f.write(jpg)
+    v = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    conn.execute("UPDATE hop_products SET photo_v=? WHERE workspace_id=? AND id=?", (v, ws, int(product_id)))
+    conn.commit()
+    return {"product_id": int(product_id), "photo_v": v, "bytes": len(jpg)}
+
+
+def to_jpeg(data: bytes, max_side: int = MAX_SIDE) -> bytes:
+    """Any phone photo / screenshot -> upright JPEG, longest side ``max_side`` (also used by note photos)."""
     if not data:
         raise ValueError("Empty photo")
     if len(data) > MAX_BYTES:
@@ -49,18 +60,12 @@ def save(conn: sqlite3.Connection, db_path: str, ws: str, product_id: int, data:
         img = ImageOps.exif_transpose(img)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
-        img.thumbnail((MAX_SIDE, MAX_SIDE))
+        img.thumbnail((max_side, max_side))
         out = io.BytesIO()
         img.save(out, "JPEG", quality=85, optimize=True)
-        jpg = out.getvalue()
+        return out.getvalue()
     except Exception as exc:  # not an image Pillow can read
         raise ValueError("Please choose a JPG, PNG or WEBP photo") from exc
-    with open(path_for(db_path, ws, product_id), "wb") as f:
-        f.write(jpg)
-    v = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    conn.execute("UPDATE hop_products SET photo_v=? WHERE workspace_id=? AND id=?", (v, ws, int(product_id)))
-    conn.commit()
-    return {"product_id": int(product_id), "photo_v": v, "bytes": len(jpg)}
 
 
 def remove(conn: sqlite3.Connection, db_path: str, ws: str, product_id: int) -> None:

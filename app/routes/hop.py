@@ -2057,6 +2057,52 @@ def unused_payments_list():
     return jsonify({"success": True, "data": rows})
 
 
+@hop_bp.route("/notes/<int:note_id>/photos", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def note_photo_add(note_id: int):
+    """Add a photo / screenshot to a note (multipart field "photo")."""
+    from app import hop_notes
+
+    ensure_hop_schema(_db_path())
+    f = request.files.get("photo") or request.files.get("file") or request.files.get("image")
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_notes.add_photo(conn, _db_path(), _ws(), note_id, f.read() if f else b"")
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/notes/<int:note_id>/photos/<photo_id>", methods=["GET", "DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def note_photo_item(note_id: int, photo_id: str):
+    """GET the JPEG of a note photo; DELETE removes it from the note."""
+    import os
+
+    from flask import send_file
+
+    from app import hop_notes
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            note = hop_notes.get(conn, _ws(), note_id)
+            if not any(p.get("id") == photo_id for p in note.get("photos") or []):
+                return _json_error("Photo not found", "NOT_FOUND", 404)
+            if request.method == "DELETE":
+                return jsonify({"success": True, "data": hop_notes.remove_photo(conn, _db_path(), _ws(), note_id, photo_id)})
+        p = hop_notes.photo_path(_db_path(), _ws(), note_id, photo_id)
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    if not os.path.exists(p):
+        return _json_error("Photo not found", "NOT_FOUND", 404)
+    return send_file(p, mimetype="image/jpeg", max_age=3600)
+
+
 @hop_bp.route("/notes/<int:note_id>/comments", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
