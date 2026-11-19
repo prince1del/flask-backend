@@ -331,6 +331,58 @@ def _set_links(conn, ws, pay: dict[str, Any], allocations: list[dict[str, Any]])
         recompute_balance(conn, ws, int(bill["id"]))
 
 
+def unused_payments(conn: sqlite3.Connection, ws: str, bill_type: int, party_type: str, party_id: int) -> list[dict[str, Any]]:
+    """Payment-In (sale side) / Payment-Out (purchase side) of this party with money not yet put on any bill."""
+    pay_type = next((p for p, b in PAYMENT_FOR.items() if b == int(bill_type)), None)
+    if not pay_type:
+        return []
+    rows = conn.execute(
+        """SELECT id, txn_number, txn_date, total_amount, unused_amount, payment_mode, payment_ref FROM hop_party_transactions
+           WHERE workspace_id=? AND txn_type=? AND party_type=? AND party_id=? AND (deleted_at IS NULL OR trim(deleted_at)='')
+           ORDER BY date(txn_date), id""", (ws, int(pay_type), party_type, int(party_id))).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        unused = round(_f(d.get("total_amount")) - _linked_total(conn, ws, payment=int(d["id"])), 2)
+        if unused > EPS:
+            d["unused_amount"] = unused
+            out.append(d)
+    return out
+
+
+def link_payments_to_bill(conn: sqlite3.Connection, ws: str, bill_id: int, links: list[dict[str, Any]]) -> None:
+    """Put money from earlier Payment-In / Out on this bill (Vyapar: link payment on the invoice).
+    Each amount ≤ what that payment still has unused and ≤ what the bill still owes."""
+    bill = _row(conn, ws, int(bill_id))
+    if not bill:
+        raise ValueError("Bill not found")
+    bill_type = int(bill.get("txn_type") or 0)
+    pay_type = next((p for p, b in PAYMENT_FOR.items() if b == bill_type), None)
+    if not pay_type:
+        raise ValueError("Payments can be linked only to sale invoices or purchase bills")
+    for ln in links or []:
+        amt = round(_f(ln.get("amount")), 2)
+        if amt <= EPS:
+            continue
+        pay = _row(conn, ws, int(ln.get("payment_txn_id") or 0))
+        if not pay or int(pay.get("txn_type") or 0) != pay_type or pay.get("deleted_at") \
+                or pay.get("party_type") != bill.get("party_type") or int(pay.get("party_id") or 0) != int(bill.get("party_id") or 0):
+            raise ValueError("That payment does not belong to this party")
+        unused = round(_f(pay.get("total_amount")) - _linked_total(conn, ws, payment=int(pay["id"])), 2)
+        if amt > unused + EPS:
+            raise ValueError(f"{pay.get('txn_number') or 'Payment'} has only ₹{unused:,.2f} unused")
+        _freeze_received(conn, ws, bill)
+        recompute_balance(conn, ws, int(bill["id"]))
+        due = _f(_row(conn, ws, int(bill["id"]))["balance_amount"])
+        if amt > due + EPS:
+            raise ValueError(f"The bill has only ₹{due:,.2f} due")
+        conn.execute("INSERT INTO hop_payment_links (workspace_id, payment_txn_id, bill_txn_id, amount, created_at) "
+                     "VALUES (?, ?, ?, ?, ?)", (ws, int(pay["id"]), int(bill["id"]), amt, _now()))
+        recompute_balance(conn, ws, int(bill["id"]))
+        recompute_balance(conn, ws, int(pay["id"]))
+    conn.commit()
+
+
 def post_document(conn: sqlite3.Connection, ws: str, txn_id: int, payload: dict[str, Any],
                   *, is_update: bool = False) -> None:
     """Apply money, cheque, stock, links and Convert effects for a saved manual

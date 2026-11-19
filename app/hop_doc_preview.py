@@ -1244,6 +1244,8 @@ def create_manual_party_document(
     _save_header_extras(conn, workspace_id, party_txn_id, payload, tcs_pct, tcs_amount, False)
     hop_loyalty.record(conn, workspace_id, party_txn_id, payload)
     hop_money.post_document(conn, workspace_id, party_txn_id, payload)
+    if payload.get("link_payments"):
+        hop_money.link_payments_to_bill(conn, workspace_id, party_txn_id, payload.get("link_payments") or [])
     conn.commit()
     after = dict(conn.execute("SELECT balance_amount, status_text FROM hop_party_transactions WHERE id=?",
                               (party_txn_id,)).fetchone())

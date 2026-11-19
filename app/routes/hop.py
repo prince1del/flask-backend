@@ -2042,6 +2042,39 @@ def notes_collection():
     return jsonify({"success": True, "data": row}), 201
 
 
+@hop_bp.route("/unused-payments", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def unused_payments_list():
+    """?bill_type=1&party_type=customer&party_id=N → that party's payments with money not yet on a bill."""
+    from app import hop_money
+
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        rows = hop_money.unused_payments(conn, _ws(), request.args.get("bill_type", type=int) or 1,
+                                         (request.args.get("party_type") or "customer").strip(),
+                                         request.args.get("party_id", type=int) or 0)
+    return jsonify({"success": True, "data": rows})
+
+
+@hop_bp.route("/notes/<int:note_id>/comments", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def note_comment(note_id: int):
+    """Reply in a note: {text, by, kind: 'comment' | 'plan'} (Claude writes what was done / a plan here)."""
+    from app import hop_notes
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_notes.add_comment(conn, _ws(), note_id, _payload())
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row})
+
+
 @hop_bp.route("/notes/<int:note_id>", methods=["PATCH", "PUT", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

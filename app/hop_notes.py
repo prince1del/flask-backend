@@ -38,6 +38,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                deleted_at TEXT
            )""")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_hop_notes_ws ON hop_notes(workspace_id, deleted_at)")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(hop_notes)")}
+    if "comments_json" not in cols:   # replies in the note: [{by, text, kind, at}]
+        conn.execute("ALTER TABLE hop_notes ADD COLUMN comments_json TEXT")
 
 
 def _party(conn: sqlite3.Connection, ws: str, payload: dict) -> tuple[str | None, int | None, str | None]:
@@ -76,12 +79,40 @@ def create(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str = "") 
     return get(conn, ws, int(cur.lastrowid))
 
 
+def _with_comments(d: dict[str, Any]) -> dict[str, Any]:
+    import json as _json
+
+    try:
+        d["comments"] = _json.loads(d.get("comments_json") or "[]")
+    except Exception:
+        d["comments"] = []
+    d.pop("comments_json", None)
+    return d
+
+
 def get(conn: sqlite3.Connection, ws: str, note_id: int) -> dict[str, Any]:
     ensure_schema(conn)
     r = conn.execute("SELECT * FROM hop_notes WHERE workspace_id=? AND id=? AND deleted_at IS NULL", (ws, int(note_id))).fetchone()
     if not r:
         raise LookupError("Note not found")
-    return dict(r)
+    return _with_comments(dict(r))
+
+
+def add_comment(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) -> dict[str, Any]:
+    """Add a reply to a note: what was done, or a plan (kind='plan')."""
+    import json as _json
+
+    text = _s(payload.get("text"))
+    if not text:
+        raise ValueError("Write the comment")
+    note = get(conn, ws, note_id)
+    items = note.get("comments") or []
+    items.append({"by": _s(payload.get("by"))[:40] or "User", "kind": "plan" if payload.get("kind") == "plan" else "comment",
+                  "text": text[:8000], "at": _now()})
+    conn.execute("UPDATE hop_notes SET comments_json=?, updated_at=? WHERE workspace_id=? AND id=?",
+                 (_json.dumps(items, ensure_ascii=False), _now(), ws, int(note_id)))
+    conn.commit()
+    return get(conn, ws, note_id)
 
 
 def update(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) -> dict[str, Any]:
@@ -125,4 +156,4 @@ def search(conn: sqlite3.Connection, ws: str, q: str = "", party_name: str = "",
         args.append(f"%{party_name.strip().lower()}%")
     sql += " ORDER BY pinned DESC, datetime(updated_at) DESC LIMIT ?"
     args.append(int(limit))
-    return [dict(r) for r in conn.execute(sql, args).fetchall()]
+    return [_with_comments(dict(r)) for r in conn.execute(sql, args).fetchall()]
