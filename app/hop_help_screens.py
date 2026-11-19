@@ -276,3 +276,16 @@ SHOWS["dist_profit"] = [
 ]
 SHOWS["dist_ledger"] = SHOWS["dist_ledger"] + ["✨ Check with the company's ledger — upload their statement; AI lists missing invoices, payments and amount differences."]
 SHOWS["dist_orders"] = SHOWS["dist_orders"] + ["✨ SO check — before saving, the SO is compared with your order and the Article Master (items, qty, rate, dates)."]
+
+SHOWS["dist_price_changes"] = [
+    "Days and price type — 7 / 30 / 90 days or 1 year; All, DP, MRP, To retailer.",
+    "Totals — changes, up / down, stock value effect.",
+    "✨ Margin alerts — DP up but retailer price not; the price that keeps your margin, Use ₹… to set it.",
+    "Categories — average change per category.",
+    "Timeline — each change by day: old price (struck) → new price, % pill, source, season, who.",
+]
+SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
+    "Price changes banner — changes in the last 30 days and margin alerts; tap to open Price changes.",
+    "Badge on a card — the latest change, e.g. DP ▲ 10% ₹150 → ₹165.",
+    "Article sheet — price history chart (DP, to retailer, MRP) and the list of changes.",
+]

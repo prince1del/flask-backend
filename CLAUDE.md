@@ -285,6 +285,14 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
   - **✨ Read company price list:** Excel read directly, PDF / photo by AI. A preview shows new articles and price
     changes; big jumps start unticked.
   - AI master check: no DP, no MRP, above MRP, below cost, code used twice.
+  - **Price changes** (banner on the master, a badge on each card such as "DP ▲ 10% ₹150 → ₹165", a chart in the
+    article sheet, and its own page):
+    - filters: 7 / 30 / 90 days / 1 year, and DP / MRP / to retailer;
+    - totals: number of changes, up / down, the effect on stock value;
+    - **✨ margin alerts**: DP went up but the retailer price did not → the price that keeps the old margin, set with
+      "Use ₹…" after you confirm;
+    - average change per category, a timeline by day, AI insights;
+    - Ask Nexora `dist_price_changes`.
 - **Company ledger & payments:**
   - billed / paid / to pay / overdue, unpaid company invoices with overdue days, ledger with running balance;
   - Pay the company;
