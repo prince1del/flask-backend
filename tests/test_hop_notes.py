@@ -54,3 +54,19 @@ def test_link_earlier_payment_to_invoice(co):
         assert round(bal, 2) == 700
         left = {u["id"]: u["unused_amount"] for u in hop_money.unused_payments(conn, WS, 1, "customer", cid)}
         assert left[pay["party_txn_id"]] == 200
+
+
+def test_note_mark_done_and_reopen(tmp_path):
+    import sqlite3
+    from app import hop_notes
+
+    conn = sqlite3.connect(tmp_path / "n.db")
+    conn.row_factory = sqlite3.Row
+    a = hop_notes.create(conn, "ws", {"text": "first"})
+    b = hop_notes.create(conn, "ws", {"text": "second"})
+    assert a["done"] is False
+    d = hop_notes.update(conn, "ws", a["id"], {"done": True, "done_by": "Claude"})
+    assert d["done"] is True and d["done_by"] == "Claude"
+    assert [n["id"] for n in hop_notes.search(conn, "ws")] == [b["id"], a["id"]]   # done ones go last
+    d = hop_notes.update(conn, "ws", a["id"], {"done": False})
+    assert d["done"] is False and d["done_by"] is None

@@ -41,6 +41,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(hop_notes)")}
     if "comments_json" not in cols:   # replies in the note: [{by, text, kind, at}]
         conn.execute("ALTER TABLE hop_notes ADD COLUMN comments_json TEXT")
+    if "done_at" not in cols:   # marked done (the work in the note is finished)
+        conn.execute("ALTER TABLE hop_notes ADD COLUMN done_at TEXT")
+        conn.execute("ALTER TABLE hop_notes ADD COLUMN done_by TEXT")
 
 
 def _party(conn: sqlite3.Connection, ws: str, payload: dict) -> tuple[str | None, int | None, str | None]:
@@ -87,6 +90,7 @@ def _with_comments(d: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         d["comments"] = []
     d.pop("comments_json", None)
+    d["done"] = bool(d.get("done_at"))
     return d
 
 
@@ -126,6 +130,10 @@ def update(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) -> di
     for k, n in (("title", 120), ("remind_on", 10)):
         if k in payload:
             sets.append(f"{k}=?"); vals.append(_s(payload.get(k))[:n] or None)
+    if "done" in payload:   # mark done / open again
+        done = payload.get("done") in (True, 1, "1", "true")
+        sets += ["done_at=?", "done_by=?"]
+        vals += [_now() if done else None, (_s(payload.get("done_by"))[:40] or "User") if done else None]
     if "pinned" in payload:
         sets.append("pinned=?"); vals.append(1 if payload.get("pinned") in (True, 1, "1", "true") else 0)
     if "party_name" in payload or "party_id" in payload:
@@ -154,6 +162,6 @@ def search(conn: sqlite3.Connection, ws: str, q: str = "", party_name: str = "",
     if party_name:
         sql += " AND lower(COALESCE(party_name,'')) LIKE ?"
         args.append(f"%{party_name.strip().lower()}%")
-    sql += " ORDER BY pinned DESC, datetime(updated_at) DESC LIMIT ?"
+    sql += " ORDER BY (done_at IS NOT NULL), pinned DESC, datetime(updated_at) DESC LIMIT ?"
     args.append(int(limit))
     return [_with_comments(dict(r)) for r in conn.execute(sql, args).fetchall()]
