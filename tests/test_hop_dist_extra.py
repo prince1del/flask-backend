@@ -122,7 +122,8 @@ def test_retailer_followup_promises_and_priority(firm):
     with connect(path) as conn:
         d = X.retailer_dues(conn, WS)
         r = d["retailers"][0]
-        assert r["party"] == "Sharma Store" and r["overdue"] > 0 and r["oldest_days"] == 40
+        assert r["party"] == "Sharma Store" and r["overdue"] > 0 and r["oldest_days"] == 40 and "40 days" in r["why"]
+        assert X._inr(163725) == "₹1,63,725" and X._inr(999) == "₹999"
         assert d["call_today"][0]["party"] == "Sharma Store" and "never followed up" in r["why"]
         X.add_followup(conn, WS, {"party_id": ids["shop"], "note": "Will pay Friday", "promise_date": _d(2),
                                   "promise_amount": 1000, "at": _d(6)}, user="Ravi")
@@ -140,7 +141,7 @@ def test_staff_and_profit(firm):
 
         hop_audit.ensure_schema(conn) if hasattr(hop_audit, "ensure_schema") else None
         conn.execute("INSERT INTO hop_audit_log (workspace_id, at, user_name, action, entity, entity_id, path) VALUES (?,?,?,?,?,?,?)",
-                     (WS, X._today().isoformat() + "T10:00:00", "Ravi", "create", "party-transactions", str(ids["inv"]), "/x"))
+                     (WS, X._today().isoformat() + "T10:00:00", "Ravi", "created", "Bill", str(ids["inv"]), "/api/v1/hop/party-transactions"))
         X.add_followup(conn, WS, {"party_id": ids["shop"], "note": "Called"}, user="Ravi")
         st = X.staff_performance(conn, WS, X._today().replace(day=1).isoformat(), X._today().isoformat())
         ravi = next(s for s in st["staff"] if s["staff"] == "Ravi")

@@ -49,6 +49,21 @@ def _s(v: Any) -> str:
     return str(v or "").strip()
 
 
+def _inr(v: float) -> str:
+    """₹1,63,725 (Indian grouping)."""
+    n = int(round(abs(float(v or 0))))
+    s = str(n)
+    if len(s) > 3:
+        head, tail = s[:-3], s[-3:]
+        head = ",".join([head[max(0, i - 2):i] for i in range(len(head), 0, -2)][::-1])
+        s = head + "," + tail
+    return ("-" if float(v or 0) < 0 else "") + "₹" + s
+
+
+def _days(n: int) -> str:
+    return f"{n} day" if n == 1 else f"{n} days"
+
+
 def _norm(s: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
 
@@ -135,6 +150,9 @@ def article_problems(rows: list[dict]) -> list[str]:
     if no_dp:
         out.append(f"{len(no_dp)} article(s) have no buying price (DP) — profit and CI checks can't work for them: "
                    + ", ".join(no_dp[:4]))
+    no_mrp = [r["name"] for r in rows if not _f(r.get("mrp"))]
+    if no_mrp:
+        out.append(f"{len(no_mrp)} article(s) have no MRP: " + ", ".join(no_mrp[:4]))
     over = [r["name"] for r in rows if _f(r.get("mrp")) and _f(r.get("selling_price")) > _f(r.get("mrp"))]
     if over:
         out.append(f"{len(over)} article(s) sell above MRP: " + ", ".join(over[:4]))
@@ -552,17 +570,17 @@ def retailer_dues(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
         score = r["overdue"] / 1000 * (1 + r["oldest_days"] / 30) + broken * 20 + (10 if days_since_fu is None or days_since_fu > 7 else 0)
         reasons = []
         if r["overdue"]:
-            reasons.append(f"₹{r['overdue']:,.0f} overdue, oldest {r['oldest_days']} days")
+            reasons.append(f"{_inr(r['overdue'])} overdue, oldest {_days(r['oldest_days'])}")
         if broken:
             reasons.append(f"{broken} promise(s) broken")
         if open_p:
-            reasons.append(f"promised ₹{_f(open_p.get('promise_amount')):,.0f} by {open_p['promise_date']}")
+            reasons.append(f"promised {_inr(_f(open_p.get('promise_amount')))} by {open_p['promise_date']}")
             if str(open_p["promise_date"]) > today.isoformat():
                 score *= 0.4           # wait for the promise date
         if days_since_fu is None:
             reasons.append("never followed up")
         elif days_since_fu > 7:
-            reasons.append(f"last follow-up {days_since_fu} days ago")
+            reasons.append(f"last follow-up {_days(days_since_fu)} ago")
         out.append({**r, "due": _r2(r["due"]), "overdue": _r2(r["overdue"]),
                     "buckets": {k: _r2(v) for k, v in r["buckets"].items()},
                     "last_payment": p[0] if p else None, "last_followup": last_fu, "open_promise": open_p,
@@ -594,7 +612,7 @@ def retailer_detail(conn: sqlite3.Connection, ws: str, party_id: int) -> dict[st
     fu = _followups(conn, ws, int(party_id))
     for f in fu:
         f["promise_state"] = _promise_state(f, pays)
-    msg = (f"Namaste {c['company']} ji, aapka ₹{(row or {}).get('due', 0):,.0f} ka payment baaki hai"
+    msg = (f"Namaste {c['company']} ji, aapka {_inr((row or {}).get('due', 0))} ka payment baaki hai"
            + (f" (sabse purana bill {(row or {}).get('oldest_days')} din overdue)" if (row or {}).get("oldest_days") else "")
            + ". Kripya jaldi payment kar dijiye. Dhanyavaad.")
     return {"party_id": int(party_id), "party": c["company"], "mobile": c["mobile"], "summary": row,
@@ -615,7 +633,8 @@ def staff_performance(conn: sqlite3.Connection, ws: str, frm: str = "", to: str 
         logs = []
     txn_ids = {}
     for lg in logs:
-        if (lg.get("entity") or "").startswith("party-transactions") and _s(lg.get("entity_id")).isdigit() and lg.get("action") == "create":
+        path = _s(lg.get("path")).rstrip("/")
+        if path.endswith("/party-transactions") and _s(lg.get("entity_id")).isdigit() and lg.get("action") in ("created", "create"):
             txn_ids[int(lg["entity_id"])] = lg.get("user_name") or "Unknown"
     txns = {}
     if txn_ids:
@@ -630,9 +649,9 @@ def staff_performance(conn: sqlite3.Connection, ws: str, frm: str = "", to: str 
         p = people[u]
         p["actions"] += 1
         p["active_days"].add(str(lg["at"])[:10])
-        if lg.get("action") == "update":
+        if lg.get("action") in ("changed", "update"):
             p["edits"] += 1
-        if lg.get("action") == "delete":
+        if lg.get("action") in ("deleted", "delete"):
             p["deletes"] += 1
     for tid, u in txn_ids.items():
         ty, amt = txns.get(tid, (0, 0.0))

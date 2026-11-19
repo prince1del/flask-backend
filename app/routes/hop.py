@@ -4241,7 +4241,7 @@ def _dist2(fn):
 
 def _user_label() -> str:
     u = getattr(request, "user", None) or {}
-    return str(u.get("full_name") or u.get("username") or u.get("email") or "")[:60]
+    return str(u.get("username") or u.get("email") or "")[:80]   # same name the audit trail keeps (staff performance)
 
 
 @hop_bp.route("/dist/articles", methods=["GET", "POST"])
