@@ -212,15 +212,6 @@
         "Unit drop-down on lines"
       ]
     },
-    "purchase_bills": {
-      "title": "Purchase bills",
-      "date": "2026-11-18",
-      "passed": [
-        "Supplier bill no. + Bill date (calendar)",
-        "E-way / vehicle / transporter",
-        "Unit drop-down"
-      ]
-    },
     "targets": {
       "title": "Targets",
       "date": "2026-11-19",
@@ -256,23 +247,6 @@
       "passed": [
         "Bank payment → UTR / Ref no. field",
         "Cheque → Cheque no. field"
-      ]
-    },
-    "products": {
-      "title": "Products / catalogue",
-      "date": "2026-11-19",
-      "passed": [
-        "Photo shows in the product form; Camera / Gallery / Remove buttons"
-      ]
-    },
-    "invoices": {
-      "title": "Sale invoices",
-      "date": "2026-11-19",
-      "passed": [
-        "Calendar date, PO no./date, e-way, vehicle, transporter",
-        "Drop-downs open under the field, page does not move",
-        "⏸ Hold → Resume",
-        "Print button → Android print"
       ]
     }
   }
