@@ -118,7 +118,7 @@ def test_no_principal_hint(tmp_path):
     ensure_hop_schema(path)
     with connect(path) as conn:
         h = D.home(conn, WS)
-        assert h["orders_open"] == 0 and "Principal" in h["alerts"][0]
+        assert h["orders_open"] == 0 and "Set company" in h["alerts"][0]
 
 
 def test_ask_nexora_distributor_tools(firm):

@@ -436,7 +436,7 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         if what == "dist_company_ledger":
             pr = D.principals(conn, ws)
             if not pr:
-                return {"note": "No company marked as principal yet (Orders to the company → Set company)."}
+                return {"note": "No company marked as principal yet (Orders → SO → CI → Set company)."}
             out = []
             for p in pr:
                 lg = D.company_ledger(conn, ws, int(p["id"]), str(extra.get("from") or ""), str(extra.get("to") or ""))
