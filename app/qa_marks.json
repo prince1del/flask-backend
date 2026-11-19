@@ -1,7 +1,8 @@
 {
   "show": true,
-  "about": "T&P = Tested & Passed on the phone (business UI). Set show=false (or delete this file) to remove every T&P badge.",
-  "screens": {
+  "about": "T&P = every button on the screen pressed on the phone on the latest build (re-audit from 19-11). Old marks kept under previous_marks_not_full_button_check.",
+  "screens": {},
+  "previous_marks_not_full_button_check": {
     "dashboard": {
       "date": "2026-11-18",
       "passed": [
