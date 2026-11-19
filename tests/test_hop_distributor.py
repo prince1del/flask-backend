@@ -119,3 +119,35 @@ def test_no_principal_hint(tmp_path):
     with connect(path) as conn:
         h = D.home(conn, WS)
         assert h["orders_open"] == 0 and "Principal" in h["alerts"][0]
+
+
+def test_ask_nexora_distributor_tools(firm):
+    from app.services import hop_ai
+
+    path, ids = firm
+    with connect(path) as conn:
+        o = hop_ai.books_answer(conn, WS, "dist_orders")
+        assert {x["status"] for x in o["open_orders"]} == {"Ordered", "SO received"}
+        lg = hop_ai.books_answer(conn, WS, "dist_company_ledger")
+        assert lg["companies"][0]["company"] == "Brand Mills" and lg["companies"][0]["to_pay"] == 6500
+        rg = hop_ai.books_answer(conn, WS, "dist_retailer_goods", party_name="sharma")
+        assert [r["retailer"] for r in rg["retailers"]] == ["Sharma Store"]
+        fc = hop_ai.books_answer(conn, WS, "dist_forecast")
+        assert "order_now" in fc and all(i["flag"] != "OK" for i in fc["items"])
+        wh = hop_ai.books_answer(conn, WS, "dist_warehouse", party_name="towel")
+        assert wh["items"][0]["item"] == "Towel"
+        ov = hop_ai.books_answer(conn, WS, "dist_overview")
+        assert ov["companies"] == ["Brand Mills"] and "alerts" in ov
+
+
+def test_distributor_prompt_only_in_distributor_ui():
+    from flask import Flask
+
+    from app.services import nexora_ai_agent as agent
+
+    app = Flask("t")
+    with app.test_request_context(headers={"X-Nexora-UI": "distributor"}):
+        assert agent._distributor_ui() and agent._business_ui()
+        assert "DISTRIBUTOR UI" in agent._system_prompt()
+    with app.test_request_context(headers={"X-Nexora-UI": "business"}):
+        assert not agent._distributor_ui() and "DISTRIBUTOR UI" not in agent._system_prompt()

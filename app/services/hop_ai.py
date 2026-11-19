@@ -421,6 +421,49 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
         slim = lambda xs: [{k: x[k] for k in ("party", "number", "balance", "due_date", "days")} for x in xs[:20]]  # noqa: E731
         return {"overdue": slim(dl["overdue"]), "due_today": slim(dl["today"]), "due_soon": slim(dl["soon"]),
                 "totals": dl["totals"], "as_of": dl["as_of"]}
+    if what.startswith("dist_"):
+        from app import hop_distributor as D
+
+        D.ensure_schema(conn)
+        if what == "dist_orders":
+            pl = D.pipeline(conn, ws)
+            keep = ("txn_number", "txn_date", "total_amount", "status", "days_waiting", "pending_amount")
+            return {"counts": pl["counts"],
+                    "open_orders": [{**{k: o.get(k) for k in keep}, "sos": [s["so_number"] for s in o["sos"]],
+                                     "cis": [b.get("party_bill_no") or b["txn_number"] for b in o["bills"]]}
+                                    for o in pl["orders"] if o["status"] != "Billed"][:25],
+                    "sos_without_order": [s["so_number"] for s in pl["sos_without_order"]][:20]}
+        if what == "dist_company_ledger":
+            pr = D.principals(conn, ws)
+            if not pr:
+                return {"note": "No company marked as principal yet (Orders to the company → Set company)."}
+            out = []
+            for p in pr:
+                lg = D.company_ledger(conn, ws, int(p["id"]), str(extra.get("from") or ""), str(extra.get("to") or ""))
+                out.append({"company": p["company"], **lg["summary"],
+                            "open_bills": [{k: b.get(k) for k in ("txn_number", "party_bill_no", "txn_date", "due_date",
+                                                                   "balance_amount", "overdue_days")} for b in lg["open_bills"][:15]]})
+            return {"companies": out}
+        if what == "dist_retailer_goods":
+            rg = D.retailer_goods(conn, ws, str(extra.get("from") or ""), str(extra.get("to") or ""), q=party_name or "")
+            return {"from": rg["from"], "to": rg["to"], "total_qty": rg["total_qty"], "total_amount": rg["total_amount"],
+                    "retailers": [{"retailer": r["party"], "qty": r["qty"], "amount": r["amount"], "bills": r["bills"],
+                                   "items": [{k: i[k] for k in ("item", "qty", "amount", "last_date")} for i in r["items"][:8]]}
+                                  for r in rg["retailers"][:15]]}
+        if what == "dist_forecast":
+            fc = D.forecast(conn, ws)
+            keep = ("item", "stock", "on_order", "per_day", "days_left", "order_qty", "order_by", "flag", "trend_pct")
+            return {**{k: fc[k] for k in ("order_now", "order_soon", "no_sale", "suggested_value", "lookback_days", "cover_days")},
+                    "items": [{k: i[k] for k in keep} for i in fc["items"] if i["flag"] != "OK"][:25]}
+        if what == "dist_warehouse":
+            wh = D.warehouse(conn, ws)
+            items = wh["items"]
+            if party_name:
+                items = [i for i in items if _similar(party_name, str(i.get("item") or "")) >= 0.5]
+            return {"total_value": wh["total_value"], "out_of_stock": wh["out_of_stock"], "count": wh["count"],
+                    "items": [{k: i[k] for k in ("item", "code", "qty", "stock_value")} for i in items[:40]]}
+        h = D.home(conn, ws)
+        return {k: v for k, v in h.items() if k != "principals"} | {"companies": [p["company"] for p in h["principals"]]}
     if what == "notes":
         from app import hop_notes
 

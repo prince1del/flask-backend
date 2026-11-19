@@ -52,9 +52,35 @@ def _business_ui() -> bool:
     try:
         from flask import has_request_context, request as _rq
 
-        return has_request_context() and (_rq.headers.get("X-Nexora-UI") or "").lower() == "business"
+        return has_request_context() and (_rq.headers.get("X-Nexora-UI") or "").lower() in ("business", "distributor")
     except Exception:
         return False
+
+
+def _distributor_ui() -> bool:
+    try:
+        from flask import has_request_context, request as _rq
+
+        return has_request_context() and (_rq.headers.get("X-Nexora-UI") or "").lower() == "distributor"
+    except Exception:
+        return False
+
+
+DISTRIBUTOR_PROMPT = """
+THE USER IS IN THE DISTRIBUTOR UI — their own distribution firm. "Company" / "principal" / the brand = the company they
+buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers. Use get_hop_books with:
+- dist_orders: my orders to the company, which have no SO yet, which SO has no CI (company invoice) yet, days waiting
+  ("SO aaya?", "CI kab aayega", "kaunsa order pending hai").
+- dist_company_ledger: what the company billed, what I paid, what I still owe, overdue company invoices, last payment
+  ("company ko kitna dena hai", "overdue kitna hai", "company ka hisaab").
+- dist_retailer_goods: which retailer got which goods (party_name = retailer or item; from/to dates)
+  ("Sharma ko kya maal gaya", "is mahine kisko kitna bheja").
+- dist_forecast: what to order from the company and by when, items that will run out, slow items
+  ("kya order karu", "kaunsa maal khatam hone wala hai").
+- dist_warehouse: stock now and its value ("godown mein kya maal hai").
+- dist_overview: the whole picture for "aaj kya dekhna hai".
+Answer with numbers, short, in the user's language (Hinglish ok). Never create anything yourself.
+"""
 
 
 BUSINESS_PROMPT = """
@@ -81,6 +107,8 @@ THE USER IS IN THE BUSINESS UI (their own billing / accounts books — like Vyap
 
 def _system_prompt() -> str:
     today = datetime.now(timezone.utc).date().isoformat()
+    if _distributor_ui():
+        return DISTRIBUTOR_PROMPT + "\n" + BUSINESS_PROMPT + "\n" + _system_prompt_base(today)
     if _business_ui():
         return BUSINESS_PROMPT + "\n" + _system_prompt_base(today)
     return _system_prompt_base(today)
@@ -639,7 +667,10 @@ def _tool_declarations() -> list[dict[str, Any]]:
                 "'kitne piece bana sakte hain' (manufacturing; item name in party_name), "
                 "'is customer ke kitne points hain' (loyalty), 'aaj kisko payment reminder bhejna hai' (reminders), "
                 "'kiski AC service due hai' / 'is hafte kitni service hai' (service; customer or item name in party_name), "
-                "'online order aaye kya' / 'catalogue link' (online_orders), 'target kitna hua' / 'saal ka target' (targets)."
+                "'online order aaye kya' / 'catalogue link' (online_orders), 'target kitna hua' / 'saal ka target' (targets). "
+                "Distributor UI: orders to the company → SO → CI (dist_orders), company ledger / what I owe the company "
+                "(dist_company_ledger), goods per retailer (dist_retailer_goods), what to order (dist_forecast), stock "
+                "(dist_warehouse), overview (dist_overview)."
             ),
             "parameters": {
                 "type": "object",
@@ -648,7 +679,9 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "unpaid_bills", "expenses", "profit_loss", "balance_sheet",
                                                         "day_book", "party_statement", "gst", "items", "other_income", "audit",
                                                         "manufacturing", "loyalty", "reminders", "service", "online_orders", "targets",
-                                                        "dispatch", "samples", "complaints", "notes", "commission"]},
+                                                        "dispatch", "samples", "complaints", "notes", "commission",
+                                                        "dist_orders", "dist_company_ledger", "dist_retailer_goods",
+                                                        "dist_forecast", "dist_warehouse", "dist_overview"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},
