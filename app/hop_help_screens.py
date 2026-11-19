@@ -176,6 +176,9 @@ SHOWS["invoices"] = SHOWS["invoices"] + [
     "E-way bill no., Vehicle no., Transporter — printed on the bill when filled in.",
     "Time — saved automatically; type one only to change it.",
     "Converted quotation — shows 'Converted to Sale Invoice …', tap it to open that bill.",
+    "Earlier payments — after you pick the customer, a Payment-In not yet on any bill shows; tick it to put that money on this bill.",
+    "Link a Payment-In — on a saved bill with balance, tap it to put a payment made later on this bill; the balance drops.",
+    "Bills on hold — starting a new bill while one is on hold asks first: Resume, Keep on hold & start new, or Delete held & start new.",
 ]
 SHOWS["sale_estimates"] = SHOWS.get("sale_estimates", []) + [
     "Convert → Sale Order / Invoice / Proforma — a quotation can be converted once; after that it links to the new bill.",
@@ -183,6 +186,7 @@ SHOWS["sale_estimates"] = SHOWS.get("sale_estimates", []) + [
 SHOWS["payments"] = SHOWS["payments"] + ["UTR / Ref no. — for bank or UPI payments (cheque no. for a cheque); printed on the receipt."]
 SHOWS["purchase_payment_out"] = SHOWS.get("purchase_payment_out", []) + ["UTR / Ref no. — for bank or UPI payments; printed on the voucher."]
 SHOWS["purchase_bills"] = SHOWS["purchase_bills"] + [
+    "Link a Payment-Out — on a saved bill with balance, put a payment made earlier or later on this bill.",
     "Supplier bill no. and Bill date — the number printed on the supplier's own bill (our ref no. is separate).",
 ]
 SHOWS["sale_returns"] = SHOWS["sale_returns"] + ["Against invoice — pick the original bill (GST needs it on a credit note)."]
@@ -197,6 +201,8 @@ SHOWS["notes"] = [
     "Search — finds words in the note, its title or party.",
     "Each note — title, text, party, remind date; pinned notes stay on top.",
     "Tap a note — clean view with Edit / Delete / Pin.",
+    "Replies — the answers in a note (💬 comment, 📋 plan); write your own reply and tap Send.",
+    "Mark as done — the work in the note is finished; done notes show ✅ and go to the bottom (Open again undoes it).",
     "+ Note — write a note; or ask Nexora to write it (you check and Save).",
 ]
 SHOWS["samples"] = SHOWS.get("samples", []) + [

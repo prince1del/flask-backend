@@ -13,6 +13,8 @@ MORE: dict[str, dict[str, Any]] = {
               "shows": ["Search — finds words in the note, its title or party.",
                         "Each note — title, text, party, remind date; pinned notes stay on top.",
                         "Tap a note — clean view with Edit / Delete / Pin.",
+                        "Replies — the answers in a note (💬 comment, 📋 plan); write your own reply and tap Send.",
+                        "Mark as done — the work in the note is finished; done notes show ✅ and go to the bottom (Open again undoes it).",
                         "+ Note — write a note; or ask Nexora to write it (you check and Save)."]},
     "samples": {"title": "Samples", "what": "Fabric / product samples you sent to customers — courier and approval.",
                 "steps": ["Tap + Sample, pick the customer (and project), write the sample name, courier and date, Save.",
