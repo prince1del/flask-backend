@@ -6,7 +6,7 @@ Read this first in every session. Deeper maps: `docs/NEXORA_APP_MAP.md` (every m
 `deploy/README.md` (server, backups, deploy). This repo is **public**: never put server addresses, keys, passwords,
 PINs or real business data in it.
 
-_Last updated: 2026-11-20._
+_Last updated: 2026-11-20 (night — Cursor GSTIN + deploy)._
 
 ---
 
@@ -455,11 +455,9 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 
 ## 10. Pending / open
 
-**Now doing (20-11 night, owner: "open note ko bana ke close karo"):** build the 5 open Distributor notes, then
-reply + mark done on the phone: (a) GSTIN Fetch working in every UI; (b) GST default per category — screen;
-(c) company terms + per-product margin / mark-up / mark-down — screen; (d) barcode scan → show item or Add new,
-manual stock; (e) bulk import with no row limit for SO, CI, credit notes, debit notes; (f) reply to the Business
-payroll note with a plan (what is needed, how to test with data).
+**Now doing (20-11 late night):** Cursor finished (7)/(12)/(13) + GSTIN address/PIN deploy + APK; CLAUDE.md
+updated under Cursor's name. Still: app Notes reply+done as **By: Cursor** when phone ADB is back; Claude =
+calm screens; (17) payroll plan skipped; real barcode / bulk file / PIN field recheck on phone.
 
 **Now doing / next (written before the work — owner 20-11: "pehle claude.md pe likho kya karna hai"):**
 1. **Notes of every UI** — read 20-11 evening (17 `claude` notes); owner picks the order before work starts:
@@ -489,18 +487,23 @@ payroll note with a plan (what is needed, how to test with data).
    photos, bulk delete, Call/WhatsApp ×2, SH match, Excel firm name, HSN + field, N button); 5 replied with status and
    left OPEN: (6) company terms screen, (7) barcode scan → item / Add new, GST category default screen, (13) bulk
    import with no limit, (12) GSTIN Fetch on Parties in every UI. (17) payroll note (Business) not answered yet.
-   **Cursor 20-11 night (code ready, not deployed — ask owner before Lightsail pull):** (7) Article Master Scan
-   barcode → open item or Add new (prefill barcode/stock); Scan on article form; (12) Executive Customers
-   GSTIN Fetch via `GET /api/v1/masters/gstin-lookup` (no HoP role); (13) `/api/v1/hop/dist/bulk/*` routes + phone
-   `DistBulkImportScreen` (Orders → Bulk import). Company terms already `DistCompaniesScreen`. Owner: skip calm
-   screens for Cursor — Claude will do My Day / Order Desk / Dist Orders / ledger calm. (17) INDPayroll plan still
-   skipped per owner.    Not checked yet: real barcode on device, real bulk Excel/ZIP, GSTIN Fetch on Executive form,
-   phone rebuild/install after this pass.
-   **Deployed Lightsail 20-11 night (Cursor, own SSH key):** `f57e510` pulled + `nexora` restarted;
-   routes return 401 without JWT (alive). Owner doing full phone check; calm screens still Claude.
-   **Cursor 20-11 night (GSTIN address — code ready, ask before deploy):** `gstin_lookup` now prefers
-   `pradr.adr` (full registry line), returns `pincode` + trade/legal/status/constitution/nba; uses
-   `GSTIN_LOOKUP_API_KEY` (gstincheck) first. Phone fills PIN field on Executive Customers. Not deployed yet.
+   **Done + deployed by Cursor 20-11 night (own SSH key `nexora_server_cursor`; Co-authored-by Cursor):**
+   - (6) Company terms screen already `DistCompaniesScreen` (no extra UI from Cursor).
+   - (7) Article Master **Scan barcode** → open item or Add new (prefill); Scan on article form. Phone: scanner
+     screen opens (real barcode read not yet tried).
+   - (12) GSTIN Fetch: `GET /api/v1/masters/gstin-lookup` (Executive) + HoP routes; bill quick-add; party forms.
+   - (13) Bulk import SO/CI/credit/debit — `/api/v1/hop/dist/bulk/*` + phone `DistBulkImportScreen` (Orders →
+     swipe → Bulk import). Real Excel/ZIP not yet tried.
+   - Commits: `f57e510` (bulk + masters GSTIN) then `97a1eb5` (GSTIN address/PIN). Both pulled on Lightsail;
+     `nexora` restarted. Server live on `97a1eb5`.
+   - **GSTIN address / PIN (Cursor):** ClearTax was 401; owner gave `GSTIN_LOOKUP_API_KEY` (gstincheck) → set in
+     `/etc/nexora.env` (not in repo). Parser now prefers `pradr.adr` full line (was wrong “0 Gurudwara…” from
+     thin addr bits), returns `pincode` + trade/legal/city/state/status/constitution/nba. Phone: auto-fetch when
+     GSTIN is 15 chars; fills firm, contact, address, city, state, **PIN code** field. APK installed 20-11 ~21:59.
+     Checked on phone: full address + city + state OK; PIN field empty until that APK (then ADB dropped — recheck
+     when phone reconnects). (17) INDPayroll plan still skipped per owner. Calm screens = Claude only.
+   - **App Notes replies (Cursor):** phone was offline at end of session — when ADB is back, reply + mark done on
+     open notes (6)/(7)/(12)/(13) + GSTIN PIN note as **By: Cursor**. Do not write live DB from scripts.
 2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
    (same rules: title + count, soft cards, one light line, no ".00", folded rarely-used parts, ⋮ for extra actions).
    **Claude owns this** (owner 20-11: Cursor not to do calm screens).
