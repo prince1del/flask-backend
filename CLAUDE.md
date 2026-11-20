@@ -494,8 +494,13 @@ payroll note with a plan (what is needed, how to test with data).
    GSTIN Fetch via `GET /api/v1/masters/gstin-lookup` (no HoP role); (13) `/api/v1/hop/dist/bulk/*` routes + phone
    `DistBulkImportScreen` (Orders → Bulk import). Company terms already `DistCompaniesScreen`. Owner: skip calm
    screens for Cursor — Claude will do My Day / Order Desk / Dist Orders / ledger calm. (17) INDPayroll plan still
-   skipped per owner. Not checked yet: real barcode on device, real bulk Excel/ZIP, GSTIN Fetch on Executive form,
+   skipped per owner.    Not checked yet: real barcode on device, real bulk Excel/ZIP, GSTIN Fetch on Executive form,
    phone rebuild/install after this pass.
+   **Deployed Lightsail 20-11 night (Cursor, own SSH key):** `f57e510` pulled + `nexora` restarted;
+   routes return 401 without JWT (alive). Owner doing full phone check; calm screens still Claude.
+   **Cursor 20-11 night (GSTIN address — code ready, ask before deploy):** `gstin_lookup` now prefers
+   `pradr.adr` (full registry line), returns `pincode` + trade/legal/status/constitution/nba; uses
+   `GSTIN_LOOKUP_API_KEY` (gstincheck) first. Phone fills PIN field on Executive Customers. Not deployed yet.
 2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
    (same rules: title + count, soft cards, one light line, no ".00", folded rarely-used parts, ⋮ for extra actions).
    **Claude owns this** (owner 20-11: Cursor not to do calm screens).

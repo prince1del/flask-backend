@@ -90,23 +90,38 @@ def decode_gstin_local(gstin: str) -> dict[str, Any]:
     return out
 
 
+def _addr_part(value: Any) -> str:
+    """Skip empty / placeholder door numbers like 0 that GSTN often returns."""
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if not s or s in {"0", "00", "-", "NA", "N/A", "None"}:
+        return ""
+    return s
+
+
 def _format_address(addr: dict | None) -> str:
     if not isinstance(addr, dict):
         return ""
     parts = [
-        addr.get("flno") or addr.get("floor"),
-        addr.get("bno") or addr.get("building") or addr.get("buildingNumber"),
-        addr.get("bnm") or addr.get("buildingName"),
-        addr.get("st") or addr.get("street"),
-        addr.get("loc") or addr.get("locality") or addr.get("location"),
-        addr.get("dst") or addr.get("district"),
-        addr.get("city"),
-        addr.get("stcd") or addr.get("state"),
-        addr.get("pncd") or addr.get("pincode") or addr.get("zip"),
+        _addr_part(addr.get("flno") or addr.get("floor")),
+        _addr_part(addr.get("bno") or addr.get("building") or addr.get("buildingNumber")),
+        _addr_part(addr.get("bnm") or addr.get("buildingName")),
+        _addr_part(addr.get("st") or addr.get("street")),
+        _addr_part(addr.get("loc") or addr.get("locality") or addr.get("location")),
+        _addr_part(addr.get("dst") or addr.get("district")),
+        _addr_part(addr.get("city")),
+        _addr_part(addr.get("stcd") or addr.get("state")),
+        _addr_part(addr.get("pncd") or addr.get("pincode") or addr.get("zip")),
     ]
-    line = " ".join(str(p).strip() for p in parts if p and str(p).strip())
+    # Deduplicate consecutive repeats (loc/dst often both "Ghaziabad")
+    cleaned: list[str] = []
+    for p in parts:
+        if p and (not cleaned or cleaned[-1].casefold() != p.casefold()):
+            cleaned.append(p)
+    line = ", ".join(cleaned)
     if line and "India" not in line:
-        line = f"{line} India"
+        line = f"{line}, India"
     return line.strip()
 
 
@@ -121,23 +136,67 @@ def _gst_type_from_duty(taxpayer: str | None) -> str | None:
     return "Registered Business - Regular"
 
 
+_PIN_RE = re.compile(r"\b(\d{6})\b")
+
+
+def _extract_pincode(*blobs: Any) -> str | None:
+    for blob in blobs:
+        if blob is None:
+            continue
+        if isinstance(blob, dict):
+            pin = _addr_part(blob.get("pncd") or blob.get("pincode") or blob.get("zip"))
+            if pin and pin.isdigit() and len(pin) == 6:
+                return pin
+            continue
+        s = _addr_part(blob)
+        if not s:
+            continue
+        if s.isdigit() and len(s) == 6:
+            return s
+        m = _PIN_RE.search(s)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _nba_text(nba: Any) -> str | None:
+    if isinstance(nba, list):
+        parts = [str(x).strip() for x in nba if str(x).strip()]
+        return ", ".join(parts) if parts else None
+    s = _addr_part(nba)
+    return s or None
+
+
 def _parse_taxpayer_blob(data: dict[str, Any], source: str) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
     pradr = data.get("pradr") if isinstance(data.get("pradr"), dict) else {}
     addr = pradr.get("addr") if isinstance(pradr.get("addr"), dict) else data.get("address")
+    # gstincheck / GSTN often ship a ready line in pradr.adr — prefer that over incomplete addr bits
+    ready = _addr_part(pradr.get("adr") or pradr.get("address") or data.get("adr"))
+    pincode: str | None = None
     if isinstance(addr, str):
-        address_text = addr
+        address_text = _addr_part(addr) or ready
         state = data.get("stcd") or data.get("state")
         city = data.get("city") or data.get("loc")
+        pincode = _extract_pincode(address_text, ready)
     elif isinstance(addr, dict):
-        address_text = _format_address(addr)
+        built = _format_address(addr)
+        # Prefer the registry's full line when structured fields are thin (e.g. bno=0, missing colony)
+        if ready and (not built or len(ready) > len(built) + 8):
+            address_text = ready
+        else:
+            address_text = built or ready
         state = addr.get("stcd") or data.get("stcd") or data.get("state")
-        city = (addr.get("loc") or addr.get("city") or addr.get("dst") or "").strip() or None
+        city = (
+            _addr_part(addr.get("loc") or addr.get("city") or addr.get("dst")) or None
+        )
+        pincode = _extract_pincode(addr, ready, address_text)
     else:
-        address_text = ""
+        address_text = ready
         state = data.get("stcd") or data.get("state")
         city = None
+        pincode = _extract_pincode(ready)
     trade = data.get("tradeNam") or data.get("trade_name") or data.get("tradeName")
     legal = data.get("lgnm") or data.get("legal_name") or data.get("legalName")
     if not (trade or legal or address_text):
@@ -147,12 +206,20 @@ def _parse_taxpayer_blob(data: dict[str, Any], source: str) -> dict[str, Any] | 
     return {
         "company": (trade or legal or "").strip() or None,
         "billing_name": (legal or trade or "").strip() or None,
+        "trade_name": (trade or "").strip() or None,
+        "legal_name": (legal or "").strip() or None,
         "address": address_text or None,
         "shipping_address": address_text or None,
         "city": city,
-        "state": state,
+        "state": _addr_part(state) or None,
+        "pincode": pincode,
         "gst_type": _gst_type_from_duty(str(taxpayer) if taxpayer else None),
-        "status": status,
+        "taxpayer_type": _addr_part(taxpayer) or None,
+        "status": _addr_part(status) or None,
+        "constitution": _addr_part(data.get("ctb") or data.get("constitution")) or None,
+        "registration_date": _addr_part(data.get("rgdt") or data.get("registration_date")) or None,
+        "nature_of_business": _nba_text(data.get("nba") or data.get("nature_of_business")),
+        "einvoice_status": _addr_part(data.get("einvoiceStatus") or data.get("einvoice_status")) or None,
         "source": source,
     }
 
@@ -192,14 +259,32 @@ def _merge_online(result: dict[str, Any], online: dict[str, Any], local: dict[st
         result["state"] = local["state"]
     if not result.get("pan") and local.get("pan"):
         result["pan"] = local["pan"]
-    result["message"] = "Details fetched — name, state & billing address filled."
+    if not result.get("pincode") and result.get("address"):
+        result["pincode"] = _extract_pincode(result.get("address"))
+    filled = [
+        label
+        for label, key in (
+            ("name", "company"),
+            ("address", "address"),
+            ("city", "city"),
+            ("state", "state"),
+            ("PIN", "pincode"),
+            ("PAN", "pan"),
+        )
+        if result.get(key)
+    ]
+    result["message"] = (
+        "Details fetched — " + ", ".join(filled) + "."
+        if filled
+        else "Details fetched."
+    )
     result["source"] = online.get("source") or result.get("source")
 
 
 def lookup_gstin(gstin: str) -> dict[str, Any]:
     """
-    Local GSTIN decode (state/PAN) + online taxpayer name/address.
-    Tries free ClearTax report first; optional GSTIN_LOOKUP_API_KEY (gstincheck) as fallback.
+    Local GSTIN decode (state/PAN) + online taxpayer name/address/PIN.
+    Prefer GSTIN_LOOKUP_API_KEY (gstincheck) when set; ClearTax is a free fallback.
     """
     local = decode_gstin_local(gstin)
     if not local["valid_format"]:
@@ -210,38 +295,48 @@ def lookup_gstin(gstin: str) -> dict[str, Any]:
         "ok": True,
         "company": None,
         "billing_name": None,
+        "trade_name": None,
+        "legal_name": None,
         "address": None,
         "shipping_address": None,
         "city": None,
+        "pincode": None,
         "gst_type": "Registered Business - Regular",
+        "taxpayer_type": None,
+        "status": None,
+        "constitution": None,
+        "registration_date": None,
+        "nature_of_business": None,
+        "einvoice_status": None,
         "message": "State/PAN filled from GSTIN.",
     }
 
     errors: list[str] = []
-
-    try:
-        online = _lookup_cleartax(local["gstin"])
-        if online and (online.get("address") or online.get("company")):
-            _merge_online(result, online, local)
-            return result
-        if online is None:
-            errors.append("registry returned empty")
-    except (HTTPError, URLError, TimeoutError, ValueError, OSError, json.JSONDecodeError) as exc:
-        errors.append(f"cleartax:{exc}")
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"cleartax:{exc}")
-
     api_key = (os.environ.get("GSTIN_LOOKUP_API_KEY") or os.environ.get("GSTINCHECK_API_KEY") or "").strip()
-    if api_key:
+
+    def _try_provider(name: str, fn) -> dict[str, Any] | None:
         try:
-            online = _lookup_gstincheck(local["gstin"], api_key)
+            online = fn()
             if online and (online.get("address") or online.get("company")):
                 _merge_online(result, online, local)
                 return result
+            if online is None:
+                errors.append(f"{name}: empty")
         except (HTTPError, URLError, TimeoutError, ValueError, OSError, json.JSONDecodeError) as exc:
-            errors.append(f"gstincheck:{exc}")
+            errors.append(f"{name}:{exc}")
         except Exception as exc:  # noqa: BLE001
-            errors.append(f"gstincheck:{exc}")
+            errors.append(f"{name}:{exc}")
+        return None
+
+    # Paid/reliable key first — ClearTax public page often 401s from the server
+    if api_key:
+        got = _try_provider("gstincheck", lambda: _lookup_gstincheck(local["gstin"], api_key))
+        if got is not None:
+            return got
+
+    got = _try_provider("cleartax", lambda: _lookup_cleartax(local["gstin"]))
+    if got is not None:
+        return got
 
     if errors:
         result["message"] = (
