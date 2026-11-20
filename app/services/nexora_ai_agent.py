@@ -97,6 +97,10 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
   maal pe loss hai"); from/to dates.
 - dist_price_changes: which article prices changed (old -> new, %), effect on stock value, articles whose margin fell
   and the retailer price that keeps the old margin ("kis article ka rate badla", "DP kitna badha", "margin pe kya asar").
+- dist_brand_desk: one company's (brand's) whole picture — setup still missing, open orders, SO waiting for invoice,
+  goods still to come per article (on SO vs received), shipments in transit / late, to pay / overdue (party_name =
+  company; without it every company in short) ("Raymond ka kya maal baaki hai", "kaunsa shipment late hai",
+  "Bombay Dyeing ka sab status").
 - dist_company_terms: every company (brand) I distribute for — payment terms, credit days, cash discount %, lead time,
   its price rule (mark-up on DP / margin / mark-down from MRP + %), articles, how many are not at the rule price
   (party_name = company) ("Alpha ki terms kya hai", "kis company pe kitna margin rakha hai", "credit kitne din ka hai").
@@ -705,7 +709,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "dist_orders", "dist_company_ledger", "dist_retailer_goods",
                                                         "dist_forecast", "dist_warehouse", "dist_overview",
                                                         "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff",
-                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms",
+                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms", "dist_brand_desk",
                                                         "salary"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},

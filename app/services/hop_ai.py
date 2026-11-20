@@ -473,6 +473,19 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                 items = [i for i in items if _similar(party_name, str(i.get("item") or "")) >= 0.5]
             return {"total_value": wh["total_value"], "out_of_stock": wh["out_of_stock"], "count": wh["count"],
                     "items": [{k: i[k] for k in ("item", "code", "qty", "stock_value")} for i in items[:40]]}
+        if what == "dist_brand_desk":
+            from app import hop_dist_brand as BR
+
+            all_ = BR.desks(conn, ws)["companies"]
+            pick = [c for c in all_ if party_name and _similar(party_name, c["company"] or "") >= 0.5]
+            if len(pick) == 1:
+                d = BR.brand_desk(conn, ws, int(pick[0]["id"]))
+                return {"company": d["company"]["company"], "setup": [s["label"] + (" ✓" if s["done"] else " — " + s["where"]) for s in d["steps"]],
+                        "orders": {k: v for k, v in d["orders"].items() if k != "latest"},
+                        "pending_items": d["pending_items"][:15], "pending_value": d["pending_value"],
+                        "in_transit": [{k: r.get(k) for k in ("party_bill_no", "lr_no", "transporter", "eta", "late")}
+                                       for r in d["shipments"]["in_transit"][:10]], "money": d["money"]}
+            return {"companies": all_}
         if what == "dist_company_terms":
             from app import hop_dist_terms as T
 

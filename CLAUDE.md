@@ -370,6 +370,12 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
   - articles carry their company (`hop_products.vendor_id`): article form Company chips, Article Master Select →
     Set company, price-list preview "This sheet is from"; with one company, loose articles are its own;
   - ✨ AI insights `company-terms`, Ask Nexora `dist_company_terms`.
+- **Brand desk** (20-11, `app/hop_dist_brand.py`, `/dist/brands`, `/dist/brands/<id>`, `/dist/shipments/<bill>`; phone
+  `HopDistBrandDesk.kt`, first item of Company): one page per company — chips (⚠ late / overdue), dark card with
+  terms + rule (tap = edit), setup checklist (terms, rule, articles, first order, SO, CI — each says where to fill),
+  tiles (open orders, SO waiting for invoice, goods still to come, in transit, to pay, overdue), **goods still to
+  come** per article (SO qty − qty on linked CIs), **shipments** (LR, transporter, vehicle, dispatched / expected /
+  received, late), latest orders, unpaid invoices. ✨ AI insights `brand-desk`, Ask Nexora `dist_brand_desk`.
 - **Bulk import** (20-11, no row limit — `app/hop_dist_bulk.py`, `/dist/bulk/*`, phone `HopDistBulkImport.kt`, menu
   Company → Bulk import + button on Orders): SO / CI / credit note / debit note from Excel, CSV, PDF, photo, ZIP or
   RAR (server `unar`). Excel is read free: header row found anywhere, columns guessed / remembered per layout /
@@ -478,9 +484,9 @@ claude.md, ask me what to do first"). Waiting for the owner to pick the order:**
 - Distributor UI:
   - (D1) DONE in code 20-11 (`hop_firms.move_ui`, `/firms/move-ui`; phone `HopBusinessName` per UI, firm list → "Move … to Distributor UI…"): cause = firms made before 20-11 had no UI and were all filed under Business; "kunwar home" is such a firm in the Business firm list. The owner moves it in the app (no script). Was: **Firm name leak:** "Kunwar home" is the Distributor firm's name but shows in the Business UI — owner:
     "saare kaam chodke pehle yeh lock lagao", no login / AI / notes / anything of one UI in another.
-  - (D2) Type-ahead search: party suggestions on every key stroke (bill form party picker), same for items in the
+  - (D2) DONE in code 20-11 (`ui/util/TypeAhead.kt`: bill form party field searches name / mobile / GSTIN / city; items match every word). Was: Type-ahead search: party suggestions on every key stroke (bill form party picker), same for items in the
     bill and in Article Master.
-  - (D3) Many brands end to end, neat and simple: where to fill each brand's details and margins, link Article Master
+  - (D3) DONE in code 20-11 = Brand desk (see §7). Was: Many brands end to end, neat and simple: where to fill each brand's details and margins, link Article Master
     to its products, tally SO / PO with my orders, CI / tax invoices / bills received, payments, shipment tracking,
     received vs pending, billed vs pending (Companies & terms + Bulk import + Orders → SO → CI cover part of it).
   - (D4) Quick note ("N") has no party tag and is not the full note form — make N open the full note.

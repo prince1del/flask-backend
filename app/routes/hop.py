@@ -4551,6 +4551,44 @@ def dist_company_save(vid: int):
     return _terms(lambda T, c: T.save_terms(c, _ws(), vid, _payload() or {}))
 
 
+def _brand(fn):
+    from app import hop_dist_brand as BR
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            BR.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(BR, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/dist/brands", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_brands():
+    """Every company I distribute for — setup, open orders, waiting CI, pending goods, in transit, to pay."""
+    return _brand(lambda BR, c: BR.desks(c, _ws()))
+
+
+@hop_bp.route("/dist/brands/<int:vid>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_brand_desk(vid: int):
+    """One company's desk: setup steps, orders → SO → CI, pending items, shipments, money."""
+    return _brand(lambda BR, c: BR.brand_desk(c, _ws(), vid))
+
+
+@hop_bp.route("/dist/shipments/<int:bill_id>", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_shipment_save(bill_id: int):
+    """{lr_no, transporter, vehicle_no, dispatched_on, eta, received_on, cases, note} for one company invoice."""
+    return _brand(lambda BR, c: BR.save_shipment(c, _ws(), bill_id, _payload() or {}))
+
+
 @hop_bp.route("/dist/companies/<int:vid>/price-check", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -4868,6 +4906,8 @@ def dist_insights(key: str):
               "home": "Distributor overview", "articles": "Article Master (prices and margins)",
               "retailer-dues": "Retailer payments and follow-ups", "staff": "Staff performance",
               "profit": "Business profitability", "price-changes": "Article price changes and their effect on margins",
+              "brand-desk": "One company I distribute for: orders, SO, invoices, goods still to come, shipments and "
+                            "money — say what to chase first (late shipments, SO without invoice, overdue) and what is missing in setup.",
               "company-terms": "Companies (brands) I distribute for: terms, credit, cash discount and price rules — "
                                "point out a company whose rule gives a thin margin, articles not at the rule price "
                                "and articles without a company.",
@@ -4892,7 +4932,9 @@ def dist_insights(key: str):
                     "profit": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).profitability(conn, _ws(), a.get("from", ""), a.get("to", "")),
                     "price-changes": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).price_changes(conn, _ws(), a.get("days", type=int) or 30),
                     "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180),
-                    "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws())}[key]()
+                    "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws()),
+                    "brand-desk": lambda: __import__("app.hop_dist_brand", fromlist=["x"]).brand_desk(
+                        conn, _ws(), a.get("vendor_id", type=int) or 0)}[key]()
         points = hop_ai.report_insights(titles[key], data, user_id=int(user.get("user_id") or 0))
     except LookupError as exc:
         return _json_error(str(exc), "NOT_FOUND", 404)

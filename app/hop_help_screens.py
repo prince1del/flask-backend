@@ -354,3 +354,12 @@ SHOWS["dist_category_gst"] = [
     "✨ Suggested — the rate most articles of the category carry, Use to set it.",
     "Fill — puts the default on the articles without GST only, after you confirm.",
 ]
+SHOWS["dist_brand_desk"] = [
+    "Company chips — every company you distribute for; ⚠ = late shipment or overdue.",
+    "Company card — terms and price rule, articles; tap to change them.",
+    "Setup — what is still missing and where to fill it.",
+    "Tiles — open orders, SO waiting for invoice, goods still to come, in transit, to pay, overdue.",
+    "Goods still to come — per article: on SO, received, still to come, value.",
+    "Shipments — LR, transporter, expected / received date; tap to add or mark received.",
+    "Latest orders, unpaid invoices — tap an invoice for its copy.",
+]
