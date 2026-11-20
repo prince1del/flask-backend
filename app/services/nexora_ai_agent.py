@@ -716,6 +716,13 @@ def _hop_biz_name(workspace_id: str) -> str:
         from app import hop_db, hop_firms
 
         with hop_db.connect(_db_path()) as conn:
+            try:   # the calling UI's own firm (Distributor UI → its distributor firm's name)
+                from flask import has_request_context, request as _rq
+
+                if has_request_context():
+                    workspace_id = hop_firms.active_ws(conn, workspace_id, _rq.headers.get("X-Hop-Firm"))
+            except Exception:
+                pass
             return hop_firms.business_name(conn, workspace_id, "your business")
     except Exception:
         return "your business"
@@ -746,6 +753,21 @@ _FOLLOW_UP_WORDS = (
 )
 
 
+def _ui_ws(workspace_id: str) -> str:
+    """Ask Nexora memory key per UI: chat turns and learned questions of one UI never reach another
+    (Business keeps the plain workspace id, as before)."""
+    try:
+        from flask import has_request_context, request as _rq
+
+        if has_request_context():
+            ui = (_rq.headers.get("X-Nexora-UI") or "").strip().lower()
+            if ui in ("executive", "distributor"):
+                return f"{workspace_id or 'default'}::{ui}"
+    except Exception:
+        pass
+    return workspace_id
+
+
 def _ensure_turns_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -766,6 +788,7 @@ def _ensure_turns_schema(conn: sqlite3.Connection) -> None:
 
 def record_turn(user_id: int | None, workspace_id: str, question: str, answer: str) -> None:
     """Remember one question/answer; never breaks the answer itself."""
+    workspace_id = _ui_ws(workspace_id)
     if user_id is None or not (question or "").strip():
         return
     try:
@@ -791,6 +814,7 @@ def record_turn(user_id: int | None, workspace_id: str, question: str, answer: s
 
 def recent_turns(user_id: int | None, workspace_id: str) -> list[dict[str, str]]:
     """This user's turns from the current conversation, oldest first."""
+    workspace_id = _ui_ws(workspace_id)
     if user_id is None:
         return []
     try:
@@ -998,6 +1022,45 @@ def pending_so_for_ai(
     return {"count": len(rows), "by_distributor_season_category": summary, "items": slim}
 
 
+# Separate data for every UI (owner, 20-11): each UI's Ask Nexora can use only its own tools.
+EXECUTIVE_TOOLS = frozenset({
+    "get_distributor_hisaab", "search_nexora", "find_so_by_article", "get_pending_so", "get_order_desk_overview",
+    "list_order_match_runs", "get_order_match_detail", "get_target_vs_achievement", "get_pjp_for_date",
+    "get_distributor_payment_status", "get_party_profile", "get_article_price", "get_market_visits",
+    "get_todo_list", "get_grievance_status", "get_distributor_zone_summary"})
+BOOKS_TOOLS = frozenset({"get_hop_books", "get_hop_help"})
+
+
+def _ui_name() -> str:
+    try:
+        from flask import has_request_context, request as _rq
+
+        if has_request_context():
+            ui = (_rq.headers.get("X-Nexora-UI") or "").strip().lower()
+            return ui if ui in ("executive", "business", "distributor") else ""
+    except Exception:
+        pass
+    return ""
+
+
+def tool_allowed(name: str, args: dict[str, Any] | None = None, ui: str | None = None) -> str | None:
+    """None when this UI may run the tool, else the reason. Business / Distributor never reach Executive data
+    (and only their own /api/v1/hop screens); Executive never reaches the business books."""
+    ui = _ui_name() if ui is None else ui
+    path = str((args or {}).get("path") or "")
+    if ui in ("business", "distributor"):
+        if name in EXECUTIVE_TOOLS:
+            return "That is Executive UI data; it is not available in this UI."
+        if name == "read_app" and not path.startswith("/api/v1/hop/"):
+            return "Only this UI's own screens can be read here."
+    elif ui == "executive":
+        if name in BOOKS_TOOLS:
+            return "The business books are not available in the Executive UI."
+        if name == "read_app" and path.startswith("/api/v1/hop"):
+            return "The business books are not available in the Executive UI."
+    return None
+
+
 def _run_tool(
     name: str, args: dict[str, Any], *, user_id: int, workspace_id: str
 ) -> dict[str, Any]:
@@ -1007,6 +1070,15 @@ def _run_tool(
     import filled_orders_db as fodb
     from app.services import fo_so_match_db as matchdb
 
+    blocked = tool_allowed(name, args)
+    if blocked:
+        return {"error": blocked}
+    if name == "get_guard_issues":   # the Guard inbox of this UI only
+        ui = _ui_name()
+        if ui in ("business", "distributor"):
+            args = {**args, "business": "hop"}
+        elif ui == "executive":
+            args = {**args, "business": "bd"}
     conn = sqlite3.connect(_db_path())
     try:
         if name == "get_distributor_hisaab":
@@ -1027,20 +1099,23 @@ def _run_tool(
             from app.services import nexora_contacts
 
             wss = [workspace_id]
-            try:   # the business firm chosen on the phone (multiple firms) is searched too
+            c_ui = ""
+            try:   # only the calling UI's own records: Distributor never sees Business parties, and back
                 from flask import has_request_context, request as _rq
 
                 from app import hop_firms
 
                 if has_request_context():
-                    with sqlite3.connect(_db_path()) as _c:
-                        fw = hop_firms.active_ws(_c, workspace_id, _rq.headers.get("X-Hop-Firm"))
-                    if fw and fw not in wss:
-                        wss.append(fw)
+                    raw_ui = (_rq.headers.get("X-Nexora-UI") or "").strip().lower()
+                    c_ui = raw_ui if raw_ui in ("executive", "business", "distributor") else ""
+                    if c_ui in ("business", "distributor"):
+                        with sqlite3.connect(_db_path()) as _c:
+                            fw = hop_firms.active_ws(_c, workspace_id, _rq.headers.get("X-Hop-Firm"), c_ui)
+                        wss = [fw] if c_ui == "distributor" else list(dict.fromkeys([workspace_id, fw]))
             except Exception:
                 pass
             out = nexora_contacts.contact_action(_db_path(), wss, str(args.get("name") or ""),
-                                                 str(args.get("do") or "show"), str(args.get("message") or ""))
+                                                 str(args.get("do") or "show"), str(args.get("message") or ""), ui=c_ui)
             if out.get("device_action"):
                 try:
                     from flask import g, has_request_context
@@ -1574,7 +1649,8 @@ def _call_gemini(contents: list[dict[str, Any]]) -> tuple[dict[str, Any], str]:
     body = {
         "systemInstruction": {"parts": [{"text": _system_prompt()}]},
         "contents": contents,
-        "tools": [{"functionDeclarations": _tool_declarations()}],
+        "tools": [{"functionDeclarations": [d for d in _tool_declarations()
+                                            if d.get("name") == "read_app" or not tool_allowed(d.get("name") or "")]}],
         "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1024},
     }
     last_err = ""
@@ -1850,6 +1926,7 @@ def match_learned(query: str, rows: list[tuple[str, str]]) -> list[dict[str, Any
 
 
 def _learned_rows(workspace_id: str) -> list[tuple[str, str]]:
+    workspace_id = _ui_ws(workspace_id)
     try:
         conn = sqlite3.connect(_db_path())
         try:
@@ -1866,6 +1943,7 @@ def _learned_rows(workspace_id: str) -> list[tuple[str, str]]:
 
 
 def _save_learned(workspace_id: str, query: str, calls: list[dict[str, Any]]) -> None:
+    workspace_id = _ui_ws(workspace_id)
     learned = learn_template(query, calls)
     if not learned:
         return
@@ -1888,6 +1966,7 @@ def _save_learned(workspace_id: str, query: str, calls: list[dict[str, Any]]) ->
 
 
 def _mark_learned_used(workspace_id: str, query: str) -> None:
+    workspace_id = _ui_ws(workspace_id)
     q = _norm_text(query)
     try:
         conn = sqlite3.connect(_db_path())

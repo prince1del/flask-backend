@@ -48,3 +48,11 @@ def test_bad_email_and_taken(tmp_path):
         c.execute("INSERT INTO users (email) VALUES ('owner@shop.in')")
     assert sec.email_taken(p, " OWNER@shop.in ") is True
     assert sec.email_taken(p, "other@shop.in") is False
+
+
+def test_send_code_only_for_a_complete_email():
+    from app.services.signup_email_code import is_complete_email
+    assert is_complete_email("name@gmail.com")
+    assert is_complete_email("a.b+c@mail.example.co.in")
+    for half in ("kpsj.bd@", "kpsj.bd@gmail", "kpsj.bd@gmail.", "@gmail.com", "kp sj@gmail.com", ""):
+        assert not is_complete_email(half), half

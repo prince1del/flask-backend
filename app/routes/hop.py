@@ -48,14 +48,15 @@ def _ws() -> str:
         return cached[1]
     req = request.headers.get("X-Hop-Firm") or ""
     ws = base
-    if req and req != base:
-        from app import hop_firms
+    from app import hop_firms
 
+    # Distributor UI (X-Nexora-UI: distributor) always works in its own firm, never the Business books.
+    if (req and req != base) or hop_firms.request_ui() != "business":
         try:
             with hop_db.connect(_db_path()) as conn:
                 ws = hop_firms.active_ws(conn, base, req)
         except Exception:
-            ws = base
+            ws = base if hop_firms.request_ui() == "business" else f"{base}__dist"
     try:
         request._hop_active_ws = (base, ws)
     except Exception:

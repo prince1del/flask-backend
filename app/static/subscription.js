@@ -814,7 +814,9 @@
     sendBtn.addEventListener('click', async () => {
       const email = form.querySelector('[name=email]').value.trim();
       codeMsg.style.color = '#94a3b8';
-      if (!email.includes('@')) { codeMsg.textContent = 'Type your email first'; return; }
+      if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email)) {
+        codeMsg.textContent = 'Finish the email (like name@gmail.com) to get the code'; return;
+      }
       sendBtn.disabled = true;
       try {
         const res = await fetch('/api/v1/signup/send-code', {

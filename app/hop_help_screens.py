@@ -289,3 +289,9 @@ SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
     "Badge on a card — the latest change, e.g. DP ▲ 10% ₹150 → ₹165.",
     "Article sheet — price history chart (DP, to retailer, MRP) and the list of changes.",
 ]
+
+# Separate data for every UI (owner, 20-11): the Distributor UI has its own firm — its own items, bills, parties,
+# notes and settings — and never shows the Business UI's data (and back).
+SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
+    "Own firm — only the articles of your distribution firm show here; the Business UI's items never do.",
+]

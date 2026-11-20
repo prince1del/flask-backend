@@ -183,6 +183,7 @@ def call_as_user(
     workspace_id: str,
     query: dict | None = None,
     json_body: dict | None = None,
+    scope_headers: dict | None = None,
 ):
     """Run one app route as the asking user and return the response.
 
@@ -195,6 +196,17 @@ def call_as_user(
 
     headers: dict[str, str] = {}
     who: dict[str, Any] = {"user_id": int(user_id), "workspace_id": workspace_id}
+    # Same UI + firm as the asker (or as saved with a proposal): the inner call sees only that UI's data.
+    scope: dict[str, str] = {}
+    if has_request_context():
+        for h in ("X-Nexora-UI", "X-Hop-Firm"):
+            if request.headers.get(h):
+                scope[h] = request.headers[h]
+    for h, v in (scope_headers or {}).items():
+        if v:
+            scope[h] = str(v)
+        else:
+            scope.pop(h, None)
     if has_request_context():
         if request.headers.get("Authorization"):
             headers["Authorization"] = request.headers["Authorization"]
@@ -211,7 +223,8 @@ def call_as_user(
         if not headers:
             with client.session_transaction() as sess:
                 sess.update(authenticated=True, **{k: v for k, v in who.items() if v is not None})
-        return client.open(path, method=method, query_string=query or None, json=json_body, headers=headers)
+        return client.open(path, method=method, query_string=query or None, json=json_body,
+                           headers={**headers, **scope})
 
 
 def read_app(path: str, query: dict | None, *, user_id: int, workspace_id: str) -> dict[str, Any]:

@@ -3,6 +3,7 @@ only with the right code. Codes are kept hashed, last 15 minutes, can be re-sent
 (max 5 an hour), and 5 wrong tries end the code."""
 from __future__ import annotations
 
+import re
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -36,6 +37,14 @@ def _norm(email: str) -> str:
     return (email or "").strip().lower()
 
 
+_EMAIL_RE = re.compile(r"^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$", re.I)
+
+
+def is_complete_email(email: str) -> bool:
+    """name@domain.tld — "kpsj.bd@" or "a@gmail" is not finished yet (same rule as the phone + web form)."""
+    return bool(_EMAIL_RE.match((email or "").strip()))
+
+
 def email_taken(db_path: str, email: str) -> bool:
     with sqlite3.connect(db_path) as conn:
         try:
@@ -47,8 +56,8 @@ def email_taken(db_path: str, email: str) -> bool:
 def new_code(db_path: str, email: str) -> str:
     """Make (or replace) the code for this email. Raises ValueError when asked again too soon / too often."""
     e = _norm(email)
-    if "@" not in e or "." not in e.split("@")[-1]:
-        raise ValueError("Enter a valid email")
+    if not is_complete_email(e):
+        raise ValueError("Enter your full email (like name@gmail.com)")
     now = _now()
     with sqlite3.connect(db_path) as conn:
         _ensure(conn)

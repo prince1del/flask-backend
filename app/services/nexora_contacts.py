@@ -18,6 +18,13 @@ SOURCES = [
     ("hop_customers", "mobile", ("company", "contact_person"), "Customer"),
     ("hop_vendors", "mobile", ("company", "contact_person"), "Supplier"),
 ]
+# Each UI searches only its own records: Executive = the field team's masters; Business / Distributor = that
+# firm's own customers and suppliers. The team (users) is the login's own people, shared by every UI.
+UI_TABLES = {
+    "executive": {"users", "master_distributors", "distributors", "master_retailers", "retailers"},
+    "business": {"users", "hop_customers", "hop_vendors"},
+    "distributor": {"users", "hop_customers", "hop_vendors"},
+}
 
 
 def _digits(phone: str) -> str:
@@ -38,10 +45,13 @@ def _score(q: str, name: str) -> float:
     return difflib.SequenceMatcher(None, q, n).ratio()
 
 
-def find(db_path: str, workspaces: list[str], name: str, limit: int = 5) -> list[dict[str, Any]]:
+def find(db_path: str, workspaces: list[str], name: str, limit: int = 5, ui: str = "") -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     with sqlite3.connect(db_path) as conn:
+        allowed = UI_TABLES.get(ui)
         for table, pcol, ncols, kind in SOURCES:
+            if allowed is not None and table not in allowed:
+                continue
             try:
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
             except sqlite3.Error:
@@ -72,12 +82,13 @@ def find(db_path: str, workspaces: list[str], name: str, limit: int = 5) -> list
     return uniq[:limit]
 
 
-def contact_action(db_path: str, workspaces: list[str], name: str, do: str = "show", message: str = "") -> dict[str, Any]:
+def contact_action(db_path: str, workspaces: list[str], name: str, do: str = "show", message: str = "",
+                   ui: str = "") -> dict[str, Any]:
     """Look the person up; when one match is clear, return a device action for the phone to confirm."""
     do = (do or "show").strip().lower()
     if do not in ("show", "call", "sms", "whatsapp"):
         do = "show"
-    hits = find(db_path, workspaces, name)
+    hits = find(db_path, workspaces, name, ui=ui)
     if not hits:
         return {"found": False, "note": f"No phone number found for '{name}' in your NEXORA data."}
     top = hits[0]

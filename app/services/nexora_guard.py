@@ -261,7 +261,7 @@ def can_open_hop(user: dict[str, Any]) -> bool:
             or str(user.get("workspace_id") or "") == HOP_WORKSPACE_ID)
 
 
-def _scope(user: dict[str, Any]) -> tuple[str, int, bool]:
+def _scope(user: dict[str, Any], db_path: str = "") -> tuple[str, int, bool]:
     """(workspace, inbox id, is_hop). HoP and BD are two separate businesses with two separate inboxes:
     the screen says which one (user["guard_scope"] = "hop" | "bd"); HoP uses the same workspace as the
     HoP screens (the login's own workspace), inbox id 0; BD uses the login's own inbox (its user id)."""
@@ -269,17 +269,44 @@ def _scope(user: dict[str, Any]) -> tuple[str, int, bool]:
 
     ws = str(user.get("workspace_id") or "default")
     business = str(user.get("guard_scope") or "").lower()
+    try:   # the calling UI decides the inbox: Executive → BD only, Business / Distributor → their books only
+        from flask import has_request_context, request
+
+        if has_request_context():
+            ui = (request.headers.get("X-Nexora-UI") or "").strip().lower()
+            if ui == "executive":
+                business = "bd"
+            elif ui in ("business", "distributor"):
+                business = "hop"
+    except Exception:
+        pass
     if business not in ("hop", "bd"):
         business = "hop" if (user.get("role") == "hop_admin" or ws == HOP_WORKSPACE_ID) else "bd"
     if business == "hop":
         if not can_open_hop(user):
             raise PermissionError("The business books are not open for this login")
-        return ws, 0, True
+        return _firm_ws(db_path, ws), 0, True
     return ws, int(user.get("user_id") or 0), False
 
 
+def _firm_ws(db_path: str, base_ws: str) -> str:
+    """The firm of the calling UI (X-Nexora-UI) + chosen firm (X-Hop-Firm): the Distributor UI's Guard checks
+    only the Distributor books, the Business UI's only the Business books — never each other's."""
+    try:
+        from flask import has_request_context, request
+
+        if not db_path or not has_request_context():
+            return base_ws
+        from app import hop_firms
+
+        with sqlite3.connect(db_path) as conn:
+            return hop_firms.active_ws(conn, base_ws, request.headers.get("X-Hop-Firm"))
+    except Exception:
+        return base_ws
+
+
 def run(db_path: str, user: dict[str, Any], *, today: date | None = None) -> dict[str, Any]:
-    ws, uid, is_hop = _scope(user)
+    ws, uid, is_hop = _scope(user, db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         ensure_schema(conn)
@@ -322,7 +349,7 @@ def run(db_path: str, user: dict[str, Any], *, today: date | None = None) -> dic
 
 
 def issues(db_path: str, user: dict[str, Any], status: str = "open", *, refresh_minutes: int = 10) -> dict[str, Any]:
-    ws, uid, _ = _scope(user)
+    ws, uid, _ = _scope(user, db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         ensure_schema(conn)
@@ -348,7 +375,7 @@ def issues(db_path: str, user: dict[str, Any], status: str = "open", *, refresh_
 def set_status(db_path: str, user: dict[str, Any], issue_id: int, status: str) -> dict[str, Any]:
     if status not in ("open", "dismissed"):
         raise ValueError("status must be open or dismissed")
-    ws, uid, _ = _scope(user)
+    ws, uid, _ = _scope(user, db_path)
     with sqlite3.connect(db_path) as conn:
         ensure_schema(conn)
         cur = conn.execute("UPDATE guard_issues SET status=? WHERE id=? AND workspace_id=? AND user_id=?",
@@ -396,7 +423,7 @@ def _gemini(prompt: str, *, user_id: int, feature: str, max_tokens: int) -> str:
 
 
 def explain(db_path: str, user: dict[str, Any], issue_id: int) -> str:
-    ws, uid, is_hop = _scope(user)
+    ws, uid, is_hop = _scope(user, db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         ensure_schema(conn)
@@ -413,7 +440,7 @@ def explain(db_path: str, user: dict[str, Any], issue_id: int) -> str:
 
 def digest(db_path: str, user: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
     """Today's short AI summary of the open issues (one AI call per day per inbox)."""
-    ws, uid, _ = _scope(user)
+    ws, uid, _ = _scope(user, db_path)
     day = date.today().isoformat()
     with sqlite3.connect(db_path) as conn:
         ensure_schema(conn)

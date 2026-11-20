@@ -6,7 +6,7 @@ Read this first in every session. Deeper maps: `docs/NEXORA_APP_MAP.md` (every m
 `deploy/README.md` (server, backups, deploy). This repo is **public**: never put server addresses, keys, passwords,
 PINs or real business data in it.
 
-_Last updated: 2026-11-19._
+_Last updated: 2026-11-20._
 
 ---
 
@@ -28,6 +28,9 @@ _Last updated: 2026-11-19._
   - One backend: phone, web and desktop read the same `/api/v1` routes.
   - No phone-only business data.
   - Every row carries its `workspace_id`.
+  - **Separate data for every UI** (owner, 20-11: "not a single byte of one UI in another"). Every phone call sends
+    `X-Nexora-UI` (executive / business / distributor) + `X-Hop-Firm`; the server picks that UI's own firm
+    (`hop_firms.active_ws`) and refuses a firm of another UI. See §7 "Own firm".
   - The owner changes data only through the app, never through scripts on the live DB.
 - **Brand DNA:** every UI shows the **subscriber's own brand**. Never "House of Prizm" / "PRIZM" for another business.
 - **Quality DNA:**
@@ -50,7 +53,8 @@ _Last updated: 2026-11-19._
 - **T&P marks** (`app/qa_marks.json`, badge on the phone + Settings → T&P list): only after a full every-button pass.
   All marks were cleared on 19-11 for a re-audit.
 - **Notes inbox:**
-  - The owner writes tasks in Business UI → Notes (Test firm), tagged `claude`.
+  - The owner writes tasks in Business UI → Notes (Test firm), tagged `claude`. **Work ONLY on notes tagged
+    `claude`** (the row shows "👤 claude"); untagged notes are the owner's own.
   - When the phone is connected: read them, do the work, reply in that note (what was done / a plan), then
     **mark it done** — through the app only.
 - **Don't touch:**
@@ -82,7 +86,8 @@ Desktop (pywebview over the web) ┘     (one server)    ├──► PostgreSQL
 | Production | AWS Lightsail Mumbai, systemd `nexora`, timers for mail scan + backups (`deploy/`) |
 
 - **Auth:** JWT (`app/jwt_service.py`).
-- **Firms:** one login can own several firms (`X-Hop-Firm` header, firm switcher).
+- **Firms:** one login can own several firms (`X-Hop-Firm` header, firm switcher). Firms belong to one UI
+  (`hop_firms.ui` = business / distributor); the Business firm switcher never lists a Distributor firm, and back.
 - **Roles:** owner / staff with per-area view / edit / none (`app/hop_permissions.py`).
 
 ## 3. The Hub — one login, five UIs
@@ -101,6 +106,8 @@ A subscriber sees only the UI they were given. Every UI has a 🧭 Nexora Hub bu
   3 strengths, glass cards (Service / Business / Distributor / Retailer / Join my company).
 - Then the details step:
   - company name, full name, phone, email + 6-digit email code, username, password, secret question;
+  - the code box + Send code show only once the email is complete (`name@domain.tld`; phone, web and server
+    `signup_email_code.is_complete_email` use the same rule);
   - or join a company with an invite code.
 - **Login:** username/password, remembered usernames, Forgot user ID / password (email code or secret question).
 - **App lock:** PIN + fingerprint / face.
@@ -252,7 +259,11 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 
 ## 7. Distributor UI (the distributor's own firm, same books engine)
 
-Owner's choice (19-11): the distributor runs **their own business**. The company (brand) they buy from is a
+Owner's choice (19-11): the distributor runs **their own business**.
+**Own firm (20-11):** the Distributor UI works in its own workspace `<base>__dist` ("My distribution firm" until the
+Company profile is filled), made the first time it is opened. Its items, Article Master, bills, parties, notes,
+settings, Guard, Ask Nexora memory are all apart from the Business UI. Older distributor test entries made on 19-11
+stay in the Business Test firm (no data moved by script). The company (brand) they buy from is a
 **principal** supplier (`hop_vendors.is_principal`). Phone: `HopMode.distributor`, its own menu + Home.
 Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/dist/*`.
 
@@ -316,6 +327,10 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
   promises, edits, deletes, active days, tips.
 - **Business profitability:** sales, cost (qty × DP), gross profit, margin, expenses, net; month by month; tabs
   Items / Retailers / Companies / Below cost; AI check.
+- **UI walls in Ask Nexora** (`nexora_ai_agent.tool_allowed`): Business / Distributor never get Executive tools and
+  `read_app` only reads `/api/v1/hop/*`; Executive never gets the books. Contacts search only that UI's tables
+  (`nexora_contacts.UI_TABLES`), chat turns + learned questions are keyed per UI (`_ui_ws`), a proposal is saved and
+  confirmed only in the UI where it was asked (`ask_nexora_actions.ui / firm`), Guard's inbox follows the UI.
 - **Ask Nexora (distributor):** `dist_orders`, `dist_company_ledger`, `dist_retailer_goods`, `dist_forecast`,
   `dist_warehouse`, `dist_overview`, `dist_articles`, `dist_retailer_dues`, `dist_profit`, `dist_staff`.
   Chips: "Kya order karu", "SO / CI status", "Company ka hisaab".
@@ -383,7 +398,6 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
     - the SO PDF file itself is not kept;
     - web screens;
     - schemes / claims;
-    - a separate firm per UI (Distributor uses the firm chosen in the menu);
     - follow-up "by" shows the login email (same as the audit trail).
 - **Supplier bill copy:**
   - add one real supplier bill to check the upload;
@@ -406,7 +420,11 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
   - Market Visit date display.
 - **Web parity** for the newest phone features: notes photos / replies / done, hold warning, link payments, bill
   copies, Print many bills, commission, targets switch, the whole Distributor UI.
-- **Notes inbox:** 4 notes from 19-11 say "Done by User". The reply script (scratchpad) is `note_reply.py`.
+- **Notes inbox:** 4 notes from 19-11 say "Done by User". The phone driver lives in the session scratchpad
+  (`nx.py`, `typein.py`, `note_reply.py`, `groups.json`, `keys.txt` — copy them from the newest older scratchpad;
+  `NXPIN` env = the NEXORA app-lock PIN, kept in Claude's private memory, never in this repo).
+- **20-11 notes done:** sign-up Send code only for a complete email; Distributor UI on its own firm (Article Master
+  showed the Business catalogue — "Comforter", "QA Split AC" — because both UIs read the same firm).
 - **Phone connection:** the Wi-Fi debug address changes. Check `adb devices`; the mDNS name
   `adb-RZCY627Z4XD-…_adb-tls-connect._tcp` works.
 

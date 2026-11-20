@@ -110,7 +110,22 @@ def _conn(db_path: str) -> sqlite3.Connection:
             decided_at TEXT
         )"""
     )
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(ask_nexora_actions)")}
+    for col in ("ui", "firm"):   # the UI + firm it was asked in: confirming saves it there, nowhere else
+        if col not in cols:
+            conn.execute(f"ALTER TABLE ask_nexora_actions ADD COLUMN {col} TEXT")
     return conn
+
+
+def _asked_scope() -> tuple[str, str]:
+    try:
+        from flask import has_request_context, request
+
+        if has_request_context():
+            return (request.headers.get("X-Nexora-UI") or "", request.headers.get("X-Hop-Firm") or "")
+    except Exception:
+        pass
+    return "", ""
 
 
 def build_request(action: str, params: dict[str, Any]) -> tuple[str, str, dict[str, Any]] | str:
@@ -146,9 +161,10 @@ def propose(db_path: str, *, user_id: int, workspace_id: str, action: str,
         conn.execute("UPDATE ask_nexora_actions SET status='replaced', decided_at=datetime('now') "
                      "WHERE user_id=? AND workspace_id=? AND status='pending'", (user_id, workspace_id))
         cur = conn.execute(
-            "INSERT INTO ask_nexora_actions (user_id, workspace_id, action, method, path, body_json, summary) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, workspace_id, action, method, path, json.dumps(body, ensure_ascii=False), summary[:500]),
+            "INSERT INTO ask_nexora_actions (user_id, workspace_id, action, method, path, body_json, summary, ui, firm) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, workspace_id, action, method, path, json.dumps(body, ensure_ascii=False), summary[:500],
+             *_asked_scope()),
         )
         conn.commit()
         action_id = cur.lastrowid
@@ -163,8 +179,8 @@ def pending(db_path: str, *, user_id: int, workspace_id: str) -> dict[str, Any] 
     try:
         row = conn.execute(
             "SELECT id, action, summary, created_at FROM ask_nexora_actions WHERE user_id=? AND workspace_id=? "
-            "AND status='pending' AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1",
-            (user_id, workspace_id, f"-{PENDING_MINUTES} minutes"),
+            "AND COALESCE(ui,'')=? AND status='pending' AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1",
+            (user_id, workspace_id, _asked_scope()[0], f"-{PENDING_MINUTES} minutes"),
         ).fetchone()
     finally:
         conn.close()
@@ -178,8 +194,9 @@ def _load(db_path: str, action_id: int, user_id: int, workspace_id: str):
     try:
         return conn.execute(
             "SELECT id, action, method, path, body_json, summary, status, "
-            "created_at >= datetime('now', ?) FROM ask_nexora_actions WHERE id=? AND user_id=? AND workspace_id=?",
-            (f"-{PENDING_MINUTES} minutes", action_id, user_id, workspace_id),
+            "created_at >= datetime('now', ?) FROM ask_nexora_actions WHERE id=? AND user_id=? AND workspace_id=? "
+            "AND COALESCE(ui,'')=?",   # a proposal made in one UI can't be confirmed from another
+            (f"-{PENDING_MINUTES} minutes", action_id, user_id, workspace_id, _asked_scope()[0]),
         ).fetchone()
     finally:
         conn.close()
@@ -218,7 +235,13 @@ def confirm(db_path: str, *, action_id: int, user_id: int, workspace_id: str) ->
         conn.close()
     if not claimed:
         return {"ok": False, "message": "Already being saved."}
-    resp = call_as_user(method, path, user_id=user_id, workspace_id=workspace_id, json_body=json.loads(body_json))
+    conn = _conn(db_path)
+    try:
+        ui, firm = conn.execute("SELECT ui, firm FROM ask_nexora_actions WHERE id=?", (action_id,)).fetchone() or ("", "")
+    finally:
+        conn.close()
+    resp = call_as_user(method, path, user_id=user_id, workspace_id=workspace_id, json_body=json.loads(body_json),
+                        scope_headers={"X-Nexora-UI": ui or "", "X-Hop-Firm": firm or ""})
     data = resp.get_json(silent=True)
     ok = resp.status_code < 400 and not (isinstance(data, dict) and (data.get("success") is False or data.get("ok") is False))
     _finish(db_path, action_id, "done" if ok else "failed", {"status": resp.status_code, "body": data})
