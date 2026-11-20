@@ -442,8 +442,19 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 ## 10. Pending / open
 
 **Now doing / next (written before the work — owner 20-11: "pehle claude.md pe likho kya karna hai"):**
-1. **Notes of every UI** (now): read Notes in Business UI, Distributor UI (own firm) and check Executive UI; act ONLY
-   on notes tagged `claude`; do the work, reply in the note (By: Claude), mark done; untagged notes are left alone.
+1. **Notes of every UI** — read 20-11 evening (17 `claude` notes); owner picks the order before work starts:
+   - Distributor → Article Master / prices: (1) Price changes counts first prices of new articles as "changes" —
+     show them apart; (2) Price changes needs search + filter; (3) GST shows 0 — GST per article + default per
+     category; (4) HSN missing + "+ field" for own details kept the same across all articles; (5) change badge on the
+     card should show MRP, not DP; (6) many brands: per company terms + per product margin / mark-up / mark-down;
+     (7) barcode: scan → item or "Add new", manual stock, barcode in the master; (8) bulk delete in Article Master.
+   - Parties (all UIs): (9) Call + WhatsApp on every party card and next to the mobile no.; (10) similar-party check
+     matches on "SH" (Shri) → wrong; (11) party Excel import drops the firm name; (12) GSTIN Fetch in every UI.
+   - Imports: (13) bulk import with no limit for SO, CI, credit notes, debit notes.
+   - Notes / testing: (14) many photos per note; (15) select + delete many notes; (16) floating "N" button on every
+     page of every UI (testing phase) to write a note from there.
+   - Business note: (17) full payroll like INDPayroll — reply with a plan (needs + how to test with data).
+   Untagged notes are left alone; partners note still waits for the owner's 3 answers.
 2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
    (same rules: title + count, soft cards, one light line, no ".00", folded rarely-used parts, ⋮ for extra actions).
 3. **Salary first real use:** owner adds one staff member and pays once → check slip, Cash & Bank, Expenses, dues tab.
