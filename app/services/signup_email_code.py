@@ -40,9 +40,26 @@ def _norm(email: str) -> str:
 _EMAIL_RE = re.compile(r"^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$", re.I)
 
 
+# Big mail providers: the domain must be typed in full — "gmail.co" / "gmail.c" is still being typed (owner, 20-11).
+MAIL_PROVIDERS = {
+    "gmail": {"gmail.com"}, "googlemail": {"googlemail.com"},
+    "yahoo": {"yahoo.com", "yahoo.co.in", "yahoo.in", "yahoo.co.uk"}, "ymail": {"ymail.com"},
+    "hotmail": {"hotmail.com", "hotmail.co.in", "hotmail.co.uk"}, "outlook": {"outlook.com", "outlook.in"},
+    "live": {"live.com", "live.in"}, "msn": {"msn.com"}, "icloud": {"icloud.com"}, "me": {"me.com"},
+    "rediffmail": {"rediffmail.com"}, "rediff": {"rediff.com"}, "protonmail": {"protonmail.com"},
+    "proton": {"proton.me"}, "zoho": {"zoho.com", "zoho.in"}, "zohomail": {"zohomail.in", "zohomail.com"},
+    "aol": {"aol.com"},
+}
+
+
 def is_complete_email(email: str) -> bool:
-    """name@domain.tld — "kpsj.bd@" or "a@gmail" is not finished yet (same rule as the phone + web form)."""
-    return bool(_EMAIL_RE.match((email or "").strip()))
+    """name@domain.tld — "kpsj.bd@", "a@gmail", "a@gmail.co" are not finished yet (same rule as phone + web form)."""
+    e = (email or "").strip().lower()
+    if not _EMAIL_RE.match(e):
+        return False
+    domain = e.rsplit("@", 1)[1]
+    allowed = MAIL_PROVIDERS.get(domain.split(".", 1)[0])
+    return domain in allowed if allowed else True
 
 
 def email_taken(db_path: str, email: str) -> bool:

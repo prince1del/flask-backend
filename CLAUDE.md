@@ -106,7 +106,7 @@ A subscriber sees only the UI they were given. Every UI has a 🧭 Nexora Hub bu
   3 strengths, glass cards (Service / Business / Distributor / Retailer / Join my company).
 - Then the details step:
   - company name, full name, phone, email + 6-digit email code, username, password, secret question;
-  - the code box + Send code show only once the email is complete (`name@domain.tld`; phone, web and server
+  - the code box + Send code show only once the email is complete (`name@domain.tld`; Gmail / Yahoo / Outlook / Rediff… need their full domain, so `gmail.co` waits; phone, web and server
     `signup_email_code.is_complete_email` use the same rule);
   - or join a company with an invite code.
 - **Login:** username/password, remembered usernames, Forgot user ID / password (email code or secret question).

@@ -1,3 +1,19 @@
+// Same rule as the server (signup_email_code.is_complete_email): big mail providers need their full domain.
+const MAIL_PROVIDERS = {
+  gmail: ['gmail.com'], googlemail: ['googlemail.com'], yahoo: ['yahoo.com', 'yahoo.co.in', 'yahoo.in', 'yahoo.co.uk'],
+  ymail: ['ymail.com'], hotmail: ['hotmail.com', 'hotmail.co.in', 'hotmail.co.uk'], outlook: ['outlook.com', 'outlook.in'],
+  live: ['live.com', 'live.in'], msn: ['msn.com'], icloud: ['icloud.com'], me: ['me.com'], rediffmail: ['rediffmail.com'],
+  rediff: ['rediff.com'], protonmail: ['protonmail.com'], proton: ['proton.me'], zoho: ['zoho.com', 'zoho.in'],
+  zohomail: ['zohomail.in', 'zohomail.com'], aol: ['aol.com'],
+};
+function isCompleteEmail(raw) {
+  const e = String(raw || '').trim().toLowerCase();
+  if (!/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(e)) return false;
+  const domain = e.split('@').pop();
+  const allowed = MAIL_PROVIDERS[domain.split('.')[0]];
+  return allowed ? allowed.includes(domain) : true;
+}
+
 /* Plan (7-day trial + activation codes + online payment), super-admin code desk
  * and payments/prices, company invites, and "join a company with an invite code"
  * sign-up. Talks to /api/v1/subscription/*, /api/v1/billing/*, /api/v1/invites/*
@@ -814,7 +830,7 @@
     sendBtn.addEventListener('click', async () => {
       const email = form.querySelector('[name=email]').value.trim();
       codeMsg.style.color = '#94a3b8';
-      if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email)) {
+      if (!isCompleteEmail(email)) {
         codeMsg.textContent = 'Finish the email (like name@gmail.com) to get the code'; return;
       }
       sendBtn.disabled = true;

@@ -54,5 +54,7 @@ def test_send_code_only_for_a_complete_email():
     from app.services.signup_email_code import is_complete_email
     assert is_complete_email("name@gmail.com")
     assert is_complete_email("a.b+c@mail.example.co.in")
-    for half in ("kpsj.bd@", "kpsj.bd@gmail", "kpsj.bd@gmail.", "@gmail.com", "kp sj@gmail.com", ""):
+    assert is_complete_email("me@yahoo.co.in") and is_complete_email("ca@sharmafirm.co")
+    for half in ("kpsj.bd@", "kpsj.bd@gmail", "kpsj.bd@gmail.", "kpsj.bd@gmail.c", "kpsj.bd@gmail.co",
+                 "a@yahoo.co", "a@outlook.co", "a@rediffmail.co", "@gmail.com", "kp sj@gmail.com", ""):
         assert not is_complete_email(half), half
