@@ -256,6 +256,9 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 - offline cache + offline bills, firm switcher, app lock, T&P badge, Info guide everywhere;
 - date format from settings;
 - drop-downs never move the form (`MenuScrollStop`, see `Nexora20/docs/SCROLL_DRIFT_NOTES.md`);
+- **menu on a short screen** (landscape, fold outer screen; height < 560 dp): the whole drawer scrolls as one with a
+  slim header (before, header + Sign out left room for ~3 items and the sections looked missing). Not yet seen in
+  landscape on the phone.
 - **less clutter (20-11, round 2):** screen titles have no explanation line (the ⓘ guide has it); top bar shows only
   the firm name; ✨ AI insights is one slim line until tapped; Ask Nexora: plain ✕, one welcome with 4 suggestions
   for that UI, no second greeting / rainbow chips, calm navy background without stars; full-screen pages keep clear
