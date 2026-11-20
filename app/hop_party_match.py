@@ -20,6 +20,13 @@ _LEGAL_SUFFIX_RE = re.compile(
     re.I,
 )
 
+# Honorifics / polite prefixes — "Shri X" must not match "Shri Y" on "SH" / "Shri" alone
+_HONORIFIC_RE = re.compile(
+    r"\b(shri|shree|sri|sree|mister|mrs?|miss|m/?s|messrs|sh)\b",
+    re.I,
+)
+_HONORIFIC_TOKENS = frozenset({"shri", "shree", "sri", "sree", "mister", "mr", "mrs", "miss", "ms", "m", "s", "messrs", "sh"})
+
 # Logistics / courier family → same token (SM Courier ≈ SM Logistic)
 _LOGISTICS_SYNONYMS = {
     "courier": "logistics",
@@ -50,18 +57,19 @@ def _clean(value: Any) -> str:
 
 
 def normalize_party_name(name: str) -> str:
-    """Lowercase, strip punctuation/legal suffixes, collapse spaces, synonym-fold."""
+    """Lowercase, strip punctuation/legal suffixes/honorifics, collapse spaces, synonym-fold."""
     s = _clean(name).lower()
     if not s:
         return ""
     s = s.replace("&", " and ")
     s = re.sub(r"[^\w\s]", " ", s)  # S.M. → S M
     s = _LEGAL_SUFFIX_RE.sub(" ", s)
+    s = _HONORIFIC_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip()
     tokens: list[str] = []
     for tok in s.split():
         tok = _LOGISTICS_SYNONYMS.get(tok, tok)
-        if tok and tok not in ("and", "the", "of"):
+        if tok and tok not in ("and", "the", "of") and tok not in _HONORIFIC_TOKENS:
             tokens.append(tok)
     return " ".join(tokens)
 
@@ -192,12 +200,15 @@ def name_similarity(a: str, b: str) -> float:
     token = _token_jaccard(na, nb)
     spaced = _levenshtein_ratio(na, nb)
     # Prefix boost: same leading token(s) e.g. both start with "sm"
+    # Never boost on short/honorific leftovers (sh, sm alone as polite prefix already stripped).
     ta, tb = na.split(), nb.split()
     prefix = 0.0
-    if ta and tb and ta[0] == tb[0]:
-        prefix = 0.12
-        if len(ta) > 1 and len(tb) > 1 and ta[1] == tb[1]:
-            prefix = 0.2
+    if ta and tb and ta[0] == tb[0] and len(ta[0]) >= 2 and ta[0] not in _HONORIFIC_TOKENS:
+        # Tiny first tokens ("sh") used to falsely link every "Shri …" party
+        if len(ta[0]) >= 3 or (len(ta) > 1 and len(tb) > 1):
+            prefix = 0.12
+            if len(ta) > 1 and len(tb) > 1 and ta[1] == tb[1]:
+                prefix = 0.2
     alias = _short_name_alias_score(na, nb)
     # First-token fuzzy (sidh vs siddhi chandla → compare first tokens only)
     first_tok = 0.0

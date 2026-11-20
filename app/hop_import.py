@@ -32,7 +32,8 @@ FIELDS: dict[str, dict[str, tuple[str, ...]]] = {
         "item_type": ("type", "item type"),
     },
     "parties": {
-        "company": ("party name", "name", "company", "customer", "customer name", "party", "firm", "business name"),
+        "company": ("party name", "firm name", "company name", "business name", "customer name",
+                    "company", "customer", "party", "firm", "name"),
         "mobile": ("mobile", "phone", "phone no", "mobile no", "contact no", "contact number", "whatsapp"),
         "email": ("email", "email id", "e-mail"),
         "gst_no": ("gstin", "gst no", "gst number", "gstin/uin", "gst"),

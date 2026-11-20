@@ -109,11 +109,85 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE hop_products ADD COLUMN mrp REAL")
     if "custom_fields" not in cols:   # article details (TC, size, shade, ply, bale pack ...) as JSON
         conn.execute("ALTER TABLE hop_products ADD COLUMN custom_fields TEXT")
+    if "barcode" not in cols:
+        conn.execute("ALTER TABLE hop_products ADD COLUMN barcode TEXT")
+    # Default GST % per category (Article Master) — used when an article has no GST yet
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS hop_dist_category_defaults (
+               workspace_id TEXT NOT NULL,
+               category TEXT NOT NULL,
+               gst_pct REAL,
+               PRIMARY KEY (workspace_id, category)
+           )""")
+    # Firm-wide detail field keys so "+ field" stays the same across articles
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS hop_dist_detail_fields (
+               workspace_id TEXT NOT NULL,
+               field_key TEXT NOT NULL,
+               sort_order INTEGER NOT NULL DEFAULT 0,
+               PRIMARY KEY (workspace_id, field_key)
+           )""")
+    vcols = {r[1] for r in conn.execute("PRAGMA table_info(hop_vendors)")} if \
+        conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hop_vendors'").fetchone() else set()
+    for col, typ in (("margin_pct", "REAL"), ("markup_pct", "REAL"), ("markdown_pct", "REAL")):
+        if vcols and col not in vcols:
+            conn.execute(f"ALTER TABLE hop_vendors ADD COLUMN {col} {typ}")
 
 
 # ══ Article Master ════════════════════════════════════════════════════════════════════════════════════════
-_ART_COLS = ("id, code, name, category, season, mrp, purchase_price, selling_price, gst_pct, hsn, unit, stock_qty, vendor_id, "
-             "updated_at, custom_fields")
+_ART_COLS = ("id, code, name, category, season, mrp, purchase_price, selling_price, gst_pct, hsn, unit, stock_qty, "
+             "barcode, vendor_id, updated_at, custom_fields")
+
+
+def category_defaults(conn: sqlite3.Connection, ws: str) -> dict[str, float]:
+    ensure_schema(conn)
+    return {_s(r[0]): _f(r[1]) for r in conn.execute(
+        "SELECT category, gst_pct FROM hop_dist_category_defaults WHERE workspace_id=?", (ws,))}
+
+
+def set_category_default(conn: sqlite3.Connection, ws: str, category: str, gst_pct: float | None) -> dict[str, Any]:
+    ensure_schema(conn)
+    cat = _s(category)[:80]
+    if not cat:
+        raise ValueError("Category is required")
+    if gst_pct is None or gst_pct == "":
+        conn.execute("DELETE FROM hop_dist_category_defaults WHERE workspace_id=? AND category=?", (ws, cat))
+    else:
+        conn.execute(
+            "INSERT INTO hop_dist_category_defaults (workspace_id, category, gst_pct) VALUES (?,?,?) "
+            "ON CONFLICT(workspace_id, category) DO UPDATE SET gst_pct=excluded.gst_pct",
+            (ws, cat, _f(gst_pct)))
+    conn.commit()
+    return {"category": cat, "gst_pct": None if gst_pct in (None, "") else _f(gst_pct)}
+
+
+def detail_field_keys(conn: sqlite3.Connection, ws: str) -> list[str]:
+    ensure_schema(conn)
+    rows = [r[0] for r in conn.execute(
+        "SELECT field_key FROM hop_dist_detail_fields WHERE workspace_id=? ORDER BY sort_order, field_key", (ws,))]
+    if rows:
+        return rows
+    # Seed from existing articles so "+ field" list is not empty after a price-list import
+    keys: list[str] = []
+    seen: set[str] = set()
+    for r in conn.execute("SELECT custom_fields FROM hop_products WHERE workspace_id=? "
+                          "AND (deleted_at IS NULL OR trim(deleted_at)='')", (ws,)):
+        for k in _details(r[0]):
+            if k not in seen:
+                seen.add(k); keys.append(k)
+    return keys
+
+
+def remember_detail_keys(conn: sqlite3.Connection, ws: str, keys: list[str]) -> None:
+    ensure_schema(conn)
+    for i, k in enumerate(keys):
+        key = _s(k)[:40]
+        if not key:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO hop_dist_detail_fields (workspace_id, field_key, sort_order) VALUES (?,?,?)",
+            (ws, key, i))
+    conn.commit()
 
 
 def _details(raw: Any) -> dict[str, str]:
@@ -159,7 +233,10 @@ def articles(conn: sqlite3.Connection, ws: str, q: str = "", category: str = "",
     problems = article_problems(rows)
     pc = price_changes(conn, ws, 30)
     return {"articles": rows, "count": len(rows), "categories": cats, "seasons": seasons, "problems": problems,
-            "recent_changes": {"count": pc["count"], "ups": pc["ups"], "downs": pc["downs"],
+            "category_gst": category_defaults(conn, ws),
+            "detail_fields": detail_field_keys(conn, ws),
+            "recent_changes": {"count": pc["count"], "first_price_count": pc["first_price_count"],
+                               "ups": pc["ups"], "downs": pc["downs"],
                                "articles_changed": pc["articles_changed"], "margin_alerts": len(pc["margin_alerts"])}}
 
 
@@ -173,6 +250,14 @@ def article_problems(rows: list[dict]) -> list[str]:
     no_mrp = [r["name"] for r in rows if not _f(r.get("mrp"))]
     if no_mrp:
         out.append(f"{len(no_mrp)} article(s) have no MRP: " + ", ".join(no_mrp[:4]))
+    no_hsn = [r["name"] for r in rows if not _s(r.get("hsn"))]
+    if no_hsn:
+        out.append(f"{len(no_hsn)} article(s) have no HSN: " + ", ".join(no_hsn[:4]))
+    missing_gst = [r["name"] for r in rows if r.get("gst_pct") is None]
+    if missing_gst:
+        out.append(f"{len(missing_gst)} article(s) have no GST %: " + ", ".join(missing_gst[:4]))
+    elif rows and all(_f(r.get("gst_pct")) == 0 for r in rows):
+        out.append(f"All {len(rows)} article(s) show GST 0% — set GST per article or a category default")
     over = [r["name"] for r in rows if _f(r.get("mrp")) and _f(r.get("selling_price")) > _f(r.get("mrp"))]
     if over:
         out.append(f"{len(over)} article(s) sell above MRP: " + ", ".join(over[:4]))
@@ -221,9 +306,16 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
     name = _s(payload.get("name"))[:160]
     pid = payload.get("id")
     now = _now()
-    fields = {k: payload.get(k) for k in ("code", "category", "season", "hsn", "unit") if k in payload}
+    fields = {k: payload.get(k) for k in ("code", "category", "season", "hsn", "unit", "barcode") if k in payload}
     details = _details(payload.get("details")) if "details" in payload else None
     prices = {k: payload.get(k) for k in ("mrp", "purchase_price", "selling_price", "gst_pct") if k in payload}
+    stock_in = payload.get("stock_qty") if "stock_qty" in payload else None
+    # Category default GST when article has none yet
+    cat_for_gst = _s(payload.get("category") or fields.get("category"))
+    if "gst_pct" not in prices or prices.get("gst_pct") in (None, ""):
+        defaults = category_defaults(conn, ws)
+        if cat_for_gst and cat_for_gst in defaults:
+            prices["gst_pct"] = defaults[cat_for_gst]
     if pid:
         cur = conn.execute(f"SELECT {_ART_COLS} FROM hop_products WHERE workspace_id=? AND id=?", (ws, int(pid))).fetchone()
         if not cur:
@@ -233,16 +325,29 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
         if name:
             sets.append("name=?"); vals.append(name)
         for k, v in fields.items():
-            sets.append(f"{k}=?"); vals.append(_s(v)[:80] or None)
+            if k == "barcode":
+                code_b = _s(v)[:48] or None
+                if code_b:
+                    dup = conn.execute("SELECT name FROM hop_products WHERE workspace_id=? AND barcode=? AND id!=? "
+                                       "AND (deleted_at IS NULL OR trim(deleted_at)='')", (ws, code_b, int(pid))).fetchone()
+                    if dup:
+                        raise ValueError(f"Barcode {code_b} is already on {dup[0]}")
+                sets.append("barcode=?"); vals.append(code_b)
+            else:
+                sets.append(f"{k}=?"); vals.append(_s(v)[:80] or None)
         for k, v in prices.items():
             if v is None or v == "":
                 continue
             sets.append(f"{k}=?"); vals.append(_f(v))
             if k != "gst_pct":
                 _log_price(conn, ws, int(pid), k, cur.get(k), _f(v), _s(payload.get("season") or cur.get("season")), source, user)
+        if stock_in is not None and stock_in != "":
+            sets.append("stock_qty=?"); vals.append(_f(stock_in))
         if details is not None:   # new details are added / updated; details the sheet does not have are kept
+            merged = {**_details(cur.get("custom_fields")), **details}
             sets.append("custom_fields=?")
-            vals.append(json.dumps({**_details(cur.get("custom_fields")), **details}, ensure_ascii=False) or None)
+            vals.append(json.dumps(merged, ensure_ascii=False) or None)
+            remember_detail_keys(conn, ws, list(merged.keys()))
         if sets:
             conn.execute(f"UPDATE hop_products SET {', '.join(sets)}, updated_at=? WHERE workspace_id=? AND id=?",
                          [*vals, now, ws, int(pid)])
@@ -254,15 +359,25 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
         if code and conn.execute("SELECT 1 FROM hop_products WHERE workspace_id=? AND lower(code)=lower(?) "
                                  "AND (deleted_at IS NULL OR trim(deleted_at)='')", (ws, code)).fetchone():
             raise ValueError(f"Article code {code} is already in the master")
+        barcode = _s(fields.get("barcode"))[:48] or None
+        if barcode and conn.execute("SELECT 1 FROM hop_products WHERE workspace_id=? AND barcode=? "
+                                    "AND (deleted_at IS NULL OR trim(deleted_at)='')", (ws, barcode)).fetchone():
+            raise ValueError(f"Barcode {barcode} is already in the master")
+        gst_val = prices.get("gst_pct")
+        gst_store = None if gst_val in (None, "") else _f(gst_val)
         c = conn.execute(
-            "INSERT INTO hop_products (workspace_id, code, name, category, season, hsn, unit, mrp, purchase_price, selling_price, "
-            "gst_pct, stock_qty, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,0,'active',?,?)",
+            "INSERT INTO hop_products (workspace_id, code, name, category, season, hsn, unit, barcode, mrp, purchase_price, "
+            "selling_price, gst_pct, stock_qty, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)",
             (ws, code or None, name, _s(fields.get("category")) or None, _s(fields.get("season")) or None,
-             _s(fields.get("hsn")) or None, _s(fields.get("unit")) or "Pcs", _f(prices.get("mrp")) or None,
-             _f(prices.get("purchase_price")) or None, _f(prices.get("selling_price")) or None, _f(prices.get("gst_pct")), now, now))
+             _s(fields.get("hsn")) or None, _s(fields.get("unit")) or "Pcs", barcode,
+             _f(prices.get("mrp")) or None, _f(prices.get("purchase_price")) or None,
+             _f(prices.get("selling_price")) or None, gst_store,
+             _f(stock_in) if stock_in not in (None, "") else 0, now, now))
         new_id = int(c.lastrowid)
         if details:
             conn.execute("UPDATE hop_products SET custom_fields=? WHERE id=?", (json.dumps(details, ensure_ascii=False), new_id))
+            remember_detail_keys(conn, ws, list(details.keys()))
         for k in ("mrp", "purchase_price", "selling_price"):
             if _f(prices.get(k)):
                 _log_price(conn, ws, new_id, k, 0, _f(prices.get(k)), _s(fields.get("season")), source, user)
@@ -291,9 +406,10 @@ def price_list_preview(conn: sqlite3.Connection, ws: str, rows: list[dict]) -> d
         if not name and not code:
             continue
         new = {k: _f(raw.get(k)) for k in ("mrp", "purchase_price", "selling_price") if _f(raw.get(k))}
+        gst_raw = raw.get("gst_pct")
         extra = {"details": _details(raw.get("details")), "checks": list(raw.get("checks") or []),
-                 **({"gst_pct": _f(raw.get("gst_pct"))} if _f(raw.get("gst_pct")) else {}),
-                 **{k: _s(raw.get(k))[:80] for k in ("hsn", "unit") if _s(raw.get(k))}}
+                 **({"gst_pct": _f(gst_raw)} if gst_raw not in (None, "") else {}),
+                 **{k: _s(raw.get(k))[:80] for k in ("hsn", "unit", "barcode") if _s(raw.get(k))}}
         m = _match_article(conn, ws, code, name)
         if not m:
             out.append({"action": "new", "code": code, "name": name, "category": _s(raw.get("category")) or None,
@@ -849,12 +965,19 @@ def read_ledger_excel(data: bytes) -> list[dict]:
 
 
 # == Price changes: what changed, by how much, what it does to stock value and margin ===================
-def price_changes(conn: sqlite3.Connection, ws: str, days: int = 30, field: str = "") -> dict[str, Any]:
-    """Every Article Master price change in the last `days`: old -> new, %, source, and its effect: stock value
-    (DP change x stock), margin now vs before, and a suggested retailer price that keeps the old margin %."""
+def price_changes(conn: sqlite3.Connection, ws: str, days: int = 30, field: str = "",
+                  q: str = "", kind: str = "changes") -> dict[str, Any]:
+    """Article Master price history in the last `days`.
+
+    First prices of new articles (old=0) are kept apart from real changes so banners/counts
+    are not inflated. `kind`: changes | first | all. `q` filters name/code/category.
+    """
     ensure_schema(conn)
     days = max(1, min(int(days or 30), 730))
     since = (_today() - timedelta(days=days)).isoformat()
+    kind = (kind or "changes").strip().lower()
+    if kind not in ("changes", "first", "all"):
+        kind = "changes"
     sql = """SELECT h.id, h.product_id, h.field, h.old_value, h.new_value, h.season, h.source, h.by_user, h.at,
                     p.code, p.name, p.category, p.stock_qty, p.mrp, p.purchase_price, p.selling_price
              FROM hop_dist_price_history h JOIN hop_products p ON p.workspace_id=h.workspace_id AND p.id=h.product_id
@@ -863,29 +986,41 @@ def price_changes(conn: sqlite3.Connection, ws: str, days: int = 30, field: str 
     if field in ("mrp", "purchase_price", "selling_price"):
         sql += " AND h.field=?"
         args.append(field)
+    qq = _s(q).lower()
+    if qq:
+        sql += (" AND (lower(p.name) LIKE ? OR lower(COALESCE(p.code,'')) LIKE ? OR "
+                "lower(COALESCE(p.category,'')) LIKE ?)")
+        args += [f"%{qq}%"] * 3
     rows = [dict(r) for r in conn.execute(sql + " ORDER BY h.at DESC, h.id DESC", args).fetchall()]
-    changes, ups, downs, stock_effect = [], 0, 0, 0.0
+    all_rows, first_rows, change_rows = [], [], []
+    ups = downs = 0
+    stock_effect = 0.0
     by_cat: dict[str, list[float]] = defaultdict(list)
     for r in rows:
         old, new = _f(r["old_value"]), _f(r["new_value"])
+        is_first = not old
         pct = round((new - old) / old * 100, 1) if old else None
-        if old and new > old:
-            ups += 1
-        elif old and new < old:
-            downs += 1
         eff = 0.0
-        if r["field"] == "purchase_price" and old:
-            eff = (new - old) * max(_f(r["stock_qty"]), 0)
-            stock_effect += eff
-        if pct is not None:
-            by_cat[r.get("category") or "Other"].append(pct)
-        changes.append({"id": r["id"], "product_id": r["product_id"], "code": r.get("code"), "name": r["name"],
-                        "category": r.get("category"), "field": r["field"], "old": old or None, "new": new, "pct": pct,
-                        "season": r.get("season"), "source": r.get("source"), "by": r.get("by_user"), "at": r["at"],
-                        "stock_effect": _r2(eff) if eff else None, "first_price": not old})
+        if not is_first:
+            if old and new > old:
+                ups += 1
+            elif old and new < old:
+                downs += 1
+            if r["field"] == "purchase_price" and old:
+                eff = (new - old) * max(_f(r["stock_qty"]), 0)
+                stock_effect += eff
+            if pct is not None:
+                by_cat[r.get("category") or "Other"].append(pct)
+        item = {"id": r["id"], "product_id": r["product_id"], "code": r.get("code"), "name": r["name"],
+                "category": r.get("category"), "field": r["field"], "old": old or None, "new": new, "pct": pct,
+                "season": r.get("season"), "source": r.get("source"), "by": r.get("by_user"), "at": r["at"],
+                "stock_effect": _r2(eff) if eff else None, "first_price": is_first}
+        all_rows.append(item)
+        (first_rows if is_first else change_rows).append(item)
+    shown = all_rows if kind == "all" else (first_rows if kind == "first" else change_rows)
     margin_alerts = []
     seen: set[int] = set()
-    for c in changes:
+    for c in change_rows:
         if c["field"] != "purchase_price" or not c["old"] or c["product_id"] in seen:
             continue
         seen.add(c["product_id"])
@@ -915,22 +1050,33 @@ def price_changes(conn: sqlite3.Connection, ws: str, days: int = 30, field: str 
     cats = [{"category": k, "changes": len(v), "avg_pct": round(sum(v) / len(v), 1)} for k, v in by_cat.items()]
     cats.sort(key=lambda x: -abs(x["avg_pct"]))
     latest: dict[int, dict] = {}
-    for c in changes:
+    for c in change_rows:
         latest.setdefault(int(c["product_id"]), c)
-    return {"days": days, "since": since, "count": len(changes), "ups": ups, "downs": downs,
-            "articles_changed": len(latest), "stock_value_effect": _r2(stock_effect), "categories": cats,
-            "changes": changes[:300], "margin_alerts": margin_alerts}
+    first_articles = {int(c["product_id"]) for c in first_rows}
+    return {"days": days, "since": since, "kind": kind, "q": qq or None,
+            "count": len(change_rows), "first_price_count": len(first_rows),
+            "ups": ups, "downs": downs,
+            "articles_changed": len(latest), "articles_first_priced": len(first_articles),
+            "stock_value_effect": _r2(stock_effect), "categories": cats,
+            "changes": shown[:300], "first_prices": first_rows[:100], "margin_alerts": margin_alerts}
 
 
 def latest_change_by_article(conn: sqlite3.Connection, ws: str, days: int = 60) -> dict[int, dict]:
+    """Card badge: prefer a real MRP change; else the newest real (non-first) change."""
     since = (_today() - timedelta(days=days)).isoformat()
-    out: dict[int, dict] = {}
+    any_change: dict[int, dict] = {}
+    mrp_change: dict[int, dict] = {}
     for r in conn.execute("""SELECT product_id, field, old_value, new_value, at FROM hop_dist_price_history
                              WHERE workspace_id=? AND substr(at,1,10) >= ? AND old_value IS NOT NULL AND old_value > 0
                              ORDER BY at DESC, id DESC""", (ws, since)):
         pid = int(r[0])
-        if pid in out:
-            continue
         old, new = _f(r[2]), _f(r[3])
-        out[pid] = {"field": r[1], "old": old, "new": new, "pct": round((new - old) / old * 100, 1) if old else None, "at": r[4]}
+        entry = {"field": r[1], "old": old, "new": new,
+                 "pct": round((new - old) / old * 100, 1) if old else None, "at": r[4]}
+        if pid not in any_change:
+            any_change[pid] = entry
+        if r[1] == "mrp" and pid not in mrp_change:
+            mrp_change[pid] = entry
+    out = dict(any_change)
+    out.update(mrp_change)  # MRP wins for the badge when present
     return out

@@ -2168,6 +2168,25 @@ def note_item(note_id: int):
     return jsonify({"success": True, "data": row})
 
 
+@hop_bp.route("/notes/bulk-delete", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def notes_bulk_delete():
+    """Select many notes → Delete N (soft-delete). Body: {ids: [1,2,…]}."""
+    from app import hop_notes
+
+    ensure_hop_schema(_db_path())
+    ids = _payload().get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return _json_error("ids list is required", "VALIDATION_ERROR", 400)
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_notes.bulk_delete(conn, _ws(), ids)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
 @hop_bp.route("/commission/entries/<int:entry_id>", methods=["DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -4433,8 +4452,10 @@ def dist_articles():
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def dist_price_changes():
-    """?days=30&field=mrp|purchase_price|selling_price: price changes, stock-value effect, margin alerts."""
-    return _dist2(lambda X, c: X.price_changes(c, _ws(), request.args.get("days", type=int) or 30, request.args.get("field", "")))
+    """?days=30&field=…&q=…&kind=changes|first|all — real changes vs first prices kept apart."""
+    a = request.args
+    return _dist2(lambda X, c: X.price_changes(
+        c, _ws(), a.get("days", type=int) or 30, a.get("field", ""), a.get("q", ""), a.get("kind", "changes")))
 
 
 @hop_bp.route("/dist/articles/<int:pid>/history", methods=["GET"])
@@ -4442,6 +4463,26 @@ def dist_price_changes():
 @require_role(HOP_ROLE)
 def dist_article_history(pid: int):
     return _dist2(lambda X, c: X.price_history(c, _ws(), pid))
+
+
+@hop_bp.route("/dist/category-defaults", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_category_defaults():
+    """GET map of category → default GST %. POST {category, gst_pct} to set (gst_pct null clears)."""
+    if request.method == "GET":
+        return _dist2(lambda X, c: X.category_defaults(c, _ws()))
+    p = _payload() or {}
+    return _dist2(lambda X, c: X.set_category_default(c, _ws(), p.get("category", ""), p.get("gst_pct")))
+
+
+@hop_bp.route("/dist/principals/<int:vid>/terms", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_principal_terms(vid: int):
+    """Per-company margin / mark-up / mark-down + payment terms."""
+    return _dist2(lambda X, c: __import__("app.hop_distributor", fromlist=["x"]).save_principal_terms(
+        c, _ws(), vid, _payload() or {}))
 
 
 @hop_bp.route("/dist/price-list/read", methods=["POST"])

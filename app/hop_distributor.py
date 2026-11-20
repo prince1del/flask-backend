@@ -81,8 +81,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 # ── principals (the companies I distribute for) ──────────────────────────────────────────────────────────
 def principals(conn: sqlite3.Connection, ws: str) -> list[dict[str, Any]]:
     ensure_schema(conn)
+    from app import hop_dist_extra as X
+    X.ensure_schema(conn)  # margin_pct / markup_pct / markdown_pct on hop_vendors
     return [dict(r) for r in conn.execute(
-        "SELECT id, company, gst_no, city, mobile, payment_terms, lead_time_days FROM hop_vendors "
+        "SELECT id, company, gst_no, city, mobile, payment_terms, lead_time_days, "
+        "margin_pct, markup_pct, markdown_pct FROM hop_vendors "
         "WHERE workspace_id=? AND is_principal=1 ORDER BY lower(company)", (ws,)).fetchall()]
 
 
@@ -92,6 +95,35 @@ def set_principal(conn: sqlite3.Connection, ws: str, vendor_id: int, on: bool) -
         raise LookupError("Supplier not found")
     conn.execute("UPDATE hop_vendors SET is_principal=?, updated_at=? WHERE workspace_id=? AND id=?",
                  (1 if on else 0, _now(), ws, int(vendor_id)))
+    conn.commit()
+    return principals(conn, ws)
+
+
+def save_principal_terms(conn: sqlite3.Connection, ws: str, vendor_id: int, payload: dict) -> list[dict[str, Any]]:
+    """Per-company terms: payment + lead time + margin / mark-up / mark-down % for Article Master."""
+    ensure_schema(conn)
+    from app import hop_dist_extra as X
+    X.ensure_schema(conn)
+    if not conn.execute("SELECT 1 FROM hop_vendors WHERE workspace_id=? AND id=?", (ws, int(vendor_id))).fetchone():
+        raise LookupError("Supplier not found")
+    sets, vals = [], []
+    for col in ("payment_terms",):
+        if col in payload:
+            sets.append(f"{col}=?"); vals.append(str(payload.get(col) or "").strip() or None)
+    if "lead_time_days" in payload:
+        v = payload.get("lead_time_days")
+        sets.append("lead_time_days=?")
+        vals.append(None if v in (None, "") else int(v))
+    for col in ("margin_pct", "markup_pct", "markdown_pct"):
+        if col in payload:
+            v = payload.get(col)
+            sets.append(f"{col}=?")
+            vals.append(None if v in (None, "") else float(v or 0))
+    if not sets:
+        raise ValueError("Nothing to save")
+    sets.append("updated_at=?"); vals.append(_now())
+    conn.execute(f"UPDATE hop_vendors SET {', '.join(sets)} WHERE workspace_id=? AND id=?",
+                 [*vals, ws, int(vendor_id)])
     conn.commit()
     return principals(conn, ws)
 

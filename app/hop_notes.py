@@ -159,6 +159,24 @@ def delete(conn: sqlite3.Connection, ws: str, note_id: int) -> None:
     conn.commit()
 
 
+def bulk_delete(conn: sqlite3.Connection, ws: str, note_ids: list[int]) -> dict[str, Any]:
+    """Soft-delete many notes at once (select → Delete N on the phone)."""
+    ensure_schema(conn)
+    ids = sorted({int(i) for i in (note_ids or []) if str(i).isdigit() or isinstance(i, int)})
+    if not ids:
+        raise ValueError("Pick at least one note")
+    now = _now()
+    deleted = 0
+    for nid in ids:
+        cur = conn.execute(
+            "UPDATE hop_notes SET deleted_at=? WHERE workspace_id=? AND id=? AND deleted_at IS NULL",
+            (now, ws, nid),
+        )
+        deleted += cur.rowcount or 0
+    conn.commit()
+    return {"deleted": deleted, "requested": len(ids)}
+
+
 def search(conn: sqlite3.Connection, ws: str, q: str = "", party_name: str = "", limit: int = 100) -> list[dict[str, Any]]:
     ensure_schema(conn)
     sql, args = "SELECT * FROM hop_notes WHERE workspace_id=? AND deleted_at IS NULL", [ws]
@@ -175,7 +193,7 @@ def search(conn: sqlite3.Connection, ws: str, q: str = "", party_name: str = "",
 
 
 # -- photos / screenshots on a note (owner: "notes main screenshot ya photo add karne ka option do") --
-MAX_PHOTOS = 8
+MAX_PHOTOS = 40
 
 
 def _photo_dir(db_path: str, ws: str) -> str:
