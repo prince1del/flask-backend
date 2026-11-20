@@ -490,7 +490,7 @@ claude.md, ask me what to do first"). Waiting for the owner to pick the order:**
     to its products, tally SO / PO with my orders, CI / tax invoices / bills received, payments, shipment tracking,
     received vs pending, billed vs pending (Companies & terms + Bulk import + Orders → SO → CI cover part of it).
   - (D4) DONE 20-11 (phone `HopNoteEditDialog`): N opens the full note form (party type-ahead, remind, photos, "For Claude" tick — no party → party "claude", with a party → body starts "[For Claude]"; Claude must also read those). No N on the Notes page (B2). Was: Quick note ("N") has no party tag and is not the full note form — make N open the full note.
-  - (D5) Logo = first letter of each word of the firm name ("Kunwar home" → KH); N button inside forms too.
+  - (D5) DONE 20-11 (phone `ui/util/FirmInitials.kt`, up to 3 letters, skips "and / pvt / ltd"): letter logo in the menu header + bill preview when the firm has no logo picture; "N" note button inside full-page forms (`HopFullScreenPage`: bill, quotation, company profile, Vyapar import, distributor forms) and the party form. PDF bill still shows no letter badge (only a real logo). Was: Logo = first letter of each word of the firm name ("Kunwar home" → KH); N button inside forms too.
   - (D6) GSTIN Fetch in every UI — built by Cursor, to check + reply.
   - (D7) "GST kyu nahi dikha raha" — GST by category screen built (`c1306e7`, not deployed yet), to reply.
   - (D8) Barcode scan → item or Add new, manual stock — built by Cursor, to check + reply.

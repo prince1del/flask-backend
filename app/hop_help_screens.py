@@ -142,7 +142,7 @@ SHOWS: dict[str, list[str]] = {
     "company_profile": [
         "Firm details — name, GSTIN, state, address, phone, email, PAN.",
         "Bank — account details printed on bills.",
-        "Logo & signature — images printed on bills.",
+        "Logo & signature — images printed on bills; with no logo the bill shows the firm's letters (first letter of each word, e.g. Kunwar home → KH).",
     ],
     "financial_year": ["Each year — open or closed. A closed year's documents cannot be changed."],
     "tally_export": [

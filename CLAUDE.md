@@ -62,12 +62,12 @@ subscriber's own brand (never "House of Prizm" for another business).
 **Deployed 20-11 night (`83ba366`):** GST by category, firm move between UIs, Brand desk — not yet opened on the phone.
 Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows only there, with its bills/parties/notes.
 
-**Open notes — owner's order D1 → D8 (D1–D4 done in code, reply + mark done after deploy + phone check):**
+**Open notes — owner's order D1 → D8 (D1–D5 done in code, reply + mark done after phone check):**
 - (D1) done in code — firm "kunwar home" showed in Business; move option + per-UI firm name on the phone.
 - (D2) done in code — type-ahead party search in the bill form (`ui/util/TypeAhead.kt`), items match every word.
 - (D3) done in code — Brand desk (per company setup, orders/SO/CI, goods still to come, shipments, money).
 - (D4) done in code — N opens the full note form (party, remind, photos, "For Claude"); no N on the Notes page.
-- (D5) **to do:** logo = first letter of each word of the firm name ("Kunwar home" → KH); N button inside forms too.
+- (D5) done 20-11, phone installed — KH letter logo (menu header, bill preview) + N inside full-page forms and party form; owner to check, then reply + mark done.
 - (D6) **to check + reply:** GSTIN Fetch in every UI (built by Cursor).
 - (D7) **to reply:** "GST kyu nahi dikha raha" → GST by category screen (Article Master → GST by category).
 - (D8) **to check + reply:** barcode scan → item or Add new, manual stock (built by Cursor).
