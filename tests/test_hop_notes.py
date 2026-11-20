@@ -165,3 +165,21 @@ def test_note_done_with_link_and_for_claude_check(tmp_path):
         hop_notes.add_comment(conn, "ws", n["id"], {"text": "x", "link": "../etc"})   # … a bad link is not
     assert hop_notes.is_for_claude({"party_name": "Claude"}) and hop_notes.is_for_claude({"text": "[For Claude] x"})
     assert not hop_notes.is_for_claude({"text": "call Sharma"})
+
+
+def test_note_numbers_per_firm(tmp_path):
+    """Owner 21-11: every note has a number in its firm; numbers never move; search "#2" finds note 2."""
+    import sqlite3
+    from app import hop_notes
+
+    conn = sqlite3.connect(tmp_path / "n.db")
+    conn.row_factory = sqlite3.Row
+    a = hop_notes.create(conn, "ws", {"text": "first"})
+    other = hop_notes.create(conn, "ws2", {"text": "other firm"})
+    b = hop_notes.create(conn, "ws", {"text": "second"})
+    c = hop_notes.create(conn, "ws", {"text": "third"})
+    assert (a["no"], b["no"], c["no"], other["no"]) == (1, 2, 3, 1)
+    hop_notes.delete(conn, "ws", b["id"])
+    assert hop_notes.get(conn, "ws", c["id"])["no"] == 3
+    assert [n["no"] for n in hop_notes.search(conn, "ws", "#3")] == [3]
+    assert [n["no"] for n in hop_notes.search(conn, "ws", "3")] == [3]

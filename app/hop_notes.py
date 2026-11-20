@@ -135,9 +135,15 @@ def _status_line(items: list, by: str, text: str, link: dict | None = None) -> l
     return items
 
 
+# Note number in its firm (#1, #2 … in the order notes were made; deleted notes keep theirs, so a number never moves).
+# Owner 21-11: "notes main numbering do taaki pata chale konsa note hai".
+_NO = "(SELECT COUNT(*) FROM hop_notes x WHERE x.workspace_id=hop_notes.workspace_id AND x.id<=hop_notes.id) AS no"
+
+
 def get(conn: sqlite3.Connection, ws: str, note_id: int) -> dict[str, Any]:
     ensure_schema(conn)
-    r = conn.execute("SELECT * FROM hop_notes WHERE workspace_id=? AND id=? AND deleted_at IS NULL", (ws, int(note_id))).fetchone()
+    r = conn.execute(f"SELECT *, {_NO} FROM hop_notes WHERE workspace_id=? AND id=? AND deleted_at IS NULL",
+                     (ws, int(note_id))).fetchone()
     if not r:
         raise LookupError("Note not found")
     return _with_comments(dict(r))
@@ -234,7 +240,15 @@ def bulk_delete(conn: sqlite3.Connection, ws: str, note_ids: list[int]) -> dict[
 
 def search(conn: sqlite3.Connection, ws: str, q: str = "", party_name: str = "", limit: int = 100) -> list[dict[str, Any]]:
     ensure_schema(conn)
-    sql, args = "SELECT * FROM hop_notes WHERE workspace_id=? AND deleted_at IS NULL", [ws]
+    import re
+
+    sql, args = f"SELECT * FROM (SELECT *, {_NO} FROM hop_notes WHERE workspace_id=?) WHERE deleted_at IS NULL", [ws]
+    m = re.fullmatch(r"#?\s*(\d{1,6})", (q or "").strip())
+    if m:   # "#12" or "12" → that note (and notes that have the number in their text)
+        like = f"%{m.group(1)}%"
+        sql += " AND (no=? OR lower(body) LIKE ? OR lower(COALESCE(title,'')) LIKE ?)"
+        args += [int(m.group(1)), like, like]
+        q = ""
     if q:
         like = f"%{q.strip().lower()}%"
         sql += " AND (lower(body) LIKE ? OR lower(COALESCE(title,'')) LIKE ? OR lower(COALESCE(party_name,'')) LIKE ?)"
