@@ -60,8 +60,7 @@ subscriber's own brand (never "House of Prizm" for another business).
 ## 4. Pending — do these next
 
 **Deployed 20-11 night (`83ba366`):** GST by category, firm move between UIs, Brand desk — not yet opened on the phone.
-Owner to do: move "kunwar home" in Business UI → firm list → "Move … to Distributor UI…" (it was a Distributor firm
-made before firms had a UI).
+Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows only there, with its bills/parties/notes.
 
 **Open notes — owner's order D1 → D8 (D1–D4 done in code, reply + mark done after deploy + phone check):**
 - (D1) done in code — firm "kunwar home" showed in Business; move option + per-UI firm name on the phone.
