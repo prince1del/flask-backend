@@ -79,7 +79,9 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
   ("kya order karu", "kaunsa maal khatam hone wala hai").
 - salary: staff pay for a month — who is paid / not paid, present days, net, advances still to recover, salary cost
   by month (party_name = staff name; from = YYYY-MM-01 for another month) ("is mahine salary kitni gayi",
-  "Ramesh ka advance kitna baaki hai", "kisko salary dena baaki hai"). Private: only for the owner / allowed staff.
+  "Ramesh ka advance kitna baaki hai", "kisko salary dena baaki hai", "is mahine PF kitna jama karna
+  hai", "TDS kab tak bharna hai"). Includes PF / ESI / PT / TDS per person and the month's dues. Private: only for the
+  owner / allowed staff.
 - dist_retailer_forecast: what each retailer buys most, how often (every N days), usual qty, and who is due to buy
   what now / this week (party_name = retailer) ("Sharma ko kya chahiye hoga", "is hafte kisko call karu",
   "kaunsa retailer kya jyada leta hai").

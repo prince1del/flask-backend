@@ -4327,6 +4327,44 @@ def salary_advance_delete(aid: int):
     return _salary(lambda S, c: S.delete_advance(c, _ws(), aid) or {"deleted": aid})
 
 
+@hop_bp.route("/salary/settings", methods=["GET", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_settings():
+    """PF / ESI registered, professional tax a month, PF on full basic, TDS on. Government rates come from the server."""
+    from app import hop_payroll_tax as T
+
+    if request.method == "PUT":
+        return _salary(lambda S, c: T.save_settings(c, _ws(), _payload() or {}))
+    return _salary(lambda S, c: T.settings(c, _ws()))
+
+
+@hop_bp.route("/salary/preview", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_preview():
+    """The salary slip before paying: earned, PF / ESI / PT / TDS, advance, net. Nothing is saved."""
+    return _salary(lambda S, c: S.preview(c, _ws(), _payload() or {}))
+
+
+@hop_bp.route("/salary/dues", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_dues():
+    """GET ?month= — PF / ESI / TDS / PT owed for the month, due date, paid. POST {month, kind, amount?, date,
+    payment_mode, payment_account_id, challan_ref} → an Expense in that category."""
+    if request.method == "POST":
+        return _salary(lambda S, c: S.pay_due(c, _ws(), _payload() or {}, user=_user_label()))
+    return _salary(lambda S, c: S.dues(c, _ws(), request.args.get("month", "") or S._today().strftime("%Y-%m")))
+
+
+@hop_bp.route("/salary/dues/<int:did>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_due_undo(did: int):
+    return _salary(lambda S, c: S.undo_due(c, _ws(), did) or {"undone": did})
+
+
 @hop_bp.route("/salary/insights", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -4344,8 +4382,9 @@ def salary_insights():
             data = {"month": sheet["month"], "totals": sheet["totals"], "checks": sheet["checks"],
                     "staff": [{k: r.get(k) for k in ("name", "designation", "pay_type", "salary", "present_days", "earned",
                                                      "advance_due", "paid", "last_month")} for r in sheet["staff"][:40]],
-                    "by_month": S.year_summary(conn, _ws())}
-        points = hop_ai.report_insights("Salary sheet, staff pay and advances", data, user_id=int(user.get("user_id") or 0))
+                    "by_month": S.year_summary(conn, _ws()), "dues_this_month": sheet["dues"],
+                    "unpaid_dues": S.open_dues(conn, _ws())}
+        points = hop_ai.report_insights("Salary sheet, staff pay, PF / ESI / TDS / PT dues and advances", data, user_id=int(user.get("user_id") or 0))
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": {"points": points}})

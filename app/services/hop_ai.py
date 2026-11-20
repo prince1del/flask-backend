@@ -521,9 +521,10 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
             rows = [r for r in rows if _similar(party_name, r["name"] or "") >= 0.5]
         return {"month": sheet["month"], "totals": sheet["totals"], "checks": sheet["checks"],
                 "staff": [{k: r.get(k) for k in ("name", "designation", "salary", "pay_type", "present_days", "earned",
-                                                 "advance_due", "paid")} | {"net_paid": (r.get("run") or {}).get("net")}
+                                                 "advance_due", "paid")} | {"net_paid": (r.get("run") or {}).get("net"),
+                                                                            "pf_esi_pt_tds": r.get("working")}
                           for r in rows[:30]],
-                "by_month": SAL.year_summary(conn, ws, 6)}
+                "by_month": SAL.year_summary(conn, ws, 6), "dues": sheet["dues"], "unpaid_dues": SAL.open_dues(conn, ws)}
     if what == "notes":
         from app import hop_notes
 

@@ -58,15 +58,33 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             advance_recovered REAL, net REAL, paid_on TEXT, payment_mode TEXT, expense_txn_id INTEGER, note TEXT,
             by_user TEXT, created_at TEXT NOT NULL, deleted_at TEXT);
         CREATE INDEX IF NOT EXISTS ix_hop_salary_runs ON hop_salary_runs(workspace_id, month, staff_id);
+        CREATE TABLE IF NOT EXISTS hop_salary_dues (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL, month TEXT NOT NULL, kind TEXT NOT NULL,
+            amount REAL NOT NULL, paid_on TEXT, payment_mode TEXT, challan_ref TEXT, expense_txn_id INTEGER,
+            by_user TEXT, created_at TEXT NOT NULL, deleted_at TEXT);
         CREATE TABLE IF NOT EXISTS hop_salary_advances (
             id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL, staff_id INTEGER NOT NULL,
             given_on TEXT NOT NULL, amount REAL NOT NULL, payment_mode TEXT, expense_txn_id INTEGER, note TEXT,
             by_user TEXT, created_at TEXT NOT NULL, deleted_at TEXT);
     """)
+    # PF / ESI / PT / TDS (owner 20-11): per staff switches + per payment working
+    for table, cols in (("hop_staff", (("pf_on", "INTEGER DEFAULT 0"), ("esi_on", "INTEGER DEFAULT 1"), ("basic_pct", "REAL"),
+                                       ("pt_amount", "REAL"), ("tds_on", "INTEGER DEFAULT 1"), ("tds_extra", "REAL"),
+                                       ("pan", "TEXT"), ("uan", "TEXT"), ("esi_no", "TEXT"))),
+                        ("hop_salary_runs", (("gross", "REAL"), ("pf_emp", "REAL"), ("pf_er", "REAL"), ("esi_emp", "REAL"),
+                                             ("esi_er", "REAL"), ("pt", "REAL"), ("tds", "REAL")))):
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for c, t in cols:
+            if c not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {c} {t}")
+    from app import hop_payroll_tax
+
+    hop_payroll_tax.ensure_schema(conn)
 
 
 # ── staff ─────────────────────────────────────────────────────────────────────────────────────────────────
-_STAFF_COLS = ("name", "phone", "designation", "pay_type", "salary", "joined_on", "left_on", "bank_details", "user_id", "active")
+_STAFF_COLS = ("name", "phone", "designation", "pay_type", "salary", "joined_on", "left_on", "bank_details", "user_id", "active",
+               "pf_on", "esi_on", "basic_pct", "pt_amount", "tds_on", "tds_extra", "pan", "uan", "esi_no")
 
 
 def list_staff(conn: sqlite3.Connection, ws: str, include_left: bool = False) -> list[dict[str, Any]]:
@@ -88,6 +106,12 @@ def save_staff(conn: sqlite3.Connection, ws: str, p: dict, staff_id: int | None 
         v = p.get(k)
         if k == "salary":
             vals[k] = max(0.0, _f(v))
+        elif k in ("pf_on", "esi_on", "tds_on"):
+            vals[k] = 1 if v in (True, 1, "1", "true") else 0
+        elif k in ("basic_pct", "pt_amount", "tds_extra"):
+            vals[k] = None if v in (None, "") else max(0.0, _f(v))
+        elif k == "pan":
+            vals[k] = _s(v).upper()[:10] or None
         elif k in ("user_id",):
             vals[k] = int(v) if v not in (None, "", 0, "0") else None
         elif k == "active":
@@ -250,6 +274,9 @@ def month_sheet(conn: sqlite3.Connection, ws: str, month: str = "", *, db_path: 
         "SELECT staff_id, SUM(net + COALESCE(advance_recovered,0)) FROM hop_salary_runs WHERE workspace_id=? AND month=? "
         "AND deleted_at IS NULL GROUP BY staff_id", (ws, prev))}
     adv = advances_due(conn, ws)
+    from app import hop_payroll_tax as T
+
+    cfg = T.settings(conn, ws)
     rows, checks = [], []
     for s in list_staff(conn, ws):
         if s.get("joined_on") and s["joined_on"][:7] > month:
@@ -260,10 +287,14 @@ def month_sheet(conn: sqlite3.Connection, ws: str, month: str = "", *, db_path: 
         present = _f(run["present_days"]) if run else (att if att is not None else (dim if s["pay_type"] == "monthly" else 0.0))
         pay = _f(s["salary"])
         earned = _r2(pay * present / dim) if s["pay_type"] == "monthly" else _r2(pay * present)
+        wk = (_run_working(run) if run else T.working(s, earned, 0.0, cfg))
         row = {"staff_id": sid, "name": s["name"], "designation": s.get("designation"), "pay_type": s["pay_type"],
                "salary": pay, "days_in_month": dim, "present_days": present, "attendance_days": att,
                "earned": _r2(run["earned"]) if run else earned, "advance_due": adv.get(sid, 0.0),
-               "paid": bool(run), "run": run, "last_month": last.get(sid)}
+               "paid": bool(run), "run": run, "last_month": last.get(sid), "working": wk,
+               "net_estimate": _r2((run["net"] if run else earned - wk["employee_total"]))}
+        for n in wk.get("notes") or []:
+            checks.append(f"{s['name']}: {n}")
         rows.append(row)
         gross = row["earned"] + (_f(run["bonus"]) if run else 0) - (_f(run["deductions"]) if run else 0)
         if row["last_month"] and gross and abs(gross - row["last_month"]) / row["last_month"] > 0.25:
@@ -276,7 +307,38 @@ def month_sheet(conn: sqlite3.Connection, ws: str, month: str = "", *, db_path: 
                        "net_paid": _r2(sum(_f(r["run"]["net"]) for r in paid)),
                        "advance_recovered": _r2(sum(_f(r["run"]["advance_recovered"]) for r in paid)),
                        "salary_cost": _r2(sum(_f(r["run"]["net"]) + _f(r["run"]["advance_recovered"]) for r in paid)),
-                       "advances_due": _r2(sum(adv.values()))}}
+                       "advances_due": _r2(sum(adv.values())),
+                       "employer_cost": _r2(sum(_f(r["run"].get("pf_er")) + _f(r["run"].get("esi_er")) for r in paid))},
+            "dues": dues(conn, ws, month), "settings": cfg}
+
+
+def _run_working(run: dict) -> dict[str, Any]:
+    w = {k: _f(run.get(k)) for k in ("pf_emp", "pf_er", "esi_emp", "esi_er", "pt", "tds")}
+    w["gross"] = _f(run.get("gross")) or _f(run.get("earned")) + _f(run.get("bonus"))
+    w["employee_total"] = _r2(w["pf_emp"] + w["esi_emp"] + w["pt"] + w["tds"])
+    w["employer_total"] = _r2(w["pf_er"] + w["esi_er"])
+    return w
+
+
+def preview(conn: sqlite3.Connection, ws: str, p: dict) -> dict[str, Any]:
+    """The salary slip before paying: earned, PF / ESI / PT / TDS, advance, net (nothing is saved)."""
+    from app import hop_payroll_tax as T
+
+    ensure_schema(conn)
+    month = _check_month(_s(p.get("month")) or _today().strftime("%Y-%m"))
+    s = conn.execute("SELECT * FROM hop_staff WHERE workspace_id=? AND id=?", (ws, int(p.get("staff_id") or 0))).fetchone()
+    if not s:
+        raise LookupError("Staff member not found")
+    s = dict(s)
+    dim = _month_days(month)
+    present = _f(p.get("present_days")) if p.get("present_days") not in (None, "") else (dim if s["pay_type"] == "monthly" else 0)
+    earned = _r2(_f(s["salary"]) * present / dim) if s["pay_type"] == "monthly" else _r2(_f(s["salary"]) * present)
+    bonus, ded = max(0.0, _f(p.get("bonus"))), max(0.0, _f(p.get("deductions")))
+    wk = T.working(s, earned, bonus, T.settings(conn, ws))
+    due = advances_due(conn, ws).get(int(s["id"]), 0.0)
+    recover = min(max(0.0, _f(p.get("advance_recover"))), due)
+    net = _r2(earned + bonus - ded - recover - wk["employee_total"])
+    return {"earned": earned, "bonus": bonus, "deductions": ded, "advance_recover": recover, "working": wk, "net": net}
 
 
 def pay_salary(conn: sqlite3.Connection, ws: str, p: dict, *, user: str = "") -> dict[str, Any]:
@@ -298,7 +360,10 @@ def pay_salary(conn: sqlite3.Connection, ws: str, p: dict, *, user: str = "") ->
     bonus, ded = max(0.0, _f(p.get("bonus"))), max(0.0, _f(p.get("deductions")))
     due = advances_due(conn, ws).get(sid, 0.0)
     recover = min(max(0.0, _f(p.get("advance_recover"))), due)
-    net = _r2(earned + bonus - ded - recover)
+    from app import hop_payroll_tax as T
+
+    wk = T.working(dict(s), earned, bonus, T.settings(conn, ws))
+    net = _r2(earned + bonus - ded - recover - wk["employee_total"])
     if net < 0:
         raise ValueError("Net salary is below zero — lower the deductions or the advance to recover")
     on = _s(p.get("date"))[:10] or _today().isoformat()
@@ -306,13 +371,14 @@ def pay_salary(conn: sqlite3.Connection, ws: str, p: dict, *, user: str = "") ->
                    f"Salary {month}") if net > 0 else None
     cur = conn.execute(
         "INSERT INTO hop_salary_runs (workspace_id, staff_id, month, days_in_month, present_days, earned, bonus, deductions, "
-        "advance_recovered, net, paid_on, payment_mode, expense_txn_id, note, by_user, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "advance_recovered, net, paid_on, payment_mode, expense_txn_id, note, by_user, created_at, gross, pf_emp, pf_er, "
+        "esi_emp, esi_er, pt, tds) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ws, sid, month, dim, present, earned, bonus, ded, recover, net, on, _s(p.get("payment_mode")) or "cash", txn,
-         _s(p.get("note"))[:200] or None, user or None, _now()))
+         _s(p.get("note"))[:200] or None, user or None, _now(), wk["gross"], wk["pf_emp"], wk["pf_er"], wk["esi_emp"],
+         wk["esi_er"], wk["pt"], wk["tds"]))
     conn.commit()
     return {"run_id": int(cur.lastrowid), "net": net, "earned": earned, "advance_recovered": recover,
-            "advance_left": _r2(due - recover), "expense_txn_id": txn}
+            "advance_left": _r2(due - recover), "expense_txn_id": txn, "working": wk}
 
 
 def undo_salary(conn: sqlite3.Connection, ws: str, run_id: int) -> None:
@@ -332,3 +398,75 @@ def year_summary(conn: sqlite3.Connection, ws: str, months: int = 12) -> list[di
             for r in conn.execute(
                 "SELECT month, COUNT(*), SUM(net), SUM(COALESCE(advance_recovered,0)) FROM hop_salary_runs "
                 "WHERE workspace_id=? AND deleted_at IS NULL GROUP BY month ORDER BY month DESC LIMIT ?", (ws, int(months)))]
+
+
+# ── PF / ESI / PT / TDS dues to the government ───────────────────────────────────────────────────────────
+DUE_KINDS = {"pf": ("PF", 15), "esi": ("ESI", 15), "tds": ("TDS on salary", 7), "pt": ("Professional tax", 15)}
+
+
+def dues(conn: sqlite3.Connection, ws: str, month: str) -> list[dict[str, Any]]:
+    """What this month's salaries owe the government (employee + employer shares), due date, paid or not."""
+    ensure_schema(conn)
+    r = conn.execute("SELECT COALESCE(SUM(pf_emp),0)+COALESCE(SUM(pf_er),0), COALESCE(SUM(esi_emp),0)+COALESCE(SUM(esi_er),0), "
+                     "COALESCE(SUM(tds),0), COALESCE(SUM(pt),0) FROM hop_salary_runs WHERE workspace_id=? AND month=? "
+                     "AND deleted_at IS NULL", (ws, month)).fetchone()
+    owed = {"pf": _f(r[0]), "esi": _f(r[1]), "tds": _f(r[2]), "pt": _f(r[3])}
+    paid = {}
+    for d in conn.execute("SELECT * FROM hop_salary_dues WHERE workspace_id=? AND month=? AND deleted_at IS NULL", (ws, month)):
+        paid.setdefault(d["kind"], []).append(dict(d))
+    y, m = (int(x) for x in month.split("-"))
+    nxt = date(y + (m == 12), 1 if m == 12 else m + 1, 1)
+    out = []
+    for k, (label, day) in DUE_KINDS.items():
+        amount = _r2(owed[k])
+        done = _r2(sum(_f(x["amount"]) for x in paid.get(k, [])))
+        if not amount and not done:
+            continue
+        due_on = nxt.replace(day=day)
+        left = _r2(amount - done)
+        out.append({"kind": k, "label": label, "amount": amount, "paid": done, "left": left, "due_on": due_on.isoformat(),
+                    "overdue_days": max(0, (_today() - due_on).days) if left > 0 else 0, "payments": paid.get(k, [])})
+    return out
+
+
+def pay_due(conn: sqlite3.Connection, ws: str, p: dict, *, user: str = "") -> dict[str, Any]:
+    """Deposit PF / ESI / TDS / PT for a month → an Expense in that category from cash / bank."""
+    ensure_schema(conn)
+    month = _check_month(_s(p.get("month")))
+    kind = _s(p.get("kind")).lower()
+    if kind not in DUE_KINDS:
+        raise ValueError("kind must be pf, esi, tds or pt")
+    row = next((d for d in dues(conn, ws, month) if d["kind"] == kind), None)
+    amount = _f(p.get("amount")) or (row["left"] if row else 0)
+    if amount <= 0:
+        raise ValueError("Nothing to pay for this month")
+    on = _s(p.get("date"))[:10] or _today().isoformat()
+    label = DUE_KINDS[kind][0]
+    txn = _expense(conn, ws, label, amount, on, _s(p.get("payment_mode")) or "bank", p.get("payment_account_id"),
+                   f"{label} {month}" + (f" · challan {_s(p.get('challan_ref'))}" if _s(p.get("challan_ref")) else ""))
+    conn.execute("INSERT INTO hop_salary_dues (workspace_id, month, kind, amount, paid_on, payment_mode, challan_ref, "
+                 "expense_txn_id, by_user, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                 (ws, month, kind, _r2(amount), on, _s(p.get("payment_mode")) or "bank", _s(p.get("challan_ref"))[:60] or None,
+                  txn, user or None, _now()))
+    conn.commit()
+    return {"dues": dues(conn, ws, month), "expense_txn_id": txn}
+
+
+def undo_due(conn: sqlite3.Connection, ws: str, due_id: int) -> None:
+    r = conn.execute("SELECT expense_txn_id FROM hop_salary_dues WHERE workspace_id=? AND id=? AND deleted_at IS NULL",
+                     (ws, int(due_id))).fetchone()
+    if not r:
+        raise LookupError("Payment not found")
+    _undo_expense(conn, ws, r[0])
+    conn.execute("UPDATE hop_salary_dues SET deleted_at=? WHERE id=?", (_now(), int(due_id)))
+    conn.commit()
+
+
+def open_dues(conn: sqlite3.Connection, ws: str, months: int = 6) -> list[dict[str, Any]]:
+    """Unpaid PF / ESI / TDS / PT of the last months — for Guard, insights and Ask Nexora."""
+    ensure_schema(conn)
+    out = []
+    for (m,) in conn.execute("SELECT DISTINCT month FROM hop_salary_runs WHERE workspace_id=? AND deleted_at IS NULL "
+                             "ORDER BY month DESC LIMIT ?", (ws, int(months))).fetchall():
+        out += [{"month": m, **{k: d[k] for k in ("label", "left", "due_on", "overdue_days")}} for d in dues(conn, ws, m) if d["left"] > 0]
+    return out

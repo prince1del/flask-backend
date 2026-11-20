@@ -100,3 +100,37 @@ def test_salary_is_private_for_staff(tmp_path, monkeypatch):
     assert client.get("/api/v1/hop/my-permissions", headers=staff).get_json()["data"]["areas"]["salary"] == "none"
     lst = client.get("/api/v1/hop/staff-permissions", headers=owner).get_json()["data"]
     assert any(a["key"] == "salary" for a in lst["areas"])
+
+
+def test_pf_esi_pt_tds_working_and_dues(db):
+    from app import hop_payroll_tax as T
+
+    with connect(db) as conn:
+        bank = hop_books.create_bank_account(conn, WS, {"name": "HDFC", "account_type": "bank", "opening_balance": 500000})
+        S.ensure_schema(conn)
+        T.save_settings(conn, WS, {"pf_enabled": True, "esi_enabled": True, "pt_default": 200, "pf_er_pct": 99})
+        cfg = T.settings(conn, WS)
+        assert cfg["pf_er_pct"] == 12.0          # government rates are not saved per firm
+        low = S.save_staff(conn, WS, {"name": "Sunil", "salary": 15000, "pf_on": True})
+        high = S.save_staff(conn, WS, {"name": "Neha", "salary": 150000, "pf_on": True, "pan": "abcde1234f"})
+        assert high["pan"] == "ABCDE1234F"
+        pv = S.preview(conn, WS, {"staff_id": low["id"], "month": "2026-11"})
+        w = pv["working"]
+        assert (w["pf_emp"], w["pf_er"], w["esi_emp"], w["esi_er"], w["pt"], w["tds"]) == (1800, 1950, 113, 488, 200, 0)
+        assert pv["net"] == 15000 - 1800 - 113 - 200
+        hw = S.preview(conn, WS, {"staff_id": high["id"], "month": "2026-11"})["working"]
+        assert hw["esi_emp"] == 0 and hw["pf_emp"] == 1800 and hw["tds"] == 12567    # ₹17.25 lakh taxable
+        assert T.yearly_tax(1200000, cfg) == 0 and T.yearly_tax(1300000, cfg) == 78000
+        S.pay_salary(conn, WS, {"staff_id": low["id"], "month": "2026-11", "payment_mode": "bank", "payment_account_id": bank["id"]})
+        S.pay_salary(conn, WS, {"staff_id": high["id"], "month": "2026-11", "payment_mode": "bank", "payment_account_id": bank["id"]})
+        d = {x["kind"]: x for x in S.dues(conn, WS, "2026-11")}
+        assert d["pf"]["amount"] == 1800 * 2 + 1950 * 2 and d["esi"]["amount"] == 601
+        assert d["tds"]["amount"] == 12567 and d["pt"]["amount"] == 400
+        assert d["pf"]["due_on"] == "2026-12-15" and d["tds"]["due_on"] == "2026-12-07"
+        out = S.pay_due(conn, WS, {"month": "2026-11", "kind": "pf", "payment_mode": "bank", "payment_account_id": bank["id"],
+                                   "challan_ref": "TRRN123"})
+        assert next(x for x in out["dues"] if x["kind"] == "pf")["left"] == 0
+        assert _cat_total(conn, "PF") == 7500
+        assert any(x["label"] == "TDS on salary" for x in S.open_dues(conn, WS))
+        with pytest.raises(ValueError):
+            S.pay_due(conn, WS, {"month": "2026-11", "kind": "gst"})

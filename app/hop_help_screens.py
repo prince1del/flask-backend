@@ -324,3 +324,9 @@ SHOWS["salary"] = [
     "Advance — money given now, recovered from a later salary.",
     "✨ Checks + AI insights — jumps, big advances, unpaid staff.",
 ]
+
+SHOWS["salary"] = SHOWS["salary"] + [
+    "PF / ESI / tax — each salary works out PF (12% + 12%), ESI (0.75% + 3.25% up to ₹21,000), professional tax and TDS (new regime).",
+    "Dues — PF, ESI, TDS and PT owed for the month with due dates (PF / ESI 15th, TDS 7th); Pay saves it as an expense.",
+    "Rates — government rates are kept on the server (rates as of date shown), so a change reaches every firm at once.",
+]
