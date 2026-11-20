@@ -92,9 +92,11 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
   4. Per company: stock of B vs C; ordered → CI → received → pending (qty + ₹); margin earned by company / category.
   Today (checked 21-11): stock comes in only on a purchase bill (CI = bill txn 2); journal has no company; shipment
   "received" moves no stock; manual / Article Master stock has no company; no category level for terms.
-- **Queued (owner 21-11, after the current batch):** notes for Claude get a founder check — when the founder marks
-  the work done the note shows ✓✓ (double tick = checked and finished); only Claude-tagged notes; only after ✓✓ the
-  Delete button shows, and the founder may delete it.
+- **Built 21-11 (phone APK built, NOT installed — phone was off Wi-Fi debug):** Goods received (`hop_dist_receive.py`:
+  company CI saved = in transit, receive in parts, undo, stock by company; `/dist/goods-received*`; AI + Ask Nexora
+  `dist_goods_received`), Add company GSTIN auto fetch, notes ✓✓ (founder checks a done Claude note; delete only
+  after ✓✓; raise again clears it), stock journal lines carry company + document (bills, Article Master hand stock).
+  Install: `adb install -r` the latest APK when the phone is on Wi-Fi debug again.
 - (D9) **new note:** "[Distributor UI] isme aster ya kisi or item pe click kyu nahi ho raha" — read it (may have a photo).
 - (D10) **owner asked:** Brand desk has no "+ Add company"; company details live in Parties (supplier) + Companies & terms — add one place.
 - (D6) **to check + reply:** GSTIN Fetch in every UI (built by Cursor).

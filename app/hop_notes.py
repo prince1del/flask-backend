@@ -46,6 +46,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE hop_notes ADD COLUMN done_by TEXT")
     if "photos_json" not in cols:   # photos / screenshots kept with the note: [{id, at}]
         conn.execute("ALTER TABLE hop_notes ADD COLUMN photos_json TEXT")
+    if "checked_at" not in cols:   # founder's ✓✓ on a note for Claude: checked, the work is fine (owner 21-11)
+        conn.execute("ALTER TABLE hop_notes ADD COLUMN checked_at TEXT")
+        conn.execute("ALTER TABLE hop_notes ADD COLUMN checked_by TEXT")
 
 
 def _party(conn: sqlite3.Connection, ws: str, payload: dict) -> tuple[str | None, int | None, str | None]:
@@ -101,6 +104,7 @@ def _with_comments(d: dict[str, Any]) -> dict[str, Any]:
     # who the work is for (owner 21-11: "kiske liye kar raha hai kaise pata chalega")
     d["for_whom"] = "Claude" if (_s(d.get("party_name")).lower() == "claude"
                                  or _s(d.get("body")).startswith("[For Claude]")) else None
+    d["checked"] = bool(d.get("checked_at"))
     d["raised_again"] = sum(1 for c in d["comments"] if isinstance(c, dict) and c.get("kind") == "status"
                             and _s(c.get("text")).startswith("↩"))
     return d
@@ -169,7 +173,7 @@ def add_comment(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) 
     reopen = note.get("done") and by.lower() != "claude"
     if reopen:
         _status_line(items, by, "↩ Raised again")
-        conn.execute("UPDATE hop_notes SET comments_json=?, done_at=NULL, done_by=NULL, updated_at=? "
+        conn.execute("UPDATE hop_notes SET comments_json=?, done_at=NULL, done_by=NULL, checked_at=NULL, checked_by=NULL, updated_at=? "
                      "WHERE workspace_id=? AND id=?", (_json.dumps(items, ensure_ascii=False), _now(), ws, int(note_id)))
     else:
         conn.execute("UPDATE hop_notes SET comments_json=?, updated_at=? WHERE workspace_id=? AND id=?",
@@ -191,11 +195,25 @@ def update(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) -> di
     for k, n in (("title", 120), ("remind_on", 10)):
         if k in payload:
             sets.append(f"{k}=?"); vals.append(_s(payload.get(k))[:n] or None)
+    if payload.get("checked") in (True, 1, "1", "true"):   # founder's ✓✓ — only a done note for Claude
+        if not note.get("for_whom"):
+            raise ValueError("✓✓ is only for notes for Claude")
+        if not note.get("done") and payload.get("done") not in (True, 1, "1", "true"):
+            raise ValueError("Mark the note done first, then ✓✓")
+        sets += ["checked_at=?", "checked_by=?"]
+        vals += [_now(), _s(payload.get("checked_by"))[:40] or "Founder"]
+        items = list(note.get("comments") or [])
+        if not any(x.startswith("comments_json") for x in sets):
+            sets.append("comments_json=?")
+            vals.append(_json.dumps(_status_line(items, _s(payload.get("checked_by"))[:40] or "Founder", "✓✓ Checked — work is fine"),
+                                    ensure_ascii=False))
     if "done" in payload:   # mark done (Claude or the user) / raise again (the work is not right yet)
         done = payload.get("done") in (True, 1, "1", "true")
         by = _s(payload.get("done_by"))[:40] or "User"
         sets += ["done_at=?", "done_by=?"]
         vals += [_now() if done else None, by if done else None]
+        if not done:
+            sets += ["checked_at=?", "checked_by=?"]; vals += [None, None]
         if done != bool(note.get("done")):
             reason = _s(payload.get("reason"))
             line = "✓ Marked done" if done else ("↩ Raised again" + (f": {reason}" if reason else ""))
@@ -215,7 +233,9 @@ def update(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) -> di
 
 
 def delete(conn: sqlite3.Connection, ws: str, note_id: int) -> None:
-    get(conn, ws, note_id)
+    n = get(conn, ws, note_id)
+    if n.get("for_whom") and not n.get("checked"):
+        raise ValueError("A note for Claude can be deleted after the founder's ✓✓ (checked, the work is fine).")
     conn.execute("UPDATE hop_notes SET deleted_at=? WHERE workspace_id=? AND id=?", (_now(), ws, int(note_id)))
     conn.commit()
 
@@ -228,14 +248,22 @@ def bulk_delete(conn: sqlite3.Connection, ws: str, note_ids: list[int]) -> dict[
         raise ValueError("Pick at least one note")
     now = _now()
     deleted = 0
+    skipped = 0
     for nid in ids:
+        try:
+            n = get(conn, ws, nid)
+        except LookupError:
+            continue
+        if n.get("for_whom") and not n.get("checked"):
+            skipped += 1   # a note for Claude waits for the founder's ✓✓
+            continue
         cur = conn.execute(
             "UPDATE hop_notes SET deleted_at=? WHERE workspace_id=? AND id=? AND deleted_at IS NULL",
             (now, ws, nid),
         )
         deleted += cur.rowcount or 0
     conn.commit()
-    return {"deleted": deleted, "requested": len(ids)}
+    return {"deleted": deleted, "requested": len(ids), "skipped_not_checked": skipped}
 
 
 def search(conn: sqlite3.Connection, ws: str, q: str = "", party_name: str = "", limit: int = 100) -> list[dict[str, Any]]:

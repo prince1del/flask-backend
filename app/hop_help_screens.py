@@ -354,6 +354,13 @@ SHOWS["dist_category_gst"] = [
     "✨ Suggested — the rate most articles of the category carry, Use to set it.",
     "Fill — puts the default on the articles without GST only, after you confirm.",
 ]
+SHOWS["dist_goods_received"] = [
+    "Stock by company — qty and value at DP of each company's articles.",
+    "Waiting for goods — each company invoice: in transit / part received, LR and expected date.",
+    "Receive — per article: billed, received, still to come; type what came and tap Receive.",
+    "Receipts — every receipt with its date; Undo takes one back.",
+    "✨ AI — late or short goods and what to chase.",
+]
 SHOWS["dist_terms_book"] = [
     "Company chips — every company you buy from; + Add company adds one with its GSTIN and address.",
     "By category — the default terms of each category and how many articles have their own or none; tap to change.",

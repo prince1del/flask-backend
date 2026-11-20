@@ -2163,6 +2163,8 @@ def note_item(note_id: int):
                 hop_notes.delete(conn, _ws(), note_id)
                 return jsonify({"success": True, "data": {"deleted": note_id}})
             p = _payload()
+            if p.get("checked") and not _is_founder():
+                return _json_error("Only the founder can give ✓✓ (checked) on a note for Claude.", "FORBIDDEN", 403)
             if ("party_name" in p or "text" in p or "body" in p) and hop_notes.is_for_claude(p) and not _is_founder():
                 return _json_error("Notes for Claude are only for the founder account.", "FORBIDDEN", 403)
             row = hop_notes.update(conn, _ws(), note_id, p)
@@ -4515,6 +4517,48 @@ def _margins(fn):
         return _json_error(str(exc))
 
 
+def _grn(fn):
+    from app import hop_dist_receive as R
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            R.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(R, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/dist/goods-received", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_goods_to_receive():
+    """?vendor_id=&all=1 — company invoices (CI) waiting for the goods: in transit / part received, per article."""
+    a = request.args
+    return _grn(lambda R, c: {**R.to_receive(c, _ws(), a.get("vendor_id", type=int), a.get("all") == "1"),
+                              "stock_by_company": R.stock_by_company(c, _ws())})
+
+
+@hop_bp.route("/dist/goods-received/<int:bill_id>", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_goods_received(bill_id: int):
+    """GET → one CI: billed / received / to come per article. POST {lines: [{product_id, qty}], received_on, note}."""
+    if request.method == "GET":
+        return _grn(lambda R, c: R.bill_status(c, _ws(), bill_id))
+    return _grn(lambda R, c: R.receive(c, _ws(), bill_id, _payload() or {}, user=_user_label()))
+
+
+@hop_bp.route("/dist/goods-received/receipt/<int:rid>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_goods_receipt_undo(rid: int):
+    """Take back one receipt typed by mistake (its stock goes out again)."""
+    return _grn(lambda R, c: R.undo_receipt(c, _ws(), rid))
+
+
 @hop_bp.route("/dist/companies/add", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -5004,6 +5048,8 @@ def dist_insights(key: str):
               "company-terms": "Companies (brands) I distribute for: terms, credit, cash discount and price rules — "
                                "point out a company whose rule gives a thin margin, articles not at the rule price "
                                "and articles without a company.",
+              "goods-received": "Company invoices (CI) waiting for the goods: in transit and part received, per article, "
+                                "and stock per company — say which goods are late or short and what to chase.",
               "terms-book": "Terms book of one company I distribute for: margin chain per category and article "
                             "(MRP → retailer margin → my mark-up → ex-mill) — point out thin margins, articles without "
                             "terms, and where the saved DP / price to retailer does not match the terms.",
@@ -5029,6 +5075,8 @@ def dist_insights(key: str):
                     "price-changes": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).price_changes(conn, _ws(), a.get("days", type=int) or 30),
                     "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180),
                     "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws()),
+                    "goods-received": lambda: __import__("app.hop_dist_receive", fromlist=["x"]).to_receive(
+                        conn, _ws(), a.get("vendor_id", type=int)),
                     "terms-book": lambda: __import__("app.hop_dist_margins", fromlist=["x"]).book(
                         conn, _ws(), a.get("vendor_id", type=int) or 0),
                     "brand-desk": lambda: __import__("app.hop_dist_brand", fromlist=["x"]).brand_desk(

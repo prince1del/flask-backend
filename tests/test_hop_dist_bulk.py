@@ -83,8 +83,13 @@ def test_ci_csv_in_zip_links_so_and_moves_stock(firm):
         assert r["saved"] == 1 and r["linked_to_so"] == 1
         bill = conn.execute("SELECT id, party_bill_no FROM hop_party_transactions WHERE txn_type=2 AND party_bill_no='INV-77'").fetchone()
         assert bill
-        stock1 = conn.execute("SELECT stock_qty FROM hop_products WHERE id=?", (tid,)).fetchone()[0]
-        assert stock1 - stock0 == 15
+        # owner 21-11: a company CI is in transit — stock comes in on Goods received
+        stock1 = conn.execute("SELECT stock_qty FROM hop_products WHERE id=?", (tid,)).fetchone()[0] or 0
+        assert stock1 == stock0
+        from app import hop_dist_receive as R
+        R.receive(conn, WS, int(bill[0]), {"lines": [{"product_id": tid, "qty": 15}]})
+        stock2 = conn.execute("SELECT stock_qty FROM hop_products WHERE id=?", (tid,)).fetchone()[0]
+        assert stock2 - stock0 == 15
         with pytest.raises(ValueError):
             B.commit(conn, WS, p["job_id"])            # a job is saved once
 

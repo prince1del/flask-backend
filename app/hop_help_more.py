@@ -18,6 +18,7 @@ MORE: dict[str, dict[str, Any]] = {
                         "Mark as done — the work in the note is finished (by Claude or you); pick the screen where it can be checked — the note shows Open ▸ that screen. Done notes show ✅ and go to the bottom.",
                         "↩ Raise again — the work is not right yet: write what is still wrong; the ✅ goes away until it is done again. A reply you write in a done note also raises it again.",
                         "For: Claude — the note is work for Claude (founder account only); every done / raise again shows in the note with who and when.",
+                        "✓✓ Checked — the founder checks a done note for Claude; the note shows ✓✓ and only then can it be deleted. Raise again takes the ✓✓ away.",
                         "📋 Plan — send a reply as a plan (what will be done and how, before the work starts); the button reads Send plan.",
                         "+ Note — write a note; or ask Nexora to write it (you check and Save).",
                         "N button — on every other screen and inside forms (bill, party, company profile): opens the full note form without leaving the screen.",

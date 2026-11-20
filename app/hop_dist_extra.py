@@ -406,6 +406,8 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
                 _log_price(conn, ws, int(pid), k, cur.get(k), _f(v), _s(payload.get("season") or cur.get("season")), source, user)
         if stock_in is not None and stock_in != "":
             sets.append("stock_qty=?"); vals.append(_f(stock_in))
+            _hand_stock_line(conn, ws, int(pid), _f(stock_in) - _f(cur.get("stock_qty")),
+                             payload.get("vendor_id") or cur.get("vendor_id"), "Stock set by hand (Article Master)", user)
         for k in ("vendor_id", "price_rule", "price_rule_pct"):
             if k in payload:
                 sets.append(f"{k}=?"); vals.append(_rule_val(k, payload.get(k)))
@@ -441,6 +443,8 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
              _f(prices.get("selling_price")) or None, gst_store,
              _f(stock_in) if stock_in not in (None, "") else 0, now, now))
         new_id = int(c.lastrowid)
+        if stock_in not in (None, "") and _f(stock_in):
+            _hand_stock_line(conn, ws, new_id, _f(stock_in), payload.get("vendor_id"), "Opening stock (Article Master)", user)
         for k in ("vendor_id", "price_rule", "price_rule_pct"):
             if payload.get(k) not in (None, ""):
                 conn.execute(f"UPDATE hop_products SET {k}=? WHERE id=?", (_rule_val(k, payload.get(k)), new_id))
@@ -453,6 +457,23 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
     conn.commit()
     r = conn.execute(f"SELECT {_ART_COLS} FROM hop_products WHERE workspace_id=? AND id=?", (ws, new_id)).fetchone()
     return _art(dict(r))
+
+
+def _hand_stock_line(conn: sqlite3.Connection, ws: str, pid: int, delta: float, vendor_id: Any, reason: str, user: str) -> None:
+    """Stock typed in Article Master also leaves a stock journal line (with the article's company), so every
+    change of stock can be traced (owner 21-11: every inward must say where it came from)."""
+    if abs(delta) < 1e-9:
+        return
+    from app import hop_dist_receive as R
+
+    R.ensure_cols(conn)
+    try:
+        vid = int(vendor_id) if vendor_id not in (None, "") else None
+    except (TypeError, ValueError):
+        vid = None
+    conn.execute("INSERT INTO hop_stock_journals (workspace_id, product_id, entry_date, qty_delta, reason, reference, "
+                 "created_at, vendor_id) VALUES (?,?,?,?,?,?,?,?)",
+                 (ws, int(pid), _now()[:10], delta, reason + (f" · {user}" if user else ""), "manual:article", _now(), vid))
 
 
 def _rule_val(k: str, v: Any) -> Any:

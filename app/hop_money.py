@@ -255,9 +255,14 @@ def _match_product(conn, ws, line: dict[str, Any]) -> int | None:
     return None
 
 
-def _post_stock(conn, ws, txn: dict[str, Any]) -> None:
+def _post_stock(conn, ws, txn: dict[str, Any], new: bool = False) -> None:
     sign = STOCK_SIGN.get(int(txn.get("txn_type") or 0))
     if not sign:
+        return
+    # Distributor: a company's invoice (CI) is "in transit" — stock comes in on Goods received (owner 21-11).
+    from app import hop_dist_receive
+
+    if hop_dist_receive.waits_for_goods(conn, ws, txn, new):
         return
     lines = conn.execute("SELECT * FROM hop_txn_lines WHERE workspace_id=? AND source_txn_id=?",
                          (ws, int(txn["source_txn_id"]))).fetchall()
@@ -288,13 +293,16 @@ def _post_stock(conn, ws, txn: dict[str, Any]) -> None:
                                          "(Settings: don't allow the sale).")
             except sqlite3.OperationalError:
                 pass
+        # every stock line says which document and (for a supplier) which company it came from
+        hop_dist_receive.ensure_cols(conn)
         conn.execute(
             """INSERT INTO hop_stock_journals (workspace_id, product_id, entry_date, qty_delta, reason, reference, created_at,
-                                               godown_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                               godown_id, doc_txn_id, vendor_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (ws, pid, (txn.get("txn_date") or _now())[:10], delta,
              f"{LABELS.get(int(txn['txn_type']), 'Document')} {txn.get('txn_number') or ''}".strip(),
-             f"doc:{int(txn['id'])}", _now(), txn.get("godown_id") or None))
+             f"doc:{int(txn['id'])}", _now(), txn.get("godown_id") or None, int(txn["id"]),
+             int(txn["party_id"]) if txn.get("party_type") == "vendor" and txn.get("party_id") else None))
         conn.execute("UPDATE hop_products SET stock_qty=COALESCE(stock_qty,0)+?, updated_at=? WHERE workspace_id=? AND id=?",
                      (delta, _now(), ws, pid))
 
@@ -481,7 +489,7 @@ def post_document(conn: sqlite3.Connection, ws: str, txn_id: int, payload: dict[
             pass
 
     # 2) Stock.
-    _post_stock(conn, ws, t)
+    _post_stock(conn, ws, t, new=not is_update)
 
     # 3) Payment-In / Out: which bills it clears.
     if ty in PAYMENT_FOR:

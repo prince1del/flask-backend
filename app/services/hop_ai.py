@@ -486,6 +486,19 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                         "in_transit": [{k: r.get(k) for k in ("party_bill_no", "lr_no", "transporter", "eta", "late")}
                                        for r in d["shipments"]["in_transit"][:10]], "money": d["money"]}
             return {"companies": all_}
+        if what == "dist_goods_received":
+            from app import hop_dist_receive as R
+
+            R.ensure_schema(conn)
+            t = R.to_receive(conn, ws)
+            bills = t["bills"]
+            if party_name:
+                bills = [b for b in bills if _similar(party_name, str(b.get("company") or "")) >= 0.5] or bills
+            return {"in_transit": t["in_transit"], "part_received": t["part_received"], "pending_qty": t["pending_qty"],
+                    "bills": [{k: b.get(k) for k in ("company", "ci_no", "ci_date", "status", "shipment")} |
+                              {"to_come": [{k: x[k] for k in ("item", "billed", "received", "pending")} for x in b["lines"] if x["pending"] > 0][:10]}
+                              for b in bills[:15]],
+                    "stock_by_company": R.stock_by_company(conn, ws)}
         if what == "dist_terms_book":
             from app import hop_dist_margins as M
             from app import hop_dist_terms as T

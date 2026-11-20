@@ -183,3 +183,31 @@ def test_note_numbers_per_firm(tmp_path):
     assert hop_notes.get(conn, "ws", c["id"])["no"] == 3
     assert [n["no"] for n in hop_notes.search(conn, "ws", "#3")] == [3]
     assert [n["no"] for n in hop_notes.search(conn, "ws", "3")] == [3]
+
+
+def test_founder_double_tick_then_delete(tmp_path):
+    """Owner 21-11: a done note for Claude gets the founder's ✓✓; only then it can be deleted; raise again clears it."""
+    import sqlite3
+
+    import pytest
+    from app import hop_notes
+
+    conn = sqlite3.connect(tmp_path / "n.db")
+    conn.row_factory = sqlite3.Row
+    n = hop_notes.create(conn, "ws", {"text": "[For Claude] fix the totals"})
+    plain = hop_notes.create(conn, "ws", {"text": "call Sharma"})
+    with pytest.raises(ValueError):
+        hop_notes.update(conn, "ws", n["id"], {"checked": True})          # not done yet
+    with pytest.raises(ValueError):
+        hop_notes.update(conn, "ws", plain["id"], {"done": True, "checked": True})   # not a note for Claude
+    with pytest.raises(ValueError):
+        hop_notes.delete(conn, "ws", n["id"])                             # no ✓✓ yet
+    hop_notes.update(conn, "ws", n["id"], {"done": True, "done_by": "Claude"})
+    d = hop_notes.update(conn, "ws", n["id"], {"checked": True, "checked_by": "Founder"})
+    assert d["checked"] and d["comments"][-1]["text"].startswith("✓✓")
+    d = hop_notes.update(conn, "ws", n["id"], {"done": False, "reason": "one more fix"})
+    assert not d["checked"] and not d["done"]                             # raise again clears ✓✓
+    hop_notes.update(conn, "ws", n["id"], {"done": True, "done_by": "Claude"})
+    hop_notes.update(conn, "ws", n["id"], {"checked": True})
+    out = hop_notes.bulk_delete(conn, "ws", [n["id"], plain["id"]])
+    assert out["deleted"] == 2 and out["skipped_not_checked"] == 0
