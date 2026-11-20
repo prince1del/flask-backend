@@ -441,6 +441,19 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 
 ## 10. Pending / open
 
+**Now doing / next (written before the work — owner 20-11: "pehle claude.md pe likho kya karna hai"):**
+1. **Notes of every UI** (now): read Notes in Business UI, Distributor UI (own firm) and check Executive UI; act ONLY
+   on notes tagged `claude`; do the work, reply in the note (By: Claude), mark done; untagged notes are left alone.
+2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
+   (same rules: title + count, soft cards, one light line, no ".00", folded rarely-used parts, ⋮ for extra actions).
+3. **Salary first real use:** owner adds one staff member and pays once → check slip, Cash & Bank, Expenses, dues tab.
+4. **Article Master with real sheets:** owner reads the 3 AW26 sheets in Distributor → Article Master and saves;
+   clears old "Sheet Sets" items in the Business Catalogue (⋮ → Select to delete).
+5. **Ideas waiting for the owner's yes:** ✨ AI rate watch (PF / ESI / tax change alert, never auto-applied),
+   Retailer UI first version, web parity (Distributor UI, Salary, Article Master columns, Forecast by retailer).
+
+
+
 **Built, not fully checked, or waiting on the owner (19-11):**
 - **Partners and team access:** the plan is in `docs/PARTNERS_AND_ROLES_PLAN.md` and in its note. Waiting on 3 answers:
   1. Is a partner equal to the owner?
