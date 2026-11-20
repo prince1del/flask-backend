@@ -423,8 +423,10 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 - **Notes inbox:** 4 notes from 19-11 say "Done by User". The phone driver lives in the session scratchpad
   (`nx.py`, `typein.py`, `note_reply.py`, `groups.json`, `keys.txt` — copy them from the newest older scratchpad;
   `NXPIN` env = the NEXORA app-lock PIN, kept in Claude's private memory, never in this repo).
-- **20-11 notes done:** sign-up Send code only for a complete email; Distributor UI on its own firm (Article Master
-  showed the Business catalogue — "Comforter", "QA Split AC" — because both UIs read the same firm).
+- **20-11 notes:** sign-up Send code only for a complete email — done + marked done. Distributor UI on its own firm
+  (Article Master showed the Business catalogue — "Comforter", "QA Split AC" — because both UIs read the same firm):
+  code pushed + phone installed; **the live server still needs `git pull` + restart**, then check on the phone and mark
+  the two notes ("article master…", "distributor ui main business ka data…") done.
 - **Phone connection:** the Wi-Fi debug address changes. Check `adb devices`; the mDNS name
   `adb-RZCY627Z4XD-…_adb-tls-connect._tcp` works.
 
