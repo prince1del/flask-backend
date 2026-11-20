@@ -64,21 +64,17 @@ GSTIN auto fetch are deployed but the phone has the older build); then check on 
 Goods received, notes ✓✓ / Raise again / Open ▸ link / #numbers, Brand desk, GST by category, "kunwar home" only in
 Distributor. Notes done 21-11: D1, D2, D4, D5, D7. Detail of all of it: `docs/NEXORA_FEATURES.md` §10.
 
-**Batch now (owner 21-11: "bina phone ke … pehle yeh sab banao"), in this order:**
-1. (D9) Warehouse item card: tap an item → details, godown stock, last stock entries, + Add / − Reduce stock (asks
-   the company), Edit item, Order this; server `/dist/items/<id>`.
-2. Company Edit details (name, GSTIN, address, state, contact) from Brand desk / Terms book.
-3. Manual stock in the Distributor UI asks the company (or "Opening stock") → journal line with `vendor_id`.
-4. CD + incentive per company / order: expected CD % and incentive, company credit note matched to it, received vs
-   still due; counted in margin.
-5. Per company: ordered → CI → received → pending (qty + ₹) and margin by company / category (report + AI + Ask Nexora).
-6. ✨ AI reads a company price sheet → per article MRP / PTR / retailer % / mark-up → Terms book suggestion (user saves).
-7. (B3) Cash & Bank "Add new account" not visible — find + fix.
-Then: tests, APK build, commit + push, ask the owner before deploy. Reply #26 (multi-brand) after the phone check.
+**Built 21-11 (night), pushed, NOT deployed (ask the owner), phone APK built but NOT installed:**
+(D9) Warehouse item card + hand stock that asks the company; company Edit details (GSTIN auto fetch); Company report
+(menu Company → Company report: ordered → CI → received → to come, margin by category, CD earned / lost / pay soon,
+incentives + company credit note link); Terms book "✨ Margins from the company sheet"; (B3) Cash & Bank "+ Add
+account" in plain sight. Server: `app/hop_dist_company.py`, `/dist/items/*`, `/dist/companies/<id>/details|report|incentives`,
+`/dist/terms-book/<id>/from-sheet`; AI `company-report`, Ask Nexora `dist_company_report`, `dist_item_card`.
+Next after deploy + install: check all on the phone, reply D9 / B3 / #26 notes.
 
 **Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
 reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with
-the theme; (B3) in the batch above; (B4) payroll — reply with a plan; (B5) partners / roles — waits for the owner's 3
+the theme; (B3) built, reply after the phone check; (B4) payroll — reply with a plan; (B5) partners / roles — waits for the owner's 3
 answers (plan in `docs/PARTNERS_AND_ROLES_PLAN.md`). Untagged, leave alone: "yaha pe add new ka option bhi do…",
 "QA test note rates bhejne hai".
 

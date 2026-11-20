@@ -317,3 +317,82 @@ def need_company(conn: sqlite3.Connection, ws: str, p: dict) -> str | None:
     if len(comps) == 1:
         return None   # the only company is taken
     return "Which company is this article from? Pick the company, then save again."
+
+
+# ══ ✨ Terms from the company's sheet ═════════════════════════════════════════════════════════════════════
+# A company booking sheet read in Article Master keeps its % columns as article details ("Retailer Margin 28%",
+# "AWD Mark up on Exmill 15%", "Perceived 40%", "Retail Mark down 30%", "AWD MD 18%", "AWD MU 17%", "Retailer MD 33%").
+# Here they become each article's own terms; the GST step is found by matching the saved MRP / PTR / DP.
+_RETAIL_KEYS = ("retailer margin", "retail margin", "retail mark down", "retail markdown", "retailer md", "retail md",
+                "retailer mark down", "rmd")
+_AWD_KEYS = ("awd mark up", "awd markup", "awd mu", "awd md", "mark up on exmill", "markup on exmill", "distributor margin",
+             "awd margin")
+_PERCEIVED_KEYS = ("perceived", "consumer discount", "consumer offer")
+
+
+def _pct_in(details: dict, keys: tuple[str, ...]) -> float | None:
+    import re
+
+    for k, v in (details or {}).items():
+        h = re.sub(r"[^a-z ]", " ", str(k).lower())
+        h = re.sub(r"\s+", " ", h).strip()
+        if any(w in h for w in keys):
+            m = re.search(r"-?\d+(\.\d+)?", str(v))
+            if m:
+                x = float(m.group(0))
+                return round(x * 100, 2) if 0 < x < 1 else x
+    return None
+
+
+def suggest_from_sheet(conn: sqlite3.Connection, ws: str, vendor_id: int) -> dict[str, Any]:
+    """✨ Every article of the company whose sheet details carry its margins → the terms they give, with a check
+    against the saved prices. Nothing is saved here."""
+    import json
+
+    ensure_schema(conn)
+    c = _company(conn, ws, vendor_id)
+    ids = {int(a["id"]) for a in _company_articles(conn, ws, vendor_id)}
+    rows = []
+    for r in conn.execute("SELECT id, name, category, mrp, purchase_price, selling_price, gst_pct, custom_fields, mg_from, season "
+                          "FROM hop_products WHERE workspace_id=?", (ws,)):
+        if int(r["id"]) not in ids:
+            continue
+        try:
+            det = json.loads(r["custom_fields"] or "{}")
+        except Exception:
+            det = {}
+        retail = _pct_in(det, _RETAIL_KEYS)
+        if retail is None:
+            continue
+        awd, perceived = _pct_in(det, _AWD_KEYS), _pct_in(det, _PERCEIVED_KEYS)
+        mrp, ptr_saved, dp = _f(r["mrp"]), _f(r["selling_price"]), _f(r["purchase_price"])
+        best, best_err = None, None
+        for g in GST_OUT:   # the GST step that matches the saved prices best
+            p = chain(mrp, r["gst_pct"], {"perceived_pct": perceived, "retail_pct": retail, "gst_out": g, "awd_pct": awd})
+            if not p:
+                continue
+            err = (abs(p["ptr"] - ptr_saved) if ptr_saved else 0) + (abs(p.get("ex_mill", 0) - dp) if dp and "ex_mill" in p else 0)
+            if best_err is None or err < best_err:
+                best, best_err = g, err
+        if best is None:
+            continue
+        terms = {"perceived_pct": perceived, "retail_pct": retail, "gst_out": best, "awd_pct": awd, "season": r["season"]}
+        p = chain(mrp, r["gst_pct"], terms)
+        rows.append({"id": int(r["id"]), "name": r["name"], "category": r["category"], "terms": terms, "prices": p,
+                     "matches_saved": (best_err or 0) < 1.0 if (ptr_saved or dp) else None,
+                     "has_own": _s(r["mg_from"]) == "own"})
+    return {"company": c["company"], "vendor_id": c["id"], "rows": rows,
+            "note": None if rows else "No margin columns found in this company's article details — read its booking "
+                                      "sheet in Article Master first (the % columns are kept as details)."}
+
+
+def apply_from_sheet(conn: sqlite3.Connection, ws: str, vendor_id: int, ids: list[int]) -> dict[str, Any]:
+    """Save the sheet's terms as the own terms of the ticked articles."""
+    sug = {r["id"]: r for r in suggest_from_sheet(conn, ws, vendor_id)["rows"]}
+    n = 0
+    for i in ids or []:
+        r = sug.get(int(i))
+        if r:
+            save_article(conn, ws, int(i), {k: v for k, v in r["terms"].items()})
+            n += 1
+    return {"saved": n, **book(conn, ws, vendor_id)}

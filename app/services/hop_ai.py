@@ -486,6 +486,33 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                         "in_transit": [{k: r.get(k) for k in ("party_bill_no", "lr_no", "transporter", "eta", "late")}
                                        for r in d["shipments"]["in_transit"][:10]], "money": d["money"]}
             return {"companies": all_}
+        if what == "dist_company_report":
+            from app import hop_dist_company as CO
+            from app import hop_dist_terms as T
+
+            CO.ensure_schema(conn)
+            comps = T._companies(conn, ws)
+            pick = [c for c in comps if party_name and _similar(party_name, c["company"] or "") >= 0.5]
+            if len(pick) == 1 or len(comps) == 1:
+                r = CO.company_report(conn, ws, int((pick or comps)[0]["id"]))
+                return {k: r[k] for k in ("company", "from", "to", "flow", "margin", "by_category")} | \
+                    {"cd_pay_soon": r["cd_pay_soon"][:10], "incentives": CO.incentives(conn, ws, int((pick or comps)[0]["id"]))["rows"][:15]}
+            return {"companies": CO.summary_text(conn, ws)}
+        if what == "dist_item_card":
+            from app import hop_dist_company as CO
+
+            CO.ensure_schema(conn)
+            best = None
+            for r in conn.execute("SELECT id, name, code FROM hop_products WHERE workspace_id=? AND (deleted_at IS NULL OR trim(deleted_at)='')", (ws,)):
+                sc = max(_similar(party_name or "", str(r["name"] or "")), 1.0 if party_name and party_name.lower() == str(r["code"] or "").lower() else 0)
+                if sc >= 0.5 and (best is None or sc > best[0]):
+                    best = (sc, int(r["id"]))
+            if not best:
+                return {"note": "Say the article name or code"}
+            card = CO.item_card(conn, ws, best[1])
+            card.pop("companies", None)
+            card["stock_lines"] = card["stock_lines"][:10]
+            return card
         if what == "dist_goods_received":
             from app import hop_dist_receive as R
 

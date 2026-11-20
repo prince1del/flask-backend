@@ -110,3 +110,20 @@ def test_add_company_and_article_needs_company(tmp_path):
         assert M.need_company(conn, WS, {"name": "Sheet", "vendor_id": g["id"]}) is None
         r = conn.execute("SELECT gst_no, state, is_principal FROM hop_vendors WHERE id=?", (g["id"],)).fetchone()
         assert (r[0], r[1], r[2]) == ("27ABCDE1234F1Z5", "Maharashtra", 1)
+
+
+def test_terms_from_sheet_details(firm):
+    """A booking sheet's % columns (kept as article details) become the article's own terms; GST step is matched."""
+    path, ids = firm
+    with connect(path) as conn:
+        # PTR = 1050 / 1.05 × 0.70 = 700 ; ex-mill = 700 / 1.25 = 560 → GST before the retailer margin
+        X.save_article(conn, WS, {"id": ids["s1"], "mrp": 1050, "selling_price": 700, "purchase_price": 560,
+                                  "details": {"Retailer Margin": "30%", "AWD Mark up on Exmill": "25%"}})
+        sug = M.suggest_from_sheet(conn, WS, ids["a"])
+        r = next(x for x in sug["rows"] if x["id"] == ids["s1"])
+        assert r["terms"]["retail_pct"] == 30 and r["terms"]["awd_pct"] == 25 and r["terms"]["gst_out"] == "retail"
+        assert r["matches_saved"] is True
+        out = M.apply_from_sheet(conn, WS, ids["a"], [ids["s1"]])
+        assert out["saved"] == 1
+        row = next(x for x in out["articles"] if x["id"] == ids["s1"])
+        assert row["from"] == "own" and row["prices"]["ex_mill"] == 560

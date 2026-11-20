@@ -4559,6 +4559,68 @@ def dist_goods_receipt_undo(rid: int):
     return _grn(lambda R, c: R.undo_receipt(c, _ws(), rid))
 
 
+def _co(fn):
+    from app import hop_dist_company as CO
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            CO.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(CO, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/dist/items/<int:pid>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_item_card(pid: int):
+    """One article: company, prices, terms, stock per godown, still to come, sold (90 days), last stock lines."""
+    return _co(lambda CO, c: CO.item_card(c, _ws(), pid))
+
+
+@hop_bp.route("/dist/items/<int:pid>/stock", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_item_hand_stock(pid: int):
+    """{qty (+/−), vendor_id | opening: true, reason, entry_date, godown_id} — stock by hand, with its company."""
+    return _co(lambda CO, c: CO.hand_stock(c, _ws(), pid, _payload() or {}, user=_user_label()))
+
+
+@hop_bp.route("/dist/companies/<int:vid>/details", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_details(vid: int):
+    """GET / POST {company, gst_no, address, state, city, contact_person, mobile, email} — a company's own details."""
+    if request.method == "GET":
+        return _co(lambda CO, c: CO.company_details(c, _ws(), vid))
+    return _co(lambda CO, c: CO.edit_company(c, _ws(), vid, _payload() or {}))
+
+
+@hop_bp.route("/dist/companies/<int:vid>/report", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_report(vid: int):
+    """?from=&to= — ordered → invoiced → received → to come; sales, margin, CD, incentives by category."""
+    a = request.args
+    return _co(lambda CO, c: {**CO.company_report(c, _ws(), vid, a.get("from", ""), a.get("to", "")),
+                              "cd": CO.cash_discount(c, _ws(), vid, a.get("from", ""), a.get("to", "")),
+                              "incentives": CO.incentives(c, _ws(), vid)})
+
+
+@hop_bp.route("/dist/companies/<int:vid>/incentives", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_incentives(vid: int):
+    """GET → incentives + credit notes not linked. POST {id?, title, basis, period, pct, base_amount, amount, cn_txn_id,
+    note} or {id, delete: true}."""
+    if request.method == "GET":
+        return _co(lambda CO, c: CO.incentives(c, _ws(), vid))
+    return _co(lambda CO, c: CO.save_incentive(c, _ws(), vid, _payload() or {}))
+
+
 @hop_bp.route("/dist/companies/add", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -4586,6 +4648,17 @@ def dist_terms_default(vid: int):
         return _margins(lambda M, c: {"following": M.following(c, _ws(), vid, cat)})
     p = _payload() or {}
     return _margins(lambda M, c: M.save_default(c, _ws(), vid, p.get("category", ""), p))
+
+
+@hop_bp.route("/dist/terms-book/<int:vid>/from-sheet", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_terms_from_sheet(vid: int):
+    """✨ GET → terms each article's sheet details give (with a check against saved prices). POST {ids} saves them."""
+    if request.method == "GET":
+        return _margins(lambda M, c: M.suggest_from_sheet(c, _ws(), vid))
+    ids = (_payload() or {}).get("ids") or []
+    return _margins(lambda M, c: M.apply_from_sheet(c, _ws(), vid, ids))
 
 
 @hop_bp.route("/dist/terms-book/article/<int:pid>", methods=["POST"])
@@ -5048,6 +5121,9 @@ def dist_insights(key: str):
               "company-terms": "Companies (brands) I distribute for: terms, credit, cash discount and price rules — "
                                "point out a company whose rule gives a thin margin, articles not at the rule price "
                                "and articles without a company.",
+              "company-report": "One company I distribute for: ordered → invoiced → received → still to come, sales and "
+                                "margin by category, cash discount earned / lost / still open, incentives received and due "
+                                "— say which invoice to pay to keep the CD, which incentive to chase, and the thinnest category.",
               "goods-received": "Company invoices (CI) waiting for the goods: in transit and part received, per article, "
                                 "and stock per company — say which goods are late or short and what to chase.",
               "terms-book": "Terms book of one company I distribute for: margin chain per category and article "
@@ -5075,6 +5151,8 @@ def dist_insights(key: str):
                     "price-changes": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).price_changes(conn, _ws(), a.get("days", type=int) or 30),
                     "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180),
                     "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws()),
+                    "company-report": lambda: __import__("app.hop_dist_company", fromlist=["x"]).company_report(
+                        conn, _ws(), a.get("vendor_id", type=int) or 0),
                     "goods-received": lambda: __import__("app.hop_dist_receive", fromlist=["x"]).to_receive(
                         conn, _ws(), a.get("vendor_id", type=int)),
                     "terms-book": lambda: __import__("app.hop_dist_margins", fromlist=["x"]).book(

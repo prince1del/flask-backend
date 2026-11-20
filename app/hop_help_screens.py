@@ -97,6 +97,7 @@ SHOWS: dict[str, list[str]] = {
     ],
     "banking": [
         "Cash in hand — cash balance now.",
+        "+ Add account — add a bank account (name, number, IFSC, opening balance); New bank entry — money in / out / transfer.",
         "Bank accounts — each account with its balance; tap one to reconcile it with the statement.",
         "Cheques — received / issued cheques still open; deposit or mark withdrawn.",
         "Bank entries — deposits, withdrawals and transfers.",
@@ -249,7 +250,8 @@ SHOWS["dist_retailer_goods"] = [
     "Dates — this month, last month, this financial year, or your own.",
     "Each retailer — pieces, amount, bills, last date; tap for item-wise list.",
 ]
-SHOWS["dist_warehouse"] = ["Totals — stock value and out-of-stock count.", "Item list — qty and value; search; What to order / Godowns / Stock entries."]
+SHOWS["dist_warehouse"] = [
+    "Tap an item — its card: company, prices, stock per godown, still to come, last stock lines, + Add / − Reduce stock (asks the company), Edit item.","Totals — stock value and out-of-stock count.", "Item list — qty and value; search; What to order / Godowns / Stock entries."]
 SHOWS["dist_forecast"] = [
     "Days — look at sales of the last 30 / 90 / 180 days; keep stock for 15 / 30 / 60 days.",
     "Totals — Order now, Order soon, Suggested value.",
@@ -353,6 +355,15 @@ SHOWS["dist_category_gst"] = [
     "GST slabs — 0 / 0.25 / 3 / 5 / 12 / 18 / 28 / 40 %; tap to set or clear the default.",
     "✨ Suggested — the rate most articles of the category carry, Use to set it.",
     "Fill — puts the default on the articles without GST only, after you confirm.",
+]
+SHOWS["dist_company_report"] = [
+    "Company chips — pick the company; Edit details changes its name, GSTIN, address, contact.",
+    "Flow — ordered, invoiced (CI), received, still to come, not invoiced yet.",
+    "Margin — sales, cost, gross margin, CD earned / lost, incentives received → net margin.",
+    "By category — sales, cost and margin % of each category of this company.",
+    "Cash discount — each invoice: CD, pay-by date, earned / lost / open; Pay soon first.",
+    "Incentives — what was promised, received, still due; link the company's credit note.",
+    "✨ AI — what to pay to keep the CD, what to chase, thinnest category.",
 ]
 SHOWS["dist_goods_received"] = [
     "Stock by company — qty and value at DP of each company's articles.",
