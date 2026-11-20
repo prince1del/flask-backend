@@ -4327,14 +4327,14 @@ def salary_advance_delete(aid: int):
     return _salary(lambda S, c: S.delete_advance(c, _ws(), aid) or {"deleted": aid})
 
 
-@hop_bp.route("/salary/settings", methods=["GET", "PUT"])
+@hop_bp.route("/salary/settings", methods=["GET", "PUT", "PATCH"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def salary_settings():
     """PF / ESI registered, professional tax a month, PF on full basic, TDS on. Government rates come from the server."""
     from app import hop_payroll_tax as T
 
-    if request.method == "PUT":
+    if request.method in ("PUT", "PATCH"):
         return _salary(lambda S, c: T.save_settings(c, _ws(), _payload() or {}))
     return _salary(lambda S, c: T.settings(c, _ws()))
 

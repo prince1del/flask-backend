@@ -202,7 +202,14 @@ The full Executive UI screen check was done on 19-11: every screen opens, no err
      bonus, deductions, advance recovered, net), **Pay** = an Expense "Salary" from cash / bank, **Advance** = an
      Expense "Salary advance" recovered later — so salary is in Cash & Bank, Day book, P&L, cash flow, expense
      reports, distributor profitability, Guard. Undo → Recycle bin. ✨ checks (jump vs last month, advance > a
-     month's pay, paid twice), ✨ AI insights, Ask Nexora `salary`. **Private** permission area `salary` (staff:
+     month's pay, paid twice), ✨ AI insights, Ask Nexora `salary`.
+     **PF / ESI / PT / TDS** (`app/hop_payroll_tax.py`): PF 12% + 12% (+1% EDLI/admin) on basic up to ₹15,000 (or full
+     basic), ESI 0.75% + 3.25% up to ₹21,000 gross, professional tax a month, TDS new regime (₹75,000 std deduction,
+     nil up to ₹12 lakh, slabs, 4% cess). Government rates live ONLY on the server (`DEFAULTS`, `RATES_AS_OF`) — firms
+     save just their switches (`FIRM_KEYS`), so one server change reaches everyone. Pay shows a live slip
+     (`/salary/preview`); tab "PF / ESI / TDS" lists the month's dues with due dates (PF/ESI 15th, TDS 7th) → Pay
+     saves an Expense (PF / ESI / TDS on salary / Professional tax). Paid payroll APIs exist (e.g. INDPayroll), not
+     used; next idea: ✨ monthly AI rate watch that only alerts (owner confirms). **Private** permission area `salary` (staff:
      none unless the owner allows; Ask Nexora checks it too); the expense note carries no staff name.
 8. **Settings:** Company profile, Settings (bills, GST, print), Print theme (12 colours), Theme (premium palettes),
    Recycle bin, Updates, Import old data, Wipe all data.
