@@ -455,12 +455,27 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
      page of every UI (testing phase) to write a note from there.
    - Business note: (17) full payroll like INDPayroll — reply with a plan (needs + how to test with data).
    Untagged notes are left alone; partners note still waits for the owner's 3 answers.
+   **Done by Cursor 20-11 (reviewed by Claude, fixed + committed):** (1) first prices kept apart + (2) search /
+   Changes · First prices · All filter on Price changes; (3) category GST default (only fills an EMPTY GST — fix);
+   (4) HSN, barcode, stock and "+ field" in the article form, firm-wide field list on every article (fix); (5) card
+   badge prefers MRP; (6) per-company margin / mark-up / mark-down + terms on the server only (no screen yet);
+   (8) Article Master bulk delete; (9) Call + WhatsApp on party rows / details; (10) honorifics: only LEADING
+   Shri / SH / Smt / Mr / M/s dropped — initials like "S M Traders" kept (fix); (11) party Excel import prefers
+   "Firm name"; (12) GSTIN Fetch in the bill form's quick add; (14) 40 photos per note; (15) notes bulk delete;
+   (16) quick-note "N" button on Business + Executive screens, notes tagged claude + "[UI]" (fix). Stock in the
+   article form is sent only when changed (fix). Phone build OK, NOT installed / checked on the phone yet.
+   Still open from the list: (6) company terms screen, (7) barcode scan → item / Add new, (12) GSTIN Fetch on the
+   Parties screen of every UI, (13) bulk import with no limit, (17) payroll plan reply.
 2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
    (same rules: title + count, soft cards, one light line, no ".00", folded rarely-used parts, ⋮ for extra actions).
 3. **Salary first real use:** owner adds one staff member and pays once → check slip, Cash & Bank, Expenses, dues tab.
 4. **Article Master with real sheets:** owner reads the 3 AW26 sheets in Distributor → Article Master and saves;
    clears old "Sheet Sets" items in the Business Catalogue (⋮ → Select to delete).
-5. **Ideas waiting for the owner's yes:** ✨ AI rate watch (PF / ESI / tax change alert, never auto-applied),
+5. **Keep users interested (owner 20-11 idea, waiting for a go):** smart "Today" list on Home ranked by money and
+   urgency (calls to make, bills due, stock to order, retailer due to buy, PF/ESI/TDS dates); one morning brief
+   notification; weekly business health score; Home cards ordered by use; setup checklist with progress; "AI saved
+   you N hours" wins; Ask Nexora day-based chips. No fake urgency or nagging.
+6. **Ideas waiting for the owner's yes:** ✨ AI rate watch (PF / ESI / tax change alert, never auto-applied),
    Retailer UI first version, web parity (Distributor UI, Salary, Article Master columns, Forecast by retailer).
 
 
