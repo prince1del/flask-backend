@@ -4477,9 +4477,88 @@ def _user_label() -> str:
 def dist_articles():
     """GET ?q=&category=&season= — Article Master with margins + AI checks. POST {id?, code, name, mrp, purchase_price, …}."""
     if request.method == "POST":
-        return _dist2(lambda X, c: X.save_article(c, _ws(), _payload() or {}, user=_user_label()))
+        p = _payload() or {}
+
+        def save(X, c):
+            from app import hop_dist_margins as M
+
+            M.ensure_schema(c)
+            msg = M.need_company(c, _ws(), p)   # every article belongs to a company (owner 21-11)
+            if msg:
+                raise _NeedCompany(msg)
+            if not p.get("id") and not p.get("vendor_id"):
+                p["vendor_id"] = __import__("app.hop_dist_terms", fromlist=["x"])._companies(c, _ws())[0]["id"]
+            return X.save_article(c, _ws(), p, user=_user_label())
+        try:
+            return _dist2(save)
+        except _NeedCompany as exc:
+            return _json_error(str(exc), "NEED_COMPANY", 400)
     a = request.args
     return _dist2(lambda X, c: X.articles(c, _ws(), a.get("q", ""), a.get("category", ""), a.get("season", "")))
+
+
+class _NeedCompany(Exception):
+    """A new article without a company — the phone offers + Add company, then saves again."""
+
+
+def _margins(fn):
+    from app import hop_dist_margins as M
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            M.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(M, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/dist/companies/add", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_add():
+    """{company, gst_no, address, state, city, contact_person, mobile, email} — a company I buy from (Brand desk)."""
+    return _margins(lambda M, c: M.add_company(c, _ws(), _payload() or {}))
+
+
+@hop_bp.route("/dist/terms-book/<int:vid>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_terms_book(vid: int):
+    """One company's Terms book: default margin chain per category + every article's chain, PTR, ex-mill, checks."""
+    return _margins(lambda M, c: M.book(c, _ws(), vid))
+
+
+@hop_bp.route("/dist/terms-book/<int:vid>/default", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_terms_default(vid: int):
+    """GET ?category= → how many articles follow the default. POST {category, perceived_pct, retail_pct, gst_out,
+    awd_pct, season} or {category, clear: true}."""
+    if request.method == "GET":
+        cat = request.args.get("category", "")
+        return _margins(lambda M, c: {"following": M.following(c, _ws(), vid, cat)})
+    p = _payload() or {}
+    return _margins(lambda M, c: M.save_default(c, _ws(), vid, p.get("category", ""), p))
+
+
+@hop_bp.route("/dist/terms-book/article/<int:pid>", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_terms_article(pid: int):
+    """An article's own margin chain, or {follow_default: true}."""
+    return _margins(lambda M, c: M.save_article(c, _ws(), pid, _payload() or {}))
+
+
+@hop_bp.route("/dist/terms-book/<int:vid>/apply", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_terms_apply(vid: int):
+    """{ids: [...]} — save PTR and ex-mill from the terms on the ticked articles (price history keeps the old)."""
+    ids = (_payload() or {}).get("ids") or []
+    return _margins(lambda M, c: M.apply(c, _ws(), vid, ids, user=_user_label()))
 
 
 @hop_bp.route("/dist/price-changes", methods=["GET"])
@@ -4925,6 +5004,9 @@ def dist_insights(key: str):
               "company-terms": "Companies (brands) I distribute for: terms, credit, cash discount and price rules — "
                                "point out a company whose rule gives a thin margin, articles not at the rule price "
                                "and articles without a company.",
+              "terms-book": "Terms book of one company I distribute for: margin chain per category and article "
+                            "(MRP → retailer margin → my mark-up → ex-mill) — point out thin margins, articles without "
+                            "terms, and where the saved DP / price to retailer does not match the terms.",
               "retailer-forecast": "What each retailer buys most, how often, and who will need what next — "
                                    "say whom to call this week and with which items"}
     if key not in titles:
@@ -4947,6 +5029,8 @@ def dist_insights(key: str):
                     "price-changes": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).price_changes(conn, _ws(), a.get("days", type=int) or 30),
                     "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180),
                     "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws()),
+                    "terms-book": lambda: __import__("app.hop_dist_margins", fromlist=["x"]).book(
+                        conn, _ws(), a.get("vendor_id", type=int) or 0),
                     "brand-desk": lambda: __import__("app.hop_dist_brand", fromlist=["x"]).brand_desk(
                         conn, _ws(), a.get("vendor_id", type=int) or 0)}[key]()
         points = hop_ai.report_insights(titles[key], data, user_id=int(user.get("user_id") or 0))

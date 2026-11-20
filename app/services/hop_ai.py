@@ -486,6 +486,18 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                         "in_transit": [{k: r.get(k) for k in ("party_bill_no", "lr_no", "transporter", "eta", "late")}
                                        for r in d["shipments"]["in_transit"][:10]], "money": d["money"]}
             return {"companies": all_}
+        if what == "dist_terms_book":
+            from app import hop_dist_margins as M
+            from app import hop_dist_terms as T
+
+            comps = T._companies(conn, ws)
+            pick = [c for c in comps if party_name and _similar(party_name, c["company"] or "") >= 0.5]
+            if len(pick) == 1 or len(comps) == 1:
+                b = M.book(conn, ws, int((pick or comps)[0]["id"]))
+                return {"company": b["company"], "summary": b["summary"], "categories": b["categories"],
+                        "articles": [{k: r.get(k) for k in ("name", "category", "mrp", "from", "terms", "prices", "checks")}
+                                     for r in b["articles"][:30]]}
+            return {"companies": M.summary_text(conn, ws)}
         if what == "dist_company_terms":
             from app import hop_dist_terms as T
 

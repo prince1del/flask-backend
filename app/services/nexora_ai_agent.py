@@ -101,6 +101,9 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
   goods still to come per article (on SO vs received), shipments in transit / late, to pay / overdue (party_name =
   company; without it every company in short) ("Raymond ka kya maal baaki hai", "kaunsa shipment late hai",
   "Bombay Dyeing ka sab status").
+- dist_terms_book: one company's Terms book — default margin chain per category (retailer %, my mark-up %, GST step,
+  season) and each article's MRP → PTR → ex-mill and my margin, articles without terms, DP / PTR not matching
+  (party_name = company) ("Bombay Dyeing bedsheet pe mera margin kitna", "kis article ka margin set nahi hai").
 - dist_company_terms: every company (brand) I distribute for — payment terms, credit days, cash discount %, lead time,
   its price rule (mark-up on DP / margin / mark-down from MRP + %), articles, how many are not at the rule price
   (party_name = company) ("Alpha ki terms kya hai", "kis company pe kitna margin rakha hai", "credit kitne din ka hai").
@@ -709,7 +712,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "dist_orders", "dist_company_ledger", "dist_retailer_goods",
                                                         "dist_forecast", "dist_warehouse", "dist_overview",
                                                         "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff",
-                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms", "dist_brand_desk",
+                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms", "dist_brand_desk", "dist_terms_book",
                                                         "salary"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},

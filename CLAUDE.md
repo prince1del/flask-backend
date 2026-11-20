@@ -62,7 +62,7 @@ subscriber's own brand (never "House of Prizm" for another business).
 **Deployed 20-11 night (`83ba366`):** GST by category, firm move between UIs, Brand desk — not yet opened on the phone.
 Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows only there, with its bills/parties/notes.
 
-**Open notes — owner's order D1 → D8 (D1–D5 done in code, reply + mark done after phone check):**
+**Open notes — owner's order D1 → D8 (D1, D2, D4, D5, D7 replied + marked done 21-11):**
 - (D1) done in code — firm "kunwar home" showed in Business; move option + per-UI firm name on the phone.
 - (D2) done in code — type-ahead party search in the bill form (`ui/util/TypeAhead.kt`), items match every word.
 - (D3) done in code — Brand desk (per company setup, orders/SO/CI, goods still to come, shipments, money).
@@ -72,6 +72,9 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
   reopens), done / raise history lines, "For: Claude", done → pick a screen → "Open ▸" link, N + For Claude founder only
   (server 403 for others). When Claude marks a note done: pick the screen where the fix shows.
 - Notes #number per firm + "#12" search + edit form keeps the saved party (21-11, phone installed, server deployed `dc60749`).
+- **Building now (21-11):** Terms book (`app/hop_dist_margins.py`, routes `/dist/terms-book/*`, `/dist/companies/add`;
+  new Distributor article needs a company → error NEED_COMPANY; AI insight `terms-book`, Ask Nexora `dist_terms_book`)
+  — server done + tests, phone screens next, not deployed. Then Goods received.
 - Owner reopened note "multiple brand … margins" (#26 in DB). QnA 21-11: distributor (A) works for companies (B), (C)…
   each with own GSTIN; every inward must say which company / CI / SO it came from; terms per company AND category
   (B: bed linen 18% mark-up on DP, C: 15% mark-down from MRP). **Owner chose 21-11: stock comes in when goods arrive**
