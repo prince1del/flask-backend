@@ -209,7 +209,9 @@ The full Executive UI screen check was done on 19-11: every screen opens, no err
      save just their switches (`FIRM_KEYS`), so one server change reaches everyone. Pay shows a live slip
      (`/salary/preview`); tab "PF / ESI / TDS" lists the month's dues with due dates (PF/ESI 15th, TDS 7th) → Pay
      saves an Expense (PF / ESI / TDS on salary / Professional tax). Paid payroll APIs exist (e.g. INDPayroll), not
-     used; next idea: ✨ monthly AI rate watch that only alerts (owner confirms). **Private** permission area `salary` (staff:
+     used; next idea: ✨ monthly AI rate watch that only alerts (owner confirms).
+     Look (20-11): navy-gold header (month arrows, salary cost incl. your PF/ESI share, chips Paid x of y / dues /
+     advances), PF / ESI setup folded into one row, dues as icon cards with a Paid / Due / late badge, empty states. **Private** permission area `salary` (staff:
      none unless the owner allows; Ask Nexora checks it too); the expense note carries no staff name.
 8. **Settings:** Company profile, Settings (bills, GST, print), Print theme (12 colours), Theme (premium palettes),
    Recycle bin, Updates, Import old data, Wipe all data.
@@ -492,6 +494,10 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 - Guard: daily server run + push notifications.
 - Web parity.
 - NEXORA website with policy pages → Razorpay partner.
+
+**Server backup fixed (20-11):** the nightly full backup failed 17-11 → 20-11 (SMTP_FROM in /etc/nexora.env
+not quoted; the backup script `source`s that file). Quoted, fresh backup taken + checked. Keep every env value with
+spaces or `< >` in double quotes.
 
 **Waiting on the owner:**
 - GSP account (e-invoice / e-way / GSTIN API);
