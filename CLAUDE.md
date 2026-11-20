@@ -211,7 +211,8 @@ The full Executive UI screen check was done on 19-11: every screen opens, no err
      saves an Expense (PF / ESI / TDS on salary / Professional tax). Paid payroll APIs exist (e.g. INDPayroll), not
      used; next idea: ✨ monthly AI rate watch that only alerts (owner confirms).
      Look (20-11): navy-gold header (month arrows, salary cost incl. your PF/ESI share, chips Paid x of y / dues /
-     advances), PF / ESI setup folded into one row, dues as icon cards with a Paid / Due / late badge, empty states. **Private** permission area `salary` (staff:
+     advances), PF / ESI setup folded into one row, dues as icon cards with a Paid / Due / late badge, empty states. Checked on
+     the phone 20-11 (Month + PF / ESI / TDS tabs, server live). Not yet tried with a real staff member / payment. **Private** permission area `salary` (staff:
      none unless the owner allows; Ask Nexora checks it too); the expense note carries no staff name.
 8. **Settings:** Company profile, Settings (bills, GST, print), Print theme (12 colours), Theme (premium palettes),
    Recycle bin, Updates, Import old data, Wipe all data.
