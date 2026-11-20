@@ -445,6 +445,12 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 
 ## 10. Pending / open
 
+**Now doing (20-11 night, owner: "open note ko bana ke close karo"):** build the 5 open Distributor notes, then
+reply + mark done on the phone: (a) GSTIN Fetch working in every UI; (b) GST default per category — screen;
+(c) company terms + per-product margin / mark-up / mark-down — screen; (d) barcode scan → show item or Add new,
+manual stock; (e) bulk import with no row limit for SO, CI, credit notes, debit notes; (f) reply to the Business
+payroll note with a plan (what is needed, how to test with data).
+
 **Now doing / next (written before the work — owner 20-11: "pehle claude.md pe likho kya karna hai"):**
 1. **Notes of every UI** — read 20-11 evening (17 `claude` notes); owner picks the order before work starts:
    - Distributor → Article Master / prices: (1) Price changes counts first prices of new articles as "changes" —
