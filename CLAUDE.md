@@ -59,9 +59,9 @@ subscriber's own brand (never "House of Prizm" for another business).
 
 ## 4. Pending — do these next
 
-**Server NOT deployed yet (ask the owner first):** GST by category (`c1306e7`), firm move between UIs (`1ab0df5`),
-Brand desk (`6bc9b22`). The phone already has all of them installed. After deploy: the owner moves "kunwar home"
-in Business UI → firm list → "Move … to Distributor UI…" (it was a Distributor firm made before firms had a UI).
+**Deployed 20-11 night (`83ba366`):** GST by category, firm move between UIs, Brand desk — not yet opened on the phone.
+Owner to do: move "kunwar home" in Business UI → firm list → "Move … to Distributor UI…" (it was a Distributor firm
+made before firms had a UI).
 
 **Open notes — owner's order D1 → D8 (D1–D4 done in code, reply + mark done after deploy + phone check):**
 - (D1) done in code — firm "kunwar home" showed in Business; move option + per-UI firm name on the phone.
