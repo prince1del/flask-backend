@@ -220,7 +220,8 @@ The full Executive UI screen check was done on 19-11: every screen opens, no err
 The rest of the menu: Plan & team, Nexora Hub, Sign out.
 
 **Home:**
-- greeting card, NEXORA Guard (AI finds mistakes, ✨ explain & fix);
+- navy-gold greeting card (gold date, 20-11), NEXORA Guard (AI finds mistakes, ✨ explain & fix);
+- one heading "Today at a glance" + refresh; tiles showing 0 / ₹0 are greyed so real numbers stand out;
 - overview cards, each opening its screen: quotations pending / sent, orders won, production, dispatch due,
   outstanding, collections today, month sales vs target, gross profit %, cash available, **EBITDA** (+ breakdown);
 - Today card, monthly target.
@@ -229,7 +230,9 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 - Every bill list has search, status chips, held bills bar (⏸ Resume / Discard), and "Copy pending" on purchase lists.
 - Tap a row → the bill copy.
 
-**Bill form:**
+**Bill form:** (calm layout 20-11: party, number / date, items and Received now stay open; "Order & transport",
+"Discount, shipping & round off", "Charges, TCS / TDS, loyalty", "Place of supply", "Terms & notes" are folded rows
+that show what is filled — `FormFold` in `HopDocumentCreateScreen.kt`; total + Save & preview in one bottom bar)
 - Parties and items:
   - customer picker + quick add;
   - catalogue item picker (rate / GST / HSN / unit), unit drop-down;
@@ -276,6 +279,8 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 - **menu on a short screen** (landscape, fold outer screen; height < 560 dp): the whole drawer scrolls as one with a
   slim header (before, header + Sign out left room for ~3 items and the sections looked missing). Checked
   sideways on the phone 20-11: all sections and Sign out reachable.
+- **still to calm down:** the Sale Invoices / bill lists (own screen, still ".00" and an instruction line), the
+  bill copy screen, Executive My Day / Order Desk.
 - **lists (20-11, round 3):** `HopModuleScaffold` header = title + count, refresh icon, one ⋮ menu (`menu`
   param) — no instruction line; `HopListCard` soft card, no outline; `hopMoney` shows no ".00" on whole amounts;
   page titles sans (no serif next to sans). Catalogue: Import / Share / Select to delete in ⋮, one light line per
