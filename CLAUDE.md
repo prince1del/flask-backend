@@ -463,7 +463,8 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
    Shri / SH / Smt / Mr / M/s dropped — initials like "S M Traders" kept (fix); (11) party Excel import prefers
    "Firm name"; (12) GSTIN Fetch in the bill form's quick add; (14) 40 photos per note; (15) notes bulk delete;
    (16) quick-note "N" button on Business + Executive screens, notes tagged claude + "[UI]" (fix). Stock in the
-   article form is sent only when changed (fix). Phone build OK, NOT installed / checked on the phone yet.
+   article form is sent only when changed (fix). Server deployed + phone installed 20-11 evening; checked on the
+   phone: Price changes 40 real changes (was 559) with First prices apart + search; Notes "Select"; "N" button.
    Still open from the list: (6) company terms screen, (7) barcode scan → item / Add new, (12) GSTIN Fetch on the
    Parties screen of every UI, (13) bulk import with no limit, (17) payroll plan reply.
 2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
