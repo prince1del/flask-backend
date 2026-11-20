@@ -1758,6 +1758,32 @@ def product_photo(product_id: int):
     return jsonify({"success": True, "data": data})
 
 
+@hop_bp.route("/products/bulk-delete", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def products_bulk_delete():
+    """Many Catalogue items to the Recycle bin at once (restorable; old bills keep the item name)."""
+    ensure_hop_schema(_db_path())
+    ids = _payload().get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return _json_error("ids list is required", "VALIDATION_ERROR", 400)
+    try:
+        id_list = sorted({int(x) for x in ids})[:2000]
+    except (TypeError, ValueError):
+        return _json_error("ids must be integers", "VALIDATION_ERROR", 400)
+    from app import hop_phase3_ext
+
+    deleted, missing = 0, 0
+    with hop_db.connect(_db_path()) as conn:
+        for pid in id_list:
+            try:
+                out = hop_phase3_ext.soft_delete_product(conn, _ws(), pid)
+                deleted += 0 if out.get("already_deleted") else 1
+            except LookupError:
+                missing += 1
+    return jsonify({"success": True, "data": {"deleted": deleted, "not_found": missing}})
+
+
 @hop_bp.route("/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

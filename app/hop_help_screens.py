@@ -295,3 +295,9 @@ SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
 SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
     "Own firm — only the articles of your distribution firm show here; the Business UI's items never do.",
 ]
+
+# Delete items (owner 20-11): one from its form, many with Select to delete — both go to the Recycle bin.
+SHOWS["products"] = SHOWS["products"] + [
+    "Delete — open an item and tap Delete; it goes to the Recycle bin and can be restored.",
+    "Select to delete — tick many items (or Select all) and tap Delete N; all go to the Recycle bin.",
+]

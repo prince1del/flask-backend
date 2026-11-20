@@ -107,3 +107,20 @@ def test_contacts_only_from_own_ui(tmp_path):
     biz = [h["name"] for h in nexora_contacts.find(db, ["co"], "Ramesh", ui="business")]
     exe = [h["name"] for h in nexora_contacts.find(db, ["co"], "Ramesh", ui="executive")]
     assert biz == ["Ramesh Traders"] and exe == ["Ramesh Retail"]
+
+
+def test_catalogue_bulk_delete_goes_to_recycle_bin_in_own_ui_only(api):
+    client, h, biz, dist = api
+    ids = []
+    for n in ("Old Towel", "Old Sheet", "Keep Pillow"):
+        r = client.post("/api/v1/hop/products", headers=biz, json={"name": n, "selling_price": 10})
+        ids.append((r.get_json().get("data") or {}).get("id"))
+    d = client.post("/api/v1/hop/products", headers=dist, json={"name": "Dist Item", "selling_price": 10})
+    dist_id = (d.get_json().get("data") or {}).get("id")
+    r = client.post("/api/v1/hop/products/bulk-delete", headers=biz, json={"ids": ids[:2] + [dist_id]})
+    assert r.status_code == 200 and r.get_json()["data"]["deleted"] == 2
+    left = str(client.get("/api/v1/hop/products", headers=biz).get_json())
+    assert "Keep Pillow" in left and "Old Towel" not in left
+    # The Business UI can't touch the Distributor's item, even by id.
+    assert "Dist Item" in str(client.get("/api/v1/hop/products", headers=dist).get_json())
+    assert client.post("/api/v1/hop/products/bulk-delete", headers=biz, json={}).status_code == 400

@@ -173,7 +173,9 @@ The full Executive UI screen check was done on 19-11: every screen opens, no err
 2. **Purchase & Expense:** Purchase Bills, Payment-Out, Expenses, Other Income, Purchase Order, Purchase Return /
    Dr. Note, Purchase FA.
 3. **Items & Stock:**
-   - Catalogue: MRP, wholesale, 2nd unit, barcode, service period, product photo.
+   - Catalogue: MRP, wholesale, 2nd unit, barcode, service period, product photo. **Delete** in the item form, and
+     **Select to delete** (tick many / Select all → Delete N, `POST /hop/products/bulk-delete`) — both go to the
+     Recycle bin (phone; web bulk not yet).
    - Stock, Godowns (move stock), Manufacturing (raw-material list, make, undo), Reorder stock, Items & units.
 4. **Cash, Bank & Accounts:**
    - Cash & Bank: accounts, entries, cheques, reconciliation.
@@ -254,6 +256,10 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 - offline cache + offline bills, firm switcher, app lock, T&P badge, Info guide everywhere;
 - date format from settings;
 - drop-downs never move the form (`MenuScrollStop`, see `Nexora20/docs/SCROLL_DRIFT_NOTES.md`);
+- **breathing space (20-11):** one spacing scale `NxSpace` in `ui/theme/Theme.kt` (screen edge 20, section 24, between
+  cards 12, inside cards 18 × 16, 112 under the last item for the robot / + button); text follows the phone's
+  font-size setting only up to 1.0× (`MAX_FONT_SCALE`). Reports and Settings are grouped cards with thin lines (no
+  box per row / box in a box); Home tiles have no "Open ›". Use `NxSpace` for new screens.
 - camera asks for permission first;
 - the keyboard hides the bottom bar / robot / FAB.
 
@@ -427,8 +433,9 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
   firm (Article Master showed the Business catalogue — "Comforter", "QA Split AC" — because both UIs read the same
   firm). Server deployed 20-11; checked on the phone: Distributor shows "My distribution firm", empty Notes, 0 articles.
   `note_reply.py` fails on a long note (the By box is below the screen) — then tap By / reply / Send by hand.
-- **Owner, 20-11 — next:** every screen feels crowded ("ghich pich, bhari bhari, claustrophobic"); give screens
-  breathing space (spacing review across Business / Distributor / Executive).
+- **Owner, 20-11 — breathing space:** every screen felt crowded ("ghich pich, bhari bhari, claustrophobic"). First pass
+  done (shared parts + Reports, Settings, Home). Next: the remaining screens one by one (bill form, Distributor
+  screens, Executive My Day / Order Desk), moving loose 6–8 dp gaps to `NxSpace`.
 - **Phone connection:** the Wi-Fi debug address changes. Check `adb devices`; the mDNS name
   `adb-RZCY627Z4XD-…_adb-tls-connect._tcp` works.
 
