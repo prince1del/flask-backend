@@ -489,7 +489,7 @@ claude.md, ask me what to do first"). Waiting for the owner to pick the order:**
   - (D3) DONE in code 20-11 = Brand desk (see §7). Was: Many brands end to end, neat and simple: where to fill each brand's details and margins, link Article Master
     to its products, tally SO / PO with my orders, CI / tax invoices / bills received, payments, shipment tracking,
     received vs pending, billed vs pending (Companies & terms + Bulk import + Orders → SO → CI cover part of it).
-  - (D4) Quick note ("N") has no party tag and is not the full note form — make N open the full note.
+  - (D4) DONE 20-11 (phone `HopNoteEditDialog`): N opens the full note form (party type-ahead, remind, photos, "For Claude" tick — no party → party "claude", with a party → body starts "[For Claude]"; Claude must also read those). No N on the Notes page (B2). Was: Quick note ("N") has no party tag and is not the full note form — make N open the full note.
   - (D5) Logo = first letter of each word of the firm name ("Kunwar home" → KH); N button inside forms too.
   - (D6) GSTIN Fetch in every UI — built by Cursor, to check + reply.
   - (D7) "GST kyu nahi dikha raha" — GST by category screen built (`c1306e7`, not deployed yet), to reply.
@@ -502,6 +502,8 @@ claude.md, ask me what to do first"). Waiting for the owner to pick the order:**
   - (B5) Partners / team roles plan — still waits for the owner's 3 answers.
   - Untagged (left alone): "yaha pe add new ka option bhi do agar user ki profile kuch or huyi to" (tag not seen —
     check before working on it), "QA test note rates bhejne hai".
+
+**Next (20-11 late night, session paused for usage):** D5 (KH initials logo + N inside forms), then D6–D8 replies. Server NOT yet deployed for: GST by category, firm move (D1), Brand desk (D3) — ask the owner first. Phone has all of it installed. After deploy: owner moves "kunwar home" via Business firm list → Move … to Distributor UI.
 
 **Claude 20-11 late night:** (6) Companies & terms + (13) bulk import built, server deployed (`40c4a06`), phone
 installed, both notes replied + marked done in Distributor → Notes. Bulk import checked on the phone only as far as the
