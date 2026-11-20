@@ -299,8 +299,15 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
     Master before saving), Link CI, SO without order.
 - **Article Master:**
   - code, name, category, season, MRP, DP (buying price), price to retailer, margin %, stock, price history;
-  - **✨ Read company price list:** Excel read directly, PDF / photo by AI. A preview shows new articles and price
-    changes; big jumps start unticked.
+  - **✨ Read company price list — any company sheet** (`app/hop_article_sheet.py`, 20-11): finds the header row
+    anywhere, lists every column with samples and its role (name part / code / category / season / MRP / DP =
+    Ex-Mill / PTR / GST / HSN / unit / **detail** / skip). Every other column (TC, size, shade, ply, bale pack, MOQ,
+    margin %…) is kept on the article as a detail (`hop_products.custom_fields`, searchable). Section rows
+    ("Fleece Collection") become a Collection detail; brand / product cells copy down; order-qty columns are skipped.
+    Names are built: "Aster 100 TC DB BS 224 X 244"; clashes get the telling detail added. Roles are remembered per
+    sheet layout (`hop_dist_sheet_maps`). **✨ AI match columns** (one capped call). Row checks: PTR / DP against the
+    sheet's own MD / MU % with or without GST. PDF / photo still read by AI. Full-screen preview on the phone; big
+    jumps and ⚠ rows start unticked. Checked on 3 real AW26 sheets (Bedsheet 44, TOB 35, Towel 80 articles).
   - AI master check: no DP, no MRP, above MRP, below cost, code used twice.
   - **Price changes** (banner on the master, a badge on each card such as "DP ▲ 10% ₹150 → ₹165", a chart in the
     article sheet, and its own page):

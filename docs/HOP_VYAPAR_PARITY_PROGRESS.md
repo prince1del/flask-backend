@@ -113,6 +113,7 @@ Before a phase is called done, every row must be ✅ or have a written reason.
 | Other income | Ask Nexora `other_income`; P&L insights include it | ✅ 2026-11-16 |
 | Bank reconciliation | ✨ Statement auto-match + plain hints for lines missing in books; Ask Nexora cash_bank shows unticked totals | ✅ 2026-11-16 (rule based, no AI cost) |
 | Sharing (WhatsApp, UPI link) | Existing ✨ AI reminder text (`/ai/payment-reminder`) + owner's templates | ✅ 2026-11-16 |
+| Distributor Article Master (any company sheet) | ✨ AI column matcher (one capped call, user confirms); rule checks of PTR / DP against the sheet's own margin / mark-up % (GST-aware); duplicate / vague-name checks; Ask Nexora `dist_articles` searches details | ✅ 2026-11-20 |
 | Excel import | Smart column matching (Hinglish names too) + row checks before saving | ✅ 2026-11-16 (rule based, no AI cost) |
 | Godowns, TDS, cess, audit, backup | Ask Nexora `items` shows godown stock, `audit` answers who changed what; rule warnings (godown short, odd TDS/cess %) | ✅ 2026-11-16 |
 | Staff permissions | Plain summary of what a person can do + warnings before saving (e.g. can change bank but cannot see reports); Ask Nexora obeys permissions | ✅ 2026-11-16 |
