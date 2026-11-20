@@ -310,11 +310,19 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
     details = _details(payload.get("details")) if "details" in payload else None
     prices = {k: payload.get(k) for k in ("mrp", "purchase_price", "selling_price", "gst_pct") if k in payload}
     stock_in = payload.get("stock_qty") if "stock_qty" in payload else None
-    # Category default GST when article has none yet
+    # Category default GST — only fills an EMPTY GST (new article, or an old one that never had GST); a GST the user
+    # set is never overwritten by a later save (e.g. a price-list update that does not carry GST).
     cat_for_gst = _s(payload.get("category") or fields.get("category"))
     if "gst_pct" not in prices or prices.get("gst_pct") in (None, ""):
+        prices.pop("gst_pct", None)
         defaults = category_defaults(conn, ws)
-        if cat_for_gst and cat_for_gst in defaults:
+        if pid:
+            row = conn.execute("SELECT category, gst_pct FROM hop_products WHERE workspace_id=? AND id=?", (ws, int(pid))).fetchone()
+            cat_for_gst = cat_for_gst or (_s(row[0]) if row else "")
+            empty = row is not None and (row[1] is None or _f(row[1]) == 0)
+        else:
+            empty = True
+        if empty and cat_for_gst and cat_for_gst in defaults:
             prices["gst_pct"] = defaults[cat_for_gst]
     if pid:
         cur = conn.execute(f"SELECT {_ART_COLS} FROM hop_products WHERE workspace_id=? AND id=?", (ws, int(pid))).fetchone()

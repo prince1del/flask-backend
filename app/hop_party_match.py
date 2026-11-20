@@ -20,12 +20,13 @@ _LEGAL_SUFFIX_RE = re.compile(
     re.I,
 )
 
-# Honorifics / polite prefixes — "Shri X" must not match "Shri Y" on "SH" / "Shri" alone
-_HONORIFIC_RE = re.compile(
-    r"\b(shri|shree|sri|sree|mister|mrs?|miss|m/?s|messrs|sh)\b",
+# Honorifics / polite prefixes — "Shri X" must not match "Shri Y" on "SH" / "Shri" alone.
+# Only LEADING courtesy words are dropped (Shri, SH, Smt, Mr, M/s …); initials like "S M Traders" are kept.
+_LEADING_HONORIFIC_RE = re.compile(
+    r"^\s*(?:(?:shri|shree|sri|sree|sh|smt|mister|mr|mrs|ms|miss|messrs|m\s*/\s*s)(?=[\s.]|$)[\s.]*)+",
     re.I,
 )
-_HONORIFIC_TOKENS = frozenset({"shri", "shree", "sri", "sree", "mister", "mr", "mrs", "miss", "ms", "m", "s", "messrs", "sh"})
+_HONORIFIC_TOKENS = frozenset({"shri", "shree", "sri", "sree", "sh", "smt", "mister", "mr", "mrs", "miss", "messrs"})
 
 # Logistics / courier family → same token (SM Courier ≈ SM Logistic)
 _LOGISTICS_SYNONYMS = {
@@ -61,15 +62,17 @@ def normalize_party_name(name: str) -> str:
     s = _clean(name).lower()
     if not s:
         return ""
+    stripped = _LEADING_HONORIFIC_RE.sub("", s)
+    if stripped.strip():          # a name that is ONLY "SH" stays as it is
+        s = stripped
     s = s.replace("&", " and ")
     s = re.sub(r"[^\w\s]", " ", s)  # S.M. → S M
     s = _LEGAL_SUFFIX_RE.sub(" ", s)
-    s = _HONORIFIC_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip()
     tokens: list[str] = []
     for tok in s.split():
         tok = _LOGISTICS_SYNONYMS.get(tok, tok)
-        if tok and tok not in ("and", "the", "of") and tok not in _HONORIFIC_TOKENS:
+        if tok and tok not in ("and", "the", "of"):
             tokens.append(tok)
     return " ".join(tokens)
 

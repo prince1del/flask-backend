@@ -187,3 +187,20 @@ def test_price_changes_effect_and_margin_alert(firm):
         art = next(a for a in X.articles(conn, WS)["articles"] if a["id"] == ids["towel"])
         assert art["last_change"]["field"] == "selling_price" and art["last_change"]["pct"] == 10.0
         assert X.articles(conn, WS)["recent_changes"]["articles_changed"] == 2
+
+
+def test_category_gst_default_never_overwrites_a_set_gst(tmp_path):
+    from app import hop_dist_extra as X
+    from app.hop_db import connect
+    from app.hop_schema import HOP_WORKSPACE_ID as W, ensure_hop_schema
+
+    path = str(tmp_path / "g.sqlite3")
+    ensure_hop_schema(path)
+    with connect(path) as conn:
+        X.ensure_schema(conn)
+        X.set_category_default(conn, W, "Towel", 5)
+        a = X.save_article(conn, W, {"name": "Flora 40x60", "category": "Towel", "mrp": 150})
+        assert a["gst_pct"] == 5                                  # empty → category default
+        X.save_article(conn, W, {"id": a["id"], "gst_pct": 12})
+        b = X.save_article(conn, W, {"id": a["id"], "mrp": 160})  # price update without GST
+        assert b["gst_pct"] == 12                                 # the set GST stays
