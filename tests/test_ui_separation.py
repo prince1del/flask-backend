@@ -124,3 +124,30 @@ def test_catalogue_bulk_delete_goes_to_recycle_bin_in_own_ui_only(api):
     # The Business UI can't touch the Distributor's item, even by id.
     assert "Dist Item" in str(client.get("/api/v1/hop/products", headers=dist).get_json())
     assert client.post("/api/v1/hop/products/bulk-delete", headers=biz, json={}).status_code == 400
+
+
+def test_old_firm_moves_to_its_own_ui(tmp_path):
+    """A firm made in the Distributor UI before firms had a UI was filed under Business; the owner moves it back."""
+    import sqlite3
+
+    import pytest
+
+    from app import hop_firms
+
+    from app.hop_schema import ensure_hop_schema
+
+    ensure_hop_schema(str(tmp_path / "m.sqlite3"))
+    conn = sqlite3.connect(str(tmp_path / "m.sqlite3"))
+    conn.row_factory = sqlite3.Row
+    hop_firms.list_firms(conn, "co", "business")
+    old = hop_firms.create(conn, "co", "Kunwar Home Test", ui="business")["firm_ws"]   # the mis-filed one
+    assert old in [f["firm_ws"] for f in hop_firms.list_firms(conn, "co", "business")]
+    hop_firms.move_ui(conn, "co", old, "distributor")
+    assert old not in [f["firm_ws"] for f in hop_firms.list_firms(conn, "co", "business")]
+    assert old in [f["firm_ws"] for f in hop_firms.list_firms(conn, "co", "distributor")]
+    assert hop_firms.active_ws(conn, "co", old, "business") == "co"          # Business can no longer open it
+    assert hop_firms.active_ws(conn, "co", old, "distributor") == old
+    with pytest.raises(ValueError):
+        hop_firms.move_ui(conn, "co", "co", "distributor")                    # the main firm never moves
+    with pytest.raises(ValueError):
+        hop_firms.move_ui(conn, "co", old, "retailer")

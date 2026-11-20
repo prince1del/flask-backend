@@ -98,7 +98,7 @@ def list_firms(conn: sqlite3.Connection, base_ws: str, ui: str | None = None) ->
         conn.commit()
     main_ws(conn, base_ws, ui)
     rows = [dict(r) for r in conn.execute(
-        f"SELECT id, firm_ws, name, gstin, is_main FROM hop_firms WHERE base_ws=? AND {_ui_sql(ui)} "
+        f"SELECT id, firm_ws, name, gstin, is_main, created_at FROM hop_firms WHERE base_ws=? AND {_ui_sql(ui)} "
         "ORDER BY is_main DESC, id", (base_ws, ui))]
     for r in rows:   # the company profile is the real name once it is filled in
         r["name"] = _profile_name(conn, r["firm_ws"]) or r["name"]
@@ -157,6 +157,26 @@ def create(conn: sqlite3.Connection, base_ws: str, name: str, gstin: str = "", s
             pass
     conn.commit()
     return {"firm_ws": firm_ws, "name": name}
+
+
+def move_ui(conn: sqlite3.Connection, base_ws: str, firm_ws: str, to_ui: str) -> None:
+    """Put a firm under another UI (owner taps it in the firm list and confirms). Firms made before 20-11 had no UI
+    and were all filed under Business, so a firm the owner made in the Distributor UI showed in the Business UI.
+    The main firm of a UI never moves; nothing inside the firm is changed."""
+    ensure_schema(conn)
+    to_ui = str(to_ui or "").strip().lower()
+    if to_ui not in UIS:
+        raise ValueError("UI must be business or distributor")
+    r = conn.execute("SELECT is_main, COALESCE(ui,'business') FROM hop_firms WHERE base_ws=? AND firm_ws=?",
+                     (base_ws, firm_ws)).fetchone()
+    if not r:
+        raise ValueError("Firm not found")
+    if int(r[0] or 0) or firm_ws == base_ws:
+        raise ValueError("The main firm of a UI cannot be moved")
+    if r[1] == to_ui:
+        return
+    conn.execute("UPDATE hop_firms SET ui=? WHERE base_ws=? AND firm_ws=?", (to_ui, base_ws, firm_ws))
+    conn.commit()
 
 
 def rename(conn: sqlite3.Connection, base_ws: str, firm_ws: str, name: str) -> None:

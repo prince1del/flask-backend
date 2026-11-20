@@ -476,7 +476,7 @@ calm screens; (17) payroll plan skipped; real barcode / bulk file / PIN field re
 **Open `claude` notes — read on the phone 20-11 ~23:15 (owner: "open notes of business and distributor, note on
 claude.md, ask me what to do first"). Waiting for the owner to pick the order:**
 - Distributor UI:
-  - (D1) **Firm name leak:** "Kunwar home" is the Distributor firm's name but shows in the Business UI — owner:
+  - (D1) DONE in code 20-11 (`hop_firms.move_ui`, `/firms/move-ui`; phone `HopBusinessName` per UI, firm list → "Move … to Distributor UI…"): cause = firms made before 20-11 had no UI and were all filed under Business; "kunwar home" is such a firm in the Business firm list. The owner moves it in the app (no script). Was: **Firm name leak:** "Kunwar home" is the Distributor firm's name but shows in the Business UI — owner:
     "saare kaam chodke pehle yeh lock lagao", no login / AI / notes / anything of one UI in another.
   - (D2) Type-ahead search: party suggestions on every key stroke (bill form party picker), same for items in the
     bill and in Article Master.

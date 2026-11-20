@@ -3276,6 +3276,26 @@ def hop_firms_route():
     return jsonify({"success": True, "data": {"firms": firms, "active": _ws()}})
 
 
+@hop_bp.route("/firms/move-ui", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def hop_firms_move_ui():
+    """{firm_ws, ui} — put a firm under the other UI (owner only, the phone asks to confirm)."""
+    from app import hop_firms, hop_permissions
+
+    user = getattr(request, "user", None) or {}
+    b = _payload() or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if not hop_permissions.is_owner(conn, user):
+                return _json_error("Only the owner can move a firm", "FORBIDDEN", 403)
+            hop_firms.move_ui(conn, get_workspace_id(), str(b.get("firm_ws") or ""), str(b.get("ui") or ""))
+            firms = hop_firms.list_firms(conn, get_workspace_id())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"firms": firms, "active": _ws()}})
+
+
 @hop_bp.route("/firms/restore", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
