@@ -450,6 +450,17 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                     "retailers": [{"retailer": r["party"], "qty": r["qty"], "amount": r["amount"], "bills": r["bills"],
                                    "items": [{k: i[k] for k in ("item", "qty", "amount", "last_date")} for i in r["items"][:8]]}
                                   for r in rg["retailers"][:15]]}
+        if what == "dist_retailer_forecast":
+            rf = D.retailer_forecast(conn, ws)
+            rets = rf["retailers"]
+            if party_name:
+                rets = [r for r in rets if _similar(party_name, r["party"] or "") >= 0.5]
+            keep = ("item", "every_days", "usual_qty", "last_date", "next_date", "days_late", "status")
+            return {"note": rf["note"],
+                    "due_now": [{"retailer": r["party"], **{k: r[k] for k in keep}} for r in rf["due_now"][:20]],
+                    "due_soon": [{"retailer": r["party"], **{k: r[k] for k in keep}} for r in rf["due_soon"][:20]],
+                    "retailers": [{"retailer": r["party"], "buys_every_days": r["buys_every_days"], "amount": r["amount"],
+                                   "top_items": [{k: i[k] for k in keep} for i in r["top_items"][:6]]} for r in rets[:12]]}
         if what == "dist_forecast":
             fc = D.forecast(conn, ws)
             keep = ("item", "stock", "on_order", "per_day", "days_left", "order_qty", "order_by", "flag", "trend_pct")

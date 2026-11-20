@@ -256,6 +256,10 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 - offline cache + offline bills, firm switcher, app lock, T&P badge, Info guide everywhere;
 - date format from settings;
 - drop-downs never move the form (`MenuScrollStop`, see `Nexora20/docs/SCROLL_DRIFT_NOTES.md`);
+- **less clutter (20-11, round 2):** screen titles have no explanation line (the ⓘ guide has it); top bar shows only
+  the firm name; ✨ AI insights is one slim line until tapped; Ask Nexora: plain ✕, one welcome with 4 suggestions
+  for that UI, no second greeting / rainbow chips, calm navy background without stars; full-screen pages keep clear
+  of the status bar.
 - **breathing space (20-11):** one spacing scale `NxSpace` in `ui/theme/Theme.kt` (screen edge 20, section 24, between
   cards 12, inside cards 18 × 16, 112 under the last item for the robot / + button); text follows the phone's
   font-size setting only up to 1.0× (`MAX_FONT_SCALE`). Reports and Settings are grouped cards with thin lines (no
@@ -336,6 +340,9 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
   - look back 30 / 90 / 180 days, keep stock for 15 / 30 / 60 days;
   - per item: stock, on order, sale per day, days left, trend, lead time, order qty + order-by date;
   - **✨ Make the suggested order** (you check, then a PO is saved).
+  - **By retailer** tab (20-11, `hop_distributor.retailer_forecast`, `/dist/forecast/retailers`): per retailer the
+    top items, every-N-days rhythm, usual qty, last / next expected order; "Who needs what" (due now / this week,
+    tap to call); ✨ AI insights `retailer-forecast`; Ask Nexora `dist_retailer_forecast` ("Sharma ko kya chahiye hoga").
 - **Staff performance:** per login — bills, sales, collections, orders to the company, challans, follow-ups,
   promises, edits, deletes, active days, tips.
 - **Business profitability:** sales, cost (qty × DP), gross profit, margin, expenses, net; month by month; tabs

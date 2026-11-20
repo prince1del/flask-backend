@@ -310,3 +310,10 @@ SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
     "Remembered — the company's next sheet with the same columns maps itself.",
     "Checks — PTR and DP are checked against the sheet's own margin / mark-up % (with or without GST).",
 ]
+
+# Forecast → By retailer (owner 20-11: "konsa retailer kya kya jyada leta hai").
+SHOWS["dist_forecast"] = SHOWS["dist_forecast"] + [
+    "By retailer — what each retailer buys most, every how many days, the usual qty and the next expected order.",
+    "Who needs what — retailers due now (late) or this week, with the item; tap to call.",
+    "✨ AI insights — whom to call this week and with which items.",
+]

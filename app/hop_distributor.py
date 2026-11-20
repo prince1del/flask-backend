@@ -327,6 +327,72 @@ def retailer_goods(conn: sqlite3.Connection, ws: str, frm: str = "", to: str = "
             "total_amount": _r2(sum(p["amount"] for p in out))}
 
 
+# ── retailer forecast: what each retailer buys most and when they will need it again ──────────────────────
+def retailer_forecast(conn: sqlite3.Connection, ws: str, lookback_days: int = 180, party_id: int | None = None,
+                      soon_days: int = 7) -> dict[str, Any]:
+    """Per retailer: top items, how often they buy each (every N days), usual qty per order, last bought, the next
+    order date + qty expected from their own rhythm, and whether it is due now / soon. Rules on the bills (no AI
+    cost); ✨ AI insights / Ask Nexora explain it. A challan counts as goods sent."""
+    since = (_today() - timedelta(days=max(14, int(lookback_days)))).isoformat()
+    args: list[Any] = [ws, since]
+    extra = ""
+    if party_id:
+        extra = " AND t.party_id=?"; args.append(int(party_id))
+    rows = conn.execute(f"""SELECT t.party_id, COALESCE(c.company, t.party_name, '') AS party, c.mobile AS phone,
+               date(t.txn_date) AS d, lower(trim(COALESCE(l.item_name,''))) AS k, l.item_name, l.unit,
+               SUM(ABS(COALESCE(l.qty,0))) AS qty, SUM(CASE WHEN t.txn_type={SALE} THEN COALESCE(l.line_total,0) ELSE 0 END) AS amount
+        FROM hop_party_transactions t
+        JOIN hop_txn_lines l ON l.workspace_id=t.workspace_id AND l.source_txn_id=t.source_txn_id
+        LEFT JOIN hop_customers c ON c.workspace_id=t.workspace_id AND c.id=t.party_id
+        WHERE t.workspace_id=? AND t.txn_type IN ({SALE},{CHALLAN}) AND {LIVE} AND t.party_type='customer'
+          AND date(t.txn_date) >= date(?){extra}
+        GROUP BY t.party_id, date(t.txn_date), lower(trim(COALESCE(l.item_name,'')))
+        ORDER BY date(t.txn_date)""", args).fetchall()
+    today = _today()
+    by: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        r = dict(r)
+        pid = int(r["party_id"] or 0)
+        p = by.setdefault(pid, {"party_id": pid, "party": r["party"], "phone": r.get("phone"), "amount": 0.0, "items": {}})
+        p["amount"] += _f(r["amount"])
+        it = p["items"].setdefault(r["k"] or "item", {"item": (r["item_name"] or "").strip() or "Item", "unit": r.get("unit"),
+                                                     "dates": [], "qtys": [], "amount": 0.0})
+        it["dates"].append(r["d"]); it["qtys"].append(_f(r["qty"])); it["amount"] += _f(r["amount"])
+    out, due_now, due_soon = [], [], []
+    for p in by.values():
+        items = []
+        for it in p["items"].values():
+            ds = [date.fromisoformat(d) for d in it["dates"]]
+            gaps = [(b - a).days for a, b in zip(ds, ds[1:]) if (b - a).days > 0]
+            every = round(sum(gaps) / len(gaps)) if gaps else None
+            per_order = _r2(sum(it["qtys"]) / len(it["qtys"]))
+            last = ds[-1]
+            nxt = last + timedelta(days=every) if every else None
+            late = (today - nxt).days if nxt else None
+            status = ("due_now" if late is not None and late >= 0 else
+                      "due_soon" if late is not None and late >= -soon_days else "ok" if every else "once")
+            row = {"item": it["item"], "unit": it["unit"], "orders": len(ds), "total_qty": _r2(sum(it["qtys"])),
+                   "amount": _r2(it["amount"]), "every_days": every, "usual_qty": per_order, "last_date": last.isoformat(),
+                   "next_date": nxt.isoformat() if nxt else None, "days_late": late if late and late > 0 else 0,
+                   "status": status}
+            items.append(row)
+            if status in ("due_now", "due_soon"):
+                (due_now if status == "due_now" else due_soon).append({"party_id": p["party_id"], "party": p["party"],
+                                                                      "phone": p.get("phone"), **row})
+        items.sort(key=lambda i: (-i["total_qty"], i["item"]))
+        regular = [i for i in items if i["every_days"]]
+        out.append({"party_id": p["party_id"], "party": p["party"], "phone": p.get("phone"), "amount": _r2(p["amount"]),
+                    "top_items": items[:8], "item_count": len(items),
+                    "due_now": sum(1 for i in items if i["status"] == "due_now"),
+                    "due_soon": sum(1 for i in items if i["status"] == "due_soon"),
+                    "buys_every_days": round(sum(i["every_days"] for i in regular) / len(regular)) if regular else None})
+    out.sort(key=lambda p: (-(p["due_now"] * 1000 + p["due_soon"]), -p["amount"]))
+    due_now.sort(key=lambda r: -r["days_late"])
+    due_soon.sort(key=lambda r: r["next_date"] or "")
+    return {"lookback_days": int(lookback_days), "retailers": out, "due_now": due_now[:60], "due_soon": due_soon[:60],
+            "note": "From each retailer's own buying rhythm (sale bills + challans). An item bought only once has no rhythm yet."}
+
+
 # ── forecast: what to order from the company, and when ───────────────────────────────────────────────────
 def _sold_by_item(conn, ws, since: str, until: str | None = None) -> dict[str, float]:
     args: list[Any] = [ws, since]

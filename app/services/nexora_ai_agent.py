@@ -77,6 +77,9 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
   ("Sharma ko kya maal gaya", "is mahine kisko kitna bheja").
 - dist_forecast: what to order from the company and by when, items that will run out, slow items
   ("kya order karu", "kaunsa maal khatam hone wala hai").
+- dist_retailer_forecast: what each retailer buys most, how often (every N days), usual qty, and who is due to buy
+  what now / this week (party_name = retailer) ("Sharma ko kya chahiye hoga", "is hafte kisko call karu",
+  "kaunsa retailer kya jyada leta hai").
 - dist_warehouse: stock now and its value ("godown mein kya maal hai").
 - dist_overview: the whole picture for "aaj kya dekhna hai".
 - dist_articles: Article Master — MRP, my buying price (DP), price to retailer, margin, season (party_name = article
@@ -694,7 +697,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "dist_orders", "dist_company_ledger", "dist_retailer_goods",
                                                         "dist_forecast", "dist_warehouse", "dist_overview",
                                                         "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff",
-                                                        "dist_price_changes"]},
+                                                        "dist_price_changes", "dist_retailer_forecast"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},

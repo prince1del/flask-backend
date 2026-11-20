@@ -151,3 +151,28 @@ def test_distributor_prompt_only_in_distributor_ui():
         assert "DISTRIBUTOR UI" in agent._system_prompt()
     with app.test_request_context(headers={"X-Nexora-UI": "business"}):
         assert not agent._distributor_ui() and "DISTRIBUTOR UI" not in agent._system_prompt()
+
+
+def test_retailer_forecast_rhythm_and_due(tmp_path):
+    """Made-up retailer 'Kapoor Linen' buys Towel every 10 days (5 pcs); last time 12 days ago → due now."""
+    path = str(tmp_path / "rf.sqlite3")
+    ensure_hop_schema(path)
+    with connect(path) as conn:
+        D.ensure_schema(conn)
+        r = create_customer(conn, WS, {"company": "Kapoor Linen", "mobile": "9800000001"})
+        for days in (42, 32, 22, 12):
+            create(conn, WS, {"txn_type": 1, "customer_id": r["id"], "txn_date": _d(days),
+                              "lines": [{"item_name": "Towel", "qty": 5, "rate": 100}]})
+        create(conn, WS, {"txn_type": 30, "customer_id": r["id"], "txn_date": _d(3),
+                          "lines": [{"item_name": "Bedsheet", "qty": 2, "rate": 500}]})
+        rf = D.retailer_forecast(conn, WS, lookback_days=90)
+        k = rf["retailers"][0]
+        assert k["party"] == "Kapoor Linen" and k["top_items"][0]["item"] == "Towel"
+        towel = k["top_items"][0]
+        assert towel["every_days"] == 10 and towel["usual_qty"] == 5 and towel["status"] == "due_now"
+        assert towel["days_late"] == 2 and rf["due_now"][0]["item"] == "Towel"
+        bed = next(i for i in k["top_items"] if i["item"] == "Bedsheet")
+        assert bed["status"] == "once" and bed["every_days"] is None
+        from app.services import hop_ai
+        ans = hop_ai.books_answer(conn, WS, "dist_retailer_forecast", "kapoor")
+        assert ans["due_now"][0]["retailer"] == "Kapoor Linen" and ans["retailers"][0]["top_items"][0]["item"] == "Towel"
