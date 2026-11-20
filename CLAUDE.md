@@ -278,6 +278,10 @@ that show what is filled — `FormFold` in `HopDocumentCreateScreen.kt`; total +
 
 **Phone basics:**
 - offline cache + offline bills, firm switcher, app lock, T&P badge, Info guide everywhere;
+- **app lock privacy (20-11):** the lock is its own top window (Dialog) so bill copies / Ask Nexora / full-screen
+  pages never show behind the fingerprint prompt; with app lock on, no recent-apps picture
+  (`setRecentsScreenshotEnabled(false)`, Android 13+). Screenshots still work (bills are shared). Checked on the
+  phone: window order fingerprint → lock → app. Not yet seen with a bill copy open when the lock comes;
 - date format from settings;
 - drop-downs never move the form (`MenuScrollStop`, see `Nexora20/docs/SCROLL_DRIFT_NOTES.md`);
 - **menu on a short screen** (landscape, fold outer screen; height < 560 dp): the whole drawer scrolls as one with a
