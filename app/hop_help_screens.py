@@ -301,3 +301,12 @@ SHOWS["products"] = SHOWS["products"] + [
     "Delete — open an item and tap Delete; it goes to the Recycle bin and can be restored.",
     "Select to delete — tick many items (or Select all) and tap Delete N; all go to the Recycle bin.",
 ]
+
+# Any company sheet (owner 20-11): every column kept, roles remembered per sheet layout, ✨ AI for unclear columns.
+SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
+    "Columns — after reading an Excel sheet, each column shows what it is used as (name, MRP, DP, PTR, detail, skip); change any and Read again.",
+    "Details — every other column (TC, size, shade, ply, bale pack, MOQ…) is kept on the article and can be searched.",
+    "✨ AI match columns — AI suggests what unclear columns are; you check before saving.",
+    "Remembered — the company's next sheet with the same columns maps itself.",
+    "Checks — PTR and DP are checked against the sheet's own margin / mark-up % (with or without GST).",
+]

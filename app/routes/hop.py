@@ -4301,7 +4301,14 @@ def dist_article_history(pid: int):
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def dist_price_list_read():
-    """Company price list → preview of new articles / changed prices. Excel: read directly; PDF / photo: ✨ AI."""
+    """Company price list / booking sheet → preview of new articles / changed prices. Nothing is saved here.
+
+    Excel: every column is listed with its role (remembered per sheet layout, else guessed); form fields
+    ``roles`` (JSON {column: role}), ``sheet`` and ``season`` re-read the same file with the user's choices.
+    PDF / photo: ✨ AI reads it."""
+    import json as _json
+
+    from app import hop_article_sheet as S
     from app.services import hop_ai
 
     f = request.files.get("file")
@@ -4309,26 +4316,72 @@ def dist_price_list_read():
         return _json_error("Choose the price list (Excel, PDF or photo)")
     data, mime, name = f.read(), (f.mimetype or "").lower(), (f.filename or "").lower()
     user = getattr(request, "user", None) or {}
+    form = request.form
+    try:
+        asked = _json.loads(form.get("roles") or "{}")
+    except ValueError:
+        asked = {}
 
     def run(X, c):
         if name.endswith((".xlsx", ".xlsm")) or "spreadsheet" in mime:
-            rows, by = X.read_price_list_excel(data), "excel"
-        elif mime.startswith("image/") or mime == "application/pdf" or name.endswith(".pdf"):
-            rows, by = hop_ai.read_price_list(data, "application/pdf" if name.endswith(".pdf") else mime,
-                                              user_id=int(user.get("user_id") or 0)), "ai"
-        else:
-            raise ValueError("Use an Excel file, a PDF or a photo of the price list")
-        return {**X.price_list_preview(c, _ws(), rows), "read_by": by}
+            a = S.analyze(data, form.get("sheet") or None)
+            remembered = S.saved_roles(c, _ws(), a["sig"])
+            roles = {str(col["i"]): col["role"] for col in a["columns"]}
+            roles.update(remembered or {})
+            roles.update({str(k): v for k, v in (asked or {}).items() if v in S.ROLES})
+            for col in a["columns"]:
+                col["role"] = roles.get(str(col["i"]), col["role"])
+            rows = S.build(a, roles, season=(form.get("season") or "").strip()[:20])
+            return {**X.price_list_preview(c, _ws(), rows), "read_by": "excel",
+                    "sheet": {"sheets": a["sheets"], "sheet": a["sheet"], "header_row": a["header_row"], "sig": a["sig"],
+                              "columns": a["columns"], "roles": roles, "remembered": bool(remembered)},
+                    "role_labels": S.ROLE_LABELS}
+        if mime.startswith("image/") or mime == "application/pdf" or name.endswith(".pdf"):
+            rows = hop_ai.read_price_list(data, "application/pdf" if name.endswith(".pdf") else mime,
+                                          user_id=int(user.get("user_id") or 0))
+            for r in rows:
+                r["checks"] = S.row_checks(r)
+            return {**X.price_list_preview(c, _ws(), rows), "read_by": "ai"}
+        raise ValueError("Use an Excel file, a PDF or a photo of the price list")
     return _dist2(run)
+
+
+@hop_bp.route("/dist/price-list/ai-columns", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_price_list_ai_columns():
+    """✨ {columns: [{i, header, samples}]} → suggested role per column (one capped AI call; the user confirms)."""
+    from app import hop_article_sheet as S
+
+    cols = (_payload() or {}).get("columns") or []
+    if not isinstance(cols, list) or not cols:
+        return _json_error("columns list is required")
+    user = getattr(request, "user", None) or {}
+    try:
+        roles = S.ai_roles([{"i": c.get("i"), "header": str(c.get("header") or "")[:60],
+                             "samples": [str(x)[:30] for x in (c.get("samples") or [])[:3]]} for c in cols if isinstance(c, dict)],
+                           user_id=int(user.get("user_id") or 0))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"roles": roles}})
 
 
 @hop_bp.route("/dist/price-list/apply", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
 def dist_price_list_apply():
-    """Save the rows the user checked: {rows: [...preview rows...]}."""
-    rows = (_payload() or {}).get("rows") or []
-    return _dist2(lambda X, c: X.price_list_apply(c, _ws(), rows, user=_user_label()))
+    """Save the rows the user checked: {rows: [...preview rows...], sig?, roles?, headers?} — the column roles
+    are remembered for this sheet layout, so the company's next sheet maps itself."""
+    from app import hop_article_sheet as S
+
+    p = _payload() or {}
+    rows = p.get("rows") or []
+
+    def run(X, c):
+        if p.get("sig") and isinstance(p.get("roles"), dict):
+            S.remember_roles(c, _ws(), str(p["sig"])[:32], p["roles"], [str(h) for h in (p.get("headers") or [])])
+        return X.price_list_apply(c, _ws(), rows, user=_user_label())
+    return _dist2(run)
 
 
 @hop_bp.route("/dist/check-so", methods=["POST"])

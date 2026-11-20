@@ -479,7 +479,8 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
             X.ensure_schema(conn)
             if what == "dist_articles":
                 a = X.articles(conn, ws, party_name or "")
-                keep = ("code", "name", "category", "season", "mrp", "purchase_price", "selling_price", "margin_pct", "stock_qty")
+                keep = ("code", "name", "category", "season", "mrp", "purchase_price", "selling_price", "margin_pct", "stock_qty",
+                        "details")   # details: TC, size, shade, ply, bale pack … from the company sheet
                 return {"count": a["count"], "problems": a["problems"], "articles": [{k: r.get(k) for k in keep} for r in a["articles"][:40]]}
             if what == "dist_retailer_dues":
                 d = X.retailer_dues(conn, ws)

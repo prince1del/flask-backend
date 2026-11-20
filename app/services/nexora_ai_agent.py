@@ -80,7 +80,9 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
 - dist_warehouse: stock now and its value ("godown mein kya maal hai").
 - dist_overview: the whole picture for "aaj kya dekhna hai".
 - dist_articles: Article Master — MRP, my buying price (DP), price to retailer, margin, season (party_name = article
-  name or code) ("T-100 ka DP kya hai", "kis article pe margin kam hai").
+  name, code, category or any detail like "120 TC", "White", "3-ply"; each article has details from the company
+  sheet: TC, size, shade, ply, bale pack, MOQ …) ("T-100 ka DP kya hai", "kis article pe margin kam hai",
+  "120 TC ke DB sheets dikhao", "Flora ka PTR kya hai").
 - dist_retailer_dues: which retailer owes how much, overdue age, promises, who to call today
   ("kisse paisa lena hai", "Sharma ka payment kab aayega", "aaj kisko call karu").
 - dist_profit: profit by month / item / retailer / company, items sold below cost ("is saal kitna kamaya", "kis

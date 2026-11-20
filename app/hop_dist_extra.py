@@ -107,14 +107,28 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE hop_products ADD COLUMN season TEXT")
     if "mrp" not in cols:
         conn.execute("ALTER TABLE hop_products ADD COLUMN mrp REAL")
+    if "custom_fields" not in cols:   # article details (TC, size, shade, ply, bale pack ...) as JSON
+        conn.execute("ALTER TABLE hop_products ADD COLUMN custom_fields TEXT")
 
 
 # ══ Article Master ════════════════════════════════════════════════════════════════════════════════════════
-_ART_COLS = "id, code, name, category, season, mrp, purchase_price, selling_price, gst_pct, hsn, unit, stock_qty, vendor_id, updated_at"
+_ART_COLS = ("id, code, name, category, season, mrp, purchase_price, selling_price, gst_pct, hsn, unit, stock_qty, vendor_id, "
+             "updated_at, custom_fields")
+
+
+def _details(raw: Any) -> dict[str, str]:
+    if isinstance(raw, dict):
+        return {str(k)[:40]: str(v)[:80] for k, v in raw.items() if str(v).strip()}
+    try:
+        d = json.loads(raw) if raw else {}
+        return {str(k): str(v) for k, v in d.items()} if isinstance(d, dict) else {}
+    except (TypeError, ValueError):
+        return {}
 
 
 def _art(r: dict) -> dict[str, Any]:
     dp, sell, mrp = _f(r.get("purchase_price")), _f(r.get("selling_price")), _f(r.get("mrp"))
+    r = {**r, "details": _details(r.pop("custom_fields", None))}
     return {**r, "margin": _r2(sell - dp) if sell and dp else None,
             "margin_pct": round((sell - dp) / sell * 100, 1) if sell and dp else None,
             "retailer_margin_pct": round((mrp - sell) / mrp * 100, 1) if mrp and sell else None}
@@ -125,9 +139,10 @@ def articles(conn: sqlite3.Connection, ws: str, q: str = "", category: str = "",
     sql = f"SELECT {_ART_COLS} FROM hop_products WHERE workspace_id=? AND COALESCE(status,'active')='active' " \
           "AND (deleted_at IS NULL OR trim(deleted_at)='')"
     args: list[Any] = [ws]
-    if q:
-        sql += " AND (lower(name) LIKE ? OR lower(COALESCE(code,'')) LIKE ?)"
-        args += [f"%{q.lower()}%", f"%{q.lower()}%"]
+    if q:   # name, code, category or any detail ("120 TC", "White", "3-ply")
+        sql += (" AND (lower(name) LIKE ? OR lower(COALESCE(code,'')) LIKE ? OR lower(COALESCE(category,'')) LIKE ? "
+                "OR lower(COALESCE(custom_fields,'')) LIKE ?)")
+        args += [f"%{q.lower()}%"] * 4
     if category:
         sql += " AND lower(COALESCE(category,''))=lower(?)"; args.append(category)
     if season:
@@ -172,6 +187,16 @@ def article_problems(rows: list[dict]) -> list[str]:
     dup = [c for c, v in codes.items() if len(v) > 1]
     if dup:
         out.append(f"{len(dup)} article code(s) are used twice: " + ", ".join(dup[:4]))
+    names: dict[str, int] = defaultdict(int)
+    for r in rows:
+        names[_norm(r.get("name"))] += 1
+    same = [n for n, c in names.items() if c > 1 and n]
+    if same:
+        out.append(f"{len(same)} article name(s) are used twice - tell them apart (size / shade): " + ", ".join(same[:4]))
+    vague = [r["name"] for r in rows if r.get("category") and _norm(r.get("name")) == _norm(r.get("category"))]
+    if len(vague) > 1:
+        out.append(f"{len(vague)} article(s) are named only by their product type (e.g. {vague[0]}) - "
+                   "read the company sheet again so each gets its brand, TC and size")
     return out
 
 
@@ -197,6 +222,7 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
     pid = payload.get("id")
     now = _now()
     fields = {k: payload.get(k) for k in ("code", "category", "season", "hsn", "unit") if k in payload}
+    details = _details(payload.get("details")) if "details" in payload else None
     prices = {k: payload.get(k) for k in ("mrp", "purchase_price", "selling_price", "gst_pct") if k in payload}
     if pid:
         cur = conn.execute(f"SELECT {_ART_COLS} FROM hop_products WHERE workspace_id=? AND id=?", (ws, int(pid))).fetchone()
@@ -214,6 +240,9 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
             sets.append(f"{k}=?"); vals.append(_f(v))
             if k != "gst_pct":
                 _log_price(conn, ws, int(pid), k, cur.get(k), _f(v), _s(payload.get("season") or cur.get("season")), source, user)
+        if details is not None:   # new details are added / updated; details the sheet does not have are kept
+            sets.append("custom_fields=?")
+            vals.append(json.dumps({**_details(cur.get("custom_fields")), **details}, ensure_ascii=False) or None)
         if sets:
             conn.execute(f"UPDATE hop_products SET {', '.join(sets)}, updated_at=? WHERE workspace_id=? AND id=?",
                          [*vals, now, ws, int(pid)])
@@ -232,6 +261,8 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
              _s(fields.get("hsn")) or None, _s(fields.get("unit")) or "Pcs", _f(prices.get("mrp")) or None,
              _f(prices.get("purchase_price")) or None, _f(prices.get("selling_price")) or None, _f(prices.get("gst_pct")), now, now))
         new_id = int(c.lastrowid)
+        if details:
+            conn.execute("UPDATE hop_products SET custom_fields=? WHERE id=?", (json.dumps(details, ensure_ascii=False), new_id))
         for k in ("mrp", "purchase_price", "selling_price"):
             if _f(prices.get(k)):
                 _log_price(conn, ws, new_id, k, 0, _f(prices.get(k)), _s(fields.get("season")), source, user)
@@ -260,16 +291,22 @@ def price_list_preview(conn: sqlite3.Connection, ws: str, rows: list[dict]) -> d
         if not name and not code:
             continue
         new = {k: _f(raw.get(k)) for k in ("mrp", "purchase_price", "selling_price") if _f(raw.get(k))}
+        extra = {"details": _details(raw.get("details")), "checks": list(raw.get("checks") or []),
+                 **({"gst_pct": _f(raw.get("gst_pct"))} if _f(raw.get("gst_pct")) else {}),
+                 **{k: _s(raw.get(k))[:80] for k in ("hsn", "unit") if _s(raw.get(k))}}
         m = _match_article(conn, ws, code, name)
         if not m:
             out.append({"action": "new", "code": code, "name": name, "category": _s(raw.get("category")) or None,
-                        "season": _s(raw.get("season")) or None, **new, "changes": []})
+                        "season": _s(raw.get("season")) or None, **new, **extra, "changes": []})
             continue
         changes = [{"field": k, "old": _f(m.get(k)), "new": v} for k, v in new.items() if abs(_f(m.get(k)) - v) >= 0.005]
         warn = [f"{c['field'].replace('_', ' ')} {('up' if c['new'] > c['old'] else 'down')} "
                 f"{abs(c['new'] - c['old']) / c['old'] * 100:.0f}%" for c in changes if c["old"] and abs(c["new"] - c["old"]) / c["old"] > 0.25]
-        out.append({"action": "change" if changes else "same", "id": m["id"], "code": code or m.get("code"), "name": m["name"],
-                    "season": _s(raw.get("season")) or m.get("season"), **new, "changes": changes,
+        new_details = [k for k, v in extra["details"].items() if _details(m.get("custom_fields")).get(k) != v]
+        out.append({"action": "change" if (changes or new_details) else "same", "id": m["id"], "code": code or m.get("code"),
+                    "name": m["name"], "category": _s(raw.get("category")) or m.get("category"),
+                    "season": _s(raw.get("season")) or m.get("season"), **new, **extra, "changes": changes,
+                    "new_details": new_details,
                     "check": ("Big change: " + ", ".join(warn) + " — check the price list") if warn else None})
     return {"rows": out, "new": sum(1 for r in out if r["action"] == "new"),
             "changed": sum(1 for r in out if r["action"] == "change"), "same": sum(1 for r in out if r["action"] == "same")}
@@ -280,12 +317,15 @@ def price_list_apply(conn: sqlite3.Connection, ws: str, rows: list[dict], *, use
     for r in rows[:1000]:
         if r.get("action") == "new":
             save_article(conn, ws, {k: r.get(k) for k in ("code", "name", "category", "season", "mrp", "purchase_price",
-                                                          "selling_price") if r.get(k) not in (None, "")},
+                                                          "selling_price", "gst_pct", "hsn", "unit", "details")
+                                    if r.get(k) not in (None, "", {})},
                          user=user, source="price_list")
             done["created"] += 1
         elif r.get("action") == "change" and r.get("id"):
             save_article(conn, ws, {"id": r["id"], "season": r.get("season"),
-                                    **{k: r[k] for k in ("mrp", "purchase_price", "selling_price") if r.get(k)}},
+                                    **{k: r[k] for k in ("mrp", "purchase_price", "selling_price") if r.get(k)},
+                                    **({"category": r["category"]} if r.get("category") else {}),
+                                    **({"details": r["details"]} if r.get("details") else {})},
                          user=user, source="price_list")
             done["updated"] += 1
     return done
