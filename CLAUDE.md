@@ -465,8 +465,10 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
    (16) quick-note "N" button on Business + Executive screens, notes tagged claude + "[UI]" (fix). Stock in the
    article form is sent only when changed (fix). Server deployed + phone installed 20-11 evening; checked on the
    phone: Price changes 40 real changes (was 559) with First prices apart + search; Notes "Select"; "N" button.
-   Still open from the list: (6) company terms screen, (7) barcode scan → item / Add new, (12) GSTIN Fetch on the
-   Parties screen of every UI, (13) bulk import with no limit, (17) payroll plan reply.
+   **Notes answered on the phone 20-11:** 11 replied + marked done (search/filter, first prices, MRP badge, many
+   photos, bulk delete, Call/WhatsApp ×2, SH match, Excel firm name, HSN + field, N button); 5 replied with status and
+   left OPEN: (6) company terms screen, (7) barcode scan → item / Add new, GST category default screen, (13) bulk
+   import with no limit, (12) GSTIN Fetch on Parties in every UI. (17) payroll note (Business) not answered yet.
 2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
    (same rules: title + count, soft cards, one light line, no ".00", folded rarely-used parts, ⋮ for extra actions).
 3. **Salary first real use:** owner adds one staff member and pays once → check slip, Cash & Bank, Expenses, dues tab.
