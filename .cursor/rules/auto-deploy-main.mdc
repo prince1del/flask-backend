@@ -1,15 +1,18 @@
 ---
-description: After desktop/Flask updates, commit and push to main for Render deploy
+description: After desktop/Flask updates, commit and push to main (deploy to the AWS server only when the owner says)
 alwaysApply: true
 ---
 
-# Auto-deploy to Render
+# Commit + push to main
 
 When the user asks for UI/backend fixes or features in this Flask desktop project (`E:\centralized-db-system`):
 
 1. Implement the change.
-2. **Without waiting to be asked**, commit the relevant files and `git push origin main` so Render auto-deploys.
-3. Tell the user the commit hash and to hard-refresh after ~1–2 minutes.
+2. **Without waiting to be asked**, commit the relevant files and `git push origin main`.
+3. Production is the AWS Lightsail server (Render is no longer used): pushing does NOT deploy. Deploy (git pull +
+   restart, `deploy/README.md`) only after the owner says so — and never write to the live database (see
+   `live-server-safety.mdc`).
+4. Tell the user the commit hash and add a line to `CLAUDE.md`.
 
 ## Commit / push rules
 

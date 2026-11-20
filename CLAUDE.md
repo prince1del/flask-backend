@@ -544,6 +544,14 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 - Web parity.
 - NEXORA website with policy pages → Razorpay partner.
 
+**Cursor audit + guard rails (20-11):** Cursor (co-author line on 19 commits 12–15 Nov + `8a2c4a1` today) works
+on this repo too. Live server check: code = main, settings untouched except the backup fix; but on 12-11 a script
+DELETEd Ask Nexora chat rows on the live DB and on 13-11 there were 13 interactive DB sessions (content not logged) —
+Claude or Cursor, same key then. Now: Cursor has its own SSH key (`cursor-agent`, fingerprint shows in the server
+log); `.cursor/rules/live-server-safety.mdc` (always on) + `AGENTS.md` forbid live-DB writes from scripts, require
+reading CLAUDE.md, own key, ask before deploy; old "Render auto-deploy" rules fixed (production = AWS Lightsail,
+push ≠ deploy). Tell Cursor to use `~/.ssh/nexora_server_cursor`.
+
 **Server backup fixed (20-11):** the nightly full backup failed 17-11 → 20-11 (SMTP_FROM in /etc/nexora.env
 not quoted; the backup script `source`s that file). Quoted, fresh backup taken + checked. Keep every env value with
 spaces or `< >` in double quotes.

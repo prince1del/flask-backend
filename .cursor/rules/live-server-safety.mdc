@@ -1,0 +1,37 @@
+---
+description: Live server and live data safety — never write to the production database from a script; use the Cursor SSH key; read CLAUDE.md first
+alwaysApply: true
+---
+
+# Live server & live data — owner's hard rules (2026-11-20)
+
+Read `CLAUDE.md` first in every session; it is the single source of truth for the product, the rules and what is
+pending. Update it (and §10 "Now doing / next") with every change you make.
+
+## Never write to the live database from a script
+
+The production server holds the owner's real business data. It was damaged once by a bulk script.
+
+- **Never** run `UPDATE`, `INSERT`, `DELETE`, `DROP`, `ALTER`, `REPLACE` or any Python / sqlite3 / psql code that
+  writes to the production database — not even "small" clean-ups (chat history, test rows, duplicates).
+- Reading is allowed only read-only: `sqlite3 -readonly …` or `sqlite3.connect("file:…?mode=ro", uri=True)`.
+- Data changes happen **only through the app** (the owner taps it) or through code that ships in the app
+  (migrations that run in the app's own startup, e.g. `ensure_schema`). If data needs fixing, fix the code and tell
+  the owner what to do in the app.
+- Never "wipe", "import old data", "close the financial year" or touch Start day on the owner's behalf.
+
+## Server access
+
+- Use **your own key**: `~/.ssh/nexora_server_cursor` (comment `cursor-agent`). Do not use `~/.ssh/nexora_server`
+  (that is the owner's laptop key). The server log shows which key did what.
+- Deploy = `git pull` as user `nexora` + `systemctl restart nexora` — see `deploy/README.md`. Production is AWS
+  Lightsail (NOT Render). Ask the owner before deploying or changing anything on the server.
+- `/etc/nexora.env` is also `source`d by the nightly backup script: every value with spaces or `< >` must be in
+  double quotes, or the backups fail. Never print secrets from it.
+- Never put server addresses, keys, passwords, PINs or real business data in this repo (it is public).
+
+## Working with Claude
+
+The owner also works with Claude Code on this repo. Commit with `Co-authored-by: Cursor <cursoragent@cursor.com>`,
+keep commits small and clear, and leave a line in `CLAUDE.md` saying what you changed and what is not checked yet,
+so the other assistant can review it.

@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Global data — one backend for App / Desktop / Web
 
-NEXORA is **one product**. Mobile, desktop shell, and browser UI must all read/write the **same** Flask API and the **same** workspace database (local SQLite or Render).
+NEXORA is **one product**. Mobile, desktop shell, and browser UI must all read/write the **same** Flask API and the **same** workspace database (local SQLite or the production server on AWS Lightsail).
 
 ## Hard rules
 
@@ -13,7 +13,7 @@ NEXORA is **one product**. Mobile, desktop shell, and browser UI must all read/w
 2. **Reuse existing `/api/v1/...` routes.** Before inventing `/api/v1/bd/...` or `/api/v1/mobile/...`, find the desktop path (`app/static/app.js`, `app/routes/`).
 3. **Same auth.** JWT `Authorization: Bearer` + workspace from login. Writes are scoped by `workspace_id` (and user where the API already filters).
 4. **New features = API first, then every client.** If Android gets a form, add/register the Flask route and expose the same screen (or at least the same endpoints) on desktop/web.
-5. **Deploy matters.** Render hosts the shared cloud DB. Local desktop DB ≠ Render until you sync/upload. Tell the user when data won’t appear cross-device because of environment.
+5. **Deploy matters.** The AWS Lightsail server hosts the shared live DB (Render is no longer used). Local DB ≠ live DB. Tell the user when data won’t appear cross-device because of environment.
 
 ## Shared BD surface (keep aligned)
 
@@ -27,4 +27,5 @@ NEXORA is **one product**. Mobile, desktop shell, and browser UI must all read/w
 | Market Visit DSR | `POST/GET /api/v1/dsr-market/visits`, `GET /api/v1/dsr-market/export`, `GET/POST /api/v1/dsr-market/competitor-brands` |
 | Google Drive | `POST/GET /api/v1/storage/connect|account|disconnect` |
 
-Android base URL must stay the same host as production desktop/web (`RetrofitClient.BASE_URL` → Render).
+Android base URL must stay the same host as production desktop/web (`RetrofitClient.BASE_URL` → the production server).
+Never write to the live DB from a script — see `live-server-safety.mdc`.
