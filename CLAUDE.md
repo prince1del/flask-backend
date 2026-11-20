@@ -67,7 +67,9 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
 - (D2) done in code — type-ahead party search in the bill form (`ui/util/TypeAhead.kt`), items match every word.
 - (D3) done in code — Brand desk (per company setup, orders/SO/CI, goods still to come, shipments, money).
 - (D4) done in code — N opens the full note form (party, remind, photos, "For Claude"); no N on the Notes page.
-- (D5) done 20-11, phone installed — KH letter logo (menu header, bill preview) + N inside full-page forms and party form; owner to check, then reply + mark done.
+- (D5) done + replied + marked done 20-11. Also new: 📸 Take screenshot (screen behind, draw in red) in the N note form.
+- (D9) **new note:** "[Distributor UI] isme aster ya kisi or item pe click kyu nahi ho raha" — read it (may have a photo).
+- (D10) **owner asked:** Brand desk has no "+ Add company"; company details live in Parties (supplier) + Companies & terms — add one place.
 - (D6) **to check + reply:** GSTIN Fetch in every UI (built by Cursor).
 - (D7) **to reply:** "GST kyu nahi dikha raha" → GST by category screen (Article Master → GST by category).
 - (D8) **to check + reply:** barcode scan → item or Add new, manual stock (built by Cursor).
