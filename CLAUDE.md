@@ -317,7 +317,7 @@ stay in the Business Test firm (no data moved by script). The company (brand) th
 Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/dist/*`.
 
 **Header:** "Distributor · NEXORA". **Menu:**
-1. **Company (orders, SO, CI):** Orders → SO → CI, Article Master, Purchase Order, Purchase Bills (= company
+1. **Company (orders, SO, CI):** Orders → SO → CI, Companies & terms, Article Master, Purchase Order, Purchase Bills (= company
    invoices), Company ledger & payments, Payment-Out, Purchase Return.
 2. **Retailers:** Sale Invoices, Delivery Challan, Sale Order, Payment-In, Retailer payments & follow-up, Goods per
    retailer, Receivables, Sale Return, Dispatch.
@@ -360,6 +360,16 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
       "Use ₹…" after you confirm;
     - average change per category, a timeline by day, AI insights;
     - Ask Nexora `dist_price_changes`.
+- **Companies & terms** (20-11, many brands — `app/hop_dist_terms.py`, `/dist/companies*`, phone `HopDistCompanies.kt`):
+  - one card per company: payment terms, credit days, cash discount %, lead time, other terms, articles, how many
+    are off the rule price;
+  - **price rule** for the price to retailer: mark-up on DP (DP × (1+p%)), margin (DP ÷ (1−p%)), mark-down from
+    MRP (MRP × (1−p%)), rounded to ₹1; an article can have its own rule (article form) that wins;
+  - **✨ Check prices**: articles not at the rule price, ⚠ above MRP (kept at MRP) / below DP start unticked → tick →
+    "Use the rule price" (you confirm; price history keeps the old price);
+  - articles carry their company (`hop_products.vendor_id`): article form Company chips, Article Master Select →
+    Set company, price-list preview "This sheet is from"; with one company, loose articles are its own;
+  - ✨ AI insights `company-terms`, Ask Nexora `dist_company_terms`.
 - **Company ledger & payments:**
   - billed / paid / to pay / overdue, unpaid company invoices with overdue days, ledger with running balance;
   - Pay the company;

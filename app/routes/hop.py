@@ -4485,6 +4485,62 @@ def dist_principal_terms(vid: int):
         c, _ws(), vid, _payload() or {}))
 
 
+def _terms(fn):
+    from app import hop_dist_terms as T
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            T.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(T, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/dist/companies", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_companies():
+    """Every company I distribute for: terms, price rule, articles, how many are not at the rule price."""
+    return _terms(lambda T, c: T.overview(c, _ws()))
+
+
+@hop_bp.route("/dist/companies/<int:vid>", methods=["POST", "PUT"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_save(vid: int):
+    """{payment_terms, credit_days, cash_discount_pct, lead_time_days, terms_note, price_rule, rule_pct}."""
+    return _terms(lambda T, c: T.save_terms(c, _ws(), vid, _payload() or {}))
+
+
+@hop_bp.route("/dist/companies/<int:vid>/price-check", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_price_check(vid: int):
+    """✨ Articles of this company whose price to retailer is not what the rule gives. Nothing is saved."""
+    return _terms(lambda T, c: T.price_check(c, _ws(), vid))
+
+
+@hop_bp.route("/dist/companies/<int:vid>/apply-prices", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_apply_prices(vid: int):
+    """{ids: [...]} — the user ticked these; save the rule price (price history keeps the old one)."""
+    ids = (_payload() or {}).get("ids") or []
+    return _terms(lambda T, c: T.apply_prices(c, _ws(), vid, ids, user=_user_label()))
+
+
+@hop_bp.route("/dist/articles/assign-company", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_articles_assign_company():
+    """{ids: [...], vendor_id} — put the ticked articles under one company (vendor_id null clears)."""
+    p = _payload() or {}
+    return _terms(lambda T, c: T.assign_company(c, _ws(), p.get("ids") or [], p.get("vendor_id") or None))
+
+
 @hop_bp.route("/dist/price-list/read", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -4568,7 +4624,7 @@ def dist_price_list_apply():
     def run(X, c):
         if p.get("sig") and isinstance(p.get("roles"), dict):
             S.remember_roles(c, _ws(), str(p["sig"])[:32], p["roles"], [str(h) for h in (p.get("headers") or [])])
-        return X.price_list_apply(c, _ws(), rows, user=_user_label())
+        return X.price_list_apply(c, _ws(), rows, user=_user_label(), vendor_id=p.get("vendor_id") or None)
     return _dist2(run)
 
 
@@ -4656,6 +4712,9 @@ def dist_insights(key: str):
               "home": "Distributor overview", "articles": "Article Master (prices and margins)",
               "retailer-dues": "Retailer payments and follow-ups", "staff": "Staff performance",
               "profit": "Business profitability", "price-changes": "Article price changes and their effect on margins",
+              "company-terms": "Companies (brands) I distribute for: terms, credit, cash discount and price rules — "
+                               "point out a company whose rule gives a thin margin, articles not at the rule price "
+                               "and articles without a company.",
               "retailer-forecast": "What each retailer buys most, how often, and who will need what next — "
                                    "say whom to call this week and with which items"}
     if key not in titles:
@@ -4676,7 +4735,8 @@ def dist_insights(key: str):
                     "staff": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).staff_performance(conn, _ws(), a.get("from", ""), a.get("to", "")),
                     "profit": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).profitability(conn, _ws(), a.get("from", ""), a.get("to", "")),
                     "price-changes": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).price_changes(conn, _ws(), a.get("days", type=int) or 30),
-                    "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180)}[key]()
+                    "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180),
+                    "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws())}[key]()
         points = hop_ai.report_insights(titles[key], data, user_id=int(user.get("user_id") or 0))
     except LookupError as exc:
         return _json_error(str(exc), "NOT_FOUND", 404)

@@ -473,6 +473,17 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                 items = [i for i in items if _similar(party_name, str(i.get("item") or "")) >= 0.5]
             return {"total_value": wh["total_value"], "out_of_stock": wh["out_of_stock"], "count": wh["count"],
                     "items": [{k: i[k] for k in ("item", "code", "qty", "stock_value")} for i in items[:40]]}
+        if what == "dist_company_terms":
+            from app import hop_dist_terms as T
+
+            o = T.overview(conn, ws)
+            comps = o["companies"]
+            if party_name:
+                comps = [c for c in comps if _similar(party_name, c["company"] or "") >= 0.5] or comps
+            keep = ("company", "payment_terms", "credit_days", "cash_discount_pct", "lead_time_days", "terms_note",
+                    "rule_label", "rule_pct", "articles", "own_rule_articles", "off_rule")
+            return {"companies": [{k: c.get(k) for k in keep} for c in comps], "articles_without_company": o["unassigned"],
+                    "rules": "markup = DP x (1+p%); margin = DP / (1-p%); markdown = MRP x (1-p%)"}
         if what == "dist_price_changes":
             from app import hop_dist_extra as X
 

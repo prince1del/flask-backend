@@ -111,6 +111,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE hop_products ADD COLUMN custom_fields TEXT")
     if "barcode" not in cols:
         conn.execute("ALTER TABLE hop_products ADD COLUMN barcode TEXT")
+    for col, typ in (("vendor_id", "INTEGER"), ("price_rule", "TEXT"), ("price_rule_pct", "REAL")):
+        if col not in cols:   # the company (brand) of the article + its own price rule (hop_dist_terms)
+            conn.execute(f"ALTER TABLE hop_products ADD COLUMN {col} {typ}")
     # Default GST % per category (Article Master) — used when an article has no GST yet
     conn.execute(
         """CREATE TABLE IF NOT EXISTS hop_dist_category_defaults (
@@ -136,7 +139,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 # ══ Article Master ════════════════════════════════════════════════════════════════════════════════════════
 _ART_COLS = ("id, code, name, category, season, mrp, purchase_price, selling_price, gst_pct, hsn, unit, stock_qty, "
-             "barcode, vendor_id, updated_at, custom_fields")
+             "barcode, vendor_id, price_rule, price_rule_pct, updated_at, custom_fields")
 
 
 def category_defaults(conn: sqlite3.Connection, ws: str) -> dict[str, float]:
@@ -351,6 +354,9 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
                 _log_price(conn, ws, int(pid), k, cur.get(k), _f(v), _s(payload.get("season") or cur.get("season")), source, user)
         if stock_in is not None and stock_in != "":
             sets.append("stock_qty=?"); vals.append(_f(stock_in))
+        for k in ("vendor_id", "price_rule", "price_rule_pct"):
+            if k in payload:
+                sets.append(f"{k}=?"); vals.append(_rule_val(k, payload.get(k)))
         if details is not None:   # new details are added / updated; details the sheet does not have are kept
             merged = {**_details(cur.get("custom_fields")), **details}
             sets.append("custom_fields=?")
@@ -383,6 +389,9 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
              _f(prices.get("selling_price")) or None, gst_store,
              _f(stock_in) if stock_in not in (None, "") else 0, now, now))
         new_id = int(c.lastrowid)
+        for k in ("vendor_id", "price_rule", "price_rule_pct"):
+            if payload.get(k) not in (None, ""):
+                conn.execute(f"UPDATE hop_products SET {k}=? WHERE id=?", (_rule_val(k, payload.get(k)), new_id))
         if details:
             conn.execute("UPDATE hop_products SET custom_fields=? WHERE id=?", (json.dumps(details, ensure_ascii=False), new_id))
             remember_detail_keys(conn, ws, list(details.keys()))
@@ -392,6 +401,22 @@ def save_article(conn: sqlite3.Connection, ws: str, payload: dict, *, user: str 
     conn.commit()
     r = conn.execute(f"SELECT {_ART_COLS} FROM hop_products WHERE workspace_id=? AND id=?", (ws, new_id)).fetchone()
     return _art(dict(r))
+
+
+def _rule_val(k: str, v: Any) -> Any:
+    """vendor_id / price_rule / price_rule_pct of an article, checked."""
+    if v in (None, ""):
+        return None
+    if k == "vendor_id":
+        return int(v)
+    if k == "price_rule":
+        if _s(v) not in ("markup", "margin", "markdown"):
+            raise ValueError("Price rule must be markup, margin or markdown")
+        return _s(v)
+    x = _f(v)
+    if x < 0 or x > 500:
+        raise ValueError("Rule % must be between 0 and 500")
+    return x
 
 
 def _match_article(conn, ws, code: str, name: str) -> dict | None:
@@ -436,20 +461,23 @@ def price_list_preview(conn: sqlite3.Connection, ws: str, rows: list[dict]) -> d
             "changed": sum(1 for r in out if r["action"] == "change"), "same": sum(1 for r in out if r["action"] == "same")}
 
 
-def price_list_apply(conn: sqlite3.Connection, ws: str, rows: list[dict], *, user: str = "") -> dict[str, Any]:
+def price_list_apply(conn: sqlite3.Connection, ws: str, rows: list[dict], *, user: str = "",
+                     vendor_id: int | None = None) -> dict[str, Any]:
+    """Save the ticked rows; ``vendor_id`` = the company the sheet is from (its articles go under it)."""
     done = {"created": 0, "updated": 0}
+    comp = {"vendor_id": int(vendor_id)} if vendor_id else {}
     for r in rows[:1000]:
         if r.get("action") == "new":
             save_article(conn, ws, {k: r.get(k) for k in ("code", "name", "category", "season", "mrp", "purchase_price",
                                                           "selling_price", "gst_pct", "hsn", "unit", "details")
-                                    if r.get(k) not in (None, "", {})},
+                                    if r.get(k) not in (None, "", {})} | comp,
                          user=user, source="price_list")
             done["created"] += 1
         elif r.get("action") == "change" and r.get("id"):
             save_article(conn, ws, {"id": r["id"], "season": r.get("season"),
                                     **{k: r[k] for k in ("mrp", "purchase_price", "selling_price") if r.get(k)},
                                     **({"category": r["category"]} if r.get("category") else {}),
-                                    **({"details": r["details"]} if r.get("details") else {})},
+                                    **({"details": r["details"]} if r.get("details") else {}), **comp},
                          user=user, source="price_list")
             done["updated"] += 1
     return done

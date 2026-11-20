@@ -330,3 +330,13 @@ SHOWS["salary"] = SHOWS["salary"] + [
     "Dues — PF, ESI, TDS and PT owed for the month with due dates (PF / ESI 15th, TDS 7th); Pay saves it as an expense.",
     "Rates — government rates are kept on the server (rates as of date shown), so a change reaches every firm at once.",
 ]
+SHOWS["dist_companies"] = [
+    "Company card — payment terms, credit days, cash discount, price rule, articles and how many are off the rule price.",
+    "Terms form — payment terms, credit days, cash discount %, lead time, other terms, price rule + % with an example.",
+    "✨ Check prices — each article: DP, MRP, price now → rule price, margin; ⚠ above MRP / below DP rows start unticked.",
+    "✨ AI insights — thin margins, articles not at the rule price, articles without a company.",
+]
+SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
+    "Article form — Company and Price rule (the company's, or its own) with the rule price and Use.",
+    "Select — tick articles, then Set company or Delete.",
+]
