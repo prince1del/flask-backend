@@ -72,7 +72,17 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
   reopens), done / raise history lines, "For: Claude", done → pick a screen → "Open ▸" link, N + For Claude founder only
   (server 403 for others). When Claude marks a note done: pick the screen where the fix shows.
 - Notes #number per firm + "#12" search + edit form keeps the saved party (21-11, phone installed, server deployed `dc60749`).
-- Owner reopened note "multiple brand … margins, mark up / mark down" (#26 in DB): "lets have QnA on this" — do a Q&A.
+- Owner reopened note "multiple brand … margins" (#26 in DB). QnA 21-11: distributor (A) works for companies (B), (C)…
+  each with own GSTIN; every inward must say which company / CI / SO it came from; terms per company AND category
+  (B: bed linen 18% mark-up on DP, C: 15% mark-down from MRP). **Plan (waiting for the owner's yes):**
+  1. Brand desk "+ Add company" (one form: name, GSTIN Fetch, address, state, contact) + Edit on each card.
+  2. Terms book per company: rule (mark-up DP / margin / mark-down MRP) at company → category → product; most specific wins.
+  3. Inward always linked: stock journal keeps company + CI/bill + SO; Goods received against a company's CI
+     (part qty ok); manual stock in Distributor UI asks the company (or Opening stock); Article Master stock edit
+     writes a journal row; CI lines not in Article Master → warning + link.
+  4. Per company: stock of B vs C; ordered → CI → received → pending (qty + ₹); margin earned by company / category.
+  Today (checked 21-11): stock comes in only on a purchase bill (CI = bill txn 2); journal has no company; shipment
+  "received" moves no stock; manual / Article Master stock has no company; no category level for terms.
 - (D9) **new note:** "[Distributor UI] isme aster ya kisi or item pe click kyu nahi ho raha" — read it (may have a photo).
 - (D10) **owner asked:** Brand desk has no "+ Add company"; company details live in Parties (supplier) + Companies & terms — add one place.
 - (D6) **to check + reply:** GSTIN Fetch in every UI (built by Cursor).
