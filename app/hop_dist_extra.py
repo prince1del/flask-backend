@@ -153,6 +153,8 @@ def set_category_default(conn: sqlite3.Connection, ws: str, category: str, gst_p
     cat = _s(category)[:80]
     if not cat:
         raise ValueError("Category is required")
+    if gst_pct not in (None, "") and _f(gst_pct) not in _GST_SLABS:
+        raise ValueError("GST must be one of 0, 0.25, 3, 5, 12, 18, 28 or 40 %")
     if gst_pct is None or gst_pct == "":
         conn.execute("DELETE FROM hop_dist_category_defaults WHERE workspace_id=? AND category=?", (ws, cat))
     else:
@@ -162,6 +164,56 @@ def set_category_default(conn: sqlite3.Connection, ws: str, category: str, gst_p
             (ws, cat, _f(gst_pct)))
     conn.commit()
     return {"category": cat, "gst_pct": None if gst_pct in (None, "") else _f(gst_pct)}
+
+
+_GST_SLABS = (0.0, 0.25, 3.0, 5.0, 12.0, 18.0, 28.0, 40.0)
+
+
+def category_gst_overview(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
+    """Every Article Master category: articles, how many have no GST, the GST rates used, and its default GST."""
+    ensure_schema(conn)
+    defaults = category_defaults(conn, ws)
+    cats: dict[str, dict[str, Any]] = {}
+    for name, gst, hsn in conn.execute(
+            "SELECT COALESCE(NULLIF(trim(category),''), '') AS c, gst_pct, hsn FROM hop_products WHERE workspace_id=? "
+            "AND COALESCE(status,'active')='active' AND (deleted_at IS NULL OR trim(deleted_at)='')", (ws,)):
+        c = cats.setdefault(_s(name), {"category": _s(name), "articles": 0, "no_gst": 0, "rates": {}, "no_hsn": 0})
+        c["articles"] += 1
+        if gst is None or _f(gst) == 0:
+            c["no_gst"] += 1
+        else:
+            k = f"{_f(gst):g}"
+            c["rates"][k] = c["rates"].get(k, 0) + 1
+        if not _s(hsn):
+            c["no_hsn"] += 1
+    for k, v in defaults.items():
+        cats.setdefault(k, {"category": k, "articles": 0, "no_gst": 0, "rates": {}, "no_hsn": 0})
+    out = []
+    for c in sorted(cats.values(), key=lambda x: (x["category"] == "", x["category"].lower())):
+        rates = sorted(c["rates"].items(), key=lambda kv: -kv[1])
+        out.append({**c, "rates": [{"gst_pct": float(k), "articles": n} for k, n in rates],
+                    "default_gst": defaults.get(c["category"]),
+                    # ✨ hint: the rate most articles of this category already carry
+                    "suggested_gst": float(rates[0][0]) if rates and c["category"] not in defaults else None,
+                    "mixed": len(rates) > 1})
+    return {"categories": out, "slabs": list(_GST_SLABS),
+            "no_gst": sum(c["no_gst"] for c in out), "articles": sum(c["articles"] for c in out)}
+
+
+def fill_category_gst(conn: sqlite3.Connection, ws: str, category: str) -> dict[str, Any]:
+    """Put the category's default GST on its articles that have NO GST yet (the user tapped Fill and confirmed).
+    Articles that already have a GST are never changed."""
+    ensure_schema(conn)
+    cat = _s(category)
+    d = category_defaults(conn, ws).get(cat)
+    if d is None:
+        raise ValueError("Set the default GST for this category first")
+    n = conn.execute(
+        "UPDATE hop_products SET gst_pct=?, updated_at=? WHERE workspace_id=? AND COALESCE(NULLIF(trim(category),''),'')=? "
+        "AND (gst_pct IS NULL OR gst_pct=0) AND (deleted_at IS NULL OR trim(deleted_at)='')",
+        (float(d), _now(), ws, cat)).rowcount
+    conn.commit()
+    return {"filled": n, **category_gst_overview(conn, ws)}
 
 
 def detail_field_keys(conn: sqlite3.Connection, ws: str) -> list[str]:

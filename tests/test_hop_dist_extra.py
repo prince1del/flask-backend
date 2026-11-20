@@ -204,3 +204,23 @@ def test_category_gst_default_never_overwrites_a_set_gst(tmp_path):
         X.save_article(conn, W, {"id": a["id"], "gst_pct": 12})
         b = X.save_article(conn, W, {"id": a["id"], "mrp": 160})  # price update without GST
         assert b["gst_pct"] == 12                                 # the set GST stays
+
+
+def test_category_gst_screen_fill_only_empty(firm):
+    path, ids = firm
+    with connect(path) as conn:
+        X.save_article(conn, WS, {"name": "Hand Towel", "category": "Towels", "mrp": 100, "purchase_price": 50})
+        X.save_article(conn, WS, {"name": "Face Towel", "category": "Towels", "gst_pct": 12})
+        o = X.category_gst_overview(conn, WS)
+        towels = next(c for c in o["categories"] if c["category"] == "Towels")
+        assert towels["articles"] == 3 and towels["no_gst"] == 1 and towels["mixed"]
+        assert towels["suggested_gst"] == 5           # most towels already carry 5%
+        with pytest.raises(ValueError):
+            X.fill_category_gst(conn, WS, "Towels")     # no default yet
+        with pytest.raises(ValueError):
+            X.set_category_default(conn, WS, "Towels", 7)
+        X.set_category_default(conn, WS, "Towels", 5)
+        r = X.fill_category_gst(conn, WS, "Towels")
+        assert r["filled"] == 1
+        gst = {n: g for n, g in conn.execute("SELECT name, gst_pct FROM hop_products WHERE category='Towels'")}
+        assert gst["Hand Towel"] == 5 and gst["Face Towel"] == 12 and gst["Bath Towel"] == 5   # set GST never changed

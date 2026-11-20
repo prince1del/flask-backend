@@ -380,6 +380,10 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
   (amount-only lines move no stock); DN → purchase bill "Company debit note". Sheets kept in the job until saved
   (jobs cleared after 2 days). Tests `tests/test_hop_dist_bulk.py` (3,500 SOs in one sheet). Server module started by
   Claude, routes + first screen by Cursor, screen redone + roles/company/checks routes by Claude.
+- **GST by category** (20-11, `hop_dist_extra.category_gst_overview / fill_category_gst`, `/dist/category-gst*`, phone
+  `HopDistCategoryGst.kt`; menu Warehouse + button in Article Master): per category articles, without GST, rates used,
+  without HSN, ⚠ mixed rates; tap a GST slab (0 / 0.25 / 3 / 5 / 12 / 18 / 28 / 40) = default; ✨ suggested = the
+  rate most of its articles carry; "Fill N" puts the default only on articles with NO GST (you confirm).
 - **Company ledger & payments:**
   - billed / paid / to pay / overdue, unpaid company invoices with overdue days, ledger with running balance;
   - Pay the company;

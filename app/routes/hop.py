@@ -4476,6 +4476,22 @@ def dist_category_defaults():
     return _dist2(lambda X, c: X.set_category_default(c, _ws(), p.get("category", ""), p.get("gst_pct")))
 
 
+@hop_bp.route("/dist/category-gst", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_category_gst():
+    """Every category: articles, no-GST count, GST rates used, default GST, ✨ suggested GST."""
+    return _dist2(lambda X, c: X.category_gst_overview(c, _ws()))
+
+
+@hop_bp.route("/dist/category-gst/fill", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_category_gst_fill():
+    """{category} — put the default GST on that category's articles with no GST (user confirmed)."""
+    return _dist2(lambda X, c: X.fill_category_gst(c, _ws(), (_payload() or {}).get("category", "")))
+
+
 @hop_bp.route("/dist/principals/<int:vid>/terms", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

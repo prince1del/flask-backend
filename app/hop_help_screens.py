@@ -348,3 +348,9 @@ SHOWS["dist_bulk_import"] = [
     "Documents — tick / untick, number, date, lines, amount, reference, ⚠ checks; tap one for its lines.",
     "Save — saves the ticked new documents; already-saved numbers are skipped.",
 ]
+SHOWS["dist_category_gst"] = [
+    "Category card — articles, without GST, rates used, without HSN; ⚠ when rates are mixed.",
+    "GST slabs — 0 / 0.25 / 3 / 5 / 12 / 18 / 28 / 40 %; tap to set or clear the default.",
+    "✨ Suggested — the rate most articles of the category carry, Use to set it.",
+    "Fill — puts the default on the articles without GST only, after you confirm.",
+]
