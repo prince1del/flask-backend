@@ -228,6 +228,8 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 
 **Lists:**
 - Every bill list has search, status chips, held bills bar (⏸ Resume / Discard), and "Copy pending" on purchase lists.
+- Calm rows (20-11, `HopInvoicesTab.kt`): party, then "bill no · date"; right side amount (no ".00") + Unpaid /
+  "₹… due" / Paid ✓; header "N bills · ₹… to collect".
 - Tap a row → the bill copy.
 
 **Bill form:** (calm layout 20-11: party, number / date, items and Received now stay open; "Order & transport",
@@ -251,6 +253,8 @@ that show what is filled — `FormFold` in `HopDocumentCreateScreen.kt`; total +
 **Bill copy / PDF:**
 - Vyapar layout: Tax Invoice title, Original for recipient, item table + total row, CGST / SGST or IGST;
   Received / Balance, amount in words (Indian), HSN summary, place of supply, UPI QR + bank, terms, signature.
+- Bottom bar (20-11): **WhatsApp & GST** (opens WhatsApp / SMS / UPI / GST files) · **Edit** · **⋮** (Duplicate, Delete);
+  PDF / print / Share stay in the top bar. The bill copy itself keeps paise (GST bill).
 - Actions:
   - Print (Android print), Save PDF, Share, WhatsApp / SMS, Bluetooth receipt;
   - GST files (e-invoice / e-way JSON);
@@ -279,8 +283,7 @@ that show what is filled — `FormFold` in `HopDocumentCreateScreen.kt`; total +
 - **menu on a short screen** (landscape, fold outer screen; height < 560 dp): the whole drawer scrolls as one with a
   slim header (before, header + Sign out left room for ~3 items and the sections looked missing). Checked
   sideways on the phone 20-11: all sections and Sign out reachable.
-- **still to calm down:** the Sale Invoices / bill lists (own screen, still ".00" and an instruction line), the
-  bill copy screen, Executive My Day / Order Desk.
+- **still to calm down:** Executive My Day / Order Desk; Distributor Orders → SO → CI and Company ledger screens.
 - **lists (20-11, round 3):** `HopModuleScaffold` header = title + count, refresh icon, one ⋮ menu (`menu`
   param) — no instruction line; `HopListCard` soft card, no outline; `hopMoney` shows no ".00" on whole amounts;
   page titles sans (no serif next to sans). Catalogue: Import / Share / Select to delete in ⋮, one light line per
