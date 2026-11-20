@@ -473,6 +473,30 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 updated under Cursor's name. Still: app Notes reply+done as **By: Cursor** when phone ADB is back; Claude =
 calm screens; (17) payroll plan skipped; real barcode / bulk file / PIN field recheck on phone.
 
+**Open `claude` notes — read on the phone 20-11 ~23:15 (owner: "open notes of business and distributor, note on
+claude.md, ask me what to do first"). Waiting for the owner to pick the order:**
+- Distributor UI:
+  - (D1) **Firm name leak:** "Kunwar home" is the Distributor firm's name but shows in the Business UI — owner:
+    "saare kaam chodke pehle yeh lock lagao", no login / AI / notes / anything of one UI in another.
+  - (D2) Type-ahead search: party suggestions on every key stroke (bill form party picker), same for items in the
+    bill and in Article Master.
+  - (D3) Many brands end to end, neat and simple: where to fill each brand's details and margins, link Article Master
+    to its products, tally SO / PO with my orders, CI / tax invoices / bills received, payments, shipment tracking,
+    received vs pending, billed vs pending (Companies & terms + Bulk import + Orders → SO → CI cover part of it).
+  - (D4) Quick note ("N") has no party tag and is not the full note form — make N open the full note.
+  - (D5) Logo = first letter of each word of the firm name ("Kunwar home" → KH); N button inside forms too.
+  - (D6) GSTIN Fetch in every UI — built by Cursor, to check + reply.
+  - (D7) "GST kyu nahi dikha raha" — GST by category screen built (`c1306e7`, not deployed yet), to reply.
+  - (D8) Barcode scan → item or Add new, manual stock — built by Cursor, to check + reply.
+- Business UI:
+  - (B1) Status bar: time and signal icons are invisible with the theme.
+  - (B2) Notes page: the floating N is not needed there (the page has + Note).
+  - (B3) "This screen is boring and Add new account is not visible" (likely Cash & Bank — check).
+  - (B4) Full payroll like INDPayroll — reply with a plan (needs + how to test with data).
+  - (B5) Partners / team roles plan — still waits for the owner's 3 answers.
+  - Untagged (left alone): "yaha pe add new ka option bhi do agar user ki profile kuch or huyi to" (tag not seen —
+    check before working on it), "QA test note rates bhejne hai".
+
 **Claude 20-11 late night:** (6) Companies & terms + (13) bulk import built, server deployed (`40c4a06`), phone
 installed, both notes replied + marked done in Distributor → Notes. Bulk import checked on the phone only as far as the
 screen opening (no company ticked in the Distributor firm, no real file tried yet). Open notes left for Cursor to
