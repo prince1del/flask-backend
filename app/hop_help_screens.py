@@ -354,7 +354,15 @@ SHOWS["dist_category_gst"] = [
     "✨ Suggested — the rate most articles of the category carry, Use to set it.",
     "Fill — puts the default on the articles without GST only, after you confirm.",
 ]
+SHOWS["dist_terms_book"] = [
+    "Company chips — every company you buy from; + Add company adds one with its GSTIN and address.",
+    "By category — the default terms of each category and how many articles have their own or none; tap to change.",
+    "Articles — MRP → PTR → ex-mill and your margin; Own terms / Category default / No terms; ⚠ where saved prices differ.",
+    "Save PTR / ex-mill — saves the prices the terms give on the ticked articles; price history keeps the old ones.",
+    "✨ AI — thin margins, missing terms and prices that do not match.",
+]
 SHOWS["dist_brand_desk"] = [
+    "+ Add company — a company you buy from: name, GSTIN (Fetch fills the address), state, contact.",
     "Company chips — every company you distribute for; ⚠ = late shipment or overdue.",
     "Company card — terms and price rule, articles; tap to change them.",
     "Setup — what is still missing and where to fill it.",

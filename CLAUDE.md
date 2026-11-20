@@ -74,7 +74,8 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
 - Notes #number per firm + "#12" search + edit form keeps the saved party (21-11, phone installed, server deployed `dc60749`).
 - **Building now (21-11):** Terms book (`app/hop_dist_margins.py`, routes `/dist/terms-book/*`, `/dist/companies/add`;
   new Distributor article needs a company → error NEED_COMPANY; AI insight `terms-book`, Ask Nexora `dist_terms_book`)
-  — server done + tests, phone screens next, not deployed. Then Goods received.
+  — server + phone done (Company → Terms book; + Add company in Brand desk / Terms book / article form), phone
+  installed, **server not deployed**, not tried on the phone. Next: Goods received (stock in when goods arrive).
 - Owner reopened note "multiple brand … margins" (#26 in DB). QnA 21-11: distributor (A) works for companies (B), (C)…
   each with own GSTIN; every inward must say which company / CI / SO it came from; terms per company AND category
   (B: bed linen 18% mark-up on DP, C: 15% mark-down from MRP). **Owner chose 21-11: stock comes in when goods arrive**
