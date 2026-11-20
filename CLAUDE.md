@@ -71,7 +71,7 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
 - Notes (21-11, built, phone installed, server deployed `8df3aca`): ↩ Raise again (reason; a user reply in a done note also
   reopens), done / raise history lines, "For: Claude", done → pick a screen → "Open ▸" link, N + For Claude founder only
   (server 403 for others). When Claude marks a note done: pick the screen where the fix shows.
-- Notes #number per firm + "#12" search + edit form keeps the saved party (21-11, phone installed, server **not deployed**).
+- Notes #number per firm + "#12" search + edit form keeps the saved party (21-11, phone installed, server deployed `dc60749`).
 - Owner reopened note "multiple brand … margins, mark up / mark down" (#26 in DB): "lets have QnA on this" — do a Q&A.
 - (D9) **new note:** "[Distributor UI] isme aster ya kisi or item pe click kyu nahi ho raha" — read it (may have a photo).
 - (D10) **owner asked:** Brand desk has no "+ Add company"; company details live in Parties (supplier) + Companies & terms — add one place.
