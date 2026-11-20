@@ -81,6 +81,10 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
   3. Inward always linked: stock journal keeps company + CI/bill + SO; Goods received against a company's CI
      (part qty ok); manual stock in Distributor UI asks the company (or Opening stock); Article Master stock edit
      writes a journal row; CI lines not in Article Master → warning + link.
+  Owner 21-11 (company price sheets studied, numbers not in repo): price = chain MRP → (perceived disc) → retailer
+  markdown / margin (varies product to product) → GST out → distributor mark-up (about the same per category) →
+  ex-mill; formula differs by category and season. Also per order: cash discount (CD) and incentives, often paid
+  as a company credit note → track CD / incentive per company + order, match the credit note, count it in margin.
   4. Per company: stock of B vs C; ordered → CI → received → pending (qty + ₹); margin earned by company / category.
   Today (checked 21-11): stock comes in only on a purchase bill (CI = bill txn 2); journal has no company; shipment
   "received" moves no stock; manual / Article Master stock has no company; no category level for terms.
