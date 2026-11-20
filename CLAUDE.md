@@ -74,7 +74,8 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
 - Notes #number per firm + "#12" search + edit form keeps the saved party (21-11, phone installed, server deployed `dc60749`).
 - Owner reopened note "multiple brand … margins" (#26 in DB). QnA 21-11: distributor (A) works for companies (B), (C)…
   each with own GSTIN; every inward must say which company / CI / SO it came from; terms per company AND category
-  (B: bed linen 18% mark-up on DP, C: 15% mark-down from MRP). **Plan (waiting for the owner's yes):**
+  (B: bed linen 18% mark-up on DP, C: 15% mark-down from MRP). **Owner chose 21-11: stock comes in when goods arrive**
+  (CI saved = in transit; "Goods received" with ticked qty, part ok = stock in). **Plan (owner picks the order):**
   1. Brand desk "+ Add company" (one form: name, GSTIN Fetch, address, state, contact) + Edit on each card.
   2. Terms book per company: rule (mark-up DP / margin / mark-down MRP) at company → category → product; most specific wins.
   3. Inward always linked: stock journal keeps company + CI/bill + SO; Goods received against a company's CI
