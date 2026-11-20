@@ -489,8 +489,16 @@ payroll note with a plan (what is needed, how to test with data).
    photos, bulk delete, Call/WhatsApp ×2, SH match, Excel firm name, HSN + field, N button); 5 replied with status and
    left OPEN: (6) company terms screen, (7) barcode scan → item / Add new, GST category default screen, (13) bulk
    import with no limit, (12) GSTIN Fetch on Parties in every UI. (17) payroll note (Business) not answered yet.
+   **Cursor 20-11 night (code ready, not deployed — ask owner before Lightsail pull):** (7) Article Master Scan
+   barcode → open item or Add new (prefill barcode/stock); Scan on article form; (12) Executive Customers
+   GSTIN Fetch via `GET /api/v1/masters/gstin-lookup` (no HoP role); (13) `/api/v1/hop/dist/bulk/*` routes + phone
+   `DistBulkImportScreen` (Orders → Bulk import). Company terms already `DistCompaniesScreen`. Owner: skip calm
+   screens for Cursor — Claude will do My Day / Order Desk / Dist Orders / ledger calm. (17) INDPayroll plan still
+   skipped per owner. Not checked yet: real barcode on device, real bulk Excel/ZIP, GSTIN Fetch on Executive form,
+   phone rebuild/install after this pass.
 2. **Calm the last busy screens:** Executive My Day + Order Desk; Distributor Orders → SO → CI and Company ledger
    (same rules: title + count, soft cards, one light line, no ".00", folded rarely-used parts, ⋮ for extra actions).
+   **Claude owns this** (owner 20-11: Cursor not to do calm screens).
 3. **Salary first real use:** owner adds one staff member and pays once → check slip, Cash & Bank, Expenses, dues tab.
 4. **Article Master with real sheets:** owner reads the 3 AW26 sheets in Distributor → Article Master and saves;
    clears old "Sheet Sets" items in the Business Catalogue (⋮ → Select to delete).

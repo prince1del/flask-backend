@@ -431,6 +431,20 @@ def delete_retailer(retailer_id):
     return jsonify({"success": True, "data": None, "message": "Retailer deleted successfully"}), 200
 
 
+@masters_bp.route("/gstin-lookup", methods=["GET", "POST"])
+@require_jwt_auth
+def masters_gstin_lookup():
+    """Decode GSTIN for Executive / masters party forms (not HoP-role). Same data as /hop/gstin-lookup."""
+    from app.services.gstin_lookup import lookup_gstin, normalize_gstin
+
+    body = request.get_json(silent=True) or {} if request.method == "POST" else {}
+    gstin = normalize_gstin(body.get("gstin") or request.args.get("gstin") or "")
+    if not gstin:
+        return jsonify({"success": False, "error": {"message": "gstin is required", "code": "VALIDATION_ERROR"}}), 400
+    data = lookup_gstin(gstin)
+    return jsonify({"success": True, "data": data})
+
+
 @masters_bp.route("/distributors/export", methods=["GET"])
 @require_jwt_auth
 def export_distributors():

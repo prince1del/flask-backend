@@ -4541,6 +4541,70 @@ def dist_articles_assign_company():
     return _terms(lambda T, c: T.assign_company(c, _ws(), p.get("ids") or [], p.get("vendor_id") or None))
 
 
+def _bulk(fn):
+    from app import hop_dist_bulk as B
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            B.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(B, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/dist/bulk/start", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_start():
+    """Multipart: kind=so|ci|cn|dn, vendor_id?, file / files[] — no row limit; PDFs wait for ✨ AI."""
+    kind = (request.form.get("kind") or request.args.get("kind") or "").strip().lower()
+    vid = request.form.get("vendor_id", type=int) or request.args.get("vendor_id", type=int)
+    files = []
+    for key in ("file", "files", "upload"):
+        for f in request.files.getlist(key):
+            if f and f.filename:
+                files.append((f.filename, f.read()))
+    if not files:
+        single = request.files.get("file")
+        if single and single.filename:
+            files.append((single.filename, single.read()))
+    if not files:
+        return _json_error("Choose Excel, CSV, PDF, photo or a ZIP of these")
+    return _bulk(lambda B, c: B.start(c, _ws(), kind, vid, files))
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_preview(job_id: int):
+    show = request.args.get("show", type=int) or 400
+    return _bulk(lambda B, c: B.preview(c, _ws(), job_id, show))
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>/read-ai", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_read_ai(job_id: int):
+    """Read the next few waiting PDF/photo files with ✨ AI (capped)."""
+    from app.routes.auth import get_request_user_id
+
+    n = (_payload() or {}).get("n") or request.args.get("n", type=int) or 3
+    uid = int(get_request_user_id() or 0)
+    return _bulk(lambda B, c: B.read_waiting(c, _ws(), job_id, user_id=uid, n=int(n)))
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>/commit", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_commit(job_id: int):
+    """Save ticked documents. Body optional {skip: [doc_no, …]}."""
+    skip = (_payload() or {}).get("skip") or []
+    return _bulk(lambda B, c: B.commit(c, _ws(), job_id, skip if isinstance(skip, list) else []))
+
+
 @hop_bp.route("/dist/price-list/read", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
