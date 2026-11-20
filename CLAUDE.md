@@ -469,6 +469,11 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 updated under Cursor's name. Still: app Notes reply+done as **By: Cursor** when phone ADB is back; Claude =
 calm screens; (17) payroll plan skipped; real barcode / bulk file / PIN field recheck on phone.
 
+**Claude 20-11 late night:** (6) Companies & terms + (13) bulk import built, server deployed (`40c4a06`), phone
+installed, both notes replied + marked done in Distributor → Notes. Bulk import checked on the phone only as far as the
+screen opening (no company ticked in the Distributor firm, no real file tried yet). Open notes left for Cursor to
+answer: (7) barcode scan, (12) GSTIN Fetch, GST category screen. (17) payroll plan still to answer.
+
 **Now doing / next (written before the work — owner 20-11: "pehle claude.md pe likho kya karna hai"):**
 1. **Notes of every UI** — read 20-11 evening (17 `claude` notes); owner picks the order before work starts:
    - Distributor → Article Master / prices: (1) Price changes counts first prices of new articles as "changes" —
