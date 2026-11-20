@@ -317,3 +317,10 @@ SHOWS["dist_forecast"] = SHOWS["dist_forecast"] + [
     "Who needs what — retailers due now (late) or this week, with the item; tap to call.",
     "✨ AI insights — whom to call this week and with which items.",
 ]
+
+SHOWS["salary"] = [
+    "Month — every staff member: present days, earned, advance due, net; Pay saves an Expense from cash or bank.",
+    "Staff — add / edit people, monthly or daily pay, optional NEXORA login for attendance.",
+    "Advance — money given now, recovered from a later salary.",
+    "✨ Checks + AI insights — jumps, big advances, unpaid staff.",
+]

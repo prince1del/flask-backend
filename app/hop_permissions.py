@@ -25,10 +25,11 @@ AREAS: list[tuple[str, str]] = [
     ("reports", "Reports, GST files and books"),
     ("crm", "Leads, deals, projects, samples, dispatches and other HoP screens"),
     ("settings", "Settings, company profile, audit trail, financial year"),
+    ("salary", "Salary — staff pay, salary sheet, advances (private: off for staff unless you allow it)"),
 ]
 AREA_KEYS = [a for a, _ in AREAS]
 LEVELS = ("none", "view", "edit")
-FULL_STAFF = {a: "edit" for a in AREA_KEYS} | {"settings": "view"}
+FULL_STAFF = {a: "edit" for a in AREA_KEYS} | {"settings": "view", "salary": "none"}
 PRESETS: dict[str, dict[str, str]] = {
     "Full access": FULL_STAFF,
     "Salesperson": {"sales": "edit", "parties": "edit", "items": "view", "crm": "edit", "purchase": "none",
@@ -37,7 +38,7 @@ PRESETS: dict[str, dict[str, str]] = {
                    "reports": "view", "crm": "view", "settings": "view"},
     "Store keeper": {"items": "edit", "sales": "view", "purchase": "view", "parties": "view", "money": "none",
                      "reports": "none", "crm": "none", "settings": "none"},
-    "View only": {a: "view" for a in AREA_KEYS} | {"settings": "none"},
+    "View only": {a: "view" for a in AREA_KEYS} | {"settings": "none", "salary": "none"},
 }
 SALES_TYPES = {1, 3, 21, 27, 30, 65, 82, 83}
 PURCHASE_TYPES = {2, 4, 7, 16, 29, 66}
@@ -47,6 +48,7 @@ OWNER_ONLY = re.compile(r"^/(backup|backups|staff-permissions|wipe|wipe-data|res
 READ_POSTS = re.compile(r"/(preview|entry-warnings|suggest-rate|reconcile/match|import/[a-z]+/preview|ai/read-bill|"
                         r"gst-files/[a-z]+|insights)(/|$)")
 PREFIX_AREA = [
+    ("salary", "salary"),
     ("customers", "parties"), ("vendors", "parties"), ("parties", "parties"), ("import/parties", "parties"),
     ("products", "items"), ("notes", "crm"), ("manufacture", "items"), ("loyalty", "sales"), ("catalog-link", "sales"), ("targets", "reports"), ("sms", "sales"), ("reminders", "sales"), ("stock", "items"), ("godowns", "items"), ("item-", "items"), ("categories", "items"),
     ("units", "items"), ("import/items", "items"),

@@ -77,6 +77,9 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
   ("Sharma ko kya maal gaya", "is mahine kisko kitna bheja").
 - dist_forecast: what to order from the company and by when, items that will run out, slow items
   ("kya order karu", "kaunsa maal khatam hone wala hai").
+- salary: staff pay for a month — who is paid / not paid, present days, net, advances still to recover, salary cost
+  by month (party_name = staff name; from = YYYY-MM-01 for another month) ("is mahine salary kitni gayi",
+  "Ramesh ka advance kitna baaki hai", "kisko salary dena baaki hai"). Private: only for the owner / allowed staff.
 - dist_retailer_forecast: what each retailer buys most, how often (every N days), usual qty, and who is due to buy
   what now / this week (party_name = retailer) ("Sharma ko kya chahiye hoga", "is hafte kisko call karu",
   "kaunsa retailer kya jyada leta hai").
@@ -697,7 +700,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "dist_orders", "dist_company_ledger", "dist_retailer_goods",
                                                         "dist_forecast", "dist_warehouse", "dist_overview",
                                                         "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff",
-                                                        "dist_price_changes", "dist_retailer_forecast"]},
+                                                        "dist_price_changes", "dist_retailer_forecast", "salary"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},
                     "to": {"type": "string", "description": "End date YYYY-MM-DD."},
@@ -1551,7 +1554,7 @@ def _run_tool(
 
             what = str(args.get("what") or "overview")
             area = {"cash_bank": "money", "items": "items", "manufacturing": "items", "loyalty": "sales", "reminders": "sales", "service": "sales", "online_orders": "sales", "targets": "reports", "audit": "settings", "other_income": "purchase",
-                    "expenses": "purchase"}.get(what, "reports")
+                    "expenses": "purchase", "salary": "salary"}.get(what, "reports")
             p = hop_permissions.perms_for(conn, {"user_id": int(user_id), "workspace_id": workspace_id,
                                                  "is_workspace_owner": bool(r[1]) if r else False})
             if p["areas"].get(area) == "none":

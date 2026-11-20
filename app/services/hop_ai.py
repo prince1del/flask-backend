@@ -512,6 +512,18 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
             return st
         h = D.home(conn, ws)
         return {k: v for k, v in h.items() if k != "principals"} | {"companies": [p["company"] for p in h["principals"]]}
+    if what == "salary":
+        from app import hop_salary as SAL
+
+        sheet = SAL.month_sheet(conn, ws, str(extra.get("month") or extra.get("from") or "")[:7])
+        rows = sheet["staff"]
+        if party_name:
+            rows = [r for r in rows if _similar(party_name, r["name"] or "") >= 0.5]
+        return {"month": sheet["month"], "totals": sheet["totals"], "checks": sheet["checks"],
+                "staff": [{k: r.get(k) for k in ("name", "designation", "salary", "pay_type", "present_days", "earned",
+                                                 "advance_due", "paid")} | {"net_paid": (r.get("run") or {}).get("net")}
+                          for r in rows[:30]],
+                "by_month": SAL.year_summary(conn, ws, 6)}
     if what == "notes":
         from app import hop_notes
 

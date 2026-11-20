@@ -15,6 +15,14 @@ _DOC_STEPS = [
 ]
 
 HELP: dict[str, dict[str, Any]] = {
+    "salary": {"title": "Salary", "what": "Your staff's pay: the month's salary sheet, advances, and paying salary from cash or bank.",
+               "steps": ["Staff tab — add each person with monthly or daily pay (link their NEXORA login to take days from Team duty).",
+                         "Month tab — check present days, bonus, deductions and the advance to recover, then tap Pay.",
+                         "Advance tab — give an advance; it is taken back from a later salary."],
+               "tips": ["Every salary and advance is saved as an Expense (Salary / Salary advance) from cash or bank — so it is in "
+                        "Cash & Bank, Day book, P&L and profit reports.",
+                        "Private: staff can't see Salary unless you allow it in Staff permissions."],
+               "ai": "✨ Checks a big jump from last month, an advance bigger than a month's pay, and paying twice; ✨ AI insights and Ask Nexora (\"is mahine salary kitni gayi\")."},
     "dashboard": {"title": "Dashboard", "what": "Your business at a glance — quotations, orders, money due, cash.",
                   "steps": ["Tap any card to open that list.", "Pull the refresh button to load the latest numbers."],
                   "tips": ["The firm name at the top of the menu shows which firm you are in.",

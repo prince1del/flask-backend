@@ -4252,6 +4252,105 @@ def dist_forecast():
                                               request.args.get("cover", type=int) or 30))
 
 
+# ── Salary (Business + Distributor, each in its own firm; private area "salary") ───────────────────────────
+def _salary(fn):
+    from app import hop_salary as S
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            S.ensure_schema(conn)
+            return jsonify({"success": True, "data": fn(S, conn)})
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+
+
+@hop_bp.route("/salary/staff", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_staff():
+    """GET ?all=1 — staff with pay and advance due. POST {name, phone, designation, pay_type, salary, joined_on, user_id…}."""
+    if request.method == "POST":
+        return _salary(lambda S, c: S.save_staff(c, _ws(), _payload() or {}))
+    return _salary(lambda S, c: S.list_staff(c, _ws(), request.args.get("all") == "1"))
+
+
+@hop_bp.route("/salary/staff/<int:sid>", methods=["PATCH"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_staff_one(sid: int):
+    return _salary(lambda S, c: S.save_staff(c, _ws(), _payload() or {}, sid))
+
+
+@hop_bp.route("/salary/month", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_month():
+    """?month=YYYY-MM — the salary sheet: present days (Team duty when linked), earned, advance due, paid or not, ✨ checks."""
+    base = get_workspace_id()
+    return _salary(lambda S, c: S.month_sheet(c, _ws(), request.args.get("month", ""), db_path=_db_path(), base_ws=base))
+
+
+@hop_bp.route("/salary/pay", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_pay():
+    """{staff_id, month, present_days, bonus, deductions, advance_recover, payment_mode, payment_account_id, date}
+    → an Expense "Salary" from cash / bank (in Cash & Bank, Day book, P&L) + the salary line."""
+    return _salary(lambda S, c: S.pay_salary(c, _ws(), _payload() or {}, user=_user_label()))
+
+
+@hop_bp.route("/salary/runs/<int:rid>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_undo(rid: int):
+    """Undo a salary payment: its Expense goes to the Recycle bin."""
+    return _salary(lambda S, c: S.undo_salary(c, _ws(), rid) or {"undone": rid})
+
+
+@hop_bp.route("/salary/advances", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_advances():
+    """GET ?staff_id= — advances given. POST {staff_id, amount, date, payment_mode, payment_account_id, note}."""
+    if request.method == "POST":
+        return _salary(lambda S, c: S.give_advance(c, _ws(), _payload() or {}, user=_user_label()))
+    return _salary(lambda S, c: S.list_advances(c, _ws(), request.args.get("staff_id", type=int)))
+
+
+@hop_bp.route("/salary/advances/<int:aid>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_advance_delete(aid: int):
+    return _salary(lambda S, c: S.delete_advance(c, _ws(), aid) or {"deleted": aid})
+
+
+@hop_bp.route("/salary/insights", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def salary_insights():
+    """✨ 3–5 AI points on the salary sheet + the last months (one capped call)."""
+    from app import hop_salary as S
+    from app.services import hop_ai
+
+    user = getattr(request, "user", None) or {}
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            S.ensure_schema(conn)
+            sheet = S.month_sheet(conn, _ws(), request.args.get("month", ""), db_path=_db_path(), base_ws=get_workspace_id())
+            data = {"month": sheet["month"], "totals": sheet["totals"], "checks": sheet["checks"],
+                    "staff": [{k: r.get(k) for k in ("name", "designation", "pay_type", "salary", "present_days", "earned",
+                                                     "advance_due", "paid", "last_month")} for r in sheet["staff"][:40]],
+                    "by_month": S.year_summary(conn, _ws())}
+        points = hop_ai.report_insights("Salary sheet, staff pay and advances", data, user_id=int(user.get("user_id") or 0))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"points": points}})
+
+
 @hop_bp.route("/dist/forecast/retailers", methods=["GET"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
