@@ -195,8 +195,15 @@ The full Executive UI screen check was done on 19-11: every screen opens, no err
    - Samples: party + several items, status.
    - Dispatch: bill / challan no., e-way, courier, In transit / Delivered.
    - Complaints, Fabric Preview, Vendor Compare, Orders / PO.
-7. **Staff & Attendance:** Team duty (attendance, live map), Staff permissions (per area view / edit / none,
-   owner-only areas), Audit trail.
+7. **Staff & Attendance:** **Salary** (20-11), Team duty (attendance, live map), Staff permissions (per area
+   view / edit / none, owner-only areas), Audit trail.
+   - **Salary** (`app/hop_salary.py`, `/api/v1/hop/salary/*`, phone `HopSalaryScreen`; also Distributor → Staff):
+     staff (monthly / daily pay, optional NEXORA login → present days from Team duty), Month sheet (days, earned,
+     bonus, deductions, advance recovered, net), **Pay** = an Expense "Salary" from cash / bank, **Advance** = an
+     Expense "Salary advance" recovered later — so salary is in Cash & Bank, Day book, P&L, cash flow, expense
+     reports, distributor profitability, Guard. Undo → Recycle bin. ✨ checks (jump vs last month, advance > a
+     month's pay, paid twice), ✨ AI insights, Ask Nexora `salary`. **Private** permission area `salary` (staff:
+     none unless the owner allows; Ask Nexora checks it too); the expense note carries no staff name.
 8. **Settings:** Company profile, Settings (bills, GST, print), Print theme (12 colours), Theme (premium palettes),
    Recycle bin, Updates, Import old data, Wipe all data.
 
@@ -259,6 +266,13 @@ The rest of the menu: Plan & team, Nexora Hub, Sign out.
 - **menu on a short screen** (landscape, fold outer screen; height < 560 dp): the whole drawer scrolls as one with a
   slim header (before, header + Sign out left room for ~3 items and the sections looked missing). Checked
   sideways on the phone 20-11: all sections and Sign out reachable.
+- **lists (20-11, round 3):** `HopModuleScaffold` header = title + count, refresh icon, one ⋮ menu (`menu`
+  param) — no instruction line; `HopListCard` soft card, no outline; `hopMoney` shows no ".00" on whole amounts;
+  page titles sans (no serif next to sans). Catalogue: Import / Share / Select to delete in ⋮, one light line per
+  item, zeros hidden.
+- **settings wiring (20-11):** `util/HopSettingsSync` applies date format / paise / currency when a UI opens, when a
+  screen opens and right after a save (+ "Saved" toast); Company profile save updates the firm name in the top bar,
+  menu and firm list at once.
 - **less clutter (20-11, round 2):** screen titles have no explanation line (the ⓘ guide has it); top bar shows only
   the firm name; ✨ AI insights is one slim line until tapped; Ask Nexora: plain ✕, one welcome with 4 suggestions
   for that UI, no second greeting / rainbow chips, calm navy background without stars; full-screen pages keep clear
@@ -441,7 +455,8 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
   - Ask Nexora writing a note;
   - Delete on ops sheets;
   - Market Visit date display.
-- **Web parity** for the newest phone features: notes photos / replies / done, hold warning, link payments, bill
+- **Retailer UI** is still only a preview ("under development") — no screens, settings or salary there yet.
+- **Web parity** for the newest phone features (+ Salary, Forecast by retailer, Article Master columns): notes photos / replies / done, hold warning, link payments, bill
   copies, Print many bills, commission, targets switch, the whole Distributor UI.
 - **Notes inbox:** 4 notes from 19-11 say "Done by User". The phone driver lives in the session scratchpad
   (`nx.py`, `typein.py`, `note_reply.py`, `groups.json`, `keys.txt` — copy them from the newest older scratchpad;
