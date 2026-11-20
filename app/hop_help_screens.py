@@ -340,3 +340,11 @@ SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
     "Article form — Company and Price rule (the company's, or its own) with the rule price and Use.",
     "Select — tick articles, then Set company or Delete.",
 ]
+SHOWS["dist_bulk_import"] = [
+    "Type chips — SO, Company invoice (CI), Credit note, Debit note.",
+    "Company — pick which company the documents are from (when you have more than one).",
+    "Sheets — header row, rows, any problem; Columns opens every column with samples and its role, ✨ AI match columns.",
+    "PDF / photo files — how many need ✨ AI, Read all with AI.",
+    "Documents — tick / untick, number, date, lines, amount, reference, ⚠ checks; tap one for its lines.",
+    "Save — saves the ticked new documents; already-saved numbers are skipped.",
+]

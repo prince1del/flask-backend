@@ -370,6 +370,16 @@ Server: `app/hop_distributor.py`, `app/hop_dist_extra.py`, routes `/api/v1/hop/d
   - articles carry their company (`hop_products.vendor_id`): article form Company chips, Article Master Select →
     Set company, price-list preview "This sheet is from"; with one company, loose articles are its own;
   - ✨ AI insights `company-terms`, Ask Nexora `dist_company_terms`.
+- **Bulk import** (20-11, no row limit — `app/hop_dist_bulk.py`, `/dist/bulk/*`, phone `HopDistBulkImport.kt`, menu
+  Company → Bulk import + button on Orders): SO / CI / credit note / debit note from Excel, CSV, PDF, photo, ZIP or
+  RAR (server `unar`). Excel is read free: header row found anywhere, columns guessed / remembered per layout /
+  ✨ AI match columns, rows grouped by document number (blank number = same document). PDFs / photos wait →
+  ✨ Read all with AI (1 read each, count shown). Preview: company pick, sheets + Columns, documents tick / untick,
+  ✨ Check all (Article Master rate / GST, CI vs SO, totals), already-saved numbers skipped. Save: SO → `hop_dist_so`
+  (linked to my PO by its number); CI → purchase bill (stock in, linked to the SO); CN → Purchase Return / Dr. Note
+  (amount-only lines move no stock); DN → purchase bill "Company debit note". Sheets kept in the job until saved
+  (jobs cleared after 2 days). Tests `tests/test_hop_dist_bulk.py` (3,500 SOs in one sheet). Server module started by
+  Claude, routes + first screen by Cursor, screen redone + roles/company/checks routes by Claude.
 - **Company ledger & payments:**
   - billed / paid / to pay / overdue, unpaid company invoices with overdue days, ledger with running balance;
   - Pay the company;

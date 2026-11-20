@@ -4572,8 +4572,64 @@ def dist_bulk_start():
         if single and single.filename:
             files.append((single.filename, single.read()))
     if not files:
-        return _json_error("Choose Excel, CSV, PDF, photo or a ZIP of these")
+        return _json_error("Choose Excel, CSV, PDF, photo, ZIP or RAR")
+    from app.hop_dist_bulk import MAX_FILE
+
+    if sum(len(b) for _n, b in files) > MAX_FILE:
+        return _json_error(f"Upload is too big (max {MAX_FILE // (1024 * 1024)} MB) — split it into two ZIPs")
     return _bulk(lambda B, c: B.start(c, _ws(), kind, vid, files))
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>/roles", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_roles(job_id: int):
+    """{sig, roles: {column number: role}} — read the sheet again with the columns the user picked."""
+    p = _payload() or {}
+    return _bulk(lambda B, c: B.set_roles(c, _ws(), job_id, str(p.get("sig") or ""), p.get("roles") or {}))
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>/ai-columns", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_ai_columns(job_id: int):
+    """✨ {sig} → suggested role per column of that sheet (one capped AI call; the user confirms)."""
+    from app.routes.auth import get_request_user_id
+
+    sig = str((_payload() or {}).get("sig") or "")
+
+    def run(B, c):
+        j = B._job(c, _ws(), job_id)
+        sh = next((x for x in j["sheets"] if x["sig"] == sig), None)
+        if not sh:
+            raise LookupError("Sheet not in this import")
+        return {"roles": B.ai_roles(j["kind"], sh["columns"], user_id=int(get_request_user_id() or 0))}
+    return _bulk(run)
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>/company", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_company(job_id: int):
+    """{vendor_id} — the company these documents are from."""
+    vid = (_payload() or {}).get("vendor_id")
+    return _bulk(lambda B, c: B.set_company(c, _ws(), job_id, int(vid or 0)))
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>/checks", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_checks(job_id: int):
+    """✨ Checks per document: Article Master rates / GST, SO match, totals."""
+    return _bulk(lambda B, c: B.check_all(c, _ws(), job_id))
+
+
+@hop_bp.route("/dist/bulk/<int:job_id>/doc", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_bulk_doc(job_id: int):
+    """?no=… — one document with its lines and checks."""
+    return _bulk(lambda B, c: B.doc_detail(c, _ws(), job_id, request.args.get("no", "")))
 
 
 @hop_bp.route("/dist/bulk/<int:job_id>", methods=["GET"])

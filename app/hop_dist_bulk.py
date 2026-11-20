@@ -377,35 +377,15 @@ def start(conn: sqlite3.Connection, ws: str, kind: str, vendor_id: int | None, f
     ensure_schema(conn)
     if kind not in KINDS:
         raise ValueError("kind must be so, ci, cn or dn")
-    vid = _company(conn, ws, vendor_id)
+    vid = _company(conn, ws, vendor_id, required=False)
     parts: list[tuple[str, bytes]] = []
     for name, data in files:
         parts += unpack(data, name)
     if not parts:
         raise ValueError("No Excel, CSV, PDF or photo found in the upload")
-    docs, sheets, waiting = [], [], []
-    for name, data in parts:
-        if name.lower().endswith(_SHEET_EXT):
-            try:
-                rows = read_rows(data, name)
-            except ValueError:
-                raise
-            except Exception as exc:  # noqa: BLE001 — a broken workbook
-                raise ValueError(f"Could not read {name}. Save it as .xlsx or .csv and try again.") from exc
-            sh = analyze_sheet(kind, rows, name)
-            saved = _saved_roles(conn, ws, sh["sig"])
-            if saved or (roles or {}).get(sh["sig"]):
-                sh = analyze_sheet(kind, rows, name, saved, (roles or {}).get(sh["sig"]))
-            sh["remembered"] = bool(saved)
-            try:
-                docs += build_docs(kind, sh)
-                sh["error"] = None
-            except ValueError as exc:
-                sh["error"] = str(exc)
-            sh.pop("_body")
-            sheets.append(sh)
-        else:
-            waiting.append((name, data))
+    sheet_files = [(n, d) for n, d in parts if n.lower().endswith(_SHEET_EXT)]
+    waiting = [(n, d) for n, d in parts if not n.lower().endswith(_SHEET_EXT)]
+    docs, sheets = _read_sheets(conn, ws, kind, sheet_files, roles)
     cur = conn.execute("INSERT INTO hop_dist_bulk_jobs (workspace_id, kind, vendor_id, docs_json, sheets_json, created_at) "
                        "VALUES (?,?,?,?,?,?)", (ws, kind, vid, json.dumps(docs, ensure_ascii=False),
                                                 json.dumps(sheets, ensure_ascii=False), _now()))
@@ -413,19 +393,63 @@ def start(conn: sqlite3.Connection, ws: str, kind: str, vendor_id: int | None, f
     for name, data in waiting:
         conn.execute("INSERT INTO hop_dist_bulk_files (job_id, workspace_id, name, mime, data) VALUES (?,?,?,?,?)",
                      (job, ws, name[:200], _mime(name), data))
+    for name, data in sheet_files:   # kept until the job is saved, so the columns can be changed
+        conn.execute("INSERT INTO hop_dist_bulk_files (job_id, workspace_id, name, mime, data, state) VALUES (?,?,?,?,?,'sheet')",
+                     (job, ws, name[:200], "sheet", data))
     conn.commit()
     return preview(conn, ws, job)
 
 
-def reread_sheet(conn, ws, job_id: int, files: list[tuple[str, bytes]], roles: dict[str, dict[str, str]]) -> dict[str, Any]:
-    """The same upload read again with the columns the user picked (old job is replaced)."""
+def _read_sheets(conn, ws, kind, sheet_files, roles=None) -> tuple[list[dict], list[dict]]:
+    docs, sheets = [], []
+    for name, data in sheet_files:
+        try:
+            rows = read_rows(data, name)
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — a broken workbook
+            raise ValueError(f"Could not read {name}. Save it as .xlsx or .csv and try again.") from exc
+        sh = analyze_sheet(kind, rows, name)
+        saved = _saved_roles(conn, ws, sh["sig"])
+        mine = (roles or {}).get(sh["sig"])
+        if saved or mine:
+            sh = analyze_sheet(kind, rows, name, None if mine else saved, mine)
+        sh["remembered"] = bool(saved) and not mine
+        try:
+            docs += build_docs(kind, sh)
+            sh["error"] = None
+        except ValueError as exc:
+            sh["error"] = str(exc)
+        sh.pop("_body")
+        sheets.append(sh)
+    return docs, sheets
+
+
+def set_roles(conn: sqlite3.Connection, ws: str, job_id: int, sig: str, roles: dict[str, str]) -> dict[str, Any]:
+    """The user changed the column roles of one sheet layout: read the kept sheets again (AI-read PDFs stay)."""
     j = _job(conn, ws, job_id)
-    conn.execute("DELETE FROM hop_dist_bulk_files WHERE job_id=?", (job_id,))
-    conn.execute("DELETE FROM hop_dist_bulk_jobs WHERE id=?", (job_id,))
-    return start(conn, ws, j["kind"], j["vendor_id"], files, roles)
+    files = [(r[0], r[1]) for r in conn.execute(
+        "SELECT name, data FROM hop_dist_bulk_files WHERE job_id=? AND state='sheet' ORDER BY id", (job_id,))]
+    if not files:
+        raise ValueError("No sheet in this import")
+    clean = {str(k): v for k, v in (roles or {}).items() if v in ROLES}
+    docs, sheets = _read_sheets(conn, ws, j["kind"], files, {sig: clean})
+    docs += [d for d in j["docs"] if d.get("ai")]
+    conn.execute("UPDATE hop_dist_bulk_jobs SET docs_json=?, sheets_json=? WHERE id=?",
+                 (json.dumps(docs, ensure_ascii=False), json.dumps(sheets, ensure_ascii=False), job_id))
+    conn.commit()
+    return preview(conn, ws, job_id)
 
 
-def _company(conn, ws, vendor_id) -> int | None:
+def set_company(conn: sqlite3.Connection, ws: str, job_id: int, vendor_id: int) -> dict[str, Any]:
+    _job(conn, ws, job_id)
+    vid = _company(conn, ws, vendor_id)
+    conn.execute("UPDATE hop_dist_bulk_jobs SET vendor_id=? WHERE id=?", (vid, job_id))
+    conn.commit()
+    return preview(conn, ws, job_id)
+
+
+def _company(conn, ws, vendor_id, required: bool = True) -> int | None:
     if vendor_id:
         if not conn.execute("SELECT 1 FROM hop_vendors WHERE workspace_id=? AND id=?", (ws, int(vendor_id))).fetchone():
             raise LookupError("Company not found")
@@ -433,6 +457,8 @@ def _company(conn, ws, vendor_id) -> int | None:
     ids = [r[0] for r in conn.execute("SELECT id FROM hop_vendors WHERE workspace_id=? AND is_principal=1", (ws,))]
     if len(ids) == 1:
         return int(ids[0])
+    if not required and ids:
+        return None          # several companies: the user picks one on the preview
     raise ValueError("Pick the company these documents are from" if ids else
                      "Mark the company you buy from first (Orders → SO → CI → Set company)")
 
@@ -496,7 +522,9 @@ def preview(conn: sqlite3.Connection, ws: str, job_id: int, show: int = 400) -> 
                      "amount": round(sum(_f(x["amount"]) for x in d["lines"]), 2), "exists": exists,
                      "first_items": [x["item_name"] for x in d["lines"][:3]]})
     files = [dict(r) for r in conn.execute(
-        "SELECT name, state, note FROM hop_dist_bulk_files WHERE job_id=? ORDER BY id", (job_id,))]
+        "SELECT name, state, note FROM hop_dist_bulk_files WHERE job_id=? AND state!='sheet' ORDER BY id", (job_id,))]
+    companies = [{"id": r[0], "company": r[1]} for r in conn.execute(
+        "SELECT id, company FROM hop_vendors WHERE workspace_id=? AND is_principal=1 ORDER BY lower(company)", (ws,))]
     comp = conn.execute("SELECT company FROM hop_vendors WHERE id=?", (j["vendor_id"],)).fetchone() if j["vendor_id"] else None
     return {"job_id": j["id"], "kind": j["kind"], "kind_label": KINDS[j["kind"]], "company": comp[0] if comp else None,
             "vendor_id": j["vendor_id"], "sheets": j["sheets"], "role_labels": ROLE_LABELS,
@@ -504,7 +532,8 @@ def preview(conn: sqlite3.Connection, ws: str, job_id: int, show: int = 400) -> 
             "lines": sum(d["lines"] for d in docs), "amount": round(sum(d["amount"] for d in docs if not d["exists"]), 2),
             "docs": docs[:show], "shown": min(show, len(docs)),
             "files_waiting": sum(1 for f in files if f["state"] == "waiting"),
-            "files": files[:200]}
+            "files": files[:200], "companies": companies, "roles": list(ROLES),
+            "ai_reads_needed": sum(1 for f in files if f["state"] == "waiting")}
 
 
 def doc_detail(conn, ws, job_id: int, doc_no: str) -> dict[str, Any]:
@@ -627,6 +656,7 @@ def commit(conn: sqlite3.Connection, ws: str, job_id: int, skip: list[str] | Non
         except (ValueError, LookupError) as exc:
             errors.append(f"{no}: {exc}")
     conn.execute("UPDATE hop_dist_bulk_jobs SET done_at=? WHERE id=?", (_now(), job_id))
+    conn.execute("DELETE FROM hop_dist_bulk_files WHERE job_id=?", (job_id,))
     for sh in j["sheets"]:
         remember_roles(conn, ws, sh["sig"], {str(c["i"]): c["role"] for c in sh["columns"]},
                        [c["header"] for c in sh["columns"]])
