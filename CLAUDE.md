@@ -5,7 +5,7 @@ part you need. Other maps: `docs/NEXORA_APP_MAP.md` (module → route → table 
 AI rules), `deploy/README.md` (server, backups, deploy). This repo is **public**: never put server addresses, keys,
 passwords, PINs or real business data in it.
 
-_Last updated: 2026-11-20 (night). Keep this file short: rules + what is pending. Finished work → `docs/NEXORA_FEATURES.md`._
+_Last updated: 2026-11-21. Keep this file short: rules + what is pending. Finished work → `docs/NEXORA_FEATURES.md`._
 
 ## 1. What NEXORA is
 
@@ -59,55 +59,28 @@ subscriber's own brand (never "House of Prizm" for another business).
 
 ## 4. Pending — do these next
 
-**Deployed 20-11 night (`83ba366`):** GST by category, firm move between UIs, Brand desk — not yet opened on the phone.
-Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows only there, with its bills/parties/notes.
+**Phone first (needs the phone on Wi-Fi debug):** `adb install -r` the latest APK (Goods received, notes ✓✓,
+GSTIN auto fetch are deployed but the phone has the older build); then check on the phone: Terms book, + Add company,
+Goods received, notes ✓✓ / Raise again / Open ▸ link / #numbers, Brand desk, GST by category, "kunwar home" only in
+Distributor. Notes done 21-11: D1, D2, D4, D5, D7. Detail of all of it: `docs/NEXORA_FEATURES.md` §10.
 
-**Open notes — owner's order D1 → D8 (D1, D2, D4, D5, D7 replied + marked done 21-11):**
-- (D1) done in code — firm "kunwar home" showed in Business; move option + per-UI firm name on the phone.
-- (D2) done in code — type-ahead party search in the bill form (`ui/util/TypeAhead.kt`), items match every word.
-- (D3) done in code — Brand desk (per company setup, orders/SO/CI, goods still to come, shipments, money).
-- (D4) done in code — N opens the full note form (party, remind, photos, "For Claude"); no N on the Notes page.
-- (D5) done + replied + marked done 20-11. Also new: 📸 Take screenshot (screen behind, draw in red) in the N note form.
-- Notes (21-11, built, phone installed, server deployed `8df3aca`): ↩ Raise again (reason; a user reply in a done note also
-  reopens), done / raise history lines, "For: Claude", done → pick a screen → "Open ▸" link, N + For Claude founder only
-  (server 403 for others). When Claude marks a note done: pick the screen where the fix shows.
-- Notes #number per firm + "#12" search + edit form keeps the saved party (21-11, phone installed, server deployed `dc60749`).
-- **Building now (21-11):** Terms book (`app/hop_dist_margins.py`, routes `/dist/terms-book/*`, `/dist/companies/add`;
-  new Distributor article needs a company → error NEED_COMPANY; AI insight `terms-book`, Ask Nexora `dist_terms_book`)
-  — server + phone done (Company → Terms book; + Add company in Brand desk / Terms book / article form), phone
-  installed, server deployed `218fc64`, not tried on the phone. Next: Goods received (stock in when goods arrive).
-- Owner reopened note "multiple brand … margins" (#26 in DB). QnA 21-11: distributor (A) works for companies (B), (C)…
-  each with own GSTIN; every inward must say which company / CI / SO it came from; terms per company AND category
-  (B: bed linen 18% mark-up on DP, C: 15% mark-down from MRP). **Owner chose 21-11: stock comes in when goods arrive**
-  (CI saved = in transit; "Goods received" with ticked qty, part ok = stock in). **Plan (owner picks the order):**
-  1. Brand desk "+ Add company" (one form: name, GSTIN Fetch, address, state, contact) + Edit on each card.
-  2. Terms book per company: rule (mark-up DP / margin / mark-down MRP) at company → category → product; most specific wins.
-  3. Inward always linked: stock journal keeps company + CI/bill + SO; Goods received against a company's CI
-     (part qty ok); manual stock in Distributor UI asks the company (or Opening stock); Article Master stock edit
-     writes a journal row; CI lines not in Article Master → warning + link.
-  Owner 21-11 (company price sheets studied, numbers not in repo): price = chain MRP → (perceived disc) → retailer
-  markdown / margin (varies product to product) → GST out → distributor mark-up (about the same per category) →
-  ex-mill; formula differs by category and season. Also per order: cash discount (CD) and incentives, often paid
-  as a company credit note → track CD / incentive per company + order, match the credit note, count it in margin.
-  4. Per company: stock of B vs C; ordered → CI → received → pending (qty + ₹); margin earned by company / category.
-  Today (checked 21-11): stock comes in only on a purchase bill (CI = bill txn 2); journal has no company; shipment
-  "received" moves no stock; manual / Article Master stock has no company; no category level for terms.
-- **Built 21-11, server deployed `90404bf` (phone APK built, NOT installed — phone was off Wi-Fi debug):** Goods received (`hop_dist_receive.py`:
-  company CI saved = in transit, receive in parts, undo, stock by company; `/dist/goods-received*`; AI + Ask Nexora
-  `dist_goods_received`), Add company GSTIN auto fetch, notes ✓✓ (founder checks a done Claude note; delete only
-  after ✓✓; raise again clears it), stock journal lines carry company + document (bills, Article Master hand stock).
-  Install: `adb install -r` the latest APK when the phone is on Wi-Fi debug again.
-- (D9) **new note:** "[Distributor UI] isme aster ya kisi or item pe click kyu nahi ho raha" — read it (may have a photo).
-- (D10) **owner asked:** Brand desk has no "+ Add company"; company details live in Parties (supplier) + Companies & terms — add one place.
-- (D6) **to check + reply:** GSTIN Fetch in every UI (built by Cursor).
-- (D7) **to reply:** "GST kyu nahi dikha raha" → GST by category screen (Article Master → GST by category).
-- (D8) **to check + reply:** barcode scan → item or Add new, manual stock (built by Cursor).
-- Business notes: (B1) status bar time / signal invisible with the theme; (B2) done with D4; (B3) "screen boring,
-  Add new account not visible" (likely Cash & Bank — check); (B4) INDPayroll-like payroll — reply with a plan (needs +
-  how to test with data); (B5) partners / team roles — waits for the owner's 3 answers (is a partner equal to the
-  owner? shared notes for partners or whole team? which roles first?), plan in `docs/PARTNERS_AND_ROLES_PLAN.md`.
-- Untagged, leave alone: "yaha pe add new ka option bhi do agar user ki profile kuch or huyi to" (check the tag
-  first), "QA test note rates bhejne hai".
+**Batch now (owner 21-11: "bina phone ke … pehle yeh sab banao"), in this order:**
+1. (D9) Warehouse item card: tap an item → details, godown stock, last stock entries, + Add / − Reduce stock (asks
+   the company), Edit item, Order this; server `/dist/items/<id>`.
+2. Company Edit details (name, GSTIN, address, state, contact) from Brand desk / Terms book.
+3. Manual stock in the Distributor UI asks the company (or "Opening stock") → journal line with `vendor_id`.
+4. CD + incentive per company / order: expected CD % and incentive, company credit note matched to it, received vs
+   still due; counted in margin.
+5. Per company: ordered → CI → received → pending (qty + ₹) and margin by company / category (report + AI + Ask Nexora).
+6. ✨ AI reads a company price sheet → per article MRP / PTR / retailer % / mark-up → Terms book suggestion (user saves).
+7. (B3) Cash & Bank "Add new account" not visible — find + fix.
+Then: tests, APK build, commit + push, ask the owner before deploy. Reply #26 (multi-brand) after the phone check.
+
+**Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
+reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with
+the theme; (B3) in the batch above; (B4) payroll — reply with a plan; (B5) partners / roles — waits for the owner's 3
+answers (plan in `docs/PARTNERS_AND_ROLES_PLAN.md`). Untagged, leave alone: "yaha pe add new ka option bhi do…",
+"QA test note rates bhejne hai".
 
 **Built but not tried with real data / on the phone:**
 - Bulk import (SO/CI/CN/DN) with a real company file; RAR on the server.
