@@ -119,3 +119,49 @@ def test_note_photos_add_and_remove(tmp_path):
         hop_notes.add_photo(conn, db, "ws", n["id"], b"not an image")
     n = hop_notes.remove_photo(conn, db, "ws", n["id"], pid)
     assert n["photos"] == [] and not os.path.exists(path)
+
+def test_note_raise_again_after_done(tmp_path):
+    """Owner 21-11: Claude marks done, the user is not happy → raises it again; done shows again only when finished."""
+    import sqlite3
+    from app import hop_notes
+
+    conn = sqlite3.connect(tmp_path / "n.db")
+    conn.row_factory = sqlite3.Row
+    n = hop_notes.create(conn, "ws", {"text": "[For Claude] fix the logo"})
+    assert n["for_whom"] == "Claude" and n["raised_again"] == 0
+    d = hop_notes.update(conn, "ws", n["id"], {"done": True, "done_by": "Claude"})
+    assert d["done"] and d["comments"][-1]["text"] == "✓ Marked done" and d["comments"][-1]["by"] == "Claude"
+    # raise again with a reason
+    d = hop_notes.update(conn, "ws", n["id"], {"done": False, "done_by": "User", "reason": "logo still one letter"})
+    assert not d["done"] and d["raised_again"] == 1
+    assert d["comments"][-1]["text"] == "↩ Raised again: logo still one letter"
+    # done again, by the user this time
+    d = hop_notes.update(conn, "ws", n["id"], {"done": True, "done_by": "User"})
+    assert d["done"] and d["done_by"] == "User"
+    # a user's reply in a done note opens it again; Claude's reply does not
+    d = hop_notes.add_comment(conn, "ws", n["id"], {"text": "ok thanks", "by": "Claude"})
+    assert d["done"]
+    d = hop_notes.add_comment(conn, "ws", n["id"], {"text": "still wrong on the bill", "by": "User"})
+    assert not d["done"] and d["raised_again"] == 2 and d["comments"][-1]["kind"] == "status"
+    # a note for nobody in particular
+    assert hop_notes.create(conn, "ws", {"text": "call Sharma"})["for_whom"] is None
+
+
+def test_note_done_with_link_and_for_claude_check(tmp_path):
+    """Owner 21-11: done carries a link to the screen to check; only the founder writes notes for Claude."""
+    import sqlite3
+
+    import pytest
+    from app import hop_notes
+
+    conn = sqlite3.connect(tmp_path / "n.db")
+    conn.row_factory = sqlite3.Row
+    n = hop_notes.create(conn, "ws", {"text": "[For Claude] add company button"})
+    d = hop_notes.update(conn, "ws", n["id"], {"done": True, "done_by": "Claude",
+                                                "link": {"view": "dist_brand_desk", "label": "Distributor → Brand desk"}})
+    assert d["comments"][-1]["link"] == {"view": "dist_brand_desk", "label": "Distributor → Brand desk"}
+    with pytest.raises(ValueError):
+        hop_notes.update(conn, "ws", n["id"], {"done": False})  # raising again is fine …
+        hop_notes.add_comment(conn, "ws", n["id"], {"text": "x", "link": "../etc"})   # … a bad link is not
+    assert hop_notes.is_for_claude({"party_name": "Claude"}) and hop_notes.is_for_claude({"text": "[For Claude] x"})
+    assert not hop_notes.is_for_claude({"text": "call Sharma"})

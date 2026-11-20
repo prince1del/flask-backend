@@ -68,6 +68,9 @@ Owner moved "kunwar home" to the Distributor UI (20-11 night) — check it shows
 - (D3) done in code — Brand desk (per company setup, orders/SO/CI, goods still to come, shipments, money).
 - (D4) done in code — N opens the full note form (party, remind, photos, "For Claude"); no N on the Notes page.
 - (D5) done + replied + marked done 20-11. Also new: 📸 Take screenshot (screen behind, draw in red) in the N note form.
+- Notes (21-11, built, phone installed, **server not deployed**): ↩ Raise again (reason; a user reply in a done note also
+  reopens), done / raise history lines, "For: Claude", done → pick a screen → "Open ▸" link, N + For Claude founder only
+  (server 403 for others). When Claude marks a note done: pick the screen where the fix shows.
 - (D9) **new note:** "[Distributor UI] isme aster ya kisi or item pe click kyu nahi ho raha" — read it (may have a photo).
 - (D10) **owner asked:** Brand desk has no "+ Add company"; company details live in Parties (supplier) + Companies & terms — add one place.
 - (D6) **to check + reply:** GSTIN Fetch in every UI (built by Cursor).

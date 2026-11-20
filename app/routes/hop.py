@@ -2063,6 +2063,8 @@ def notes_collection():
                                                                        request.args.get("party") or "")})
         try:
             p = _payload()
+            if hop_notes.is_for_claude(p) and not _is_founder():
+                return _json_error("Notes for Claude are only for the founder account.", "FORBIDDEN", 403)
             row = hop_notes.create(conn, _ws(), p, user=str(getattr(g, "user_id", "") or ""))
         except ValueError as exc:
             return _json_error(str(exc))
@@ -2160,7 +2162,10 @@ def note_item(note_id: int):
             if request.method == "DELETE":
                 hop_notes.delete(conn, _ws(), note_id)
                 return jsonify({"success": True, "data": {"deleted": note_id}})
-            row = hop_notes.update(conn, _ws(), note_id, _payload())
+            p = _payload()
+            if ("party_name" in p or "text" in p or "body" in p) and hop_notes.is_for_claude(p) and not _is_founder():
+                return _json_error("Notes for Claude are only for the founder account.", "FORBIDDEN", 403)
+            row = hop_notes.update(conn, _ws(), note_id, p)
     except LookupError as exc:
         return _json_error(str(exc), "NOT_FOUND", 404)
     except ValueError as exc:
@@ -4450,6 +4455,15 @@ def _dist2(fn):
         return _json_error(str(exc), "NOT_FOUND", 404)
     except ValueError as exc:
         return _json_error(str(exc))
+
+
+def _is_founder() -> bool:
+    """The founder account (WORKSPACE_OWNER_USERNAME / is_workspace_owner) — the only one that writes notes for Claude."""
+    import os
+
+    u = getattr(request, "user", None) or {}
+    owner = (os.getenv("WORKSPACE_OWNER_USERNAME") or "kunwar1del").strip().lower()
+    return bool(u.get("is_workspace_owner")) or str(u.get("username") or "").strip().lower() == owner
 
 
 def _user_label() -> str:

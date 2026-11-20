@@ -98,7 +98,41 @@ def _with_comments(d: dict[str, Any]) -> dict[str, Any]:
         d["photos"] = []
     d.pop("photos_json", None)
     d["done"] = bool(d.get("done_at"))
+    # who the work is for (owner 21-11: "kiske liye kar raha hai kaise pata chalega")
+    d["for_whom"] = "Claude" if (_s(d.get("party_name")).lower() == "claude"
+                                 or _s(d.get("body")).startswith("[For Claude]")) else None
+    d["raised_again"] = sum(1 for c in d["comments"] if isinstance(c, dict) and c.get("kind") == "status"
+                            and _s(c.get("text")).startswith("↩"))
     return d
+
+
+def _link(payload: dict) -> dict | None:
+    """Where the fix can be seen: {view: a screen key of the app (e.g. dist_brand_desk), label: "Distributor → Brand desk"}.
+    Owner 21-11: with "done", a link so the founder can open the screen and check the query is solved."""
+    import re
+
+    v = payload.get("link")
+    view = _s(v.get("view") if isinstance(v, dict) else v)
+    if not view:
+        return None
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", view):
+        raise ValueError("Link must be a screen key like dist_brand_desk")
+    label = _s((v.get("label") if isinstance(v, dict) else None) or payload.get("link_label"))[:80]
+    return {"view": view, "label": label or view}
+
+
+def is_for_claude(payload: dict) -> bool:
+    """A note written for Claude (party "claude" or text starting "[For Claude]") — only the founder account may."""
+    return _s(payload.get("party_name")).lower() == "claude" or         _s(payload.get("text") or payload.get("body")).startswith("[For Claude]")
+
+
+def _status_line(items: list, by: str, text: str, link: dict | None = None) -> list:
+    """A history line in the note: who marked it done / raised it again, and when (+ where to check it)."""
+    item = {"by": by[:40] or "User", "kind": "status", "text": text[:2000], "at": _now()}
+    if link:
+        item["link"] = link
+    items.append(item)
+    return items
 
 
 def get(conn: sqlite3.Connection, ws: str, note_id: int) -> dict[str, Any]:
@@ -118,16 +152,30 @@ def add_comment(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) 
         raise ValueError("Write the comment")
     note = get(conn, ws, note_id)
     items = note.get("comments") or []
-    items.append({"by": _s(payload.get("by"))[:40] or "User", "kind": "plan" if payload.get("kind") == "plan" else "comment",
-                  "text": text[:8000], "at": _now()})
-    conn.execute("UPDATE hop_notes SET comments_json=?, updated_at=? WHERE workspace_id=? AND id=?",
-                 (_json.dumps(items, ensure_ascii=False), _now(), ws, int(note_id)))
+    by = _s(payload.get("by"))[:40] or "User"
+    item = {"by": by, "kind": "plan" if payload.get("kind") == "plan" else "comment", "text": text[:8000], "at": _now()}
+    link = _link(payload)
+    if link:
+        item["link"] = link
+    items.append(item)
+    # The user writes again in a finished note = the work is not right yet: the note opens again
+    # (owner 21-11: "user ko kaam pasand nahi aaya to query dubara raise kar sakta hai, job done ka sign hat jayega").
+    reopen = note.get("done") and by.lower() != "claude"
+    if reopen:
+        _status_line(items, by, "↩ Raised again")
+        conn.execute("UPDATE hop_notes SET comments_json=?, done_at=NULL, done_by=NULL, updated_at=? "
+                     "WHERE workspace_id=? AND id=?", (_json.dumps(items, ensure_ascii=False), _now(), ws, int(note_id)))
+    else:
+        conn.execute("UPDATE hop_notes SET comments_json=?, updated_at=? WHERE workspace_id=? AND id=?",
+                     (_json.dumps(items, ensure_ascii=False), _now(), ws, int(note_id)))
     conn.commit()
     return get(conn, ws, note_id)
 
 
 def update(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) -> dict[str, Any]:
-    get(conn, ws, note_id)
+    import json as _json
+
+    note = get(conn, ws, note_id)
     sets, vals = [], []
     if "text" in payload or "body" in payload:
         body = _s(payload.get("text") or payload.get("body"))
@@ -137,10 +185,17 @@ def update(conn: sqlite3.Connection, ws: str, note_id: int, payload: dict) -> di
     for k, n in (("title", 120), ("remind_on", 10)):
         if k in payload:
             sets.append(f"{k}=?"); vals.append(_s(payload.get(k))[:n] or None)
-    if "done" in payload:   # mark done / open again
+    if "done" in payload:   # mark done (Claude or the user) / raise again (the work is not right yet)
         done = payload.get("done") in (True, 1, "1", "true")
+        by = _s(payload.get("done_by"))[:40] or "User"
         sets += ["done_at=?", "done_by=?"]
-        vals += [_now() if done else None, (_s(payload.get("done_by"))[:40] or "User") if done else None]
+        vals += [_now() if done else None, by if done else None]
+        if done != bool(note.get("done")):
+            reason = _s(payload.get("reason"))
+            line = "✓ Marked done" if done else ("↩ Raised again" + (f": {reason}" if reason else ""))
+            sets.append("comments_json=?")
+            vals.append(_json.dumps(_status_line(list(note.get("comments") or []), by, line,
+                                                 _link(payload) if done else None), ensure_ascii=False))
     if "pinned" in payload:
         sets.append("pinned=?"); vals.append(1 if payload.get("pinned") in (True, 1, "1", "true") else 0)
     if "party_name" in payload or "party_id" in payload:
