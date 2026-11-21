@@ -2258,6 +2258,27 @@ def party_transaction_next_number():
     return jsonify({"success": True, "data": {"txn_number": txn_number, "txn_type": txn_type}})
 
 
+@hop_bp.route("/party-transactions/offline-series", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_offline_series():
+    """This login's own number series per document type, for bills made with no internet: {code, series: {type:
+    {base, next}}}. The phone keeps it and counts on by itself while offline."""
+    import re
+    from datetime import datetime, timezone
+
+    from app.hop_doc_preview import offline_series
+
+    ensure_hop_schema(_db_path())
+    u = getattr(request, "user", None) or {}
+    name = str(u.get("username") or u.get("email") or "")
+    letters = "".join(w[0] for w in re.split(r"[^A-Za-z]+", name.split("@")[0]) if w)[:2] or "U"
+    code = f"{letters}{int(u.get('user_id') or 0)}"
+    day = (request.args.get("txn_date") or "").strip() or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": offline_series(conn, _ws(), code, day)})
+
+
 @hop_bp.route("/party-transactions", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

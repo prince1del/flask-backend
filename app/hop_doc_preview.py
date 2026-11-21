@@ -823,6 +823,30 @@ def next_manual_doc_number(
     return f"{prefix}/{fy}/{max_serial + 1}"
 
 
+def offline_series(conn: sqlite3.Connection, workspace_id: str, user_code: str, txn_date: str) -> dict[str, Any]:
+    """Each login's own number series for bills made without internet (owner 21-11: "har id ka apna bill number
+    series hoga, offline ya online kya farq padta hai"): <prefix>/<fy>/<code>-<n>. The main series reads only an
+    all-digit tail, so these never clash with it. Per document type: {base, next}."""
+    import re
+
+    code = re.sub(r"[^A-Z0-9]", "", str(user_code or "").upper())[:8] or "U"
+    out: dict[str, Any] = {}
+    for t in sorted(MANUAL_TXN_TYPES):
+        main = next_manual_doc_number(conn, workspace_id, int(t), txn_date)
+        if "/" not in main:
+            continue
+        head = main.rsplit("/", 1)[0]
+        base = f"{head}/{code}-"
+        mx = 0
+        for (num,) in conn.execute("SELECT txn_number FROM hop_party_transactions WHERE workspace_id=? AND txn_type=? "
+                                   "AND txn_number LIKE ?", (workspace_id, int(t), base + "%")):
+            tail = str(num or "")[len(base):]
+            if tail.isdigit():
+                mx = max(mx, int(tail))
+        out[str(int(t))] = {"base": base, "next": mx + 1}
+    return {"code": code, "series": out}
+
+
 def _parse_manual_doc_lines(raw_lines: list[Any]) -> tuple[list[dict[str, Any]], float, float]:
     computed_lines: list[dict[str, Any]] = []
     sub_total = 0.0

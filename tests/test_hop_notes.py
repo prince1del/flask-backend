@@ -211,3 +211,18 @@ def test_founder_double_tick_then_delete(tmp_path):
     hop_notes.update(conn, "ws", n["id"], {"checked": True})
     out = hop_notes.bulk_delete(conn, "ws", [n["id"], plain["id"]])
     assert out["deleted"] == 2 and out["skipped_not_checked"] == 0
+
+
+def test_offline_bill_series_never_clashes(co):
+    """Owner 21-11: each login has its own series for bills made offline; the main series ignores it."""
+    from app.hop_doc_preview import create_manual_party_document as create, next_manual_doc_number, offline_series
+
+    with connect(co["path"]) as conn:
+        s = offline_series(conn, WS, "kp7", "2026-11-21")
+        inv = s["series"]["1"]
+        assert s["code"] == "KP7" and inv["base"].endswith("/KP7-") and inv["next"] == 1
+        main_before = next_manual_doc_number(conn, WS, 1, "2026-11-21")
+        create(conn, WS, {"txn_type": 1, "party_type": "customer", "customer_id": co["cust"]["id"], "txn_date": "2026-11-21",
+                          "txn_number": inv["base"] + "1", "lines": [{"item_name": "Towel", "qty": 1, "rate": 100}]})
+        assert offline_series(conn, WS, "KP7", "2026-11-21")["series"]["1"]["next"] == 2
+        assert next_manual_doc_number(conn, WS, 1, "2026-11-21") == main_before     # main series untouched

@@ -12,6 +12,7 @@ MORE: dict[str, dict[str, Any]] = {
               "ai": "Ask Nexora writes the note for you and finds old notes (\"Sharma ke baare mein kya likha tha\").",
               "shows": ["Search — finds words in the note, its title or party; type #12 to open note number 12.",
                         "#Number — every note has its own number in this firm (#1, #2 …); it never changes, even when other notes are deleted.",
+                        "No internet — a new note (with its photos) waits on the phone and is sent by itself when the internet is back (Menu → 📤 waiting to send).",
                         "Each note — title, text, party, remind date; pinned notes stay on top.",
                         "Tap a note — clean view with Edit / Delete / Pin; Edit shows the party the note was saved for.",
                         "Replies — the answers in a note (💬 comment, 📋 plan); write your own reply and tap Send.",
