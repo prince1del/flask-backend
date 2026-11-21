@@ -103,8 +103,13 @@ Always say the in-app #number, never the DB id.
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
 **Distributor UI — claude notes (21-11 ~12:40):** replied + ✓ done in the app: #2, #10, #16, #17, #19, #24-#37.
-**Still open:** #9 bulk delete missing (↩), #12 GST not shown (↩), #22 Aster row does not open, #23 page cluttered +
-bulk delete — each needs its note photo (open the note on the phone first). Work in number order (#36).
+**Built 21-11 evening (installed on the NEW phone Vivo V2144, serial 13879371970004N, Wi-Fi; server `aec59ed`):** #9
+bulk delete on every bill list + Parties (Select → Delete N; Article Master already had it), Distributor bottom bar
+Orders → Orders/SO/CI (was Sales Orders — from cursor.md, checked in code), #12 GST % on Article Master rows (likely
+the note — confirm with its photo). Server: minimum app version (`min_version_code` / `NEXORA_MIN_APP_VERSION_CODE`,
+publish `MANDATORY=1` / `MIN_VERSION_CODE=n`) — **phone side still to do** (AppUpdate.kt: own VERSION_CODE <
+min → no "Later"). Still open: #22 Aster row, #23 which page; cursor.md also says "Company invoices" leaves the
+pipeline and "Ask AI ›" does nothing — check in code, do not trust blindly (owner).
 
 **#32-#35 BUILT 21-11 (owner picked first):** numbers never repeat (server refuses a used number), delete frees the
 number, Cancel bill keeps it ("Cancelled" in the list), offline bills on top of the bill list with Share / Delete,
