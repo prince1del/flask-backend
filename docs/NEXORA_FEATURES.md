@@ -486,6 +486,9 @@ balance 0. Phone: `HopOfflineCache` never keeps `/next-number`; `HopOfflineNumbe
 `OFF/U<id>-<type>-n` when never fetched, `giveBack` when the last waiting bill is deleted; series refreshed on every
 module open while online. `HopOfflineBillsBar` on top of every bill list: waiting bills (number, party, amount,
 error) with Share (text) and Delete. Preview Delete dialog → Cancel bill / Delete / Keep.
+#34 (owner: offline, Delete kept spinning, no back / menu / drawer): the dialog checks the internet first ("No
+internet — the bill is not changed"), calls time out after 20 s, Keep / back always close it (the job is cancelled);
+`withColdStartRetry` stops at once on `UnknownHostException` (no internet) instead of retrying 45 s — every screen.
 
 **Scan many (21-11, QnA step 1 of 3 — fast entry #42 / photo #43 / voice #44; owner checks the note numbers):**
 server `hop_items.scan_index` → `GET /api/v1/hop/products/scan-index` (items + `keys` barcode / lower-case code →
