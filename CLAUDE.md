@@ -51,7 +51,7 @@ subscriber's own brand (never "House of Prizm" for another business).
 - Server tests: `python -m pytest tests -q` (full ≈ 40 min; use `-k dist` / `-k help` etc. for the part you touched).
 - Phone build: `./gradlew.bat :app:assembleDebug` (JAVA_HOME = Android Studio jbr); long builds in the background.
 - Kotlin: never write `/*` inside a comment.
-- Phone: install over **USB** (owner 21-11, not Wi-Fi debug) — `adb devices -l`, `adb -s <serial> install -r`. Phone driver scripts
+- Phone on Wi-Fi debug: the port changes — `adb mdns services`, else ask the owner for IP:port (or USB when the owner says). Phone driver scripts
   live in the session scratchpad (`nx.py`, `reply_notes.py`, `list_notes.py`, `pin.sh`); the app-lock PIN is in
   Claude's private memory only.
 - Cursor also works on this repo (own SSH key `nexora_server_cursor`, rules in `.cursor/rules/live-server-safety.mdc`
