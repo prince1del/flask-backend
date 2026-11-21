@@ -41,6 +41,7 @@ HELP: dict[str, dict[str, Any]] = {
                  "tips": ["Scan adds one item; scanning it again adds 1 to the quantity.",
                           "Scan many keeps the camera open: move it from piece to piece, every beep adds 1, then Done adds all the lines.",
                           "Photo finds an item without a barcode by its saved photo — tap the right one of the 3 shown.",
+                          "🎤 Speak the bill: say the party, then each item with qty (and rate). Unclear words are matched by sound to your own items; check the words, tap ✨ Make bill, pick any item shown in amber (remembered next time), then Save.",
                           "Extra charges (freight, packing), TCS / TDS, PO no. and time are lower down the form."],
                  "ai": "✨ Fill with AI: take a photo of any bill, order or handwritten note — AI fills the customer and items. You check and save."},
     "sale_estimates": {"title": "Estimate / Quotation", "what": "Price offers before a sale. Convert one to an invoice when the order comes.",

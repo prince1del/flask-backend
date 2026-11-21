@@ -495,8 +495,19 @@ category default; look-alike items by photo; checks. `hop_product_photos`: `phot
 saved with every photo, filled for old photos on the first match) and `match()` → `POST /products/match-photo`
 (rotations tried, score 0-100, ≥ 40 shown, top 3). Phone (`HopProductPhoto.kt` → `HopPhotoProduct`,
 `rememberProductPhotoTaker`, `HopPhotoMatchDialog`): Article Master "✨ Photo → new" (look-alikes → pick or New
-article → form filled, Save → photo uploaded) + "Find by photo"; bill form "Photo" → pick → line added. Next: step 3
-voice bill.
+article → form filled, Save → photo uploaded) + "Find by photo"; bill form "Photo" → pick → line added.
+
+**Voice bill (21-11, QnA step 3):** `app/hop_voice_bill.py` → `POST /party-transactions/voice-draft` {text,
+alternatives (the phone's 5 speech guesses), kind sale|quote|purchase}: one capped AI call (400 tokens, logged as
+`nexora_agent_hop_voice_bill`) splits party / item / qty / rate / unit and may "pick" a name from a shortlist of THIS
+UI's items (40) / parties (15) that sound like the words — a name not in the list is ignored. Matching
+`app/hop_name_match.py` (words + sound keys for Hinglish: "aaster dabal" = "Aster Double", "flowra" = "Flora",
+"sharmaa" = "Sharma" + learned words `hop_voice_aliases`, `POST /party-transactions/voice-learn` when the user taps an
+option). Answer = ✨ Fill with AI shape + `options` / `party_options` / `say`. Phone `HopVoiceBill.kt`
+(`HopVoiceBillBar` in the bill form under ✨ Fill with AI): SpeechRecognizer en-IN, prefer offline, editable text,
+"Add more", ✨ Make bill, amber chips, TTS reads "party, n items, total ₹x. Correct?". **Ask Nexora** gets the same
+ears: `hop_ai._similar` now also scores by sound (every party / item lookup, and ✨ Fill with AI matching), learned
+party words win in party statements, and an item search with no hit falls back to sound match (`heard_as`).
 
 **Now doing (20-11 late night):** Cursor finished (7)/(12)/(13) + GSTIN address/PIN deploy + APK; CLAUDE.md
 updated under Cursor's name. Still: app Notes reply+done as **By: Cursor** when phone ADB is back; Claude =

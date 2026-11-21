@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app import hop_voice_bill as V
+from app import hop_name_match as NM, hop_voice_bill as V
 from app.hop_db import connect, create_customer
 from app.hop_ops import create_product
 from app.hop_schema import HOP_WORKSPACE_ID as WS, ensure_hop_schema
@@ -26,9 +26,9 @@ def db(tmp_path: Path):
 
 
 def test_score_prefers_full_word_match():
-    assert V.score("aster double", "Aster Double Bedsheet") > V.score("aster double", "Aster King Bedsheet")
-    assert V.score("flora towel", "Flora Towel") >= 0.95
-    assert V.score("sharma", "Sharma Traders") >= 0.85
+    assert NM.score("aster double", "Aster Double Bedsheet") > NM.score("aster double", "Aster King Bedsheet")
+    assert NM.score("flora towel", "Flora Towel") >= 0.95
+    assert NM.score("sharma", "Sharma Traders") >= 0.85
 
 
 def test_draft_matches_saved_lists_only(db):
@@ -70,3 +70,40 @@ def test_voice_route(tmp_path, monkeypatch):
     assert d["lines"][0]["item_name"] == "Lamp V" and d["lines"][0]["qty"] == 3
     assert client.post("/api/v1/hop/party-transactions/voice-draft", headers=headers,
                        json={"text": "x", "kind": "bad"}).status_code == 400
+
+
+def test_sound_match_unclear_words():
+    assert NM.sound("aaster") == NM.sound("aster") and NM.sound("flowra") == NM.sound("flora")
+    assert NM.sound("dabal") == NM.sound("double") and NM.sound("sharmaa") == NM.sound("sharma")
+    assert NM.score("aaster dabal", "Aster Double Bedsheet") >= 0.85
+    assert NM.score("aaster dabal", "Aster Double Bedsheet") > NM.score("aaster dabal", "Aster King Bedsheet")
+
+
+def test_unclear_speech_ai_pick_and_learning(db):
+    with connect(db) as conn:
+        # AI pointed to a saved name; one not in the list is ignored
+        d = V.draft(conn, WS, "sharmaa, das flowra", user_id=1, parsed={"party": "sharmaa", "lines": [
+            {"item": "flowra", "pick": "Flora Towel", "qty": 10},
+            {"item": "rozy", "pick": "Rosy Blanket", "qty": 1}]})
+        assert d["customer_match"] == "Sharma Traders"
+        assert d["lines"][0]["item_name"] == "Flora Towel" and d["lines"][0]["qty"] == 10
+        assert d["lines"][1]["product_id"] is None
+        # "aster" alone is unclear → options; the user picks King → learned, next time sure
+        d = V.draft(conn, WS, "aster", user_id=1, parsed={"party": "", "lines": [{"item": "aster", "qty": 1}]})
+        assert d["lines"][0]["unsure"]
+        king = next(o for o in d["lines"][0]["options"] if "King" in o["item_name"])
+        NM.learn(conn, WS, "item", "aster", king["product_id"])
+        d = V.draft(conn, WS, "aaster", user_id=1, parsed={"party": "", "lines": [{"item": "aaster", "qty": 1}]})
+        assert d["lines"][0]["item_name"] == "Aster King Bedsheet" and d["lines"][0]["learned"] and not d["lines"][0]["unsure"]
+        with pytest.raises(LookupError):
+            NM.learn(conn, WS, "item", "x", 99999)
+
+
+def test_ask_nexora_hears_unclear_names(db):
+    from app.services import hop_ai
+
+    with connect(db) as conn:
+        out = hop_ai.books_answer(conn, WS, "items", "aaster dabal")
+        assert out["items"][0]["name"] == "Aster Double Bedsheet" and out["heard_as"]
+        st = hop_ai.books_answer(conn, WS, "party_statement", "sharmaa")
+        assert "not_found" not in st

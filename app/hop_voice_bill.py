@@ -1,10 +1,12 @@
 """Voice bill (owner QnA 21-11, step 3): "Sharma Traders, 10 Aster double bedsheet 719 ke rate se, 5 Flora towel".
 
 1. The phone turns speech into text (on the phone, free); the user can fix the text first.
-2. One capped AI call only SPLITS the text: party, and per line item / qty / rate / unit. It never picks or
-   invents a party or an item.
-3. Party and items are matched here, ONLY against this UI's saved parties and items (word match). A clear winner
-   is filled in; otherwise the line is marked unsure with up to 3 options to tap.
+2. One capped AI call splits the text (party, item / qty / rate / unit) and may point to a name from a short list
+   of THIS UI's saved items / parties that sound like the words (the phone's other guesses are sent too), so unclear
+   speech still lands on the right product. A name not in the list is ignored.
+3. Party and items are matched here (``hop_name_match``: words, sounds, learned words) ONLY against the saved
+   lists. A clear winner is filled in; otherwise the line is unsure with up to 3 options to tap — the pick is
+   learned (``/voice-learn``) so the same words go straight to it next time.
 4. A rate that was not spoken comes from the item (price to retailer / selling price, or the buying price on a
    purchase), wholesale when the qty reaches its minimum.
 
@@ -15,62 +17,23 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from difflib import SequenceMatcher
 from typing import Any
 
-from app import hop_items
+from app import hop_items, hop_name_match as NM
 
-_PROMPT = """Split a shopkeeper's spoken bill (English / Hindi / Hinglish, speech-to-text, may have mistakes)
-into JSON only: {"party": "", "lines": [{"item": "", "qty": 1, "rate": 0, "unit": ""}]}
-- party: the customer / supplier name said (usually first). Empty if none.
-- item: the item words as said (keep size / design words like "double", "king", "90x100"). Never add words.
-- qty: number of pieces (hindi numbers: ek 1, do 2, teen 3, char 4, paanch 5, chhe 6, saat 7, aath 8, nau 9,
-  das 10, bees 20, pachaas 50, sau 100). Default 1.
+_PROMPT = """Split a shopkeeper's spoken bill (English / Hindi / Hinglish, speech-to-text, may be unclear or
+misheard) into JSON only:
+{"party": "", "party_pick": "", "lines": [{"item": "", "pick": "", "qty": 1, "rate": 0, "unit": ""}]}
+- party: the customer / supplier name as said (usually first). Empty if none.
+- party_pick: the EXACT name from PARTIES that was meant (sounds alike counts), else "".
+- item: the item words as said (keep size / design words like "double", "king", "90x100").
+- pick: the EXACT name from ITEMS that was meant (sounds alike / misheard counts: "aaster dabal" = "Aster Double
+  Bedsheet"), else "". Never a name that is not in ITEMS.
+- qty: pieces (hindi numbers: ek 1, do 2, teen 3, char 4, paanch 5, chhe 6, saat 7, aath 8, nau 9, das 10,
+  bees 20, pachaas 50, sau 100). Default 1.
 - rate: only if a price per piece was said ("719 ke rate se", "@ 719", "719 wala"); else 0.
 - unit: only if said (box, dozen, set, mtr); else "".
-Text: """
-
-_STOP = {"ka", "ki", "ke", "aur", "and", "the", "of", "wala", "wali", "wale", "piece", "pieces", "pcs", "pc", "nos"}
-
-
-def _words(s: str) -> list[str]:
-    return [w for w in re.findall(r"[a-z0-9]+", str(s or "").lower()) if w not in _STOP]
-
-
-def score(spoken: str, name: str, code: str = "") -> float:
-    """0..1 how well the spoken words fit an item / party name (every spoken word should be in it)."""
-    sw, nw = _words(spoken), _words(name) + _words(code)
-    if not sw or not nw:
-        return 0.0
-    hit = 0.0
-    for w in sw:
-        best = 0.0
-        for n in nw:
-            if w == n:
-                best = 1.0
-                break
-            if len(w) >= 3 and (n.startswith(w) or w.startswith(n) and len(n) >= 3):
-                best = max(best, 0.9)
-            elif len(w) >= 4:                       # speech-to-text spelling slips ("flowra" → "flora")
-                r = SequenceMatcher(None, w, n).ratio()
-                if r >= 0.8:
-                    best = max(best, r)
-        hit += best
-    cover = hit / len(sw)
-    extra = len(nw) - len(sw)          # a shorter name that holds every word beats a long one
-    return round(cover - max(0, extra) * 0.02, 3)
-
-
-def _rank(spoken: str, rows: list[dict], name_key: str, code_key: str | None = None) -> list[tuple[float, dict]]:
-    out = [(score(spoken, r.get(name_key) or "", (r.get(code_key) or "") if code_key else ""), r) for r in rows]
-    out = [x for x in out if x[0] >= 0.5]
-    out.sort(key=lambda x: -x[0])
-    return out[:3]
-
-
-def _sure(ranked: list[tuple[float, dict]]) -> bool:
-    return bool(ranked) and ranked[0][0] >= 0.85 and (len(ranked) == 1 or ranked[0][0] - ranked[1][0] >= 0.1)
-
+"""
 
 def _num(v: Any) -> float:
     try:
@@ -90,25 +53,41 @@ def _line_from(prod: dict, qty: float, rate: float, party_type: str) -> dict[str
 
 
 def draft(conn: sqlite3.Connection, ws: str, text: str, *, user_id: int, kind: str = "sale",
-          parsed: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Spoken text → bill draft (``parsed`` lets tests skip the AI call)."""
+          alternatives: list[str] | None = None, parsed: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Spoken text (+ the phone's other guesses of the same speech) → bill draft. ``parsed`` lets tests skip AI."""
     text = str(text or "").strip()[:600]
     if not text:
         raise ValueError("Say the party and the items first")
+    alts = [str(a).strip()[:300] for a in (alternatives or []) if str(a or "").strip() and str(a).strip() != text][:4]
+    purchase = kind == "purchase"
+    party_type = "vendor" if purchase else "customer"
+    parties = NM._parties(conn, ws, party_type)
+    products = NM._products(conn, ws)
     if parsed is None:
         from app.services import hop_ai
 
-        parsed = hop_ai.ask_json(_PROMPT + text, user_id=user_id, feature="nexora_agent_hop_voice_bill", max_tokens=350)
-    purchase = kind == "purchase"
-    party_type = "vendor" if purchase else "customer"
-    table = "hop_vendors" if purchase else "hop_customers"
-    parties = [dict(r) for r in conn.execute(f"SELECT id, company, mobile FROM {table} WHERE workspace_id=?", (ws,))]
-    products = [dict(r) for r in conn.execute(
-        "SELECT * FROM hop_products WHERE workspace_id=? AND (deleted_at IS NULL OR trim(deleted_at)='') "
-        "AND COALESCE(status,'active')!='inactive'", (ws,))]
+        items_short = NM.shortlist([text, *alts], products, "name", "code", limit=40)
+        parties_short = NM.shortlist([text, *alts], parties, "company", limit=15)
+        prompt = "\n".join([
+            _PROMPT + "ITEMS: " + "; ".join(p["name"] for p in items_short),
+            "PARTIES: " + "; ".join(p["company"] for p in parties_short),
+            "HEARD: " + text,
+            ("OTHER GUESSES OF THE SAME SPEECH: " + " | ".join(alts)) if alts else "",
+        ])
+        parsed = hop_ai.ask_json(prompt, user_id=user_id, feature="nexora_agent_hop_voice_bill", max_tokens=400)
+    by_name = {str(p.get("name") or "").strip().lower(): p for p in products}
+    party_by_name = {str(p.get("company") or "").strip().lower(): p for p in parties}
+
     party_said = str(parsed.get("party") or "").strip()[:120]
-    ranked_p = _rank(party_said, parties, "company") if party_said else []
-    party = ranked_p[0][1] if _sure(ranked_p) else None
+    pf = NM.find(conn, ws, party_type, party_said, parties) if party_said else {"best": None, "options": [], "learned": False}
+    party, ranked_p = pf["best"], pf["options"]
+    ai_party = party_by_name.get(str(parsed.get("party_pick") or "").strip().lower())
+    if party is None and ai_party is not None:
+        # AI heard it as a saved party: sure when our words agree a little, else the first option to tap
+        if NM.score(party_said, ai_party["company"]) >= 0.5 or not ranked_p:
+            party = ai_party
+        else:
+            ranked_p = [(1.0, ai_party)] + [x for x in ranked_p if x[1]["id"] != ai_party["id"]][:2]
     checks: list[str] = []
     lines = []
     for ln in (parsed.get("lines") or [])[:30]:
@@ -119,21 +98,28 @@ def draft(conn: sqlite3.Connection, ws: str, text: str, *, user_id: int, kind: s
             continue
         qty = _num(ln.get("qty")) or 1.0
         rate = _num(ln.get("rate"))
-        ranked = _rank(said, products, "name", "code")
+        f = NM.find(conn, ws, "item", said, products)
+        ranked, best = f["options"], f["best"]
+        ai_pick = by_name.get(str(ln.get("pick") or "").strip().lower())
+        if best is None and ai_pick is not None:
+            if NM.score(said, ai_pick["name"], ai_pick.get("code") or "") >= 0.5 or not ranked:
+                best = ai_pick
+            ranked = [(1.0, ai_pick)] + [x for x in ranked if x[1]["id"] != ai_pick["id"]][:2]
         options = [{**_line_from(p, qty, rate, party_type), "score": round(sc * 100)} for sc, p in ranked]
-        sure = _sure(ranked)
-        if ranked:
-            base = dict(options[0])
-            base.pop("score", None)
+        top = best or (ranked[0][1] if ranked else None)
+        if top is not None:
+            base = _line_from(top, qty, rate, party_type)
         else:
             base = {"product_id": None, "item_name": said, "rate": rate, "rate_from": "spoken" if rate else "missing",
                     "tax_pct": 0.0, "hsn": "", "unit": "PCS"}
         unit = str(ln.get("unit") or "").strip().upper()[:12]
-        lines.append({**base, "qty": qty, "unit": unit or base["unit"], "said": said, "matched_item": sure,
-                      "unsure": not sure, "options": options if not sure else [], "discount_pct": 0.0, "description": ""})
-        if not ranked:
+        is_sure = best is not None
+        lines.append({**base, "qty": qty, "unit": unit or base["unit"], "said": said, "matched_item": is_sure,
+                      "learned": f["learned"], "unsure": not is_sure, "options": options if not is_sure else [],
+                      "discount_pct": 0.0, "description": ""})
+        if top is None:
             checks.append(f"\"{said}\" is not in your items — add it, or pick the right item.")
-        elif not sure:
+        elif not is_sure:
             checks.append(f"\"{said}\": which one? " + " / ".join(o["item_name"] for o in options))
     if party_said and not party:
         checks.insert(0, f"\"{party_said}\": " + ("which one? " + " / ".join(p["company"] for _, p in ranked_p)
@@ -150,7 +136,8 @@ def draft(conn: sqlite3.Connection, ws: str, text: str, *, user_id: int, kind: s
     key = "vendor_id" if purchase else "customer_id"
     return {"kind": kind, key: party["id"] if party else None,
             ("vendor_name" if purchase else "customer_match"): party["company"] if party else None,
-            "customer_name": party_said, "party_options": [{"id": p["id"], "name": p["company"], "score": round(sc * 100)}
-                                                         for sc, p in ranked_p] if party_said and not party else [],
+            "customer_name": party_said, "party_said": party_said, "party_kind": party_type,
+            "party_options": [{"id": p["id"], "name": p["company"], "score": round(sc * 100)}
+                              for sc, p in ranked_p] if party_said and not party else [],
             "lines": lines, "items_total": total, "total": total, "text": text, "say": say, "checks": checks,
             "date": "", "notes": ""}

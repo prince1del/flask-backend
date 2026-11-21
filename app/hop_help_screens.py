@@ -178,6 +178,8 @@ for _k, _v in _MORE.items():
 # ── 18-11-2026: what changed on these screens (kept in the Info sheet) ─────────────────────────────
 SHOWS["invoices"] = SHOWS["invoices"] + [
     "Date — tap it to pick from the calendar (every date in the app works the same way).",
+    "🎤 Speak the bill — say party + items; the words show (fix them), ✨ Make bill fills the form, amber items / party show options to tap (remembered), Nexora reads the total; you Save.",
+    "Scan / Scan many / Photo — add items by barcode (one or many pieces) or by the item's photo.",
     "Customer PO no. and PO date — your customer's order number; printed on the bill.",
     "E-way bill no., Vehicle no., Transporter — printed on the bill when filled in.",
     "Time — saved automatically; type one only to change it.",

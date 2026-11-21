@@ -71,12 +71,17 @@ def _num(v: Any) -> float:
 
 
 def _similar(a: str, b: str) -> float:
-    a, b = re.sub(r"[^a-z0-9]", "", a.lower()), re.sub(r"[^a-z0-9]", "", b.lower())
+    """How alike a name said / read (``a``) is to a saved name (``b``): letters, words, and how it sounds
+    (owner 21-11: unclear speech / Hinglish spelling must still find the right party or item)."""
+    from app.hop_name_match import score as _sound_score
+
+    ra, rb = str(a or ""), str(b or "")
+    a, b = re.sub(r"[^a-z0-9]", "", ra.lower()), re.sub(r"[^a-z0-9]", "", rb.lower())
     if not a or not b:
         return 0.0
     if a in b or b in a:
         return 0.9
-    return SequenceMatcher(None, a, b).ratio()
+    return max(SequenceMatcher(None, a, b).ratio(), _sound_score(ra, rb))
 
 
 def _ask_gemini(data: bytes, mime: str, user_id: int, prompt: str | None = None, *, max_tokens: int = 3000,
@@ -369,6 +374,13 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
             return {"error": "Which party? Give a party name."}
         best = None
         scored = []
+        from app import hop_name_match as NM
+
+        for kind in ("customer", "vendor"):          # a name the user once picked for these words wins
+            lid = NM.learned(conn, ws, kind, party_name)
+            if lid is not None:
+                best = (1.0, kind, lid)
+                break
         for kind, table in (("customer", "hop_customers"), ("vendor", "hop_vendors")):
             for r in conn.execute(f"SELECT id, company FROM {table} WHERE workspace_id=?", (ws,)).fetchall():
                 sc = _similar(party_name, r[1] or "")
@@ -405,6 +417,17 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
 
         q = str(party_name or "").strip()
         rows = hop_ops.list_products(conn, ws, q or None)
+        heard_as = None
+        if q and not rows:
+            # spoken / misspelt item name ("aaster dabal"): learned words, then sound match — saved items only
+            from app import hop_name_match as NM
+
+            f = NM.find(conn, ws, "item", q, limit=5)
+            names = [f["best"]["name"]] if f["best"] else [r["name"] for _, r in f["options"]]
+            if names:
+                allr = hop_ops.list_products(conn, ws, None)
+                rows = [r for n in names for r in allr if r.get("name") == n]
+                heard_as = names
         def slim(r):
             return {k: r.get(k) for k in ("name", "code", "barcode", "item_type", "unit", "stock_qty", "selling_price",
                                           "purchase_price", "mrp", "wholesale_price", "wholesale_min_qty", "alt_unit",
@@ -414,7 +437,9 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                 "low_or_negative_stock": [{"name": r["name"], "stock": r.get("stock_qty")} for r in goods
                                           if float(r.get("stock_qty") or 0) <= 0][:15],
                 "item_problems": [{"name": r["name"], "problems": r["checks"]} for r in rows if r.get("checks")][:15],
-                "godowns": _godown_summary(conn, ws, q)}
+                "godowns": _godown_summary(conn, ws, q),
+                **({"heard_as": heard_as, "tell_user": f"No item is named exactly '{q}'; these sound like it: "
+                    + ", ".join(heard_as) + ". Say which one you mean if it is not the first."} if heard_as else {})}
     if what == "reminders":
         from app import hop_reminders
 

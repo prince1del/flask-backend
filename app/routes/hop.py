@@ -4183,8 +4183,29 @@ def voice_bill_draft():
     user = getattr(request, "user", None) or {}
     try:
         with hop_db.connect(_db_path()) as conn:
-            out = hop_voice_bill.draft(conn, _ws(), p.get("text") or "", user_id=int(user.get("user_id") or 0), kind=kind)
+            alts = p.get("alternatives") if isinstance(p.get("alternatives"), list) else []
+            out = hop_voice_bill.draft(conn, _ws(), p.get("text") or "", user_id=int(user.get("user_id") or 0), kind=kind,
+                                       alternatives=alts)
     except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/party-transactions/voice-learn", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def voice_bill_learn():
+    """The user tapped the right item / party for what was said → remembered for this UI (voice bill + Ask Nexora)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_name_match
+
+    p = _payload() or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_name_match.learn(conn, _ws(), str(p.get("kind") or "item"), str(p.get("said") or ""), int(p.get("id") or 0))
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except (ValueError, TypeError) as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": out})
 
