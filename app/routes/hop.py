@@ -4167,6 +4167,28 @@ def party_transaction_links(txn_id: int):
     }})
 
 
+@hop_bp.route("/party-transactions/voice-draft", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def voice_bill_draft():
+    """🎤 Voice bill: {text, kind: sale|quote|purchase} → bill draft (same shape as ✨ Fill with AI). One capped AI
+    call splits the words; party and items come only from the saved lists; unsure lines carry options. Nothing saved."""
+    ensure_hop_schema(_db_path())
+    from app import hop_voice_bill
+
+    p = _payload() or {}
+    kind = str(p.get("kind") or "sale").lower()
+    if kind not in ("sale", "quote", "purchase"):
+        return _json_error("kind must be sale, quote or purchase")
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_voice_bill.draft(conn, _ws(), p.get("text") or "", user_id=int(user.get("user_id") or 0), kind=kind)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
 @hop_bp.route("/ai/read-bill", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

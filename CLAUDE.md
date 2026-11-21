@@ -103,7 +103,11 @@ Create account button), #26 multi-brand (Distributor main). D9 replied, kept ope
 **QnA #42/#43/#44 (owner checks the numbers vs #25-27 before replies):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
 `ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master
 Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). **Step 2 photo → new product BUILT 21-11** — server `91f8d32` deployed; phone Article Master "✨ Photo → new" + "Find by
-photo", bill form "Photo" (detail §10). Owner checks on the phone. Next: step 3 voice bill.
+photo", bill form "Photo" (detail §10). Owner checks on the phone. **Building now — step 3 voice bill:** bill form 🎤 → phone speech-to-text (shown,
+editable) → `POST /party-transactions/voice-draft` (one capped AI call splits party / items / qty / rate; party + items
+matched ONLY to saved lists, word match, top 3 options when unsure; rate not spoken → catalogue / PTR) → same draft
+shape as ✨ Fill with AI, unsure lines amber with option chips, Nexora speaks "party, n items, total ₹x — correct?";
+user taps Save (AI never saves).
 
 **Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
 reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with
