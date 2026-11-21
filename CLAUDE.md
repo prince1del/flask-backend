@@ -31,6 +31,8 @@ subscriber's own brand (never "House of Prizm" for another business).
 - **Write the plan here before starting a batch**; ask the owner what to do first; update this file after each change.
 - **Notes inbox:** work ONLY on notes for Claude — party "claude" (row shows "👤 claude") or body starting
   "[For Claude]". Reply in the note (By: Claude), then ✓ Mark as done — through the app only.
+  **"Phone ke notes check karo" = only the notes tagged claude** (owner 21-11), in the UI the owner names (e.g.
+  Distributor UI); untagged notes are not read out, listed or worked on.
 - **Don't touch:** Wipe all data, Import old data on real data, Start day, Financial year close, Android permission
   prompts, the phone's own lock password.
 - T&P (Tested & Passed) mark only after every button of a screen was pressed on the latest phone build. Tests use
