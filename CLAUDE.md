@@ -5,7 +5,7 @@ part you need. Other maps: `docs/NEXORA_APP_MAP.md` (module → route → table 
 AI rules), `deploy/README.md` (server, backups, deploy). This repo is **public**: never put server addresses, keys,
 passwords, PINs or real business data in it.
 
-_Last updated: 2026-11-21. Keep this file short: rules + what is pending. Finished work → `docs/NEXORA_FEATURES.md`._
+_Last updated: 2026-11-21 (evening). Keep this file short: rules + what is pending. Finished work → `docs/NEXORA_FEATURES.md`._
 
 ## 1. What NEXORA is
 
@@ -53,9 +53,14 @@ subscriber's own brand (never "House of Prizm" for another business).
 - Server tests: `python -m pytest tests -q` (full ≈ 40 min; use `-k dist` / `-k help` etc. for the part you touched).
 - Phone build: `./gradlew.bat :app:assembleDebug` (JAVA_HOME = Android Studio jbr); long builds in the background.
 - Kotlin: never write `/*` inside a comment.
-- Phone on Wi-Fi debug: the port changes — `adb mdns services`, else ask the owner for IP:port (or USB when the owner says). Phone driver scripts
-  live in the session scratchpad (`nx.py`, `reply_notes.py`, `list_notes.py`, `pin.sh`); the app-lock PIN is in
+- Phones: always `adb -s <serial or ip:port>` and check `ro.serialno` first — never a phone the owner did not name.
+  Old phone Fold (USB); new phone Vivo V2144 (Wi-Fi, paired 21-11; ask the owner for "IP address & Port"; pairing port
+  ≠ connect port — `adb mdns services`). Phone driver scripts (`nx.py`, `list_notes.py`, `mark_done.py`, `typein.py`)
+  read `ANDROID_SERIAL`; they press Back, which on the Vivo leaves the app — drive notes on the Fold, or take
+  screenshots step by step. Fold screenshots: `screencap -d <display id>` (two displays). The app-lock PIN is in
   Claude's private memory only.
+- Test with a NEW sign-up of each UI, not only the founder login (the founder skips role checks) —
+  `tests/test_self_serve_distributor_books.py` does Business / Distributor / Retailer / Executive.
 - Cursor also works on this repo (own SSH key `nexora_server_cursor`, rules in `.cursor/rules/live-server-safety.mdc`
   + `AGENTS.md`). Review its commits; it does not do calm-screen work.
 - `/etc/nexora.env` is sourced by the backup script: quote every value with spaces or `< >`.
@@ -103,13 +108,17 @@ Always say the in-app #number, never the DB id.
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
 **Distributor UI — claude notes (21-11 ~12:40):** replied + ✓ done in the app: #2, #10, #16, #17, #19, #24-#37.
-**Built 21-11 evening (installed on the NEW phone Vivo V2144, serial 13879371970004N, Wi-Fi; server `aec59ed`):** #9
-bulk delete on every bill list + Parties (Select → Delete N; Article Master already had it), Distributor bottom bar
-Orders → Orders/SO/CI (was Sales Orders — from cursor.md, checked in code), #12 GST % on Article Master rows (likely
-the note — confirm with its photo). Server: minimum app version (`min_version_code` / `NEXORA_MIN_APP_VERSION_CODE`,
-publish `MANDATORY=1` / `MIN_VERSION_CODE=n`) — **phone side still to do** (AppUpdate.kt: own VERSION_CODE <
-min → no "Later"). Still open: #22 Aster row, #23 which page; cursor.md also says "Company invoices" leaves the
-pipeline and "Ask AI ›" does nothing — check in code, do not trust blindly (owner).
+**Done 21-11 evening (APK 15:57 on BOTH phones; server `9248c8b`):** #9 bulk delete (photo = Parties list) on every
+bill list + Parties; Distributor bottom Orders → Orders/SO/CI; #12 GST % on Article Master rows; #22 Warehouse row
+opens the item card (checked in code); #23 Article Master calm (two button rows, Select visible, small AI card).
+Distributor notes #2-#37 all replied + ✓ done. **New sign-up fix:** a Distributor / Retailer sign-up got
+"Insufficient permissions" (role `distributor` / `retailer`, books need `hop_admin`) → `auth._self_serve_books_user`
+lets a self-signed-up business into its OWN workspace's books only.
+**Next:** (1) version check phone side — AppUpdate.kt: own VERSION_CODE < `min_version_code` → no "Later" (server
+done: latest.json `min_version_code` / env `NEXORA_MIN_APP_VERSION_CODE`, publish `MANDATORY=1` / `MIN_VERSION_CODE=n`);
+(2) new notes #38 (screen name in the top bar, not the firm name), #39 ("where do I type?" — clearer forms);
+(3) cursor.md (owner: check, don't trust blindly): "Company invoices" in Orders→SO→CI opens Purchase Bills,
+"Ask AI ›" does nothing; (4) smaller price-change banner on Article Master (offered).
 
 **#32-#35 BUILT 21-11 (owner picked first):** numbers never repeat (server refuses a used number), delete frees the
 number, Cancel bill keeps it ("Cancelled" in the list), offline bills on top of the bill list with Share / Delete,
