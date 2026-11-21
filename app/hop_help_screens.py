@@ -180,7 +180,7 @@ SHOWS["invoices"] = SHOWS["invoices"] + [
     "Date — tap it to pick from the calendar (every date in the app works the same way).",
     "🎤 Speak the bill — say party + items; the words show (fix them), ✨ Make bill fills the form, amber items / party show options to tap (remembered), Nexora reads the total; you Save.",
     "Scan / Scan many / Photo — add items by barcode (one or many pieces) or by the item's photo.",
-    "On this phone — bills made without internet: number, party, amount; Share sends it as text, Delete removes it; they are sent by themselves.",
+    "Bills made without internet — at the top like any bill (number, party, amount); Share sends it as text, Delete removes it; they sync by themselves.",
     "Delete or cancel — Cancel bill keeps the number and shows Cancelled (stock, balance, reports leave it out); Delete moves it to the Recycle bin and frees the number.",
     "Customer PO no. and PO date — your customer's order number; printed on the bill.",
     "E-way bill no., Vehicle no., Transporter — printed on the bill when filled in.",

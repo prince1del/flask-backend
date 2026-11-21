@@ -115,6 +115,8 @@ number order · #37 EAN field on Article Master in every UI. (The #41-#46 number
 **#32-#35 BUILT 21-11 (owner picked first):** numbers never repeat (server refuses a used number), delete frees the
 number, Cancel bill keeps it ("Cancelled" in the list), offline bills on top of the bill list with Share / Delete,
 offline number shown in the form and never counted backwards (detail §10). Owner tests offline, then reply #32-#35.
+**Offline everywhere (owner 21-11):** every change made offline is kept and synced by itself, and shows on the screen
+at once with no "waiting" labels (phone interceptor, detail §10); #34 was the delete screen locking offline — fixed.
 
 **QnA #25/#26/#27 (Distributor UI):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
 `ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master

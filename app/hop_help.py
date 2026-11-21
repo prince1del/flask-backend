@@ -41,7 +41,7 @@ HELP: dict[str, dict[str, Any]] = {
                  "tips": ["Scan adds one item; scanning it again adds 1 to the quantity.",
                           "Scan many keeps the camera open: move it from piece to piece, every beep adds 1, then Done adds all the lines.",
                           "Photo finds an item without a barcode by its saved photo — tap the right one of the 3 shown.",
-                          "No internet? The bill gets your own offline number (never one already used), shows at the top of the list with Share, and is sent by itself later.",
+                          "No internet? Keep working — new bills, edits, deletes and payments show at once and sync by themselves; an offline bill gets your own number (never one already used) and has Share.",
                           "Wrong bill: Cancel bill keeps its number and shows Cancelled; Delete frees the number for the next bill.",
                           "🎤 Speak the bill: say the party, then each item with qty (and rate). Unclear words are matched by sound to your own items; check the words, tap ✨ Make bill, pick any item shown in amber (remembered next time), then Save.",
                           "Extra charges (freight, packing), TCS / TDS, PO no. and time are lower down the form."],

@@ -489,6 +489,15 @@ error) with Share (text) and Delete. Preview Delete dialog → Cancel bill / Del
 #34 (owner: offline, Delete kept spinning, no back / menu / drawer): the dialog checks the internet first ("No
 internet — the bill is not changed"), calls time out after 20 s, Keep / back always close it (the job is cancelled);
 `withColdStartRetry` stops at once on `UnknownHostException` (no internet) instead of retrying 45 s — every screen.
+**Offline everywhere (owner 21-11: "koi kaam nahi rukna ... delete, new, old sab screen pe dikhna chahiye ... seedha
+update karo"):** phone `HopOfflineCache.Interceptor` — every POST / PATCH / PUT / DELETE under `/api/v1/hop` made with
+no internet (or that never reached the server: UnknownHost / Connect) is kept as the exact request
+(`HopOffline.enqueueRaw`, same order, own UI + firm) and answered "ok"; `HopOffline.flush` replays it (method + body,
+`X-Nexora-Replay`), a 404 on edit / delete = already gone. Every list / detail GET (saved copy offline, or live while
+something waits) is drawn with the waiting changes applied: DELETE → row gone, cancel → "Cancelled", JSON PATCH / PUT
+→ fields merged, JSON POST to a list → new row. No "waiting" labels anywhere; offline bills look like normal bills
+(Share / Delete); the drawer card shows only changes the server refused. Server-answer calls (AI, GSTIN, imports,
+backups, restore) say "No internet — this needs internet" at once. New bills / notes keep their own queues.
 
 **Scan many (21-11, QnA step 1 of 3 — fast entry #42 / photo #43 / voice #44; owner checks the note numbers):**
 server `hop_items.scan_index` → `GET /api/v1/hop/products/scan-index` (items + `keys` barcode / lower-case code →
