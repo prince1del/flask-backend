@@ -102,15 +102,9 @@ Always say the in-app #number, never the DB id.
 "add new option if the profile is different" (login chips?). Done 21-11: B3 (it was the LOGIN screen → navy-gold +
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
-**Distributor UI — open notes tagged claude (read on the phone 21-11 ~11:40; "For: Claude"; #36 = work them in
-number order):** #2 GSTIN fetch every UI · #9 ↩ bulk delete missing · #10 ↩ many photos on a note · #12 ↩ GST not
-shown · #16 scan → item or Add new · #17 ↩ logo = initials of each word (KH) + a floating "report a problem / change"
-button on forms · #19 multi-brand (Brand desk built) · #22 Aster row does not open · #23 page cluttered + bulk delete
-· #24 Retailer notes (built) · #25 / #26 / #27 QnA = the 3 steps below (numbers confirmed) · #28 ↩ fully offline, own
-bill series per login · #29 ↩ notes not saved offline · #30 claude tag on edit (fixed, reply) · #31 "check, ignore"
-· **#32 offline bill got no. 1 again after bill 1 (duplicate invoice!) · #33 offline bill saved but not shown · #34
-offline bill cannot be deleted · #35 bill 2 deleted → next shows 3; no Cancel bill; series rule** · #36 work in
-number order · #37 EAN field on Article Master in every UI. (The #41-#46 numbers above were wrong — use these.)
+**Distributor UI — claude notes (21-11 ~12:40):** replied + ✓ done in the app: #2, #10, #16, #17, #19, #24-#37.
+**Still open:** #9 bulk delete missing (↩), #12 GST not shown (↩), #22 Aster row does not open, #23 page cluttered +
+bulk delete — each needs its note photo (open the note on the phone first). Work in number order (#36).
 
 **#32-#35 BUILT 21-11 (owner picked first):** numbers never repeat (server refuses a used number), delete frees the
 number, Cancel bill keeps it ("Cancelled" in the list), offline bills on top of the bill list with Share / Delete,
