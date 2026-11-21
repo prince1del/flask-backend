@@ -70,3 +70,14 @@ def test_every_ui_new_signup_can_save_and_read_books(client, category, ui):
     for path in ("/api/v1/hop/customers", "/api/v1/hop/party-transactions?txn_types=1", "/api/v1/hop/products",
                  "/api/v1/hop/feedback/counts"):
         assert c.get(path, headers=h).status_code == 200, (category, path)
+
+
+def test_executive_new_signup_opens_its_screens(client):
+    """Executive UI's brand-new sign-up (category "service"): Home / visits open — no "Insufficient permissions"."""
+    c, _ = client
+    d = _signup(c, "newexec", "service")
+    assert d["role"] == "sales_executive"
+    h = {"Authorization": f"Bearer {d['access_token']}", "X-Nexora-UI": "executive"}
+    for path in ("/api/v1/executive/home", "/api/v1/executive/visits"):
+        r = c.get(path, headers=h)
+        assert r.status_code == 200, (path, r.status_code, r.get_json())
