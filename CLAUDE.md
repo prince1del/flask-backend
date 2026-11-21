@@ -79,6 +79,11 @@ big 2-line title, info scattered, buttons uneven, empty space; redo as calm card
 
 **Deployed 21-11 `a9e006f`:** company PIN code, more contacts, designation, Guard tip → Brand desk + Add company.
 
+**Building now (owner 21-11: #45 / #46 offline first):** lists already work offline (HopOfflineCache) and bills queue
+(HopOffline). Gaps → (1) offline bill number: each login has its own series `<prefix>/<fy>/<code>-<n>` (server
+`/party-transactions/offline-series`, phone keeps the next number, the main series never clashes); (2) notes (with
+photos) queue offline and send themselves; (3) the queue card says "waiting to send" for notes too.
+
 **New notes 21-11 (Distributor, Kunwar home):** #45 tagged claude — offline: a new bill gets no number (photo);
 #46 party "claudes" — notes do not save offline in any UI; untagged (tagging was broken, fixed 21-11 — ask the owner):
 #41 notes for the Retailer UI, #42 QnA barcode-less fast product entry, #43 product photo → EAN / MRP / design / GST,
