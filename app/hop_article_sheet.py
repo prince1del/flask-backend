@@ -24,11 +24,12 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
-ROLES = ("name_part", "code", "category", "season", "mrp", "purchase_price", "selling_price", "gst_pct", "hsn",
-         "unit", "detail", "skip")
+ROLES = ("name_part", "code", "barcode", "category", "season", "mrp", "purchase_price", "selling_price", "gst_pct",
+         "hsn", "unit", "detail", "skip")
 ROLE_LABELS = {"name_part": "Part of the name", "code": "Article code", "category": "Category / product",
                "season": "Season", "mrp": "MRP", "purchase_price": "My buying price (DP / Ex-Mill)",
                "selling_price": "Price to retailer (PTR)", "gst_pct": "GST %", "hsn": "HSN", "unit": "Unit",
+               "barcode": "EAN / barcode",
                "detail": "Keep as detail", "skip": "Skip (not for the master)"}
 
 # header words → role (first match wins; checked on the normalised header)
@@ -42,6 +43,7 @@ _RULES: list[tuple[str, tuple[str, ...]]] = [
                         "billing rate", "cost price", "landing")),
     ("selling_price", ("ptr", "price to retailer", "retailer price", "rlp", "sale rate", "wholesale")),
     ("mrp", ("mrp", "max retail")),
+    ("barcode", ("ean", "barcode", "bar code", "upc", "gtin")),   # owner #37 — before "code" ("EAN code")
     ("code", ("code", "art no", "article no", "sku", "item code", "style no", "design no")),
     ("gst_pct", ("gst", "tax")),
     ("hsn", ("hsn",)),
@@ -219,6 +221,8 @@ def build(analysis: dict[str, Any], roles: dict[str, str] | None = None, season:
                     a[rj] = round(n * 100, 2) if rj == "gst_pct" and 0 < n < 1 else round(n, 2)
             elif rj in ("code", "category", "season", "hsn", "unit") and _s(v):
                 a[rj] = _s(v)[:80]
+            elif rj == "barcode" and _s(v):
+                a["barcode"] = re.sub(r"\s", "", _s(v))[:48]
             elif rj == "detail" and _s(v) and _s(v) not in ("-", "—"):
                 n = _num(v)
                 a["details"][hdr[j][:40]] = (f"{round(n * 100, 1):g}%" if n is not None and 0 < n < 1 else _s(v)[:80])

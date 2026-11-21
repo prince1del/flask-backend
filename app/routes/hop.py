@@ -5430,3 +5430,107 @@ def report_balance_sheet():
     with hop_db.connect(_db_path()) as conn:
         data = hop_books.balance_sheet(conn, _ws())
     return jsonify({"success": True, "data": data})
+
+
+# ── Customer care feedback (owner 21-11) — one platform inbox, never inside a business's books ──────────────────
+
+def _fb_user() -> dict:
+    u = getattr(request, "user", None)
+    return u if isinstance(u, dict) else {}
+
+
+@hop_bp.route("/feedback", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def feedback_collection():
+    """POST (form: kind problem|idea, text, screen, app_version, file = screenshot) → Customer care.
+    GET → this user's own feedback with Customer care's replies (marks replies seen)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_feedback, hop_firms
+    from app.hop_doc_preview import get_firm_profile
+
+    user = _fb_user()
+    with hop_db.connect(_db_path()) as conn:
+        if request.method == "GET":
+            return jsonify({"success": True, "data": {"items": hop_feedback.mine(conn, int(user.get("user_id") or 0))}})
+        form = request.form if request.form else (_payload() or {})
+        f = request.files.get("file") or request.files.get("shot")
+        try:
+            firm = (get_firm_profile(conn, _ws()) or {}).get("firm_name") or ""
+            row = hop_feedback.create(conn, _db_path(), user=user, ws=_ws(), ui=hop_firms.request_ui(), firm_name=firm,
+                                      kind=form.get("kind") or "problem", text=form.get("text") or "",
+                                      screen=form.get("screen") or "", app_version=form.get("app_version") or "",
+                                      shot=f.read() if f else None)
+        except ValueError as exc:
+            return _json_error(str(exc))
+    return jsonify({"success": True, "data": row}), 201
+
+
+@hop_bp.route("/feedback/counts", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def feedback_counts():
+    """Menu badge: replies from Customer care not read yet (+ new feedback for Customer care's own login)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_feedback
+
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": hop_feedback.counts(conn, _fb_user())})
+
+
+@hop_bp.route("/feedback/inbox", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def feedback_inbox():
+    """Customer care inbox: every subscriber's feedback (platform owner's login only)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_feedback
+
+    if not hop_feedback.is_founder(_fb_user()):
+        return _json_error("Only NEXORA Customer care can open this", "FORBIDDEN", 403)
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": {"items": hop_feedback.inbox(conn, request.args.get("status") or "")}})
+
+
+@hop_bp.route("/feedback/<int:fid>/reply", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def feedback_reply(fid: int):
+    """Customer care: {status open|working|done, reply} — the user sees it in Help & feedback."""
+    ensure_hop_schema(_db_path())
+    from app import hop_feedback
+
+    if not hop_feedback.is_founder(_fb_user()):
+        return _json_error("Only NEXORA Customer care can reply", "FORBIDDEN", 403)
+    p = _payload() or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            row = hop_feedback.reply(conn, fid, status=p.get("status") or "", text=p.get("reply") or "")
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/feedback/<int:fid>/shot", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def feedback_shot(fid: int):
+    """The screenshot sent with a feedback — for Customer care or the user who sent it."""
+    import os
+
+    from flask import send_file
+
+    from app import hop_feedback
+
+    ensure_hop_schema(_db_path())
+    user = _fb_user()
+    with hop_db.connect(_db_path()) as conn:
+        row = hop_feedback.get(conn, fid)
+    if not row or not (hop_feedback.is_founder(user) or int(row.get("user_id") or -1) == int(user.get("user_id") or 0)):
+        return _json_error("Not found", "NOT_FOUND", 404)
+    p = hop_feedback.shot_path(_db_path(), fid)
+    if not os.path.exists(p):
+        return _json_error("No screenshot", "NOT_FOUND", 404)
+    return send_file(p, mimetype="image/jpeg", max_age=3600)

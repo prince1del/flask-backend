@@ -65,3 +65,13 @@ def test_offline_series_skips_deleted(tmp_path, monkeypatch):
     client.delete(f"/api/v1/hop/party-transactions/{a['party_txn_id']}", headers=h)
     s2 = client.get("/api/v1/hop/party-transactions/offline-series", headers=h).get_json()["data"]["series"]["1"]
     assert s2["next"] == 3            # the highest kept number + 1 (the phone also never goes below its own counter)
+
+
+def test_price_sheet_reads_ean_column():
+    """Owner #37: an "EAN code" column goes to the article's barcode, not to the article code."""
+    from app import hop_article_sheet as S
+
+    rules = dict((k, v) for k, v in S._RULES)
+    assert "ean" in rules["barcode"] and S.ROLE_LABELS["barcode"] == "EAN / barcode"
+    first = [k for k, words in S._RULES if any(w in "ean code" for w in words)][0]
+    assert first == "barcode"
