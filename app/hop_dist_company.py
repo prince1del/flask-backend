@@ -79,8 +79,8 @@ def _company_name(conn, ws, vid) -> str | None:
 
 
 def _check_company(conn, ws, vid: int) -> dict:
-    r = conn.execute("SELECT id, company, gst_no, address, state, city, contact_person, mobile, email, cash_discount_pct, "
-                     "credit_days FROM hop_vendors WHERE workspace_id=? AND id=? AND is_principal=1", (ws, int(vid))).fetchone()
+    r = conn.execute("SELECT id, company, gst_no, address, state, city, contact_person, contact_designation, mobile, email, "
+                     "cash_discount_pct, credit_days FROM hop_vendors WHERE workspace_id=? AND id=? AND is_principal=1", (ws, int(vid))).fetchone()
     if not r:
         raise LookupError("Company not found")
     return dict(r)
@@ -212,7 +212,8 @@ def edit_company(conn: sqlite3.Connection, ws: str, vid: int, p: dict) -> dict[s
         if g and not re.fullmatch(r"\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]", g):
             raise ValueError("GSTIN looks wrong — 15 characters like 27ABCDE1234F1Z5")
         sets.append("gst_no=?"); vals.append(g or None)
-    for k, n in (("address", 400), ("state", 60), ("city", 60), ("contact_person", 80), ("mobile", 15), ("email", 120)):
+    for k, n in (("address", 400), ("state", 60), ("city", 60), ("contact_person", 80), ("contact_designation", 80),
+                 ("mobile", 15), ("email", 120)):
         if k in p:
             sets.append(f"{k}=?"); vals.append(_s(p.get(k))[:n] or None)
     if not sets:

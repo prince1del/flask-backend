@@ -55,8 +55,9 @@ def test_item_card_and_hand_stock_needs_company(firm):
 def test_edit_company(firm):
     path, ids = firm
     with connect(path) as conn:
-        c = C.edit_company(conn, WS, ids["a"], {"address": "2 Mill Road", "state": "Gujarat", "mobile": "9876543210"})
-        assert c["address"] == "2 Mill Road" and c["state"] == "Gujarat"
+        c = C.edit_company(conn, WS, ids["a"], {"address": "2 Mill Road", "state": "Gujarat", "mobile": "9876543210",
+                                                 "contact_person": "R. Shah", "contact_designation": "Area Sales Manager"})
+        assert c["address"] == "2 Mill Road" and c["state"] == "Gujarat" and c["contact_designation"] == "Area Sales Manager"
         with pytest.raises(ValueError):
             C.edit_company(conn, WS, ids["a"], {"gst_no": "WRONG"})
         with pytest.raises(ValueError):

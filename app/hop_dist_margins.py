@@ -49,6 +49,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                      ("mg_awd_pct", "REAL"), ("mg_season", "TEXT"), ("mg_from", "TEXT")):
         if col not in cols:
             conn.execute(f"ALTER TABLE hop_products ADD COLUMN {col} {typ}")
+    vcols = {r[1] for r in conn.execute("PRAGMA table_info(hop_vendors)")}
+    if "contact_designation" not in vcols:   # contact person's designation at the company (owner 21-11)
+        conn.execute("ALTER TABLE hop_vendors ADD COLUMN contact_designation TEXT")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS hop_dist_margin_defaults (
                workspace_id TEXT NOT NULL,
@@ -301,6 +304,10 @@ def add_company(conn: sqlite3.Connection, ws: str, p: dict) -> dict[str, Any]:
                                                        "address", "state", "city", "payment_terms")} |
                       {"company": name, "gst_no": gst})
     D.set_principal(conn, ws, int(v["id"]), True)
+    if _s(p.get("contact_designation")):
+        conn.execute("UPDATE hop_vendors SET contact_designation=? WHERE workspace_id=? AND id=?",
+                     (_s(p.get("contact_designation"))[:80], ws, int(v["id"])))
+        conn.commit()
     return {"id": int(v["id"]), "company": name, "existed": False}
 
 
