@@ -79,7 +79,7 @@ big 2-line title, info scattered, buttons uneven, empty space; redo as calm card
 
 **Deployed 21-11 `a9e006f`:** company PIN code, more contacts, designation, Guard tip → Brand desk + Add company.
 
-**Built 21-11 (phone installed, server pushed `0e1e068`, NOT deployed; offline not tried — adb is over Wi-Fi):** lists already work offline (HopOfflineCache) and bills queue
+**Built 21-11 (phone installed, server deployed `c5529b7`; offline not tried — owner to test, then reply #45/#46):** lists already work offline (HopOfflineCache) and bills queue
 (HopOffline). Gaps → (1) offline bill number: each login has its own series `<prefix>/<fy>/<code>-<n>` (server
 `/party-transactions/offline-series`, phone keeps the next number, the main series never clashes); (2) notes (with
 photos) queue offline and send themselves; (3) the queue card says "waiting to send" for notes too.
