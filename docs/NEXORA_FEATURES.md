@@ -482,6 +482,20 @@ address / state / PIN / PAN again, never the business name); Business type (28) 
 `app/services/ifsc_lookup.py`, public IFSC directory, 7-day cache) — also in Cash & Bank → New bank account (fills the
 account name when empty); Banking fields one per row; signature pad: full-width "Use signature", Clear / Cancel below.
 
+
+**My brands + AI batch (21-11 night; server `3c6182d` → `c64c8a4` deployed, phone `90ed27d` + `492d497` committed, NOT
+built yet — build only when the owner asks):** Brand desk renamed **My brands** = registration only: brand cards (letters,
+GSTIN, city, contact, "Setup x of 3" / "Registered ✓"), tap → navy terms card + Company details card (call / WhatsApp /
+mail, Edit) + 3-step setup (details, terms, price rule; `hop_dist_brand.brand_desk` steps) with Fill ›; orders / goods /
+shipments / unpaid invoices moved to "Orders, goods & payments of this brand ›"; + Add brand opens terms right after.
+Add a brand form in three parts (Brand / Address / Contact). Terms form: short title, rules as a list. ✨ AI: photo
+(visiting card / letterhead / GST certificate / cheque) fills Add brand, Company details and Edit profile —
+`/api/v1/masters/read-company-photo` (`app/hop_company_card_ai.py`, one capped call, GSTIN + IFSC checked free, nothing
+saved); My brands AI insights key `my-brands` (`hop_dist_brand.registration`); Ask Nexora `dist_my_brands`, `ifsc`.
+Also: profile Save turns off after saving + scrolls to top; all plain placeholders light (30%); note form wider with
+one-line Camera / Gallery. Pre-existing failing test: `test_nexora_guard::test_hop_checks_find_real_problems` (reuses
+bill number MT-77, refused since #32) — fix the test data.
+
 ## 10. Pending / open
 
 **21-11 afternoon batch (Distributor notes, number order):** #10 many photos on a note (pick many at once; before, only
