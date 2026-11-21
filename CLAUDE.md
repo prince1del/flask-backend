@@ -26,7 +26,8 @@ subscriber's own brand (never "House of Prizm" for another business).
 - **Never write to the live DB from a script** (no UPDATE/DELETE/INSERT, not even clean-ups). Fix the code; the owner
   changes data in the app. Read-only checks only.
 - **Commit + push to `main` after every fix** (this repo). Phone repo: local commits only.
-- **Ask the owner before every server deploy.**
+- **Auto deploy after every server fix** (owner 21-11: "auto deploy karo har baar") — push, pull on the server,
+  restart, smoke-check the new route (401 = there); no need to ask.
 - **Write the plan here before starting a batch**; ask the owner what to do first; update this file after each change.
 - **Notes inbox:** work ONLY on notes for Claude — party "claude" (row shows "👤 claude") or body starting
   "[For Claude]". Reply in the note (By: Claude), then ✓ Mark as done — through the app only.
@@ -100,7 +101,7 @@ Always say the in-app #number, never the DB id.
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
 **QnA #42/#43/#44 (owner checks the numbers vs #25-27 before replies):** step 1 "Scan many" BUILT 21-11 — server
-`ccf16d3` (scan-index / scan-check) pushed, NOT deployed (ask first); phone bill form "Scan many" + Article Master
+`ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master
 Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). Next: deploy + install, then step 2 photo → new
 product (AI label + GST by HSN + photo fingerprint), step 3 voice bill.
 
