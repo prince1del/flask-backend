@@ -173,5 +173,9 @@ Company ledger; bill form and the remaining screens → `NxSpace`, title + count
 **Waiting on outside accounts:** GSP (e-invoice / e-way / GSTIN API), DLT + SMS provider, payment gateway KYC,
 off-server backups (S3), a remote for the phone repo, Executive target fiscal years.
 
+**iOS app (owner 21-11):** owner will buy a new Mac and we build iOS ourselves. Plan: Compose Multiplatform (share
+the Kotlin screens; rewrite only Android-only parts — camera, photos, offline store, Retrofit/Gson → Ktor/kotlinx);
+needs Apple Developer account + an iPhone to test. Start after the Mac arrives.
+
 **Bigger roadmap:** NEXORA remote support, Guard daily server run + push notifications, web parity, NEXORA website
 with policy pages → Razorpay partner.
