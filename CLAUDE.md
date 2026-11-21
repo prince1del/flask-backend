@@ -93,7 +93,7 @@ Create account button), #26 multi-brand (Distributor main). D9 replied, kept ope
 
 **Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
 reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with
-the theme; (B3) built, reply after the phone check; (B4) payroll — reply with a plan; (B5) partners / roles — waits for the owner's 3
+the theme; (B3) built, reply after the phone check; (B4) payroll — plan written in `docs/PAYROLL_PLAN.md` (reply in the note, in Hindi, with the 3 questions); (B5) partners / roles — waits for the owner's 3
 answers (plan in `docs/PARTNERS_AND_ROLES_PLAN.md`). Untagged, leave alone: "yaha pe add new ka option bhi do…",
 "QA test note rates bhejne hai".
 
