@@ -347,6 +347,8 @@ SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
     "Article form — Company and Price rule (the company's, or its own) with the rule price and Use.",
     "Select — tick articles, then Set company or Delete.",
     "Scan — camera stays open, every beep adds 1; one piece opens its article, many pieces show counted vs books and codes not in the master (Add).",
+    "✨ Photo → new — one photo of the tag fills a new article (barcode read on the phone, one AI call for the rest, GST from the HSN); if it looks like an article you have, you pick it or tap New article.",
+    "Find by photo — no barcode? photograph the piece; the 3 most alike articles (by their saved photo, no AI cost) open with a tap.",
 ]
 SHOWS["dist_bulk_import"] = [
     "Type chips — SO, Company invoice (CI), Credit note, Debit note.",

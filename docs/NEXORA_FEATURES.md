@@ -484,7 +484,19 @@ same code counts again only after it left the frame (`ScanGate`: 900 ms gap, 600
 Light, Done. Bill form: "Scan" (one) + "Scan many" (all lines with qty; unknown codes listed). Article Master "Scan":
 one piece → open / Add with the barcode; many → "Counted · n pieces" dialog (books vs counted, Add for unknown codes,
 nothing saved by itself). Google's own scanner screen is not used (its branding cannot be removed); NEXORA uses the
-same ML Kit engine on its own screen. Next: step 2 photo → new product, step 3 voice bill.
+same ML Kit engine on its own screen.
+
+**Photo → new product (21-11, QnA step 2):** `app/hop_product_ai.py` → `POST /products/read-photo` (file + the EAN
+the phone read with ML Kit): EAN already in the master → that item, no AI; else `hop_ai.read_product_photo` (one
+call, 400 tokens, daily limit, logged as `nexora_agent_hop_product_photo`) reads name / brand / category / MRP / size
+/ design / colour / material / HSN / EAN; GST from `app/hop_hsn_gst.py` (Ch 50-64 textiles / apparel / footwear,
+5% up to ₹2,500 a piece else 18% for made-ups, apparel and footwear; MRP used as the price, flagged) else the
+category default; look-alike items by photo; checks. `hop_product_photos`: `photo_hash` (dHash of the middle 70%,
+saved with every photo, filled for old photos on the first match) and `match()` → `POST /products/match-photo`
+(rotations tried, score 0-100, ≥ 40 shown, top 3). Phone (`HopProductPhoto.kt` → `HopPhotoProduct`,
+`rememberProductPhotoTaker`, `HopPhotoMatchDialog`): Article Master "✨ Photo → new" (look-alikes → pick or New
+article → form filled, Save → photo uploaded) + "Find by photo"; bill form "Photo" → pick → line added. Next: step 3
+voice bill.
 
 **Now doing (20-11 late night):** Cursor finished (7)/(12)/(13) + GSTIN address/PIN deploy + APK; CLAUDE.md
 updated under Cursor's name. Still: app Notes reply+done as **By: Cursor** when phone ADB is back; Claude =
