@@ -74,6 +74,9 @@ Next after deploy + install: check all on the phone, reply D9 / B3 / #26 notes.
 **App lock is OFF on the owner's phone (owner 21-11: "jab main kahu lock on tab karna") — never turn it on by
 yourself.** It now has its own menu item in every UI: Settings → App lock (PIN).
 
+**Owner said "weird, fix later" (21-11):** Warehouse item card (`DistItemCardDialog`, `HopDistCompanyScreens.kt`) —
+big 2-line title, info scattered, buttons uneven, empty space; redo as calm cards (price / stock / actions / history).
+
 **Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
 reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with
 the theme; (B3) built, reply after the phone check; (B4) payroll — reply with a plan; (B5) partners / roles — waits for the owner's 3
