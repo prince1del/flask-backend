@@ -59,12 +59,11 @@ subscriber's own brand (never "House of Prizm" for another business).
 
 ## 4. Pending — do these next
 
-**Phone first (needs the phone on Wi-Fi debug):** `adb install -r` the latest APK (everything below is deployed but the phone has
-the older build); then check on the phone: Terms book, + Add company,
+**Phone check (latest APK installed 21-11 morning):** check on the phone: Terms book, + Add company,
 Goods received, notes ✓✓ / Raise again / Open ▸ link / #numbers, Brand desk, GST by category, "kunwar home" only in
 Distributor. Notes done 21-11: D1, D2, D4, D5, D7. Detail of all of it: `docs/NEXORA_FEATURES.md` §10.
 
-**Built 21-11 (night), server deployed `d2a7b18` (21-11 morning), phone APK built but NOT installed:**
+**Built 21-11 (night), server deployed `d2a7b18` + phone installed (21-11 morning), not checked on the phone yet:**
 (D9) Warehouse item card + hand stock that asks the company; company Edit details (GSTIN auto fetch); Company report
 (menu Company → Company report: ordered → CI → received → to come, margin by category, CD earned / lost / pay soon,
 incentives + company credit note link); Terms book "✨ Margins from the company sheet"; (B3) Cash & Bank "+ Add
