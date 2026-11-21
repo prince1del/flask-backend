@@ -140,6 +140,11 @@ SHOWS: dict[str, list[str]] = {
         "Each line — when, who (login), what (bill / item), the action (created, edited, deleted) and the old vs new amount.",
         "Search — by bill number or name.",
     ],
+    "app_lock": [
+        "PIN — 4 to 6 digits, typed twice; kept only on this phone.",
+        "Turn on / Change PIN / Turn off app lock — what the buttons do.",
+        "Fingerprint — unlock with your fingerprint; the PIN still works.",
+    ],
     "company_profile": [
         "Firm details — name, GSTIN, state, address, phone, email, PAN.",
         "Bank — account details printed on bills.",
