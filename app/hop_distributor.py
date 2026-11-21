@@ -571,7 +571,7 @@ def home(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
 def _alerts(pl, fc, owe, overdue, pr) -> list[str]:
     a = []
     if not pr:
-        a.append("Add the company you buy from: Brand desk → + Add company (name, GSTIN, address). Then its orders, SO, CI and ledger show here.")
+        a.append("Add the company you buy from: My brands → + Add brand (name, GSTIN, address). Then its orders, SO, CI and ledger show here.")
     late = [o for o in pl["orders"] if o["status"] == "Ordered" and (o["days_waiting"] or 0) >= 7]
     if late:
         a.append(f"{len(late)} order(s) waiting 7+ days for the company's SO — oldest {late[-1]['txn_number']}.")

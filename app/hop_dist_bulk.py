@@ -460,7 +460,7 @@ def _company(conn, ws, vendor_id, required: bool = True) -> int | None:
     if not required and ids:
         return None          # several companies: the user picks one on the preview
     raise ValueError("Pick the company these documents are from" if ids else
-                     "Add the company you buy from first (Brand desk → + Add company)")
+                     "Add the company you buy from first (My brands → + Add brand)")
 
 
 def _job(conn, ws, job_id) -> dict[str, Any]:

@@ -117,7 +117,7 @@ def _company(conn, ws, vid: int) -> dict:
     r = conn.execute("SELECT id, company FROM hop_vendors WHERE workspace_id=? AND id=? AND is_principal=1",
                      (ws, int(vid))).fetchone()
     if not r:
-        raise LookupError("Company not found — add it in Brand desk or tick it in Orders → SO → CI → Set company")
+        raise LookupError("Company not found — add it in My brands or tick it in Orders → SO → CI → Set company")
     return {"id": int(r[0]), "company": r[1]}
 
 

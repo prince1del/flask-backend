@@ -399,13 +399,10 @@ SHOWS["dist_terms_book"] = [
     "✨ AI — thin margins, missing terms and prices that do not match.",
 ]
 SHOWS["dist_brand_desk"] = [
-    "+ Add company — a company you buy from: name, GSTIN (Fetch fills the address), state, contact.",
-    "Brand cards — one card per company you distribute for (GSTIN, city, contact, open orders, to pay, overdue); tap a card to open it, ‹ All brands to go back.",
-    "Company card — terms and price rule, articles; tap to change them.",
-    "Company details — GSTIN, address and contact people of the chosen company; tap to call, WhatsApp or mail, Edit to change.",
-    "Setup — each missing step is a button (Fill ›) that opens where to fill it; after + Add company the terms and price rule open at once.",
-    "Tiles — open orders, SO waiting for invoice, goods still to come, in transit, to pay, overdue.",
-    "Goods still to come — per article: on SO, received, still to come, value.",
-    "Shipments — LR, transporter, expected / received date; tap to add or mark received.",
-    "Latest orders, unpaid invoices — tap an invoice for its copy.",
+    "+ Add brand — a brand you distribute: name, GSTIN (Fetch fills the address), state, contact; terms and price rule open right after.",
+    "Brand cards — one card per brand (GSTIN, city, contact); \"Setup 1 of 3\" until it is fully registered; tap a card to open it.",
+    "Brand card (navy) — payment terms, credit days and price rule; tap to change them.",
+    "Company details — GSTIN, address and contact people; tap to call, WhatsApp or mail, Edit to change.",
+    "Setup — the 3 registration steps (details, terms, price rule); Fill › opens where to fill each.",
+    "Orders, goods & payments of this brand › — its own page: tiles, goods still to come, shipments (LR), latest orders, unpaid invoices.",
 ]
