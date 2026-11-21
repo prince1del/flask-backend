@@ -79,11 +79,19 @@ def _company_name(conn, ws, vid) -> str | None:
 
 
 def _check_company(conn, ws, vid: int) -> dict:
-    r = conn.execute("SELECT id, company, gst_no, address, state, city, contact_person, contact_designation, mobile, email, "
-                     "cash_discount_pct, credit_days FROM hop_vendors WHERE workspace_id=? AND id=? AND is_principal=1", (ws, int(vid))).fetchone()
+    import json
+
+    r = conn.execute("SELECT id, company, gst_no, address, state, city, pincode, contact_person, contact_designation, mobile, email, "
+                     "contacts_json, cash_discount_pct, credit_days FROM hop_vendors WHERE workspace_id=? AND id=? AND is_principal=1",
+                     (ws, int(vid))).fetchone()
     if not r:
         raise LookupError("Company not found")
-    return dict(r)
+    d = dict(r)
+    try:
+        d["contacts"] = json.loads(d.pop("contacts_json") or "[]")
+    except Exception:
+        d["contacts"] = []
+    return d
 
 
 # ══ Item card ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -216,6 +224,22 @@ def edit_company(conn: sqlite3.Connection, ws: str, vid: int, p: dict) -> dict[s
                  ("mobile", 15), ("email", 120)):
         if k in p:
             sets.append(f"{k}=?"); vals.append(_s(p.get(k))[:n] or None)
+    if "pincode" in p:
+        pin = _s(p.get("pincode"))
+        if pin and not re.fullmatch(r"\d{6}", pin):
+            raise ValueError("PIN code must be 6 digits")
+        sets.append("pincode=?"); vals.append(pin or None)
+    if "contacts" in p:   # more contact persons at the company — kept for now, used later
+        import json
+
+        rows = []
+        for c in (p.get("contacts") or [])[:10]:
+            if not isinstance(c, dict):
+                continue
+            row = {k: _s(c.get(k))[:n] for k, n in (("name", 80), ("designation", 80), ("mobile", 15), ("email", 120))}
+            if row["name"] or row["mobile"] or row["email"]:
+                rows.append(row)
+        sets.append("contacts_json=?"); vals.append(json.dumps(rows, ensure_ascii=False) if rows else None)
     if not sets:
         raise ValueError("Nothing to save")
     conn.execute(f"UPDATE hop_vendors SET {', '.join(sets)}, updated_at=? WHERE workspace_id=? AND id=?",

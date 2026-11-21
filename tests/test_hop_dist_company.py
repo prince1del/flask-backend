@@ -58,6 +58,12 @@ def test_edit_company(firm):
         c = C.edit_company(conn, WS, ids["a"], {"address": "2 Mill Road", "state": "Gujarat", "mobile": "9876543210",
                                                  "contact_person": "R. Shah", "contact_designation": "Area Sales Manager"})
         assert c["address"] == "2 Mill Road" and c["state"] == "Gujarat" and c["contact_designation"] == "Area Sales Manager"
+        c = C.edit_company(conn, WS, ids["a"], {"pincode": "400001", "contacts": [
+            {"name": "A. Rao", "designation": "Zonal Manager", "mobile": "9000000001"},
+            {"name": "B. Iyer", "designation": "Accounts", "email": "b@example.com"}, {"name": ""}]})
+        assert c["pincode"] == "400001" and [x["name"] for x in c["contacts"]] == ["A. Rao", "B. Iyer"]
+        with pytest.raises(ValueError):
+            C.edit_company(conn, WS, ids["a"], {"pincode": "4000"})
         with pytest.raises(ValueError):
             C.edit_company(conn, WS, ids["a"], {"gst_no": "WRONG"})
         with pytest.raises(ValueError):

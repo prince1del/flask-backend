@@ -52,6 +52,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     vcols = {r[1] for r in conn.execute("PRAGMA table_info(hop_vendors)")}
     if "contact_designation" not in vcols:   # contact person's designation at the company (owner 21-11)
         conn.execute("ALTER TABLE hop_vendors ADD COLUMN contact_designation TEXT")
+    if "pincode" not in vcols:
+        conn.execute("ALTER TABLE hop_vendors ADD COLUMN pincode TEXT")
+    if "contacts_json" not in vcols:   # more contact persons: [{name, designation, mobile, email}] (owner 21-11)
+        conn.execute("ALTER TABLE hop_vendors ADD COLUMN contacts_json TEXT")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS hop_dist_margin_defaults (
                workspace_id TEXT NOT NULL,
@@ -304,10 +308,11 @@ def add_company(conn: sqlite3.Connection, ws: str, p: dict) -> dict[str, Any]:
                                                        "address", "state", "city", "payment_terms")} |
                       {"company": name, "gst_no": gst})
     D.set_principal(conn, ws, int(v["id"]), True)
-    if _s(p.get("contact_designation")):
-        conn.execute("UPDATE hop_vendors SET contact_designation=? WHERE workspace_id=? AND id=?",
-                     (_s(p.get("contact_designation"))[:80], ws, int(v["id"])))
-        conn.commit()
+    from app import hop_dist_company as CO
+
+    extra = {k: p[k] for k in ("contact_designation", "pincode", "contacts") if k in p}
+    if extra:
+        CO.edit_company(conn, ws, int(v["id"]), extra)
     return {"id": int(v["id"]), "company": name, "existed": False}
 
 
