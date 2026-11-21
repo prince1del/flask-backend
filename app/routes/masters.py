@@ -445,6 +445,19 @@ def masters_gstin_lookup():
     return jsonify({"success": True, "data": data})
 
 
+@masters_bp.route("/ifsc-lookup", methods=["GET", "POST"])
+@require_jwt_auth
+def masters_ifsc_lookup():
+    """IFSC → bank name, branch and branch address — open to every login, every UI (banking details forms)."""
+    from app.services.ifsc_lookup import lookup_ifsc, normalize_ifsc
+
+    body = (request.get_json(silent=True) or {}) if request.method == "POST" else {}
+    ifsc = normalize_ifsc(body.get("ifsc") or request.args.get("ifsc") or "")
+    if not ifsc:
+        return jsonify({"success": False, "error": {"message": "ifsc is required", "code": "VALIDATION_ERROR"}}), 400
+    return jsonify({"success": True, "data": lookup_ifsc(ifsc)})
+
+
 @masters_bp.route("/distributors/export", methods=["GET"])
 @require_jwt_auth
 def export_distributors():

@@ -707,6 +707,7 @@ def _draw_terms_bank(pdf: _HopPdf, preview: dict) -> None:
             firm.get("bank_name") and f"Bank: {firm.get('bank_name')}",
             firm.get("bank_account") and f"A/C: {firm.get('bank_account')}",
             firm.get("bank_ifsc") and f"IFSC: {firm.get('bank_ifsc')}",
+            firm.get("bank_branch") and f"Branch: {firm.get('bank_branch')}",
             firm.get("bank_holder") and f"Holder: {firm.get('bank_holder')}",
         )
         if b

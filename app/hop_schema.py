@@ -765,6 +765,7 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("business_category", "TEXT"),
             ("pincode", "TEXT"),
             ("signature_url", "TEXT"),
+            ("bank_branch", "TEXT"),  # branch + address (auto from IFSC)
         ]:
             _ensure_column(conn, "hop_firm_profile", col, ddl)
 

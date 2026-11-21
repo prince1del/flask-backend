@@ -152,6 +152,8 @@ SHOWS: dict[str, list[str]] = {
     ],
     "company_profile": [
         "Firm details — name, GSTIN, state, address, phone, email, PAN.",
+        "GSTIN — type the 15 characters and address, state, PIN and PAN fill by themselves; Fetch fills them again.",
+        "Business type / category — pick one, or + Add new to type your own.",
         "Bank — account details printed on bills.",
         "Logo & signature — images printed on bills; with no logo the bill shows the firm's letters (first letter of each word, e.g. Kunwar home → KH).",
     ],
