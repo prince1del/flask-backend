@@ -77,6 +77,8 @@ yourself.** It now has its own menu item in every UI: Settings → App lock (PIN
 **Owner said "weird, fix later" (21-11):** Warehouse item card (`DistItemCardDialog`, `HopDistCompanyScreens.kt`) —
 big 2-line title, info scattered, buttons uneven, empty space; redo as calm cards (price / stock / actions / history).
 
+**Deployed 21-11 `a9e006f`:** company PIN code, more contacts, designation, Guard tip → Brand desk + Add company.
+
 **New notes 21-11 (Distributor, Kunwar home):** #45 tagged claude — offline: a new bill gets no number (photo);
 #46 party "claudes" — notes do not save offline in any UI; untagged (tagging was broken, fixed 21-11 — ask the owner):
 #41 notes for the Retailer UI, #42 QnA barcode-less fast product entry, #43 product photo → EAN / MRP / design / GST,
