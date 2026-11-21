@@ -17,7 +17,8 @@ subscriber's own brand (never "House of Prizm" for another business).
 ## 2. Owner's rules (always)
 
 - **One backend.** New feature = server route → phone (and web later). Phone, web, desktop read the same `/api/v1`.
-- **Mobile first.** Build + check on the phone (`adb install -r`, no OTA).
+- **Mobile first.** Phone first; but build + `adb install -r` ONLY when the owner asks (owner 21-11: "maine kab
+  kaha ki har update ke baad app rebuild karo") — edit + local commit, then say it is ready to build.
 - **AI in every feature**, but AI never saves by itself (user confirms); one capped call, inside the daily limit,
   logged. Ask before any test that costs more than ₹10.
 - **UI text in English** (chat can be Hinglish).
