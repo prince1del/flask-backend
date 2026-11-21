@@ -5534,3 +5534,29 @@ def feedback_shot(fid: int):
     if not os.path.exists(p):
         return _json_error("No screenshot", "NOT_FOUND", 404)
     return send_file(p, mimetype="image/jpeg", max_age=3600)
+
+
+@hop_bp.route("/party-transactions/bulk-delete", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transactions_bulk_delete():
+    """Many bills to the Recycle bin at once (owner note #9 "bulk delete") — restorable; numbers are freed."""
+    ensure_hop_schema(_db_path())
+    from app import hop_phase3_ext
+
+    ids = (_payload() or {}).get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return _json_error("ids list is required", "VALIDATION_ERROR", 400)
+    try:
+        id_list = sorted({int(x) for x in ids})[:2000]
+    except (TypeError, ValueError):
+        return _json_error("ids must be integers", "VALIDATION_ERROR", 400)
+    deleted, skipped = 0, []
+    with hop_db.connect(_db_path()) as conn:
+        for tid in id_list:
+            try:
+                out = hop_phase3_ext.soft_delete_document(conn, _ws(), tid, actor=_user_label())
+                deleted += 0 if out.get("already_deleted") else 1
+            except (LookupError, ValueError) as exc:
+                skipped.append({"id": tid, "why": str(exc)})
+    return jsonify({"success": True, "data": {"deleted": deleted, "skipped": skipped}})

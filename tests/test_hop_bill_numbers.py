@@ -75,3 +75,13 @@ def test_price_sheet_reads_ean_column():
     assert "ean" in rules["barcode"] and S.ROLE_LABELS["barcode"] == "EAN / barcode"
     first = [k for k, words in S._RULES if any(w in "ean code" for w in words)][0]
     assert first == "barcode"
+
+
+def test_bulk_delete_bills(tmp_path, monkeypatch):
+    client, h, cid = _setup(tmp_path, monkeypatch)
+    a = _bill(client, h, cid).get_json()["data"]["party_txn_id"]
+    b = _bill(client, h, cid).get_json()["data"]["party_txn_id"]
+    r = client.post("/api/v1/hop/party-transactions/bulk-delete", headers=h, json={"ids": [a, b, 99999]})
+    d = r.get_json()["data"]
+    assert r.status_code == 200 and d["deleted"] == 2 and d["skipped"][0]["id"] == 99999
+    assert _next(client, h).endswith("/1")
