@@ -84,8 +84,9 @@ big 2-line title, info scattered, buttons uneven, empty space; redo as calm card
 `/party-transactions/offline-series`, phone keeps the next number, the main series never clashes); (2) notes (with
 photos) queue offline and send themselves; (3) the queue card says "waiting to send" for notes too.
 
-**Now (21-11):** in-app note numbers (Distributor, Kunwar home main) — #24 Retailer UI notes (building: server
-`hop_firms` UI "retailer" → workspace `<base>__retail`, pushed not deployed; phone Retailer shell gets Notes + N next),
+**Now (21-11):** in-app note numbers (Distributor, Kunwar home main) — #24 Retailer UI notes (built: server
+`hop_firms` UI "retailer" → `<base>__retail` pushed `a84d396`, phone APK built `badcabd` — DEPLOY FIRST, then install,
+else an old server files Retailer notes under Business),
 #25 / #26 / #27 = QnA (fast entry without barcode, product photo → EAN / MRP / GST, voice billing) — answer with a plan.
 Done 21-11: #28 offline bill numbers, #29 offline notes (owner tests later), #30 claude party fix; D6 GSTIN auto fill
 everywhere, B1 status bar icons, item card calm redesign (phone installed). B4 payroll parked (docs/PAYROLL_PLAN.md).
