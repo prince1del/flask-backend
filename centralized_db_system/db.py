@@ -4086,9 +4086,11 @@ class CentralizedDB:
         user_id: int,
         session_id: str,
         device_label: str | None = None,
+        slot: str = "phone",
     ) -> None:
-        """Make [session_id] the only live session for this user."""
+        """Make [session_id] the live session of this user in its slot (phone / computer)."""
         self.ensure_user_profile_columns()
+        self.set_slot_session(user_id, slot, session_id, device_label)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -4106,6 +4108,112 @@ class CentralizedDB:
                 ),
             )
 
+    # One device per slot (owner 21-11: "founder ke alawa kisi bhi user ki app sirf ek hi device pe chalegi" →
+    # one phone + one computer — web browser, Windows exe or Mac). A new sign-in in a slot ends the old one there.
+    DEVICE_SLOTS = ("phone", "computer")
+
+    def _ensure_device_slots(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS user_device_slots (
+                   user_id INTEGER NOT NULL,
+                   slot TEXT NOT NULL,
+                   session_id TEXT NOT NULL,
+                   device_label TEXT,
+                   at TEXT NOT NULL,
+                   PRIMARY KEY (user_id, slot)
+               )""")
+
+    def device_allowance(self, user_id: int | None) -> dict[str, int]:
+        """How many phones / computers this login may use at once — 1 + 1 unless the founder gifted more
+        (later: bought in the app; owner 21-11)."""
+        out = {"phone": 1, "computer": 1}
+        if user_id is None:
+            return out
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_column_exists(conn, "users", "device_phones", "INTEGER")
+            self._ensure_column_exists(conn, "users", "device_computers", "INTEGER")
+            r = conn.execute("SELECT device_phones, device_computers FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        if r:
+            out["phone"] = max(1, int(r[0] or 1))
+            out["computer"] = max(1, int(r[1] or 1))
+        return out
+
+    def set_device_allowance(self, user_id: int, phones: int, computers: int) -> dict[str, Any]:
+        phones, computers = max(1, min(int(phones), 20)), max(1, min(int(computers), 20))
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_column_exists(conn, "users", "device_phones", "INTEGER")
+            self._ensure_column_exists(conn, "users", "device_computers", "INTEGER")
+            row = conn.execute("SELECT username FROM users WHERE id = ?", (int(user_id),)).fetchone()
+            if row is None:
+                raise ValueError("User not found")
+            conn.execute("UPDATE users SET device_phones = ?, device_computers = ? WHERE id = ?",
+                         (phones, computers, int(user_id)))
+        self._trim_slots(int(user_id))
+        return {"user_id": int(user_id), "username": row[0], "phones": phones, "computers": computers,
+                "devices": self.get_slot_devices(int(user_id))}
+
+    def _trim_slots(self, user_id: int) -> None:
+        """After the allowance went down: only the newest sessions of each kind stay."""
+        allow = self.device_allowance(user_id)
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_device_slots(conn)
+            for kind, n in allow.items():
+                rows = conn.execute("SELECT slot FROM user_device_slots WHERE user_id = ? AND (slot = ? OR slot LIKE ?) "
+                                    "ORDER BY at DESC", (user_id, kind, kind + "#%")).fetchall()
+                for (slot,) in rows[n:]:
+                    conn.execute("DELETE FROM user_device_slots WHERE user_id = ? AND slot = ?", (user_id, slot))
+
+    def set_slot_session(self, user_id: int, slot: str, session_id: str, device_label: str | None = None) -> None:
+        """A new sign-in of kind [slot] (phone / computer): takes a free place when the allowance has one, else
+        ends the OLDEST session of that kind."""
+        kind = slot if slot in self.DEVICE_SLOTS else "phone"
+        allowed = self.device_allowance(user_id)[kind]
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_device_slots(conn)
+            rows = conn.execute("SELECT slot FROM user_device_slots WHERE user_id = ? AND (slot = ? OR slot LIKE ?) "
+                                "ORDER BY at", (int(user_id), kind, kind + "#%")).fetchall()
+            used = [r[0] for r in rows]
+            if len(used) < allowed:
+                name = next(n for n in [kind] + [f"{kind}#{i}" for i in range(2, 22)] if n not in used)
+            else:
+                name = used[0]   # the oldest one of this kind gives way
+            conn.execute(
+                """INSERT INTO user_device_slots (user_id, slot, session_id, device_label, at) VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, slot) DO UPDATE SET session_id=excluded.session_id,
+                   device_label=excluded.device_label, at=excluded.at""",
+                (int(user_id), name, str(session_id), (device_label or None), now))
+            for extra in used[allowed:]:
+                conn.execute("DELETE FROM user_device_slots WHERE user_id = ? AND slot = ?", (int(user_id), extra))
+
+    def get_slot_sessions(self, user_id: int | None) -> dict[str, str]:
+        """{slot: session_id} of the live sessions of this login."""
+        if user_id is None:
+            return {}
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_device_slots(conn)
+            rows = conn.execute("SELECT slot, session_id FROM user_device_slots WHERE user_id = ?",
+                                (int(user_id),)).fetchall()
+        return {str(r[0]): str(r[1]) for r in rows if r[1]}
+
+    def get_slot_devices(self, user_id: int | None) -> list[dict[str, Any]]:
+        if user_id is None:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_device_slots(conn)
+            rows = conn.execute("SELECT slot, device_label, at FROM user_device_slots WHERE user_id = ? ORDER BY slot",
+                                (int(user_id),)).fetchall()
+        return [{"slot": r[0], "device": r[1], "since": r[2]} for r in rows]
+
+    def clear_slot_session(self, user_id: int, session_id: str | None = None) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            self._ensure_device_slots(conn)
+            if session_id:
+                conn.execute("DELETE FROM user_device_slots WHERE user_id = ? AND session_id = ?",
+                             (int(user_id), str(session_id)))
+            else:
+                conn.execute("DELETE FROM user_device_slots WHERE user_id = ?", (int(user_id),))
+
     def get_active_session(self, user_id: int | None) -> str | None:
         if user_id is None:
             return None
@@ -4120,6 +4228,7 @@ class CentralizedDB:
     def clear_active_session(self, user_id: int, session_id: str | None = None) -> None:
         """Logout. With [session_id], only clears when it still owns the session."""
         self.ensure_user_profile_columns()
+        self.clear_slot_session(user_id, session_id)
         with sqlite3.connect(self.db_path) as conn:
             if session_id:
                 conn.execute(

@@ -193,14 +193,27 @@ def signup():
 
     service = get_jwt_service()
     session_id = None
+    if not invite:
+        # every new login is tied to its device from the first sign-in (owner 21-11)
+        import uuid
+
+        from app.jwt_service import client_slot
+
+        session_id = uuid.uuid4().hex
+        try:
+            db.set_active_session(user_id, session_id, data.get("device_label"), slot=client_slot())
+        except Exception:
+            session_id = None
     if invite:
         # A teammate's first sign-in also waits for the owner's approval.
         import uuid
 
         from app.services import login_approval
 
+        from app.jwt_service import client_slot
+
         session_id = uuid.uuid4().hex
-        db.set_active_session(user_id, session_id, data.get("device_label"))
+        db.set_active_session(user_id, session_id, data.get("device_label"), slot=client_slot())
         login_approval.request_login(db.db_path, user_id, workspace_id, session_id,
                                      data.get("device_label"), request.remote_addr)
     access_token, refresh_token = service.create_tokens(

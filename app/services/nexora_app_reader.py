@@ -218,11 +218,14 @@ def call_as_user(
                 "role": user.get("role") or "unassigned",
                 "username": user.get("username"),
                 "is_workspace_owner": bool(user.get("is_workspace_owner")),
+                "sid": user.get("sid"),
             }
     with current_app.test_client() as client:
         if not headers:
             with client.session_transaction() as sess:
-                sess.update(authenticated=True, **{k: v for k, v in who.items() if v is not None})
+                # nexora_internal: this server's own read for an already-checked user (signed cookie — a browser
+                # cannot set it), so the one-computer check does not refuse it
+                sess.update(authenticated=True, nexora_internal=True, **{k: v for k, v in who.items() if v is not None})
         return client.open(path, method=method, query_string=query or None, json=json_body,
                            headers={**headers, **scope})
 

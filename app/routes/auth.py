@@ -159,6 +159,14 @@ def require_jwt_auth(fn):
                 "is_workspace_owner": is_owner,
                 "sid": session.get("sid"),
             }
+            # one computer per login: a browser whose sign-in was taken over elsewhere is signed out
+            if uid is not None and not session.get("nexora_internal") and not session_is_current(dict(request.user)):
+                session.clear()
+                if request.path.startswith("/api/") or request.is_json:
+                    return jsonify({"success": False, "error": {
+                        "code": "SESSION_REVOKED",
+                        "message": "Signed out — this account was opened on another computer."}}), 401
+                return redirect("/login")
             return gated_fn(*args, **kwargs)
 
         # No session, no Authorization header — genuine API-style
@@ -482,7 +490,9 @@ def api_login() -> tuple[Response, int]:
     if isinstance(data, dict):
         device_label = (data.get("device_label") or data.get("device_id") or None)
     try:
-        db.set_active_session(user_id, session_id, device_label)
+        from app.jwt_service import client_slot
+
+        db.set_active_session(user_id, session_id, device_label, slot=client_slot())
     except Exception:
         session_id = None
     from app.services import login_approval
@@ -1081,6 +1091,18 @@ def api_refresh() -> tuple[Response, int]:
     )
 
 
+@auth_blueprint.route("/api/v1/auth/devices", methods=["GET"], endpoint="api_my_devices")
+@require_jwt_auth
+def api_my_devices() -> tuple[Response, int]:
+    """My signed-in devices and how many phones / computers I may use (1 + 1 unless more were given)."""
+    user = getattr(request, "user", None) or {}
+    db = _get_auth_db()
+    uid = int(user.get("user_id") or 0)
+    allow = db.device_allowance(uid)
+    return jsonify({"success": True, "data": {"phones": allow["phone"], "computers": allow["computer"],
+                                              "devices": db.get_slot_devices(uid)}}), 200
+
+
 @auth_blueprint.route("/api/v1/auth/approval", methods=["GET"], endpoint="api_login_approval")
 @require_jwt_auth
 def api_login_approval() -> tuple[Response, int]:
@@ -1176,6 +1198,16 @@ def login() -> str | Response:
                     linked_sid = str(_p["sid"])
             if linked_sid:
                 session["sid"] = linked_sid
+            elif user_row and not login_approval.needs_approval(
+                _get_auth_db().db_path, int(user_row.get("id")), bool(user_row.get("is_workspace_owner"))
+            ):
+                # a plain web sign-in takes the computer slot (one computer per login; owner 21-11)
+                sid = uuid.uuid4().hex
+                session["sid"] = sid
+                try:
+                    _get_auth_db().set_active_session(int(user_row.get("id")), sid, "Web browser", slot="computer")
+                except Exception:
+                    pass
             elif user_row and login_approval.needs_approval(
                 _get_auth_db().db_path, int(user_row.get("id")), bool(user_row.get("is_workspace_owner"))
             ):

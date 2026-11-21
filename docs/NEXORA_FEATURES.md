@@ -510,6 +510,14 @@ received); ✨ read a scheme letter (photo / PDF → drafts the user checks and 
 `/dist/schemes/<id>` (DELETE), `/dist/schemes/alerts`, `/dist/schemes/read-letter`; AI insights `schemes`; Ask Nexora
 `dist_schemes`; Company report carries `schemes`.
 
+
+**Devices per login (21-11 night):** every login except the founder (WORKSPACE_OWNER_USERNAME) = 1 phone + 1 computer
+(web / Windows exe / Mac) at a time; a new sign-in of a kind ends the OLDEST of that kind (`user_device_slots`,
+`CentralizedDB.set_active_session(slot=)`, `jwt_service.client_slot` from User-Agent / "client"). Browser cookie
+sessions are checked too (were never checked before); self sign-up pins its first device; Ask Nexora's own reads
+carry `nexora_internal`. Founder gifts more: `POST /api/v1/admin/users/<id>/devices {phones, computers}`; a user sees
+own devices at `GET /api/v1/auth/devices`. In-app purchase of extra devices: price later (owner).
+
 ## 10. Pending / open
 
 **21-11 afternoon batch (Distributor notes, number order):** #10 many photos on a note (pick many at once; before, only

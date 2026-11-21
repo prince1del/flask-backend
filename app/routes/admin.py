@@ -495,6 +495,28 @@ def set_user_multi_device(user_id):
     return jsonify({'success': True, 'data': result}), 200
 
 
+@admin_bp.route('/users/<int:user_id>/devices', methods=['GET', 'POST'])
+@require_jwt_auth
+@require_role('admin')
+def user_devices(user_id):
+    """Founder: how many phones / computers this login may use at once (gift extra devices; owner 21-11).
+    POST {phones, computers}. GET: the allowance and the signed-in devices."""
+    if not _is_founder_requester():
+        return _forbidden('Only the owner can change devices of a login')
+    cdb = _auth_db()
+    try:
+        if request.method == 'POST':
+            data = request.get_json(silent=True) or {}
+            result = cdb.set_device_allowance(int(user_id), int(data.get('phones') or 1), int(data.get('computers') or 1))
+        else:
+            allow = cdb.device_allowance(int(user_id))
+            result = {"user_id": int(user_id), "phones": allow["phone"], "computers": allow["computer"],
+                      "devices": cdb.get_slot_devices(int(user_id))}
+    except (TypeError, ValueError) as exc:
+        return jsonify({'success': False, 'data': None, 'message': str(exc)}), 400
+    return jsonify({'success': True, 'data': result}), 200
+
+
 @admin_bp.route('/users/<int:user_id>/sessions', methods=['DELETE'])
 @require_jwt_auth
 @require_role('admin')

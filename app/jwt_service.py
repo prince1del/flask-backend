@@ -167,19 +167,41 @@ class JWTService:
         return decorated_function
 
 
-def session_is_current(payload: dict) -> bool:
-    """One live device per account unless the owner granted an exception.
+def client_slot(req=None) -> str:
+    """'phone' for the NEXORA phone app, 'computer' for a web browser, the Windows exe or a Mac."""
+    from flask import request as _r
 
-    Old tokens minted before this feature carry no `sid`; they stay valid until
-    the user logs in again (which then pins a session id).
-    """
+    req = req or _r
+    try:
+        body = req.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    told = str((body.get("client") if isinstance(body, dict) else "") or req.headers.get("X-Nexora-Client") or "").lower()
+    if told in ("android", "ios", "phone", "app"):
+        return "phone"
+    if told in ("web", "desktop", "exe", "mac", "windows", "computer"):
+        return "computer"
+    ua = (req.headers.get("User-Agent") or "").lower()
+    if "mozilla" in ua or "pywebview" in ua or "electron" in ua:
+        return "computer"
+    return "phone"   # okhttp / Dalvik = the phone app
+
+
+def _is_founder_payload(payload: dict) -> bool:
+    import os
+
+    founder = (os.getenv("WORKSPACE_OWNER_USERNAME") or "kunwar1del").strip().lower() or "kunwar1del"
+    return str(payload.get("username") or "").strip().lower() == founder
+
+
+def session_is_current(payload: dict) -> bool:
+    """One phone + one computer per login (owner 21-11); only the founder and logins the founder granted
+    "multi device" are free. A token without a session id is refused once the login has a live session."""
     if not isinstance(payload, dict):
         return True
-    if payload.get("is_workspace_owner"):
+    if _is_founder_payload(payload):
         return True
     token_sid = payload.get("sid")
-    if not token_sid:
-        return True
     try:
         from centralized_db_system.db import CentralizedDB
         from flask import current_app
@@ -189,10 +211,13 @@ def session_is_current(payload: dict) -> bool:
         user_id = payload.get("user_id")
         if db.is_multi_device_allowed(user_id):
             return True
-        active = db.get_active_session(user_id)
+        slots = db.get_slot_sessions(user_id)
+        active = None if slots else db.get_active_session(user_id)
     except Exception:
         # Never lock users out because of a DB hiccup.
         return True
+    if slots:
+        return bool(token_sid) and str(token_sid) in slots.values()
     if not active:
         return True
-    return str(active) == str(token_sid)
+    return bool(token_sid) and str(active) == str(token_sid)
