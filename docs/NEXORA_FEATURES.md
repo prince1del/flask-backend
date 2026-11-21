@@ -473,6 +473,15 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
   - daily limits (50 AI questions, 100 voice clips per user).
 - **Cost rules:** `maxOutputTokens` on every call, usage logged in `ai_agent_usage_log`, ask before tests over ₹10.
 
+
+**Edit profile batch (21-11 evening, server `7038130`, phone `76df678`, OTA 2.0.467225):** logo letters use
+`FirmInitials` (Kunwar home → KH); GSTIN row with a Fetch button + hint (auto fetch at 15 characters, Fetch fills
+address / state / PIN / PAN again, never the business name); Business type (28) and category (70) open a search picker,
+"+ Add “…”" keeps a name not in the list ("Other" removed); IFSC → bank name + "Branch & address" (new column
+`hop_firm_profile.bank_branch`, printed on bills as "Branch :") via `/api/v1/masters/ifsc-lookup` (any login, every UI;
+`app/services/ifsc_lookup.py`, public IFSC directory, 7-day cache) — also in Cash & Bank → New bank account (fills the
+account name when empty); Banking fields one per row; signature pad: full-width "Use signature", Clear / Cancel below.
+
 ## 10. Pending / open
 
 **21-11 afternoon batch (Distributor notes, number order):** #10 many photos on a note (pick many at once; before, only

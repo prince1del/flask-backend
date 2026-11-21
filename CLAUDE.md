@@ -107,6 +107,9 @@ Always say the in-app #number, never the DB id.
 "add new option if the profile is different" (login chips?). Done 21-11: B3 (it was the LOGIN screen → navy-gold +
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
+**Done 21-11 evening (OTA 2.0.467225 published + Fold installed, owner checks):** Edit profile — KH logo letters,
+GSTIN Fetch, type / category search + Add, IFSC → bank + branch address (every UI), signature pad buttons. Detail §10.
+
 **Distributor UI — claude notes (21-11 ~12:40):** replied + ✓ done in the app: #2, #10, #16, #17, #19, #24-#37.
 **Done 21-11 evening (APK 15:57 on BOTH phones; server `9248c8b`):** #9 bulk delete (photo = Parties list) on every
 bill list + Parties; Distributor bottom Orders → Orders/SO/CI; #12 GST % on Article Master rows; #22 Warehouse row
