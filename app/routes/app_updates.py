@@ -101,6 +101,17 @@ def items_for(items: list[dict], ui: str | None) -> list[dict]:
     return [i for i in items if i["ui"] in ("all", ui)]
 
 
+def _min_version(meta: dict) -> int:
+    vals = []
+    for v in (meta.get("min_version_code"), os.getenv("NEXORA_MIN_APP_VERSION_CODE")):
+        try:
+            if v not in (None, ""):
+                vals.append(int(v))
+        except (TypeError, ValueError):
+            pass
+    return max(vals) if vals else 0
+
+
 @app_updates_bp.route("/android/latest", methods=["GET"])
 @require_jwt_auth
 def android_latest():
@@ -124,6 +135,9 @@ def android_latest():
                 "size_bytes": meta.get("size_bytes"),
                 "published_at": meta.get("published_at"),
                 "mandatory": bool(meta.get("mandatory", False)),
+                # owner 21-11 "version check": any phone older than this must update (even when the newest
+                # release itself is optional) — latest.json "min_version_code" or env NEXORA_MIN_APP_VERSION_CODE
+                "min_version_code": _min_version(meta),
                 "download_path": "/api/v1/app/android/download",
             },
         }

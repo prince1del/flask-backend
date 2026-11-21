@@ -36,7 +36,7 @@ REMOTE_APK="nexora-$CODE.apk"
 STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 LOCAL_LATEST=$(mktemp)
 "$PY" -c '
-import json, sys
+import json, os, sys
 notes = sys.argv[1]
 TAGS = {"[business]": "business", "[b]": "business", "[executive]": "executive", "[e]": "executive",
         "[all]": "all", "[a]": "all", "[global]": "all"}
@@ -59,6 +59,9 @@ meta = {
   "size_bytes": int(sys.argv[5]),
   "file": sys.argv[6],
   "published_at": sys.argv[7],
+  # MANDATORY=1 → this build must be installed; MIN_VERSION_CODE=n → every phone older than n must update
+  "mandatory": os.environ.get("MANDATORY") == "1",
+  "min_version_code": int(os.environ.get("MIN_VERSION_CODE") or 0),
 }
 json.dump(meta, open(sys.argv[8], "w", encoding="utf-8"), ensure_ascii=False)
 ' "$NOTES" "$CODE" "$NAME" "$SHA" "$SIZE" "$REMOTE_APK" "$STAMP" "$LOCAL_LATEST"

@@ -48,3 +48,12 @@ def test_feedback_round_trip(tmp_path, monkeypatch):
     mine = client.get("/api/v1/hop/feedback", headers=h).get_json()["data"]["items"]
     assert mine[0]["reply"] == "Fixed in the new update"
     assert client.get("/api/v1/hop/feedback/counts", headers=h).get_json()["data"]["replies"] == 0
+
+
+def test_min_app_version(monkeypatch):
+    from app.routes import app_updates as U
+
+    assert U._min_version({}) == 0
+    assert U._min_version({"min_version_code": 40}) == 40
+    monkeypatch.setenv("NEXORA_MIN_APP_VERSION_CODE", "55")
+    assert U._min_version({"min_version_code": 40}) == 55
