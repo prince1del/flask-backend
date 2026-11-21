@@ -143,6 +143,75 @@ def find_by_barcode(conn: sqlite3.Connection, ws: str, code: str) -> dict[str, A
     return decorate(dict(r)) if r else None
 
 
+_SCAN_COLS = ("id", "name", "code", "barcode", "unit", "hsn", "gst_pct", "cess_pct", "mrp",
+              "selling_price", "purchase_price", "stock_qty")
+
+
+def scan_index(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
+    """Compact item list for the phone's continuous scanner ("Scan many").
+
+    The phone keeps it (works offline) and matches every scan on the phone, so a repeat piece is instant.
+    ``keys`` maps a barcode or item code (codes in lower case) to the item's index in ``items``.
+    """
+    ensure_columns(conn)
+    rows = conn.execute(
+        f"SELECT {', '.join(_SCAN_COLS)} FROM hop_products WHERE workspace_id=? "
+        "AND (deleted_at IS NULL OR trim(deleted_at)='') AND COALESCE(status,'active')!='inactive' "
+        "AND COALESCE(item_type,'product')!='service' ORDER BY name", (ws,)).fetchall()
+    items, keys = [], {}
+    for r in rows:
+        d = {k: r[i] for i, k in enumerate(_SCAN_COLS)}
+        idx = len(items)
+        items.append(d)
+        bc, code = _s(d.get("barcode")), _s(d.get("code")).lower()
+        if bc:
+            keys[bc] = idx                      # barcode wins over an item code that looks the same
+        if code and code not in keys:
+            keys[code] = idx
+    return {"items": items, "keys": keys, "count": len(items)}
+
+
+def scan_check(conn: sqlite3.Connection, ws: str, counts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Counted pieces from "Scan many" against the books (rule based, no AI cost).
+
+    ``counts`` = [{"code": "890…", "qty": 10}, …]. Returns each item with counted vs book stock,
+    the codes not in the master, and plain warnings.
+    """
+    idx = scan_index(conn, ws)
+    merged: dict[int, float] = {}
+    unknown: dict[str, float] = {}
+    for c in counts or []:
+        code = _s(c.get("code"))
+        if not code:
+            continue
+        try:
+            q = float(c.get("qty") or 1)
+        except (TypeError, ValueError):
+            q = 1.0
+        hit = idx["keys"].get(code)
+        if hit is None:
+            hit = idx["keys"].get(code.lower())
+        if hit is None:
+            unknown[code] = unknown.get(code, 0) + q
+        else:
+            merged[hit] = merged.get(hit, 0) + q
+    items, warnings, value = [], [], 0.0
+    for i, q in merged.items():
+        it = idx["items"][i]
+        book = float(it.get("stock_qty") or 0)
+        rate = float(it.get("selling_price") or 0)
+        value += rate * q
+        items.append({**it, "counted": q, "diff": q - book})
+        if q != book:
+            warnings.append(f"{it['name']}: counted {q:g}, books say {book:g}")
+        if not rate:
+            warnings.append(f"{it['name']}: no selling price in the master")
+    for code in unknown:
+        warnings.append(f"Code {code} is not in the master — tap Add to create the item")
+    return {"items": items, "unknown": [{"code": k, "qty": v} for k, v in unknown.items()],
+            "pieces": sum(merged.values()) + sum(unknown.values()), "value": round(value, 2), "warnings": warnings}
+
+
 def price_for_qty(product: dict[str, Any], qty: float, party_type: str = "customer") -> tuple[float | None, str | None]:
     """Catalogue price for this quantity: wholesale once qty reaches the minimum."""
     if party_type == "vendor":

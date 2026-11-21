@@ -77,6 +77,43 @@ def test_barcode_api(tmp_path, monkeypatch):
     assert client.get("/api/v1/hop/products/by-barcode?code=000", headers=headers).status_code == 404
 
 
+def test_scan_index_and_check(db):
+    from app import hop_items
+
+    p, _ = db
+    with connect(p) as conn:
+        create_product(conn, WS, {"name": "Aster Sheet", "code": "AST-1", "barcode": "8901", "selling_price": 719,
+                                  "stock_qty": 10})
+        create_product(conn, WS, {"name": "Flora Towel", "code": "FL-2", "selling_price": 0, "stock_qty": 5})
+        create_product(conn, WS, {"name": "Stitching", "item_type": "service", "barcode": "999"})
+        idx = hop_items.scan_index(conn, WS)
+        names = [i["name"] for i in idx["items"]]
+        assert "Stitching" not in names
+        assert idx["items"][idx["keys"]["8901"]]["name"] == "Aster Sheet"
+        assert idx["items"][idx["keys"]["fl-2"]]["name"] == "Flora Towel"
+        out = hop_items.scan_check(conn, WS, [{"code": "8901", "qty": 8}, {"code": "8901", "qty": 2},
+                                              {"code": "FL-2", "qty": 3}, {"code": "000", "qty": 1}])
+        by = {i["name"]: i for i in out["items"]}
+        assert by["Aster Sheet"]["counted"] == 10 and by["Aster Sheet"]["diff"] == 0
+        assert by["Flora Towel"]["diff"] == -2
+        assert out["unknown"] == [{"code": "000", "qty": 1.0}] and out["pieces"] == 14
+        assert out["value"] == 7190
+        assert any("Flora Towel: counted 3" in w for w in out["warnings"])
+        assert any("no selling price" in w for w in out["warnings"])
+
+
+def test_scan_api(tmp_path, monkeypatch):
+    from tests.test_hop_wipe_password import _setup_hop_wipe_client
+
+    client, headers, _ = _setup_hop_wipe_client(tmp_path, monkeypatch)
+    client.post("/api/v1/hop/products", headers=headers, json={"name": "Lamp S", "barcode": "556"})
+    d = client.get("/api/v1/hop/products/scan-index", headers=headers).get_json()["data"]
+    assert "556" in d["keys"]
+    r = client.post("/api/v1/hop/products/scan-check", headers=headers, json={"counts": [{"code": "556", "qty": 2}]})
+    assert r.status_code == 200 and r.get_json()["data"]["items"][0]["counted"] == 2
+    assert client.post("/api/v1/hop/products/scan-check", headers=headers, json={"counts": "x"}).status_code == 400
+
+
 def test_ask_nexora_items(db):
     from app.services import hop_ai
 

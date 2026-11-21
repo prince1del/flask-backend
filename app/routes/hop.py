@@ -3159,6 +3159,35 @@ def product_by_barcode():
     return jsonify({"success": True, "data": row})
 
 
+@hop_bp.route("/products/scan-index", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_scan_index():
+    """Phone "Scan many": every item's barcode / code in one small list (kept on the phone, works offline)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_items
+
+    with hop_db.connect(_db_path()) as conn:
+        out = hop_items.scan_index(conn, _ws())
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/products/scan-check", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_scan_check():
+    """Counted pieces from "Scan many" vs the books: counted / book stock / codes not in the master."""
+    ensure_hop_schema(_db_path())
+    from app import hop_items
+
+    counts = _payload().get("counts") or []
+    if not isinstance(counts, list) or len(counts) > 2000:
+        return _json_error("Send counts as a list (up to 2000 codes)")
+    with hop_db.connect(_db_path()) as conn:
+        out = hop_items.scan_check(conn, _ws(), counts)
+    return jsonify({"success": True, "data": out})
+
+
 @hop_bp.route("/import/<kind>/preview", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)

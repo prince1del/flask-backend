@@ -346,6 +346,7 @@ SHOWS["dist_companies"] = [
 SHOWS["dist_articles"] = SHOWS["dist_articles"] + [
     "Article form — Company and Price rule (the company's, or its own) with the rule price and Use.",
     "Select — tick articles, then Set company or Delete.",
+    "Scan — camera stays open, every beep adds 1; one piece opens its article, many pieces show counted vs books and codes not in the master (Add).",
 ]
 SHOWS["dist_bulk_import"] = [
     "Type chips — SO, Company invoice (CI), Credit note, Debit note.",
