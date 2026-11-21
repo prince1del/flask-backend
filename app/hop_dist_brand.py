@@ -176,19 +176,18 @@ def brand_desk(conn: sqlite3.Connection, ws: str, vid: int) -> dict[str, Any]:
     ship = shipments(conn, ws, int(vid))
     orders = pipe["orders"]
     so_wait = sum(1 for o in orders if o["status"] == "SO received") + sum(1 for s in pipe["sos_without_order"] if not s["bills"])
+    # Setup = registering the brand only (owner 21-11: "article master, order, SO, CI … registration ka part nahi"):
+    # its own details, payment terms and the price rule. Orders / SO / CI are day-to-day work, shown as tiles.
+    v = conn.execute("SELECT gst_no, address, contact_person, mobile FROM hop_vendors WHERE workspace_id=? AND id=?",
+                     (ws, int(vid))).fetchone()
+    has_details = bool(v and (v[0] or "").strip() and (v[1] or "").strip() and ((v[2] or "").strip() or (v[3] or "").strip()))
     steps = [
+        {"key": "details", "label": "Company details (GSTIN, address, contact)", "done": has_details,
+         "where": "Edit details"},
         {"key": "terms", "label": "Payment terms and credit days", "done": bool(c.get("payment_terms") or c.get("credit_days") is not None),
-         "where": "Companies & terms → tap the company"},
+         "where": "Terms and price rule"},
         {"key": "rule", "label": "Price rule (mark-up / margin / mark-down)", "done": bool(c.get("rule")),
-         "where": "Companies & terms → tap the company"},
-        {"key": "articles", "label": "Articles of this company", "done": int(c.get("articles") or 0) > 0,
-         "where": "Article Master → ✨ Read company price list (pick this company), or Select → Set company"},
-        {"key": "order", "label": "First order to the company", "done": bool(orders),
-         "where": "Orders → SO → CI → + New order"},
-        {"key": "so", "label": "Company's SO", "done": bool(any(o["sos"] for o in orders) or pipe["sos_without_order"]),
-         "where": "Orders → + SO received, or Bulk import → SO"},
-        {"key": "ci", "label": "Company's invoices (CI)", "done": bool(led["summary"]["billed"]),
-         "where": "Purchase Bills, or Bulk import → CI"},
+         "where": "Terms and price rule"},
     ]
     return {"company": c, "steps": steps, "setup_done": sum(1 for s in steps if s["done"]), "setup_total": len(steps),
             "orders": {"open": sum(1 for o in orders if o["status"] in ("Ordered", "SO received", "Part billed")),
