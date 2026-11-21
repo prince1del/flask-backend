@@ -77,6 +77,13 @@ yourself.** It now has its own menu item in every UI: Settings → App lock (PIN
 **Owner said "weird, fix later" (21-11):** Warehouse item card (`DistItemCardDialog`, `HopDistCompanyScreens.kt`) —
 big 2-line title, info scattered, buttons uneven, empty space; redo as calm cards (price / stock / actions / history).
 
+**New notes 21-11 (Distributor, Kunwar home):** #45 tagged claude — offline: a new bill gets no number (photo);
+#46 party "claudes" — notes do not save offline in any UI; untagged (tagging was broken, fixed 21-11 — ask the owner):
+#41 notes for the Retailer UI, #42 QnA barcode-less fast product entry, #43 product photo → EAN / MRP / design / GST,
+#44 voice billing without mistakes. Firm "kunwar home" (moved, `__f2`) holds: B1 status bar, B4 payroll, #17
+"add new option if the profile is different" (login chips?). Done 21-11: B3 (it was the LOGIN screen → navy-gold +
+Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
+
 **Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
 reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with
 the theme; (B3) built, reply after the phone check; (B4) payroll — reply with a plan; (B5) partners / roles — waits for the owner's 3
