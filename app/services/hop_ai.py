@@ -79,7 +79,8 @@ def _similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def _ask_gemini(data: bytes, mime: str, user_id: int, prompt: str | None = None) -> dict[str, Any]:
+def _ask_gemini(data: bytes, mime: str, user_id: int, prompt: str | None = None, *, max_tokens: int = 3000,
+                feature: str = "nexora_agent_hop_bill_read") -> dict[str, Any]:
     from app.services import nexora_ai_agent as agent
     from app.services.dsr_notes_polish import gemini_api_key
 
@@ -95,7 +96,7 @@ def _ask_gemini(data: bytes, mime: str, user_id: int, prompt: str | None = None)
             {"text": prompt or _PROMPT},
             {"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("ascii")}},
         ]}],
-        "generationConfig": {"temperature": 0, "maxOutputTokens": 3000, "responseMimeType": "application/json"},
+        "generationConfig": {"temperature": 0, "maxOutputTokens": int(max_tokens), "responseMimeType": "application/json"},
     }).encode("utf-8")
     for model in agent.agent_gemini_models():
         req = urllib.request.Request(
@@ -112,10 +113,10 @@ def _ask_gemini(data: bytes, mime: str, user_id: int, prompt: str | None = None)
             break
         usage = out.get("usageMetadata") or {}
         agent._log_usage(
-            user_id=int(user_id), feature="nexora_agent_hop_bill_read", model=model, rounds=1,
+            user_id=int(user_id), feature=feature, model=model, rounds=1,
             prompt_tokens=int(usage.get("promptTokenCount") or 0),
             output_tokens=int(usage.get("candidatesTokenCount") or 0),
-            total_tokens=int(usage.get("totalTokenCount") or 0), query="hop bill read")
+            total_tokens=int(usage.get("totalTokenCount") or 0), query=feature.replace("nexora_agent_", "").replace("_", " "))
         parts = ((out.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
         return _parse_json("".join(p.get("text", "") for p in parts if isinstance(p, dict)))
     raise ValueError("Could not read the bill. Type it in by hand.")
@@ -908,3 +909,28 @@ def read_soa(data: bytes, mime: str, *, user_id: int) -> dict[str, Any]:
                          "narration": str(r.get("narration") or "").strip()[:160],
                          "debit": _num(r.get("debit")), "credit": _num(r.get("credit"))})
     return {"rows": rows, "opening_balance": _num(out.get("opening_balance")), "closing_balance": _num(out.get("closing_balance"))}
+
+
+_PROMPT_PRODUCT_PHOTO = """You read ONE product's photo (its tag, label, packet or the product itself) for a shop's item master.
+Return JSON only: {"name": "", "brand": "", "category": "", "mrp": 0, "size": "", "design": "", "colour": "",
+"material": "", "hsn": "", "ean": "", "unit": "Pcs", "pieces_in_pack": 1, "confidence": "high|medium|low"}
+- name: short shop name as on the tag, e.g. "Aster Double Bedsheet 90x100".
+- mrp: the printed MRP in rupees (number), 0 if not printed. Never guess a price.
+- hsn: only if printed. ean: the 8/12/13-digit number under the barcode if readable.
+- category: one or two words (Bedsheet, Towel, Curtain, Shirt...).
+- Leave anything not visible empty. Never invent."""
+
+
+def read_product_photo(data: bytes, mime: str, *, user_id: int) -> dict[str, Any]:
+    """One capped AI call: product photo → fields for the item form. Nothing is saved here."""
+    out = _ask_gemini(data, mime, user_id, _PROMPT_PRODUCT_PHOTO, max_tokens=400,
+                      feature="nexora_agent_hop_product_photo")
+
+    def s(k: str, n: int = 80) -> str:
+        return str(out.get(k) or "").strip()[:n]
+
+    ean = "".join(ch for ch in s("ean", 20) if ch.isdigit())
+    return {"name": s("name", 160), "brand": s("brand"), "category": s("category", 60), "mrp": _num(out.get("mrp")),
+            "size": s("size"), "design": s("design"), "colour": s("colour"), "material": s("material"),
+            "hsn": "".join(ch for ch in s("hsn", 12) if ch.isdigit()), "ean": ean if len(ean) in (8, 12, 13, 14) else "",
+            "unit": s("unit", 12) or "Pcs", "confidence": s("confidence", 10) or "medium"}

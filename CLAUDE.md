@@ -102,8 +102,12 @@ Create account button), #26 multi-brand (Distributor main). D9 replied, kept ope
 
 **QnA #42/#43/#44 (owner checks the numbers vs #25-27 before replies):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
 `ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master
-Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). Next: deploy + install, then step 2 photo → new
-product (AI label + GST by HSN + photo fingerprint), step 3 voice bill.
+Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). **Building now — step 2 photo → new product:**
+`POST /products/read-photo` (phone reads the EAN free on the phone; one capped AI call reads name / MRP / size /
+design / colour / HSN from the tag; GST % from HSN rules `app/hop_hsn_gst.py` with the ₹2,500 textile line, else the
+category default; existing item with the same EAN shown) → Article Master "📷 Photo" opens the form filled, user
+saves, the photo + its fingerprint (dHash) are saved; `POST /products/match-photo` = "Find by photo" (no barcode,
+no AI cost) → top 3 to tap, in the bill form and Article Master. Then step 3 voice bill.
 
 **Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
 reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with

@@ -3188,6 +3188,48 @@ def product_scan_check():
     return jsonify({"success": True, "data": out})
 
 
+@hop_bp.route("/products/read-photo", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_read_photo():
+    """✨ Photo → new product: file "photo" (+ "ean" the phone read). EAN already in the master → that item, no AI.
+    Else one capped AI call reads the tag; GST from HSN rules / category default; look-alike items. Nothing saved."""
+    ensure_hop_schema(_db_path())
+    from app import hop_product_ai
+
+    f = request.files.get("photo") or request.files.get("file")
+    if not f:
+        return _json_error("Take a photo of the product or its tag")
+    user = getattr(request, "user", None) or {}
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_product_ai.read_photo(conn, _db_path(), _ws(), f.read(), (f.mimetype or "image/jpeg").lower(),
+                                            user_id=int(user.get("user_id") or user.get("id") or 0),
+                                            ean=request.form.get("ean") or "")
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/products/match-photo", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def product_match_photo():
+    """Find by photo (no barcode): the items whose saved photo looks most like this one. No AI cost."""
+    ensure_hop_schema(_db_path())
+    from app import hop_product_photos as PH
+
+    f = request.files.get("photo") or request.files.get("file")
+    if not f:
+        return _json_error("Take a photo of the product")
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            rows = PH.match(conn, _db_path(), _ws(), f.read())
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": {"matches": rows}})
+
+
 @hop_bp.route("/import/<kind>/preview", methods=["POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
