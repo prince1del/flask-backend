@@ -117,6 +117,12 @@ number, Cancel bill keeps it ("Cancelled" in the list), offline bills on top of 
 offline number shown in the form and never counted backwards (detail §10). Owner tests offline, then reply #32-#35.
 **Offline everywhere (owner 21-11):** every change made offline is kept and synced by itself, and shows on the screen
 at once with no "waiting" labels (phone interceptor, detail §10); #34 was the delete screen locking offline — fixed.
+**Done 21-11 afternoon (server `a5e9ccb` deployed, phone `fa528d6` installed 12:21, owner checks):** #10 many note
+photos, #16 scan → New item in the bill form, #17 KH initials in the Hub list + Customer care feedback (ⓘ guide →
+Report a problem / Suggest a change; Menu → Help & feedback; Customer care inbox on the platform owner's login; no
+floating button), #37 EAN field + EAN column in price lists, #2 GSTIN fetch checked (already everywhere), photo
+rotation fix. **Next:** #9 / #12 / #22 / #23 — need the note photos (open each note on the phone first), then reply to
+all claude notes together (owner: "jawab saare baad main ek saath").
 
 **QnA #25/#26/#27 (Distributor UI):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
 `ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master
