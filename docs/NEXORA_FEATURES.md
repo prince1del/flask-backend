@@ -517,6 +517,7 @@ received); ✨ read a scheme letter (photo / PDF → drafts the user checks and 
 sessions are checked too (were never checked before); self sign-up pins its first device; Ask Nexora's own reads
 carry `nexora_internal`. Founder gifts more: `POST /api/v1/admin/users/<id>/devices {phones, computers}`; a user sees
 own devices at `GET /api/v1/auth/devices`. In-app purchase of extra devices: price later (owner).
+Founder list `GET /api/v1/admin/logins?q=` (server `311c120`). Phone `5d43af8` (committed, NOT built): Admin Zone → "Logins & devices" card (founder only) → search list (name, company, "1 phone · 1 computer", signed-in devices) → tap → Phones / Computers − n + (1..20) → Save; founder row "Founder — no limit". Settings → "My devices" card for every login ("Need more devices? Ask NEXORA customer care.").
 
 ## 10. Pending / open
 

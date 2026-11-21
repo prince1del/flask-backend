@@ -121,6 +121,10 @@ brands + IFSC, tidy terms / note / profile forms. Fix test data of `test_nexora_
 setup = details + payment terms; margins per article from the sheet % (Article Master preview + save); dated CD /
 incentive Schemes with progress, alerts, ✨ letter reader (brand → Orders, goods & payments). Detail §10.
 
+**Devices per login (21-11 night; server `2b11799` + `311c120` deployed; phone `5d43af8` committed, NOT built):**
+everyone except the founder = 1 phone + 1 computer at a time (browser sessions checked too); founder gives more in
+Admin Zone → Logins & devices; Settings → My devices. Buying extra devices in the app: owner decides the price later.
+
 **Distributor UI — claude notes (21-11 ~12:40):** replied + ✓ done in the app: #2, #10, #16, #17, #19, #24-#37.
 **Done 21-11 evening (APK 15:57 on BOTH phones; server `9248c8b`):** #9 bulk delete (photo = Parties list) on every
 bill list + Parties; Distributor bottom Orders → Orders/SO/CI; #12 GST % on Article Master rows; #22 Warehouse row

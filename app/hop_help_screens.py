@@ -127,6 +127,7 @@ SHOWS: dict[str, list[str]] = {
     ],
     "app_settings": [
         "Sections — Transaction (numbering, due days, round off), Tax / GST, Print (paper, header, HSN, margins), Sharing (WhatsApp / SMS messages, UPI), Party (groups, loyalty), Reminders (morning email, auto emails, backup email), App lock, Backup.",
+        "My devices — how many phones and computers your login may use at once (1 + 1) and where it is signed in now; signing in on another one signs out the oldest.",
         "Saving — switches save at once; text boxes save with Save.",
         "Government & approvals (owner) — E-Invoice / E-Way Bill / GSTIN verify, SMS (DLT) and online payments (your Razorpay): what to apply for, keys (stored locked), Off / Test / Live and a Test button.",
         "Backup — Download backup (locked .kunwar file, opens only in NEXORA), Restore into a new firm, and Backups on server (every 6 hours + before import / wipe / replace, 30 days; Replace this firm needs your password and saves today's data first). Owner only — or staff the owner allowed to download.",
