@@ -136,3 +136,30 @@ def test_non_owner_cannot_grant_multi_device(client, app):
         headers={"Authorization": f"Bearer {login['access_token']}"},
     )
     assert res.status_code in (401, 403)
+
+
+def test_phone_and_computer_together_and_founder_gift(client, app):
+    db = _cdb(app)
+    shop = db.create_user("shop_one", "pass1234", role="admin", workspace_id="ws_shop")
+    db.create_user("kunwar1del", "ownerpass1", role="admin", workspace_id="ws_owner")
+    db.promote_workspace_owner("kunwar1del")
+    phone = _login(client, "shop_one", device="Fold")                      # test client = phone app
+    web = client.post("/api/v1/auth/login", json={"username": "shop_one", "password": "pass1234", "client": "web"}).get_json()["data"]
+    assert _probe(client, phone["access_token"]).status_code != 401        # a phone and a computer together
+    assert _probe(client, web["access_token"]).status_code != 401
+    second = _login(client, "shop_one", device="Vivo")
+    assert _probe(client, phone["access_token"]).status_code == 401        # the second phone ends the first
+    assert _probe(client, second["access_token"]).status_code != 401
+    owner = _login(client, "kunwar1del", password="ownerpass1")
+    h = {"Authorization": f"Bearer {owner['access_token']}"}
+    uid = shop["id"] if isinstance(shop, dict) else shop
+    rows = client.get("/api/v1/admin/logins?q=shop_one", headers=h).get_json()["data"]["logins"]
+    assert rows and rows[0]["phones"] == 1 and len(rows[0]["devices"]) == 2
+    res = client.post(f"/api/v1/admin/users/{uid}/devices", json={"phones": 2, "computers": 1}, headers=h)
+    assert res.status_code == 200 and res.get_json()["data"]["phones"] == 2
+    third = _login(client, "shop_one", device="Tab")                       # gifted: two phones live
+    assert _probe(client, second["access_token"]).status_code != 401
+    assert _probe(client, third["access_token"]).status_code != 401
+    other = client.post(f"/api/v1/admin/users/{uid}/devices", json={"phones": 5},
+                        headers={"Authorization": f"Bearer {third['access_token']}"})
+    assert other.status_code == 403

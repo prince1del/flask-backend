@@ -495,6 +495,45 @@ def set_user_multi_device(user_id):
     return jsonify({'success': True, 'data': result}), 200
 
 
+@admin_bp.route('/logins', methods=['GET'])
+@require_jwt_auth
+@require_role('admin')
+def founder_logins():
+    """Founder: every login with its company, how many phones / computers it may use and its signed-in devices
+    (?q= name / email / company). For gifting extra devices on the phone (owner 21-11)."""
+    if not _is_founder_requester():
+        return _forbidden('Only the owner can see all logins')
+    import sqlite3 as _sq
+
+    cdb = _auth_db()
+    cdb.ensure_user_profile_columns()
+    q = (request.args.get('q') or '').strip().lower()
+    out = []
+    with _sq.connect(cdb.db_path) as conn:
+        conn.row_factory = _sq.Row
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+        pick = [c for c in ("id", "username", "full_name", "email", "phone", "workspace_id", "role", "active_session_at")
+                if c in cols]
+        rows = conn.execute(f"SELECT {', '.join(pick)} FROM users ORDER BY id DESC LIMIT 500").fetchall()
+        names = {}
+        try:
+            for r in conn.execute("SELECT w.workspace_id, c.name FROM workspace_registry w JOIN companies c ON c.id = w.company_id"):
+                names[str(r[0])] = r[1]
+        except _sq.OperationalError:
+            pass
+    founder = _founder_username().lower()
+    for r in rows:
+        d = dict(r)
+        d["company"] = names.get(str(d.get("workspace_id") or ""), "")
+        if q and q not in " ".join(str(d.get(k) or "") for k in ("username", "full_name", "email", "company")).lower():
+            continue
+        allow = cdb.device_allowance(int(d["id"]))
+        d.update({"phones": allow["phone"], "computers": allow["computer"], "devices": cdb.get_slot_devices(int(d["id"])),
+                  "is_founder": str(d.get("username") or "").lower() == founder})
+        out.append(d)
+    return jsonify({'success': True, 'data': {'logins': out[:200], 'count': len(out)}}), 200
+
+
 @admin_bp.route('/users/<int:user_id>/devices', methods=['GET', 'POST'])
 @require_jwt_auth
 @require_role('admin')
