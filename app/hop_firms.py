@@ -17,7 +17,9 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-UIS = ("business", "distributor")
+UIS = ("business", "distributor", "retailer")
+# each UI's own workspace next to the login's Business one (owner: "not a single byte of one UI in another")
+_SUFFIX = {"distributor": "__dist", "retailer": "__retail"}
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -57,8 +59,8 @@ def main_ws(conn: sqlite3.Connection, base_ws: str, ui: str = "business") -> str
                      (base_ws, ui)).fetchone()
     if r:
         return r[0]
-    firm_ws = f"{base_ws}__dist"
-    name = "My distribution firm"
+    firm_ws = f"{base_ws}{_SUFFIX.get(ui, '__dist')}"
+    name = "My distribution firm" if ui == "distributor" else "My shop"
     conn.execute("INSERT OR IGNORE INTO hop_firms (base_ws, firm_ws, name, is_main, created_at, ui) VALUES (?, ?, ?, 1, ?, ?)",
                  (base_ws, firm_ws, name, _now(), ui))
     try:
@@ -119,7 +121,7 @@ def active_ws(conn: sqlite3.Connection, base_ws: str, requested: str | None, ui:
             return req
         return main_ws(conn, base_ws, ui)
     except sqlite3.OperationalError:
-        return base_ws if ui == "business" else f"{base_ws}__dist"
+        return base_ws if ui == "business" else f"{base_ws}{_SUFFIX.get(ui, '__dist')}"
 
 
 def create(conn: sqlite3.Connection, base_ws: str, name: str, gstin: str = "", state: str = "",
@@ -165,7 +167,7 @@ def move_ui(conn: sqlite3.Connection, base_ws: str, firm_ws: str, to_ui: str) ->
     The main firm of a UI never moves; nothing inside the firm is changed."""
     ensure_schema(conn)
     to_ui = str(to_ui or "").strip().lower()
-    if to_ui not in UIS:
+    if to_ui not in ("business", "distributor"):   # the Retailer UI is a preview: firms do not move there
         raise ValueError("UI must be business or distributor")
     r = conn.execute("SELECT is_main, COALESCE(ui,'business') FROM hop_firms WHERE base_ws=? AND firm_ws=?",
                      (base_ws, firm_ws)).fetchone()

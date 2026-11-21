@@ -151,3 +151,17 @@ def test_old_firm_moves_to_its_own_ui(tmp_path):
         hop_firms.move_ui(conn, "co", "co", "distributor")                    # the main firm never moves
     with pytest.raises(ValueError):
         hop_firms.move_ui(conn, "co", old, "retailer")
+
+
+def test_retailer_ui_has_its_own_workspace(tmp_path):
+    """Owner 21-11 (#41): the Retailer UI gets its own notes — its own workspace, never Business or Distributor."""
+    import sqlite3
+    from app import hop_firms as F
+
+    conn = sqlite3.connect(tmp_path / "f.db")
+    conn.row_factory = sqlite3.Row
+    assert F.request_ui("retailer") == "retailer"
+    assert F.active_ws(conn, "acme", None, "retailer") == "acme__retail"
+    assert F.active_ws(conn, "acme", None, "distributor") == "acme__dist"
+    assert F.active_ws(conn, "acme", None, "business") == "acme"
+    assert F.active_ws(conn, "acme", "acme__dist", "retailer") == "acme__retail"   # a Distributor firm is refused
