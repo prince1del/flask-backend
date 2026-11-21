@@ -51,7 +51,7 @@ subscriber's own brand (never "House of Prizm" for another business).
 - Server tests: `python -m pytest tests -q` (full ≈ 40 min; use `-k dist` / `-k help` etc. for the part you touched).
 - Phone build: `./gradlew.bat :app:assembleDebug` (JAVA_HOME = Android Studio jbr); long builds in the background.
 - Kotlin: never write `/*` inside a comment.
-- Phone on Wi-Fi debug: the port changes — `adb mdns services`, else ask the owner for IP:port. Phone driver scripts
+- Phone: install over **USB** (owner 21-11, not Wi-Fi debug) — `adb devices -l`, `adb -s <serial> install -r`. Phone driver scripts
   live in the session scratchpad (`nx.py`, `reply_notes.py`, `list_notes.py`, `pin.sh`); the app-lock PIN is in
   Claude's private memory only.
 - Cursor also works on this repo (own SSH key `nexora_server_cursor`, rules in `.cursor/rules/live-server-safety.mdc`
@@ -100,7 +100,7 @@ Always say the in-app #number, never the DB id.
 "add new option if the profile is different" (login chips?). Done 21-11: B3 (it was the LOGIN screen → navy-gold +
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
-**QnA #42/#43/#44 (owner checks the numbers vs #25-27 before replies):** step 1 "Scan many" BUILT 21-11 — server
+**QnA #42/#43/#44 (owner checks the numbers vs #25-27 before replies):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
 `ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master
 Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). Next: deploy + install, then step 2 photo → new
 product (AI label + GST by HSN + photo fingerprint), step 3 voice bill.
