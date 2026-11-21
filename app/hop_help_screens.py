@@ -400,9 +400,10 @@ SHOWS["dist_terms_book"] = [
 ]
 SHOWS["dist_brand_desk"] = [
     "+ Add company — a company you buy from: name, GSTIN (Fetch fills the address), state, contact.",
-    "Company chips — every company you distribute for; ⚠ = late shipment or overdue.",
+    "Brand cards — one card per company you distribute for (GSTIN, city, contact, open orders, to pay, overdue); tap a card to open it, ‹ All brands to go back.",
     "Company card — terms and price rule, articles; tap to change them.",
-    "Setup — what is still missing and where to fill it.",
+    "Company details — GSTIN, address and contact people of the chosen company; tap to call, WhatsApp or mail, Edit to change.",
+    "Setup — each missing step is a button (Fill ›) that opens where to fill it; after + Add company the terms and price rule open at once.",
     "Tiles — open orders, SO waiting for invoice, goods still to come, in transit, to pay, overdue.",
     "Goods still to come — per article: on SO, received, still to come, value.",
     "Shipments — LR, transporter, expected / received date; tap to add or mark received.",

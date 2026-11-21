@@ -213,4 +213,15 @@ def desks(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
                     "open_orders": d["orders"]["open"], "waiting_ci": d["orders"]["waiting_ci"],
                     "pending_value": d["pending_value"], "in_transit": len(d["shipments"]["in_transit"]),
                     "late": d["shipments"]["late"], "to_pay": d["money"]["to_pay"], "overdue": d["money"]["overdue"]})
+    # GSTIN, city and contact for the brand cards (owner 21-11: one card per brand, tap for details)
+    if out:
+        ids = [int(x["id"]) for x in out]
+        rows = conn.execute(
+            f"SELECT id, gst_no, city, state, contact_person, mobile FROM hop_vendors WHERE workspace_id=? "
+            f"AND id IN ({','.join('?' * len(ids))})", [ws, *ids]).fetchall()
+        extra = {int(r[0]): r for r in rows}
+        for x in out:
+            r = extra.get(int(x["id"]))
+            if r:
+                x.update({"gst_no": r[1] or "", "city": r[2] or r[3] or "", "contact_person": r[4] or "", "mobile": r[5] or ""})
     return {"companies": out}
