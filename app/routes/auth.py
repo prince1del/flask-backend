@@ -215,6 +215,32 @@ def deny_signup_tenants():
     return None
 
 
+def _self_serve_books_user(user: dict) -> bool:
+    """A business that signed up by itself for the Distributor / Retailer UI keeps its books on the same engine
+    (/api/v1/hop) as the Business UI — in its OWN workspace (owner 21-11: a new distributor got "Insufficient
+    permissions"). Only when that workspace was registered at sign-up and its company's owner signed up with role
+    distributor / retailer in that same workspace — so a distributor login inside someone else's workspace (the
+    employer's, e.g. Bombay Dyeing field distributors) never gets that workspace's books."""
+    if str(user.get("role") or "") not in ("distributor", "retailer"):
+        return False
+    ws = str(user.get("workspace_id") or "").strip()
+    if not ws:
+        return False
+    try:
+        import sqlite3
+
+        from flask import current_app
+
+        with sqlite3.connect(current_app.config.get("DATABASE_PATH", "centralized_db.sqlite3")) as conn:
+            r = conn.execute(
+                "SELECT u.role FROM workspace_registry w JOIN companies c ON c.id = w.company_id "
+                "JOIN users u ON u.id = c.owner_user_id WHERE w.workspace_id = ? AND u.workspace_id = ?",
+                (ws, ws)).fetchone()
+        return bool(r) and str(r[0] or "") in ("distributor", "retailer")
+    except Exception:
+        return False
+
+
 def _hop_permission_denied(user: dict) -> str | None:
     try:
         from flask import current_app
@@ -258,7 +284,8 @@ def require_role(*allowed_roles):
             role = user.get("role")
             if role in allowed_roles or (user.get("is_workspace_owner") and (
                 "admin" in allowed_roles or "hop_admin" in allowed_roles
-            )):
+            )) or ("hop_admin" in allowed_roles and request.path.startswith("/api/v1/hop")
+                   and _self_serve_books_user(user)):
                 # HoP staff permissions (owner sets per area: none / view / edit).
                 if "hop_admin" in allowed_roles and request.path.startswith("/api/v1/hop"):
                     denied = _hop_permission_denied(user)
