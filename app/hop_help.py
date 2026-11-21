@@ -231,7 +231,7 @@ HELP: dict[str, dict[str, Any]] = {
                                  "⚠ shows where the saved DP or price to retailer does not match the terms."],
                         "ai": "Points out thin margins, articles without terms and prices that do not match; Ask Nexora answers \"Bombay Dyeing bedsheet pe mera margin kitna\"."},
     "dist_brand_desk": {"title": "My brands", "what": "Register the brands you distribute: one card per brand with its GSTIN, address, contact, payment terms and price rule. Orders, goods and payments of a brand open from its page.",
-                        "steps": ["+ Add brand — name and GSTIN; then fill its payment terms and price rule.",
+                        "steps": ["+ Add brand — name and GSTIN; then fill its payment terms.",
                                   "Tap a brand card to see its details; Fill › finishes any missing step.",
                                   "Orders, goods & payments of this brand › — goods still to come (SO minus received), shipments (LR), unpaid invoices."],
                         "tips": ["Tap the dark card to change terms and the price rule.", "⚠ on a company chip = a late shipment or an overdue bill."],

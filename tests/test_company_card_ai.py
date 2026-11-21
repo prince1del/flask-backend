@@ -67,7 +67,7 @@ def test_registration_and_ask_nexora(firm):
         by = {b["brand"]: b for b in reg["brands"]}
         assert reg["count"] == 2 and reg["fully_registered"] == 1
         assert by["Alpha Mills"]["contact_person"] == "Ravi" and not by["Alpha Mills"]["missing"]
-        assert len(by["Beta Motors"]["missing"]) == 3
+        assert len(by["Beta Motors"]["missing"]) == 2
         one = hop_ai.books_answer(conn, WS, "dist_my_brands", party_name="alpha mills")
         assert [b["brand"] for b in one["brands"]] == ["Alpha Mills"]
         assert hop_ai.books_answer(conn, WS, "ifsc", party_name="bad")["ok"] is False

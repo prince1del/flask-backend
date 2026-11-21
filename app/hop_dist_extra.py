@@ -530,6 +530,19 @@ def price_list_preview(conn: sqlite3.Connection, ws: str, rows: list[dict]) -> d
                     "season": _s(raw.get("season")) or m.get("season"), **new, **extra, "changes": changes,
                     "new_details": new_details,
                     "check": ("Big change: " + ", ".join(warn) + " — check the price list") if warn else None})
+    # owner 21-11: margins are per article — the sheet's % columns give each row its PTR / ex-mill right here
+    from app import hop_dist_margins as MG
+
+    for r in out:
+        mg = MG.terms_from_details(r.get("details") or {}, r.get("mrp"), r.get("gst_pct"),
+                                   r.get("selling_price"), r.get("purchase_price"))
+        if mg:
+            r["margin"] = mg
+            if mg["matches_saved"] is False:
+                r.setdefault("checks", []).append(
+                    f"Sheet % give PTR ₹{mg['prices']['ptr']:,.2f}"
+                    + (f" / ex-mill ₹{mg['prices']['ex_mill']:,.2f}" if mg["prices"].get("ex_mill") else "")
+                    + " — the prices in the sheet differ")
     return {"rows": out, "new": sum(1 for r in out if r["action"] == "new"),
             "changed": sum(1 for r in out if r["action"] == "change"), "same": sum(1 for r in out if r["action"] == "same")}
 
@@ -537,22 +550,36 @@ def price_list_preview(conn: sqlite3.Connection, ws: str, rows: list[dict]) -> d
 def price_list_apply(conn: sqlite3.Connection, ws: str, rows: list[dict], *, user: str = "",
                      vendor_id: int | None = None) -> dict[str, Any]:
     """Save the ticked rows; ``vendor_id`` = the company the sheet is from (its articles go under it)."""
-    done = {"created": 0, "updated": 0}
+    from app import hop_dist_margins as MG
+
+    done = {"created": 0, "updated": 0, "margins": 0}
     comp = {"vendor_id": int(vendor_id)} if vendor_id else {}
     for r in rows[:1000]:
+        saved = None
         if r.get("action") == "new":
-            save_article(conn, ws, {k: r.get(k) for k in ("code", "name", "category", "season", "mrp", "purchase_price",
-                                                          "selling_price", "gst_pct", "hsn", "unit", "details")
-                                    if r.get(k) not in (None, "", {})} | comp,
-                         user=user, source="price_list")
+            saved = save_article(conn, ws, {k: r.get(k) for k in ("code", "name", "category", "season", "mrp", "purchase_price",
+                                                                  "selling_price", "gst_pct", "hsn", "unit", "details")
+                                            if r.get(k) not in (None, "", {})} | comp,
+                                 user=user, source="price_list")
             done["created"] += 1
-        elif r.get("action") == "change" and r.get("id"):
-            save_article(conn, ws, {"id": r["id"], "season": r.get("season"),
-                                    **{k: r[k] for k in ("mrp", "purchase_price", "selling_price") if r.get(k)},
-                                    **({"category": r["category"]} if r.get("category") else {}),
-                                    **({"details": r["details"]} if r.get("details") else {}), **comp},
-                         user=user, source="price_list")
-            done["updated"] += 1
+        elif r.get("action") in ("change", "same") and r.get("id"):
+            if r.get("action") == "change":
+                saved = save_article(conn, ws, {"id": r["id"], "season": r.get("season"),
+                                                **{k: r[k] for k in ("mrp", "purchase_price", "selling_price") if r.get(k)},
+                                                **({"category": r["category"]} if r.get("category") else {}),
+                                                **({"details": r["details"]} if r.get("details") else {}), **comp},
+                                     user=user, source="price_list")
+                done["updated"] += 1
+            else:
+                saved = {"id": r["id"]}
+        # the article's own margin terms from the sheet's % columns (owner 21-11: per product, not per brand)
+        mg = (r.get("margin") or {}).get("terms") if isinstance(r.get("margin"), dict) else None
+        if not mg and r.get("details"):
+            got = MG.terms_from_details(r["details"], r.get("mrp"), r.get("gst_pct"), r.get("selling_price"), r.get("purchase_price"))
+            mg = got["terms"] if got else None
+        if mg and saved and saved.get("id"):
+            MG.save_article(conn, ws, int(saved["id"]), {**mg, "season": r.get("season")})
+            done["margins"] += 1
     return done
 
 

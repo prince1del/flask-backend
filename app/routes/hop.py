@@ -4755,6 +4755,76 @@ def dist_item_hand_stock(pid: int):
     return _co(lambda CO, c: CO.hand_stock(c, _ws(), pid, _payload() or {}, user=_user_label()))
 
 
+@hop_bp.route("/dist/companies/<int:vid>/schemes", methods=["GET", "POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_company_schemes(vid: int):
+    """GET: the company's CD schemes (dated slabs) and incentives with their progress + alerts.
+    POST {id?, kind cd|incentive, title, from_date, to_date, basis, categories, slabs, note, cn_txn_id?,
+    received_amount?}: create / change one scheme (a change never rewrites old invoices)."""
+    from app import hop_dist_schemes as SC
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            if request.method == "POST":
+                SC.save(conn, _ws(), vid, _payload() or {})
+            out = SC.company_schemes(conn, _ws(), vid)
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/dist/schemes/<int:sid>", methods=["DELETE"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_scheme_delete(sid: int):
+    from app import hop_dist_schemes as SC
+
+    ensure_hop_schema(_db_path())
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = SC.delete(conn, _ws(), sid)
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    return jsonify({"success": True, "data": out})
+
+
+@hop_bp.route("/dist/schemes/alerts", methods=["GET"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_scheme_alerts():
+    """Every company: CD to keep, targets close to the next slab, schemes ending, incentives not received."""
+    from app import hop_dist_schemes as SC
+
+    ensure_hop_schema(_db_path())
+    with hop_db.connect(_db_path()) as conn:
+        return jsonify({"success": True, "data": {"alerts": SC.alerts(conn, _ws())}})
+
+
+@hop_bp.route("/dist/schemes/read-letter", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def dist_scheme_read_letter():
+    """✨ Scheme letter / circular (photo or PDF, file "file") → draft CD / incentive schemes. One capped AI call;
+    nothing is saved — the user checks each draft and saves it."""
+    from app import hop_dist_schemes as SC
+
+    f = request.files.get("file") or request.files.get("photo")
+    if not f:
+        return _json_error("Choose the scheme letter (photo or PDF)")
+    name, mime = (f.filename or "").lower(), (f.mimetype or "image/jpeg").lower()
+    user = getattr(request, "user", None) or {}
+    try:
+        out = SC.read_letter(f.read(), "application/pdf" if name.endswith(".pdf") else mime,
+                             user_id=int(user.get("user_id") or user.get("id") or 0))
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
+
+
 @hop_bp.route("/dist/companies/<int:vid>/details", methods=["GET", "POST"])
 @require_jwt_auth
 @require_role(HOP_ROLE)
@@ -5284,6 +5354,9 @@ def dist_insights(key: str):
               "profit": "Business profitability", "price-changes": "Article price changes and their effect on margins",
               "brand-desk": "One company I distribute for: orders, SO, invoices, goods still to come, shipments and "
                             "money — say what to chase first (late shipments, SO without invoice, overdue) and what is missing in setup.",
+              "schemes": "Cash discount and incentive schemes of the companies I distribute for: which invoice to pay "
+                         "first to keep the CD, which target is close and how much more to buy, which scheme ends soon, "
+                         "which earned incentive's credit note has not come. Be concrete with ₹ and dates.",
               "my-brands": "Brands I distribute — registration only: which brand still misses its GSTIN, address, "
                            "contact person, payment terms or price rule; say which to finish first and why it matters "
                            "(GST bills, margins, payment reminders). Do not talk about orders or money.",
@@ -5321,6 +5394,9 @@ def dist_insights(key: str):
                     "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180),
                     "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws()),
                     "my-brands": lambda: __import__("app.hop_dist_brand", fromlist=["x"]).registration(conn, _ws()),
+                    "schemes": lambda: (__import__("app.hop_dist_schemes", fromlist=["x"]).company_schemes(
+                        conn, _ws(), a.get("vendor_id", type=int)) if a.get("vendor_id", type=int)
+                        else {"alerts": __import__("app.hop_dist_schemes", fromlist=["x"]).alerts(conn, _ws())}),
                     "company-report": lambda: __import__("app.hop_dist_company", fromlist=["x"]).company_report(
                         conn, _ws(), a.get("vendor_id", type=int) or 0),
                     "goods-received": lambda: __import__("app.hop_dist_receive", fromlist=["x"]).to_receive(

@@ -400,12 +400,12 @@ SHOWS["dist_terms_book"] = [
     "✨ AI — thin margins, missing terms and prices that do not match.",
 ]
 SHOWS["dist_brand_desk"] = [
-    "+ Add brand — a brand you distribute: name, GSTIN (Fetch fills the address), state, contact; terms and price rule open right after.",
+    "+ Add brand — a brand you distribute: name, GSTIN (Fetch fills the address), state, contact; payment terms open right after.",
     "✨ Fill from a photo — visiting card, letterhead or GST certificate fills the brand form (you check and save).",
     "✨ AI insights — which brand still misses GSTIN, address, contact, terms or price rule, and what to fill first.",
     "Brand cards — one card per brand (GSTIN, city, contact); \"Setup 1 of 3\" until it is fully registered; tap a card to open it.",
-    "Brand card (navy) — payment terms, credit days and price rule; tap to change them.",
+    "Brand card (navy) — payment terms and credit days; tap to change them. Margins are per article (Article Master), CD and incentives are in Schemes.",
     "Company details — GSTIN, address and contact people; tap to call, WhatsApp or mail, Edit to change.",
-    "Setup — the 3 registration steps (details, terms, price rule); Fill › opens where to fill each.",
-    "Orders, goods & payments of this brand › — its own page: tiles, goods still to come, shipments (LR), latest orders, unpaid invoices.",
+    "Setup — the 2 registration steps (company details, payment terms); Fill › opens where to fill each.",
+    "Orders, goods & payments of this brand › — its own page: Schemes (CD slabs and incentive targets with dates, progress and alerts; ✨ read a scheme letter), tiles, goods still to come, shipments (LR), latest orders, unpaid invoices.",
 ]

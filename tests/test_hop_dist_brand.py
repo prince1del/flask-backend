@@ -34,8 +34,8 @@ def test_desk_pending_goods_shipment_and_steps(firm):
     with connect(path) as conn:
         d0 = BR.brand_desk(conn, WS, aid)
         # setup = registering the brand: details, terms, price rule (orders / SO / CI are not setup)
-        assert d0["setup_done"] == 0 and d0["setup_total"] == 3
-        assert [s["key"] for s in d0["steps"]] == ["details", "terms", "rule"]
+        assert d0["setup_done"] == 0 and d0["setup_total"] == 2
+        assert [s["key"] for s in d0["steps"]] == ["details", "terms"]
         T.save_terms(conn, WS, aid, {"payment_terms": "30 days", "price_rule": "markup", "rule_pct": 20})
         so = D.create_so(conn, WS, {"so_number": "SO-1", "so_date": "2026-11-01", "vendor_id": aid,
                                     "lines": [{"item_name": "Alpha Towel", "qty": 100, "rate": 150}]})
@@ -46,7 +46,7 @@ def test_desk_pending_goods_shipment_and_steps(firm):
         d = BR.brand_desk(conn, WS, aid)
         p = d["pending_items"][0]
         assert p["on_so"] == 100 and p["received"] == 60 and p["pending"] == 40 and p["pending_value"] == 6000
-        assert d["money"]["billed"] > 0 and d["setup_done"] == 2          # details not filled yet
+        assert d["money"]["billed"] > 0 and d["setup_done"] == 1          # details not filled yet
         # shipment: in transit, late, then received
         sh = BR.save_shipment(conn, WS, ci["party_txn_id"], {"lr_no": "LR-9", "transporter": "VRL", "dispatched_on": "2026-11-05",
                                                             "eta": "2026-11-06"})

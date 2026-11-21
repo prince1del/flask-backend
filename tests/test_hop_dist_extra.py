@@ -70,7 +70,7 @@ def test_price_list_preview_and_apply(firm):
         assert acts["Bath Towel"]["action"] == "change" and acts["Hand Towel"]["action"] == "new"
         assert acts["Double Bedsheet"]["check"] and "up" in acts["Double Bedsheet"]["check"]
         done = X.price_list_apply(conn, WS, [acts["Bath Towel"], acts["Hand Towel"]], user="Owner")
-        assert done == {"created": 1, "updated": 1}
+        assert done == {"created": 1, "updated": 1, "margins": 0}
         assert X.price_history(conn, WS, ids["towel"])[0]["source"] == "price_list"
 
 

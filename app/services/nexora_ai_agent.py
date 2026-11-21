@@ -104,6 +104,10 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
 - dist_my_brands: My brands (registration) — every brand I distribute with its GSTIN, address, contact person,
   mobile, email, payment terms, price rule and what is still missing (party_name = brand to pick one) ("Bombay
   Dyeing ka contact kaun hai", "kis brand ka setup adhoora hai", "Raymond ka GSTIN kya hai").
+- dist_schemes: cash discount (CD) schemes with dates and slabs, incentive / target schemes with progress (bought so
+  far, next slab, ₹ more to buy, days left), alerts (pay soon to keep CD, close to target, scheme ending, credit note
+  not received) (party_name = company; without it alerts of all) ("Raymond ka scheme kitna bacha", "CD bachane ke
+  liye kaunsa bill pehle bharu", "kaunsa incentive nahi mila").
 - ifsc: bank name, branch and address of an IFSC code (party_name = the IFSC) ("SBIN0001234 kis bank ka hai").
 - dist_company_report: one company — ordered → invoiced → received → to come, sales and margin by category, cash
   discount earned / lost / to pay soon, incentives received and due (party_name = company) ("Raymond se kitna CD mila",
@@ -724,7 +728,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "dist_orders", "dist_company_ledger", "dist_retailer_goods",
                                                         "dist_forecast", "dist_warehouse", "dist_overview",
                                                         "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff",
-                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms", "dist_brand_desk", "dist_my_brands", "ifsc", "dist_terms_book", "dist_goods_received", "dist_company_report", "dist_item_card",
+                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms", "dist_brand_desk", "dist_my_brands", "dist_schemes", "ifsc", "dist_terms_book", "dist_goods_received", "dist_company_report", "dist_item_card",
                                                         "salary"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},

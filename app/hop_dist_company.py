@@ -258,14 +258,15 @@ def _paid_on(conn, ws, bill_id: int) -> str | None:
 
 
 def cash_discount(conn: sqlite3.Connection, ws: str, vid: int, frm: str = "", to: str = "") -> dict[str, Any]:
-    """Per company invoice: CD that can be earned (CD % of the invoice), pay-by date, and earned / lost / open."""
+    """Per company invoice: the CD rule running on ITS invoice date (dated CD scheme with slabs, else the old single
+    CD %), the slab earned / still open, the date to pay by, and earned / lost / open totals (owner 21-11: CD changes
+    over time — a new scheme never rewrites old invoices)."""
+    from app import hop_dist_schemes as SC
+
     ensure_schema(conn)
+    SC.ensure_schema(conn)
     c = _check_company(conn, ws, vid)
-    pct, days = _f(c.get("cash_discount_pct")), int(c.get("credit_days") or 0)
-    rows = []
-    if pct <= 0:
-        return {"company": c["company"], "cd_pct": 0, "credit_days": days, "rows": [], "earned": 0, "lost": 0, "open": 0,
-                "note": "No cash discount % set for this company (Terms → Companies & terms)."}
+    days = int(c.get("credit_days") or 0)
     sql = f"""SELECT t.id, t.txn_date, t.party_bill_no, t.txn_number, t.total_amount, t.balance_amount FROM hop_party_transactions t
               WHERE t.workspace_id=? AND t.txn_type=2 AND t.party_type='vendor' AND t.party_id=? AND {LIVE}"""
     args: list[Any] = [ws, int(vid)]
@@ -273,25 +274,36 @@ def cash_discount(conn: sqlite3.Connection, ws: str, vid: int, frm: str = "", to
         sql += " AND date(t.txn_date)>=date(?)"; args.append(frm)
     if to:
         sql += " AND date(t.txn_date)<=date(?)"; args.append(to)
-    today = _today().isoformat()
+    today = _today()
+    rows = []
+    any_rule = False
     for t in conn.execute(sql + " ORDER BY t.txn_date DESC LIMIT 300", args):
         t = dict(t)
+        try:
+            inv = date.fromisoformat(str(t["txn_date"])[:10])
+        except ValueError:
+            continue
+        rule = SC.cd_for(conn, ws, vid, inv, legacy=c)
+        if not rule:
+            continue
+        any_rule = True
         amt = _f(t["total_amount"])
-        cd = round(amt * pct / 100, 2)
-        by = (date.fromisoformat(str(t["txn_date"])[:10]) + timedelta(days=days)).isoformat()
         bal = _f(t.get("balance_amount")) if t.get("balance_amount") is not None else amt
         paid = _paid_on(conn, ws, int(t["id"])) if bal <= 0.005 else None
-        if bal <= 0.005:
-            status = "earned" if (paid or today) <= by else "lost"
-        else:
-            status = "open" if today <= by else "lost"
+        st = SC.cd_status(rule, amt, inv, date.fromisoformat(paid[:10]) if paid else None, bal, today)
         rows.append({"bill_id": t["id"], "ci_no": t.get("party_bill_no") or t.get("txn_number"), "ci_date": t["txn_date"],
-                     "amount": amt, "cd": cd, "pay_by": by, "paid_on": paid, "balance": bal, "status": status})
-    return {"company": c["company"], "cd_pct": pct, "credit_days": days, "rows": rows,
+                     "amount": amt, "cd": st["cd"], "cd_pct": st["pct"], "pay_by": st["pay_by"], "paid_on": paid,
+                     "balance": bal, "status": st["status"], "scheme": rule["title"], "scheme_id": rule.get("id")})
+    if not any_rule:
+        return {"company": c["company"], "cd_pct": 0, "credit_days": days, "rows": [], "earned": 0, "lost": 0, "open": 0,
+                "pay_soon": [],
+                "note": "No cash discount for this company yet — add a CD scheme (with its dates) in Schemes."}
+    soon = (today + timedelta(days=7)).isoformat()
+    return {"company": c["company"], "cd_pct": _f(c.get("cash_discount_pct")), "credit_days": days, "rows": rows,
             "earned": round(sum(r["cd"] for r in rows if r["status"] == "earned"), 2),
             "lost": round(sum(r["cd"] for r in rows if r["status"] == "lost"), 2),
             "open": round(sum(r["cd"] for r in rows if r["status"] == "open"), 2),
-            "pay_soon": [r for r in rows if r["status"] == "open" and r["pay_by"] <= (_today() + timedelta(days=7)).isoformat()]}
+            "pay_soon": [r for r in rows if r["status"] == "open" and r["pay_by"] <= soon]}
 
 
 def _credit_notes(conn, ws, vid: int) -> list[dict]:
@@ -429,7 +441,19 @@ def company_report(conn: sqlite3.Connection, ws: str, vid: int, frm: str = "", t
                        "incentive_received": inc["received"], "incentive_due": inc["still_due"],
                        "net": round(net, 2), "net_pct": round(net / sales * 100, 1) if sales else None},
             "by_category": cats, "cd_pay_soon": cd.get("pay_soon", []),
-            "credit_notes_not_linked": inc["credit_notes_not_linked"]}
+            "credit_notes_not_linked": inc["credit_notes_not_linked"],
+            # dated schemes (owner 21-11): incentive progress + what needs attention for this company
+            "schemes": _schemes_brief(conn, ws, vid)}
+
+
+def _schemes_brief(conn, ws, vid: int) -> dict[str, Any]:
+    from app import hop_dist_schemes as SC
+
+    try:
+        s = SC.company_schemes(conn, ws, vid)
+    except LookupError:
+        return {"incentives": [], "alerts": []}
+    return {"incentives": s["incentives"], "alerts": s["alerts"], "cd_running": [x for x in s["cd"] if x.get("running")]}
 
 
 def summary_text(conn: sqlite3.Connection, ws: str) -> str:

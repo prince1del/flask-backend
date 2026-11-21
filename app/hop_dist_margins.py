@@ -356,6 +356,32 @@ def _pct_in(details: dict, keys: tuple[str, ...]) -> float | None:
     return None
 
 
+def terms_from_details(details: dict, mrp: Any, gst_pct: Any, ptr_saved: Any = 0, dp: Any = 0) -> dict[str, Any] | None:
+    """The sheet's own % columns of ONE article (Perceived, Retailer margin, AWD mark-up on ex-mill) → its terms and
+    prices. The GST step is the one that matches the sheet's PTR / ex-mill best (the AW26 sheet: GST out before the
+    retailer margin). None when the article has no retailer margin column."""
+    retail = _pct_in(details or {}, _RETAIL_KEYS)
+    if retail is None:
+        return None
+    awd, perceived = _pct_in(details, _AWD_KEYS), _pct_in(details, _PERCEIVED_KEYS)
+    mrp, ptr_saved, dp = _f(mrp), _f(ptr_saved), _f(dp)
+    best, best_err = None, None
+    for g in GST_OUT:
+        p = chain(mrp, gst_pct, {"perceived_pct": perceived, "retail_pct": retail, "gst_out": g, "awd_pct": awd})
+        if not p:
+            continue
+        err = (abs(p["ptr"] - ptr_saved) if ptr_saved else 0) + (abs(p.get("ex_mill", 0) - dp) if dp and "ex_mill" in p else 0)
+        if best_err is None or err < best_err:
+            best, best_err = g, err
+    if best is None:
+        return None
+    if not ptr_saved and not dp:
+        best = "retail"   # nothing to match against: the usual Indian chain (MRP incl. GST → GST out → margins)
+    terms = {"perceived_pct": perceived, "retail_pct": retail, "gst_out": best, "awd_pct": awd}
+    return {"terms": terms, "prices": chain(mrp, gst_pct, terms),
+            "matches_saved": (best_err or 0) < 1.0 if (ptr_saved or dp) else None}
+
+
 def suggest_from_sheet(conn: sqlite3.Connection, ws: str, vendor_id: int) -> dict[str, Any]:
     """✨ Every article of the company whose sheet details carry its margins → the terms they give, with a check
     against the saved prices. Nothing is saved here."""
