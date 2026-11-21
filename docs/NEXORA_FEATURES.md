@@ -475,6 +475,17 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 
 ## 10. Pending / open
 
+**Scan many (21-11, QnA step 1 of 3 — fast entry #42 / photo #43 / voice #44; owner checks the note numbers):**
+server `hop_items.scan_index` → `GET /api/v1/hop/products/scan-index` (items + `keys` barcode / lower-case code →
+index; services and deleted items left out; the phone's offline cache keeps it) and `hop_items.scan_check` →
+`POST /products/scan-check` (counted vs book stock, codes not in the master, warnings; rule based, no AI cost).
+Phone: `HopBarcodeScan.scanMany` + `HopScanActivity` EXTRA_MANY — the camera stays open, beep + vibrate per piece,
+same code counts again only after it left the frame (`ScanGate`: 900 ms gap, 600 ms cooldown), Undo / − / +, Pause,
+Light, Done. Bill form: "Scan" (one) + "Scan many" (all lines with qty; unknown codes listed). Article Master "Scan":
+one piece → open / Add with the barcode; many → "Counted · n pieces" dialog (books vs counted, Add for unknown codes,
+nothing saved by itself). Google's own scanner screen is not used (its branding cannot be removed); NEXORA uses the
+same ML Kit engine on its own screen. Next: step 2 photo → new product, step 3 voice bill.
+
 **Now doing (20-11 late night):** Cursor finished (7)/(12)/(13) + GSTIN address/PIN deploy + APK; CLAUDE.md
 updated under Cursor's name. Still: app Notes reply+done as **By: Cursor** when phone ADB is back; Claude =
 calm screens; (17) payroll plan skipped; real barcode / bulk file / PIN field recheck on phone.

@@ -99,12 +99,10 @@ Always say the in-app #number, never the DB id.
 "add new option if the profile is different" (login chips?). Done 21-11: B3 (it was the LOGIN screen → navy-gold +
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
-**Building now (21-11, owner "banana shuru karo") — QnA #42/#43/#44 plan, step 1 = Continuous scan ("Scan many"):**
-server `/products/scan-index` (compact barcode/code → item map, phone keeps it offline) → phone scan screen stays
-open, beep + vibrate, same piece counts again only after it leaves the frame, list "Item × n", unknown codes amber,
-Undo / − / +; Done → bill form adds lines with qty, Article Master shows counts + "Add" for unknown codes (barcode
-filled). Step 2 = photo → new product (AI label + GST by HSN + photo fingerprint); step 3 = voice bill. Owner checks
-note numbers (#25-27 vs #42-44) before the replies go in.
+**QnA #42/#43/#44 (owner checks the numbers vs #25-27 before replies):** step 1 "Scan many" BUILT 21-11 — server
+`ccf16d3` (scan-index / scan-check) pushed, NOT deployed (ask first); phone bill form "Scan many" + Article Master
+Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). Next: deploy + install, then step 2 photo → new
+product (AI label + GST by HSN + photo fingerprint), step 3 voice bill.
 
 **Notes still open:** (D6) GSTIN Fetch in every UI + (D8) barcode scan → item or Add new — built by Cursor, check +
 reply; #26 multi-brand margins — reply after the phone check. Business: (B1) status bar time / signal invisible with
