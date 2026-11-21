@@ -315,6 +315,10 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
     extra = extra or {}
     what = (what or "overview").strip().lower()
     party_name = (party_name or "").strip()
+    if what == "ifsc":   # bank, branch and address of an IFSC (every UI)
+        from app.services.ifsc_lookup import lookup_ifsc
+
+        return lookup_ifsc(party_name)
 
     def outstanding(txn_type: int) -> list[dict[str, Any]]:
         rows = conn.execute(
@@ -512,6 +516,13 @@ def books_answer(conn: sqlite3.Connection, ws: str, what: str, party_name: str =
                         "in_transit": [{k: r.get(k) for k in ("party_bill_no", "lr_no", "transporter", "eta", "late")}
                                        for r in d["shipments"]["in_transit"][:10]], "money": d["money"]}
             return {"companies": all_}
+        if what == "dist_my_brands":
+            from app import hop_dist_brand as BR
+
+            reg = BR.registration(conn, ws)
+            if party_name:
+                reg["brands"] = [b for b in reg["brands"] if _similar(party_name, b["brand"] or "") >= 0.5] or reg["brands"]
+            return reg
         if what == "dist_company_report":
             from app import hop_dist_company as CO
             from app import hop_dist_terms as T
@@ -959,3 +970,46 @@ def read_product_photo(data: bytes, mime: str, *, user_id: int) -> dict[str, Any
             "size": s("size"), "design": s("design"), "colour": s("colour"), "material": s("material"),
             "hsn": "".join(ch for ch in s("hsn", 12) if ch.isdigit()), "ean": ean if len(ean) in (8, 12, 13, 14) else "",
             "unit": s("unit", 12) or "Pcs", "confidence": s("confidence", 10) or "medium"}
+
+
+_PROMPT_COMPANY_CARD = """You read ONE photo of a business document — a visiting card, letterhead, GST registration certificate,
+cancelled cheque or bank passbook page — to fill a company form. Return JSON only:
+{"company": "", "gst_no": "", "pan": "", "address": "", "city": "", "state": "", "pincode": "",
+"contact_person": "", "contact_designation": "", "mobile": "", "email": "",
+"bank_name": "", "bank_account": "", "bank_ifsc": "", "bank_holder": "", "doc_type": "", "confidence": "high|medium|low"}
+- company: the business's legal / trade name as printed.
+- gst_no: 15 characters like 27ABCDE1234F1Z5, only if printed. pan: 10 characters, only if printed.
+- address: street / area lines only; city, state and pincode in their own fields.
+- mobile: 10 digits (drop +91 / 0). Several numbers → the first mobile.
+- bank_*: only from a cheque / passbook / bank details block. bank_ifsc: 11 characters like SBIN0001234.
+- doc_type: visiting_card | letterhead | gst_certificate | cheque | passbook | other.
+- Leave anything not visible empty. Never invent or guess a number."""
+
+
+def read_company_card(data: bytes, mime: str, *, user_id: int) -> dict[str, Any]:
+    """One capped AI call: a visiting card / letterhead / GST certificate / cheque photo → company form fields.
+    Nothing is saved here."""
+    import re
+
+    out = _ask_gemini(data, mime, user_id, _PROMPT_COMPANY_CARD, max_tokens=500,
+                      feature="nexora_agent_hop_company_card")
+
+    def s(k: str, n: int = 120) -> str:
+        return str(out.get(k) or "").strip()[:n]
+
+    gst = re.sub(r"[^A-Z0-9]", "", s("gst_no", 20).upper())
+    pan = re.sub(r"[^A-Z0-9]", "", s("pan", 12).upper())
+    ifsc = re.sub(r"[^A-Z0-9]", "", s("bank_ifsc", 15).upper())
+    mobile = "".join(ch for ch in s("mobile", 20) if ch.isdigit())[-10:]
+    pin = "".join(ch for ch in s("pincode", 10) if ch.isdigit())
+    email = s("email", 120)
+    return {
+        "company": s("company", 120), "gst_no": gst if len(gst) == 15 else "", "pan": pan if len(pan) == 10 else "",
+        "address": s("address", 400), "city": s("city", 60), "state": s("state", 60),
+        "pincode": pin if len(pin) == 6 else "", "contact_person": s("contact_person", 80),
+        "contact_designation": s("contact_designation", 80), "mobile": mobile if len(mobile) == 10 else "",
+        "email": email if "@" in email else "", "bank_name": s("bank_name", 80),
+        "bank_account": "".join(ch for ch in s("bank_account", 30) if ch.isalnum()),
+        "bank_ifsc": ifsc if len(ifsc) == 11 else "", "bank_holder": s("bank_holder", 80),
+        "doc_type": s("doc_type", 20) or "other", "confidence": s("confidence", 10) or "medium",
+    }

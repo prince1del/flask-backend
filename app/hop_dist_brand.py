@@ -224,3 +224,24 @@ def desks(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
             if r:
                 x.update({"gst_no": r[1] or "", "city": r[2] or r[3] or "", "contact_person": r[4] or "", "mobile": r[5] or ""})
     return {"companies": out}
+
+
+def registration(conn: sqlite3.Connection, ws: str) -> dict[str, Any]:
+    """My brands (registration only): per brand what is filled and what is missing — for AI tips and Ask Nexora."""
+    ensure_schema(conn)
+    from app import hop_dist_company as CO
+
+    CO.ensure_schema(conn)   # pincode, designation, contacts columns
+    out = []
+    for c in desks(conn, ws)["companies"]:
+        d = brand_desk(conn, ws, int(c["id"]))
+        v = conn.execute("SELECT gst_no, address, city, state, pincode, contact_person, contact_designation, mobile, email "
+                         "FROM hop_vendors WHERE workspace_id=? AND id=?", (ws, int(c["id"]))).fetchone()
+        det = dict(zip(("gst_no", "address", "city", "state", "pincode", "contact_person", "contact_designation",
+                        "mobile", "email"), v or ()))
+        co = d["company"]
+        out.append({"brand": c["company"], **{k: (det.get(k) or "") for k in det},
+                    "payment_terms": co.get("payment_terms") or "", "credit_days": co.get("credit_days"),
+                    "price_rule": (f"{co.get('rule_label')} {co.get('rule_pct')}%" if co.get("rule") else ""),
+                    "setup": c["setup"], "missing": [s["label"] for s in d["steps"] if not s["done"]]})
+    return {"brands": out, "count": len(out), "fully_registered": sum(1 for b in out if not b["missing"])}

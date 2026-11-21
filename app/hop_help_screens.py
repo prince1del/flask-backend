@@ -152,6 +152,7 @@ SHOWS: dict[str, list[str]] = {
     ],
     "company_profile": [
         "Firm details — name, GSTIN, state, address, phone, email, PAN.",
+        "✨ Fill from a photo — GST certificate, letterhead or cancelled cheque fills the empty fields (you check and save).",
         "GSTIN — type the 15 characters and address, state, PIN and PAN fill by themselves; Fetch fills them again.",
         "Business type / category — pick one, or + Add new to type your own.",
         "Bank — account details printed on bills.",
@@ -400,6 +401,8 @@ SHOWS["dist_terms_book"] = [
 ]
 SHOWS["dist_brand_desk"] = [
     "+ Add brand — a brand you distribute: name, GSTIN (Fetch fills the address), state, contact; terms and price rule open right after.",
+    "✨ Fill from a photo — visiting card, letterhead or GST certificate fills the brand form (you check and save).",
+    "✨ AI insights — which brand still misses GSTIN, address, contact, terms or price rule, and what to fill first.",
     "Brand cards — one card per brand (GSTIN, city, contact); \"Setup 1 of 3\" until it is fully registered; tap a card to open it.",
     "Brand card (navy) — payment terms, credit days and price rule; tap to change them.",
     "Company details — GSTIN, address and contact people; tap to call, WhatsApp or mail, Edit to change.",

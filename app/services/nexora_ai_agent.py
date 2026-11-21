@@ -101,6 +101,10 @@ buy from (a supplier marked principal). "Retailer" / "dukaan" = their customers.
   goods still to come per article (on SO vs received), shipments in transit / late, to pay / overdue (party_name =
   company; without it every company in short) ("Raymond ka kya maal baaki hai", "kaunsa shipment late hai",
   "Bombay Dyeing ka sab status").
+- dist_my_brands: My brands (registration) — every brand I distribute with its GSTIN, address, contact person,
+  mobile, email, payment terms, price rule and what is still missing (party_name = brand to pick one) ("Bombay
+  Dyeing ka contact kaun hai", "kis brand ka setup adhoora hai", "Raymond ka GSTIN kya hai").
+- ifsc: bank name, branch and address of an IFSC code (party_name = the IFSC) ("SBIN0001234 kis bank ka hai").
 - dist_company_report: one company — ordered → invoiced → received → to come, sales and margin by category, cash
   discount earned / lost / to pay soon, incentives received and due (party_name = company) ("Raymond se kitna CD mila",
   "kaunsa incentive baaki hai", "Bombay Dyeing pe net margin kitna").
@@ -720,7 +724,7 @@ def _tool_declarations() -> list[dict[str, Any]]:
                                                         "dist_orders", "dist_company_ledger", "dist_retailer_goods",
                                                         "dist_forecast", "dist_warehouse", "dist_overview",
                                                         "dist_articles", "dist_retailer_dues", "dist_profit", "dist_staff",
-                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms", "dist_brand_desk", "dist_terms_book", "dist_goods_received", "dist_company_report", "dist_item_card",
+                                                        "dist_price_changes", "dist_retailer_forecast", "dist_company_terms", "dist_brand_desk", "dist_my_brands", "ifsc", "dist_terms_book", "dist_goods_received", "dist_company_report", "dist_item_card",
                                                         "salary"]},
                     "party_name": {"type": "string", "description": "Party name (needed for party_statement; partial ok)."},
                     "from": {"type": "string", "description": "Start date YYYY-MM-DD (profit_loss, party_statement, gst)."},

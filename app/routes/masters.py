@@ -458,6 +458,25 @@ def masters_ifsc_lookup():
     return jsonify({"success": True, "data": lookup_ifsc(ifsc)})
 
 
+@masters_bp.route("/read-company-photo", methods=["POST"])
+@require_jwt_auth
+def masters_read_company_photo():
+    """✨ Photo → company details: file "photo" (visiting card, letterhead, GST certificate, cancelled cheque).
+    One capped AI call inside the daily limit; GSTIN / IFSC then checked for free. Nothing is saved — every UI."""
+    from app.hop_company_card_ai import read
+
+    f = request.files.get("photo") or request.files.get("file")
+    if not f:
+        return jsonify({"success": False, "error": {"message": "Take a photo of the card, letterhead or GST certificate",
+                                                    "code": "VALIDATION_ERROR"}}), 400
+    user = getattr(request, "user", None) or {}
+    try:
+        out = read(f.read(), (f.mimetype or "image/jpeg").lower(), user_id=int(user.get("user_id") or user.get("id") or 0))
+    except ValueError as exc:
+        return jsonify({"success": False, "error": {"message": str(exc), "code": "AI_ERROR"}}), 400
+    return jsonify({"success": True, "data": out})
+
+
 @masters_bp.route("/distributors/export", methods=["GET"])
 @require_jwt_auth
 def export_distributors():

@@ -5284,6 +5284,9 @@ def dist_insights(key: str):
               "profit": "Business profitability", "price-changes": "Article price changes and their effect on margins",
               "brand-desk": "One company I distribute for: orders, SO, invoices, goods still to come, shipments and "
                             "money — say what to chase first (late shipments, SO without invoice, overdue) and what is missing in setup.",
+              "my-brands": "Brands I distribute — registration only: which brand still misses its GSTIN, address, "
+                           "contact person, payment terms or price rule; say which to finish first and why it matters "
+                           "(GST bills, margins, payment reminders). Do not talk about orders or money.",
               "company-terms": "Companies (brands) I distribute for: terms, credit, cash discount and price rules — "
                                "point out a company whose rule gives a thin margin, articles not at the rule price "
                                "and articles without a company.",
@@ -5317,6 +5320,7 @@ def dist_insights(key: str):
                     "price-changes": lambda: __import__("app.hop_dist_extra", fromlist=["x"]).price_changes(conn, _ws(), a.get("days", type=int) or 30),
                     "retailer-forecast": lambda: D.retailer_forecast(conn, _ws(), a.get("lookback", type=int) or 180),
                     "company-terms": lambda: __import__("app.hop_dist_terms", fromlist=["x"]).overview(conn, _ws()),
+                    "my-brands": lambda: __import__("app.hop_dist_brand", fromlist=["x"]).registration(conn, _ws()),
                     "company-report": lambda: __import__("app.hop_dist_company", fromlist=["x"]).company_report(
                         conn, _ws(), a.get("vendor_id", type=int) or 0),
                     "goods-received": lambda: __import__("app.hop_dist_receive", fromlist=["x"]).to_receive(
