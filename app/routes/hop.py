@@ -2317,10 +2317,16 @@ def party_transactions_collection():
                 txn_types.append(int(part))
     label_q = (request.args.get("label_q") or "").strip()
     with hop_db.connect(_db_path()) as conn:
-        sql = """
+        from app.hop_bill_numbers import ensure_columns as _bn_cols
+
+        _bn_cols(conn)
+        # a bill list (by type, not one party's ledger) also shows Cancelled bills, so their numbers stay visible
+        keep = ("((deleted_at IS NULL OR trim(deleted_at)='') OR cancelled_at IS NOT NULL)" if txn_types and not party_id
+                else "(deleted_at IS NULL OR trim(deleted_at)='')")
+        sql = f"""
             SELECT *
             FROM hop_party_transactions
-            WHERE (deleted_at IS NULL OR trim(deleted_at)='') AND workspace_id=?
+            WHERE {keep} AND workspace_id=?
         """
         params: list[object] = [_ws()]
         if party_type:
@@ -2338,6 +2344,10 @@ def party_transactions_collection():
             params.append(f"%{label_q.lower()}%")
         sql += " ORDER BY date(txn_date) DESC, id DESC"
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    for r in rows:
+        if r.get("cancelled_at"):
+            r["status_text"] = "Cancelled" + (f" — {r['cancel_reason']}" if r.get("cancel_reason") else "")
+            r["balance_amount"] = 0
     return jsonify({"success": True, "data": rows})
 
 
@@ -2374,6 +2384,25 @@ def party_transaction_detail(txn_id: int):
     except ValueError as exc:
         return _json_error(str(exc))
     return jsonify({"success": True, "data": row})
+
+
+@hop_bp.route("/party-transactions/<int:txn_id>/cancel", methods=["POST"])
+@require_jwt_auth
+@require_role(HOP_ROLE)
+def party_transaction_cancel(txn_id: int):
+    """Cancel bill {reason}: stops counting everywhere, keeps its number, shows as Cancelled in the list (owner #35)."""
+    ensure_hop_schema(_db_path())
+    from app import hop_bill_numbers
+
+    try:
+        with hop_db.connect(_db_path()) as conn:
+            out = hop_bill_numbers.cancel_document(conn, _ws(), txn_id, str((_payload() or {}).get("reason") or ""),
+                                                   actor=_user_label())
+    except LookupError as exc:
+        return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return jsonify({"success": True, "data": out})
 
 
 @hop_bp.route("/party-transactions/<int:txn_id>/preview", methods=["GET"])
@@ -3991,6 +4020,8 @@ def recycle_bin_restore(kind: str, item_id: int):
                 return _json_error("kind must be docs or products")
     except LookupError as exc:
         return _json_error(str(exc), "NOT_FOUND", 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
     return jsonify({"success": True, "data": out})
 
 

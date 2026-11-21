@@ -1195,6 +1195,8 @@ def ensure_hop_schema(db_path: str | Path) -> None:
             ("tds_pct", "REAL"),                # TDS deducted on the bill (we on a purchase / customer on a sale)
             ("tds_amount", "REAL"),
             ("client_ref", "TEXT"),             # phone's id for a bill made offline (no double save on re-sync)
+            ("cancelled_at", "TEXT"),           # Cancel bill: keeps its number, stops counting (hop_bill_numbers)
+            ("cancel_reason", "TEXT"),
             ("vehicle_no", "TEXT"),             # e-way / transport details on the bill
             ("transporter_name", "TEXT"),
             ("party_bill_no", "TEXT"),          # supplier's own bill no. on a purchase bill

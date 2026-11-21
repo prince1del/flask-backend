@@ -112,6 +112,10 @@ bill series per login · #29 ↩ notes not saved offline · #30 claude tag on ed
 offline bill cannot be deleted · #35 bill 2 deleted → next shows 3; no Cancel bill; series rule** · #36 work in
 number order · #37 EAN field on Article Master in every UI. (The #41-#46 numbers above were wrong — use these.)
 
+**#32-#35 BUILT 21-11 (owner picked first):** numbers never repeat (server refuses a used number), delete frees the
+number, Cancel bill keeps it ("Cancelled" in the list), offline bills on top of the bill list with Share / Delete,
+offline number shown in the form and never counted backwards (detail §10). Owner tests offline, then reply #32-#35.
+
 **QnA #25/#26/#27 (Distributor UI):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
 `ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master
 Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). **Step 2 photo → new product BUILT 21-11** — server `91f8d32` deployed; phone Article Master "✨ Photo → new" + "Find by

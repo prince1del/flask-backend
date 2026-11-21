@@ -807,10 +807,14 @@ def next_manual_doc_number(
     if not prefix or not fy:
         return str(int(txn_type))
     pattern = f"{prefix}/{fy}/%"
+    from app.hop_bill_numbers import HOLDS_NUMBER, ensure_columns as _bn_cols
+
+    _bn_cols(conn)
+    # deleted bills free their number (owner #35: "bill 2 deleted → next must be 2"); cancelled bills keep it
     rows = conn.execute(
-        """
+        f"""
         SELECT txn_number FROM hop_party_transactions
-        WHERE workspace_id=? AND txn_type=? AND txn_number LIKE ?
+        WHERE workspace_id=? AND txn_type=? AND txn_number LIKE ? AND {HOLDS_NUMBER}
         """,
         (workspace_id, int(txn_type), pattern),
     ).fetchall()
@@ -838,8 +842,10 @@ def offline_series(conn: sqlite3.Connection, workspace_id: str, user_code: str, 
         head = main.rsplit("/", 1)[0]
         base = f"{head}/{code}-"
         mx = 0
+        from app.hop_bill_numbers import HOLDS_NUMBER
+
         for (num,) in conn.execute("SELECT txn_number FROM hop_party_transactions WHERE workspace_id=? AND txn_type=? "
-                                   "AND txn_number LIKE ?", (workspace_id, int(t), base + "%")):
+                                   f"AND txn_number LIKE ? AND {HOLDS_NUMBER}", (workspace_id, int(t), base + "%")):
             tail = str(num or "")[len(base):]
             if tail.isdigit():
                 mx = max(mx, int(tail))
@@ -1209,6 +1215,11 @@ def create_manual_party_document(
         delivery_terms = _clean(firm.get("delivery_terms"))
 
     source_txn_id = next_manual_source_txn_id(conn, workspace_id)
+    if _clean(payload.get("txn_number")):
+        # a typed / offline number must not be another bill's (owner #32: same invoice to 2 customers)
+        from app.hop_bill_numbers import check_free
+
+        check_free(conn, workspace_id, txn_type, _clean(payload.get("txn_number")))
     txn_number = _clean(payload.get("txn_number")) or next_manual_doc_number(
         conn, workspace_id, txn_type, txn_date
     )
@@ -1387,6 +1398,10 @@ def update_manual_party_document(
     else:
         delivery_terms = _clean(h.get("delivery_terms"))
     txn_number = _clean(payload.get("txn_number")) or _clean(h.get("txn_number"))
+    if txn_number.lower() != _clean(h.get("txn_number")).lower():
+        from app.hop_bill_numbers import check_free
+
+        check_free(conn, workspace_id, int(h.get("txn_type") or txn_type), txn_number, exclude_id=int(party_txn_id))
     party_name = _clean(party.get("company"))
 
     conn.execute(

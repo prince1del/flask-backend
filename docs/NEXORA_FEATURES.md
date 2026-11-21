@@ -475,6 +475,18 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 
 ## 10. Pending / open
 
+**Bill numbers + offline bills (21-11, Distributor notes #32-#35):** `app/hop_bill_numbers.py` — a number belongs
+to one bill (live or CANCELLED); `check_free` refuses a typed / offline number already used (create, edit,
+restore); deleted bills free their number (`next_manual_doc_number` and `offline_series` count only
+`HOLDS_NUMBER` rows) so "bill 2 deleted → next is 2"; restore is refused when the number went to another bill;
+`POST /party-transactions/<id>/cancel` {reason} = soft delete + `cancelled_at` / `cancel_reason` (stops counting,
+keeps the number), the bill list (`txn_types`, not a party ledger) shows it with status "Cancelled — reason",
+balance 0. Phone: `HopOfflineCache` never keeps `/next-number`; `HopOfflineNumbers` refresh never counts backwards
+(max of server and phone), `peek` shows the offline number in the form when offline, a phone-made series
+`OFF/U<id>-<type>-n` when never fetched, `giveBack` when the last waiting bill is deleted; series refreshed on every
+module open while online. `HopOfflineBillsBar` on top of every bill list: waiting bills (number, party, amount,
+error) with Share (text) and Delete. Preview Delete dialog → Cancel bill / Delete / Keep.
+
 **Scan many (21-11, QnA step 1 of 3 — fast entry #42 / photo #43 / voice #44; owner checks the note numbers):**
 server `hop_items.scan_index` → `GET /api/v1/hop/products/scan-index` (items + `keys` barcode / lower-case code →
 index; services and deleted items left out; the phone's offline cache keeps it) and `hop_items.scan_check` →

@@ -125,8 +125,20 @@ def restore_document(conn: sqlite3.Connection, ws: str, txn_id: int) -> dict[str
         raise LookupError("Transaction not found")
     if not row["deleted_at"]:
         return {"party_txn_id": int(txn_id), "restored": False, "reason": "not in recycle bin"}
+    from app import hop_bill_numbers
+
+    hop_bill_numbers.ensure_columns(conn)
+    t0 = conn.execute("SELECT txn_type, txn_number, cancelled_at FROM hop_party_transactions WHERE id=?", (int(txn_id),)).fetchone()
+    if t0 and not t0["cancelled_at"]:
+        # its number may have gone to a new bill after the delete (owner #35) — never two bills with one number
+        hit = hop_bill_numbers.number_owner(conn, ws, int(t0["txn_type"] or 0), t0["txn_number"] or "", exclude_id=int(txn_id))
+        if hit:
+            raise ValueError(f"Number {t0['txn_number']} now belongs to another bill"
+                             + (f" ({hit['party_name']})" if hit.get("party_name") else "")
+                             + ". Open this bill and use Duplicate to make it again with a new number.")
     conn.execute(
-        "UPDATE hop_party_transactions SET deleted_at=NULL, deleted_by=NULL, updated_at=? WHERE id=?",
+        "UPDATE hop_party_transactions SET deleted_at=NULL, deleted_by=NULL, cancelled_at=NULL, cancel_reason=NULL, "
+        "updated_at=? WHERE id=?",
         (_now(), int(txn_id)),
     )
     # Re-post with the document's own saved payment (received now, account, cheque):
