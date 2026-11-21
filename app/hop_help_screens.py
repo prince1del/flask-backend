@@ -145,6 +145,11 @@ SHOWS: dict[str, list[str]] = {
         "Turn on / Change PIN / Turn off app lock — what the buttons do.",
         "Fingerprint — unlock with your fingerprint; the PIN still works.",
     ],
+    "feedback": [
+        "Report a problem / Suggest a change — write what happened or what should change; it goes to NEXORA Customer care.",
+        "My feedback — each one with its status (Open, Working on it, Done) and the reply from Customer care.",
+        "Picture of the screen — sent from the ⓘ guide so Customer care sees exactly what you saw; tap to see it big.",
+    ],
     "company_profile": [
         "Firm details — name, GSTIN, state, address, phone, email, PAN.",
         "Bank — account details printed on bills.",

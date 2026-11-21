@@ -475,6 +475,20 @@ Galaxy Watch, plans & billing, manage users, share NEXORA.
 
 ## 10. Pending / open
 
+**21-11 afternoon batch (Distributor notes, number order):** #10 many photos on a note (pick many at once; before, only
+the last stayed — a stale-list bug in `HopPendingNotePhotos`; existing notes now take many too). #16 bill form: a
+scanned code not in the items opens "New item" (barcode filled, price / GST / HSN) → saved (offline too) and the line
+added; Scan many asks for each new code. #17 logo initials also in the Hub firm list (`PlanGate.InitialAvatar` →
+`FirmInitials`). #37 Article Master / Catalogue field "EAN / barcode"; the price list reader has an "EAN / barcode"
+column role (EAN / barcode / UPC / GTIN, before "code"). #2 checked — GSTIN fetch is on every GSTIN field. Photos
+came out turned (landscape ↔ portrait): `HopProductPhotoApi.shrink` now turns by the EXIF orientation before
+re-saving (product, note, AI photos). **Customer care feedback** (`app/hop_feedback.py`, table `nexora_feedback`,
+screenshots `feedback_shots/`): ⓘ guide of every screen → Report a problem / Suggest a change (screenshot of that
+screen, screen key, UI, firm, app version) → `POST /api/v1/hop/feedback` (offline kept) → email to Customer care
+(`NEXORA_FEEDBACK_EMAIL` or the platform owner's login) + `GET /feedback/inbox` (platform owner only) →
+`POST /feedback/<id>/reply` {status, reply} → the user sees it in Menu → Help & feedback (badge from
+`/feedback/counts`). Users only ever see "Customer care". No floating button (owner: not professional).
+
 **Bill numbers + offline bills (21-11, Distributor notes #32-#35):** `app/hop_bill_numbers.py` — a number belongs
 to one bill (live or CANCELLED); `check_free` refuses a typed / offline number already used (create, edit,
 restore); deleted bills free their number (`next_manual_doc_number` and `offline_series` count only

@@ -36,6 +36,7 @@ def test_every_phone_menu_screen_has_help():
 
     keys = ["dashboard", "parties", "invoices", "products", "samples", "fabric_preview", "vendor_cmp", "orders",
             "dispatches", "complaints", "customer_dash", "daily", "profit", "targets", "theme", "team_duty",
-            "vyapar_import", "wipe_data", "reminders", "leads", "meetings", "projects", "vendors", "customers"]
+            "vyapar_import", "wipe_data", "reminders", "leads", "meetings", "projects", "vendors", "customers",
+            "feedback"]
     for k in keys:
         assert topic(k) and topic(k)["shows"], k
