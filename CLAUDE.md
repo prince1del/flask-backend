@@ -102,7 +102,17 @@ Always say the in-app #number, never the DB id.
 "add new option if the profile is different" (login chips?). Done 21-11: B3 (it was the LOGIN screen → navy-gold +
 Create account button), #26 multi-brand (Distributor main). D9 replied, kept open (item card redesign).
 
-**QnA #42/#43/#44 (owner checks the numbers vs #25-27 before replies):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
+**Distributor UI — open notes tagged claude (read on the phone 21-11 ~11:40; "For: Claude"; #36 = work them in
+number order):** #2 GSTIN fetch every UI · #9 ↩ bulk delete missing · #10 ↩ many photos on a note · #12 ↩ GST not
+shown · #16 scan → item or Add new · #17 ↩ logo = initials of each word (KH) + a floating "report a problem / change"
+button on forms · #19 multi-brand (Brand desk built) · #22 Aster row does not open · #23 page cluttered + bulk delete
+· #24 Retailer notes (built) · #25 / #26 / #27 QnA = the 3 steps below (numbers confirmed) · #28 ↩ fully offline, own
+bill series per login · #29 ↩ notes not saved offline · #30 claude tag on edit (fixed, reply) · #31 "check, ignore"
+· **#32 offline bill got no. 1 again after bill 1 (duplicate invoice!) · #33 offline bill saved but not shown · #34
+offline bill cannot be deleted · #35 bill 2 deleted → next shows 3; no Cancel bill; series rule** · #36 work in
+number order · #37 EAN field on Article Master in every UI. (The #41-#46 numbers above were wrong — use these.)
+
+**QnA #25/#26/#27 (Distributor UI):** step 1 "Scan many" BUILT + phone installed 21-11 (owner checks) — server
 `ccf16d3` (scan-index / scan-check) deployed 21-11 `95600f7`; phone bill form "Scan many" + Article Master
 Scan → counted vs books (detail `docs/NEXORA_FEATURES.md` §10). **Step 2 photo → new product BUILT 21-11** — server `91f8d32` deployed; phone Article Master "✨ Photo → new" + "Find by
 photo", bill form "Photo" (detail §10). Owner checks on the phone. **Step 3 voice bill BUILT 21-11** (+ unclear speech: sound match, AI picks only from
