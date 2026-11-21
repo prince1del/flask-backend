@@ -28,6 +28,8 @@ subscriber's own brand (never "House of Prizm" for another business).
 - **Commit + push to `main` after every fix** (this repo). Phone repo: local commits only.
 - **Auto deploy after every server fix** (owner 21-11: "auto deploy karo har baar") — push, pull on the server,
   restart, smoke-check the new route (401 = there); no need to ask.
+- **OTA app update only when the owner asks** (owner 21-11: "jab mangu tab do") — build + `adb install` is fine,
+  `deploy/publish_android_apk.sh` only on the owner's word.
 - **Write the plan here before starting a batch**; ask the owner what to do first; update this file after each change.
 - **Notes inbox:** work ONLY on notes for Claude — party "claude" (row shows "👤 claude") or body starting
   "[For Claude]". Reply in the note (By: Claude), then ✓ Mark as done — through the app only.
