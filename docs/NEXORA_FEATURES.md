@@ -496,6 +496,20 @@ Also: profile Save turns off after saving + scrolls to top; all plain placeholde
 one-line Camera / Gallery. Pre-existing failing test: `test_nexora_guard::test_hop_checks_find_real_problems` (reuses
 bill number MT-77, refused since #32) — fix the test data.
 
+
+**Schemes + per-article margins (21-11 night; server `b881973` deployed, phone `5c7b7c9` committed, NOT built):**
+My brands registration = 2 steps (company details, payment terms); the Payment terms form has no CD % / price rule any
+more (old values stay saved). Margins per article: Article Master price-list preview shows "PTR ₹ · Ex-mill ₹ (from the
+sheet %)" per row (`row.margin` from `hop_dist_margins.terms_from_details`, AW26 chain: GST out before the retailer
+margin, AWD mark-up on ex-mill); Save also saves each article's own terms ("N margins saved from the sheet").
+Schemes (`app/hop_dist_schemes.py`, brand page → Orders, goods & payments → Schemes): CD schemes with from / to dates
+and slabs (pay within N days → X %) — each invoice uses the scheme of its own date, else "Old CD % (no dates)";
+incentives with target slabs, progress from the company's invoices (all goods or some categories), status running /
+earned / missed / received, short-received; alerts (pay soon to keep CD, close to target, ending, credit note not
+received); ✨ read a scheme letter (photo / PDF → drafts the user checks and saves). Routes `/dist/companies/<id>/schemes`,
+`/dist/schemes/<id>` (DELETE), `/dist/schemes/alerts`, `/dist/schemes/read-letter`; AI insights `schemes`; Ask Nexora
+`dist_schemes`; Company report carries `schemes`.
+
 ## 10. Pending / open
 
 **21-11 afternoon batch (Distributor notes, number order):** #10 many photos on a note (pick many at once; before, only
